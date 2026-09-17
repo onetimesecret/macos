@@ -1100,6 +1100,73 @@ final class FileDocumentTests: XCTestCase {
             "Unsaved changes to a.txt and c.txt go with it.")
     }
 
+    /// The drafts leg has its own write, so the cancelled quit's line
+    /// names the dirty files only while that write is still owed. A
+    /// refusal from the content or ledger leg after the drafts landed
+    /// costs the pages alone, and so does an unsavable session, whose
+    /// drafts leg settled by definition.
+    func testTheCancelledQuitLineNamesTheDirtyFilesOnlyWhileTheirDraftsAreUnwritten() {
+        func file(_ name: String, dirty: Bool) -> FileSummary {
+            FileSummary(
+                id: CompanionClient.fileIDTag | 1, name: name, path: "/tmp/\(name)",
+                isDirty: dirty, conflict: .none, lineEnding: .lf, hasBOM: false,
+                lastEditedAt: 0, restoredFromDraft: false
+            )
+        }
+        let pagesOnly =
+            "the sealed state file was not written, so this session's pages will not survive the quit"
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused, files: [file("a.txt", dirty: false)], draftsUnwritten: true),
+            pagesOnly,
+            "a clean file adds nothing to the loss")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused, files: [file("a.txt", dirty: true)], draftsUnwritten: false),
+            pagesOnly,
+            "a draft the drafts leg wrote survives a refusal from another leg")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused,
+                files: [
+                    file("a.txt", dirty: true), file("b.md", dirty: false),
+                    file("c.txt", dirty: true),
+                ],
+                draftsUnwritten: true),
+            "the sealed state file was not written, so this session's pages and the unsaved "
+                + "changes to a.txt and c.txt will not survive the quit")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .unsavableWithContent, files: [file("a.txt", dirty: true)], draftsUnwritten: false),
+            "nothing typed this session is on disk, so its pages will not survive the quit",
+            "an unsavable session's drafts leg settled, so its drafts are on disk")
+        XCTAssertNil(
+            PageModel.quitRefusalSentence(
+                .settled, files: [file("a.txt", dirty: true)], draftsUnwritten: true))
+    }
+
+    /// The flag the surface hands the line is the model's own drafts
+    /// dirtiness: set by an edit, cleared by the drafts leg's write,
+    /// so a flush that lands the drafts stops the line naming them.
+    func testTheDraftsLegClearsTheDirtinessTheQuitLineReads() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty, "an edit owes the drafts file a write")
+
+        XCTAssertTrue(model.saveState())
+        XCTAssertFalse(model.draftsDirty, "the drafts leg landed, so no draft is at stake")
+        XCTAssertTrue(
+            try XCTUnwrap(model.openFiles.first).isDirty,
+            "the file stays dirty; only its draft is on disk")
+    }
+
     // MARK: The roster is the authority
 
     func testEverySaveRefreshesTheRosterTheHeaderAndTheDotsRead() throws {

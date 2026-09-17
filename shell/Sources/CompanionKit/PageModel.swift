@@ -1405,7 +1405,10 @@ public final class PageModel: ObservableObject {
     /// may not write over yesterday's pages, and that refusal says
     /// nothing about a file the person opened by hand in this session:
     /// their unsaved typing still deserves to survive a crash.
-    private var draftsDirty = false
+    ///
+    /// Readable so the cancelled quit's line can tell a drafts leg
+    /// that failed from one that landed before another leg refused.
+    private(set) var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -2187,15 +2190,34 @@ public final class PageModel: ObservableObject {
     /// The standing line's sentence, a pure function of the outcome so
     /// the two cases are testable as words. Lower case, third person,
     /// and it names the loss rather than warning in general (D-15).
-    public nonisolated static func quitRefusalSentence(_ outcome: QuitSaveOutcome) -> String? {
+    ///
+    /// The drafts are a third file with a write of their own, and a
+    /// refusal says only that one of the three legs failed. The drafts
+    /// leg runs under a withheld content licence too, so an unsavable
+    /// session's drafts are on disk. The line therefore names dirty
+    /// files only when that leg itself still owes its write
+    /// (`draftsUnwritten`), and names the pages alone otherwise.
+    public nonisolated static func quitRefusalSentence(
+        _ outcome: QuitSaveOutcome, files: [FileSummary] = [], draftsUnwritten: Bool = false
+    ) -> String? {
+        let loss = lostAtQuit(files: files, draftsUnwritten: draftsUnwritten)
         switch outcome {
         case .settled:
             return nil
         case .refused:
-            return "the sealed state file was not written, so this session's pages will not survive the quit"
+            return "the sealed state file was not written, so this session's \(loss) will not survive the quit"
         case .unsavableWithContent:
-            return "nothing typed this session is on disk, so its pages will not survive the quit"
+            return "nothing typed this session is on disk, so its \(loss) will not survive the quit"
         }
+    }
+
+    /// What a cancelled quit takes, as the object of the standing line.
+    private nonisolated static func lostAtQuit(
+        files: [FileSummary], draftsUnwritten: Bool
+    ) -> String {
+        let dirty = draftsUnwritten ? files.filter(\.isDirty).map(\.name) : []
+        guard !dirty.isEmpty else { return "pages" }
+        return "pages and the unsaved changes to \(englishList(dirty))"
     }
 
     deinit {

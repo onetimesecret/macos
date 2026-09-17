@@ -198,7 +198,8 @@ public struct PageStatusStack: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         if let refusal = model.quitRefusal,
-            let sentence = PageModel.quitRefusalSentence(refusal)
+            let sentence = PageModel.quitRefusalSentence(
+                refusal, files: model.openFiles, draftsUnwritten: model.draftsDirty)
         {
             // The quit the terminate path cancelled (issue 172, D-14 and
             // D-19). Standing rather than a notice, because the condition
