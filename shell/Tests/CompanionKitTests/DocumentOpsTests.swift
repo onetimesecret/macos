@@ -619,6 +619,28 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertTrue(result.displays[0].detailText.contains("edited"))
     }
 
+    /// A block can open on an empty paragraph — a paste that kept its
+    /// leading blank, a return pressed before the words arrived. The
+    /// affordance belongs to the first line a reader can see, not to
+    /// the whitespace above it, or it floats free of the words it
+    /// describes.
+    func testAnAffordanceSkipsItsBlockLeadingBlankLine() {
+        let storage = NSTextStorage(string: "alpha\n\nbeta words")
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: storage, sheet: 1,
+            blockMetas: [
+                BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+                BlockInfo(id: "beta", createdS: 2_000, modifiedS: 3_000, paragraphs: 2),
+            ],
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:]
+        )
+        XCTAssertEqual(result.displays.count, 1)
+        XCTAssertEqual(
+            result.displays[0].range, NSRange(location: 7, length: 10),
+            "the affordance rode the block's blank opening line"
+        )
+    }
+
     /// The display still treats a fence as one visual region, but its
     /// metadata now rides the opening rule instead of reserving a row.
     func testAFenceCoalescesToOneEditedAffordance() {
