@@ -740,6 +740,17 @@ impl FileStore {
         if clean {
             file.last_edited_ms = wall_ms;
         }
+        // A local commit drops the redo stack, so the Take theirs
+        // generation an undone marker speaks for stops being reachable:
+        // no Redo can return to the disk generation, and no Undo can
+        // explain why the file still reads unsaved. ADR-0031 refuses the
+        // same orphaned marker at the relaunch boundary, and the live
+        // session owes the person the same honesty. The baseline
+        // comparison below then answers on its own.
+        if file.take_theirs_undone && !file.document.can_redo() {
+            file.take_theirs_undone = false;
+            file.active_take_theirs_generation = None;
+        }
         file.resettle_dirty();
         clean
     }
@@ -2180,16 +2191,17 @@ mod tests {
         );
 
         // Typing branches from the pre-resolution draft and invalidates
-        // Redo of Take theirs. Undoing that typing reaches the saved output
-        // again, but it is still the old draft generation and stays dirty.
+        // Redo of Take theirs, which retires the generation marker with
+        // it. Undoing that typing reaches the saved output again, and
+        // with nothing left to steer by the file reads saved.
         assert!(store.apply_ops(id, &[ins(4, "!")], 5_000));
         assert_eq!(store.text(id).unwrap(), "same!\n");
         assert!(store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
         assert_eq!(store.text(id).unwrap(), "same\n");
         assert!(
-            store.is_dirty(id),
-            "ordinary edit/undo cannot erase the undone generation"
+            !store.is_dirty(id),
+            "an unreachable generation marker stops pinning the file dirty"
         );
 
         // The only remaining redo is the branched typing step; the old
@@ -2200,7 +2212,7 @@ mod tests {
         assert!(!store.can_redo(id));
         assert!(store.undo(id).unwrap().applied);
         assert_eq!(store.text(id).unwrap(), "same\n");
-        assert!(store.is_dirty(id));
+        assert!(!store.is_dirty(id));
 
         store.save(&io, id).unwrap();
         assert!(!store.is_dirty(id), "a successful save settles the branch");
@@ -2244,6 +2256,41 @@ mod tests {
         assert!(store.close(id));
         let reopened = store.open(&io, Path::new("/settle.txt")).unwrap();
         assert!(!store.is_dirty(reopened));
+    }
+
+    #[test]
+    fn typing_past_an_undone_take_theirs_retires_the_orphaned_marker() {
+        let io = MemoryIo::with("/orphan.txt", b"old\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/orphan.txt")).unwrap();
+        assert!(store.apply_ops(id, &[del(0, 3), ins(0, "mine")], 1));
+        io.put("/orphan.txt", b"theirs\n");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "mine\n");
+        assert!(store.is_dirty(id));
+        assert!(store.can_redo(id));
+
+        // The local commit drops the redo stack, so the disk generation
+        // becomes unreachable and the marker loses its authority.
+        assert!(store.apply_ops(id, &[ins(4, "!")], 2));
+        assert!(!store.can_redo(id));
+        assert!(store.is_dirty(id), "the typing itself is a real edit");
+
+        // Editing back to the disk text now reads saved, because no Undo
+        // or Redo remains that could explain an unsaved file.
+        assert!(store.apply_ops_as_new_step(id, &[del(0, 5), ins(0, "theirs")], 3));
+        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert!(
+            !store.is_dirty(id),
+            "an orphaned generation marker cannot pin the file dirty"
+        );
+        assert_eq!(
+            store.file(id).unwrap().bytes_to_write(),
+            b"theirs\n".to_vec()
+        );
     }
 
     #[test]
