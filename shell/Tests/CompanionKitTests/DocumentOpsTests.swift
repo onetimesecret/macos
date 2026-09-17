@@ -984,6 +984,51 @@ final class DocumentOpsWiringTests: XCTestCase {
         ))
     }
 
+    func testHoverPointOverAnotherWindowClears() {
+        XCTAssertNil(InkTextView.hoverPoint(
+            pointer: NSPoint(x: 50, y: 150), visibleRect: hoverRect,
+            holdsKeys: true, pointsIntoWindow: false
+        ))
+    }
+
+    func testClipBoundsChangeRefreshesHoverFromInjectedScreenPoint() throws {
+        makeEditor()
+        let scroll = InkEditorView.scrollStack(for: textView)
+        let card = NSRect(x: 0, y: 0, width: 720, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.contentView?.addSubview(scroll)
+        scroll.frame = card
+        scroll.layoutSubtreeIfNeeded()
+        coordinator.observeClip(of: scroll)
+
+        type("alpha")
+        coordinator.layOutBlockLabels(forMetas: [
+            BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
+        ])
+        scroll.layoutSubtreeIfNeeded()
+        let field = try XCTUnwrap(labelFields().first, "the fixture minted no affordance")
+        let compact = field.stringValue
+        let localPoint = NSPoint(x: field.frame.midX, y: field.frame.midY)
+        XCTAssertTrue(textView.visibleRect.contains(localPoint), "the hover target is outside the page")
+        let windowPoint = textView.convert(localPoint, to: nil)
+        textView.hoverRefreshInput = (
+            screenPoint: window.convertPoint(toScreen: windowPoint),
+            holdsKeys: true,
+            pointsIntoWindow: true
+        )
+
+        NotificationCenter.default.post(
+            name: NSView.boundsDidChangeNotification, object: scroll.contentView
+        )
+
+        XCTAssertNotEqual(
+            field.stringValue, compact,
+            "a clip bounds change did not re-resolve hover under the injected pointer"
+        )
+    }
+
     func testHoverPointOnMaxYEdgeFollowsRectContains() {
         let edge = NSPoint(x: 50, y: hoverRect.maxY)
         XCTAssertFalse(hoverRect.contains(edge))
