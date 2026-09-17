@@ -2139,6 +2139,24 @@ public final class PageModel: ObservableObject {
 
     public var quitAnywayOffered: Bool { quitRefusal != nil }
 
+    /// The standing line's button, answered.
+    ///
+    /// It asks for a termination rather than performing one: the request
+    /// goes back through `applicationShouldTerminate`, which is where
+    /// `QuitPrompt.terminateReply` reads the offer this line represents
+    /// and lets the second ask through. That is why the button and a
+    /// second ⌘Q are the same answer, and it is the reason this is a
+    /// model call and not `NSApp.terminate` from inside a view: every
+    /// other action on the status stack goes through the model, and the
+    /// quit path is the one that can least afford a second route.
+    ///
+    /// `NSApp` is read optionally because a filtered test run has no
+    /// application object, and a status action that traps the runner is
+    /// worse than one that does nothing there.
+    public func requestQuitAnyway() {
+        NSApp?.terminate(nil)
+    }
+
     /// The cancelled quit's standing line goes up. A settled outcome is
     /// never recorded: there is nothing to quit anyway from.
     public func offerQuitAnyway(after outcome: QuitSaveOutcome) {

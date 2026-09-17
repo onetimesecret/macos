@@ -212,7 +212,7 @@ public struct PageStatusStack: View {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("quit anyway (⌘Q)") { NSApp.terminate(nil) }
+                Button("quit anyway (⌘Q)") { model.requestQuitAnyway() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .help(quitAnywayHelp)
