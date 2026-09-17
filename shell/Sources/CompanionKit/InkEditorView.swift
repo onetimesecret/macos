@@ -1555,12 +1555,29 @@ public struct InkEditorView: NSViewRepresentable {
             NotificationCenter.default.removeObserver(
                 self, name: NSView.frameDidChangeNotification, object: nil
             )
+            NotificationCenter.default.removeObserver(
+                self, name: NSView.boundsDidChangeNotification, object: nil
+            )
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(clipFrameChanged),
                 name: NSView.frameDidChangeNotification,
                 object: scroll.contentView
             )
+            scroll.contentView.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(clipBoundsChanged),
+                name: NSView.boundsDidChangeNotification,
+                object: scroll.contentView
+            )
+        }
+
+        /// The page scrolled. Hover follows the pointer, and the pointer
+        /// did not move, so the hit test has to be re-run against the
+        /// content that arrived under it.
+        @objc private func clipBoundsChanged(_ notification: Notification) {
+            textView?.refreshHover()
         }
 
         /// The card resized. Wrapped, the autoresizing mask has already
@@ -3654,15 +3671,28 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        let point = convert(event.locationInWindow, from: nil)
-        hoveredChipIndex = coordinator?.chipIndex(at: point, in: self)
+        applyHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    /// Re-run the hover hit test against wherever the pointer is now.
+    /// Scrolling moves content under a stationary pointer and sends no
+    /// mouse event, so without this the block that was hovered before
+    /// the scroll stays expanded and the one now under the pointer
+    /// stays compact until the mouse moves again.
+    func refreshHover() {
+        guard let window, window.isKeyWindow else { return applyHover(at: nil) }
+        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        applyHover(at: visibleRect.contains(point) ? point : nil)
+    }
+
+    private func applyHover(at point: NSPoint?) {
+        hoveredChipIndex = point.flatMap { coordinator?.chipIndex(at: $0, in: self) }
         coordinator?.updateBlockMetadataHover(at: point)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        hoveredChipIndex = nil
-        coordinator?.updateBlockMetadataHover(at: nil)
+        applyHover(at: nil)
     }
 
     private func redrawChip(at index: Int) {
