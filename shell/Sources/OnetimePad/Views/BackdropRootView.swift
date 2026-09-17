@@ -84,6 +84,13 @@ struct BackdropRootView: View {
     /// commit rather than one a mid-drag rest already voided.
     @State private var gestureAnchor: CGPoint?
 
+    /// How wide the trailing indicator cluster is drawing right now.
+    /// The header mirrors it as an empty leading column so the identity
+    /// can stay centred on the card without the two ever sharing a
+    /// point of the header.
+    @State private var indicatorWidth: CGFloat = 0
+    @State private var headerWidth: CGFloat = 0
+
     private var raised: Bool { model.stance == .raised }
 
     /// The crossing between the two stances (D-02): a short fade of
@@ -272,20 +279,66 @@ struct BackdropRootView: View {
             : "⌃⌥Space raises the surface"
     }
 
+    /// What the middle column may take, or nil for the single pass
+    /// before the card has been measured, where an unconstrained
+    /// identity reads better than one starved to nothing.
+    private var identityColumnWidth: CGFloat? {
+        guard headerWidth > 0 else { return nil }
+        return HeaderLayout.identityWidth(
+            cardWidth: headerWidth, indicatorWidth: indicatorWidth
+        )
+    }
+
     private var header: some View {
-        ZStack {
+        // Three columns rather than a stack. The identity used to be
+        // centred in a ZStack with the indicators laid over it, which
+        // held only while the identity stayed inside its 260 point
+        // cap; a file identity, whose words are the file's and not
+        // ours, routinely asked for more and slid under the cluster
+        // drawn after it. Given a column of its own the identity can
+        // no longer reach the cluster's ground, whatever it has to
+        // say, and the empty leading column, kept the same width as
+        // the cluster, keeps the middle centred on the card rather
+        // than on what is left of it.
+        HStack(spacing: HeaderLayout.gutter) {
+            Color.clear
+                .frame(width: indicatorWidth, height: 0)
+
             // This is a borderless surface, so the header has to supply
             // the quiet orientation cue a title bar normally would. A
             // centered identity belongs to the card rather than to the
             // navigation column below it: the rail is one mode of the
             // page picker, not the owner of the window.
             headerIdentity
-                .frame(maxWidth: 260)
+                .frame(width: identityColumnWidth)
+                .frame(maxWidth: .infinity)
 
-            HStack(spacing: 8) {
-                Spacer(minLength: 16)
-                headerIndicators
+            headerIndicators
+                .fixedSize()
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: HeaderIndicatorWidthKey.self, value: proxy.size.width
+                        )
+                    }
+                )
+        }
+        // The card's width, read from the header's own ground. Nothing
+        // downstream of it changes that ground: the cluster is sized to
+        // fit and the identity only ever takes what this arithmetic
+        // hands it, so measuring here cannot start a loop.
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: HeaderWidthKey.self, value: proxy.size.width
+                )
             }
+        )
+        .onPreferenceChange(HeaderIndicatorWidthKey.self) { width in
+            indicatorWidth = width
+        }
+        .onPreferenceChange(HeaderWidthKey.self) { width in
+            headerWidth = width
         }
         // The header doubles as the card's handle while raised. The
         // gesture rides the header itself, above the pane's tap
@@ -433,7 +486,10 @@ struct BackdropRootView: View {
                 Text(state.saveWord)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(state.showsUnsavedDot ? Color.emberText : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .layoutPriority(1)
             if let stamp = state.lastEditStamp {
                 // The draft's age, on a file whose buffer came back
                 // from the drafts file rather than from disk. It is the
@@ -445,11 +501,19 @@ struct BackdropRootView: View {
                 Text(stamp)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             Text(state.encodingAndFormat)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
+        // The name yields its width before the facts beside it do: a
+        // middle-truncated file name still says which file this is,
+        // where a clipped "unsaved" says nothing at all.
+        .lineLimit(1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(state.spoken))
     }
@@ -676,5 +740,59 @@ struct BackdropRootView: View {
                     edge.resized(model.geometry, by: paneTranslation(from: started))
                 )
             }
+    }
+}
+
+/// How wide the trailing indicator cluster came out. Read from the
+/// cluster itself rather than guessed, because its words come and go
+/// with the session's state and a guessed width would be wrong in
+/// exactly the cases the reserve exists for.
+/// How wide the header's ground came out, which is the card's width
+/// less its own padding. The identity's column is cut from it by
+/// `HeaderLayout.identityWidth`, so the drawing and the arithmetic the
+/// tests assert are one thing rather than two.
+private struct HeaderWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct HeaderIndicatorWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// The header's width arithmetic, written apart from the drawing but
+/// consulted by it: the header measures its own ground and asks here
+/// how much of it the identity may take. Keeping the rule in one
+/// function means the invariant that matters can be asserted without a
+/// card — the identity's column and the indicator cluster's never share
+/// a point, however narrow the card gets — and that what is asserted is
+/// what the view does.
+enum HeaderLayout {
+    /// The space between the header's three columns.
+    static let gutter: CGFloat = 8
+
+    /// As wide as the identity is ever allowed to be. A centred name
+    /// that runs on becomes a line of text rather than a title, so it
+    /// stops here and truncates instead.
+    static let identityCap: CGFloat = 260
+
+    /// The width the middle column may take on a card this wide, given
+    /// an indicator cluster of `indicatorWidth` and its mirror on the
+    /// leading side.
+    ///
+    /// Answers zero rather than a negative measure when the cluster and
+    /// its mirror have eaten the header whole: the identity then shows
+    /// nothing, which is the right failure, since the cluster's states
+    /// are the ones that need acting on.
+    static func identityWidth(cardWidth: CGFloat, indicatorWidth: CGFloat) -> CGFloat {
+        let reserved = 2 * (indicatorWidth + gutter)
+        return max(0, min(identityCap, cardWidth - reserved))
     }
 }

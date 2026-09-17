@@ -216,3 +216,57 @@ final class BackdropGeometryTests: XCTestCase {
         XCTAssertEqual(BackdropGeometry.load(from: defaults), .default)
     }
 }
+
+/// The header's three columns, tested as the arithmetic they are. The
+/// header used to lay the indicator cluster over a centred identity,
+/// which held only while the identity stayed under its cap; a file
+/// identity asks for whatever its own words need, and on a narrow card
+/// the two drew on the same points. What is asserted here is that the
+/// cluster's ground is reserved, at every width.
+///
+/// This is the width the header actually gives its middle column: the
+/// view measures its own ground and hands `identityWidth` the answer,
+/// so these cases stand behind the drawing rather than beside it. Where
+/// the column then sits is the HStack's own centring and is not
+/// asserted here.
+final class HeaderLayoutTests: XCTestCase {
+    /// The cluster at its wordiest: a capture warning, a save word, a
+    /// sync word and the pin toggle.
+    private let indicators: CGFloat = 150
+
+    func testTheIdentityNeverReachesTheIndicatorCluster() {
+        for cardWidth in stride(from: CGFloat(120), through: 1600, by: 20) {
+            let width = HeaderLayout.identityWidth(
+                cardWidth: cardWidth, indicatorWidth: indicators
+            )
+            // A starved identity draws nothing and so can overlap
+            // nothing; the width assertion below is what covers it.
+            guard width > 0 else { continue }
+            // Both clusters keep their ground and both gutters survive,
+            // whatever the identity had to say.
+            XCTAssertLessThanOrEqual(
+                width, cardWidth - 2 * (indicators + HeaderLayout.gutter),
+                "identity underlaps the cluster at card width \(cardWidth)"
+            )
+        }
+    }
+
+    func testANarrowCardStarvesTheIdentityRatherThanOverlapping() {
+        // Narrower than the cluster and its mirror together: the
+        // identity gets nothing, which is the right thing to lose.
+        let width = HeaderLayout.identityWidth(cardWidth: 200, indicatorWidth: indicators)
+        XCTAssertEqual(width, 0)
+        // And it starves the whole way down, rather than turning
+        // negative and reading as room the cluster could borrow.
+        for cardWidth in stride(from: CGFloat(0), through: 316, by: 4) {
+            XCTAssertGreaterThanOrEqual(
+                HeaderLayout.identityWidth(cardWidth: cardWidth, indicatorWidth: indicators), 0
+            )
+        }
+    }
+
+    func testAWideCardStopsAtTheCapRatherThanRunningOn() {
+        let width = HeaderLayout.identityWidth(cardWidth: 1600, indicatorWidth: indicators)
+        XCTAssertEqual(width, HeaderLayout.identityCap)
+    }
+}
