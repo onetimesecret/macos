@@ -2367,13 +2367,23 @@ public struct InkEditorView: NSViewRepresentable {
                 // gives its lines).
                 let joinsPrevious = scanner.insideFence
                 var head = extent
+                var headIsBlank = true
                 var paragraphs: [WalkedParagraph] = []
                 var paragraphStart = location
                 while paragraphStart < NSMaxRange(extent) {
                     let paragraph = text.paragraphRange(
                         for: NSRange(location: paragraphStart, length: 0)
                     )
-                    if paragraphStart == location { head = paragraph }
+                    // The affordance rides the first line a reader can
+                    // see. A block whose opening paragraph is empty — a
+                    // paste that kept its leading blank, a return
+                    // pressed before the words arrived — would otherwise
+                    // float its pill over whitespace, reading as
+                    // belonging to nothing.
+                    if headIsBlank {
+                        head = paragraph
+                        headIsBlank = Self.isBlank(paragraph, of: text)
+                    }
                     let line = text.substring(with: paragraph)
                     // Whether the scanner was already holding a fence
                     // open is what tells an opening rule from a closing
