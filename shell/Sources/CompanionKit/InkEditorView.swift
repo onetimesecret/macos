@@ -593,6 +593,7 @@ public struct InkEditorView: NSViewRepresentable {
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
             refreshLanguageActionAvailability()
+            refreshBlockMetadataFocus()
         }
 
         private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -2247,8 +2248,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// line renders at heading weight with its `#`s dimmed in
         /// place. Attributes only; the bytes of the page never change.
         /// Also the ADR-0013 editable-surface rule's display instance:
-        /// created/modified are pulled fresh from the core and laid out
-        /// as labels above each block, styling the text without
+        /// created/modified are pulled fresh from the core and edited
+        /// blocks receive trailing-edge affordances without
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
@@ -2300,21 +2301,19 @@ public struct InkEditorView: NSViewRepresentable {
                 layoutManager.fenceRegions = fenceRegions
                 textView?.needsDisplay = true
             }
-            // `paragraphSpacingBefore` is ignored on the first paragraph
-            // of the storage, so the top block's gap has to come from the
-            // container inset instead — otherwise its label would be laid
-            // out above the text view's own top edge and clipped away.
-            let leading = displays.first?.range.location == 0
-            let inset = Self.topInset + (leading ? Self.blockLabelReserve : 0)
-            if let textView, textView.textContainerInset.height != inset {
-                textView.textContainerInset.height = inset
+            // Block metadata rides the first line instead of taking a row
+            // above it, so the page keeps its ordinary top inset regardless
+            // of which blocks have been edited.
+            if let textView, textView.textContainerInset.height != Self.topInset {
+                textView.textContainerInset.height = Self.topInset
             }
+            refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
 
         /// The pure part of `restyle()`: walk the storage block by block
         /// under one whole-page fence scanner, style each paragraph, and
-        /// return the fence regions, the block-label displays and the
+        /// return the fence regions, block metadata displays and the
         /// classifications. Shared with `PageModel.quietRendering(for:)`
         /// so a quiet day laid over its own temporary storage reads the
         /// same as the mounted editor would over its live one.
@@ -2353,9 +2352,9 @@ public struct InkEditorView: NSViewRepresentable {
                 let meta = block < blockMetas.count ? blockMetas[block] : nil
                 // A block is usually one paragraph and sometimes several
                 // (a paste keeps its lines together, ADR-0013), so the
-                // page is walked block by block, and the stamp stands
-                // above the block's first line rather than above every
-                // line the paste brought with it.
+                // page is walked block by block, and metadata belongs
+                // to the block's first line rather than every line the
+                // paste brought with it.
                 let extent = Self.blockRange(
                     from: location, paragraphs: meta?.paragraphs ?? 1, of: text
                 )
@@ -2438,10 +2437,9 @@ public struct InkEditorView: NSViewRepresentable {
             }
             // Second pass: lay the attributes down group by group,
             // where a group is one ordinary block or the run of blocks
-            // a fence region spans, and stamp each group once at its
-            // first line, earliest created to latest modified. Interior
-            // blocks of a region get neither label nor the reserved
-            // gap, so the fence renders as contiguous lines.
+            // a fence region spans. Each edited group gets one compact
+            // affordance on its first line, spanning earliest creation
+            // to latest touch. No group changes paragraph spacing.
             var displays: [BlockDisplay] = []
             storage.beginEditing()
             var lower = 0
@@ -2449,26 +2447,21 @@ public struct InkEditorView: NSViewRepresentable {
                 var upper = lower + 1
                 while upper < walks.count, walks[upper].joinsPrevious { upper += 1 }
                 let group = Array(walks[lower..<upper])
-                // Block created/modified labels are editor-only display:
-                // a quiet caller (ADR-0030) suppresses both the stamp and
-                // the paragraph spacing reserved for it by passing
+                // Block metadata affordances are editor-only display: a
+                // quiet caller (ADR-0030) suppresses them by passing
                 // `renderBlockLabels: false`.
-                let label = renderBlockLabels ? Self.groupLabel(for: group) : nil
-                for (position, walk) in group.enumerated() {
-                    for (index, paragraph) in walk.paragraphs.enumerated() {
-                        // Only the group's very first line reserves the
-                        // gap the label sits in; the rest of a pasted
-                        // passage or a fence region runs on at ordinary
-                        // spacing.
+                let display = renderBlockLabels ? Self.groupDisplay(for: group) : nil
+                for walk in group {
+                    for paragraph in walk.paragraphs {
                         Self.styleParagraph(
                             paragraph.range, of: storage, kind: paragraph.kind,
-                            tokens: paragraph.tokens,
-                            labeled: label != nil && position == 0 && index == 0
+                            tokens: paragraph.tokens
                         )
                     }
                 }
-                if let label, let head = group.first?.head {
-                    displays.append(BlockDisplay(range: head, text: label))
+                if var display, let head = group.first?.head {
+                    display.range = head
+                    displays.append(display)
                 }
                 lower = upper
             }
@@ -2621,14 +2614,13 @@ public struct InkEditorView: NSViewRepresentable {
 
         private static func styleParagraph(
             _ range: NSRange, of storage: NSTextStorage,
-            kind: InkStyle.LineKind, tokens: [CodeInk.Token], labeled: Bool
+            kind: InkStyle.LineKind, tokens: [CodeInk.Token]
         ) {
             guard range.length > 0 else { return }
             let paragraphStyle = NSMutableParagraphStyle()
-            // Room for the label above the block, reserved only where
-            // one will actually render: an untouched block carries no
-            // stamp and gets no gap.
-            paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
+            // Metadata is an overlay at the trailing edge of the first
+            // line. It never changes paragraph rhythm.
+            paragraphStyle.paragraphSpacingBefore = 0
             // A list item hangs from its content: an item long enough
             // to wrap keeps its second line under the words rather than
             // under the bullet, so the marker column stays a column.
@@ -2759,16 +2751,19 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
-        // MARK: Block labels (ADR-0013: created/modified above each block)
+        // MARK: Block metadata (ADR-0013: compact edited affordance)
 
-        /// One block's label and the paragraph range it renders above,
-        /// recomputed by `restyle` whenever content changes and read by
-        /// `repositionBlockLabels` on every layout pass. Never holds an
-        /// origin: the editable-surface rule keeps origin off every read
-        /// surface, this one included.
+        /// One edited block's compact and expanded readings, anchored to
+        /// its first paragraph. Untouched blocks deliberately have no
+        /// display: the surrounding checkpoint already supplies temporal
+        /// context, while an edit is the state worth signaling at rest.
+        /// Never holds an origin: the editable-surface rule keeps origin
+        /// off every read surface, this one included.
         struct BlockDisplay {
-            let range: NSRange
-            let text: String
+            var range: NSRange
+            let compactText: String
+            let detailText: String
+            let accessibilityText: String
         }
 
         /// One core block as the first restyle pass read it: where it
@@ -2796,21 +2791,21 @@ public struct InkEditorView: NSViewRepresentable {
             let tokens: [CodeInk.Token]
         }
 
-        /// The stamp a group renders, or nil for a group with nothing
-        /// to say. A lone block keeps the original reading — blank is
-        /// spacing and shows nothing. A fence region typed line by line
-        /// is many core blocks the eye reads as one slab, so it takes
-        /// one stamp spanning them: earliest created to latest touch,
-        /// and the branch of `blockLabel` that collapses an identical
-        /// pair still applies.
-        private static func groupLabel(for group: [BlockWalk]) -> String? {
+        /// The affordance a group renders, or nil when it is blank or has
+        /// not changed since creation. A fence region typed line by line
+        /// is many core blocks the eye reads as one slab, so its reading
+        /// spans earliest creation to latest touch across the region.
+        private static func groupDisplay(for group: [BlockWalk]) -> BlockDisplay? {
             if group.count == 1, let walk = group.first {
-                guard !walk.blank, let createdS = walk.meta?.createdS else { return nil }
-                return blockLabel(createdS: createdS, modifiedS: walk.meta?.modifiedS)
+                guard !walk.blank, let createdS = walk.meta?.createdS,
+                      let modifiedS = walk.meta?.modifiedS
+                else { return nil }
+                return blockDisplay(createdS: createdS, modifiedS: modifiedS)
             }
-            return fenceRegionLabel(
-                stamps: group.compactMap(\.meta).map { ($0.createdS, $0.modifiedS) }
-            )
+            let stamps = group.compactMap(\.meta).map { ($0.createdS, $0.modifiedS) }
+            guard let created = stamps.compactMap({ $0.0 }).min() else { return nil }
+            let modified = stamps.compactMap { $0.1 ?? $0.0 }.max() ?? created
+            return blockDisplay(createdS: created, modifiedS: modified)
         }
 
         /// The stamp a fence region wears: earliest created to latest
@@ -2819,12 +2814,13 @@ public struct InkEditorView: NSViewRepresentable {
         /// block that was touched but never modified counts its created
         /// stamp as its latest, and a region with no committed content
         /// at all wears nothing.
-        static func fenceRegionLabel(
+        static func fenceRegionDetails(
             stamps: [(createdS: Int64?, modifiedS: Int64?)]
         ) -> String? {
             guard let created = stamps.compactMap({ $0.createdS }).min() else { return nil }
             let modified = stamps.compactMap { $0.modifiedS ?? $0.createdS }.max()
-            return blockLabel(createdS: created, modifiedS: modified)
+            guard let modified else { return nil }
+            return blockDetails(createdS: created, modifiedS: modified)
         }
 
         /// The fence regions the last restyle read off the page, as
@@ -2913,52 +2909,72 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private var blockDisplays: [BlockDisplay] = []
-        private var blockLabelViews: [NSTextField] = []
+        private var blockLabelViews: [BlockMetadataField] = []
+        private var hoveredBlockLocation: Int?
+        private var focusedBlockLocation: Int?
 
         /// What the last restyle laid out, in document order: one entry
-        /// per labeled block, the range being the line its label sits
-        /// above. The window tests get onto the block walk; nothing
+        /// per edited block, the range being the line its affordance
+        /// rides. The window tests get onto the block walk; nothing
         /// writes through it.
         var blockLabelLayout: [(range: NSRange, text: String)] {
-            blockDisplays.map { ($0.range, $0.text) }
+            blockDisplays.map { ($0.range, $0.compactText) }
         }
 
         private static let blockLabelFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        /// Vertical gap a labeled block reserves above its first line:
-        /// the label's own height plus a little air on both sides.
-        static let blockLabelReserve: CGFloat = 20
-        /// The page's own top margin, before any label reserve.
+        /// The page's own top margin.
         static let topInset: CGFloat = 12
 
-        private static let blockLabelFormatter: DateFormatter = {
+        private static let blockTimeFormatter: DateFormatter = {
             let formatter = DateFormatter()
-            // `DDD HH:mm` (ADR-0013): day name and clock time only,
-            // since these are short-lived pages, and a full calendar date
-            // would overstate how long anything here is expected to
-            // live. The literal `HH` holds the clock at 24-hour
-            // regardless of locale; the weekday name still localizes.
+            formatter.dateFormat = "HH:mm"
+            return formatter
+        }()
+
+        private static let blockDayTimeFormatter: DateFormatter = {
+            let formatter = DateFormatter()
             formatter.dateFormat = "EEE HH:mm"
             return formatter
         }()
 
-        /// `Thu 14:32`, or `Thu 14:32 → Thu 14:40` once the block has
-        /// been edited past its first commit. The collapse is decided on
-        /// the underlying dates at minute granularity, not on the
-        /// rendered stamps: the format keeps no seconds, so an edit
-        /// forty seconds after the first commit still reads as one
-        /// stamp — but a modification exactly some weeks later would
-        /// render the same `EEE HH:mm` text while being a genuinely
-        /// different moment, and must keep its range.
-        static func blockLabel(createdS: Int64, modifiedS: Int64?) -> String {
+        private static let blockAccessibilityFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter
+        }()
+
+        /// The expanded reading uses the checkpoint's day context while
+        /// both stamps stay on that day. A cross-day edit restores the
+        /// weekday because it has become information again.
+        static func blockDetails(createdS: Int64, modifiedS: Int64) -> String? {
+            guard modifiedS > createdS else { return nil }
             let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
-            let created = blockLabelFormatter.string(from: createdDate)
-            guard let modifiedS else { return created }
             let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            // The operation log sees the first and last keystrokes of a
+            // newly typed block as different touches. Preserve the old
+            // minute-granularity collapse so ordinary typing does not
+            // immediately label nearly every block as edited.
             guard !Calendar.current.isDate(
                 createdDate, equalTo: modifiedDate, toGranularity: .minute
-            ) else { return created }
-            let modified = blockLabelFormatter.string(from: modifiedDate)
-            return "\(created) → \(modified)"
+            ) else { return nil }
+            let formatter = Calendar.current.isDate(createdDate, inSameDayAs: modifiedDate)
+                ? blockTimeFormatter : blockDayTimeFormatter
+            return "created \(formatter.string(from: createdDate)) · edited \(formatter.string(from: modifiedDate))"
+        }
+
+        private static func blockDisplay(createdS: Int64, modifiedS: Int64) -> BlockDisplay? {
+            guard let detail = blockDetails(createdS: createdS, modifiedS: modifiedS) else {
+                return nil
+            }
+            let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
+            let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            let accessibility = "Created \(blockAccessibilityFormatter.string(from: createdDate)); edited \(blockAccessibilityFormatter.string(from: modifiedDate))"
+            return BlockDisplay(
+                range: NSRange(location: 0, length: 0),
+                compactText: "edited", detailText: detail,
+                accessibilityText: accessibility
+            )
         }
 
         /// Resize the label pool to match `blockDisplays` and refresh
@@ -2975,50 +2991,116 @@ public struct InkEditorView: NSViewRepresentable {
                 blockLabelViews.removeLast().removeFromSuperview()
             }
             for (field, display) in zip(blockLabelViews, blockDisplays) {
-                field.stringValue = display.text
+                let expanded = display.range.location == hoveredBlockLocation
+                    || display.range.location == focusedBlockLocation
+                field.stringValue = expanded ? display.detailText : display.compactText
+                field.toolTip = display.accessibilityText
+                field.setAccessibilityLabel(display.accessibilityText)
                 field.sizeToFit()
+                field.frame.size.width += expanded ? 18 : 22
+                field.frame.size.height = max(20, field.frame.height + 4)
             }
             repositionBlockLabels()
         }
 
-        private static func makeBlockLabel() -> NSTextField {
-            let field = NSTextField(labelWithString: "")
+        private static func makeBlockLabel() -> BlockMetadataField {
+            let field = BlockMetadataField(labelWithString: "")
             field.font = blockLabelFont
-            field.textColor = .tertiaryLabelColor
+            field.textColor = .secondaryLabelColor
+            field.alignment = .center
             field.isSelectable = false
             field.isEditable = false
+            field.drawsBackground = true
+            field.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
+            field.isBezeled = false
+            field.wantsLayer = true
+            field.layer?.cornerRadius = 10
+            field.layer?.masksToBounds = true
+            field.setAccessibilityElement(true)
+            field.setAccessibilityRole(.staticText)
             return field
         }
 
-        /// Place every label in the gap above its block's first line.
-        /// Geometry only, no core round trip, so this is safe to call on
-        /// every layout pass: a resize rewraps paragraphs without
-        /// changing what any block says.
+        /// Place every affordance at the trailing edge of its block's
+        /// first line. Geometry only, no core round trip, so this is safe
+        /// to call on every layout pass: a resize rewraps paragraphs
+        /// without changing what any block says.
         func repositionBlockLabels() {
             guard let textView, let layoutManager = textView.layoutManager,
-                  textView.textContainer != nil else { return }
+                  let container = textView.textContainer else { return }
             let origin = textView.textContainerOrigin
             for (field, display) in zip(blockLabelViews, blockDisplays) {
                 let glyphRange = layoutManager.glyphRange(
                     forCharacterRange: display.range, actualCharacterRange: nil
                 )
                 guard glyphRange.length > 0 else { continue }
-                // The line fragment rect swallows `paragraphSpacingBefore`:
-                // it starts where the previous paragraph ended, so
-                // measuring from its top drops the label onto that
-                // paragraph's last line. The used rect is where this
-                // block's glyphs actually begin, and the reserved gap is
-                // the space immediately above it.
                 let usedRect = layoutManager.lineFragmentUsedRect(
                     forGlyphAt: glyphRange.location, effectiveRange: nil
                 )
-                field.frame.origin = NSPoint(
-                    x: origin.x + usedRect.minX,
-                    y: origin.y + usedRect.minY - field.frame.height - 2
+                field.frame.origin = Self.blockAffordanceOrigin(
+                    firstLine: usedRect, containerWidth: container.size.width,
+                    containerOrigin: origin, affordanceSize: field.frame.size
                 )
             }
         }
+
+        nonisolated static func blockAffordanceOrigin(
+            firstLine: NSRect, containerWidth: CGFloat,
+            containerOrigin: NSPoint, affordanceSize: NSSize
+        ) -> NSPoint {
+            NSPoint(
+                x: containerOrigin.x + containerWidth - affordanceSize.width,
+                y: containerOrigin.y + firstLine.midY - affordanceSize.height / 2
+            )
+        }
+
+        /// Expand the metadata for the edited block under the pointer.
+        /// The whole first-line row is the target rather than the small
+        /// pill, so inspecting a block does not demand pixel hunting.
+        func updateBlockMetadataHover(at point: NSPoint?) {
+            let next = point.flatMap { blockLocation(at: $0) }
+            guard next != hoveredBlockLocation else { return }
+            hoveredBlockLocation = next
+            updateBlockLabelViews()
+        }
+
+        private func blockLocation(at point: NSPoint) -> Int? {
+            guard let textView, let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer else { return nil }
+            let origin = textView.textContainerOrigin
+            let horizontal = origin.x...(origin.x + container.size.width)
+            guard horizontal.contains(point.x) else { return nil }
+            return blockDisplays.first { display in
+                let glyphs = layoutManager.glyphRange(
+                    forCharacterRange: display.range, actualCharacterRange: nil
+                )
+                guard glyphs.length > 0 else { return false }
+                let line = layoutManager.lineFragmentUsedRect(
+                    forGlyphAt: glyphs.location, effectiveRange: nil
+                )
+                return (origin.y + line.minY...origin.y + line.maxY).contains(point.y)
+            }?.range.location
+        }
+
+        private func refreshBlockMetadataFocus() {
+            guard let textView else { return }
+            let selection = textView.selectedRange()
+            let next = blockDisplays.first { display in
+                selection.location != NSNotFound
+                    && NSLocationInRange(selection.location, display.range)
+            }?.range.location
+            guard next != focusedBlockLocation else { return }
+            focusedBlockLocation = next
+            updateBlockLabelViews()
+        }
     }
+}
+
+/// Block metadata is informative until the revision read API exists.
+/// Let pointer gestures fall through to the editor so the compact pill
+/// never steals caret placement or text selection from the line it rides.
+private final class BlockMetadataField: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - The layout manager
@@ -3051,10 +3133,8 @@ final class InkLayoutManager: NSLayoutManager {
                 // document; a region that falls entirely outside the
                 // requested glyphs needs no paint this pass.
                 guard NSIntersectionRange(glyphs, glyphsToShow).length > 0 else { continue }
-                // The first line's fragment rect swallows any
-                // `paragraphSpacingBefore` above it — the reserved label
-                // gap included — so the slab's top comes from the used
-                // rect, where the region's glyphs actually begin.
+                // The slab's top comes from the used rect, where the
+                // region's glyphs actually begin.
                 let top = lineFragmentUsedRect(
                     forGlyphAt: glyphs.location, effectiveRange: nil
                 ).minY
@@ -3212,11 +3292,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         super.mouseMoved(with: event)
         let point = convert(event.locationInWindow, from: nil)
         hoveredChipIndex = coordinator?.chipIndex(at: point, in: self)
+        coordinator?.updateBlockMetadataHover(at: point)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         hoveredChipIndex = nil
+        coordinator?.updateBlockMetadataHover(at: nil)
     }
 
     private func redrawChip(at index: Int) {
@@ -3350,7 +3432,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     /// A resize rewraps paragraphs without touching their content, so
-    /// the block labels (ADR-0013) need only be moved, not recomputed
+    /// the block affordances (ADR-0013) need only be moved, not recomputed
     /// from the core, cheap enough to run on every layout pass.
     override func layout() {
         updateChipEditorMeasure()

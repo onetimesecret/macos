@@ -141,55 +141,39 @@ final class OpEmitterTests: XCTestCase {
         XCTAssertEqual(ops, [.del(at: 0, len: 2), .ins(at: 0, text: "\u{1F601}")])
     }
 
-    func testBlockLabelShowsOneStampWhenUntouchedSinceCreation() {
+    func testBlockDetailsStayAbsentUntilARealEditExists() {
+        XCTAssertNil(InkEditorView.Coordinator.blockDetails(createdS: 1_000, modifiedS: 1_000))
+        XCTAssertNil(InkEditorView.Coordinator.blockDetails(createdS: 1_000, modifiedS: 999))
+    }
+
+    /// First and last keystrokes are separate core touches. Collapsing
+    /// one rendered minute keeps ordinary typing from making nearly
+    /// every freshly written block claim it was edited.
+    func testBlockDetailsCollapseTouchesInsideTheSameMinute() {
+        XCTAssertNil(
+            InkEditorView.Coordinator.blockDetails(createdS: 1_000, modifiedS: 1_019)
+        )
+    }
+
+    func testBlockDetailsUseCheckpointDayContextForSameDayEdits() throws {
+        let details = try XCTUnwrap(
+            InkEditorView.Coordinator.blockDetails(createdS: 3_600, modifiedS: 7_200)
+        )
         XCTAssertEqual(
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_000),
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: nil),
-            "modified equal to (or absent alongside) created reads as one stamp"
-        )
-        XCTAssertFalse(
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_000).contains("→")
+            details.split(separator: " ").count, 5,
+            "same-day details should be two clocks with no weekday words"
         )
     }
 
-    /// The format keeps no seconds, so two instants inside the same
-    /// minute render identically and must collapse to one stamp: a
-    /// block touched forty seconds after its first commit is not a
-    /// range worth printing. (Epoch minutes end at multiples of 60, and
-    /// every real timezone offset is a whole number of minutes, so
-    /// 1_000 and 1_019 share a rendered minute in any locale.)
-    func testBlockLabelCollapsesAnEditWithinTheSameRenderedMinute() {
-        let label = InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_019)
-        XCTAssertFalse(label.contains("→"), "same rendered minute, so one stamp")
-        XCTAssertEqual(label, InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: nil))
-    }
-
-    /// One minute over the boundary is a range again: the collapse is
-    /// about identical stamps, not about nearness.
-    func testBlockLabelKeepsTheRangeAcrossAMinuteBoundary() {
-        XCTAssertTrue(
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_060).contains("→")
-        )
-    }
-
-    /// The format repeats every week: a modification exactly seven days
-    /// after creation renders the same `EEE HH:mm` text while being a
-    /// different moment entirely. The collapse compares the dates at
-    /// minute granularity, not the rendered stamps, so the range
-    /// survives the aliasing.
-    func testBlockLabelKeepsTheRangeAcrossExactlyOneWeek() {
-        XCTAssertTrue(
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_000 + 604_800)
-                .contains("→"),
-            "a week-later edit renders the same stamp text but is not the same minute"
-        )
-    }
-
-    func testBlockLabelShowsBothStampsOnceEdited() {
-        XCTAssertTrue(
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 2_000).contains("→"),
-            "a block touched after its first commit shows created and modified"
-        )
+    func testBlockDetailsRestoreWeekdaysForCrossDayEdits() throws {
+        let calendar = Calendar.current
+        let created = calendar.startOfDay(for: Date())
+        let modified = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: created))
+        let details = try XCTUnwrap(InkEditorView.Coordinator.blockDetails(
+            createdS: Int64(created.timeIntervalSince1970),
+            modifiedS: Int64(modified.timeIntervalSince1970)
+        ))
+        XCTAssertEqual(details.split(separator: " ").count, 7)
     }
 }
 
@@ -259,9 +243,8 @@ final class DocumentOpsWiringTests: XCTestCase {
         model.coreClient.documentRuns(sheet: sheet)
     }
 
-    /// The block labels currently mounted over the page (ADR-0013):
-    /// plain subviews of the text view, one per block that has a
-    /// created stamp.
+    /// The compact metadata affordances currently mounted over the page
+    /// (ADR-0013): plain subviews of the text view, one per edited block.
     private func labelFields() -> [NSTextField] {
         textView.subviews.compactMap { $0 as? NSTextField }
     }
@@ -591,161 +574,94 @@ final class DocumentOpsWiringTests: XCTestCase {
         assertParity()
     }
 
-    // MARK: Block labels (ADR-0013: created/modified above each block)
+    // MARK: Block metadata (ADR-0013: compact edited affordance)
 
     func testAFreshEmptyPageCarriesNoBlockLabel() {
         makeEditor()
         XCTAssertTrue(labelFields().isEmpty, "no committed content, nothing to stamp")
     }
 
-    func testTypingCommitsAndLabelsItsBlock() {
+    func testTypingAnUntouchedBlockAddsNoMetadataChrome() {
         makeEditor()
         type("alpha")
-        let labels = labelFields()
-        XCTAssertEqual(labels.count, 1)
-        XCTAssertFalse(labels[0].stringValue.isEmpty)
+        XCTAssertTrue(labelFields().isEmpty)
+        XCTAssertTrue(coordinator.blockLabelLayout.isEmpty)
     }
 
-    func testASplitParagraphGetsItsOwnLabel() {
+    func testUntouchedParagraphsReserveNoMetadataRows() {
         makeEditor()
         type("alpha", "\n", "beta")
-        XCTAssertEqual(labelFields().count, 2, "each typed line stamps separately")
-    }
-
-    func testBlankLinesBetweenParagraphsAreNotStamped() {
-        makeEditor()
-        type("alpha", "\n", "\n", "\n", "   ", "\n", "beta")
+        storage.enumerateAttribute(
+            .paragraphStyle, in: NSRange(location: 0, length: storage.length)
+        ) { value, _, _ in
+            XCTAssertEqual((value as? NSParagraphStyle)?.paragraphSpacingBefore, 0)
+        }
         XCTAssertEqual(
-            labelFields().count, 2,
-            "spacing between paragraphs is not writing, so it carries no visible stamp"
+            textView.textContainerInset.height, InkEditorView.Coordinator.topInset,
+            "metadata must not enlarge the page's top inset"
         )
     }
 
-    /// The paste rule (ADR-0013): lines that arrived together stay
-    /// together, so the page shows one time above the passage instead of
-    /// the same time repeated down its margin.
-    func testAPastedPassageCarriesOneLabelAboveItsFirstLine() {
-        makeEditor()
-        // One edit carrying its own newlines: the shape ⌘V delivers, and
-        // the shape the core reads as a single block.
-        textView.insertText(
-            "one\ntwo\nthree", replacementRange: NSRange(location: NSNotFound, length: 0))
-        XCTAssertEqual(labelFields().count, 1, "one stamp for the whole paste")
-        let layout = coordinator.blockLabelLayout
-        XCTAssertEqual(layout.count, 1)
-        XCTAssertEqual(
-            layout[0].range, NSRange(location: 0, length: 4),
-            "the stamp sits above the paste's first line, not above every line"
+    func testOnlyEditedBlocksProduceAnAffordance() {
+        let storage = NSTextStorage(string: "first\nsecond")
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: storage, sheet: 1,
+            blockMetas: [
+                BlockInfo(id: "first", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+                BlockInfo(id: "second", createdS: 2_000, modifiedS: 3_000, paragraphs: 1),
+            ],
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:]
         )
-
-        // What the reader types after it is their own block, stamped
-        // separately.
-        type("\n", "mine")
-        XCTAssertEqual(labelFields().count, 2)
-        XCTAssertEqual(coordinator.blockLabelLayout.last?.range.location, 14)
+        XCTAssertEqual(result.displays.count, 1)
+        XCTAssertEqual(result.displays[0].range.location, 6)
+        XCTAssertEqual(result.displays[0].compactText, "edited")
+        XCTAssertTrue(result.displays[0].detailText.contains("created"))
+        XCTAssertTrue(result.displays[0].detailText.contains("edited"))
     }
 
-    /// A fence typed line by line is one block per line core-side, but
-    /// the eye reads the fence as one slab, so the display coalesces
-    /// the region under a single stamp above the opening rule.
-    func testAFenceTypedLineByLineCarriesOneLabel() {
-        makeEditor()
-        type("```", "\n", "let x = 1", "\n", "```")
-        XCTAssertEqual(labelFields().count, 1, "one stamp for the whole fence region")
-        let layout = coordinator.blockLabelLayout
-        XCTAssertEqual(layout.count, 1)
-        XCTAssertEqual(
-            layout[0].range, NSRange(location: 0, length: 4),
-            "the stamp sits above the opening rule, not above every line"
+    /// The display still treats a fence as one visual region, but its
+    /// metadata now rides the opening rule instead of reserving a row.
+    func testAFenceCoalescesToOneEditedAffordance() {
+        let storage = NSTextStorage(string: "```\ncode\n```")
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: storage, sheet: 1,
+            blockMetas: [
+                BlockInfo(id: "open", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+                BlockInfo(id: "body", createdS: 2_000, modifiedS: 2_000, paragraphs: 1),
+                BlockInfo(id: "close", createdS: 3_000, modifiedS: 4_000, paragraphs: 1),
+            ],
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:]
         )
+        XCTAssertEqual(result.displays.count, 1)
+        XCTAssertEqual(result.displays[0].range, NSRange(location: 0, length: 4))
     }
 
-    /// The closing rule ends the region: what the reader types after it
-    /// is prose again, stamped on its own.
-    func testABlockAfterTheClosingFenceStampsSeparately() {
-        makeEditor()
-        type("```", "\n", "code", "\n", "```", "\n", "after")
-        XCTAssertEqual(labelFields().count, 2, "the fence is one stamp, the prose after another")
+    func testAFenceRegionDetailsSpanEarliestToLatest() {
         XCTAssertEqual(
-            coordinator.blockLabelLayout.last?.range.location, 13,
-            "the second stamp belongs to the line below the closing rule"
-        )
-    }
-
-    /// A fence left open holds to the last line of the page, exactly as
-    /// the styling already reads it: the region, and its single stamp,
-    /// run to the end.
-    func testAnUnclosedFenceStillCoalescesToOneLabel() {
-        makeEditor()
-        type("```", "\n", "still code", "\n", "more code")
-        XCTAssertEqual(labelFields().count, 1)
-        XCTAssertEqual(coordinator.blockLabelLayout.first?.range.location, 0)
-    }
-
-    /// The region's stamp spans the blocks it covers: earliest created
-    /// to latest touch, rendered through the same collapse rule a lone
-    /// block's label follows. The wiring above cannot hold the clock
-    /// still, so the span math is asserted on the pure function.
-    func testAFenceRegionLabelSpansEarliestToLatest() {
-        XCTAssertEqual(
-            InkEditorView.Coordinator.fenceRegionLabel(stamps: [
+            InkEditorView.Coordinator.fenceRegionDetails(stamps: [
                 (createdS: 2_000, modifiedS: nil),
                 (createdS: 1_000, modifiedS: 1_000),
                 (createdS: 3_000, modifiedS: 9_000),
             ]),
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 9_000)
+            InkEditorView.Coordinator.blockDetails(createdS: 1_000, modifiedS: 9_000)
         )
-        // Created counts as the latest touch for a block never modified.
-        XCTAssertEqual(
-            InkEditorView.Coordinator.fenceRegionLabel(stamps: [
-                (createdS: 1_000, modifiedS: nil),
-                (createdS: 5_000, modifiedS: nil),
-            ]),
-            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 5_000)
-        )
-        // A region with no committed content wears nothing.
         XCTAssertNil(
-            InkEditorView.Coordinator.fenceRegionLabel(stamps: [
+            InkEditorView.Coordinator.fenceRegionDetails(stamps: [
                 (createdS: nil, modifiedS: nil)
             ])
         )
     }
 
-    /// The gap a labeled block reserves is above its own first line, so
-    /// the label has to land inside that gap. Placing it against the
-    /// line fragment rect instead drops it onto the previous
-    /// paragraph's last line, which is what the screen showed.
-    func testALabelSitsInItsOwnGapAndNotOnThePrecedingLine() {
-        makeEditor()
-        type("alpha", "\n", "beta")
-        guard let layoutManager = textView.layoutManager,
-              let container = textView.textContainer else {
-            return XCTFail("the editor's TextKit stack is missing")
-        }
-        layoutManager.ensureLayout(for: container)
-        coordinator.repositionBlockLabels()
-        let labels = labelFields().sorted { $0.frame.minY < $1.frame.minY }
-        XCTAssertEqual(labels.count, 2)
-
-        let origin = textView.textContainerOrigin
-        // Where "alpha" and "beta" actually draw.
-        let first = layoutManager.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil)
-        let second = layoutManager.lineFragmentUsedRect(forGlyphAt: 6, effectiveRange: nil)
-
-        XCTAssertGreaterThanOrEqual(labels[0].frame.minY, 0, "the top label stays on screen")
-        XCTAssertLessThanOrEqual(
-            labels[0].frame.maxY, origin.y + first.minY,
-            "the top label clears the first line it belongs to"
+    func testAffordanceOriginIsTrailingAlignedAndVerticallyCentered() {
+        let origin = InkEditorView.Coordinator.blockAffordanceOrigin(
+            firstLine: NSRect(x: 8, y: 40, width: 220, height: 24),
+            containerWidth: 500, containerOrigin: NSPoint(x: 12, y: 16),
+            affordanceSize: NSSize(width: 90, height: 20)
         )
-        XCTAssertGreaterThanOrEqual(
-            labels[1].frame.minY, origin.y + first.maxY,
-            "the second label clears the paragraph above it"
-        )
-        XCTAssertLessThanOrEqual(
-            labels[1].frame.maxY, origin.y + second.minY,
-            "the second label clears the line it belongs to"
-        )
+        XCTAssertEqual(origin.x, 422)
+        XCTAssertEqual(origin.y, 58)
     }
+
 }
 
 /// A tiny deterministic generator, so the random edit script replays

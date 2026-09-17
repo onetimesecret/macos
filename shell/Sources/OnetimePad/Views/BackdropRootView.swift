@@ -273,29 +273,79 @@ struct BackdropRootView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            // The ember dot is hidden (issue #78): the name alone says
-            // whose card this is, and the dot spent its colour on
-            // nothing in particular. The header's drag and its
-            // double-click zoom are untouched, since both ride the
-            // HStack rather than the dot.
-            if HiddenUI.showsHeaderDot {
+        ZStack {
+            // This is a borderless surface, so the header has to supply
+            // the quiet orientation cue a title bar normally would. A
+            // centered identity belongs to the card rather than to the
+            // navigation column below it: the rail is one mode of the
+            // page picker, not the owner of the window.
+            headerIdentity
+                .frame(maxWidth: 260)
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 16)
+                headerIndicators
+            }
+        }
+        // The header doubles as the card's handle while raised. The
+        // gesture rides the header itself, above the pane's tap
+        // catcher, so a drag can never fall through and read as a
+        // click-outside rest; the pin toggle, being a child, still
+        // wins a plain click. While resting the mask yields the
+        // gesture to subviews, which leaves the handle inert (and any
+        // resting click stops at the raise shield anyway).
+        .contentShape(Rectangle())
+        .gesture(dragGesture, including: raised ? .all : .subviews)
+        // A window zooms on a title-bar double-click; the header is
+        // where this card's title bar would be.
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
+        )
+    }
+
+    /// The name of what is on screen, held at the optical centre of the
+    /// card. A file replaces the product name at this same seat, so the
+    /// header still answers the file surface's primary question without
+    /// pulling the controls out of their stable trailing cluster.
+    @ViewBuilder
+    private var headerIdentity: some View {
+        // The ember dot is hidden (issue #78): the name alone says
+        // whose card this is, and the dot spent its colour on nothing
+        // in particular.
+        if HiddenUI.showsHeaderDot {
+            HStack(spacing: 8) {
                 Circle().fill(Color.ember).frame(width: 6, height: 6)
+                headerIdentityText
             }
-            if let file = pages.activeFile, !pages.showingLedger {
-                // A file showing puts its own identity where the
-                // product name stands, because on a file surface the
-                // question the header answers is which file this is and
-                // whether it is on disk (ADR-0028).
-                fileIdentity(FileHeaderState.derive(
-                    from: file, renderMode: pages.activeFileRenderMode
-                ))
-            } else {
-                Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 16)
+        } else {
+            headerIdentityText
+        }
+    }
+
+    @ViewBuilder
+    private var headerIdentityText: some View {
+        if let file = pages.activeFile, !pages.showingLedger {
+            // A file showing puts its own identity where the product
+            // name stands, because on a file surface the question the
+            // header answers is which file this is and whether it is on
+            // disk (ADR-0028).
+            fileIdentity(FileHeaderState.derive(
+                from: file, renderMode: pages.activeFileRenderMode
+            ))
+        } else {
+            Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    /// The card-wide state controls. Kept as one trailing cluster so
+    /// their changing words do not move the surface identity or compete
+    /// with the navigation rail's headings.
+    private var headerIndicators: some View {
+        HStack(spacing: 8) {
             // Standing indicator while the capture opt-out is on.
             // Doubly load-bearing here: the backdrop is on screen for
             // every screenshot and screen share, so "the exclusion is
@@ -335,20 +385,6 @@ struct BackdropRootView: View {
             // here beside the product name.
             pinToggle
         }
-        // The header doubles as the card's handle while raised. The
-        // gesture rides the header itself, above the pane's tap
-        // catcher, so a drag can never fall through and read as a
-        // click-outside rest; the pin toggle, being a child, still
-        // wins a plain click. While resting the mask yields the
-        // gesture to subviews, which leaves the handle inert (and any
-        // resting click stops at the raise shield anyway).
-        .contentShape(Rectangle())
-        .gesture(dragGesture, including: raised ? .all : .subviews)
-        // A window zooms on a title-bar double-click; the header is
-        // where this card's title bar would be.
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
-        )
     }
 
     /// Forward every dropped URL to the shared file-open path. The core

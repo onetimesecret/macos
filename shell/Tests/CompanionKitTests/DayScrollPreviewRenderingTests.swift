@@ -383,7 +383,7 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         )
     }
 
-    // MARK: 5. Quiet pages carry no unexplained block-label spacing
+    // MARK: 5. Quiet pages carry no block-metadata spacing
 
     /// Block created/modified stamps are an editor-only affordance
     /// (ADR-0030), so a quiet region must not reserve the paragraph gap
@@ -401,7 +401,7 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(
             region.textContainerInset.height,
             InkEditorView.Coordinator.topInset,
-            "a quiet region kept the editor's block-label reserve above its first line"
+            "a quiet region added space for editor-only block metadata"
         )
         let storage = try XCTUnwrap(region.textStorage)
         var offenders = 0
@@ -409,13 +409,13 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
             .paragraphStyle, in: NSRange(location: 0, length: storage.length)
         ) { value, _, _ in
             guard let style = value as? NSParagraphStyle else { return }
-            if style.paragraphSpacingBefore >= InkEditorView.Coordinator.blockLabelReserve {
+            if style.paragraphSpacingBefore > 0 {
                 offenders += 1
             }
         }
         XCTAssertEqual(
             offenders, 0,
-            "a quiet paragraph reserved the editor-only block-label spacing"
+            "a quiet paragraph reserved editor-only block-metadata spacing"
         )
     }
 
