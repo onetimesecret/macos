@@ -2943,6 +2943,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// reads as sitting in the margin rather than butting against
         /// the column.
         nonisolated static let blockLabelTrailingInset: CGFloat = 6
+        /// The clearance a line's last glyph asks of the affordance
+        /// beside it, below which the wide reading stands down.
+        nonisolated static let blockAffordanceGap: CGFloat = 8
         /// The page's own top margin.
         static let topInset: CGFloat = 12
 
@@ -3017,16 +3020,52 @@ public struct InkEditorView: NSViewRepresentable {
                 field.stringValue = expanded ? display.detailText : display.compactText
                 field.toolTip = display.accessibilityText
                 field.setAccessibilityLabel(display.accessibilityText)
-                field.sizeToFit()
-                // One padding rule for both readings, so the pill grows
-                // and shrinks without appearing to change shape.
-                field.frame.size.width = ceil(field.frame.width) + Self.blockLabelPadding * 2
-                field.frame.size.height = max(
-                    Self.blockLabelMinHeight, ceil(field.frame.height) + 6
-                )
-                field.layer?.cornerRadius = field.frame.height / 2
+                shapeBlockLabel(field)
+                // A first line that runs the full measure has no margin
+                // left to lend. Rather than let the wide reading cover
+                // the words it describes, the block keeps its compact
+                // pill until the line makes room.
+                if expanded, !expandedLabelFits(field, for: display) {
+                    field.stringValue = display.compactText
+                    shapeBlockLabel(field)
+                }
             }
             repositionBlockLabels()
+        }
+
+        /// One padding rule for both readings, so the pill grows and
+        /// shrinks without appearing to change shape.
+        private func shapeBlockLabel(_ field: BlockMetadataField) {
+            field.sizeToFit()
+            field.frame.size.width = ceil(field.frame.width) + Self.blockLabelPadding * 2
+            field.frame.size.height = max(
+                Self.blockLabelMinHeight, ceil(field.frame.height) + 6
+            )
+            field.layer?.cornerRadius = field.frame.height / 2
+        }
+
+        private func expandedLabelFits(
+            _ field: BlockMetadataField, for display: BlockDisplay
+        ) -> Bool {
+            guard let container = textView?.textContainer,
+                  let line = firstLineUsedRect(for: display) else { return true }
+            return Self.blockAffordanceFits(
+                lineMaxX: line.maxX, containerWidth: container.size.width,
+                affordanceWidth: field.frame.width
+            )
+        }
+
+        /// The used rect of the line a block's affordance rides, in
+        /// container coordinates, or nil when the range has no glyphs.
+        private func firstLineUsedRect(for display: BlockDisplay) -> NSRect? {
+            guard let layoutManager = textView?.layoutManager else { return nil }
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: display.range, actualCharacterRange: nil
+            )
+            guard glyphRange.length > 0 else { return nil }
+            return layoutManager.lineFragmentUsedRect(
+                forGlyphAt: glyphRange.location, effectiveRange: nil
+            )
         }
 
         private static func makeBlockLabel() -> BlockMetadataField {
@@ -3052,22 +3091,25 @@ public struct InkEditorView: NSViewRepresentable {
         /// to call on every layout pass: a resize rewraps paragraphs
         /// without changing what any block says.
         func repositionBlockLabels() {
-            guard let textView, let layoutManager = textView.layoutManager,
-                  let container = textView.textContainer else { return }
+            guard let textView, let container = textView.textContainer else { return }
             let origin = textView.textContainerOrigin
             for (field, display) in zip(blockLabelViews, blockDisplays) {
-                let glyphRange = layoutManager.glyphRange(
-                    forCharacterRange: display.range, actualCharacterRange: nil
-                )
-                guard glyphRange.length > 0 else { continue }
-                let usedRect = layoutManager.lineFragmentUsedRect(
-                    forGlyphAt: glyphRange.location, effectiveRange: nil
-                )
+                guard let usedRect = firstLineUsedRect(for: display) else { continue }
                 field.frame.origin = Self.blockAffordanceOrigin(
                     firstLine: usedRect, containerWidth: container.size.width,
                     containerOrigin: origin, affordanceSize: field.frame.size
                 )
             }
+        }
+
+        /// Whether the wide reading can stand clear of a line's glyphs.
+        /// A line that runs to the measure leaves the affordance nowhere
+        /// to go, and a pill drawn over words is worse than a short one.
+        nonisolated static func blockAffordanceFits(
+            lineMaxX: CGFloat, containerWidth: CGFloat, affordanceWidth: CGFloat
+        ) -> Bool {
+            lineMaxX + blockAffordanceGap + affordanceWidth
+                + blockLabelTrailingInset <= containerWidth
         }
 
         nonisolated static func blockAffordanceOrigin(

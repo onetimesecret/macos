@@ -684,6 +684,26 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(origin.y, 58)
     }
 
+    /// A short line lends the affordance its margin; a line that runs to
+    /// the measure has none to lend, and the wide reading stands down
+    /// rather than draw itself over the words it describes.
+    func testAFullMeasureLineRefusesTheWideReading() {
+        XCTAssertTrue(InkEditorView.Coordinator.blockAffordanceFits(
+            lineMaxX: 200, containerWidth: 500, affordanceWidth: 180
+        ))
+        XCTAssertFalse(InkEditorView.Coordinator.blockAffordanceFits(
+            lineMaxX: 480, containerWidth: 500, affordanceWidth: 180
+        ))
+        // Exactly flush counts as room: gap, pill and trailing inset
+        // together reach the measure and no further.
+        XCTAssertTrue(InkEditorView.Coordinator.blockAffordanceFits(
+            lineMaxX: 306, containerWidth: 500, affordanceWidth: 180
+        ))
+        XCTAssertFalse(InkEditorView.Coordinator.blockAffordanceFits(
+            lineMaxX: 307, containerWidth: 500, affordanceWidth: 180
+        ))
+    }
+
     /// The pill's border is a dynamic colour flattened to a CGColor, the
     /// one place where a light-mode answer would otherwise be kept
     /// through a switch to dark.
