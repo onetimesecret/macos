@@ -72,7 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file shows Save file, Discard changes and Keep editing above the
   editor; Take theirs applies immediately and can be undone; and quit
   flushes the pad's state without an alert. A refused flush cancels quit
-  and leaves the existing inline recovery state in place.
+  and leaves the existing inline recovery state in place. The core arms
+  the Take theirs undo marker only when an undo item exists to carry it,
+  and zeroizes read and restored disk bytes (`companion-core` 0.24.1,
+  `companion-ffi` 0.32.1).
 
 - **The header never says "synced" with no peer awake** (D-20). An
   attached channel with no other device awake says "sync waiting", in
