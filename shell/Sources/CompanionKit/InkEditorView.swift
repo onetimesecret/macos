@@ -4090,11 +4090,17 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// the storage being rebuilt around it.
     @MainActor
     private var excerpt: NSAttributedString {
-        NSAttributedString(
+        // The excerpt is drawn into a rect that stops short of the size
+        // class, and it is the tail that goes when the rect is too
+        // narrow: the head is what identifies the object.
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        return NSAttributedString(
             string: info.excerpt,
             attributes: [
                 .font: InkStyle.chipFont,
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: style,
             ]
         )
     }
@@ -4133,12 +4139,41 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     struct ContentLayout {
+        let metrics: SealedBlockLayout.Metrics
         /// The content column's leading edge, the one inset every row
         /// starts from.
         let left: CGFloat
         let topRowY: CGFloat
         let bottomRowY: CGFloat
         let lockRect: NSRect
+        /// Where the classification starts: a gap past the lock, on the
+        /// lock's row.
+        let labelOrigin: NSPoint
+        /// The metadata column's trailing edge, the inset the actions
+        /// seat shares, and the baseline its smaller face sits on.
+        let metadataRight: CGFloat
+        let metadataY: CGFloat
+
+        /// The size class is drawn at its own measured width, ending at
+        /// the column's trailing edge.
+        func metadataOrigin(width: CGFloat) -> NSPoint {
+            NSPoint(x: metadataRight - width, y: metadataY)
+        }
+
+        /// Where the excerpt is drawn and where its tail is cut: the
+        /// bottom row from the leading edge to a gap short of the size
+        /// class. `height` is one line of the excerpt's face, so an
+        /// excerpt too long for the rect truncates rather than wrapping
+        /// under the block.
+        func excerptRect(metadataWidth: CGFloat, height: CGFloat) -> NSRect {
+            NSRect(
+                x: left,
+                y: bottomRowY,
+                width: SealedBlockLayout.excerptWidth(
+                    containerWidth: metrics.width, metadataWidth: metadataWidth),
+                height: height
+            )
+        }
     }
 
     /// Row and lock geometry in the flipped text-view coordinate system.
@@ -4148,16 +4183,22 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
         let left = cellFrame.minX + metrics.horizontalPadding
         let topRowY = cellFrame.minY + metrics.verticalPadding
+        let bottomRowY = cellFrame.maxY - metrics.bottomRowInset
+        let lockRect = NSRect(
+            x: left,
+            y: topRowY + metrics.lockTopNudge,
+            width: metrics.lockSize,
+            height: metrics.lockSize
+        )
         return ContentLayout(
+            metrics: metrics,
             left: left,
             topRowY: topRowY,
-            bottomRowY: cellFrame.maxY - metrics.bottomRowInset,
-            lockRect: NSRect(
-                x: left,
-                y: topRowY + 1,
-                width: metrics.lockSize,
-                height: metrics.lockSize
-            )
+            bottomRowY: bottomRowY,
+            lockRect: lockRect,
+            labelOrigin: NSPoint(x: lockRect.maxX + metrics.lockToLabelGap, y: topRowY),
+            metadataRight: cellFrame.maxX - metrics.horizontalPadding,
+            metadataY: bottomRowY + metrics.metadataBaselineNudge
         )
     }
 
@@ -4310,7 +4351,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
         block.lineWidth = metrics.borderWidth
         block.stroke()
         let layout = Self.contentLayout(in: cellFrame)
-        let left = layout.left
 
         if let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
             lock.draw(
@@ -4323,7 +4363,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             )
         }
 
-        classificationLabel.draw(at: NSPoint(x: left + 14, y: layout.topRowY))
+        classificationLabel.draw(at: layout.labelOrigin)
         if hovered || selected {
             let glyph = actions
             let size = glyph.size()
@@ -4334,12 +4374,13 @@ final class SealedBlockCell: NSTextAttachmentCell {
             ))
         }
 
-        excerpt.draw(at: NSPoint(x: left, y: layout.bottomRowY))
+        let excerptLine = excerpt
         let metadataSize = metadata.size()
-        metadata.draw(at: NSPoint(
-            x: cellFrame.maxX - metrics.horizontalPadding - metadataSize.width,
-            y: layout.bottomRowY + 1
+        excerptLine.draw(in: layout.excerptRect(
+            metadataWidth: metadataSize.width,
+            height: excerptLine.size().height
         ))
+        metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
     }
 }
 

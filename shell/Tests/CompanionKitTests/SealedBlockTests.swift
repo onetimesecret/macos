@@ -55,6 +55,10 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertEqual(metrics.selectionRingWidth, 3)
         XCTAssertEqual(metrics.bottomRowInset, 24)
         XCTAssertEqual(metrics.lockSize, 9)
+        XCTAssertEqual(metrics.lockTopNudge, 1)
+        XCTAssertEqual(metrics.lockToLabelGap, 5)
+        XCTAssertEqual(metrics.metadataBaselineNudge, 1)
+        XCTAssertEqual(metrics.excerptTrailingGap, 8)
     }
 
     func testBlockBoundsHangFromTheBaselineByTheMetricOffset() {
@@ -88,6 +92,67 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertEqual(layout.bottomRowY, frame.maxY - metrics.bottomRowInset)
         XCTAssertEqual(layout.lockRect.size, NSSize(width: metrics.lockSize, height: metrics.lockSize))
         XCTAssertEqual(layout.lockRect.minX, layout.left)
+        XCTAssertEqual(layout.lockRect.minY, layout.topRowY + metrics.lockTopNudge)
+    }
+
+    /// The classification opens a named gap past the lock, on the
+    /// lock's row, so the top row is placed from the layout and not
+    /// from a sum of lock size and gap kept in the drawing routine.
+    func testClassificationStartsAGapPastTheLock() {
+        let frame = NSRect(x: 10, y: 10, width: 300, height: SealedBlockCell.blockHeight)
+        let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
+        let layout = SealedBlockCell.contentLayout(in: frame)
+
+        XCTAssertEqual(layout.labelOrigin.x, layout.lockRect.maxX + metrics.lockToLabelGap)
+        XCTAssertEqual(
+            layout.labelOrigin.x,
+            layout.left + metrics.lockSize + metrics.lockToLabelGap)
+        XCTAssertEqual(layout.labelOrigin.y, layout.topRowY)
+    }
+
+    /// The size class ends at the trailing inset the actions seat
+    /// shares and sits a named nudge below the bottom row, level with
+    /// the excerpt's larger face.
+    func testMetadataEndsAtTheTrailingInsetOnTheNudgedBaseline() {
+        let frame = NSRect(x: 10, y: 10, width: 300, height: SealedBlockCell.blockHeight)
+        let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
+        let layout = SealedBlockCell.contentLayout(in: frame)
+        let origin = layout.metadataOrigin(width: 30)
+
+        XCTAssertEqual(layout.metadataRight, SealedBlockCell.actionsRect(in: frame).maxX)
+        XCTAssertEqual(origin.x, frame.maxX - metrics.horizontalPadding - 30)
+        XCTAssertEqual(origin.y, layout.bottomRowY + metrics.metadataBaselineNudge)
+        XCTAssertEqual(layout.metadataY, origin.y)
+    }
+
+    /// The block is a fixed measure and the excerpt is drawn at the
+    /// core's length, so at a narrow measure the excerpt's rect must
+    /// stop a gap short of the size class rather than run under it.
+    func testExcerptStopsShortOfTheMetadataColumnAtANarrowMeasure() {
+        let frame = NSRect(x: 10, y: 10, width: 120, height: SealedBlockCell.blockHeight)
+        let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
+        let layout = SealedBlockCell.contentLayout(in: frame)
+        let metadataWidth: CGFloat = 40
+        let rect = layout.excerptRect(metadataWidth: metadataWidth, height: 14)
+        let metadataMinX = layout.metadataOrigin(width: metadataWidth).x
+
+        XCTAssertEqual(rect.minX, layout.left)
+        XCTAssertEqual(rect.minY, layout.bottomRowY)
+        XCTAssertEqual(rect.height, 14)
+        XCTAssertLessThanOrEqual(rect.maxX, metadataMinX - metrics.excerptTrailingGap)
+        XCTAssertEqual(
+            rect.width,
+            SealedBlockLayout.excerptWidth(containerWidth: frame.width, metadataWidth: metadataWidth))
+        XCTAssertEqual(
+            SealedBlockLayout.excerptWidth(containerWidth: 120, metadataWidth: 40),
+            120 - metrics.horizontalPadding * 2 - 40 - metrics.excerptTrailingGap)
+    }
+
+    /// A block too narrow for the size class and the gap draws no
+    /// excerpt rather than one with a negative measure.
+    func testExcerptWidthNeverGoesNegative() {
+        XCTAssertEqual(SealedBlockLayout.excerptWidth(containerWidth: 40, metadataWidth: 40), 0)
+        XCTAssertEqual(SealedBlockLayout.excerptWidth(containerWidth: 0, metadataWidth: 0), 0)
     }
 
     func testBlockUsesTheViewportMeasureAndFixedHeight() throws {
