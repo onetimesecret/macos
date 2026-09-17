@@ -4053,7 +4053,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     private(set) var lastDrawnFrame: NSRect?
     #endif
 
-    nonisolated static let blockHeight = SealedBlockLayout.metrics(containerWidth: 0).height
+    nonisolated static let blockHeight = SealedBlockLayout.height
     /// The width a block takes when nothing has measured the editor:
     /// a context-free `cellSize()` and a layout with no usable measure
     /// both fall back to it, so it is named once.
@@ -4065,7 +4065,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     nonisolated static func blockBounds(width: CGFloat) -> NSRect {
         let metrics = SealedBlockLayout.metrics(containerWidth: width)
-        return NSRect(x: 0, y: -metrics.height + 4, width: metrics.width, height: metrics.height)
+        return NSRect(
+            x: 0,
+            y: -metrics.height + metrics.baselineOffset,
+            width: metrics.width,
+            height: metrics.height
+        )
     }
 
     @MainActor
@@ -4146,8 +4151,13 @@ final class SealedBlockCell: NSTextAttachmentCell {
         return ContentLayout(
             left: left,
             topRowY: topRowY,
-            bottomRowY: cellFrame.maxY - 24,
-            lockRect: NSRect(x: left, y: topRowY + 1, width: 9, height: 9)
+            bottomRowY: cellFrame.maxY - metrics.bottomRowInset,
+            lockRect: NSRect(
+                x: left,
+                y: topRowY + 1,
+                width: metrics.lockSize,
+                height: metrics.lockSize
+            )
         )
     }
 
@@ -4167,10 +4177,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
     nonisolated static func actionsRect(in cellFrame: NSRect) -> NSRect {
         let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
         return NSRect(
-            x: cellFrame.maxX - metrics.horizontalPadding - 22,
-            y: cellFrame.minY + 6,
-            width: 22,
-            height: 16
+            x: cellFrame.maxX - metrics.horizontalPadding - metrics.actionsWidth,
+            y: cellFrame.minY + metrics.actionsTopInset,
+            width: metrics.actionsWidth,
+            height: metrics.actionsHeight
         )
     }
 
@@ -4283,12 +4293,15 @@ final class SealedBlockCell: NSTextAttachmentCell {
         block.fill()
         if selected {
             let ring = NSBezierPath(
-                roundedRect: cellFrame.insetBy(dx: -1, dy: -1),
-                xRadius: metrics.cornerRadius + 1,
-                yRadius: metrics.cornerRadius + 1
+                roundedRect: cellFrame.insetBy(
+                    dx: -metrics.selectionRingInset,
+                    dy: -metrics.selectionRingInset
+                ),
+                xRadius: metrics.cornerRadius + metrics.selectionRingInset,
+                yRadius: metrics.cornerRadius + metrics.selectionRingInset
             )
             NSColor.ember.withAlphaComponent(0.12).setStroke()
-            ring.lineWidth = 3
+            ring.lineWidth = metrics.selectionRingWidth
             ring.stroke()
             NSColor.ember.setStroke()
         } else {
