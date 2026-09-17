@@ -114,7 +114,6 @@ final class FileSurfaceTests: XCTestCase {
             FileCloseAction.allCases.map(\.label),
             ["Save file", "Discard changes", "Keep editing"]
         )
-        XCTAssertTrue(FileCloseAction.allCases.filter(\.isDefault).isEmpty)
         XCTAssertEqual(FileCloseAction.allCases.last, .keepEditing)
         XCTAssertEqual(FileCloseBanner.sentence(name: "notes.txt"), "notes.txt has unsaved changes")
     }

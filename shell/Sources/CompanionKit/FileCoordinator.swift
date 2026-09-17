@@ -12,7 +12,6 @@ public protocol FilePanels {
 
     /// Ask where to write a file. Nil means the person cancelled.
     func chooseDestination(suggestedName: String) -> URL?
-
 }
 
 /// The one place in the app that raises a file panel, makes a

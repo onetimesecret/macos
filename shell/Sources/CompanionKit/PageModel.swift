@@ -303,9 +303,6 @@ public enum FileCloseAction: CaseIterable, Equatable, Sendable {
         case .keepEditing: return "Keep editing"
         }
     }
-
-    /// No close action is the window default while the editor remains editable.
-    public var isDefault: Bool { false }
 }
 
 /// A dirty file waiting for an inline close decision.
