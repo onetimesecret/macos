@@ -743,10 +743,6 @@ struct BackdropRootView: View {
     }
 }
 
-/// How wide the trailing indicator cluster came out. Read from the
-/// cluster itself rather than guessed, because its words come and go
-/// with the session's state and a guessed width would be wrong in
-/// exactly the cases the reserve exists for.
 /// How wide the header's ground came out, which is the card's width
 /// less its own padding. The identity's column is cut from it by
 /// `HeaderLayout.identityWidth`, so the drawing and the arithmetic the
@@ -759,6 +755,10 @@ private struct HeaderWidthKey: PreferenceKey {
     }
 }
 
+/// How wide the trailing indicator cluster came out. Read from the
+/// cluster itself rather than guessed, because its words come and go
+/// with the session's state and a guessed width would be wrong in
+/// exactly the cases the reserve exists for.
 private struct HeaderIndicatorWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
