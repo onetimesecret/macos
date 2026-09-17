@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Block metadata is compact and contextual.** Edited blocks now show a
+  right-aligned `edited` affordance instead of persistent timestamp rows.
+  Hovering its first line, or placing the caret there, reveals its created and
+  edited times; same-day times omit the weekday.
+
 - **The rail and the gutters say each fact once** (Days + side;
   `companion-core` 0.24.0; `companion-ffi` 0.32.0;
   `docs/spec/design/2026-0916-rail-redundancy.md`, D-44 to D-48). A
