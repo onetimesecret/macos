@@ -21,7 +21,8 @@ predicate that fires it in the app.
 **Owner:** delano.
 **Status:** cases 1 and 2 passed on hardware 2026-09-05. Case 3's
 former modal path passed then; rerun cases 2 through 5 for issue #172's
-nonmodal interactions. Re-run all cases when the drafts file's format
+nonmodal interactions, with case 5 on its rewritten criteria (PR 180: a
+clean buffer withdraws the close decision and keeps the tab). Re-run all cases when the drafts file's format
 changes, when the content erase predicate moves, or before a release
 that touches either.
 
@@ -181,43 +182,51 @@ typing from a session the person had ended.
 visible; Undo failing to restore it; Redo failing to reapply the disk
 copy; or the conflict remaining after the replacement succeeds.
 
-## Case 5: a clean buffer closes the tab while the banner stands
+## Case 5: a clean buffer withdraws the banner and keeps the tab
 
-The banner from case 3 offers three actions, and none of them is the
-only other way out: making the buffer match the file. Saving, undoing
-back to the saved text, or taking theirs on a conflict settles the close
-decision on its own and the tab goes. The banner does not say so, and
-this case exists so a hardware pass reads that as intended rather than
-as the banner being ignored. It is pinned by
-`testSavingWhileADirtyCloseDecisionStandsClosesTheNowCleanFile`,
-`testUndoingAPendingCloseBackToSavedTextClosesTheFile` and
-`testTakingTheirsWhileADirtyCloseDecisionStandsClosesTheFile`
+The banner from case 3 offers three actions, and only those three close
+the tab; a second cmd-w while it stands does nothing. Making the buffer
+match the file by any
+other route (saving, undoing back to the saved text, taking theirs on a
+conflict) withdraws the decision instead, because the question it asked
+no longer applies, and the tab stays open with its undo history intact.
+Closing is the one step that cannot be undone, so nothing automatic may
+take it. This case exists so a hardware pass reads the banner going
+away with the tab still open as intended rather than as a stranded
+decision. It is pinned by
+`testSavingWhileADirtyCloseDecisionStandsWithdrawsTheDecisionAndKeepsTheTab`,
+`testUndoingAPendingCloseBackToSavedTextWithdrawsTheDecisionAndKeepsRedo`,
+`testTakingTheirsWhileADirtyCloseDecisionStandsWithdrawsTheDecisionAndKeepsUndo`
+and
+`testACleanFileWithAPendingCloseStaysOpenWithNoDecisionAndTheSideTablesPruned`
 (`shell/Tests/CompanionKitTests/FileDocumentTests.swift`).
 
 1. With `/tmp/qa-draft.txt` open, type a distinctive line and do not
    save. Press cmd-w and confirm the banner from case 3 appears.
 2. Without touching the banner, press cmd-s.
-3. Reopen `/tmp/qa-draft.txt`, type one distinctive line, press cmd-w to
-   raise the banner again, and then press cmd-z until the buffer is back
-   to the text on disk.
-4. Reopen `/tmp/qa-draft.txt`, type `MINE` at the start and do not save.
+3. In the same tab, type one distinctive line, press cmd-w to raise the
+   banner again, and then press cmd-z until the buffer is back to the
+   text on disk.
+4. In the same tab, type `MINE` at the start and do not save.
    In Terminal, `printf 'THEIRS\n' > /tmp/qa-draft.txt`. Activate
    OnetimePad so the conflict banner appears, press cmd-w so the close
    banner stands alongside it, then choose **Take theirs**.
 
-**Pass:** the tab closes in step 2, and `cat /tmp/qa-draft.txt` shows the
-line typed in step 1 written to disk, because a save was asked for. The
-tab closes in step 3 at the moment the buffer matches the file, and the
-file on disk is unchanged by that step. The tab closes in step 4 too,
-with `THEIRS` still the only line on disk. None of the three closes asks
-anything further.
+**Pass:** in each of steps 2, 3 and 4 the banner goes away and the tab
+stays open with the file clean. After step 2, `cat /tmp/qa-draft.txt`
+shows the line typed in step 1, because a save was asked for. After
+step 3 the file on disk is unchanged and cmd-shift-z brings the typed
+line back (Redo survived). After step 4, `THEIRS` is the only line on
+disk, the conflict banner is gone, and cmd-z restores the buffer
+containing `MINE` (Undo survived). In each step, a further cmd-w on the
+clean tab closes it at once with no banner and no alert.
 
-**Fail:** the tab staying open with the banner gone, which would strand
-a close decision that no longer has a way to be answered; the tab
-closing in step 3 before the buffer matches the file, which would lose
-typing; step 3 or step 4 writing the file; the step 4 tab staying open
-with the conflict cleared; or an alert or sheet at any of the three
-closes.
+**Fail:** the tab closing on its own in any of the three steps; the
+banner still standing after the buffer matches the file; Redo dead
+after step 3 or Undo dead after step 4; step 3 or step 4 writing the
+file; the conflict remaining after step 4; the further cmd-w raising a
+banner on a clean tab or not closing it; or an alert or sheet anywhere
+in the case.
 
 ## Results
 

@@ -383,7 +383,7 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         )
     }
 
-    // MARK: 5. Quiet pages carry no unexplained block-label spacing
+    // MARK: 5. Quiet pages carry no block-metadata spacing
 
     /// Block created/modified stamps are an editor-only affordance
     /// (ADR-0030), so a quiet region must not reserve the paragraph gap
@@ -401,7 +401,7 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(
             region.textContainerInset.height,
             InkEditorView.Coordinator.topInset,
-            "a quiet region kept the editor's block-label reserve above its first line"
+            "a quiet region added space for editor-only block metadata"
         )
         let storage = try XCTUnwrap(region.textStorage)
         var offenders = 0
@@ -409,13 +409,13 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
             .paragraphStyle, in: NSRange(location: 0, length: storage.length)
         ) { value, _, _ in
             guard let style = value as? NSParagraphStyle else { return }
-            if style.paragraphSpacingBefore >= InkEditorView.Coordinator.blockLabelReserve {
+            if style.paragraphSpacingBefore > 0 {
                 offenders += 1
             }
         }
         XCTAssertEqual(
             offenders, 0,
-            "a quiet paragraph reserved the editor-only block-label spacing"
+            "a quiet paragraph reserved editor-only block-metadata spacing"
         )
     }
 
@@ -444,15 +444,18 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
             "```",
             "",
         ] + (0..<20).map { "trailing prose \($0)" }).joined(separator: "\n")
-        try page(in: model, saying: heavy)
         try page(in: model, saying: "another day")
+        try page(in: model, saying: heavy)
         let roll = try mountRoll(model: model, height: 180)
         republish(roll, model)
         await settle()
 
-        // The quiet region for the markdown fixture is the last row of
-        // the roll, since the fixture was minted first and the editor
-        // lands on the most recent page.
+        // The markdown fixture is minted last, so the editor lands on
+        // it and it is the roll's first row. The scope has to reach the
+        // page the ink is standing on: what moves the measurement is
+        // the heading ramp and the fixed-pitch fence collapsing back to
+        // one prose line height, block metadata no longer reserving a
+        // row of its own to take away.
         let beforeRow = try XCTUnwrap(roll.stack.laidOut.last).body.frame
         let beforeDocumentHeight = roll.stack.frame.height
         let beforeMeasured = roll.stack.measuredGeometry
@@ -469,7 +472,7 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         let afterRow = try XCTUnwrap(roll.stack.laidOut.last).body.frame
         XCTAssertNotEqual(
             afterRow.height, beforeRow.height,
-            "a scope flip did not remeasure the quiet page below the editor"
+            "a scope flip did not remeasure the styled page on the roll"
         )
         XCTAssertNotEqual(
             roll.stack.frame.height, beforeDocumentHeight,

@@ -290,13 +290,35 @@ impl SheetDocument {
     /// Commit explicit Take theirs as an isolated undo item. The zero
     /// interval separates it from preceding typing; `separate_next_commit`
     /// applies the same barrier to the first commit that follows it.
-    pub(crate) fn commit_take_theirs_step(&mut self, generation: i64) {
+    ///
+    /// Returns whether an undo item was pushed carrying the generation.
+    /// A commit with no operations pushes none, and a generation no item
+    /// carries is one no Undo can ever reach.
+    pub(crate) fn commit_take_theirs_step(&mut self, generation: i64) -> bool {
         self.set_take_theirs_commit(Some(generation));
         self.undo.set_merge_interval(0);
         self.commit_now(None);
         self.undo.set_merge_interval(self.merge_interval);
+        // The push hook takes the generation with the item it stamps, so
+        // a slot still holding it means nothing was pushed. Taking it is
+        // not sufficient: another push could consume it before this
+        // transaction's item reaches the top. The marker is authoritative
+        // only while the item it names is the next Undo target.
+        let consumed = self
+            .take_theirs_commit
+            .lock()
+            .is_ok_and(|slot| slot.is_none());
+        let expected_top = matches!(
+            self.undo.top_undo_value(),
+            Some(LoroValue::I64(top_generation)) if top_generation == generation
+        );
+        debug_assert!(
+            !consumed || expected_top,
+            "Take theirs marker was consumed by a non-top undo item"
+        );
         self.set_take_theirs_commit(None);
         self.separate_next_commit.set(true);
+        consumed && expected_top
     }
 
     /// Where the caret belongs after the last [`SheetDocument::undo`]
@@ -892,7 +914,12 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let anchor = body.clone();
     undo.set_on_push(Some(Box::new(move |_kind, _span, event| {
         let mut meta = UndoItemMeta::new();
-        let explicit_commit = take_theirs_source.lock().ok().and_then(|slot| *slot);
+        // Taken rather than read, so the commit that set it can tell
+        // whether an item was pushed to carry it.
+        let explicit_commit = take_theirs_source
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
         let inverse_step = event
             .is_none()
             .then(|| {
@@ -1462,6 +1489,33 @@ mod tests {
         assert!(doc.undo());
         assert_eq!(doc.runs(), vec![DocRun::Ink("- milk".to_string())]);
         assert!(doc.can_undo());
+    }
+
+    #[test]
+    fn take_theirs_step_pins_its_generation_to_the_top_undo_item() {
+        let mut doc = SheetDocument::new();
+        doc.insert(0, "mine").unwrap();
+        doc.commit(None);
+        doc.insert(0, "theirs").unwrap();
+
+        assert!(doc.commit_take_theirs_step(41));
+        assert!(matches!(
+            doc.undo.top_undo_value(),
+            Some(LoroValue::I64(41))
+        ));
+        assert!(doc.undo());
+        assert_eq!(doc.popped_take_theirs(), Some(41));
+
+        // An empty structural commit must not borrow the existing top
+        // item as evidence that its own generation was carried.
+        let mut no_op = SheetDocument::new();
+        no_op.insert(0, "standing").unwrap();
+        no_op.commit(None);
+        assert!(!no_op.commit_take_theirs_step(42));
+        assert!(!matches!(
+            no_op.undo.top_undo_value(),
+            Some(LoroValue::I64(42))
+        ));
     }
 
     #[test]

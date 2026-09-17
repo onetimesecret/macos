@@ -1405,7 +1405,10 @@ public final class PageModel: ObservableObject {
     /// may not write over yesterday's pages, and that refusal says
     /// nothing about a file the person opened by hand in this session:
     /// their unsaved typing still deserves to survive a crash.
-    private var draftsDirty = false
+    ///
+    /// Readable so the cancelled quit's line can tell a drafts leg
+    /// that failed from one that landed before another leg refused.
+    private(set) var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -2187,15 +2190,34 @@ public final class PageModel: ObservableObject {
     /// The standing line's sentence, a pure function of the outcome so
     /// the two cases are testable as words. Lower case, third person,
     /// and it names the loss rather than warning in general (D-15).
-    public nonisolated static func quitRefusalSentence(_ outcome: QuitSaveOutcome) -> String? {
+    ///
+    /// The drafts are a third file with a write of their own, and a
+    /// refusal says only that one of the three legs failed. The drafts
+    /// leg runs under a withheld content licence too, so an unsavable
+    /// session's drafts are on disk. The line therefore names dirty
+    /// files only when that leg itself still owes its write
+    /// (`draftsUnwritten`), and names the pages alone otherwise.
+    public nonisolated static func quitRefusalSentence(
+        _ outcome: QuitSaveOutcome, files: [FileSummary] = [], draftsUnwritten: Bool = false
+    ) -> String? {
+        let loss = lostAtQuit(files: files, draftsUnwritten: draftsUnwritten)
         switch outcome {
         case .settled:
             return nil
         case .refused:
-            return "the sealed state file was not written, so this session's pages will not survive the quit"
+            return "the sealed state file was not written, so this session's \(loss) will not survive the quit"
         case .unsavableWithContent:
-            return "nothing typed this session is on disk, so its pages will not survive the quit"
+            return "nothing typed this session is on disk, so its \(loss) will not survive the quit"
         }
+    }
+
+    /// What a cancelled quit takes, as the object of the standing line.
+    private nonisolated static func lostAtQuit(
+        files: [FileSummary], draftsUnwritten: Bool
+    ) -> String {
+        let dirty = draftsUnwritten ? files.filter(\.isDirty).map(\.name) : []
+        guard !dirty.isEmpty else { return "pages" }
+        return "pages and the unsaved changes to \(englishList(dirty))"
     }
 
     deinit {
@@ -2640,25 +2662,18 @@ public final class PageModel: ObservableObject {
         openFiles = files
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
+                // A pending close is answered only by its own three
+                // actions; nothing here closes a tab, and a second
+                // close gesture on the same tab is a no-op while the
+                // decision stands. A file that came clean by any other
+                // route (⌘S, an Undo back to the saved text, Take
+                // theirs) has had its question overtaken, so
+                // the decision is withdrawn and the tab stays, undo
+                // and redo history intact. Closing is the one step on
+                // this surface that cannot be undone, which is why only
+                // an explicit answer may take it.
                 if !file.isDirty {
-                    let previousSelection = selectionBeforePendingFileClose
-                    let previousLedger = ledgerBeforePendingFileClose
                     clearPendingFileClose()
-                    if closeFileNow(file.id) {
-                        // The close stood a fresh roster through this
-                        // same method, and that nested pass did every
-                        // prune below against it. Doing them again here
-                        // would work off the roster the close replaced.
-                        return
-                    }
-                    // The close was refused, so the decision goes back
-                    // on the surface and this pass carries on: the
-                    // roster above is already the published one, and
-                    // the prunes below are what keeps the per-file side
-                    // tables from outliving it.
-                    pendingFileClose = pending
-                    selectionBeforePendingFileClose = previousSelection
-                    ledgerBeforePendingFileClose = previousLedger
                 }
             } else {
                 clearPendingFileClose()
@@ -3003,13 +3018,12 @@ public final class PageModel: ObservableObject {
         switch action {
         case .save:
             guard saveFile(pending.fileID) else { return }
-            // A successful save refreshes the roster, and a clean file
-            // with a close still pending is closed inside
-            // `standOpenFiles`, so by the time this line runs the file
-            // has usually gone already. The check writes that invariant
-            // down rather than leaning on file ids never being reused:
-            // the only id this closes is one the core still holds,
-            // which leaves the retry after an auto-close that failed.
+            // The save's own roster refresh withdrew the decision (the
+            // file is clean now) but closed nothing: this is the answer
+            // that closes, and it closes only after the write landed.
+            // The check writes down that the only id this closes is one
+            // the core still holds, rather than leaning on file ids
+            // never being reused.
             guard openFiles.contains(where: { $0.id == pending.fileID }) else { return }
             clearPendingFileClose()
             _ = closeFileNow(pending.fileID)

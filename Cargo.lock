@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.24.0"
+version = "0.24.1"
 dependencies = [
  "betlang",
  "companion-credentials",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "companion-ffi"
-version = "0.32.0"
+version = "0.32.1"
 dependencies = [
  "base64",
  "companion-core",

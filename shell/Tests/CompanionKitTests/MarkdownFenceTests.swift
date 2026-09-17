@@ -195,10 +195,8 @@ final class FenceRenderingTests: XCTestCase {
         attributes(ofLine: index)[.foregroundColor] as? NSColor
     }
 
-    /// The visual seam between blocks is the reserved label gap, so a
-    /// fence typed line by line — one core block per line — must not
-    /// reserve it anywhere but above the opening rule: the interior
-    /// lines run at ordinary spacing and the slab reads as contiguous.
+    /// Block metadata is now an overlay, so neither a fence nor the
+    /// prose after it may retain the former label-row spacing.
     func testAFenceTypedLineByLineReservesNoInteriorGaps() {
         makeEditor()
         for piece in ["```", "\n", "echo hi", "\n", "```", "\n", "after"] {
@@ -212,13 +210,10 @@ final class FenceRenderingTests: XCTestCase {
                 "line \(line) reserved a label gap inside the fence"
             )
         }
-        // The prose below the closing rule is its own block again, and
-        // its stamp gets its gap back.
+        // The prose below the closing rule is its own block again, but
+        // the compact affordance never changes paragraph rhythm.
         let after = attributes(ofLine: 3)[.paragraphStyle] as? NSParagraphStyle
-        XCTAssertEqual(
-            after?.paragraphSpacingBefore,
-            InkEditorView.Coordinator.blockLabelReserve
-        )
+        XCTAssertEqual(after?.paragraphSpacingBefore, 0)
     }
 
     func testAHashInsideAFenceStaysPlainInk() {
@@ -318,10 +313,8 @@ final class CodeSlabTests: XCTestCase {
         XCTAssertEqual(slab, NSRect(x: 12, y: 52, width: 380, height: 60))
     }
 
-    /// The reserved label gap above a stamped fence lives in the first
-    /// line's fragment rect, not its used rect, so the caller measures
-    /// the top from the used rect; the arithmetic only has to keep the
-    /// origin offset honest, not re-subtract the gap.
+    /// The caller measures the top from the used rect; the arithmetic
+    /// only has to keep the origin offset honest.
     func testTheSlabHonorsTheContainerOrigin() {
         let slab = InkLayoutManager.slabRect(
             firstLineTop: 0, regionBottom: 17,

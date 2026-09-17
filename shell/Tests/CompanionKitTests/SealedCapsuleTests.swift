@@ -230,8 +230,8 @@ final class SealedCapsuleTests: XCTestCase {
     /// four points, so the glyph's bounding rect, which takes the
     /// line's used height, starts above the drawn block and stands
     /// taller than it; a seat computed off it misses the drawn glyph.
-    /// The paragraph is labeled as well, to hold that the label
-    /// reserve above the block moves neither frame. The cell records
+    /// The paragraph has extra leading as well, to hold that paragraph
+    /// spacing above the block moves neither frame. The cell records
     /// the frame it is drawn with, so the two are compared, not eyed.
     func testTheClickFrameIsTheDrawnFrameWhenInkSharesTheLine() throws {
         let editor = mountUnwrappedEditor(inset: NSSize(width: 12, height: 10))
@@ -243,7 +243,7 @@ final class SealedCapsuleTests: XCTestCase {
         storage.append(chip(11, excerpt: "inline"))
         storage.append(NSAttributedString(string: " cd", attributes: ink))
         let style = NSMutableParagraphStyle()
-        style.paragraphSpacingBefore = InkEditorView.Coordinator.blockLabelReserve
+        style.paragraphSpacingBefore = 20
         storage.addAttribute(
             .paragraphStyle, value: style,
             range: NSRange(location: chipIndex - 3, length: storage.length - chipIndex + 3))

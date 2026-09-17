@@ -418,7 +418,11 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertNil(model.selectedFile, "the surface fell back to the pad")
     }
 
-    func testSavingWhileADirtyCloseDecisionStandsClosesTheNowCleanFile() throws {
+    /// A pending close is answered only by its own three actions or by
+    /// another close gesture. ⌘S while it stands makes the file clean,
+    /// which overtakes the question rather than answering it: the
+    /// decision is withdrawn and the tab stays.
+    func testSavingWhileADirtyCloseDecisionStandsWithdrawsTheDecisionAndKeepsTheTab() throws {
         let fixture = try makeFixture()
         let model = makeModel(fixture, panels: ScriptedFilePanels())
         model.loadStateIfNeeded()
@@ -432,35 +436,54 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(model.saveFile(id))
 
         XCTAssertEqual(try read(url), "the body\n")
+        XCTAssertEqual(model.openFiles.map(\.id), [id], "the tab stays open")
+        XCTAssertNil(model.pendingFileClose, "the question no longer applies")
+        XCTAssertEqual(model.selectedFile, id)
+
+        // A clean file closes at once on the next close gesture, as any
+        // clean file does.
+        XCTAssertTrue(model.closeActiveFile())
         XCTAssertTrue(model.openFiles.isEmpty)
-        XCTAssertNil(model.pendingFileClose)
     }
 
-    func testUndoingAPendingCloseBackToSavedTextClosesTheFile() throws {
+    /// Undo back to the saved text withdraws the decision and leaves
+    /// Redo alive: closing the tab would have taken the redo history
+    /// with it, and closing is the one step here that cannot be undone.
+    func testUndoingAPendingCloseBackToSavedTextWithdrawsTheDecisionAndKeepsRedo() throws {
         let fixture = try makeFixture()
         let model = makeModel(fixture, panels: ScriptedFilePanels())
         model.loadStateIfNeeded()
         let url = try write("body\n", named: "notes.txt", in: fixture)
         model.openFile(at: url)
         let id = try XCTUnwrap(model.activeFile?.id)
+        let mounted = model.storage(for: id)
         try type("the ", at: 0, into: id, on: model)
 
         model.closeActiveFile()
         XCTAssertEqual(model.pendingFileClose?.fileID, id)
         XCTAssertTrue(model.undoEdit(sheet: id).applied)
 
-        XCTAssertEqual(try read(url), "body\n")
-        XCTAssertTrue(model.openFiles.isEmpty)
-        XCTAssertNil(model.pendingFileClose)
+        XCTAssertEqual(try read(url), "body\n", "nothing was written")
+        XCTAssertEqual(model.openFiles.map(\.id), [id], "the tab stays open")
+        XCTAssertNil(model.pendingFileClose, "the question no longer applies")
+        XCTAssertFalse(model.openFiles.first?.isDirty == true)
+
+        XCTAssertTrue(model.redoEdit(sheet: id).applied, "Redo survived the withdrawn decision")
+        XCTAssertEqual(mounted.string, "the body\n")
+        XCTAssertTrue(model.openFiles.first?.isDirty == true, "and the file is dirty again")
     }
 
-    func testTakingTheirsWhileADirtyCloseDecisionStandsClosesTheFile() throws {
+    /// Take theirs promises "Undo restores this copy", and a close
+    /// standing over it must not break that promise by closing the tab
+    /// the moment the buffer matches the disk.
+    func testTakingTheirsWhileADirtyCloseDecisionStandsWithdrawsTheDecisionAndKeepsUndo() throws {
         let fixture = try makeFixture()
         let model = makeModel(fixture, panels: ScriptedFilePanels())
         model.loadStateIfNeeded()
         let url = try write("body\n", named: "notes.txt", in: fixture)
         model.openFile(at: url)
         let id = try XCTUnwrap(model.activeFile?.id)
+        let mounted = model.storage(for: id)
         try type("mine ", at: 0, into: id, on: model)
         try Data("theirs\n".utf8).write(to: url)
         model.checkOpenFilesOnActivate()
@@ -470,8 +493,13 @@ final class FileDocumentTests: XCTestCase {
         model.resolveConflict(.takeTheirs)
 
         XCTAssertEqual(try read(url), "theirs\n")
-        XCTAssertTrue(model.openFiles.isEmpty)
-        XCTAssertNil(model.pendingFileClose)
+        XCTAssertEqual(mounted.string, "theirs\n")
+        XCTAssertEqual(model.openFiles.map(\.id), [id], "the tab stays open")
+        XCTAssertNil(model.pendingFileClose, "the question no longer applies")
+        XCTAssertEqual(model.openFiles.first?.conflict, FileConflict.none)
+
+        XCTAssertTrue(model.undoEdit(sheet: id).applied, "Undo still restores this copy")
+        XCTAssertEqual(mounted.string, "mine body\n")
     }
 
     func testSaveCloseFailureLeavesTheFileAndInlineDecisionStanding() throws {
@@ -1072,6 +1100,73 @@ final class FileDocumentTests: XCTestCase {
             "Unsaved changes to a.txt and c.txt go with it.")
     }
 
+    /// The drafts leg has its own write, so the cancelled quit's line
+    /// names the dirty files only while that write is still owed. A
+    /// refusal from the content or ledger leg after the drafts landed
+    /// costs the pages alone, and so does an unsavable session, whose
+    /// drafts leg settled by definition.
+    func testTheCancelledQuitLineNamesTheDirtyFilesOnlyWhileTheirDraftsAreUnwritten() {
+        func file(_ name: String, dirty: Bool) -> FileSummary {
+            FileSummary(
+                id: CompanionClient.fileIDTag | 1, name: name, path: "/tmp/\(name)",
+                isDirty: dirty, conflict: .none, lineEnding: .lf, hasBOM: false,
+                lastEditedAt: 0, restoredFromDraft: false
+            )
+        }
+        let pagesOnly =
+            "the sealed state file was not written, so this session's pages will not survive the quit"
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused, files: [file("a.txt", dirty: false)], draftsUnwritten: true),
+            pagesOnly,
+            "a clean file adds nothing to the loss")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused, files: [file("a.txt", dirty: true)], draftsUnwritten: false),
+            pagesOnly,
+            "a draft the drafts leg wrote survives a refusal from another leg")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused,
+                files: [
+                    file("a.txt", dirty: true), file("b.md", dirty: false),
+                    file("c.txt", dirty: true),
+                ],
+                draftsUnwritten: true),
+            "the sealed state file was not written, so this session's pages and the unsaved "
+                + "changes to a.txt and c.txt will not survive the quit")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .unsavableWithContent, files: [file("a.txt", dirty: true)], draftsUnwritten: false),
+            "nothing typed this session is on disk, so its pages will not survive the quit",
+            "an unsavable session's drafts leg settled, so its drafts are on disk")
+        XCTAssertNil(
+            PageModel.quitRefusalSentence(
+                .settled, files: [file("a.txt", dirty: true)], draftsUnwritten: true))
+    }
+
+    /// The flag the surface hands the line is the model's own drafts
+    /// dirtiness: set by an edit, cleared by the drafts leg's write,
+    /// so a flush that lands the drafts stops the line naming them.
+    func testTheDraftsLegClearsTheDirtinessTheQuitLineReads() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty, "an edit owes the drafts file a write")
+
+        XCTAssertTrue(model.saveState())
+        XCTAssertFalse(model.draftsDirty, "the drafts leg landed, so no draft is at stake")
+        XCTAssertTrue(
+            try XCTUnwrap(model.openFiles.first).isDirty,
+            "the file stays dirty; only its draft is on disk")
+    }
+
     // MARK: The roster is the authority
 
     func testEverySaveRefreshesTheRosterTheHeaderAndTheDotsRead() throws {
@@ -1129,10 +1224,11 @@ final class FileDocumentTests: XCTestCase {
 
     // MARK: 7a. What a refused close does, and how often one is asked for
 
-    /// Save closes the file through the roster the save itself
-    /// refreshed, so the core is asked for the close once and only
-    /// once. The second ask would land on an id the core no longer
-    /// holds, and file ids are not promised never to be reused.
+    /// Save closes the file itself once the write lands. The roster
+    /// refresh inside the save withdraws the decision but closes
+    /// nothing, so the core is asked for the close once and only once.
+    /// A second ask would land on an id the core no longer holds, and
+    /// file ids are not promised never to be reused.
     func testSaveAsksTheCoreToCloseTheFileExactlyOnce() throws {
         let fixture = try makeFixture()
         let client = ScriptedCloseClient(tag: fixture.tag)
@@ -1150,14 +1246,14 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertNil(model.pendingFileClose, "and the decision left with the file")
         XCTAssertEqual(
             client.closeRequests, [dirty],
-            "the close that happened inside the refreshed roster is the only one owed")
+            "the close the Save action made itself is the only one owed")
     }
 
-    /// A refused automatic close puts the decision back on the surface,
-    /// and the pass it interrupted carries on: the roster standing is
-    /// already the published one, so the per-file side tables have to be
-    /// swept against it or they outlive the files they describe.
-    func testARefusedAutomaticCloseKeepsTheDecisionAndStillPrunesTheSideTables() throws {
+    /// A roster that reads the pending file as clean withdraws the
+    /// decision and asks the core for nothing: no close is automatic.
+    /// The pass still prunes the per-file side tables against the roster
+    /// it published, or they outlive the files they describe.
+    func testACleanFileWithAPendingCloseStaysOpenWithNoDecisionAndTheSideTablesPruned() throws {
         let fixture = try makeFixture()
         let client = ScriptedCloseClient(tag: fixture.tag)
         let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
@@ -1175,9 +1271,7 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.pendingFileClose?.fileID, dirty)
 
         // The roster a successful save would publish: the file with the
-        // decision on it is clean now, and the other one is gone. The
-        // core refuses the close this provokes.
-        client.refusalsRemaining = 1
+        // decision on it is clean now, and the other one is gone.
         model.standOpenFiles([
             FileSummary(
                 id: dirty, name: "a.txt",
@@ -1187,16 +1281,14 @@ final class FileDocumentTests: XCTestCase {
             )
         ])
 
-        XCTAssertEqual(client.closeRequests, [dirty], "the close was asked for and refused")
-        XCTAssertEqual(
-            model.pendingFileClose?.fileID, dirty,
-            "a refused close leaves the person the decision they still have to make")
+        XCTAssertEqual(client.closeRequests, [], "no close was asked for")
+        XCTAssertNil(model.pendingFileClose, "the decision was withdrawn, not answered")
         XCTAssertEqual(
             model.openFiles.map { $0.id }, [dirty] as [UInt64],
-            "and the roster published is the new one")
+            "the roster published is the new one and the tab is still on it")
         XCTAssertNil(
             model.fileRenderModes[leaving],
-            "the refusal must not skip the sweep: the file that left took its render mode with it")
+            "the file that left took its render mode with it")
     }
 }
 

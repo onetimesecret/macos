@@ -16,11 +16,12 @@
 //! helper, same strict envelope rule. `OTSSNAP4` is not touched.
 //!
 //! One record per open file: the bookmark blob, the last known path,
-//! the witness, the dirty flag, the last edit stamp, for a dirty file
-//! the Loro snapshot, and an optional trailing generation-dirty flag.
-//! A clean file records only its identity, so
-//! its tab comes back with nothing staged behind it and the shell fills
-//! it from disk with a reload.
+//! the witness, the line ending and BOM, the dirty flag, the last edit
+//! stamp, and for a dirty file the Loro snapshot. A clean file records
+//! only its identity, so its tab comes back with nothing staged behind
+//! it and the shell fills it from disk with a reload. A record that
+//! carries the trailing generation-dirty flag one earlier build wrote
+//! is tolerated on read and the flag is never acted on.
 //!
 //! [`restore`] is only half of a restore: it decodes, and touches no
 //! filesystem. [`crate::files::FileStore::hydrate_restored`] is the
@@ -32,6 +33,8 @@
 //! Drafts die on save, on discard, on `companion_persist_erase`, and
 //! whenever the content key halves rotate without this file being
 //! rewritten in the same operation. Rotation rewrites it.
+
+use zeroize::Zeroizing;
 
 use crate::files::{DraftBody, FileNotice, FileStore, line_ending_from_code};
 use crate::persist::{Reader, RestoreError, Sink, Writer, count, framed};
@@ -162,7 +165,7 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
         let last_edited_ms = record.u64().ok_or(Malformed)?;
         let snapshot = match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(record.bytes().ok_or(Malformed)?.to_vec()),
+            1 => Some(Zeroizing::new(record.bytes().ok_or(Malformed)?.to_vec())),
             _ => return Err(Malformed),
         };
         // A build in between wrote a generation-dirty flag here. It is
@@ -209,7 +212,7 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             record.has_bom,
             record.dirty,
             record.last_edited_ms,
-            record.snapshot.as_deref(),
+            record.snapshot.as_deref().map(Vec::as_slice),
         )?;
         restored += 1;
     }
@@ -225,7 +228,9 @@ struct Record {
     has_bom: bool,
     dirty: bool,
     last_edited_ms: u64,
-    snapshot: Option<Vec<u8>>,
+    /// Plaintext Loro bytes retained only while the complete snapshot is
+    /// validated and adopted into the document.
+    snapshot: Option<Zeroizing<Vec<u8>>>,
 }
 
 #[cfg(test)]
@@ -411,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn an_undone_equal_text_take_theirs_stays_dirty_when_save_output_differs() {
+    fn an_undone_equal_text_take_theirs_settles_clean_after_mixed_endings_normalize() {
         let io = MemoryIo::with("/mixed.txt", b"old\nline\n");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/mixed.txt")).unwrap();
@@ -436,17 +441,44 @@ mod tests {
         assert_eq!(store.text(id).unwrap(), "same\nline\n");
 
         let bytes = emit(&store, 5_000).bytes;
-        let (back, notices) = relaunch(&io, &bytes);
+        let (mut back, notices) = relaunch(&io, &bytes);
         assert!(notices.is_empty());
-        let file = &back.files()[0];
+        let restored = back.files()[0].id();
+        let file = back.file(restored).unwrap();
         assert!(
-            file.is_dirty(),
-            "normalizing mixed line endings would still change the disk bytes"
+            !file.is_dirty(),
+            "restored drafts compare the same normalized text baseline as Take theirs"
         );
         assert_eq!(file.bytes_to_write(), b"same\nline\n");
-        assert_ne!(file.bytes_to_write(), io.files.lock().unwrap()[file.path()]);
-        assert!(!back.can_undo(file.id()));
-        assert!(!back.can_redo(file.id()));
+        assert_ne!(
+            file.bytes_to_write(),
+            io.files.lock().unwrap()[file.path()],
+            "mixed endings still become uniform when a later save is requested"
+        );
+        assert!(!back.can_undo(restored));
+        assert!(!back.can_redo(restored));
+
+        // Accepted batches compare runs to the normalized baseline rather
+        // than materializing save bytes, so returning to the draft text is
+        // clean even though a later save will make the disk endings uniform.
+        assert!(back.apply_ops(
+            restored,
+            &[EditOp::Insert {
+                pos_u16: 9,
+                text: "!".into(),
+            }],
+            6_000,
+        ));
+        assert!(back.is_dirty(restored));
+        assert!(back.apply_ops(
+            restored,
+            &[EditOp::Delete {
+                pos_u16: 9,
+                len_u16: 1,
+            }],
+            7_000,
+        ));
+        assert!(!back.is_dirty(restored));
     }
 
     #[test]

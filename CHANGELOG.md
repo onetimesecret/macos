@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Block metadata is compact and contextual** (ADR-0022, amendment 1).
+  Edited blocks now show a compact `edited` pill on the trailing edge of their
+  first line instead of persistent timestamp rows. Hovering it, or placing the
+  caret in its block, reveals the created and edited times.
+
 - **The rail and the gutters say each fact once** (Days + side;
   `companion-core` 0.24.0; `companion-ffi` 0.32.0;
   `docs/spec/design/2026-0916-rail-redundancy.md`, D-44 to D-48). A
@@ -72,7 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file shows Save file, Discard changes and Keep editing above the
   editor; Take theirs applies immediately and can be undone; and quit
   flushes the pad's state without an alert. A refused flush cancels quit
-  and leaves the existing inline recovery state in place.
+  and leaves the existing inline recovery state in place. The core arms
+  the Take theirs undo marker only when an undo item exists to carry it,
+  and zeroizes read and restored disk bytes (`companion-core` 0.24.1,
+  `companion-ffi` 0.32.1).
 
 - **The header never says "synced" with no peer awake** (D-20). An
   attached channel with no other device awake says "sync waiting", in

@@ -65,7 +65,12 @@ public struct TimeRailView: View {
             surfaceShowsRoll: rollIsShowing,
             stampFormat: model.stampFormat
         )
-        VStack(spacing: 2) {
+        // `FILES` and `PAD` are group labels in one navigation column.
+        // The default stack centres its intrinsic text while the PAD
+        // heading itself fills the column for its trailing plus, which
+        // made the two labels look unrelated. One leading alignment line
+        // gives the shelf, its heading, and the stream a shared origin.
+        VStack(alignment: .leading, spacing: 2) {
             // The Files shelf: fixed, above the days, and drawn only
             // when a file is open (ADR-0028). Files are navigation
             // peers and not dated regions, so they sit outside the roll
@@ -688,7 +693,10 @@ public struct SlotRailView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 2) {
+        // Keep the slot rail on the same leading grid as the stream
+        // rail. The two placement modes are peers, so changing between
+        // them must not make the Files and Pad labels jump sideways.
+        VStack(alignment: .leading, spacing: 2) {
             if !model.openFiles.isEmpty {
                 GroupLabel(text: "FILES")
                 ForEach(model.openFiles) { file in

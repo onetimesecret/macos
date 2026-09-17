@@ -118,6 +118,47 @@ final class FileSurfaceTests: XCTestCase {
         XCTAssertEqual(FileCloseBanner.sentence(name: "notes.txt"), "notes.txt has unsaved changes")
     }
 
+    /// Each close action carries a tooltip and a VoiceOver hint. The
+    /// conflict banner replaces its labels instead, in the first person;
+    /// a hint keeps the button's own text and reads after it, which is
+    /// the right slot for an action whose label is already a verb.
+    /// Discard is the destructive one, and both of its strings say the
+    /// draft is destroyed and does not come back.
+    func testTheCloseBannerActionsEachSayWhatTheyDo() {
+        XCTAssertEqual(
+            FileCloseBanner.help(for: .save),
+            "Write the file and close the tab once the write succeeds")
+        XCTAssertEqual(
+            FileCloseBanner.help(for: .discard),
+            "Close the tab and destroy the draft. It cannot be recovered.")
+        XCTAssertEqual(
+            FileCloseBanner.help(for: .keepEditing),
+            "Leave the tab open with its draft intact")
+        XCTAssertEqual(
+            FileCloseBanner.accessibilityHint(for: .save),
+            "Writes the file, then closes the tab")
+        XCTAssertEqual(
+            FileCloseBanner.accessibilityHint(for: .discard),
+            "Closes the tab and destroys the draft, which cannot be recovered")
+        XCTAssertEqual(
+            FileCloseBanner.accessibilityHint(for: .keepEditing),
+            "Leaves the tab open and keeps the draft")
+        for action in FileCloseAction.allCases {
+            let help = FileCloseBanner.help(for: action)
+            let hint = FileCloseBanner.accessibilityHint(for: action)
+            XCTAssertFalse(help.isEmpty, "\(action)")
+            XCTAssertFalse(hint.isEmpty, "\(action)")
+            for sentence in [help, hint] {
+                let words = sentence.lowercased()
+                    .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                XCTAssertFalse(words.contains("you"), sentence)
+                XCTAssertFalse(words.contains("your"), sentence)
+            }
+        }
+        XCTAssertTrue(FileCloseBanner.help(for: .discard).contains("cannot be recovered"))
+        XCTAssertTrue(FileCloseBanner.accessibilityHint(for: .discard).contains("cannot be recovered"))
+    }
+
     func testTheConflictBannerNamesTheFileAndSaysSavingIsRefused() {
         XCTAssertEqual(
             FileConflictBanner.sentence(for: .changed, name: "README.md"),

@@ -1,0 +1,8 @@
+/* The creation and modification dates in an edited block's metadata. */
+"created %@ · edited %@" = "created %@ · edited %@";
+
+/* The creation and modification dates in an edited block's accessibility label. */
+"Created %@; edited %@" = "Created %@; edited %@";
+
+/* The compact metadata label for an edited block. */
+"edited" = "edited";

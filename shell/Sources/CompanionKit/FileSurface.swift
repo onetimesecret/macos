@@ -233,6 +233,32 @@ public struct FileCloseBanner: View {
         "\(name) has unsaved changes"
     }
 
+    /// The tooltip for each action. Pure, so the three are testable as
+    /// words. Discard is the one that destroys something, and its
+    /// tooltip says so and says the draft does not come back.
+    public static func help(for action: FileCloseAction) -> String {
+        switch action {
+        case .save:
+            return "Write the file and close the tab once the write succeeds"
+        case .discard:
+            return "Close the tab and destroy the draft. It cannot be recovered."
+        case .keepEditing:
+            return "Leave the tab open with its draft intact"
+        }
+    }
+
+    /// What VoiceOver reads after each action's label.
+    public static func accessibilityHint(for action: FileCloseAction) -> String {
+        switch action {
+        case .save:
+            return "Writes the file, then closes the tab"
+        case .discard:
+            return "Closes the tab and destroys the draft, which cannot be recovered"
+        case .keepEditing:
+            return "Leaves the tab open and keeps the draft"
+        }
+    }
+
     public var body: some View {
         HStack(spacing: 8) {
             Text(Self.sentence(name: pending.name))
@@ -242,12 +268,18 @@ public struct FileCloseBanner: View {
             Button(FileCloseAction.save.label) { resolve(.save) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
+                .help(Self.help(for: .save))
+                .accessibilityHint(Text(Self.accessibilityHint(for: .save)))
             Button(FileCloseAction.discard.label, role: .destructive) { resolve(.discard) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
+                .help(Self.help(for: .discard))
+                .accessibilityHint(Text(Self.accessibilityHint(for: .discard)))
             Button(FileCloseAction.keepEditing.label) { resolve(.keepEditing) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
+                .help(Self.help(for: .keepEditing))
+                .accessibilityHint(Text(Self.accessibilityHint(for: .keepEditing)))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
