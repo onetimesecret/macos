@@ -156,12 +156,17 @@ final class OpEmitterTests: XCTestCase {
     }
 
     func testBlockDetailsUseCheckpointDayContextForSameDayEdits() throws {
+        let created = Date(timeIntervalSince1970: 3_600)
         let details = try XCTUnwrap(
             InkEditorView.Coordinator.blockDetails(createdS: 3_600, modifiedS: 7_200)
         )
-        XCTAssertEqual(
-            details.split(separator: " ").count, 5,
-            "same-day details should be two clocks with no weekday words"
+        let readings = details.components(separatedBy: " · ")
+        XCTAssertEqual(readings.count, 2, "details should retain their semantic separator")
+        let weekday = DateFormatter()
+        weekday.dateFormat = "EEE"
+        XCTAssertFalse(
+            readings.contains { $0.contains(weekday.string(from: created)) },
+            "same-day details should omit weekday context"
         )
     }
 
@@ -173,7 +178,12 @@ final class OpEmitterTests: XCTestCase {
             createdS: Int64(created.timeIntervalSince1970),
             modifiedS: Int64(modified.timeIntervalSince1970)
         ))
-        XCTAssertEqual(details.split(separator: " ").count, 7)
+        let readings = details.components(separatedBy: " · ")
+        XCTAssertEqual(readings.count, 2, "details should retain their semantic separator")
+        let weekday = DateFormatter()
+        weekday.dateFormat = "EEE"
+        XCTAssertTrue(readings[0].contains(weekday.string(from: created)))
+        XCTAssertTrue(readings[1].contains(weekday.string(from: modified)))
     }
 }
 
@@ -656,22 +666,40 @@ final class DocumentOpsWiringTests: XCTestCase {
         )
         XCTAssertEqual(result.displays.count, 1)
         XCTAssertEqual(result.displays[0].range, NSRange(location: 0, length: 4))
+        XCTAssertEqual(result.displays[0].logicalRange, NSRange(location: 0, length: storage.length))
     }
 
-    func testAFenceRegionDetailsSpanEarliestToLatest() {
+    func testCaretFocusCoversTheCompleteLogicalBlock() {
+        let storage = NSTextStorage(string: "first\nsecond")
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: storage, sheet: 1,
+            blockMetas: [
+                BlockInfo(id: "paste", createdS: 1_000, modifiedS: 3_000, paragraphs: 2)
+            ],
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:]
+        )
+        XCTAssertEqual(result.displays.count, 1)
         XCTAssertEqual(
-            InkEditorView.Coordinator.fenceRegionDetails(stamps: [
-                (createdS: 2_000, modifiedS: nil),
-                (createdS: 1_000, modifiedS: 1_000),
-                (createdS: 3_000, modifiedS: 9_000),
-            ]),
-            InkEditorView.Coordinator.blockDetails(createdS: 1_000, modifiedS: 9_000)
+            InkEditorView.Coordinator.blockFocusLocation(
+                for: NSRange(location: 7, length: 0), in: result.displays,
+                documentLength: storage.length
+            ),
+            result.displays[0].range.location,
+            "the second paragraph belongs to the same logical block"
         )
-        XCTAssertNil(
-            InkEditorView.Coordinator.fenceRegionDetails(stamps: [
-                (createdS: nil, modifiedS: nil)
-            ])
-        )
+    }
+
+    func testTimestampSpanUsesTheEarliestCreationAndLatestTouch() throws {
+        let span = try XCTUnwrap(InkEditorView.Coordinator.timestampSpan(for: [
+            (createdS: 2_000, modifiedS: nil),
+            (createdS: 1_000, modifiedS: 1_000),
+            (createdS: 3_000, modifiedS: 9_000),
+        ]))
+        XCTAssertEqual(span.createdS, 1_000)
+        XCTAssertEqual(span.modifiedS, 9_000)
+        XCTAssertNil(InkEditorView.Coordinator.timestampSpan(for: [
+            (createdS: nil, modifiedS: nil)
+        ]))
     }
 
     func testAffordanceOriginIsTrailingAlignedAndVerticallyCentered() {

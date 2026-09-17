@@ -593,7 +593,9 @@ public struct InkEditorView: NSViewRepresentable {
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
             refreshLanguageActionAvailability()
-            refreshBlockMetadataFocus()
+            if refreshBlockMetadataFocus() {
+                updateBlockLabelViews()
+            }
         }
 
         private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -2253,6 +2255,10 @@ public struct InkEditorView: NSViewRepresentable {
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            // Locations are storage offsets. Any structural restyle may
+            // move the hovered block underneath a fixed offset, so leave
+            // the old row before deriving the new display model.
+            hoveredBlockLocation = nil
             // `.never` uses the plain visual profile everywhere. Markdown-capable
             // pages still need the Markdown walk's classifications and fence ranges
             // for editing and paste safety, but neither result is rendered.
@@ -2307,7 +2313,7 @@ public struct InkEditorView: NSViewRepresentable {
             if let textView, textView.textContainerInset.height != Self.topInset {
                 textView.textContainerInset.height = Self.topInset
             }
-            refreshBlockMetadataFocus()
+            _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
 
@@ -2433,7 +2439,7 @@ public struct InkEditorView: NSViewRepresentable {
                     paragraphStart = NSMaxRange(paragraph)
                 }
                 walks.append(BlockWalk(
-                    head: head, meta: meta,
+                    head: head, extent: extent, meta: meta,
                     // A blank block is spacing, not writing: it carries a
                     // stamp in the core but shows none, so a page of
                     // empty paragraphs no longer stacks a column of
@@ -2471,6 +2477,9 @@ public struct InkEditorView: NSViewRepresentable {
                 }
                 if var display, let head = group.first?.head {
                     display.range = head
+                    display.logicalRange = group.reduce(head) { range, walk in
+                        NSUnionRange(range, walk.extent)
+                    }
                     displays.append(display)
                 }
                 lower = upper
@@ -2540,6 +2549,7 @@ public struct InkEditorView: NSViewRepresentable {
             if textView?.textContainerInset.height != Self.topInset {
                 textView?.textContainerInset.height = Self.topInset
             }
+            _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
 
@@ -2594,6 +2604,7 @@ public struct InkEditorView: NSViewRepresentable {
             if textView?.textContainerInset.height != Self.topInset {
                 textView?.textContainerInset.height = Self.topInset
             }
+            _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
 
@@ -2764,13 +2775,17 @@ public struct InkEditorView: NSViewRepresentable {
         // MARK: Block metadata (ADR-0013: compact edited affordance)
 
         /// One edited block's compact and expanded readings, anchored to
-        /// its first paragraph. Untouched blocks deliberately have no
+        /// its first visible paragraph. Untouched blocks deliberately have no
         /// display: the surrounding checkpoint already supplies temporal
         /// context, while an edit is the state worth signaling at rest.
         /// Never holds an origin: the editable-surface rule keeps origin
         /// off every read surface, this one included.
         struct BlockDisplay {
+            /// The first visible paragraph, where the pill is drawn.
             var range: NSRange
+            /// Every character in the logical block (or coalesced fence
+            /// region), which owns caret focus even away from the pill.
+            var logicalRange: NSRange
             let compactText: String
             let detailText: String
             let accessibilityText: String
@@ -2781,6 +2796,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// another block opened — the fact the second pass groups by.
         private struct BlockWalk {
             let head: NSRange
+            let extent: NSRange
             let meta: BlockInfo?
             let blank: Bool
             let paragraphs: [WalkedParagraph]
@@ -2806,31 +2822,21 @@ public struct InkEditorView: NSViewRepresentable {
         /// is many core blocks the eye reads as one slab, so its reading
         /// spans earliest creation to latest touch across the region.
         private static func groupDisplay(for group: [BlockWalk]) -> BlockDisplay? {
-            if group.count == 1, let walk = group.first {
-                guard !walk.blank, let createdS = walk.meta?.createdS,
-                      let modifiedS = walk.meta?.modifiedS
-                else { return nil }
-                return blockDisplay(createdS: createdS, modifiedS: modifiedS)
-            }
+            guard !(group.count == 1 && group.first?.blank == true) else { return nil }
             let stamps = group.compactMap(\.meta).map { ($0.createdS, $0.modifiedS) }
-            guard let created = stamps.compactMap({ $0.0 }).min() else { return nil }
-            let modified = stamps.compactMap { $0.1 ?? $0.0 }.max() ?? created
-            return blockDisplay(createdS: created, modifiedS: modified)
+            guard let span = timestampSpan(for: stamps) else { return nil }
+            return blockDisplay(createdS: span.createdS, modifiedS: span.modifiedS)
         }
 
-        /// The stamp a fence region wears: earliest created to latest
-        /// touch across every block the region spans, since the lines
-        /// were typed over a stretch of time but read as one slab. A
-        /// block that was touched but never modified counts its created
-        /// stamp as its latest, and a region with no committed content
-        /// at all wears nothing.
-        static func fenceRegionDetails(
-            stamps: [(createdS: Int64?, modifiedS: Int64?)]
-        ) -> String? {
-            guard let created = stamps.compactMap({ $0.createdS }).min() else { return nil }
-            let modified = stamps.compactMap { $0.modifiedS ?? $0.createdS }.max()
-            guard let modified else { return nil }
-            return blockDetails(createdS: created, modifiedS: modified)
+        /// The earliest creation and latest touch among a display group.
+        /// An unmodified block was last touched at creation; a group with
+        /// no committed creation has no timestamp span to display.
+        static func timestampSpan(
+            for stamps: [(createdS: Int64?, modifiedS: Int64?)]
+        ) -> (createdS: Int64, modifiedS: Int64)? {
+            guard let createdS = stamps.compactMap({ $0.createdS }).min() else { return nil }
+            let modifiedS = stamps.compactMap { $0.modifiedS ?? $0.createdS }.max() ?? createdS
+            return (createdS, modifiedS)
         }
 
         /// The fence regions the last restyle read off the page, as
@@ -2922,6 +2928,10 @@ public struct InkEditorView: NSViewRepresentable {
         private var blockLabelViews: [BlockMetadataField] = []
         private var hoveredBlockLocation: Int?
         private var focusedBlockLocation: Int?
+        /// First-line rows in text-view coordinates, rebuilt whenever
+        /// labels move. Pointer hit testing reads this geometry rather
+        /// than asking TextKit to rederive glyph ranges on every move.
+        private var blockFirstLineDisplayRects: [Int: NSRect] = [:]
         /// What each live tooltip rect says, keyed by the tag the text
         /// view handed back. Rebuilt whenever the rects are, which is
         /// the only thing keeping the two in step.
@@ -3004,6 +3014,7 @@ public struct InkEditorView: NSViewRepresentable {
             let accessibility = "Created \(blockAccessibilityFormatter.string(from: createdDate)); edited \(blockAccessibilityFormatter.string(from: modifiedDate))"
             return BlockDisplay(
                 range: NSRange(location: 0, length: 0),
+                logicalRange: NSRange(location: 0, length: 0),
                 compactText: "edited", detailText: detail,
                 accessibilityText: accessibility
             )
@@ -3122,6 +3133,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// to call on every layout pass: a resize rewraps paragraphs
         /// without changing what any block says.
         func repositionBlockLabels() {
+            blockFirstLineDisplayRects.removeAll()
             guard let textView, let container = textView.textContainer else { return }
             let origin = textView.textContainerOrigin
             // AppKit hands a tooltip to whichever view answers the hit
@@ -3142,12 +3154,13 @@ public struct InkEditorView: NSViewRepresentable {
                 // and the first hover would message a dead object. The
                 // coordinator outlives the page, and answers from a table
                 // rebuilt alongside the rects it belongs to.
+                let displayRect = NSRect(
+                    x: origin.x, y: origin.y + usedRect.minY,
+                    width: container.size.width, height: usedRect.height
+                )
+                blockFirstLineDisplayRects[display.range.location] = displayRect
                 let tag = textView.addToolTip(
-                    NSRect(
-                        x: origin.x, y: origin.y + usedRect.minY,
-                        width: container.size.width, height: usedRect.height
-                    ),
-                    owner: self, userData: nil
+                    displayRect, owner: self, userData: nil
                 )
                 blockToolTips[tag] = display.accessibilityText
             }
@@ -3195,33 +3208,35 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func blockLocation(at point: NSPoint) -> Int? {
-            guard let textView, let layoutManager = textView.layoutManager,
-                  let container = textView.textContainer else { return nil }
-            let origin = textView.textContainerOrigin
-            let horizontal = origin.x...(origin.x + container.size.width)
-            guard horizontal.contains(point.x) else { return nil }
-            return blockDisplays.first { display in
-                let glyphs = layoutManager.glyphRange(
-                    forCharacterRange: display.range, actualCharacterRange: nil
-                )
-                guard glyphs.length > 0 else { return false }
-                let line = layoutManager.lineFragmentUsedRect(
-                    forGlyphAt: glyphs.location, effectiveRange: nil
-                )
-                return (origin.y + line.minY...origin.y + line.maxY).contains(point.y)
+            blockDisplays.first { display in
+                blockFirstLineDisplayRects[display.range.location]?.contains(point) == true
             }?.range.location
         }
 
-        private func refreshBlockMetadataFocus() {
-            guard let textView else { return }
-            let selection = textView.selectedRange()
-            let next = blockDisplays.first { display in
-                selection.location != NSNotFound
-                    && NSLocationInRange(selection.location, display.range)
+        /// The block owning a selection start. A caret at the document's
+        /// final boundary belongs to its final block; boundaries between
+        /// blocks remain assigned to the following block.
+        static func blockFocusLocation(
+            for selection: NSRange, in displays: [BlockDisplay], documentLength: Int
+        ) -> Int? {
+            guard selection.location != NSNotFound else { return nil }
+            return displays.first { display in
+                NSLocationInRange(selection.location, display.logicalRange)
+                    || (selection.location == documentLength
+                        && NSMaxRange(display.logicalRange) == documentLength)
             }?.range.location
-            guard next != focusedBlockLocation else { return }
+        }
+
+        @discardableResult
+        private func refreshBlockMetadataFocus() -> Bool {
+            guard let textView else { return false }
+            let next = Self.blockFocusLocation(
+                for: textView.selectedRange(), in: blockDisplays,
+                documentLength: textView.textStorage?.length ?? 0
+            )
+            guard next != focusedBlockLocation else { return false }
             focusedBlockLocation = next
-            updateBlockLabelViews()
+            return true
         }
     }
 }
