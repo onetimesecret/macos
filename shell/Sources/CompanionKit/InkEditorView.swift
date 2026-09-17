@@ -1471,6 +1471,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// only so a wrap change, which arrives through the model rather
         /// than through a view, can reach the geometry it has to rebuild.
         private weak var scrollView: NSScrollView?
+        /// The exact clip view carrying this coordinator's observers.
+        /// A scroll view may replace its clip without changing identity.
+        private weak var observedClip: NSClipView?
 
         /// The wrap state the geometry currently stands in, so a SwiftUI
         /// pass that changed something else does not tear the text
@@ -1551,26 +1554,35 @@ public struct InkEditorView: NSViewRepresentable {
         /// unpick it. Idempotent: every `updateNSView` calls it, and the
         /// same clip re-registers to nothing.
         func observeClip(of scroll: NSScrollView) {
-            guard scrollView !== scroll else { return }
+            let clip = scroll.contentView
+            guard observedClip !== clip else {
+                scrollView = scroll
+                return
+            }
+            if let observedClip {
+                NotificationCenter.default.removeObserver(
+                    self, name: NSView.frameDidChangeNotification, object: observedClip
+                )
+                NotificationCenter.default.removeObserver(
+                    self, name: NSView.boundsDidChangeNotification, object: observedClip
+                )
+            }
             scrollView = scroll
-            NotificationCenter.default.removeObserver(
-                self, name: NSView.frameDidChangeNotification, object: nil
-            )
-            NotificationCenter.default.removeObserver(
-                self, name: NSView.boundsDidChangeNotification, object: nil
-            )
+            observedClip = clip
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(clipFrameChanged),
                 name: NSView.frameDidChangeNotification,
-                object: scroll.contentView
+                object: clip
             )
-            scroll.contentView.postsBoundsChangedNotifications = true
+            // Set this explicitly so hover refresh does not depend on
+            // NSView's default notification-posting behavior.
+            clip.postsBoundsChangedNotifications = true
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(clipBoundsChanged),
                 name: NSView.boundsDidChangeNotification,
-                object: scroll.contentView
+                object: clip
             )
         }
 
@@ -1590,6 +1602,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// is re-levelled here and a page narrower than the card is
         /// stretched to meet it.
         @objc private func clipFrameChanged(_ notification: Notification) {
+            defer { textView?.refreshHover() }
             guard appliedWrap == false, let textView, let scroll = scrollView else { return }
             let width = scroll.contentSize.width
             textView.minSize = NSSize(width: width, height: 0)
@@ -2293,6 +2306,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            defer { textView?.refreshHover() }
             // Locations are storage offsets. Any structural restyle may
             // move the hovered block underneath a fixed offset, so leave
             // the old row before deriving the new display model.
@@ -3618,6 +3632,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
+    #if DEBUG
+        /// Deterministic screen-space input for hover-refresh wiring tests.
+        /// Production always reads the current window-server state instead.
+        var hoverRefreshInput: (screenPoint: NSPoint, holdsKeys: Bool, pointsIntoWindow: Bool)?
+    #endif
+
     /// Keep the text view's native accessibility hierarchy intact. The
     /// metadata fields supplement it rather than replacing it, preserving
     /// AppKit's text-navigation children.
@@ -3688,21 +3708,38 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             applyHover(at: nil)
             return
         }
-        let pointer = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        #if DEBUG
+            let screenPointer = hoverRefreshInput?.screenPoint ?? NSEvent.mouseLocation
+            let holdsKeys = hoverRefreshInput?.holdsKeys ?? window.isKeyWindow
+            let pointsIntoWindow = hoverRefreshInput?.pointsIntoWindow ?? (
+                NSWindow.windowNumber(
+                    at: screenPointer, belowWindowWithWindowNumber: 0
+                ) == window.windowNumber
+            )
+        #else
+            let screenPointer = NSEvent.mouseLocation
+            let holdsKeys = window.isKeyWindow
+            let pointsIntoWindow = NSWindow.windowNumber(
+                at: screenPointer, belowWindowWithWindowNumber: 0
+            ) == window.windowNumber
+        #endif
+        let pointer = convert(window.convertPoint(fromScreen: screenPointer), from: nil)
         applyHover(at: Self.hoverPoint(
-            pointer: pointer, visibleRect: visibleRect, holdsKeys: window.isKeyWindow
+            pointer: pointer, visibleRect: visibleRect,
+            holdsKeys: holdsKeys, pointsIntoWindow: pointsIntoWindow
         ))
     }
 
     /// The point hover should resolve against, or nil to clear it. A
     /// window without keys shows no hover, matching the tracking area's
-    /// `.activeInKeyWindow`, and a pointer outside the visible rect is
-    /// over nothing on this page. Containment follows `NSRect.contains`,
-    /// so the max edges are outside.
+    /// `.activeInKeyWindow`, and a pointer over another window or outside
+    /// the visible rect is over nothing on this page. Containment follows
+    /// `NSRect.contains`, so the max edges are outside.
     nonisolated static func hoverPoint(
-        pointer: NSPoint, visibleRect: NSRect, holdsKeys: Bool
+        pointer: NSPoint, visibleRect: NSRect,
+        holdsKeys: Bool, pointsIntoWindow: Bool = true
     ) -> NSPoint? {
-        guard holdsKeys, visibleRect.contains(pointer) else { return nil }
+        guard holdsKeys, pointsIntoWindow, visibleRect.contains(pointer) else { return nil }
         return pointer
     }
 
