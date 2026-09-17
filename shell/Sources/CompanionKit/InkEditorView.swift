@@ -2922,6 +2922,14 @@ public struct InkEditorView: NSViewRepresentable {
         private var blockLabelViews: [BlockMetadataField] = []
         private var hoveredBlockLocation: Int?
         private var focusedBlockLocation: Int?
+        /// What each live tooltip rect says, keyed by the tag the text
+        /// view handed back. Rebuilt whenever the rects are, which is
+        /// the only thing keeping the two in step.
+        private var blockToolTips: [NSView.ToolTipTag: String] = [:]
+
+        /// The tags currently registered, in document order. The tests
+        /// read the tooltip table through the same door AppKit does.
+        var blockToolTipTags: [NSView.ToolTipTag] { blockToolTips.keys.sorted() }
 
         /// What the last restyle laid out, in document order: one entry
         /// per edited block, the range being the line its affordance
@@ -3018,7 +3026,9 @@ public struct InkEditorView: NSViewRepresentable {
                 let expanded = display.range.location == hoveredBlockLocation
                     || display.range.location == focusedBlockLocation
                 field.stringValue = expanded ? display.detailText : display.compactText
-                field.toolTip = display.accessibilityText
+                // The pill carries only the short reading; the whole
+                // created and edited sentence lives in the label a
+                // screen reader hears and in the row's tooltip.
                 field.setAccessibilityLabel(display.accessibilityText)
                 shapeBlockLabel(field)
                 // A first line that runs the full measure has no margin
@@ -3030,7 +3040,28 @@ public struct InkEditorView: NSViewRepresentable {
                     shapeBlockLabel(field)
                 }
             }
+            // NSTextView does not reliably offer arbitrary subviews to
+            // assistive technology, and the pill refuses hit testing on
+            // purpose, so the page names its affordances outright.
+            textView.setAccessibilityChildren(blockLabelViews)
             repositionBlockLabels()
+        }
+
+        /// Lay the affordances out against stamps handed in rather than
+        /// read from the core. The mounted editor never takes this door:
+        /// it exists because a block cannot be aged inside a test run,
+        /// and the pills, the accessibility children and the tooltip
+        /// table can only be examined over a page that carries edited
+        /// blocks.
+        func layOutBlockLabels(forMetas metas: [BlockInfo]) {
+            guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            let (_, displays, _) = Self.applyMarkdownStyling(
+                to: storage, sheet: sheet, blockMetas: metas,
+                syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
+                fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
+            )
+            blockDisplays = displays
+            updateBlockLabelViews()
         }
 
         /// One padding rule for both readings, so the pill grows and
@@ -3093,13 +3124,43 @@ public struct InkEditorView: NSViewRepresentable {
         func repositionBlockLabels() {
             guard let textView, let container = textView.textContainer else { return }
             let origin = textView.textContainerOrigin
+            // AppKit hands a tooltip to whichever view answers the hit
+            // test, and the pill answers with nothing so the caret can
+            // land behind it. The text view hosts the tooltip instead,
+            // over the same row the hover expansion already claims.
+            textView.removeAllToolTips()
+            blockToolTips.removeAll()
             for (field, display) in zip(blockLabelViews, blockDisplays) {
                 guard let usedRect = firstLineUsedRect(for: display) else { continue }
                 field.frame.origin = Self.blockAffordanceOrigin(
                     firstLine: usedRect, containerWidth: container.size.width,
                     containerOrigin: origin, affordanceSize: field.frame.size
                 )
+                // The owner is this coordinator, never the string itself:
+                // AppKit keeps the owner unretained, so a bridged
+                // temporary would be freed the moment the loop moved on
+                // and the first hover would message a dead object. The
+                // coordinator outlives the page, and answers from a table
+                // rebuilt alongside the rects it belongs to.
+                let tag = textView.addToolTip(
+                    NSRect(
+                        x: origin.x, y: origin.y + usedRect.minY,
+                        width: container.size.width, height: usedRect.height
+                    ),
+                    owner: self, userData: nil
+                )
+                blockToolTips[tag] = display.accessibilityText
             }
+        }
+
+        /// AppKit asking what the row under the pointer says. An unknown
+        /// tag is a stale rect the rebuild has already forgotten, and it
+        /// answers with nothing rather than with another block's stamps.
+        public func view(
+            _ view: NSView, stringForToolTip tag: NSView.ToolTipTag,
+            point: NSPoint, userData: UnsafeMutableRawPointer?
+        ) -> String {
+            blockToolTips[tag] ?? ""
         }
 
         /// Whether the wide reading can stand clear of a line's glyphs.
@@ -3168,6 +3229,9 @@ public struct InkEditorView: NSViewRepresentable {
 /// Block metadata is informative until the revision read API exists.
 /// Let pointer gestures fall through to the editor so the compact pill
 /// never steals caret placement or text selection from the line it rides.
+/// The tooltip is hosted by the text view rather than here, for the
+/// same reason: a view that answers the hit test with nothing is never
+/// offered one.
 final class BlockMetadataField: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 

@@ -725,6 +725,92 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertNotEqual(light, dark, "the border kept its light-mode reading")
     }
 
+    /// The pill refuses the hit test so the caret can land behind it,
+    /// which also takes it out of the accessibility hit path. The page
+    /// therefore names its affordances outright.
+    func testThePageNamesItsAffordancesToAssistiveTechnology() {
+        makeEditor()
+        type("alpha")
+        // A block typed just now reads as untouched and mints no pill,
+        // so the page is handed stamps that make it an edited one. Age
+        // is the one thing a test cannot wait for.
+        coordinator.layOutBlockLabels(forMetas: [
+            BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
+        ])
+        XCTAssertEqual(labelFields().count, 1, "the fixture minted no affordance")
+        let children = textView.accessibilityChildren()
+        XCTAssertNotNil(children, "the text view never declared its AX children")
+        XCTAssertEqual(children?.count, 1)
+        XCTAssertTrue(
+            children?.first as AnyObject? === labelFields().first,
+            "the page named something other than its own pill"
+        )
+        XCTAssertEqual(
+            (children?.first as? NSView)?.accessibilityLabel()?.hasPrefix("Created "), true
+        )
+    }
+
+    /// The tooltip owner must outlive the loop that registered it.
+    /// AppKit holds the owner weakly, so a bridged string would be gone
+    /// before the first hover; the coordinator answers instead, out of a
+    /// table it rebuilds whenever it rebuilds the rects.
+    func testTheRowsTooltipSurvivesTheLoopThatRegisteredIt() {
+        makeEditor()
+        type("alpha")
+        coordinator.layOutBlockLabels(forMetas: [
+            BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
+        ])
+        let tags = coordinator.blockToolTipTags
+        XCTAssertEqual(tags.count, 1, "the edited row registered no tooltip")
+        let text = coordinator.view(
+            textView, stringForToolTip: tags[0], point: .zero, userData: nil
+        )
+        XCTAssertTrue(text.hasPrefix("Created "), "the tooltip lost its stamps: \(text)")
+        XCTAssertTrue(text.contains("; edited "))
+
+        // A tag the rebuild has forgotten answers with nothing rather
+        // than with some other block's reading.
+        XCTAssertEqual(
+            coordinator.view(
+                textView, stringForToolTip: tags[0] + 9_999, point: .zero, userData: nil
+            ),
+            ""
+        )
+    }
+
+    func testRepositioningRebuildsTheTooltipTable() {
+        makeEditor()
+        type("alpha")
+        coordinator.layOutBlockLabels(forMetas: [
+            BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
+        ])
+        XCTAssertEqual(coordinator.blockToolTipTags.count, 1)
+        // No stamps, no edited blocks: the rects and their strings go
+        // together, leaving nothing behind to answer a stale hover.
+        coordinator.layOutBlockLabels(forMetas: [])
+        XCTAssertTrue(
+            coordinator.blockToolTipTags.isEmpty, "a tooltip outlived its affordance"
+        )
+    }
+
+    /// Whatever the pill says, the label a screen reader hears carries
+    /// both stamps in full.
+    func testTheAccessibilityLabelKeepsBothStampsInFull() {
+        let storage = NSTextStorage(string: "first\nsecond")
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: storage, sheet: 1,
+            blockMetas: [
+                BlockInfo(id: "first", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+                BlockInfo(id: "second", createdS: 2_000, modifiedS: 300_000, paragraphs: 1),
+            ],
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:]
+        )
+        let text = result.displays[0].accessibilityText
+        XCTAssertTrue(text.hasPrefix("Created "))
+        XCTAssertTrue(text.contains("; edited "))
+        XCTAssertTrue(text.contains("1970"), "the full date is missing: \(text)")
+    }
+
 }
 
 /// A tiny deterministic generator, so the random edit script replays
