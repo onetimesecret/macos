@@ -17,8 +17,8 @@ The dogfood investigation that exposed the conflation is
 
 ## Context
 
-The background surface has two stances. The authoritative feature
-specification says it is always either resting or raised, and assigns the
+The background surface has two stances. Before this decision, the
+feature specification made it always either resting or raised and assigned the
 raised stance the `.floating` window level. It also says:
 
 > A summon is a summon first and a dismissal last: a resting surface raises; a

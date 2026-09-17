@@ -41,7 +41,7 @@ exactly one of two stances:
 
 | | **Resting** | **Raised** |
 | --- | --- | --- |
-| Level | one above the window-server desktop level (clear of the wallpaper's *own window*, below icons) | `.floating` |
+| Level | derived from stance and Pin | derived from keyboard ownership, Pin, and the keep-above preference |
 | Mouse | ignored — clicks fall through to the desktop | interactive |
 | Keyboard | refused outright (`canBecomeKey` = false) | may become key, never main |
 | Spaces | stationary desktop furniture; never in a full-screen Space | joins the user's active Space, full-screen included |
@@ -49,6 +49,23 @@ exactly one of two stances:
 | Reading | the same page, dimmed, editing refused | the same page, editable |
 
 The mouse row is all-or-nothing per window, not a choice. ADR-0015.
+
+Raised is an interaction stance, not an always-above instruction. Altitude is
+derived independently from stance, keyboard ownership, Pin, and the keep-above
+preference:
+
+| Surface state | Window level |
+| --- | --- |
+| Resting and unpinned | one above the window-server desktop level (clear of the wallpaper's *own window*, below icons) |
+| Raised and keyed, or about to take keys | `.floating` |
+| Raised, keyless, unpinned, with the default preference | `.normal` |
+| Raised, keyless, unpinned, with **Keep OnetimePad above other apps when switching away** enabled | `.floating` |
+| Pinned, in either stance | `.floating` |
+
+The keep-above preference defaults to off. On an application switch, an
+unpinned raised surface that loses the keyboard remains raised at `.normal`;
+it stays open but the newly active application's normal windows may cover it.
+Pin overrides the preference. ADR-0032 records this altitude decision.
 
 The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
