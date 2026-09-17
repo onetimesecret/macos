@@ -1471,6 +1471,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// only so a wrap change, which arrives through the model rather
         /// than through a view, can reach the geometry it has to rebuild.
         private weak var scrollView: NSScrollView?
+        /// The exact clip view carrying this coordinator's observers.
+        /// A scroll view may replace its clip without changing identity.
+        private weak var observedClip: NSClipView?
 
         /// The wrap state the geometry currently stands in, so a SwiftUI
         /// pass that changed something else does not tear the text
@@ -1543,24 +1546,54 @@ public struct InkEditorView: NSViewRepresentable {
             languageDetectionService.invalidate()
         }
 
-        /// Watch the clip so the unwrapped page's width floor stays level
-        /// with the card. Registered by selector rather than by block:
-        /// that registration is zeroing, so it retires with this
-        /// coordinator and needs no `deinit` to unpick it. Idempotent —
-        /// every `updateNSView` calls it, and the same clip re-registers
-        /// to nothing.
+        /// Watch the clip for two jobs: a frame change keeps the unwrapped
+        /// page's width floor level with the card, and a bounds change
+        /// refreshes hover under a stationary pointer. Registered by
+        /// selector rather than by block: that registration is zeroing,
+        /// so it retires with this coordinator and needs no `deinit` to
+        /// unpick it. Idempotent: every `updateNSView` calls it, and the
+        /// same clip re-registers to nothing.
         func observeClip(of scroll: NSScrollView) {
-            guard scrollView !== scroll else { return }
+            let clip = scroll.contentView
+            guard observedClip !== clip else {
+                scrollView = scroll
+                return
+            }
+            if let observedClip {
+                NotificationCenter.default.removeObserver(
+                    self, name: NSView.frameDidChangeNotification, object: observedClip
+                )
+                NotificationCenter.default.removeObserver(
+                    self, name: NSView.boundsDidChangeNotification, object: observedClip
+                )
+            }
             scrollView = scroll
-            NotificationCenter.default.removeObserver(
-                self, name: NSView.frameDidChangeNotification, object: nil
-            )
+            observedClip = clip
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(clipFrameChanged),
                 name: NSView.frameDidChangeNotification,
-                object: scroll.contentView
+                object: clip
             )
+            // Set this explicitly so hover refresh does not depend on
+            // NSView's default notification-posting behavior.
+            clip.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(clipBoundsChanged),
+                name: NSView.boundsDidChangeNotification,
+                object: clip
+            )
+        }
+
+        /// The page scrolled. Hover follows the pointer, and the pointer
+        /// did not move, so the hit test has to be re-run against the
+        /// content that arrived under it. Programmatic scrolls
+        /// (`scrollRangeToVisible` while typing, the offset restore at
+        /// mount) land here too and re-resolve hover deliberately, the
+        /// way tracking-area hover behaves on AppKit controls.
+        @objc private func clipBoundsChanged(_ notification: Notification) {
+            textView?.refreshHover()
         }
 
         /// The card resized. Wrapped, the autoresizing mask has already
@@ -1569,6 +1602,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// is re-levelled here and a page narrower than the card is
         /// stretched to meet it.
         @objc private func clipFrameChanged(_ notification: Notification) {
+            defer { textView?.refreshHover() }
             guard appliedWrap == false, let textView, let scroll = scrollView else { return }
             let width = scroll.contentSize.width
             textView.minSize = NSSize(width: width, height: 0)
@@ -2272,6 +2306,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            defer { textView?.refreshHover() }
             // Locations are storage offsets. Any structural restyle may
             // move the hovered block underneath a fixed offset, so leave
             // the old row before deriving the new display model.
@@ -3597,6 +3632,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
+    #if DEBUG
+        /// Deterministic screen-space input for hover-refresh wiring tests.
+        /// Production always reads the current window-server state instead.
+        var hoverRefreshInput: (screenPoint: NSPoint, holdsKeys: Bool, pointsIntoWindow: Bool)?
+    #endif
+
     /// Keep the text view's native accessibility hierarchy intact. The
     /// metadata fields supplement it rather than replacing it, preserving
     /// AppKit's text-navigation children.
@@ -3654,15 +3695,62 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        let point = convert(event.locationInWindow, from: nil)
-        hoveredChipIndex = coordinator?.chipIndex(at: point, in: self)
+        applyHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    /// Re-run the hover hit test against wherever the pointer is now.
+    /// Scrolling moves content under a stationary pointer and sends no
+    /// mouse event, so without this the block that was hovered before
+    /// the scroll stays expanded and the one now under the pointer
+    /// stays compact until the mouse moves again.
+    func refreshHover() {
+        guard let window else {
+            applyHover(at: nil)
+            return
+        }
+        #if DEBUG
+            let screenPointer = hoverRefreshInput?.screenPoint ?? NSEvent.mouseLocation
+            let holdsKeys = hoverRefreshInput?.holdsKeys ?? window.isKeyWindow
+            let pointsIntoWindow = hoverRefreshInput?.pointsIntoWindow ?? (
+                NSWindow.windowNumber(
+                    at: screenPointer, belowWindowWithWindowNumber: 0
+                ) == window.windowNumber
+            )
+        #else
+            let screenPointer = NSEvent.mouseLocation
+            let holdsKeys = window.isKeyWindow
+            let pointsIntoWindow = NSWindow.windowNumber(
+                at: screenPointer, belowWindowWithWindowNumber: 0
+            ) == window.windowNumber
+        #endif
+        let pointer = convert(window.convertPoint(fromScreen: screenPointer), from: nil)
+        applyHover(at: Self.hoverPoint(
+            pointer: pointer, visibleRect: visibleRect,
+            holdsKeys: holdsKeys, pointsIntoWindow: pointsIntoWindow
+        ))
+    }
+
+    /// The point hover should resolve against, or nil to clear it. A
+    /// window without keys shows no hover, matching the tracking area's
+    /// `.activeInKeyWindow`, and a pointer over another window or outside
+    /// the visible rect is over nothing on this page. Containment follows
+    /// `NSRect.contains`, so the max edges are outside.
+    nonisolated static func hoverPoint(
+        pointer: NSPoint, visibleRect: NSRect,
+        holdsKeys: Bool, pointsIntoWindow: Bool = true
+    ) -> NSPoint? {
+        guard holdsKeys, pointsIntoWindow, visibleRect.contains(pointer) else { return nil }
+        return pointer
+    }
+
+    private func applyHover(at point: NSPoint?) {
+        hoveredChipIndex = point.flatMap { coordinator?.chipIndex(at: $0, in: self) }
         coordinator?.updateBlockMetadataHover(at: point)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        hoveredChipIndex = nil
-        coordinator?.updateBlockMetadataHover(at: nil)
+        applyHover(at: nil)
     }
 
     private func redrawChip(at index: Int) {
