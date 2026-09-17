@@ -960,6 +960,41 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertTrue(text.contains("1970"), "the full date is missing: \(text)")
     }
 
+    // MARK: Hover point
+
+    private let hoverRect = NSRect(x: 0, y: 100, width: 200, height: 300)
+
+    func testHoverPointInsideVisibleRectPassesThrough() {
+        let point = NSPoint(x: 50, y: 150)
+        XCTAssertEqual(
+            InkTextView.hoverPoint(pointer: point, visibleRect: hoverRect, holdsKeys: true),
+            point
+        )
+    }
+
+    func testHoverPointOutsideVisibleRectClears() {
+        XCTAssertNil(InkTextView.hoverPoint(
+            pointer: NSPoint(x: 50, y: 50), visibleRect: hoverRect, holdsKeys: true
+        ))
+    }
+
+    func testHoverPointWithoutKeysClears() {
+        XCTAssertNil(InkTextView.hoverPoint(
+            pointer: NSPoint(x: 50, y: 150), visibleRect: hoverRect, holdsKeys: false
+        ))
+    }
+
+    func testHoverPointOnMaxYEdgeFollowsRectContains() {
+        let edge = NSPoint(x: 50, y: hoverRect.maxY)
+        XCTAssertFalse(hoverRect.contains(edge))
+        XCTAssertNil(InkTextView.hoverPoint(pointer: edge, visibleRect: hoverRect, holdsKeys: true))
+        let minEdge = NSPoint(x: 50, y: hoverRect.minY)
+        XCTAssertEqual(
+            InkTextView.hoverPoint(pointer: minEdge, visibleRect: hoverRect, holdsKeys: true),
+            minEdge
+        )
+    }
+
 }
 
 /// A tiny deterministic generator, so the random edit script replays

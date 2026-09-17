@@ -1543,12 +1543,13 @@ public struct InkEditorView: NSViewRepresentable {
             languageDetectionService.invalidate()
         }
 
-        /// Watch the clip so the unwrapped page's width floor stays level
-        /// with the card. Registered by selector rather than by block:
-        /// that registration is zeroing, so it retires with this
-        /// coordinator and needs no `deinit` to unpick it. Idempotent —
-        /// every `updateNSView` calls it, and the same clip re-registers
-        /// to nothing.
+        /// Watch the clip for two jobs: a frame change keeps the unwrapped
+        /// page's width floor level with the card, and a bounds change
+        /// refreshes hover under a stationary pointer. Registered by
+        /// selector rather than by block: that registration is zeroing,
+        /// so it retires with this coordinator and needs no `deinit` to
+        /// unpick it. Idempotent: every `updateNSView` calls it, and the
+        /// same clip re-registers to nothing.
         func observeClip(of scroll: NSScrollView) {
             guard scrollView !== scroll else { return }
             scrollView = scroll
@@ -1575,7 +1576,10 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The page scrolled. Hover follows the pointer, and the pointer
         /// did not move, so the hit test has to be re-run against the
-        /// content that arrived under it.
+        /// content that arrived under it. Programmatic scrolls
+        /// (`scrollRangeToVisible` while typing, the offset restore at
+        /// mount) land here too and re-resolve hover deliberately, the
+        /// way tracking-area hover behaves on AppKit controls.
         @objc private func clipBoundsChanged(_ notification: Notification) {
             textView?.refreshHover()
         }
@@ -3680,9 +3684,26 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// the scroll stays expanded and the one now under the pointer
     /// stays compact until the mouse moves again.
     func refreshHover() {
-        guard let window, window.isKeyWindow else { return applyHover(at: nil) }
-        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-        applyHover(at: visibleRect.contains(point) ? point : nil)
+        guard let window else {
+            applyHover(at: nil)
+            return
+        }
+        let pointer = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        applyHover(at: Self.hoverPoint(
+            pointer: pointer, visibleRect: visibleRect, holdsKeys: window.isKeyWindow
+        ))
+    }
+
+    /// The point hover should resolve against, or nil to clear it. A
+    /// window without keys shows no hover, matching the tracking area's
+    /// `.activeInKeyWindow`, and a pointer outside the visible rect is
+    /// over nothing on this page. Containment follows `NSRect.contains`,
+    /// so the max edges are outside.
+    nonisolated static func hoverPoint(
+        pointer: NSPoint, visibleRect: NSRect, holdsKeys: Bool
+    ) -> NSPoint? {
+        guard holdsKeys, visibleRect.contains(pointer) else { return nil }
+        return pointer
     }
 
     private func applyHover(at point: NSPoint?) {
