@@ -2640,25 +2640,17 @@ public final class PageModel: ObservableObject {
         openFiles = files
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
+                // A pending close is answered only by its own three
+                // actions or by another close gesture; nothing here
+                // closes a tab. A file that came clean by any other
+                // route (⌘S, an Undo back to the saved text, Take
+                // theirs, a reload) has had its question overtaken, so
+                // the decision is withdrawn and the tab stays, undo
+                // and redo history intact. Closing is the one step on
+                // this surface that cannot be undone, which is why only
+                // an explicit answer may take it.
                 if !file.isDirty {
-                    let previousSelection = selectionBeforePendingFileClose
-                    let previousLedger = ledgerBeforePendingFileClose
                     clearPendingFileClose()
-                    if closeFileNow(file.id) {
-                        // The close stood a fresh roster through this
-                        // same method, and that nested pass did every
-                        // prune below against it. Doing them again here
-                        // would work off the roster the close replaced.
-                        return
-                    }
-                    // The close was refused, so the decision goes back
-                    // on the surface and this pass carries on: the
-                    // roster above is already the published one, and
-                    // the prunes below are what keeps the per-file side
-                    // tables from outliving it.
-                    pendingFileClose = pending
-                    selectionBeforePendingFileClose = previousSelection
-                    ledgerBeforePendingFileClose = previousLedger
                 }
             } else {
                 clearPendingFileClose()
@@ -3003,13 +2995,12 @@ public final class PageModel: ObservableObject {
         switch action {
         case .save:
             guard saveFile(pending.fileID) else { return }
-            // A successful save refreshes the roster, and a clean file
-            // with a close still pending is closed inside
-            // `standOpenFiles`, so by the time this line runs the file
-            // has usually gone already. The check writes that invariant
-            // down rather than leaning on file ids never being reused:
-            // the only id this closes is one the core still holds,
-            // which leaves the retry after an auto-close that failed.
+            // The save's own roster refresh withdrew the decision (the
+            // file is clean now) but closed nothing: this is the answer
+            // that closes, and it closes only after the write landed.
+            // The check writes down that the only id this closes is one
+            // the core still holds, rather than leaning on file ids
+            // never being reused.
             guard openFiles.contains(where: { $0.id == pending.fileID }) else { return }
             clearPendingFileClose()
             _ = closeFileNow(pending.fileID)
