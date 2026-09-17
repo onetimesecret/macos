@@ -6,6 +6,7 @@ import PackageDescription
 
 let package = Package(
     name: "OnetimePad",
+    defaultLocalization: "en",
     platforms: [.macOS(.v13)], // MenuBarExtra needs macOS 13+
     targets: [
         // Produced by scripts/build-core.sh. Exposes the C ABI in

@@ -446,6 +446,23 @@ public struct InkEditorView: NSViewRepresentable {
                 ordinaryPasteShadowEnabled ?? Self.defaultOrdinaryPasteShadowEnabled
             self.languageDetectionService = languageDetectionService ?? LanguageDetectionService()
             self.ordinaryPastePayload = ordinaryPastePayload
+            super.init()
+            let notifications = NotificationCenter.default
+            notifications.addObserver(
+                self, selector: #selector(blockMetadataFormatDidChange(_:)),
+                name: NSLocale.currentLocaleDidChangeNotification, object: nil
+            )
+            notifications.addObserver(
+                self, selector: #selector(blockMetadataFormatDidChange(_:)),
+                name: .NSSystemTimeZoneDidChange, object: nil
+            )
+        }
+
+        /// Both notifications mean already-rendered labels could have stale
+        /// calendar context or date text. The selector registration is zeroing,
+        /// like the clip observer, so it needs no teardown registration.
+        @objc private func blockMetadataFormatDidChange(_ notification: Notification) {
+            restyle()
         }
 
         /// Captures the ordinary plain-text payload once, before AppKit performs
@@ -2933,15 +2950,23 @@ public struct InkEditorView: NSViewRepresentable {
         /// than asking TextKit to rederive glyph ranges on every move.
         private var blockFirstLineDisplayRects: [Int: NSRect] = [:]
         /// What each live tooltip rect says, keyed by the tag the text
-        /// view handed back. Rebuilt whenever the rects are, which is
-        /// the only thing keeping the two in step.
+        /// view handed back. Registrations are also keyed by block location
+        /// so unchanged rows retain their AppKit registration on layout.
         private var blockToolTips: [NSView.ToolTipTag: String] = [:]
+        private var blockToolTipRegistrations: [Int: BlockToolTipRegistration] = [:]
+
+        private struct BlockToolTipRegistration: Equatable {
+            let tag: NSView.ToolTipTag
+            let rect: NSRect
+            let text: String
+        }
 
         #if DEBUG
             /// The tags currently registered, in document order. The tests
             /// read the tooltip table through the same door AppKit does.
             /// A seam, so it is not built into a shipped binary.
             var blockToolTipTags: [NSView.ToolTipTag] { blockToolTips.keys.sorted() }
+            private(set) var blockLabelShapeCount = 0
 
             /// What the last restyle laid out, in document order: one entry
             /// per edited block, the range being the line its affordance
@@ -2970,55 +2995,109 @@ public struct InkEditorView: NSViewRepresentable {
         /// The page's own top margin.
         static let topInset: CGFloat = 12
 
-        private static let blockTimeFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm"
-            return formatter
-        }()
+        private static func localizedBlockDates(
+            _ key: String, created: String, edited: String,
+            bundle: Bundle, comment: String
+        ) -> String {
+            String.localizedStringWithFormat(
+                NSLocalizedString(key, bundle: bundle, comment: comment), created, edited
+            )
+        }
 
-        private static let blockDayTimeFormatter: DateFormatter = {
+        private static func blockDate(
+            _ date: Date, template: String, locale: Locale, timeZone: TimeZone
+        ) -> String {
             let formatter = DateFormatter()
-            formatter.dateFormat = "EEE HH:mm"
-            return formatter
-        }()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.setLocalizedDateFormatFromTemplate(template)
+            return formatter.string(from: date)
+        }
 
-        private static let blockAccessibilityFormatter: DateFormatter = {
+        private static func blockAccessibilityDate(
+            _ date: Date, locale: Locale, timeZone: TimeZone
+        ) -> String {
             let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
             formatter.dateStyle = .medium
             formatter.timeStyle = .short
-            return formatter
-        }()
+            return formatter.string(from: date)
+        }
+
+        private static func blockCalendar(locale: Locale, timeZone: TimeZone) -> Calendar {
+            var calendar = Calendar.autoupdatingCurrent
+            calendar.locale = locale
+            calendar.timeZone = timeZone
+            return calendar
+        }
 
         /// The expanded reading uses the checkpoint's day context while
         /// both stamps stay on that day. A cross-day edit restores the
-        /// weekday because it has become information again.
-        static func blockDetails(createdS: Int64, modifiedS: Int64) -> String? {
+        /// weekday because it has become information again. Formatters are
+        /// made at the point of use so the next render observes changes to
+        /// the system locale and time zone rather than retaining stale ones.
+        static func blockDetails(
+            createdS: Int64, modifiedS: Int64,
+            locale: Locale = .autoupdatingCurrent,
+            timeZone: TimeZone = .autoupdatingCurrent,
+            bundle: Bundle = .module
+        ) -> String? {
             guard modifiedS > createdS else { return nil }
             let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
             let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            let calendar = blockCalendar(locale: locale, timeZone: timeZone)
             // The operation log sees the first and last keystrokes of a
             // newly typed block as different touches. Preserve the old
             // minute-granularity collapse so ordinary typing does not
             // immediately label nearly every block as edited.
-            guard !Calendar.current.isDate(
+            guard !calendar.isDate(
                 createdDate, equalTo: modifiedDate, toGranularity: .minute
             ) else { return nil }
-            let formatter = Calendar.current.isDate(createdDate, inSameDayAs: modifiedDate)
-                ? blockTimeFormatter : blockDayTimeFormatter
-            return "created \(formatter.string(from: createdDate)) · edited \(formatter.string(from: modifiedDate))"
+            let template = calendar.isDate(createdDate, inSameDayAs: modifiedDate) ? "jm" : "Ejm"
+            return localizedBlockDates(
+                "created %@ · edited %@",
+                created: blockDate(createdDate, template: template, locale: locale, timeZone: timeZone),
+                edited: blockDate(modifiedDate, template: template, locale: locale, timeZone: timeZone),
+                bundle: bundle,
+                comment: "The creation and modification dates in an edited block's metadata."
+            )
+        }
+
+        static func blockAccessibilityText(
+            createdS: Int64, modifiedS: Int64,
+            locale: Locale = .autoupdatingCurrent,
+            timeZone: TimeZone = .autoupdatingCurrent,
+            bundle: Bundle = .module
+        ) -> String {
+            let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
+            let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            return localizedBlockDates(
+                "Created %@; edited %@",
+                created: blockAccessibilityDate(createdDate, locale: locale, timeZone: timeZone),
+                edited: blockAccessibilityDate(modifiedDate, locale: locale, timeZone: timeZone),
+                bundle: bundle,
+                comment: "The creation and modification dates in an edited block's accessibility label."
+            )
         }
 
         private static func blockDisplay(createdS: Int64, modifiedS: Int64) -> BlockDisplay? {
-            guard let detail = blockDetails(createdS: createdS, modifiedS: modifiedS) else {
-                return nil
-            }
-            let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
-            let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
-            let accessibility = "Created \(blockAccessibilityFormatter.string(from: createdDate)); edited \(blockAccessibilityFormatter.string(from: modifiedDate))"
+            let locale = Locale.autoupdatingCurrent
+            let timeZone = TimeZone.autoupdatingCurrent
+            guard let detail = blockDetails(
+                createdS: createdS, modifiedS: modifiedS, locale: locale, timeZone: timeZone
+            ) else { return nil }
+            let accessibility = blockAccessibilityText(
+                createdS: createdS, modifiedS: modifiedS, locale: locale, timeZone: timeZone
+            )
             return BlockDisplay(
                 range: NSRange(location: 0, length: 0),
                 logicalRange: NSRange(location: 0, length: 0),
-                compactText: "edited", detailText: detail,
+                compactText: NSLocalizedString(
+                    "edited", bundle: .module,
+                    comment: "The compact metadata label for an edited block."
+                ),
+                detailText: detail,
                 accessibilityText: accessibility
             )
         }
@@ -3039,25 +3118,24 @@ public struct InkEditorView: NSViewRepresentable {
             for (field, display) in zip(blockLabelViews, blockDisplays) {
                 let expanded = display.range.location == hoveredBlockLocation
                     || display.range.location == focusedBlockLocation
-                field.stringValue = expanded ? display.detailText : display.compactText
+                // A first line that runs the full measure has no margin
+                // left to lend. Decide against an independent measurement
+                // before changing the field, so an expanded-but-too-wide
+                // row does not size itself long and compact on every pass.
+                let requestedText = expanded && expandedLabelFits(display.detailText, for: display)
+                    ? display.detailText : display.compactText
+                if field.stringValue != requestedText {
+                    field.stringValue = requestedText
+                    shapeBlockLabel(field)
+                }
                 // The pill carries only the short reading; the whole
                 // created and edited sentence lives in the label a
                 // screen reader hears and in the row's tooltip.
-                field.setAccessibilityLabel(display.accessibilityText)
-                shapeBlockLabel(field)
-                // A first line that runs the full measure has no margin
-                // left to lend. Rather than let the wide reading cover
-                // the words it describes, the block keeps its compact
-                // pill until the line makes room.
-                if expanded, !expandedLabelFits(field, for: display) {
-                    field.stringValue = display.compactText
-                    shapeBlockLabel(field)
+                if field.accessibilityLabel() != display.accessibilityText {
+                    field.setAccessibilityLabel(display.accessibilityText)
                 }
             }
-            // NSTextView does not reliably offer arbitrary subviews to
-            // assistive technology, and the pill refuses hit testing on
-            // purpose, so the page names its affordances outright.
-            textView.setAccessibilityChildren(blockLabelViews)
+            textView.setBlockAccessibilityChildren(blockLabelViews)
             repositionBlockLabels()
         }
 
@@ -3093,6 +3171,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// One padding rule for both readings, so the pill grows and
         /// shrinks without appearing to change shape.
         private func shapeBlockLabel(_ field: BlockMetadataField) {
+            #if DEBUG
+                blockLabelShapeCount += 1
+            #endif
             field.sizeToFit()
             field.frame.size.width = ceil(field.frame.width) + Self.blockLabelPadding * 2
             field.frame.size.height = max(
@@ -3101,36 +3182,42 @@ public struct InkEditorView: NSViewRepresentable {
             field.layer?.cornerRadius = field.frame.height / 2
         }
 
-        private func expandedLabelFits(
-            _ field: BlockMetadataField, for display: BlockDisplay
-        ) -> Bool {
+        private func expandedLabelFits(_ text: String, for display: BlockDisplay) -> Bool {
             guard let line = firstLineUsedRect(for: display) else { return true }
             return Self.blockAffordanceFits(
                 lineMaxX: line.maxX, containerWidth: blockAffordanceMeasure,
-                affordanceWidth: field.frame.width
+                affordanceWidth: Self.blockLabelWidth(for: text)
             )
         }
 
-        /// The measure every affordance is placed and tested against.
-        /// A page with wrapping off hands its container TextKit's
-        /// unbounded sentinel, which would put the pill at an x no
-        /// reader can reach and make every wide reading "fit"; the
-        /// view's own width is the page that exists, so it stands in.
+        private static func blockLabelWidth(for text: String) -> CGFloat {
+            ceil((text as NSString).size(withAttributes: [.font: blockLabelFont]).width)
+                + blockLabelPadding * 2
+        }
+
+        /// The trailing container coordinate every affordance is placed
+        /// and tested against. In no-wrap mode TextKit hands the container
+        /// an unbounded sentinel, so the document view can be much wider
+        /// than the clip. `visibleRect` is the actual viewport in the
+        /// document view's coordinates; subtracting the container origin
+        /// keeps the origin added by `blockAffordanceOrigin` from counting
+        /// the leading inset a second time.
         private var blockAffordanceMeasure: CGFloat {
             guard let textView else { return 0 }
             return Self.blockAffordanceMeasure(
                 containerWidth: textView.textContainer?.size.width ?? .infinity,
-                viewWidth: textView.bounds.width
+                visibleRect: textView.visibleRect,
+                containerOriginX: textView.textContainerOrigin.x
             )
         }
 
         nonisolated static func blockAffordanceMeasure(
-            containerWidth: CGFloat, viewWidth: CGFloat
+            containerWidth: CGFloat, visibleRect: NSRect, containerOriginX: CGFloat
         ) -> CGFloat {
             guard containerWidth.isFinite,
                   containerWidth < SealedBlockCell.effectivelyUnboundedWidth
-            else { return viewWidth }
-            return min(containerWidth, viewWidth)
+            else { return visibleRect.maxX - containerOriginX }
+            return min(containerWidth, visibleRect.maxX - containerOriginX)
         }
 
         /// The used rect of the line a block's affordance rides, in
@@ -3165,47 +3252,62 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// Place every affordance at the trailing edge of its block's
-        /// first line. Geometry only, no core round trip, so this is safe
-        /// to call on every layout pass: a resize rewraps paragraphs
-        /// without changing what any block says.
+        /// first line. Geometry only, no core round trip. Rows whose text
+        /// and geometry did not move retain both their field frame and
+        /// tooltip registration, avoiding layout feedback work.
         func repositionBlockLabels() {
             blockFirstLineDisplayRects.removeAll()
             guard let textView else { return }
             let measure = blockAffordanceMeasure
             let origin = textView.textContainerOrigin
-            // AppKit hands a tooltip to whichever view answers the hit
-            // test, and the pill answers with nothing so the caret can
-            // land behind it. The text view hosts the tooltip instead,
-            // over the same row the hover expansion already claims.
-            // Clearing the table wholesale means the affordances own the
-            // text view's tooltips outright: anything else that wants one
-            // on this view has to be registered from here too, or this
-            // pass will take it away.
-            textView.removeAllToolTips()
-            blockToolTips.removeAll()
+            var requestedToolTips: [Int: (rect: NSRect, text: String)] = [:]
             for (field, display) in zip(blockLabelViews, blockDisplays) {
                 guard let usedRect = firstLineUsedRect(for: display) else { continue }
-                field.frame.origin = Self.blockAffordanceOrigin(
+                let fieldOrigin = Self.blockAffordanceOrigin(
                     firstLine: usedRect, containerWidth: measure,
                     containerOrigin: origin, affordanceSize: field.frame.size
                 )
-                // The owner is this coordinator, never the string itself:
-                // AppKit keeps the owner unretained, so a bridged
-                // temporary would be freed the moment the loop moved on
-                // and the first hover would message a dead object. The
-                // coordinator outlives the page, and answers from a table
-                // rebuilt alongside the rects it belongs to.
+                if field.frame.origin != fieldOrigin {
+                    field.setFrameOrigin(fieldOrigin)
+                }
+                // AppKit hands a tooltip to whichever view answers the hit
+                // test, and the pill answers with nothing so the caret can
+                // land behind it. The text view hosts the tooltip instead,
+                // over the same row the hover expansion already claims.
                 let displayRect = NSRect(
                     x: origin.x, y: origin.y + usedRect.minY,
                     width: measure, height: usedRect.height
                 )
                 blockFirstLineDisplayRects[display.range.location] = displayRect
-                let tag = textView.addToolTip(
-                    displayRect, owner: self, userData: nil
+                requestedToolTips[display.range.location] = (
+                    rect: displayRect, text: display.accessibilityText
                 )
-                blockToolTips[tag] = display.accessibilityText
+            }
+            reconcileBlockToolTips(requestedToolTips, in: textView)
+        }
+
+        private func reconcileBlockToolTips(
+            _ requested: [Int: (rect: NSRect, text: String)], in textView: NSTextView
+        ) {
+            for (location, registration) in Array(blockToolTipRegistrations) {
+                guard let next = requested[location],
+                      registration.rect == next.rect, registration.text == next.text
+                else {
+                    textView.removeToolTip(registration.tag)
+                    blockToolTips[registration.tag] = nil
+                    blockToolTipRegistrations[location] = nil
+                    continue
+                }
+            }
+            for (location, next) in requested where blockToolTipRegistrations[location] == nil {
+                let tag = textView.addToolTip(next.rect, owner: self, userData: nil)
+                blockToolTips[tag] = next.text
+                blockToolTipRegistrations[location] = BlockToolTipRegistration(
+                    tag: tag, rect: next.rect, text: next.text
+                )
             }
         }
+
 
         /// AppKit asking what the row under the pointer says. An unknown
         /// tag is a stale rect the rebuild has already forgotten, and it
@@ -3493,6 +3595,26 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     SealResponder
 {
     weak var coordinator: InkEditorView.Coordinator?
+    private var blockAccessibilityChildren: [BlockMetadataField] = []
+
+    /// Keep the text view's native accessibility hierarchy intact. The
+    /// metadata fields supplement it rather than replacing it, preserving
+    /// AppKit's text-navigation children.
+    func setBlockAccessibilityChildren(_ fields: [BlockMetadataField]) {
+        guard blockAccessibilityChildren.map(ObjectIdentifier.init)
+            != fields.map(ObjectIdentifier.init)
+        else { return }
+        blockAccessibilityChildren = fields
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        let nativeChildren = super.accessibilityChildren() ?? []
+        let metadataChildren = blockAccessibilityChildren.filter { field in
+            !nativeChildren.contains { ($0 as AnyObject) === field }
+        }
+        let children = nativeChildren + metadataChildren
+        return children.isEmpty ? nil : children
+    }
 
     var canChooseCodeLanguage: Bool {
         coordinator?.manualLanguageTargetAvailable == true

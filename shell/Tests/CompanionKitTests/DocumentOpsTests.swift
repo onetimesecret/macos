@@ -185,6 +185,61 @@ final class OpEmitterTests: XCTestCase {
         XCTAssertTrue(readings[0].contains(weekday.string(from: created)))
         XCTAssertTrue(readings[1].contains(weekday.string(from: modified)))
     }
+
+    func testBlockDetailsUseTheLocaleAndTimeZoneOfTheCurrentRender() throws {
+        let created = Date(timeIntervalSince1970: 0)
+        let modified = Date(timeIntervalSince1970: 3_600)
+        let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let pacific = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let us = Locale(identifier: "en_US")
+        let french = Locale(identifier: "fr_FR")
+        let frenchResourceURL = try XCTUnwrap(
+            Bundle.module.url(forResource: "fr", withExtension: "lproj")
+        )
+        let frenchBundle = try XCTUnwrap(Bundle(path: frenchResourceURL.path))
+
+        func time(_ date: Date, _ locale: Locale, _ timeZone: TimeZone) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.setLocalizedDateFormatFromTemplate("jm")
+            return formatter.string(from: date)
+        }
+        func accessibilityDate(_ date: Date, _ locale: Locale, _ timeZone: TimeZone) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
+        }
+
+        let usUTC = try XCTUnwrap(InkEditorView.Coordinator.blockDetails(
+            createdS: 0, modifiedS: 3_600, locale: us, timeZone: utc
+        ))
+        let frenchPacific = try XCTUnwrap(InkEditorView.Coordinator.blockDetails(
+            createdS: 0, modifiedS: 3_600, locale: french, timeZone: pacific, bundle: frenchBundle
+        ))
+
+        XCTAssertEqual(
+            usUTC,
+            "created \(time(created, us, utc)) · edited \(time(modified, us, utc))"
+        )
+        XCTAssertEqual(
+            frenchPacific,
+            "créé le \(time(created, french, pacific)) · modifié le \(time(modified, french, pacific))"
+        )
+        XCTAssertEqual(
+            InkEditorView.Coordinator.blockAccessibilityText(
+                createdS: 0, modifiedS: 3_600,
+                locale: french, timeZone: pacific, bundle: frenchBundle
+            ),
+            "Créé le \(accessibilityDate(created, french, pacific)) ; modifié le \(accessibilityDate(modified, french, pacific))"
+        )
+        XCTAssertEqual(
+            frenchBundle.localizedString(forKey: "edited", value: nil, table: nil), "modifié"
+        )
+    }
 }
 
 /// The live wiring: a real storage with the coordinator as its
@@ -732,40 +787,45 @@ final class DocumentOpsWiringTests: XCTestCase {
         ))
     }
 
-    /// A page with wrapping off hands its container TextKit's unbounded
-    /// sentinel. Placed against that, the pill would sit at an x no
-    /// reader can reach and every wide reading would "fit"; the view's
-    /// own width stands in.
-    func testAnUnboundedContainerTakesTheViewsWidth() {
+    /// In no-wrap mode TextKit's container is unbounded while the text
+    /// view grows with the document. The affordance instead follows the
+    /// document view's actual visible viewport. Its leading container
+    /// origin must be removed because `blockAffordanceOrigin` adds it
+    /// back when translating container coordinates into view coordinates.
+    func testAnUnboundedContainerUsesTheVisibleViewportWithoutDoubleCountingInsets() {
+        let visibleRect = NSRect(x: 200, y: 0, width: 640, height: 320)
+        let measure = InkEditorView.Coordinator.blockAffordanceMeasure(
+            containerWidth: .greatestFiniteMagnitude,
+            visibleRect: visibleRect, containerOriginX: 12
+        )
+        XCTAssertEqual(measure, 828)
+        let origin = InkEditorView.Coordinator.blockAffordanceOrigin(
+            firstLine: .zero, containerWidth: measure,
+            containerOrigin: NSPoint(x: 12, y: 0), affordanceSize: NSSize(width: 90, height: 20)
+        )
         XCTAssertEqual(
-            InkEditorView.Coordinator.blockAffordanceMeasure(
-                containerWidth: .greatestFiniteMagnitude, viewWidth: 640
-            ),
-            640
+            origin.x, visibleRect.maxX - 90 - InkEditorView.Coordinator.blockLabelTrailingInset
         )
         XCTAssertEqual(
             InkEditorView.Coordinator.blockAffordanceMeasure(
-                containerWidth: SealedBlockCell.effectivelyUnboundedWidth, viewWidth: 640
+                containerWidth: SealedBlockCell.effectivelyUnboundedWidth,
+                visibleRect: visibleRect, containerOriginX: 12
             ),
-            640
+            measure
         )
-        // A wrapped page's container is the measure, and the narrower of
-        // the two wins while a resize is still settling.
+        // A wrapped page remains constrained by its text container rather
+        // than taking the wider viewport during a resize.
         XCTAssertEqual(
             InkEditorView.Coordinator.blockAffordanceMeasure(
-                containerWidth: 500, viewWidth: 640
+                containerWidth: 500, visibleRect: visibleRect, containerOriginX: 12
             ),
             500
         )
         XCTAssertFalse(
             InkEditorView.Coordinator.blockAffordanceFits(
-                lineMaxX: 620,
-                containerWidth: InkEditorView.Coordinator.blockAffordanceMeasure(
-                    containerWidth: .greatestFiniteMagnitude, viewWidth: 640
-                ),
-                affordanceWidth: 180
+                lineMaxX: 810, containerWidth: measure, affordanceWidth: 18
             ),
-            "the wide reading fit itself onto an unbounded page"
+            "the wide reading fit beyond the visible viewport"
         )
     }
 
@@ -790,11 +850,13 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertNotEqual(light, dark, "the border kept its light-mode reading")
     }
 
-    /// The pill refuses the hit test so the caret can land behind it,
-    /// which also takes it out of the accessibility hit path. The page
-    /// therefore names its affordances outright.
-    func testThePageNamesItsAffordancesToAssistiveTechnology() {
+    /// The pill refuses the hit test so the caret can land behind it.
+    /// Metadata supplements, rather than replaces, AppKit's text children
+    /// so VoiceOver text navigation remains present.
+    func testThePageAddsItsAffordancesToExistingAccessibilityChildren() {
         makeEditor()
+        let textNavigationChild = NSView(frame: .zero)
+        textView.setAccessibilityChildren([textNavigationChild])
         type("alpha")
         // A block typed just now reads as untouched and mints no pill,
         // so the page is handed stamps that make it an edited one. Age
@@ -802,17 +864,18 @@ final class DocumentOpsWiringTests: XCTestCase {
         coordinator.layOutBlockLabels(forMetas: [
             BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
         ])
-        XCTAssertEqual(labelFields().count, 1, "the fixture minted no affordance")
+        let field = try! XCTUnwrap(labelFields().first, "the fixture minted no affordance")
         let children = textView.accessibilityChildren()
-        XCTAssertNotNil(children, "the text view never declared its AX children")
-        XCTAssertEqual(children?.count, 1)
+        XCTAssertNotNil(children, "the text view declared no AX children")
         XCTAssertTrue(
-            children?.first as AnyObject? === labelFields().first,
-            "the page named something other than its own pill"
+            children?.contains { ($0 as AnyObject) === textNavigationChild } == true,
+            "metadata replaced the text view's existing accessibility children"
         )
-        XCTAssertEqual(
-            (children?.first as? NSView)?.accessibilityLabel()?.hasPrefix("Created "), true
+        XCTAssertTrue(
+            children?.contains { ($0 as AnyObject) === field } == true,
+            "the metadata pill was not exposed to assistive technology"
         )
+        XCTAssertTrue(field.accessibilityLabel()?.hasPrefix("Created ") == true)
     }
 
     /// The tooltip owner must outlive the loop that registered it.
@@ -843,19 +906,40 @@ final class DocumentOpsWiringTests: XCTestCase {
         )
     }
 
-    func testRepositioningRebuildsTheTooltipTable() {
+    func testRepositioningRetainsUnchangedTooltipsAndRemovesOnlyBlockRegistrations() {
         makeEditor()
+        let unrelatedTag = textView.addToolTip(NSRect(x: 350, y: 0, width: 20, height: 20),
+                                               owner: self, userData: nil)
         type("alpha")
         coordinator.layOutBlockLabels(forMetas: [
             BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
         ])
-        XCTAssertEqual(coordinator.blockToolTipTags.count, 1)
+        let tags = coordinator.blockToolTipTags
+        let shapeCount = coordinator.blockLabelShapeCount
+        XCTAssertEqual(tags.count, 1)
+        coordinator.refitBlockLabels()
+        XCTAssertEqual(
+            coordinator.blockToolTipTags, tags,
+            "an unchanged row re-registered its tooltip during layout"
+        )
+        XCTAssertEqual(
+            coordinator.blockLabelShapeCount, shapeCount,
+            "an unchanged row called sizeToFit during layout"
+        )
         // No stamps, no edited blocks: the rects and their strings go
-        // together, leaving nothing behind to answer a stale hover.
+        // together, leaving nothing behind to answer a stale hover. The
+        // unrelated tag is deliberately not in the coordinator table and
+        // is left to its owner rather than cleared wholesale.
         coordinator.layOutBlockLabels(forMetas: [])
         XCTAssertTrue(
             coordinator.blockToolTipTags.isEmpty, "a tooltip outlived its affordance"
         )
+        XCTAssertEqual(
+            coordinator.view(textView, stringForToolTip: tags[0], point: .zero, userData: nil),
+            "",
+            "a removed block tag resolved to stale metadata"
+        )
+        textView.removeToolTip(unrelatedTag)
     }
 
     /// Whatever the pill says, the label a screen reader hears carries

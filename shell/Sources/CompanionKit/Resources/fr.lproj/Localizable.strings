@@ -1,0 +1,8 @@
+/* Dates de création et de modification dans les métadonnées d’un bloc modifié. */
+"created %@ · edited %@" = "créé le %@ · modifié le %@";
+
+/* Dates de création et de modification dans l’étiquette d’accessibilité d’un bloc modifié. */
+"Created %@; edited %@" = "Créé le %@ ; modifié le %@";
+
+/* Étiquette compacte d’un bloc modifié. */
+"edited" = "modifié";
