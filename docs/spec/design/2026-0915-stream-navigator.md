@@ -145,7 +145,7 @@ the mechanical excerpt and the size class on the row under them.
   they are not the keymap's; ⌘↩ stays the seal.
   *Acceptance:* `SealedCapsuleTests.testTheRowsLockAndActionsUseFlippedTextViewCoordinates`
   and `testReturnAndSpaceOpenTheObjectsMenuAndNothingElseDoes`;
-  `ChipCell.actionsRect(in:)` is the one seat the drawing reads;
+  `SealedBlockCell.actionsRect(in:)` is the one seat the drawing reads;
   `Coordinator.openChipMenu(at:from:in:)` is the one menu all three
   routes open.
 - **D-41 (fixed)** The menu, in the design's words and order:

@@ -18,7 +18,7 @@ Coordinator.documentHeight() layoutManager.ensureLayout(for:)     ← glyph-era 
 
 Coordinator.repositionBlockLabels() glyphRange(forCharacterRange:)       ← glyph-era API lineFragmentUsedRect(forGlyphAt:)
 
-ChipAttachment / ChipCell attachmentCell = ChipCell(...)      ← NSTextAttachmentCell
+ChipAttachment / SealedBlockCell attachmentCell = SealedBlockCell(...)      ← NSTextAttachmentCell
                                               TK2 has no attachment cells;
                                               touching one forces the fallback
 
@@ -30,7 +30,7 @@ Nothing about find and replace or word wrap. NSTextFinder, usesFindBar, and cont
 
 What TextKit 2 actually buys is the ADR-0013 work, not the editing verbs:
 
-- NSTextAttachmentViewProvider replaces ChipCell, so a chip becomes a real NSView: hover, accessibility, and the chip menu stop being hand drawn in draw(withFrame:in:).
+- NSTextAttachmentViewProvider replaces SealedBlockCell, so a chip becomes a real NSView: hover, accessibility, and the chip menu stop being hand drawn in draw(withFrame:in:).
 - NSTextLayoutFragment subclassing draws the provenance label inside the fragment, which deletes updateBlockLabelViews and repositionBlockLabels and the whole pool of NSTextField subviews (roughly 60 lines, plus the paragraphSpacingBefore and top-inset hack).
 - A custom NSTextContentManager vends NSTextParagraph elements backed by core blocks, which is the one thing that would make blocks.rs and the view layer agree on what a block is instead of the view re-deriving it by counting paragraphs in blockRange.
 
@@ -66,7 +66,7 @@ What actually pins you to TextKit 1
 
 InkEditorView.swift                          TK2 migration cost
 ─────────────────────────────────────────────────────────────────────  NSLayoutManager()                       rewrite  NSTextLayoutManager replaceTextStorage(incoming)            rewrite  no equivalent; you
-     ADR-0006 page swap                               swap textContentManager  shedLayoutManagers                      rewrite  different ownership model ChipAttachment + NSTextAttachmentCell  REWRITE  TK2 has no cell path; ChipCell.draw(withFrame:)                       NSTextAttachmentViewProvider textView(_:clickedOn:in:at:)            REWRITE  cell-click delegate is TK1 only ensureLayout / usedRect(for:)           rewrite  usageBoundsForTextContainer glyphRange(forCharacterRange:)          rewrite  no glyphs in TK2; lineFragmentUsedRect(forGlyphAt:)                enumerateTextLayoutFragments
+     ADR-0006 page swap                               swap textContentManager  shedLayoutManagers                      rewrite  different ownership model ChipAttachment + NSTextAttachmentCell  REWRITE  TK2 has no cell path; SealedBlockCell.draw(withFrame:)                       NSTextAttachmentViewProvider textView(_:clickedOn:in:at:)            REWRITE  cell-click delegate is TK1 only ensureLayout / usedRect(for:)           rewrite  usageBoundsForTextContainer glyphRange(forCharacterRange:)          rewrite  no glyphs in TK2; lineFragmentUsedRect(forGlyphAt:)                enumerateTextLayoutFragments
 ───────────────────────────────────────────────────────────────────── NSTextStorage didProcessEditing         SURVIVES NSTextContentStorage wraps
      the op emission point                            a real NSTextStorage  usesFindPanel / NSTextFinder            SURVIVES both stacks
      wrap toggle, spellcheck, undo           SURVIVES

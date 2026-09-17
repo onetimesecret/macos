@@ -407,13 +407,13 @@ in plain; the fragment adds order, not payload exposure.
   as metadata (never a count), and nothing that reads as pressable. The
   pill shape invited a press that nothing answers. The excerpt still
   only has to be recognised by the person who pasted it.
-  *Owed:* this overrules the shipping treatment, `ChipCell` in
+  *Owed:* this overrules the shipping treatment, `SealedBlockCell` in
   `shell/Sources/CompanionKit/InkEditorView.swift`, which draws
   `[ excerpt · size ]` at intrinsic width; the archived Airlock canvases
   drew an inline pill and are history. There is no design system
   component to follow; the only `SealedChip` in the tree is the Rust
   type. Tracked as "Sealed block: full-measure attachment replaces
-  ChipCell (D-27)" (issue 169).
+  SealedBlockCell (D-27)" (issue 169).
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
   operations act on the whole object; the caret never lands inside it

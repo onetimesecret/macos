@@ -310,7 +310,7 @@ way.
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
   with a lock over the mechanical excerpt, the size right-aligned as
   metadata, and nothing that reads as pressable.
-  *Owed:* this overrules the shipping treatment. `ChipCell` in
+  *Owed:* this overrules the shipping treatment. `SealedBlockCell` in
   `InkEditorView.swift` draws `[ excerpt · size ]` at intrinsic width and
   the design system's `SealedChip` mirrors it; both follow this record.
 - **D-28 (fixed)** A sealed item is one object in the document and its
