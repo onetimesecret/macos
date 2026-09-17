@@ -62,6 +62,13 @@ The boundary is:
 - During the live session, retain generation-sensitive dirty behavior while the
   active Take theirs marker remains in undo history. Undo can restore the prior
   generation as dirty and Redo can settle the adopted disk generation clean.
+- Retire the override inside the live session too, at the moment the marker
+  stops being reachable. A local commit drops the redo stack, so a person who
+  undoes Take theirs and then types can never reach the disk generation again.
+  From that commit onward the file's dirty state is decided by its baseline
+  comparison alone, for the same reason the relaunch boundary refuses an
+  orphaned marker: a file cannot read unsaved on the authority of a choice no
+  Undo or Redo can show.
 - Do not restore `take_theirs_undone` as an active dirty-state override without
   its matching generation and undo history. A persisted field may continue to
   be parsed for format compatibility, but it has no authority by itself.
@@ -74,6 +81,17 @@ The boundary is:
 - When the disk copy changed, disappeared, or could not be read, retain the
   existing conservative conflict behavior. This decision does not infer byte
   equality across a failed or stale read.
+- The live session does not follow save output. It compares the buffer's
+  normalized text with the text the buffer was born from, which is the reading
+  that answers the surface question "have you changed anything since this was
+  last in step with disk". The two readings can differ for one class of file:
+  one whose exact bytes the writer cannot reproduce, such as a file with mixed
+  line endings, where a save rewrites every ending in the file's classified
+  style. Comparing bytes live would open such a file already unsaved with
+  nothing typed, contradicting the file specification's "the dot appears on the
+  first edit that changes the bytes". Hydration has no such birth moment to
+  protect: it has only bytes, so it uses bytes, and where the two readings
+  disagree the disagreement falls toward dirty rather than toward a false clean.
 - Keep Save available for an active file. Save continues through the normal
   before-save external-change check and conflict refusal; it is not required as
   an acknowledgement step for an otherwise clean restored file.
@@ -90,6 +108,13 @@ The boundary is:
 - A generation-distinct but byte-identical draft is no longer retained as
   unsaved work after hydration. The application gives up preserving a semantic
   distinction that has no surviving Undo or Redo operation.
+- A person who undoes Take theirs, types, and then edits back to the disk text
+  sees the file read saved. The generation distinction is given up at the same
+  moment the operations that expressed it become unreachable, rather than
+  lingering until the next Save, Reload, or Take theirs.
+- Take theirs over an empty buffer and an empty disk copy writes no operations
+  and therefore offers no Undo. An enabled Undo that does nothing when pressed
+  would be a worse account of the state than no step at all.
 - The persistence reader may need to accept the old generation field after the
   writer stops relying on it. Existing drafts remain readable without allowing
   an orphaned marker to control the surface.
@@ -124,3 +149,8 @@ The boundary is:
 - 2026-09-16: Proposed after review of the restored undone Take theirs state,
   where generation dirtiness survived but its active generation and undo
   history did not.
+- 2026-09-16: Extended after review to retire the live override when a local
+  commit makes the marker unreachable, to state why the live path reads
+  normalized text rather than save output, and to record that an empty adoption
+  over an empty disk copy leaves no undo step. The drafts writer stopped
+  emitting the generation field; the reader now steps over it by frame length.
