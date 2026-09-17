@@ -2931,7 +2931,18 @@ public struct InkEditorView: NSViewRepresentable {
             blockDisplays.map { ($0.range, $0.compactText) }
         }
 
-        private static let blockLabelFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        private static let blockLabelFont = NSFont.monospacedDigitSystemFont(
+            ofSize: 10.5, weight: .medium
+        )
+        /// Breathing room inside the pill, and the smallest it ever
+        /// draws. Both readings share them, so hovering a block expands
+        /// the text without the shape appearing to change.
+        private static let blockLabelPadding: CGFloat = 10
+        private static let blockLabelMinHeight: CGFloat = 19
+        /// The gap between the pill and the trailing text edge, so it
+        /// reads as sitting in the margin rather than butting against
+        /// the column.
+        nonisolated static let blockLabelTrailingInset: CGFloat = 6
         /// The page's own top margin.
         static let topInset: CGFloat = 12
 
@@ -3007,8 +3018,13 @@ public struct InkEditorView: NSViewRepresentable {
                 field.toolTip = display.accessibilityText
                 field.setAccessibilityLabel(display.accessibilityText)
                 field.sizeToFit()
-                field.frame.size.width += expanded ? 18 : 22
-                field.frame.size.height = max(20, field.frame.height + 4)
+                // One padding rule for both readings, so the pill grows
+                // and shrinks without appearing to change shape.
+                field.frame.size.width = ceil(field.frame.width) + Self.blockLabelPadding * 2
+                field.frame.size.height = max(
+                    Self.blockLabelMinHeight, ceil(field.frame.height) + 6
+                )
+                field.layer?.cornerRadius = field.frame.height / 2
             }
             repositionBlockLabels()
         }
@@ -3024,8 +3040,11 @@ public struct InkEditorView: NSViewRepresentable {
             field.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
             field.isBezeled = false
             field.wantsLayer = true
-            field.layer?.cornerRadius = 10
+            field.layer?.cornerRadius = blockLabelMinHeight / 2
             field.layer?.masksToBounds = true
+            field.layer?.borderWidth = 1
+            field.layer?.borderColor = NSColor.separatorColor
+                .withAlphaComponent(0.35).cgColor
             field.setAccessibilityElement(true)
             field.setAccessibilityRole(.staticText)
             return field
@@ -3059,7 +3078,8 @@ public struct InkEditorView: NSViewRepresentable {
             containerOrigin: NSPoint, affordanceSize: NSSize
         ) -> NSPoint {
             NSPoint(
-                x: containerOrigin.x + containerWidth - affordanceSize.width,
+                x: containerOrigin.x + containerWidth
+                    - affordanceSize.width - blockLabelTrailingInset,
                 y: containerOrigin.y + firstLine.midY - affordanceSize.height / 2
             )
         }
@@ -3111,6 +3131,36 @@ public struct InkEditorView: NSViewRepresentable {
 /// never steals caret placement or text selection from the line it rides.
 private final class BlockMetadataField: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override class var cellClass: AnyClass? {
+        get { BlockMetadataCell.self }
+        set { super.cellClass = newValue }
+    }
+}
+
+/// A label's text sits at the top of whatever frame it is given. The
+/// pill's frame is taller than its line so it can carry padding, so the
+/// text is centered back into it rather than riding the pill's ceiling.
+private final class BlockMetadataCell: NSTextFieldCell {
+    private func centered(_ frame: NSRect) -> NSRect {
+        let height = cellSize(forBounds: frame).height
+        guard height < frame.height else { return frame }
+        return frame.insetBy(dx: 0, dy: (frame.height - height) / 2)
+    }
+
+    override func drawInterior(withFrame frame: NSRect, in view: NSView) {
+        super.drawInterior(withFrame: centered(frame), in: view)
+    }
+
+    override func select(
+        withFrame frame: NSRect, in view: NSView, editor: NSText,
+        delegate: Any?, start: Int, length: Int
+    ) {
+        super.select(
+            withFrame: centered(frame), in: view, editor: editor,
+            delegate: delegate, start: start, length: length
+        )
+    }
 }
 
 // MARK: - The layout manager

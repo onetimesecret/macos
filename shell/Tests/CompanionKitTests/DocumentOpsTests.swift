@@ -658,7 +658,7 @@ final class DocumentOpsWiringTests: XCTestCase {
             containerWidth: 500, containerOrigin: NSPoint(x: 12, y: 16),
             affordanceSize: NSSize(width: 90, height: 20)
         )
-        XCTAssertEqual(origin.x, 422)
+        XCTAssertEqual(origin.x, 416)
         XCTAssertEqual(origin.y, 58)
     }
 
