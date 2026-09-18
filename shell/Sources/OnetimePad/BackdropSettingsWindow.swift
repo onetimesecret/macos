@@ -162,7 +162,11 @@ final class BackdropSettingsWindowController {
                 GeneralSettingsView(
                     model: model.pages,
                     loginPresence: "the surface",
-                    resetSurface: { [model] in model.resetGeometry() }
+                    resetSurface: { [model] in model.resetGeometry() },
+                    keepsAbove: Binding(
+                        get: { [model] in model.keepsAboveWhenInactive },
+                        set: { [model] in model.keepsAboveWhenInactive = $0 }
+                    )
                 ),
                 for: tab
             )

@@ -86,16 +86,24 @@ public struct GeneralSettingsView: View {
     /// form factor has such a thing to return.
     private let resetSurface: (() -> Void)?
 
+    /// The keep-above preference the surface offers alongside the pin
+    /// (ADR-0032). Nil where the form factor has no such preference to
+    /// bind (the panel), which hides the row and keeps this shared
+    /// form drawing the same shape for both callers.
+    private let keepsAbove: Binding<Bool>?
+
     public init(
         model: PageModel,
         loginPresence: String,
         offersCaptureToggle: Bool = true,
-        resetSurface: (() -> Void)? = nil
+        resetSurface: (() -> Void)? = nil,
+        keepsAbove: Binding<Bool>? = nil
     ) {
         self.model = model
         self.loginPresence = loginPresence
         self.offersCaptureToggle = offersCaptureToggle
         self.resetSurface = resetSurface
+        self.keepsAbove = keepsAbove
     }
 
     @State private var confirmingLedgerClear = false
@@ -113,12 +121,26 @@ public struct GeneralSettingsView: View {
         Form {
             if let resetSurface {
                 Section {
+                    if let keepsAbove {
+                        Toggle(
+                            "Keep OnetimePad above other apps when switching away",
+                            isOn: keepsAbove
+                        )
+                    }
                     Button("Reset to default position and size", action: resetSurface)
                 } header: {
                     Text("Surface")
                 } footer: {
-                    SettingsCaption(
-                        "Returns the card to its original place and size. Takes effect immediately.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        if keepsAbove != nil {
+                            SettingsCaption(
+                                "Pin keeps the card above regardless. A click outside the card still rests it."
+                            )
+                        }
+                        SettingsCaption(
+                            "Returns the card to its original place and size. Takes effect immediately."
+                        )
+                    }
                 }
             }
             Section {
