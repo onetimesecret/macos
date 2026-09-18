@@ -155,3 +155,7 @@ The behavior directly responsible here is:
 > **Raised means floating regardless of whether the surface still has focus.**
 
 Familiar macOS behavior would require separating **visibility** from **always-on-top**: after resigning key, an unpinned surface should remain raised/visible but drop to normal window level, allowing the newly focused application’s windows to appear above it. A pinned surface could remain floating.
+
+---
+
+Track A of issue #192 implements that separation as ADR-0032: stance, keyboard ownership and altitude are now three independent facts, an unpinned keyless raised surface drops to normal, Pin and the new **Keep OnetimePad above other apps when switching away** preference each lift it back to floating, and the hardware checks belong in [`docs/qa/verification-procedures/spaces-and-cmd-tab.md`](../qa/verification-procedures/spaces-and-cmd-tab.md) under issue #190.

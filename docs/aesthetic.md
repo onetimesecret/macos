@@ -25,7 +25,7 @@ The app should feel spatially aware rather than screen-dominating:
 | Stance | Appearance | Behavior |
 |---|---|---|
 | **Resting** | A borderless, transparent, shadowless card at desktop level; dimmed but readable | Behind windows, ignores clicks, refuses keyboard input |
-| **Raised** | The same card, elevated into a floating editor | Interactive and keyable without disrupting the user’s other app |
+| **Raised** | The same card, taking the keyboard as an editor; floating above other apps while it holds the keyboard, or when Pin or the keep-above preference asks it to, and dropping to normal window level otherwise so the app the person switches to can cover it (ADR-0032) | Interactive and keyable without disrupting the user’s other app |
 
 The background-surface specification explicitly calls for **“.borderless, transparent, shadowless”** at rest and for the same page to remain visible but editing-refused, avoiding reflow when raised (`docs/spec/feature/background-surface/README.md`).
 

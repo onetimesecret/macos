@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A raised OnetimePad that loses the keyboard drops to normal window level, so
+  other apps stack over it (ADR-0032, #185, #186, #187, #188). A new Settings
+  preference "Keep OnetimePad above other apps when switching away" (default
+  off) restores the floating behaviour; Pin still outranks both.
+
 - **Block metadata is compact and contextual** (ADR-0022, amendment 1).
   Edited blocks now show a compact `edited` pill on the trailing edge of their
   first line instead of persistent timestamp rows. Hovering it, or placing the

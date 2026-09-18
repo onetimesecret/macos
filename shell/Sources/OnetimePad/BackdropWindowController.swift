@@ -5,13 +5,20 @@ import SwiftUI
 import os
 
 /// The background surface's window: a borderless pane covering the
-/// primary screen, resting at desktop level (above the wallpaper, below
-/// the icons and every normal window; the pin lifts a rest to floating
-/// and shrinks the window to the card's own rect, so clicks beside the
-/// card stay someone else's) and raised to floating for a moment of
-/// editing. The mechanics follow Plash's recovered recipe and
-/// the panel's focus law: the stance split lives in `BackdropStance`;
-/// this controller only applies it.
+/// primary screen. Where it sits in the stacking order is
+/// `BackdropAltitude.resolve`'s to decide from four inputs together
+/// (stance, key status, the pin and the keep-above preference,
+/// ADR-0032), so an unpinned rest sits at desktop level (above the
+/// wallpaper, below the icons and every normal window), a pinned rest
+/// floats above other windows and shrinks to the card's own rect so
+/// clicks beside the card stay someone else's, and a raise floats
+/// while it holds the keyboard or the pin or the keep-above preference
+/// asks it to; a raised card that has lost the keyboard, unpinned and
+/// with the preference off, drops to normal so the app the person just
+/// gave the keyboard can cover it. The mechanics follow Plash's
+/// recovered recipe and the panel's focus law: the stance split lives
+/// in `BackdropStance`; this controller only writes what the resolver
+/// returns and reapplies it on each input that decides it.
 @MainActor
 final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let panel: BackdropPanel
@@ -786,7 +793,10 @@ private final class BackdropKeyRelayPanel: NSPanel {
 /// every activation, issue #74) and `.fullScreenNone` (a full-screen
 /// Space is another app's room; the unpinned backdrop does not follow
 /// it there). Key status is stance-gated the way Plash gates
-/// interactivity.
+/// interactivity. Where the panel sits in the stacking order is not
+/// the panel's own concern: `BackdropAltitude.resolve` picks a level
+/// from stance, key status, the pin and the keep-above preference
+/// together (ADR-0032), and the controller writes it.
 final class BackdropPanel: NSPanel {
     /// Set by the controller from the stance, before ordering changes.
     var isInteractive = false

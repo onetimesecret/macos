@@ -132,6 +132,70 @@ log stream --predicate 'subsystem == "com.onetimesecret.pad"'
       returns above are looking for. A line on a genuine raise or rest,
       where the posture really changed, is expected.
 
+### Normal inactive stacking (ADR-0032, issue #190)
+
+The keyless raised surface now drops to normal window level unless Pin
+or the keep-above preference lifts it. What the pure decision returns
+is covered by `BackdropAltitudeTests`; what the window server does with
+the level under real applications is the part only a person at the
+machine can judge.
+
+Two apps beside OnetimePad make the checks cheap: pick two windowed
+apps you can ⌘Tab between (Safari and Terminal, say), and leave both
+open. Confirm the surface preference **Keep OnetimePad above other apps
+when switching away** is off before the first run; the last two checks
+turn it on.
+
+- [ ] **⌘Tab away stacks normally, preference off.** Raise the card
+      (⌃⌥Space), ⌘Tab to another app, and confirm the other app's
+      windows cover the card. ⌘Tab back to OnetimePad: the card is
+      keyed and floating again, on the same page, and the roll has not
+      moved to today. **Fail:** the card stays above the other app on
+      ⌘Tab away (the previous always-above behaviour), or the return
+      does not re-key it, or the roll snaps to today.
+- [ ] **Hotkey raise, then ⌘Tab between two other apps.** With the pad
+      resting, ⌃⌥Space to raise, then ⌘Tab to app A and ⌘Tab from A to
+      B without going through OnetimePad. **Pass:** the card lowers to
+      normal and each app's windows stack over it in turn; no frame
+      shows the card flashing above the newly active app.
+- [ ] **Preference on: raised stays above.** Open Settings, turn **Keep
+      OnetimePad above other apps when switching away** on, close
+      Settings. Raise the card, ⌘Tab to another app. **Pass:** the
+      card stays above that app's windows. ⌘Tab back and confirm the
+      card is still there, keyed. Turn the preference off again before
+      moving on.
+- [ ] **Pin outranks both.** With the preference off, pin the card
+      (raised or resting), ⌘Tab to another app. **Pass:** the card
+      stays above. Repeat with the preference on and confirm the same
+      answer; Pin is the stronger, explicit promise (ADR-0032).
+- [ ] **Press on a partly covered card takes keys and lifts.** With
+      the preference off, raise the card, ⌘Tab to another app whose
+      window covers most of the card, and click on the visible sliver
+      of the card. **Pass:** the click takes keys, the card lifts to
+      floating and types at once. **Fail:** the mouse gate refuses the
+      click (a lowered raised surface is a case the exposure gate saw
+      rarely before, issue #73) and the press lands in the other app
+      instead.
+
+The observation from `docs/dogfood/potentially-quirky-behaviour.md` on
+this branch stands: on a preliminary probe (bdb0cbd) ⌘Tab to a
+full-screen application still followed the pad across to the
+full-screen Space with the card above it, and the drop to normal after
+the transition settled did not read as reliable. Whether the fix in
+this branch settles it is one of the checks below; if it does not,
+that is the eject trigger ADR-0032 names first.
+
+- [ ] **Full-screen Space, preference off.** Put another app full
+      screen and ⌘Tab into it from OnetimePad. **Pass:** the screen
+      goes to the full-screen Space, and once the animation settles
+      the full-screen app is what fills it; a card visible over
+      empty pixels the app leaves uncovered is normal stacking. **Fail:**
+      the card sits above the full-screen app's content after the
+      transition settles, which was the pre-branch reading and the
+      case bdb0cbd could not fully address. Note the exact shape:
+      whether the pad is composited over the app, or whether only the
+      status item's menu draws there.
+
 ### The drag, which is a decision rather than a fix
 
 - [ ] **Drag the card to the right edge of the screen and hold.**
@@ -158,4 +222,10 @@ stay: a re-run adds a row rather than replacing one.
 | | | ten ⌘Tab returns, unpinned | | Record the shape of any flicker. |
 | | | ten ⌘Tab returns, pinned | | |
 | | | no collectionBehavior write on a re-raise | | Needs `log stream --level debug`. |
+| | | ⌘Tab away stacks normally, preference off | | ADR-0032, #190. |
+| | | hotkey raise then ⌘Tab A→B, no flash | | ADR-0032, #190. |
+| | | preference on: raised stays above on ⌘Tab | | ADR-0032, #190. |
+| | | Pin outranks preference in both stances | | ADR-0032, #190. |
+| | | press on a partly covered card takes keys | | ADR-0032, issue #73 and #190. |
+| | | full-screen Space, preference off | | Pending; the bdb0cbd probe was insufficient. #190. |
 | | | edge drag stays on this desktop | | The documented decision, ADR-0019. |

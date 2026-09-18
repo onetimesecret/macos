@@ -1,5 +1,5 @@
 ---
-documentation_status: needs-review # draft | reviewed | stale
+documentation_status: needs-review # draft | needs-review | reviewed | stale
 ---
 
 # ADR-0032: Inactive raised surfaces follow normal app stacking
