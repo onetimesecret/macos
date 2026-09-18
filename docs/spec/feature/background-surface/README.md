@@ -44,7 +44,7 @@ exactly one of two stances:
 | Level | derived from stance and Pin | derived from keyboard ownership, Pin, and the keep-above preference |
 | Mouse | ignored — clicks fall through to the desktop | interactive |
 | Keyboard | refused outright (`canBecomeKey` = false) | may become key, never main |
-| Spaces | stationary desktop furniture; never in a full-screen Space | joins the user's active Space, full-screen included |
+| Spaces | on every desktop Space; stationary desktop furniture when unpinned; in a full-screen Space only when pinned | on every desktop Space; in a full-screen Space only while its altitude is floating (ADR-0034) |
 | Countdown repaint | every 30 s | 1 Hz |
 | Reading | the same page, dimmed, editing refused | the same page, editable |
 
@@ -66,6 +66,18 @@ The keep-above preference defaults to off. On an application switch, an
 unpinned raised surface that loses the keyboard remains raised at `.normal`;
 it stays open but the newly active application's normal windows may cover it.
 Pin overrides the preference. ADR-0032 records this altitude decision.
+
+Full screen participation follows the altitude, not the stance (ADR-0034). A
+surface carries `.fullScreenAuxiliary` exactly when its altitude is floating
+and `.fullScreenNone` otherwise, which is what an ordinary window at the normal
+level does. A raised card that has dropped to `.normal` therefore stays out of
+another app's full screen Space: ⌘Tab into that app is meant to show the app
+alone. ⌘Tab back raises and keys the card again; which Space that return
+settles on has not yet been confirmed on hardware, and the
+[hardware procedure](../../../qa/verification-procedures/spaces-and-cmd-tab.md)
+records it. A card that floats, because it holds the
+keyboard, is pinned or keeps above, follows the person into those Spaces.
+`.canJoinAllSpaces` is constant in every state (ADR-0019).
 
 The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
@@ -95,9 +107,11 @@ Mechanics follow Plash's recovered recipe where the postures agree:
 `.borderless`, transparent, shadowless; at rest,
 `collectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]` —
 a full-screen Space is another app's room, and a *resting* backdrop
-does not follow the user there. A summon does follow: the raised
-stance swaps to `[.moveToActiveSpace, .fullScreenAuxiliary]` (the
-panel's summon recipe), holding the invariant the stances exist to
+does not follow the user there. A summon does follow: a raise that
+takes the keyboard floats, and a floating surface carries
+`.fullScreenAuxiliary` (the membership bit is `.canJoinAllSpaces`
+in every state since ADR-0019, and the full screen bit follows the
+altitude since ADR-0034), holding the invariant the stances exist to
 protect — **a surface that holds the keyboard is visible where the
 user is looking**. The failure mode this forecloses is real: a hotkey
 pressed from a full-screen app or another desktop would otherwise key
@@ -331,8 +345,11 @@ and needs the project's hand-verification pass on real hardware:
    do).
 4. Spaces: what `.stationary` actually does across desktop Spaces at
    rest; a resting surface stays out of full-screen Spaces while a
-   summoned one appears over them and lands on the active Space; Stage
-   Manager neither relays out nor hides it surprisingly.
+   summoned one appears over them and lands on the active Space; a
+   raised card that lost the keyboard, unpinned with the keep-above
+   preference off, is absent from another app's full-screen Space
+   (ADR-0034); Stage Manager neither relays out nor hides it
+   surprisingly.
 5. ⌘Tab, both directions: switching to the backdrop raises and keys it
    wherever the user is (including from a full-screen app); resting
    from a ⌘Tab summon returns activation to the previous app and its

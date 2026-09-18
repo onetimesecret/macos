@@ -4,6 +4,14 @@ docs/dogfood/potentially-quirky-behaviour.md
 
 During #192 / #184 work.
 
+Resolution, 2026-09-18: [ADR-0034](../adr/0034-full-screen-participation-follows-altitude.md).
+The fix was not ordering, as the note below expected. The lowered card was
+still a full screen auxiliary window, and those are shown with the full screen
+window whatever their level. Full screen participation now follows the
+altitude, so a card at normal level stays out of another app's full screen
+Space. Hardware confirmation is owed, by the checks in
+`docs/qa/verification-procedures/spaces-and-cmd-tab.md`.
+
 > What macos API is used when command-tabbing to another application that is in another desktop and/or full screen? Currently, unlike
 > when the applications are on the same desktop screen which alternate "top-ness", switching to the fullscreen application brings the
 > user's screen to that desktop as expected, with the OnetimePad window on top. Is that expected from the implimentation of 192 or is

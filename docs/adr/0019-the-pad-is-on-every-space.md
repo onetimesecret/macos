@@ -6,6 +6,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-24
+- **Superseded in part by:** [ADR-0034](0034-full-screen-participation-follows-altitude.md), which replaces one descriptive clause of the Decision only: the raise accepts full-screen participation only while it floats. Membership constancy stands.
 
 ## Context
 
@@ -115,3 +116,18 @@ does not. The pad is furniture, not a document window.
 that confirms or falsifies the three symptoms on hardware. ADR-0015, for
 the mouse transparency rule the pin bends. ADR-0014, for why this form
 factor is the only one left to have Spaces at all.
+
+## Decision history
+
+- 2026-08-24: Accepted.
+- 2026-09-18: Superseded in part by
+  [ADR-0034](0034-full-screen-participation-follows-altitude.md). The Decision
+  describes full-screen participation as something "the unpinned rest declines
+  and both the pin and the raise accept". ADR-0034 replaces that clause for the
+  raise: full-screen participation follows altitude, so a raise accepts it only
+  while it floats, and a raised card that has dropped to normal declines it as
+  the unpinned rest does. The membership decision stands unchanged:
+  `.canJoinAllSpaces` in every posture, never rewritten. The helper the
+  Decision names as `BackdropStance.spaceMembership(pinned:)` is now
+  `BackdropStance.spaceMembership(altitude:)`, and its invariant is tested
+  across every stance and altitude.
