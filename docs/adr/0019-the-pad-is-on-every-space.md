@@ -6,6 +6,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-24
+- **Superseded in part by:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically the reach of the all Spaces rule over the whole application. The rule stands for the ambient panel.
 
 ## Context
 
@@ -115,3 +116,13 @@ does not. The pad is furniture, not a document window.
 that confirms or falsifies the three symptoms on hardware. ADR-0015, for
 the mouse transparency rule the pin bends. ADR-0014, for why this form
 factor is the only one left to have Spaces at all.
+
+## Decision history
+
+- 2026-09-18: Superseded in part by
+  [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md).
+  "The pad" in this record now means the ambient panel, and the decision stands
+  for it unchanged. The primary editor window ADR-0033 adds has ordinary Space
+  membership, so the consequence that activating the app never changes the
+  user's desktop holds only while that window is closed. Settings and About
+  keep `.moveToActiveSpace`.

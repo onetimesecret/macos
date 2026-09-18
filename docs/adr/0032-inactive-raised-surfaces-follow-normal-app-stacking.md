@@ -6,6 +6,7 @@ documentation_status: needs-review # draft | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-09-17
+- **Superseded in part by:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically the return switch consequence and the reach of the companion window rule over the primary editor window. The three fact model, the altitude table and the preference stand for the ambient panel.
 - **Depends on:** [ADR-0015](0015-resting-backdrop-is-mouse-transparent.md) for the resting surface's click behavior, and [ADR-0019](0019-the-pad-is-on-every-space.md) for constant Space membership.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -167,3 +168,11 @@ collection behaviors and the off-Space summon safety net.
 
 - 2026-09-17: Accepted. Normal inactive stacking is the default; the previous
   always-above behavior remains an opt-in preference, and Pin overrides both.
+- 2026-09-18: The fourth eject trigger fired and
+  [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md) is its
+  answer. Superseded in part: the return ⌘Tab now selects the primary editor
+  window and rests a raised panel, so the first consequence's retained raised
+  stance no longer applies to that route, and the companion window rule governs
+  Settings and About but not the editor window, which stays at normal level.
+  Everything else stands for the ambient panel, which now reaches raised and
+  keyless only from a hotkey or status item summon.
