@@ -14,16 +14,23 @@ final class BackdropStanceTests: XCTestCase {
     func testRestingSitsJustAboveTheWallpapersOwnLevel() {
         // One above, not at: the wallpaper image is itself a window at
         // the desktop level, and a surface parked at that same level
-        // can resolve behind it — invisible on a bare desktop.
+        // can resolve behind it — invisible on a bare desktop. The
+        // altitude for the unpinned resting stance is the desktop case,
+        // and its level is `backdropDesktop`; the arithmetic is stated
+        // once, on the extension.
         XCTAssertEqual(
-            BackdropStance.resting.level(pinned: false).rawValue,
+            BackdropAltitude.resolve(
+                stance: .resting, keyed: false, pinned: false, keepsAbove: false
+            ).level.rawValue,
             Int(CGWindowLevelForKey(.desktopWindow)) + 1
         )
     }
 
     func testRestingStaysBelowTheDesktopIcons() {
         XCTAssertLessThan(
-            BackdropStance.resting.level(pinned: false).rawValue,
+            BackdropAltitude.resolve(
+                stance: .resting, keyed: false, pinned: false, keepsAbove: false
+            ).level.rawValue,
             Int(CGWindowLevelForKey(.desktopIconWindow))
         )
     }
@@ -58,10 +65,6 @@ final class BackdropStanceTests: XCTestCase {
     }
 
     // MARK: Raised — the panel model, borrowed for the moment of editing
-
-    func testRaisedFloats() {
-        XCTAssertEqual(BackdropStance.raised.level(pinned: false), .floating)
-    }
 
     func testRaisedTakesTheMouse() {
         XCTAssertFalse(BackdropStance.raised.ignoresMouse(pinned: false))
@@ -116,7 +119,16 @@ final class BackdropStanceTests: XCTestCase {
     // MARK: The pin, a resting altitude (plus the click that undoes it)
 
     func testAPinnedRestFloatsAboveNormalWindows() {
-        XCTAssertEqual(BackdropStance.resting.level(pinned: true), .floating)
+        // The pin's whole purpose is to keep the card above other apps,
+        // so the resolver returns floating for the pinned resting case
+        // whatever else is asked (`BackdropAltitudeTests` holds the full
+        // matrix).
+        XCTAssertEqual(
+            BackdropAltitude.resolve(
+                stance: .resting, keyed: false, pinned: true, keepsAbove: false
+            ).level,
+            .floating
+        )
     }
 
     func testAPinnedRestTakesTheMouseButNeverTheKeyboard() {
@@ -158,14 +170,6 @@ final class BackdropStanceTests: XCTestCase {
         )
         XCTAssertTrue(
             BackdropStance.resting.collectionBehavior(pinned: false).contains(.stationary)
-        )
-    }
-
-    func testThePinLeavesARaisedSurfaceAlone() {
-        XCTAssertEqual(BackdropStance.raised.level(pinned: true), .floating)
-        XCTAssertEqual(
-            BackdropStance.raised.collectionBehavior(pinned: true),
-            [.canJoinAllSpaces, .fullScreenAuxiliary]
         )
     }
 

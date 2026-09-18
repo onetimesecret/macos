@@ -1,32 +1,24 @@
 import AppKit
 
-/// The backdrop's two postures, and everything that mechanically follows
-/// from them (docs/spec/feature/background-surface). The research's
-/// central lesson — even the reference wallpaper app cannot be typed
-/// into *at* the desktop level — is encoded here as a hard split: the
-/// surface is either resting (a passive pane behind every window) or
-/// raised (a floating, key-taking editor), never something in between.
+/// The backdrop's two postures (docs/spec/feature/background-surface).
+/// The research's central lesson — even the reference wallpaper app
+/// cannot be typed into *at* the desktop level — is encoded here as a
+/// hard split: the surface is either resting (a passive pane behind
+/// every window) or raised (a floating, key-taking editor), never
+/// something in between. What stance does not decide on its own is
+/// where the window sits in the stacking order: altitude is one of
+/// three window facts (desktop, normal, floating), picked by
+/// `BackdropAltitude.resolve` from stance, key status, the pin and the
+/// keep-above preference together (ADR-0032).
 enum BackdropStance: Equatable {
     /// Behind everything: desktop level, mouse-transparent, refuses the
     /// keyboard. Glanceable, never interactive.
     case resting
 
-    /// Summoned for a moment of editing: floating level, clickable,
-    /// may become key. Structurally the panel model — the backdrop
-    /// borrows it exactly as long as the user is typing.
+    /// Summoned for a moment of editing: clickable, may become key.
+    /// Structurally the panel model — the backdrop borrows it exactly
+    /// as long as the user is typing.
     case raised
-
-    /// Where the window sits in the stacking order. The pin lifts the
-    /// resting pane above normal windows. A pinned rest still refuses
-    /// the keyboard (the hard split's central lesson holds); its one
-    /// concession to the mouse is that a click raises it, the same
-    /// deliberate act any other summon is.
-    func level(pinned: Bool) -> NSWindow.Level {
-        switch self {
-        case .resting: pinned ? .floating : .backdropDesktop
-        case .raised: .floating
-        }
-    }
 
     /// Whether clicks pass through to whatever lies beneath. Mouse
     /// transparency is all-or-nothing per window, decided at the

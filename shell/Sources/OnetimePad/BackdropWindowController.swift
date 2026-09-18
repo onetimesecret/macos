@@ -375,7 +375,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// (`BackdropStance.spaceMembership(pinned:)`), which is the part a
     /// reassignment would turn on.
     private func applyAltitude(stance: BackdropStance, pinned: Bool) {
-        let level = stance.level(pinned: pinned)
+        // A conservative shim during the ADR-0032 stages: the resolver
+        // is in place, but the real key and preference inputs land with
+        // #187 and #186. Passing `keyed: true, keepsAbove: false` keeps
+        // the old figure (raised → floating, resting → desktop or pin)
+        // for every call this controller makes today.
+        let level = BackdropAltitude.resolve(
+            stance: stance, keyed: true, pinned: pinned, keepsAbove: false
+        ).level
         if panel.level != level {
             panel.level = level
         }
