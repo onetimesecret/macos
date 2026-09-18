@@ -1,17 +1,17 @@
 # Window roles: normal stacking now, primary editor next
 
-**Status:** Active, 2026-09-17.
+**Status:** Active, 2026-09-17. Track B decided 2026-09-18.
 **Tracking:** [#192](https://github.com/onetimesecret/macos/issues/192)
-**Sources:** [ADR-0032](../adr/0032-inactive-raised-surfaces-follow-normal-app-stacking.md) (accepted), [ADR-0033](../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) (proposed).
+**Sources:** [ADR-0032](../adr/0032-inactive-raised-surfaces-follow-normal-app-stacking.md) (accepted), [ADR-0033](../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) (accepted 2026-09-18, narrowed).
 **Source of execution status:** GitHub issues once filed, not this document.
 
 ## Goal
 
 Track A makes the code match ADR-0032: a raised surface that loses the keyboard drops to normal window level unless Pin or the keep above preference says otherwise.
 
-Track B takes ADR-0033 from proposed to a decision, and if accepted, to a conventional `NSWindow` editor beside the ambient panel.
+Track B took ADR-0033 from proposed to accepted, and now takes it to a conventional `NSWindow` editor beside the ambient panel, with one owner of the live page content at a time.
 
-Track A is small and ships alone. Track B is epic sized and is gated on a decision issue. Track A is not wasted by Track B: the three fact model stays with the panel.
+Track A is small and ships alone. Track B is epic sized and was gated on decision issue #191, decided 2026-09-18. Track A is not wasted by Track B: the three fact model stays with the panel.
 
 ## Current state
 
@@ -29,7 +29,7 @@ For ADR-0033, the one presentation assumption runs deep in the views and shallow
 - One `NSTextStorage` per page with exactly one layout manager, enforced by `Coordinator.shedLayoutManagers` (`InkEditorView.swift:1617`) at every mount and swap, and one storage delegate (`:122`). A second `InkEditorView` on the same page loses its layout manager at the other window's next mount. The resting card uses this same editor with `readOnly: true`, so even a read only second window collides.
 - `PageModel` holds about twenty presentation fields with no owner: `activeEditor` (`PageModel.swift:954`), `performSealedPaste` (`:606`), `onAnchorToday` (`:985`), `rollGeometry` (`:1017`), `holdsKeys` (`:591`), `selection`, `selectedFile`, `activeTarget`, `showingLedger`, `pasteboardOffer`, the redraw timer. Mount sites write them last writer wins.
 - Menu actions route to the key window's first responder, but menu enablement reads `activeEditor`. With two windows these can name different editors.
-- ADR-0006 and `DayScrollView.swift:30` state the one editor rule as contract. ADR-0033 fires ADR-0006's second eject trigger and does not cite it.
+- ADR-0006 and `DayScrollView.swift:30` state the one editor rule as contract. ADR-0033 as proposed did not cite it. As accepted it depends on ADR-0006, and the second eject trigger does not fire, because one owner at a time keeps one mounted editor.
 - Persistence, Keychain scope and `FormFactor` are already single and window agnostic. "One document model" costs nothing there.
 - The archived panel's `WindowRootView.swift` (87 lines, `git show 3623416^:shell/Sources/CompanionApp/Views/WindowRootView.swift`) is a usable skeleton for the new window's root view.
 
@@ -43,6 +43,8 @@ For ADR-0033, the one presentation assumption runs deep in the views and shallow
 6. Nit: the front matter comment omits `needs-review` from its value list. The linter passes.
 
 ## Feedback on ADR-0033
+
+All six items were taken into the accepted ADR on 2026-09-18, with three corrections found while checking them against the code and the record. ADR-0006's second eject trigger did not fire: exclusive ownership is what keeps it from firing. The panel is not read only: it may edit while it owns, and a read only panel stays available as a policy on the same model. A modal return and a cancelled quit go back to the owner, not always to the editor window. The items are kept below as written.
 
 1. **Narrow "two live presentations" to one owner at a time.** The code cannot show one page live in two windows without reopening ADR-0006. The affordable reading: exactly one window owns the live page content; the other shows a glance built from private storages (the `QuietRendering` pattern, already sanctioned for quiet days) or shows nothing. This answers open question 1 (the ambient panel is a glance that hands off) and pre-empts eject trigger 3.
 2. **Cite ADR-0006, ADR-0020 and ADR-0014.** ADR-0010 Amendment 1 argued against merging two apps with opposite activation policies, separate TCC identities and separate stores. The panel app is archived and the process is already `.regular` with one store, so three of its four arguments no longer apply. Only the launch story remains: a login launch must show the ambient panel only, never open the editor window. That settles half of open question 2.
@@ -68,14 +70,14 @@ One PR, one commit per task. Shell only; no Rust or FFI version change.
 
 ## Track B: ADR-0033
 
-- **B0. Decision issue (label `decision`).** Answer the five open questions, take or reject the feedback above, amend the ADR, accept or reject. Nothing below is filed until this closes.
-- **B1. Spike (label `prototype`).** `PrimaryEditorWindowController`: titled, resizable, normal level, may become main, frame autosave, `sharingType = .none`, not restorable. Root view is a stack over the strip, `PageContentView`, `PageStatusStack` and `PageKeyboardMap`. Exclusive ownership by the crudest means: while the window is open the panel rests and unmounts its content. This is enough to dogfood eject triggers 1 and 2 before paying for B2.
-- **B2. Presentation ownership in CompanionKit.** One owner at a time for `activeEditor`, `performSealedPaste`, `onAnchorToday`, `rollGeometry`, `holdsKeys`, the redraw cadence, the pasteboard offer and the `PageKeyboardMap` mount. Mount sites check ownership instead of writing last. Extend `EditorHandoffTests` and `EditorFactoryTests`. This is the expensive task.
-- **B3. Glance for the window that does not own.** Private storages from `QuietRendering`, so the resting card stays readable while the editor window is open. Skip if B0 decides the panel hides instead.
-- **B4. Activation routing.** Split `activationRaises`: activations go to the editor window, summons to the panel. Re-point reopen, modal return and the cancelled quit line. Remove the `NSApp.deactivate()` on rest while the editor window is visible. Hand off gesture from panel to editor.
-- **B5. Menus and commands.** Window menu, the ⌘W decision, enablement read from the owner's editor.
-- **B6. Tests and procedures divided** between primary window and ambient panel (`LaunchStanceTests`, `OutsidePressTests`, `BackdropStanceTests`, the Spaces procedure).
-- **B7. Documents.** Supersession recorded in both directions for ADR-0010 Amendment 1, ADR-0019 (scoped to the panel), ADR-0032 and ADR-0006; a new feature spec for the primary editor; background surface spec; CHANGELOG.
+- **B0. Decision issue (label `decision`). Decided 2026-09-18: accepted, narrowed.** One window owns the live page content at a time and the other shows a glance or nothing. Ownership is explicit and transferable: the panel owns while it is raised or while the editor window is closed, and the editor window owns otherwise. The panel may edit while it owns. Launch is decided by route: login shows the panel only, a person's launch, the Dock, reopen and ⌘Tab select the editor window, and the hotkey, the status item and the resting card's click stay with the panel. ⌘W stays `page::Close` and ⇧⌘W closes the window. The panel is a persistent preference, default on, behind a removable boundary. The editor window keeps frame autosave only. The supersession is recorded in both directions in the ADRs.
+- **B1. Spike (label `prototype`).** `PrimaryEditorWindowController`: titled, resizable, normal level, ordinary Space membership, may become main, frame autosave, `isRestorable = false`, `sharingType = .none` under the same capture opt out as the panel, and a title that names the app and never page content. Root view is a stack over the strip, `PageContentView`, `PageStatusStack` and `PageKeyboardMap`. Exclusive ownership by the crudest means: while the window is open the panel rests and unmounts its content. The crude form stands for the spike only. This is enough to dogfood eject triggers 1 to 3 before B2 is built.
+- **B2. Presentation ownership in CompanionKit.** One explicit, transferable owner for `activeEditor`, `performSealedPaste`, `onAnchorToday`, `rollGeometry`, `holdsKeys`, the redraw cadence, the pasteboard offer and the `PageKeyboardMap` mount. The owner is a pure function of panel stance and whether the editor window is open, with tests over the whole matrix. Key status passing to Settings, About or a modal moves nothing. Mount sites check ownership instead of writing last. Caret and scroll move from the editor coordinator to the model so a hand off keeps the person's place. A read only panel must be one policy switch on this model. Extend `EditorHandoffTests` and `EditorFactoryTests`. This is the expensive task.
+- **B3. Glance for the window that does not own. Required.** Private storages from `QuietRendering`, never a second editor on a live storage. Both directions: the resting card stays readable while the editor window owns, and the editor window shows a glance while a summoned panel owns.
+- **B4. Activation routing.** Split `activationRaises`: a person's launch, the Dock, reopen and ⌘Tab select the editor window, opening it when closed; summons go to the panel; a login launch opens nothing. A modal return and the cancelled quit line go back to the owner. `NSApp.deactivate()` on rest does not fire while the editor window is visible; the keyboard returns to the editor window instead. The editor window taking the keyboard rests a raised panel. Closing the editor window with no other window of ours up hands the activation back. The ambient panel preference, default on, with the hotkey and status item selecting the editor window when it is off.
+- **B5. Menus and commands.** A Window menu. ⌘W stays `page::Close`; a new `window::Close` command on `cmd-shift-w`, which the default keymap leaves free. Enablement reads the owner's editor. The panel stays out of the Window menu.
+- **B6. Tests and procedures divided** between primary window and ambient panel (`LaunchStanceTests`, `OutsidePressTests`, `BackdropStanceTests`, the Spaces procedure). New hand checks: ⌘Tab from another desktop goes to the editor window's desktop, and a pinned card floats above the editor window.
+- **B7. Documents.** The ADR supersession is done (ADR-0010 Amendment 1, ADR-0019, ADR-0032, and the note on ADR-0006). Still owed: a new feature spec for the primary editor; the background surface spec; the code comments that state the one editor rule (`DayScrollView.swift`, `InkEditorView.swift`); CHANGELOG; the ADR citation sweep.
 
 ## Dependencies
 
@@ -85,13 +87,13 @@ flowchart TD
     A1 --> A2[A2 preference] --> A5[A5 settings row] --> A6
     A2 --> A3
     B0[B0 decision] --> B1[B1 spike] --> B2[B2 ownership] --> B4[B4 activation routing] --> B5[B5 menus] --> B6[B6 tests] --> B7[B7 documents]
-    B2 --> B3[B3 glance]
+    B2 --> B3[B3 glance] --> B6
     A3 -.panel model carries over.-> B4
 ```
 
 ## Epic shape
 
-One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B1 to B7 are filed when B0 closes with an acceptance.
+One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B0 was decided as an acceptance on 2026-09-18, so B1 to B7 are filed as sub-issues of the epic and added to this table as they get numbers.
 
 | Task | Issue |
 | --- | --- |
