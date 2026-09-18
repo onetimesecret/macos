@@ -1,5 +1,55 @@
 docs/dogfood/potentially-quirky-behaviour.md
 
+## Switching to another desktop
+
+During #192 / #184 work.
+
+> What macos API is used when command-tabbing to another application that is in another desktop and/or full screen? Currently, unlike
+> when the applications are on the same desktop screen which alternate "top-ness", switching to the fullscreen application brings the
+> user's screen to that desktop as expected, with the OnetimePad window on top. Is that expected from the implimentation of 192 or is
+> there more to do for that?
+
+The manual test confirms the same-Space half of the spike. The cross-Space case is governed by a different axis—Space membership—so I’m
+checking whether “visible everywhere” is an intentional invariant or whether fullscreen should be treated specially.
+
+• Command-Tab itself is handled by macOS; OnetimePad does not call a “switch Space” API. The relevant pieces are:
+
+- macOS/AppKit changes application activation.
+- OnetimePad observes key-window loss through windowDidResignKey.
+- NSWindow.CollectionBehavior.canJoinAllSpaces
+  (https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/canjoinallspaces) allows the panel to
+  appear across desktops.
+
+- fullScreenAuxiliary (https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/fullscreenauxiliary)
+  allows it alongside a full-screen window.
+
+- NSWindow.Level and window ordering determine which participating window is in front.
+
+The destination-Space appearance is expected. Accepted ADR-0019 says exactly:
+
+> “The pad's Space membership is .canJoinAllSpaces, in every posture and either pin state, and it never changes.”
+
+ADR-0032 explicitly preserves that behavior:
+
+> “Do not change the surface's Space membership or full-screen participation.”
+
+However, remaining above the full-screen application after the transition settles is not expected when Pin is off and the keep-above
+preference is off. ADR-0032 requires the newly active application’s windows to stack in front.
+
+So your result means:
+
+- Following the user to the full-screen Space: correct.
+- Staying visibly above an overlapping full-screen application after the animation settles: the #184 spike fails that route.
+- Appearing only in uncovered screen areas: allowed.
+
+This confirms there is more to do, but the fix belongs to ordering—not Space membership. The next #184 experiment should explicitly
+order the panel below the newly active application’s window when the bare .normal level change is insufficient. That hardware verdict
+must be resolved before proceeding to #185–#190. The relevant implementation is in shell/Sources/OnetimePad/
+---
+
+
+# Potentially resolved (as of Sept 17):
+
 > Why does the main window sometimes disappear when the focus changes to the settings window and sometimes not? WHat would the conventional, idiomatic behaviour be?
 
 ## Why it varies
