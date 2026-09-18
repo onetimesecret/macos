@@ -268,4 +268,46 @@ final class BackdropAltitudeTests: XCTestCase {
             .normal
         )
     }
+
+    /// Every stance × pin × preference row a companion window (Settings,
+    /// About) can read the surface in, taken end-to-end from
+    /// `keylessAltitude` through `companionLevel`. The expected level
+    /// is stated per row rather than derived so a regression names the
+    /// row it broke; the table is short enough to read as one.
+    func testKeylessCompanionLevelMatrix() {
+        let cases:
+            [(stance: BackdropStance, pinned: Bool, keepsAbove: Bool, level: NSWindow.Level)] = [
+                // An unpinned resting surface with the preference off:
+                // Settings sits at normal, above nothing in particular.
+                (.resting, false, false, .normal),
+                // Same, preference on: keep-above lifts a raise, not
+                // a rest; the companion sees the resting answer and
+                // holds at normal.
+                (.resting, false, true, .normal),
+                // Pinned rest: the pin lifts the surface to floating,
+                // so the companion has to float too or the pin would
+                // hide it.
+                (.resting, true, false, .floating),
+                (.resting, true, true, .floating),
+                // Keyless raise, preference off: the raised surface
+                // has dropped to normal, and the companion sits at
+                // normal beside it.
+                (.raised, false, false, .normal),
+                // Keyless raise, preference on: the raise floats
+                // above other apps, and the companion has to too.
+                (.raised, false, true, .floating),
+                // Pinned raise: pin wins whatever the preference does.
+                (.raised, true, false, .floating),
+                (.raised, true, true, .floating),
+            ]
+        for c in cases {
+            XCTAssertEqual(
+                BackdropAltitude.keylessAltitude(
+                    stance: c.stance, pinned: c.pinned, keepsAbove: c.keepsAbove
+                ).companionLevel,
+                c.level,
+                "stance=\(c.stance) pinned=\(c.pinned) keepsAbove=\(c.keepsAbove)"
+            )
+        }
+    }
 }

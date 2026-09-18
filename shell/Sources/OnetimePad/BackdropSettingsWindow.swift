@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CompanionKit
 import SwiftUI
 
@@ -56,7 +57,7 @@ enum SettingsTab: Int, CaseIterable {
 /// reaches the backdrop's own Keychain service, so a token saved here
 /// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
-final class BackdropSettingsWindowController {
+final class BackdropSettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var tabs: NSTabViewController?
     private let model: BackdropModel
@@ -87,7 +88,22 @@ final class BackdropSettingsWindowController {
 
     init(model: BackdropModel) {
         self.model = model
+        super.init()
     }
+
+    /// Cancels the level sinks when the Settings window closes. A
+    /// closed window that kept subscribing would still be writing a
+    /// level onto a hidden pane, which is nothing anyone sees but is
+    /// still one wire more than the shipping app needs.
+    func windowWillClose(_ notification: Notification) {
+        levelObservers.removeAll()
+    }
+
+    /// Sinks that keep the Settings window's level in step with the
+    /// surface while it is on screen. Cancelled and cleared when the
+    /// window closes, so a subsequent open builds a fresh set against
+    /// the model as it stands then.
+    private var levelObservers: [AnyCancellable] = []
 
     func show() {
         if window == nil {
@@ -133,11 +149,52 @@ final class BackdropSettingsWindowController {
         // A raised card floats above normal windows, and so does a
         // pinned resting one; a .normal-level Settings window would
         // open key yet invisible beneath it, since level beats key
-        // status for stacking. Match the card's current level so
-        // ordering front actually reveals it.
-        window?.level = model.stance == .raised || model.pinned ? .floating : .normal
+        // status for stacking. The altitude comes from
+        // `BackdropAltitude.keylessAltitude` read as a companion level
+        // (ADR-0032, #188): Settings has no key status of its own to
+        // feed the resolver, so it reads the surface's keyless answer
+        // and maps desktop to normal (a titled window at desktop level
+        // could resolve behind the wallpaper as easily as the surface
+        // can).
+        applyCurrentLevel()
+        installLevelObservers()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Reads the surface's inputs now and writes the companion level.
+    /// Called on open and on every published change while the window
+    /// is up, so a pin flipped inside Settings and a keep-above toggle
+    /// flipped inside Settings both move the window at the moment the
+    /// switch does.
+    private func applyCurrentLevel() {
+        window?.level = BackdropAltitude.keylessAltitude(
+            stance: model.stance,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        ).companionLevel
+    }
+
+    /// A subscription per input the resolver reads. Nothing is written
+    /// here on the willSet emission itself; the sink asks the resolver
+    /// for a fresh answer and writes that. Cancelled when the window
+    /// closes.
+    private func installLevelObservers() {
+        guard levelObservers.isEmpty else { return }
+        model.$stance
+            .dropFirst()
+            .sink { [weak self] _ in self?.applyCurrentLevel() }
+            .store(in: &levelObservers)
+        model.$pinned
+            .dropFirst()
+            .sink { [weak self] _ in self?.applyCurrentLevel() }
+            .store(in: &levelObservers)
+        model.$keepsAboveWhenInactive
+            .dropFirst()
+            .sink { [weak self] _ in self?.applyCurrentLevel() }
+            .store(in: &levelObservers)
+        // The delegate below cancels the set when the window closes.
+        window?.delegate = self
     }
 
     /// The tab view controller in its toolbar style, which is the whole

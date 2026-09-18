@@ -763,7 +763,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // surface, and Settings takes the same bit at creation. This
         // panel is not ours to construct, so the bit goes on after
         // AppKit has put it up.
-        Self.standardAboutPanel()?.collectionBehavior.insert(.moveToActiveSpace)
+        let panel = Self.standardAboutPanel()
+        panel?.collectionBehavior.insert(.moveToActiveSpace)
+        // The About panel is short-lived (opened, read, closed) and
+        // AppKit is not ours to teach; the level is taken once at open
+        // rather than through a sink, and reads the surface's keyless
+        // altitude as a companion level (ADR-0032, #188). Otherwise
+        // About opens at .normal beneath a raised, pinned or
+        // keep-above card, which is the same invisibility Settings
+        // used to hit.
+        panel?.level = BackdropAltitude.keylessAltitude(
+            stance: model.stance,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        ).companionLevel
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
