@@ -56,7 +56,12 @@ let package = Package(
         ),
         .testTarget(
             name: "OnetimePadTests",
-            dependencies: ["OnetimePad"],
+            // CompanionKit and CompanionCore are direct dependencies so
+            // a test can construct a `PageModel` through its test seams
+            // (a throwaway state directory and `.ephemeral(tag:)`) and
+            // hand it to `BackdropModel`, keeping the runner out of the
+            // installed app's Keychain and files.
+            dependencies: ["OnetimePad", "CompanionKit", "CompanionCore"],
             path: "Tests/OnetimePadTests"
         ),
     ]

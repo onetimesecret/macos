@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CompanionKit
 import SwiftUI
 
@@ -56,7 +57,7 @@ enum SettingsTab: Int, CaseIterable {
 /// reaches the backdrop's own Keychain service, so a token saved here
 /// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
-final class BackdropSettingsWindowController {
+final class BackdropSettingsWindowController: NSObject {
     private var window: NSWindow?
     private var tabs: NSTabViewController?
     private let model: BackdropModel
@@ -85,8 +86,21 @@ final class BackdropSettingsWindowController {
         }
     }
 
+    /// Keeps the Settings window's level in step with the surface while
+    /// it is open, and lets go when it closes. The same type follows
+    /// About (`CompanionLevelFollower`).
+    private let levelFollower: CompanionLevelFollower
+
     init(model: BackdropModel) {
         self.model = model
+        levelFollower = CompanionLevelFollower(model: model)
+        super.init()
+    }
+
+    /// Whether a window is the Settings window. The About lookup asks,
+    /// so that it can never take this window for AppKit's panel.
+    func owns(_ candidate: NSWindow) -> Bool {
+        window === candidate
     }
 
     func show() {
@@ -133,9 +147,19 @@ final class BackdropSettingsWindowController {
         // A raised card floats above normal windows, and so does a
         // pinned resting one; a .normal-level Settings window would
         // open key yet invisible beneath it, since level beats key
-        // status for stacking. Match the card's current level so
-        // ordering front actually reveals it.
-        window?.level = model.stance == .raised || model.pinned ? .floating : .normal
+        // status for stacking. The altitude comes from
+        // `BackdropAltitude.keylessAltitude` read as a companion level
+        // (ADR-0032, #188): Settings has no key status of its own to
+        // feed the resolver, so it reads the surface's keyless answer
+        // and maps desktop to normal (a titled window at desktop level
+        // could resolve behind the wallpaper as easily as the surface
+        // can). The follower writes it now and on every published
+        // change while the window is up, so a pin or a keep above
+        // switch flipped inside Settings moves the window at the moment
+        // the switch does.
+        if let window {
+            levelFollower.follow(window)
+        }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -162,7 +186,11 @@ final class BackdropSettingsWindowController {
                 GeneralSettingsView(
                     model: model.pages,
                     loginPresence: "the surface",
-                    resetSurface: { [model] in model.resetGeometry() }
+                    resetSurface: { [model] in model.resetGeometry() },
+                    keepsAbove: Binding(
+                        get: { [model] in model.keepsAboveWhenInactive },
+                        set: { [model] in model.keepsAboveWhenInactive = $0 }
+                    )
                 ),
                 for: tab
             )

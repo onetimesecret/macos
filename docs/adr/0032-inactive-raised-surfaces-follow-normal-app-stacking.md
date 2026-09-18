@@ -1,11 +1,12 @@
 ---
-documentation_status: needs-review # draft | reviewed | stale
+documentation_status: needs-review # draft | needs-review | reviewed | stale
 ---
 
 # ADR-0032: Inactive raised surfaces follow normal app stacking
 
 - **Status:** accepted
 - **Date:** 2026-09-17
+- **Superseded in part by:** [ADR-0034](0034-full-screen-participation-follows-altitude.md), which replaces the full-screen participation half of one clause only.
 - **Depends on:** [ADR-0015](0015-resting-backdrop-is-mouse-transparent.md) for the resting surface's click behavior, and [ADR-0019](0019-the-pad-is-on-every-space.md) for constant Space membership.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -167,3 +168,11 @@ collection behaviors and the off-Space summon safety net.
 
 - 2026-09-17: Accepted. Normal inactive stacking is the default; the previous
   always-above behavior remains an opt-in preference, and Pin overrides both.
+- 2026-09-18: Superseded in part by
+  [ADR-0034](0034-full-screen-participation-follows-altitude.md). Eject trigger
+  1 fired for the full screen route in issue 184: after ⌘Tab into an app in its
+  own full screen Space, the card at `.normal` was still drawn above that app.
+  ADR-0034 replaces the clause "Do not change the surface's Space membership or
+  full-screen participation." for full-screen participation only, which now
+  follows altitude. The Space membership half of the clause, the altitude
+  table, the preference and every other part of this decision stand.

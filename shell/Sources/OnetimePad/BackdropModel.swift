@@ -85,6 +85,21 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     }
     private static let pinnedKey = "restingPinned"
 
+    /// Whether a raised card that has lost the keyboard to another
+    /// window still floats above other apps. The pin is a stronger
+    /// promise (it lifts a resting card too, and shrinks the window
+    /// to the card so a click beside it lands where it looks); this
+    /// keeps the raised, keyless card visible while the person works
+    /// beside it, and rests it the moment a click outside lands (the
+    /// outside-click rule is unchanged). Off by default: the release
+    /// posture is a card the app the person is working in can cover.
+    /// Persisted; the window controller observes and re-applies the
+    /// altitude when it flips.
+    @Published var keepsAboveWhenInactive: Bool {
+        didSet { defaults.set(keepsAboveWhenInactive, forKey: Self.keepsAboveKey) }
+    }
+    private static let keepsAboveKey = "keepsAboveWhenInactive"
+
     /// Where the surface's own settings (the card's geometry, the pin)
     /// rest between runs, injectable so tests can point at a throwaway
     /// domain.
@@ -105,11 +120,22 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     private var started = false
 
-    init(defaults: UserDefaults = FormFactor.settingsDefaults) {
+    init(
+        defaults: UserDefaults = FormFactor.settingsDefaults,
+        pages: PageModel? = nil
+    ) {
         self.defaults = defaults
         geometry = BackdropGeometry.load(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
-        pages = PageModel(formFactor: .backdrop, defaults: defaults)
+        keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
+        // The pages seam is nil for every shipping construction, where
+        // the model builds the form factor's own `PageModel`. A test
+        // has to hand one in (built with `PageModel.Seams` that name a
+        // throwaway state directory and an ephemeral core handle),
+        // because a default one would touch the installed app's files
+        // and Keychain — the PageModel init refuses that under a
+        // runner and takes the process down.
+        self.pages = pages ?? PageModel(formFactor: .backdrop, defaults: defaults)
     }
 
     /// True while the surface holds the keyboard, set by the window

@@ -13,6 +13,51 @@ be tidy. When one of these turns out to be structural, graduate it: an
 ADR if it is a decision, DOGFOOD.md if it is operational guidance other
 people need, an issue if it should be fixed.
 
+
+
+---
+
+2026-09-17 22:55:18
+
+
+❯ Why does the color look more orange than the brand colour #DC4A22 which is almost a red
+
+  Thought for 14s
+
+Two things, both real:
+
+1. The hex is orange-red, not red. #DC4A22 is R=220 G=74 B=34. That green channel at 74 is what tips it toward vermilion. A colour readers call "red" usually has G under ~50 (e.g. #B22222 firebrick, or Onetime's own darker #B0361A emberText). The brand hex was chosen for a logo mark, where warmth reads as energy — that same warmth reads as "orange" in a thin rule or edge line where there's less mass to anchor the hue.
+2. Wide gamut / colour space. NSColor(srgbRed:...) (Theme.swift:68) tags the colour as sRGB and macOS colour-manages it to the display's profile. On a P3 display (every Apple laptop and Studio Display since 2016) sRGB #DC4A22 renders correctly, but the surrounding UI — window chrome, accent tints from the system — often lives in a wider gamut, so the ember can appear duller/warmer against fully saturated system oranges. If the logo asset you're comparing against is a P3 PNG (Sketch/Figma default), the same numeric hex renders more saturated there than through the sRGB path — and more red-shifted, because P3 red primary is deeper than sRGB's.
+
+Quick check: sample the rendered edge with Digital Colour Meter in "sRGB IEC61966-2.1" mode. If it reads #DC4A22, the code is faithful and the perception is the hex itself. If it reads shifted, something upstream (blending onto a tinted surface, withAlphaComponent, or a P3 layer) is doing the shift.
+
+✻ Waiting for 1 background agent to finish
+
+❯ Here it is on top of onetimesecret.com homepage opened in firefox:
+
+  [Image #2]
+[Image #2]
+
+  Thought for 42s, searched for 4 patterns
+
+Confirmed: it IS ember, but not drawn honestly. shell/Sources/OnetimePad/Views/BackdropRootView.swift:229-230:
+
+RoundedRectangle(cornerRadius: 12)
+    .strokeBorder(Color.ember.opacity(pages.holdsKeys ? 0.8 : 0), lineWidth: 1.5)
+
+Two things are shifting the hue:
+
+1. opacity(0.8) — 20% of the dark translucent panel underneath bleeds through the stroke. On a very dark backdrop that desaturates the ember and pushes it toward a warmer, lighter appearance. The Sign Up button is opaque; that is why it reads correctly.
+2. 1.5pt stroke — thin coloured lines on dark surfaces trip a small-field perception effect (the eye is worse at hue discrimination for narrow highlights and tends to read them as brighter and more orange). Wider fills of the same colour don't do this.
+
+Fix options, cheapest first:
+- Drop the alpha: .strokeBorder(Color.ember, lineWidth: 1.5) when keyed. That alone will put the hue back on brand.
+- Thicken to 2pt if you still want a soft edge.
+- If you like the softness, keep the 0.8 but composite it over an opaque backing behind the stroke (a thin inset opaque ring), so the panel material never leaks through the ember.
+
+The keyline is the one place ember is drawn as a stroke rather than a fill — every other ember use in that file is a filled dot, text, or filled shape, which is why nothing else looks off.
+
+
 ---
 
 2026-07-25: persistence only survives a clean quit

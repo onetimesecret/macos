@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A raised OnetimePad that loses the keyboard drops to normal window level, so
+  other apps stack over it (ADR-0032, #185, #186, #187, #188). A new Settings
+  preference "Keep OnetimePad above other apps when switching away" (default
+  off) restores the floating behaviour; Pin still outranks both.
+
+  Full screen participation now follows the altitude (ADR-0034, #184). ⌘Tab
+  into an app in its own full screen Space used to leave the lowered card drawn
+  above that app, because every raised card was a full screen auxiliary window
+  and those are shown with the full screen window whatever their level. A card
+  carries `.fullScreenAuxiliary` only while it floats (holding the keyboard,
+  pinned, or keeping above) and `.fullScreenNone` otherwise, so a card that has
+  yielded to another app stays out of that app's full screen Space. Space
+  membership is unchanged (ADR-0019). `scripts/window-order-probe.swift` prints
+  the window server's front to back order and a verdict line for the hardware
+  checks.
+
+  About now stays at the surface's keyless altitude for as long as it is open,
+  as Settings does, so toggling Pin on the card with About up no longer strands
+  About beneath it. Both windows follow through one `CompanionLevelFollower`,
+  which also fixes Settings reading the old value of the switch that was
+  changing (#188).
+
 - **Block metadata is compact and contextual** (ADR-0022, amendment 1).
   Edited blocks now show a compact `edited` pill on the trailing edge of their
   first line instead of persistent timestamp rows. Hovering it, or placing the
