@@ -18,6 +18,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let model: BackdropModel
     private var observers: [AnyCancellable] = []
 
+    /// The last stance the controller applied to the panel, which is
+    /// the stance the delegate methods below have to read. The window
+    /// server calls `windowDidResignKey` synchronously from inside
+    /// `apply(.resting)` — the surface hands its keys back mid-rest —
+    /// and reading `model.stance` from there catches the transition
+    /// halfway, when neither the previous stance nor the settling one
+    /// answers the altitude question honestly. Stamped just before the
+    /// rest hands off (and set to `.raised` before `makeKeyAndOrderFront`
+    /// on a raise) so a delegate turn arriving in the middle reads the
+    /// stance the controller has committed to.
+    private var lastAppliedStance: BackdropStance = .resting
+
+    /// The reconcile task from the last raise: a single main-actor turn
+    /// later, the controller re-reads key status and drops the panel
+    /// to the keyless altitude if the raise was refused (e.g. by an
+    /// application-modal panel that stole key). Cancelled and replaced
+    /// on every raise so a stale reconcile from an earlier gesture
+    /// cannot fight a later one.
+    private var raiseReconcile: Task<Void, Never>?
+
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and the observation token isn't
     // Sendable. Safe here: removeObserver is documented thread-safe,
@@ -60,7 +80,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 // left: a pin judged from that reading is a pin judged
                 // from where the card was a moment ago.
                 panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
-                applyAltitude(stance: model.stance, pinned: pinned)
+                applyAltitude(
+                    stance: model.stance,
+                    keyed: panel.isKeyWindow,
+                    pinned: pinned,
+                    keepsAbove: model.keepsAboveWhenInactive
+                )
                 applyFrame(
                     stance: model.stance, pinned: pinned,
                     geometry: model.displayedGeometry
@@ -70,6 +95,23 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 // pin has no exposure gate at all, since neither an
                 // occlusion change nor a Space switch need follow it.
                 refreshMouseGateAfterPostureChange()
+            }
+            .store(in: &observers)
+        // The keep-above preference flipped (ADR-0032, #187): a card
+        // that lost the keyboard reads its altitude from the resolver
+        // again, and the resolver's answer moves the moment the person
+        // toggles the switch. No other posture bit is written here;
+        // this is level-only.
+        model.$keepsAboveWhenInactive
+            .dropFirst()
+            .sink { [weak self] keepsAbove in
+                guard let self else { return }
+                applyAltitude(
+                    stance: lastAppliedStance,
+                    keyed: panel.isKeyWindow,
+                    pinned: model.pinned,
+                    keepsAbove: keepsAbove
+                )
             }
             .store(in: &observers)
         // Wherever the window hugs the card (a pinned rest, and every
@@ -263,6 +305,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
+        // Stamped before the ordering below fires: the resign-key
+        // delegate can arrive synchronously from inside `apply(.resting)`
+        // (the surface hands its keys back mid-rest), and it reads this
+        // to know which stance the controller has committed to.
+        lastAppliedStance = stance
         // The posture's own rule, ungated, because the ordering below is
         // about to change what is on screen: the window server's present
         // reading describes the posture being left, and a raise arriving
@@ -270,7 +317,20 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // life mouse-transparent for no reason. The settled reading is
         // taken a turn later, once the ordering has happened.
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
-        applyAltitude(stance: stance, pinned: model.pinned)
+        // The raise is about to take the keys, so the altitude is
+        // resolved with `keyed: true`: the summon must not flash at a
+        // lower level for the frame between placing the panel and
+        // AppKit reporting it key. The rest hands the keys away, so it
+        // resolves with `keyed: false`; the outcome collapses to the
+        // keyless answer anyway, but the honest input is worth it. The
+        // key answer for the delegate turns lives in the panel's own
+        // `isKeyWindow` from that point on.
+        applyAltitude(
+            stance: stance,
+            keyed: stance == .raised,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        )
         // Extent before ordering: a card-hugging window must already
         // hug when it orders front, or the frame change would be
         // visible as a snap after the fact.
@@ -308,6 +368,27 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // one route that activates first; the raise is then its
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
+            // One-turn reconcile: `makeKeyAndOrderFront` can be
+            // refused (an application-modal panel already holds key,
+            // for instance), and a refused raise leaves the panel at
+            // the raised-keyed altitude with no resign-key event to
+            // drop it. A single main-actor turn later, this reads what
+            // the window server made of the call and, if the raise did
+            // not take, resolves the altitude with the honest keyless
+            // input instead.
+            raiseReconcile?.cancel()
+            raiseReconcile = Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard !Task.isCancelled else { return }
+                if !panel.isKeyWindow {
+                    applyAltitude(
+                        stance: lastAppliedStance,
+                        keyed: false,
+                        pinned: model.pinned,
+                        keepsAbove: model.keepsAboveWhenInactive
+                    )
+                }
+            }
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
@@ -374,14 +455,16 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// differs is the membership subset the rewrite names
     /// (`BackdropStance.spaceMembership(pinned:)`), which is the part a
     /// reassignment would turn on.
-    private func applyAltitude(stance: BackdropStance, pinned: Bool) {
-        // A conservative shim during the ADR-0032 stages: the resolver
-        // is in place, but the real key and preference inputs land with
-        // #187 and #186. Passing `keyed: true, keepsAbove: false` keeps
-        // the old figure (raised → floating, resting → desktop or pin)
-        // for every call this controller makes today.
+    private func applyAltitude(
+        stance: BackdropStance, keyed: Bool, pinned: Bool, keepsAbove: Bool
+    ) {
+        // `BackdropAltitude.resolve` is the whole rule; this method
+        // exists to write what it returns and to leave frame,
+        // collection behavior and ordering alone. A drop from floating
+        // to normal must not order the panel front — that would raise
+        // it above the window the person has just given the keyboard.
         let level = BackdropAltitude.resolve(
-            stance: stance, keyed: true, pinned: pinned, keepsAbove: false
+            stance: stance, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove
         ).level
         if panel.level != level {
             panel.level = level
@@ -627,18 +710,23 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private static let logger = Logger(
         subsystem: FormFactor.backdrop.loggerSubsystem, category: "surface"
     )
-    private var inactiveStackingSpikeSequence = 0
 
     // MARK: NSWindowDelegate
 
     /// Key status feeds the model: the ember border shows exactly
     /// while the surface holds the keyboard, and the summon decision
     /// distinguishes raised-and-keyed (summon rests it) from
-    /// raised-but-keyboard-less (summon re-keys it).
+    /// raised-but-keyboard-less (summon re-keys it). The altitude the
+    /// panel sits at is `BackdropAltitude.resolve`'s to decide from
+    /// the four inputs together, and this passes the key answer that
+    /// has just arrived so the resolver reads honest facts.
     func windowDidBecomeKey(_ notification: Notification) {
-        if panel.level != .floating {
-            panel.level = .floating
-        }
+        applyAltitude(
+            stance: lastAppliedStance,
+            keyed: true,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        )
         model.holdsKeys = true
     }
 
@@ -647,75 +735,21 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// take key from a surface that stays raised, and a rest here would
     /// pull the pad away under every one of them. The stance moves only
     /// by the routes that name it.
+    ///
+    /// `lastAppliedStance` is what is read, not `model.stance`: the
+    /// resign fires synchronously from inside `apply(.resting)`, and
+    /// `model.stance` is halfway between the previous stance and the
+    /// settling one at that moment, while `lastAppliedStance` was
+    /// stamped as the controller committed to the transition and gives
+    /// the honest answer.
     func windowDidResignKey(_ notification: Notification) {
-        let shouldProbe = panel.isInteractive && !model.pinned
-        if shouldProbe, panel.level != .normal {
-            panel.level = .normal
-        }
+        applyAltitude(
+            stance: lastAppliedStance,
+            keyed: false,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        )
         model.holdsKeys = false
-        guard shouldProbe else { return }
-        scheduleInactiveStackingSpikeRead(
-            expectedFrontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-            expectedLevel: panel.level.rawValue,
-            expectedKey: panel.isKeyWindow,
-            expectedInteractive: panel.isInteractive,
-            expectedPinned: model.pinned
-        )
-    }
-
-    /// Issue #184's throwaway hardware probe. Window-list order is
-    /// front-to-back, so the two indices make the result judgeable from
-    /// the unified log without relying on what the transition looked like.
-    private func scheduleInactiveStackingSpikeRead(
-        expectedFrontmostPID: pid_t?, expectedLevel: Int,
-        expectedKey: Bool, expectedInteractive: Bool, expectedPinned: Bool
-    ) {
-        inactiveStackingSpikeSequence += 1
-        let sequence = inactiveStackingSpikeSequence
-        Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .seconds(SurfaceExposure.settledDelay))
-            } catch {
-                return
-            }
-            guard let self, sequence == inactiveStackingSpikeSequence else { return }
-            logInactiveStackingSpikeRead(
-                sequence: sequence,
-                expectedFrontmostPID: expectedFrontmostPID,
-                expectedLevel: expectedLevel,
-                expectedKey: expectedKey,
-                expectedInteractive: expectedInteractive,
-                expectedPinned: expectedPinned
-            )
-        }
-    }
-
-    private func logInactiveStackingSpikeRead(
-        sequence: Int, expectedFrontmostPID: pid_t?, expectedLevel: Int,
-        expectedKey: Bool, expectedInteractive: Bool, expectedPinned: Bool
-    ) {
-        let windowNumberKey = kCGWindowNumber as String
-        let ownerPIDKey = kCGWindowOwnerPID as String
-        let layerKey = kCGWindowLayer as String
-        let windows = CGWindowListCopyWindowInfo(
-            .optionOnScreenOnly, kCGNullWindowID
-        ) as? [[String: Any]] ?? []
-        let currentFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let panelIndex = windows.firstIndex {
-            ($0[windowNumberKey] as? NSNumber)?.intValue == panel.windowNumber
-        }
-        let currentFrontmostLayerZeroIndex = windows.firstIndex {
-            ($0[ownerPIDKey] as? NSNumber)?.int32Value == currentFrontmostPID
-                && ($0[layerKey] as? NSNumber)?.intValue == 0
-        }
-        let panelIndexDescription = panelIndex.map(String.init) ?? "missing"
-        let currentFrontmostIndexDescription =
-            currentFrontmostLayerZeroIndex.map(String.init) ?? "missing"
-        let expectedFrontmostPIDDescription = expectedFrontmostPID.map(String.init) ?? "missing"
-        let currentFrontmostPIDDescription = currentFrontmostPID.map(String.init) ?? "missing"
-        Self.logger.info(
-            "spike=inactive-stacking sequence=\(sequence, privacy: .public) panelIndex=\(panelIndexDescription, privacy: .public) currentFrontmostLayer0Index=\(currentFrontmostIndexDescription, privacy: .public) expectedFrontmostPID=\(expectedFrontmostPIDDescription, privacy: .public) currentFrontmostPID=\(currentFrontmostPIDDescription, privacy: .public) expectedLevel=\(expectedLevel, privacy: .public) currentLevel=\(self.panel.level.rawValue, privacy: .public) expectedKey=\(expectedKey, privacy: .public) currentKey=\(self.panel.isKeyWindow, privacy: .public) expectedInteractive=\(expectedInteractive, privacy: .public) currentInteractive=\(self.panel.isInteractive, privacy: .public) expectedPinned=\(expectedPinned, privacy: .public) currentPinned=\(self.model.pinned, privacy: .public)"
-        )
     }
 
     /// The keyboard's waypoint on its way back to the active app: a
