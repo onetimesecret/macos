@@ -227,7 +227,7 @@ struct BackdropRootView: View {
             // unlit). Visible state, never colour alone; the caret and
             // focus ring agree.
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.ember.opacity(pages.holdsKeys ? 0.8 : 0), lineWidth: 1.5)
+                .strokeBorder(pages.holdsKeys ? Color.ember : Color.clear, lineWidth: 1.5)
                 .allowsHitTesting(false)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
