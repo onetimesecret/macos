@@ -204,6 +204,37 @@ final class BackdropAltitudeTests: XCTestCase {
         )
     }
 
+    // MARK: Full screen participation follows altitude (ADR-0034)
+
+    func testOnlyAFloatingSurfaceJoinsFullScreenSpaces() {
+        // An auxiliary window is shown with the full screen window
+        // whatever its level, so a card at normal that kept the bit was
+        // drawn over the full screen app it had just yielded to (issue
+        // 184). Normal and desktop decline, as ordinary windows do.
+        XCTAssertTrue(BackdropAltitude.floating.joinsFullScreenSpaces)
+        XCTAssertFalse(BackdropAltitude.normal.joinsFullScreenSpaces)
+        XCTAssertFalse(BackdropAltitude.desktop.joinsFullScreenSpaces)
+    }
+
+    func testARaisedCardLeavesFullScreenSpacesOnlyWhenItYieldsToOtherApps() {
+        // The one state that drops out: raised, keyless, unpinned and
+        // with the preference off. Every other raised row floats and
+        // follows the person into a full screen Space.
+        for keyed in [false, true] {
+            for pinned in [false, true] {
+                for keepsAbove in [false, true] {
+                    let joins = BackdropAltitude.resolve(
+                        stance: .raised, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove
+                    ).joinsFullScreenSpaces
+                    XCTAssertEqual(
+                        joins, keyed || pinned || keepsAbove,
+                        "keyed=\(keyed) pinned=\(pinned) keepsAbove=\(keepsAbove)"
+                    )
+                }
+            }
+        }
+    }
+
     // MARK: The keyless helper — what companion windows read
 
     func testKeylessMatchesResolveWithKeyedFalse() {

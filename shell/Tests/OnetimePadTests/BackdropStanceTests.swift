@@ -53,7 +53,7 @@ final class BackdropStanceTests: XCTestCase {
 
     func testRestingIsDesktopFurnitureAcrossSpaces() {
         XCTAssertEqual(
-            BackdropStance.resting.collectionBehavior(pinned: false),
+            BackdropStance.resting.collectionBehavior(altitude: .desktop),
             [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         )
     }
@@ -110,9 +110,23 @@ final class BackdropStanceTests: XCTestCase {
         // user is looking, full-screen Spaces included. It gets there by
         // being on every Space already rather than by being moved onto
         // this one, so that no summon costs a reassignment (issue #74).
+        // A raise that holds the keyboard floats, and so does a pinned
+        // or keep above one.
         XCTAssertEqual(
-            BackdropStance.raised.collectionBehavior(pinned: false),
+            BackdropStance.raised.collectionBehavior(altitude: .floating),
             [.canJoinAllSpaces, .fullScreenAuxiliary]
+        )
+    }
+
+    func testARaisedCardThatDroppedToNormalLeavesFullScreenSpaces() {
+        // Issue 184, ADR-0034. An auxiliary window is shown with the
+        // full screen window whatever its level, so a raised card that
+        // had yielded the keyboard and dropped to normal was still drawn
+        // over the full screen app the person had switched to. At normal
+        // it declines those Spaces, as an ordinary window does.
+        XCTAssertEqual(
+            BackdropStance.raised.collectionBehavior(altitude: .normal),
+            [.canJoinAllSpaces, .fullScreenNone]
         )
     }
 
@@ -154,7 +168,7 @@ final class BackdropStanceTests: XCTestCase {
         // writes elsewhere, full-screen apps included; a pin that
         // vanished on a Space switch would fail its one purpose.
         XCTAssertEqual(
-            BackdropStance.resting.collectionBehavior(pinned: true),
+            BackdropStance.resting.collectionBehavior(altitude: .floating),
             [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
         )
     }
@@ -166,10 +180,10 @@ final class BackdropStanceTests: XCTestCase {
         // app's full-screen Space the answer was a card kept in the
         // hit-test path but never drawn (issue #73).
         XCTAssertFalse(
-            BackdropStance.resting.collectionBehavior(pinned: true).contains(.stationary)
+            BackdropStance.resting.collectionBehavior(altitude: .floating).contains(.stationary)
         )
         XCTAssertTrue(
-            BackdropStance.resting.collectionBehavior(pinned: false).contains(.stationary)
+            BackdropStance.resting.collectionBehavior(altitude: .desktop).contains(.stationary)
         )
     }
 
@@ -180,49 +194,145 @@ final class BackdropStanceTests: XCTestCase {
         // ADR-0019): a window bound to the Space it was created on drags
         // the user back there whenever the app is activated, because the
         // window server switches Spaces to reveal the app's windows.
-        for stance in [BackdropStance.resting, .raised] {
-            for pinned in [false, true] {
-                XCTAssertTrue(
-                    stance.collectionBehavior(pinned: pinned).contains(.canJoinAllSpaces),
-                    "a posture bound to one Space pulls the user back to it on activation"
-                )
-            }
+        for (stance, altitude) in Self.everyCell {
+            XCTAssertTrue(
+                stance.collectionBehavior(altitude: altitude).contains(.canJoinAllSpaces),
+                "a posture bound to one Space pulls the user back to it on activation"
+            )
         }
+    }
+
+    /// All six stance by altitude cells. Two are unreachable today (a
+    /// rest never resolves to normal, a raise never to desktop), and
+    /// the rule still owes each of them an answer that breaks nothing.
+    private static let everyCell: [(BackdropStance, BackdropAltitude)] =
+        [BackdropStance.resting, .raised].flatMap { stance in
+            [BackdropAltitude.desktop, .normal, .floating].map { (stance, $0) }
+        }
+
+    func testTheFullStanceByAltitudeMatrix() {
+        // Written out cell by cell, so a regression names the cell it
+        // broke. Resting adds `.ignoresCycle`, desktop adds
+        // `.stationary`, and the full screen bit is read from the
+        // altitude alone (ADR-0034).
+        let expected: [(BackdropStance, BackdropAltitude, NSWindow.CollectionBehavior)] = [
+            (.resting, .desktop, [.canJoinAllSpaces, .ignoresCycle, .stationary, .fullScreenNone]),
+            (.resting, .normal, [.canJoinAllSpaces, .ignoresCycle, .fullScreenNone]),
+            (.resting, .floating, [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]),
+            (.raised, .desktop, [.canJoinAllSpaces, .stationary, .fullScreenNone]),
+            (.raised, .normal, [.canJoinAllSpaces, .fullScreenNone]),
+            (.raised, .floating, [.canJoinAllSpaces, .fullScreenAuxiliary]),
+        ]
+        for (stance, altitude, behavior) in expected {
+            XCTAssertEqual(
+                stance.collectionBehavior(altitude: altitude), behavior,
+                "stance=\(stance) altitude=\(altitude)"
+            )
+        }
+    }
+
+    func testTheReachableStatesKeepTheBehaviorTheyHadBeforeTheRuleMoved() {
+        // The three literals the stance used to state by hand, reached
+        // through the resolver from the inputs that produce them. Only
+        // the raised, keyless, unpinned, preference off state is new.
+        func behavior(
+            _ stance: BackdropStance, keyed: Bool, pinned: Bool, keepsAbove: Bool
+        ) -> NSWindow.CollectionBehavior {
+            stance.collectionBehavior(
+                altitude: BackdropAltitude.resolve(
+                    stance: stance, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove
+                )
+            )
+        }
+        XCTAssertEqual(
+            behavior(.resting, keyed: false, pinned: false, keepsAbove: false),
+            [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        )
+        XCTAssertEqual(
+            behavior(.resting, keyed: false, pinned: true, keepsAbove: false),
+            [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
+        )
+        for (keyed, pinned, keepsAbove) in [
+            (true, false, false), (true, true, false), (false, true, false),
+            (false, false, true), (true, false, true),
+        ] {
+            XCTAssertEqual(
+                behavior(.raised, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove),
+                [.canJoinAllSpaces, .fullScreenAuxiliary],
+                "keyed=\(keyed) pinned=\(pinned) keepsAbove=\(keepsAbove)"
+            )
+        }
+        XCTAssertEqual(
+            behavior(.raised, keyed: false, pinned: false, keepsAbove: false),
+            [.canJoinAllSpaces, .fullScreenNone]
+        )
     }
 
     func testNoPostureChangeAsksForAReassignment() {
         // The flicker half of the same issue: the membership bits are
         // what the window server reads to decide which Space a window
         // lives on, and writing different ones on a stance flip is a
-        // move between Spaces, seen as a blink. Every posture must name
-        // the same membership, so no summon, rest or pin can ask for
-        // one.
+        // move between Spaces, seen as a blink. Every stance at every
+        // altitude must name the same membership, so no summon, rest,
+        // pin or key transition can ask for one. The key transitions
+        // are the new writers (ADR-0034), which is why all six cells
+        // are held to it and not only the reachable ones.
         let memberships = Set(
-            [BackdropStance.resting, .raised].flatMap { stance in
-                [false, true].map { stance.spaceMembership(pinned: $0).rawValue }
+            Self.everyCell.map { stance, altitude in
+                stance.spaceMembership(altitude: altitude).rawValue
             }
         )
         XCTAssertEqual(memberships, [NSWindow.CollectionBehavior.canJoinAllSpaces.rawValue])
     }
 
     func testFullScreenParticipationVariesWhileMembershipDoesNot() {
-        // Not the only bit that varies by posture: `.stationary` and
-        // `.ignoresCycle` do too. It is the only one that decides which
-        // Spaces are joined, and membership, the invariant above, is
-        // what stays put either way. A desktop-level card in another
-        // app's full-screen room could only ever be an invisible one, so
-        // the unpinned rest declines those Spaces while the pin and the
-        // raise accept them. This decides whether such a Space is joined
-        // at all, not which desktop the window sits on.
-        XCTAssertTrue(
-            BackdropStance.resting.collectionBehavior(pinned: false).contains(.fullScreenNone)
-        )
-        XCTAssertTrue(
-            BackdropStance.resting.collectionBehavior(pinned: true).contains(.fullScreenAuxiliary)
-        )
-        XCTAssertTrue(
-            BackdropStance.raised.collectionBehavior(pinned: false).contains(.fullScreenAuxiliary)
-        )
+        // Full screen participation follows altitude, not stance
+        // (ADR-0034): the auxiliary bit is present exactly when the
+        // altitude is floating. A card at desktop level in another
+        // app's full screen room could only ever be an invisible one,
+        // and a card at normal level there is drawn over the app the
+        // person has just switched to (issue 184), so both decline
+        // those Spaces. This decides whether such a Space is joined at
+        // all, not which desktop the window sits on, and membership,
+        // the invariant above, stays put either way.
+        for (stance, altitude) in Self.everyCell {
+            let behavior = stance.collectionBehavior(altitude: altitude)
+            XCTAssertEqual(
+                behavior.contains(.fullScreenAuxiliary), altitude == .floating,
+                "stance=\(stance) altitude=\(altitude)"
+            )
+            XCTAssertEqual(
+                behavior.contains(.fullScreenNone), altitude != .floating,
+                "stance=\(stance) altitude=\(altitude)"
+            )
+            XCTAssertEqual(
+                stance.spaceMembership(altitude: altitude), [.canJoinAllSpaces],
+                "stance=\(stance) altitude=\(altitude)"
+            )
+        }
+    }
+
+    func testExactlyOneFullScreenBitIsEverSet() {
+        // AppKit's header allows at most one of primary, auxiliary and
+        // none, and the issue 73 lesson is that a combination nothing
+        // defines gets an answer nothing defines. Naming none of them
+        // would leave the choice to a default, so the rule always names
+        // one. The surface is never a full screen window of its own and
+        // never tiles, so primary and the tiling bits stay clear.
+        let fullScreenBits: [NSWindow.CollectionBehavior] = [
+            .fullScreenPrimary, .fullScreenAuxiliary, .fullScreenNone,
+        ]
+        let neverSet: NSWindow.CollectionBehavior = [
+            .fullScreenPrimary, .fullScreenAllowsTiling, .fullScreenDisallowsTiling,
+        ]
+        for (stance, altitude) in Self.everyCell {
+            let behavior = stance.collectionBehavior(altitude: altitude)
+            let set = fullScreenBits.filter { behavior.contains($0) }
+            XCTAssertEqual(set.count, 1, "stance=\(stance) altitude=\(altitude)")
+            XCTAssertTrue(
+                behavior.isDisjoint(with: neverSet), "stance=\(stance) altitude=\(altitude)"
+            )
+        }
     }
 
     // MARK: The summon's round trip, the safety net that used to blink

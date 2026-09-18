@@ -91,17 +91,33 @@ enum BackdropStance: Equatable {
     /// must never land on a mouse-transparent pane, and neither while
     /// raised, which is an ordinary editor for as long as it is up.
     ///
-    /// Full-screen Spaces are the one deliberate exception to the
-    /// constancy: an unpinned rest declines them (Plash's recipe; a
-    /// desktop-level card in another app's full-screen room could only
-    /// ever be an invisible one), while a raise and a pinned rest both
-    /// accept them.
+    /// Full screen Spaces are the one deliberate exception to the
+    /// constancy, and they follow altitude rather than stance
+    /// (ADR-0034). A surface carries `.fullScreenAuxiliary` exactly when
+    /// its altitude is floating, and `.fullScreenNone` otherwise. The
+    /// older rule gave every raise the auxiliary bit, and an auxiliary
+    /// window is shown with the full screen window whatever its level,
+    /// so a raised card that had dropped to normal after a ⌘Tab was
+    /// still drawn over the full screen app the person had switched to
+    /// (issue 184). Reading the bit from the altitude gives each level
+    /// what an ordinary window at that level does. An unpinned rest at
+    /// desktop level declines those Spaces (Plash's recipe; a desktop
+    /// level card in another app's full screen room could only ever be
+    /// an invisible one). A raised card that has lost the keyboard and
+    /// dropped to normal declines them too. A floating card accepts
+    /// them, whether it floats because it holds the keyboard, because
+    /// of the pin or because of the keep above preference.
     ///
-    /// A pinned rest joins every Space, full-screen ones
+    /// A pinned rest therefore joins every Space, full screen ones
     /// included: the pin exists to keep the card readable beside
     /// whatever the user is writing, and a pin that vanished on a
     /// Space switch would fail its one purpose. `.ignoresCycle` stays;
     /// the window cycle must never land on a mouse-transparent pane.
+    ///
+    /// The full screen bit is not a membership bit. Writing it on a key
+    /// transition names the same `spaceMembership` as before, so it
+    /// asks for no move between desktops, which is where the flicker of
+    /// issue 74 came from.
     ///
     /// What the pinned rest does *not* keep is `.stationary`. That flag
     /// belongs to the wallpaper recipe the unpinned rest is built from,
@@ -114,15 +130,24 @@ enum BackdropStance: Equatable {
     /// and over another app's full-screen Space it answered by keeping
     /// the card in the hit-test path without ever drawing it (issue
     /// #73). The mouse gate makes those invisible presses harmless; this
-    /// is the half that tries to make the card visible instead.
-    func collectionBehavior(pinned: Bool) -> NSWindow.CollectionBehavior {
-        switch self {
-        case .resting:
-            pinned
-                ? [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
-                : [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-        case .raised: [.canJoinAllSpaces, .fullScreenAuxiliary]
+    /// is the half that tries to make the card visible instead. So
+    /// `.stationary` is read from the altitude as well: it is set
+    /// exactly when the altitude is desktop, the one level where the
+    /// wallpaper recipe applies.
+    ///
+    /// The altitude is the caller's to resolve
+    /// (`BackdropAltitude.resolve`), once, so the level and the
+    /// behavior written to the window always describe the same answer.
+    func collectionBehavior(altitude: BackdropAltitude) -> NSWindow.CollectionBehavior {
+        var behavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces]
+        if self == .resting {
+            behavior.insert(.ignoresCycle)
         }
+        if altitude == .desktop {
+            behavior.insert(.stationary)
+        }
+        behavior.insert(altitude.joinsFullScreenSpaces ? .fullScreenAuxiliary : .fullScreenNone)
+        return behavior
     }
 
     /// Which Spaces the window belongs to, separated from what it does
@@ -131,13 +156,15 @@ enum BackdropStance: Equatable {
     /// from one Space to another.
     ///
     /// Kept apart so the invariant can be stated and tested on its own:
-    /// membership is the same in every posture, so no stance change, pin
-    /// or summon ever asks for a reassignment. Full-screen participation
-    /// is not counted here, since it decides whether a Space of that
-    /// kind is joined at all rather than which desktop the window sits
-    /// on.
-    func spaceMembership(pinned: Bool) -> NSWindow.CollectionBehavior {
-        collectionBehavior(pinned: pinned)
+    /// membership is the same in every stance and at every altitude, so
+    /// no stance change, pin, summon or key transition ever asks for a
+    /// reassignment. Full screen participation is not counted here,
+    /// since it decides whether a Space of that kind is joined at all
+    /// rather than which desktop the window sits on, and that is what
+    /// lets it follow the altitude (ADR-0034) without reopening issue
+    /// 74.
+    func spaceMembership(altitude: BackdropAltitude) -> NSWindow.CollectionBehavior {
+        collectionBehavior(altitude: altitude)
             .intersection([.canJoinAllSpaces, .moveToActiveSpace, .transient])
     }
 
@@ -155,8 +182,9 @@ enum BackdropStance: Equatable {
     /// longer arise between desktops, which is where the flicker was
     /// seen: a window on all of them is on whichever desktop the user is
     /// looking at. It is not unreachable. An unpinned rest declines
-    /// full-screen Spaces (`.fullScreenNone`), so while another app is
-    /// full screen the card is visible on its desktops and yet not on
+    /// full-screen Spaces (`.fullScreenNone`), and so does a raised
+    /// card that has dropped to normal (ADR-0034), so while another app
+    /// is full screen the card is visible on its desktops and yet not on
     /// the Space in front of the user, and a summon from there is the
     /// stranded case exactly; a raise taken while a Space transition is
     /// still in flight can read the same way for a moment. The blink

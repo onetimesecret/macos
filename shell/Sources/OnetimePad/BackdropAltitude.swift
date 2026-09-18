@@ -56,6 +56,18 @@ enum BackdropAltitude {
         }
     }
 
+    /// Whether a surface at this altitude shares another app's full
+    /// screen Space (ADR-0034). Only a floating one does. An auxiliary
+    /// window is shown with the full screen window whatever its level,
+    /// so a raised card that had dropped to normal after a ⌘Tab was
+    /// still drawn over the full screen app it had just yielded to
+    /// (issue 184). Full screen participation therefore follows
+    /// altitude rather than stance: a card that floats above other apps
+    /// follows the person into their full screen rooms, and a card at
+    /// normal or desktop level stays out of them, which is what an
+    /// ordinary window at those levels does.
+    var joinsFullScreenSpaces: Bool { self == .floating }
+
     /// The full matrix, in one place. Pinned wins first because the pin
     /// is a promise to keep the card above other apps regardless of
     /// posture; a raised surface floats while it holds the keyboard
