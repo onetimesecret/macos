@@ -620,6 +620,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private static let logger = Logger(
         subsystem: FormFactor.backdrop.loggerSubsystem, category: "surface"
     )
+    private var inactiveStackingSpikeSequence = 0
 
     // MARK: NSWindowDelegate
 
@@ -628,6 +629,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// distinguishes raised-and-keyed (summon rests it) from
     /// raised-but-keyboard-less (summon re-keys it).
     func windowDidBecomeKey(_ notification: Notification) {
+        if panel.level != .floating {
+            panel.level = .floating
+        }
         model.holdsKeys = true
     }
 
@@ -637,7 +641,74 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// pull the pad away under every one of them. The stance moves only
     /// by the routes that name it.
     func windowDidResignKey(_ notification: Notification) {
+        let shouldProbe = panel.isInteractive && !model.pinned
+        if shouldProbe, panel.level != .normal {
+            panel.level = .normal
+        }
         model.holdsKeys = false
+        guard shouldProbe else { return }
+        scheduleInactiveStackingSpikeRead(
+            expectedFrontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            expectedLevel: panel.level.rawValue,
+            expectedKey: panel.isKeyWindow,
+            expectedInteractive: panel.isInteractive,
+            expectedPinned: model.pinned
+        )
+    }
+
+    /// Issue #184's throwaway hardware probe. Window-list order is
+    /// front-to-back, so the two indices make the result judgeable from
+    /// the unified log without relying on what the transition looked like.
+    private func scheduleInactiveStackingSpikeRead(
+        expectedFrontmostPID: pid_t?, expectedLevel: Int,
+        expectedKey: Bool, expectedInteractive: Bool, expectedPinned: Bool
+    ) {
+        inactiveStackingSpikeSequence += 1
+        let sequence = inactiveStackingSpikeSequence
+        Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(SurfaceExposure.settledDelay))
+            } catch {
+                return
+            }
+            guard let self, sequence == inactiveStackingSpikeSequence else { return }
+            logInactiveStackingSpikeRead(
+                sequence: sequence,
+                expectedFrontmostPID: expectedFrontmostPID,
+                expectedLevel: expectedLevel,
+                expectedKey: expectedKey,
+                expectedInteractive: expectedInteractive,
+                expectedPinned: expectedPinned
+            )
+        }
+    }
+
+    private func logInactiveStackingSpikeRead(
+        sequence: Int, expectedFrontmostPID: pid_t?, expectedLevel: Int,
+        expectedKey: Bool, expectedInteractive: Bool, expectedPinned: Bool
+    ) {
+        let windowNumberKey = kCGWindowNumber as String
+        let ownerPIDKey = kCGWindowOwnerPID as String
+        let layerKey = kCGWindowLayer as String
+        let windows = CGWindowListCopyWindowInfo(
+            .optionOnScreenOnly, kCGNullWindowID
+        ) as? [[String: Any]] ?? []
+        let currentFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let panelIndex = windows.firstIndex {
+            ($0[windowNumberKey] as? NSNumber)?.intValue == panel.windowNumber
+        }
+        let currentFrontmostLayerZeroIndex = windows.firstIndex {
+            ($0[ownerPIDKey] as? NSNumber)?.int32Value == currentFrontmostPID
+                && ($0[layerKey] as? NSNumber)?.intValue == 0
+        }
+        let panelIndexDescription = panelIndex.map(String.init) ?? "missing"
+        let currentFrontmostIndexDescription =
+            currentFrontmostLayerZeroIndex.map(String.init) ?? "missing"
+        let expectedFrontmostPIDDescription = expectedFrontmostPID.map(String.init) ?? "missing"
+        let currentFrontmostPIDDescription = currentFrontmostPID.map(String.init) ?? "missing"
+        Self.logger.info(
+            "spike=inactive-stacking sequence=\(sequence, privacy: .public) panelIndex=\(panelIndexDescription, privacy: .public) currentFrontmostLayer0Index=\(currentFrontmostIndexDescription, privacy: .public) expectedFrontmostPID=\(expectedFrontmostPIDDescription, privacy: .public) currentFrontmostPID=\(currentFrontmostPIDDescription, privacy: .public) expectedLevel=\(expectedLevel, privacy: .public) currentLevel=\(self.panel.level.rawValue, privacy: .public) expectedKey=\(expectedKey, privacy: .public) currentKey=\(self.panel.isKeyWindow, privacy: .public) expectedInteractive=\(expectedInteractive, privacy: .public) currentInteractive=\(self.panel.isInteractive, privacy: .public) expectedPinned=\(expectedPinned, privacy: .public) currentPinned=\(self.model.pinned, privacy: .public)"
+        )
     }
 
     /// The keyboard's waypoint on its way back to the active app: a
