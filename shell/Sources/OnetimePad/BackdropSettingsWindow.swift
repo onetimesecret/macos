@@ -57,7 +57,7 @@ enum SettingsTab: Int, CaseIterable {
 /// reaches the backdrop's own Keychain service, so a token saved here
 /// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
-final class BackdropSettingsWindowController: NSObject, NSWindowDelegate {
+final class BackdropSettingsWindowController: NSObject {
     private var window: NSWindow?
     private var tabs: NSTabViewController?
     private let model: BackdropModel
@@ -86,24 +86,22 @@ final class BackdropSettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Keeps the Settings window's level in step with the surface while
+    /// it is open, and lets go when it closes. The same type follows
+    /// About (`CompanionLevelFollower`).
+    private let levelFollower: CompanionLevelFollower
+
     init(model: BackdropModel) {
         self.model = model
+        levelFollower = CompanionLevelFollower(model: model)
         super.init()
     }
 
-    /// Cancels the level sinks when the Settings window closes. A
-    /// closed window that kept subscribing would still be writing a
-    /// level onto a hidden pane, which is nothing anyone sees but is
-    /// still one wire more than the shipping app needs.
-    func windowWillClose(_ notification: Notification) {
-        levelObservers.removeAll()
+    /// Whether a window is the Settings window. The About lookup asks,
+    /// so that it can never take this window for AppKit's panel.
+    func owns(_ candidate: NSWindow) -> Bool {
+        window === candidate
     }
-
-    /// Sinks that keep the Settings window's level in step with the
-    /// surface while it is on screen. Cancelled and cleared when the
-    /// window closes, so a subsequent open builds a fresh set against
-    /// the model as it stands then.
-    private var levelObservers: [AnyCancellable] = []
 
     func show() {
         if window == nil {
@@ -155,46 +153,15 @@ final class BackdropSettingsWindowController: NSObject, NSWindowDelegate {
         // feed the resolver, so it reads the surface's keyless answer
         // and maps desktop to normal (a titled window at desktop level
         // could resolve behind the wallpaper as easily as the surface
-        // can).
-        applyCurrentLevel()
-        installLevelObservers()
+        // can). The follower writes it now and on every published
+        // change while the window is up, so a pin or a keep above
+        // switch flipped inside Settings moves the window at the moment
+        // the switch does.
+        if let window {
+            levelFollower.follow(window)
+        }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-    }
-
-    /// Reads the surface's inputs now and writes the companion level.
-    /// Called on open and on every published change while the window
-    /// is up, so a pin flipped inside Settings and a keep-above toggle
-    /// flipped inside Settings both move the window at the moment the
-    /// switch does.
-    private func applyCurrentLevel() {
-        window?.level = BackdropAltitude.keylessAltitude(
-            stance: model.stance,
-            pinned: model.pinned,
-            keepsAbove: model.keepsAboveWhenInactive
-        ).companionLevel
-    }
-
-    /// A subscription per input the resolver reads. Nothing is written
-    /// here on the willSet emission itself; the sink asks the resolver
-    /// for a fresh answer and writes that. Cancelled when the window
-    /// closes.
-    private func installLevelObservers() {
-        guard levelObservers.isEmpty else { return }
-        model.$stance
-            .dropFirst()
-            .sink { [weak self] _ in self?.applyCurrentLevel() }
-            .store(in: &levelObservers)
-        model.$pinned
-            .dropFirst()
-            .sink { [weak self] _ in self?.applyCurrentLevel() }
-            .store(in: &levelObservers)
-        model.$keepsAboveWhenInactive
-            .dropFirst()
-            .sink { [weak self] _ in self?.applyCurrentLevel() }
-            .store(in: &levelObservers)
-        // The delegate below cancels the set when the window closes.
-        window?.delegate = self
     }
 
     /// The tab view controller in its toolbar style, which is the whole

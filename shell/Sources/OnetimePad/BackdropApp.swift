@@ -296,6 +296,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
+    /// Holds the About panel at the surface's keyless altitude while
+    /// it is open. Settings owns a follower of its own; this one is
+    /// the delegate's because the About panel is AppKit's and has no
+    /// controller of ours to live in.
+    private lazy var aboutLevelFollower = CompanionLevelFollower(model: model)
+
     /// Not every activation is the same raise, and one kind of launch
     /// brings no activation at all. A launch the person performs, from
     /// the Finder, the Dock, Spotlight or `open`, activates the app
@@ -763,20 +769,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // surface, and Settings takes the same bit at creation. This
         // panel is not ours to construct, so the bit goes on after
         // AppKit has put it up.
-        let panel = Self.standardAboutPanel()
+        let panel = standardAboutPanel()
         panel?.collectionBehavior.insert(.moveToActiveSpace)
-        // The About panel is short-lived (opened, read, closed) and
-        // AppKit is not ours to teach; the level is taken once at open
-        // rather than through a sink, and reads the surface's keyless
-        // altitude as a companion level (ADR-0032, #188). Otherwise
-        // About opens at .normal beneath a raised, pinned or
-        // keep-above card, which is the same invisibility Settings
-        // used to hit.
-        panel?.level = BackdropAltitude.keylessAltitude(
-            stance: model.stance,
-            pinned: model.pinned,
-            keepsAbove: model.keepsAboveWhenInactive
-        ).companionLevel
+        // About sits at the surface's keyless altitude for as long as
+        // it is open, as Settings does and through the same follower
+        // (ADR-0032, #188). Otherwise About opens at .normal beneath a
+        // raised, pinned or keep above card, and a level read only at
+        // open strands it there the moment the pin is toggled on the
+        // card while About is up. The follower lets go when the panel
+        // closes and picks it up again on the next open.
+        if let panel {
+            aboutLevelFollower.follow(panel)
+        }
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
@@ -791,13 +795,31 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// hands back no reference to it, so it is picked out of the app's
     /// windows by what it is: on screen, titled, and carrying no title
     /// text. Settings has a title, and the surface and its key relay are
-    /// borderless, so none of ours can be mistaken for it. If a future
-    /// macOS builds the panel differently the lookup finds nothing and
-    /// the panel keeps the behavior it had before this existed.
-    private static func standardAboutPanel() -> NSWindow? {
+    /// borderless, so none of those can be mistaken for it. A sheet can:
+    /// a confirmation run on the Settings window is visible, titled and
+    /// carries no title text, and following it would hand the About
+    /// follower a window that closes with the answer. So a sheet is
+    /// never the panel, and neither is the Settings window itself,
+    /// whatever its title reads at the time. If a future macOS builds
+    /// the panel differently the lookup finds nothing and the panel
+    /// keeps the behavior it had before this existed.
+    private func standardAboutPanel() -> NSWindow? {
         NSApp.windows.first { window in
-            window.isVisible && window.styleMask.contains(.titled) && window.title.isEmpty
+            Self.looksLikeTheAboutPanel(
+                visible: window.isVisible,
+                titled: window.styleMask.contains(.titled),
+                title: window.title,
+                isSheet: window.isSheet,
+                isSettings: settings.owns(window)
+            )
         }
+    }
+
+    /// The lookup's rule, pure so each exclusion is an assertion.
+    nonisolated static func looksLikeTheAboutPanel(
+        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool
+    ) -> Bool {
+        visible && titled && title.isEmpty && !isSheet && !isSettings
     }
 
     /// What this app calls itself to the user, for the places a bundle
