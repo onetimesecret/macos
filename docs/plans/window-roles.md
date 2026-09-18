@@ -1,6 +1,7 @@
 # Window roles: normal stacking now, primary editor next
 
-**Status:** Draft workplan, 2026-09-17. Not yet an epic.
+**Status:** Active, 2026-09-17.
+**Tracking:** [#192](https://github.com/onetimesecret/macos/issues/192)
 **Sources:** [ADR-0032](../adr/0032-inactive-raised-surfaces-follow-normal-app-stacking.md) (accepted), [ADR-0033](../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) (proposed).
 **Source of execution status:** GitHub issues once filed, not this document.
 
@@ -34,7 +35,7 @@ For ADR-0033, the one presentation assumption runs deep in the views and shallow
 
 ## Feedback on ADR-0032
 
-1. **The keep above preference is nearly unobservable. Recommend dropping it.** The outside click monitor stays installed for as long as the surface is raised, so the first mouse press in the other application rests the card to desktop level whatever the preference says. The preference only changes what happens between ⌘Tab and that first press, or during a keyboard only stay. Pin is the real companion mode. Dropping it removes tasks A2 and A5 and half of the A1 matrix. The same fact softens the first consequence bullet: the raised stance survives the round trip only if no press lands elsewhere, and the editing context survives regardless because ⌘Tab back is an `.activation` raise that never anchors the roll.
+1. **The keep above preference has a narrow window. Decided 2026-09-17: it stays.** The outside click monitor stays installed for as long as the surface is raised, so the first mouse press in the other application rests the card to desktop level whatever the preference says. The preference changes what happens between ⌘Tab and that first press, and during a keyboard only stay. The hand checks in A7 should state this so nobody reads the rest as a defect. The same fact softens the first consequence bullet: the raised stance survives the round trip only if no press lands elsewhere, and the editing context survives regardless because ⌘Tab back is an `.activation` raise that never anchors the roll.
 2. **"About to take keys" needs a failure path.** `makeKeyAndOrderFront` can be refused (a modal is up). The surface would then sit floating and keyless with no resign key event to lower it. Add: reconcile altitude against `isKeyWindow` one turn after a raise.
 3. **The companion window rule is loose and must be live.** State it as: a companion window's level equals the surface's keyless altitude. It must reapply while the window is open, because the preference toggle lives inside Settings, and flipping it would lift a raised keyless card over the Settings window that holds the keyboard. About needs the same rule and has none today.
 4. **Spike before build.** Eject trigger 1 is a real race: a level write restacks the panel within its new level, and if that lands after the newly active application has ordered its windows front, the card ends above them. The hotkey raised route (our app never active, ⌘Tab from A to B) is the likeliest place to see it.
@@ -56,12 +57,12 @@ One PR, one commit per task. Shell only; no Rust or FFI version change.
 
 - **A0. Hardware spike (gates the rest).** Throwaway branch: lower to `.normal` in `windowDidResignKey` when raised and unpinned. Check ⌘Tab from an active app, the hotkey raised route, Stage Manager, another app's full screen Space, a second display. Log the panel's index in `CGWindowListCopyWindowInfo` front to back order against the frontmost app's first layer 0 window, so the verdict is in the log and not judged by eye. Decide whether lowering needs an explicit `order(.below, relativeTo:)`.
 - **A1. Pure altitude.** `BackdropAltitude` (desktop, normal, floating) with `resolve(stance:keyed:pinned:keepsAbove:)` and `level`. Replace `BackdropStance.level(pinned:)`. Add `keylessAltitude` for companion windows. Tests cover the whole matrix and replace the two raised is floating assertions.
-- **A2. Preference (delete if feedback 1 is taken).** `BackdropModel.keepsAboveWhenInactive`, persisted beside `restingPinned`, never on `PageModel`. Tests inject a throwaway defaults domain.
+- **A2. Preference.** `BackdropModel.keepsAboveWhenInactive`, persisted beside `restingPinned`, never on `PageModel`. Tests inject a throwaway defaults domain.
 - **A3. Controller.** Reapply level on become key, resign key, pin, preference and stance. `apply(.raised)` resolves with `keyed: true` before ordering. The key delegate paths write level only, never frame, `collectionBehavior` or ordering. Two hazards:
   - `@Published` emits on `willSet`, and the key relay inside `apply(.resting)` makes the panel resign key synchronously. A delegate that reads `model.stance` there still sees `.raised` and would park a resting surface at `.normal`. The controller must resolve from the stance it last applied.
   - Reconcile against `isKeyWindow` a turn after each raise (feedback 2).
 - **A4. Companion windows.** Settings and About take `keylessAltitude`, reapplied while open. Pure function plus test.
-- **A5. Settings row (delete with A2).** `GeneralSettingsView` takes an optional `Binding<Bool>` the way it takes `resetSurface`. Label exactly as the ADR gives it; caption says Pin overrides.
+- **A5. Settings row.** `GeneralSettingsView` takes an optional `Binding<Bool>` the way it takes `resetSurface`. Label exactly as the ADR gives it; caption says Pin overrides.
 - **A6. Documents.** Type and controller header comments, `docs/aesthetic.md:28`, new cases in `docs/qa/verification-procedures/spaces-and-cmd-tab.md`, CHANGELOG, ADR citation sweep.
 - **A7. Hand checks owed.** ⌘Tab away and back on one desktop; hotkey raise then ⌘Tab between two other apps; press on a partly covered card; Settings opened by ⌘, by menu and by status item with Pin on and off; open panel round trip; Stage Manager.
 
@@ -90,4 +91,15 @@ flowchart TD
 
 ## Epic shape
 
-One epic, "Window roles". Sub-issues A0 to A7 and B0 filed at once; B1 to B7 filed when B0 closes with an acceptance.
+One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B1 to B7 are filed when B0 closes with an acceptance.
+
+| Task | Issue |
+| --- | --- |
+| A0 spike | [#184](https://github.com/onetimesecret/macos/issues/184) |
+| A1 pure altitude | [#185](https://github.com/onetimesecret/macos/issues/185) |
+| A2 and A5 preference and Settings row | [#186](https://github.com/onetimesecret/macos/issues/186) |
+| A3 controller | [#187](https://github.com/onetimesecret/macos/issues/187) |
+| A4 companion windows | [#188](https://github.com/onetimesecret/macos/issues/188) |
+| A6 documents | [#189](https://github.com/onetimesecret/macos/issues/189) |
+| A7 hand checks | [#190](https://github.com/onetimesecret/macos/issues/190) |
+| B0 decision | [#191](https://github.com/onetimesecret/macos/issues/191) |
