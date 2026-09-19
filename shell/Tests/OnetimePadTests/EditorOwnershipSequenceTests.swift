@@ -93,6 +93,7 @@ final class EditorOwnershipSequenceTests: XCTestCase {
     private final class TwoWindows {
         let model: BackdropModel
         let asRoll: Bool
+        let panelMayOwn: Bool
         var mounts: [PresentationOwner: Mount] = [:]
         /// Every editor either window ever had, kept so that a layout
         /// manager count is the hand off's doing and never ARC's.
@@ -100,9 +101,10 @@ final class EditorOwnershipSequenceTests: XCTestCase {
 
         var pages: PageModel { model.pages }
 
-        init(model: BackdropModel, asRoll: Bool) {
+        init(model: BackdropModel, asRoll: Bool, panelMayOwn: Bool) {
             self.model = model
             self.asRoll = asRoll
+            self.panelMayOwn = panelMayOwn
             model.pages.showsTimeUnits = asRoll
         }
 
@@ -177,7 +179,13 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         }
 
         private func show(_ surface: PresentationOwner) {
-            if surface == .editorWindow, !model.editorWindowOpen { return }
+            if surface == .editorWindow, !model.editorWindowOpen {
+                // Only the never grant policy names a closed window as
+                // the owner. There is nothing to show in it, and what
+                // its hosting view still held comes down on this pass.
+                dismantle(.editorWindow)
+                return
+            }
             if let standing = mounts[surface] {
                 update(standing)
             } else {
@@ -258,7 +266,7 @@ final class EditorOwnershipSequenceTests: XCTestCase {
             pages: ephemeralPages(defaults: defaults, tag: name),
             panelMayOwn: panelMayOwn
         )
-        let windows = TwoWindows(model: model, asRoll: asRoll)
+        let windows = TwoWindows(model: model, asRoll: asRoll, panelMayOwn: panelMayOwn)
         // Two pages, so a selection made in either window has somewhere
         // to go and "every storage" is more than one.
         model.pages.newPage()
@@ -284,11 +292,32 @@ final class EditorOwnershipSequenceTests: XCTestCase {
     /// After a pass: the selected page has exactly one layout manager
     /// and it is the owner's editor's, every other page has none, and
     /// the window that does not own has no mount at all.
+    ///
+    /// One state has no editor to find: the never grant policy with the
+    /// editor window shut, where the owner is a window that is not
+    /// there. Then the page is mounted nowhere, and that is asserted
+    /// in its place. The shipped rule never reaches it, and a walk
+    /// under the shipped rule that did would fail here.
     private func assertTheOwnerAloneIsMounted(
         _ windows: TwoWindows, _ context: String, line: UInt = #line
     ) throws {
         let pages = windows.pages
         let owner = pages.owner
+        if owner == .editorWindow, !windows.model.editorWindowOpen {
+            XCTAssertFalse(
+                windows.panelMayOwn, "a closed editor window owns \(context)", line: line
+            )
+            XCTAssertTrue(windows.mounts.isEmpty, "something is mounted \(context)", line: line)
+            XCTAssertNil(pages.activeEditor, context, line: line)
+            for tab in pages.tabs {
+                guard let page = tab.pageID else { continue }
+                XCTAssertEqual(
+                    pages.storage(for: page).layoutManagers.count, 0,
+                    "page \(page) is laid out with nothing mounted \(context)", line: line
+                )
+            }
+            return
+        }
         let other: PresentationOwner = owner == .panel ? .editorWindow : .panel
         let selected = try XCTUnwrap(pages.selectedPageID, line: line)
         let editor = try XCTUnwrap(
@@ -516,18 +545,20 @@ final class EditorOwnershipSequenceTests: XCTestCase {
     // MARK: The never grant policy
 
     /// ADR-0033 keeps a second design in reserve: a panel that is
-    /// never granted the page content while the editor window is open,
-    /// raised or not. It ships off (`panelMayOwn` defaults to true and
-    /// no call site passes false), and it is proved here against the
-    /// same model, the same factory and the same sequences as the
-    /// shipped rule, so turning it on would be one argument and not a
-    /// second architecture.
+    /// never granted the page content, raised or not, beside the
+    /// editor window or with it shut. It ships off (`panelMayOwn`
+    /// defaults to true and no call site passes false), and it is
+    /// proved here against the same model, the same factory and the
+    /// same sequences as the shipped rule, so turning it on would be
+    /// one argument and not a second architecture.
     ///
     /// What is proved is the mount and not only the owner. After every
     /// event the panel tries to mount the page without asking, as a
     /// root view with a defect would, and no editor comes of it, the
-    /// editor window's editor is still the only one on the page, and
-    /// the model declined nothing, because the factory asked first.
+    /// editor window's editor is still the only one on the page while
+    /// that window is open, no editor is on it at all while it is
+    /// shut, and the model declined nothing, because the factory asked
+    /// first.
     private func assertThePanelCannotMount(
         _ windows: TwoWindows, _ context: String, line: UInt = #line
     ) throws {
@@ -540,19 +571,19 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         assertNoPageIsLaidOutTwice(windows, context, line: line)
     }
 
-    /// Everything that can happen while the editor window stays open.
-    private let eventsBesideAnOpenEditorWindow: [Event] = [
-        .summon, .rest, .editorWindowTakesKeys, .keysGoToSettings, .editorWindowOpens,
-        .anotherPageIsSelected,
-    ]
-
-    func testUnderTheNeverGrantPolicyThePanelNeverMountsBesideAnOpenEditorWindow() throws {
+    func testUnderTheNeverGrantPolicyThePanelNeverMountsAnEditor() throws {
         let windows = try makeWindows(named: "policy-named", panelMayOwn: false)
+        // With the editor window shut the page is mounted nowhere: the
+        // card is a glance at launch and a glance when summoned. A
+        // policy that left these rows to the panel would be a panel
+        // that edits whenever the other window happens to be closed.
         windows.render(newMountFirst: true)
-        XCTAssertNotNil(
-            windows.mounts[.panel]?.editor,
-            "with the editor window closed the panel owns under either policy"
-        )
+        try assertThePanelCannotMount(windows, "at launch, the editor window shut")
+        windows.apply(.summon)
+        windows.render(newMountFirst: true)
+        try assertThePanelCannotMount(windows, "summoned, the editor window shut")
+        try assertTheOwnerAloneIsMounted(windows, "summoned, the editor window shut")
+        windows.apply(.rest)
 
         windows.apply(.editorWindowOpens)
         windows.render(newMountFirst: true)
@@ -570,11 +601,13 @@ final class EditorOwnershipSequenceTests: XCTestCase {
             try assertTheOwnerAloneIsMounted(windows, "after \(event) at step \(index)")
         }
 
-        // The boundary of the policy: it restricts the panel beside an
-        // open editor window and nowhere else.
+        // The policy has no boundary: the window closing hands the
+        // panel nothing, and the editor that was in it comes off the
+        // page with its window.
         windows.apply(.editorWindowCloses)
+        try assertThePanelCannotMount(windows, "after the close, before SwiftUI's pass")
         windows.render(newMountFirst: true)
-        XCTAssertEqual(windows.pages.owner, .panel)
+        try assertThePanelCannotMount(windows, "after the editor window closed")
         try assertTheOwnerAloneIsMounted(windows, "after the editor window closed")
     }
 
@@ -584,11 +617,8 @@ final class EditorOwnershipSequenceTests: XCTestCase {
                 named: "policy-walk-\(asRoll ? "roll" : "page")", asRoll: asRoll,
                 panelMayOwn: false
             )
-            windows.apply(.editorWindowOpens)
-            try walk(
-                windows, seed: asRoll ? 0x33 : 0x198, steps: 250,
-                over: eventsBesideAnOpenEditorWindow
-            ) { context in
+            // Every event, the window closing and opening among them.
+            try walk(windows, seed: asRoll ? 0x33 : 0x198, steps: 250) { context in
                 try assertThePanelCannotMount(windows, context)
             }
         }

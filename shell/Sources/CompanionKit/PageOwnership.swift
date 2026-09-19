@@ -37,26 +37,31 @@ public enum PresentationOwner: Equatable, Sendable {
     /// or while the editor window is closed, and the editor window owns
     /// otherwise.
     ///
-    /// The answer is total. With the editor window closed the panel
-    /// owns even if nothing is mounted anywhere, because an owner that
-    /// could be nobody would leave every mount site a third branch to
-    /// get wrong, and a closed window has no editor to hand anything to.
+    /// The answer is total, because an owner that could be nobody
+    /// would leave every mount site a third branch to get wrong. Under
+    /// the shipped rule the panel owns with the editor window closed,
+    /// even if nothing is mounted anywhere: a closed window has no
+    /// editor to hand anything to.
     ///
     /// `panelMayOwn` is the read only panel as one policy switch: with
-    /// it false the panel is never granted ownership while the editor
-    /// window is open, raised or not, and that is the whole of the
-    /// restriction. The closed rows still answer the panel, since the
-    /// rule is total and a closed window cannot be handed anything;
-    /// whether a panel under the policy mounts an editor in those rows
-    /// is the mount site's question, not this function's. Nothing
-    /// passes false today. The parameter exists so the policy
-    /// is proved against the same function the app runs, not against a
-    /// second architecture built for the occasion.
+    /// it false the panel is never granted ownership, in any row, and
+    /// that is the whole of the policy. The closed rows answer the
+    /// editor window too. That names a window with nothing mounted in
+    /// it, which is still an answer and still total: every mount site
+    /// asks whether its own surface owns, the panel's is told no, and
+    /// so nothing is mounted anywhere and the card is a glance. Were
+    /// the closed rows left to the panel, the policy would be a panel
+    /// that edits whenever the editor window happens to be shut, which
+    /// is not what ADR-0033 means by read only, and the mount sites
+    /// would need a second question to close the gap. Nothing passes
+    /// false today. The parameter exists so the policy is proved
+    /// against the same function the app runs, not against a second
+    /// architecture built for the occasion.
     public nonisolated static func resolve(
         panelRaised: Bool, editorWindowOpen: Bool, panelMayOwn: Bool = true
     ) -> PresentationOwner {
-        guard editorWindowOpen else { return .panel }
         guard panelMayOwn else { return .editorWindow }
+        guard editorWindowOpen else { return .panel }
         return panelRaised ? .panel : .editorWindow
     }
 

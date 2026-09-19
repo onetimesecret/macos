@@ -592,8 +592,8 @@ public final class PageModel: ObservableObject {
     /// form factor resolves it (`PresentationOwner.resolve`) and moves
     /// it through `transferOwnership(to:)`, which is its only writer.
     /// The panel until somebody says otherwise, which is every launch:
-    /// the editor window starts closed, and the closed rows of the rule
-    /// all answer the panel.
+    /// the editor window starts closed, and the closed rows of the
+    /// shipped rule both answer the panel.
     @Published public private(set) var owner: PresentationOwner = .panel
 
     /// True while the owner's window holds the keyboard, which drives

@@ -120,11 +120,12 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     private var started = false
 
-    /// Whether the panel may ever own the page content while the editor
-    /// window is open. True in every shipping construction. False is
-    /// ADR-0033's read only panel, kept as one input to the rule so the
-    /// policy can be proved against the model the app runs; nothing
-    /// outside a test passes it.
+    /// Whether the panel may ever own the page content. True in every
+    /// shipping construction. False is ADR-0033's read only panel, which
+    /// is granted nothing whether the editor window is open or closed,
+    /// kept as one input to the rule so the policy can be proved
+    /// against the model the app runs; nothing outside a test passes
+    /// it.
     private let panelMayOwn: Bool
 
     init(
@@ -146,6 +147,16 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // and Keychain — the PageModel init refuses that under a
         // runner and takes the process down.
         self.pages = pages ?? PageModel(formFactor: .backdrop, defaults: defaults)
+        // The shared model starts with the panel owning, which is the
+        // shipped rule's answer at launch and so moves nothing. Under
+        // the never grant policy it is not the answer, and the panel's
+        // root view must not find itself the owner for even one pass.
+        // The owner alone: the redraw is `start()`'s to begin.
+        self.pages.transferOwnership(
+            to: PresentationOwner.resolve(
+                panelRaised: false, editorWindowOpen: false, panelMayOwn: panelMayOwn
+            )
+        )
     }
 
     /// True while the window that owns the page content holds the
@@ -353,14 +364,18 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// The countdown redraw, at the cadence of the window showing the
     /// countdowns. The panel coarsens to the resting glance's tick
     /// while it rests. The editor window is an ordinary window a person
-    /// is looking at, and ticks by the second.
+    /// is looking at, and ticks by the second. An editor window that
+    /// owns while closed is the never grant policy, where the card is
+    /// the only thing on screen and the cadence is its posture's.
     private func retime() {
+        let posture: BackdropStance = panelRaised ? .raised : .resting
         switch pages.owner {
         case .panel:
-            let posture: BackdropStance = panelRaised ? .raised : .resting
             pages.startRedraw(interval: posture.tickInterval, from: .panel)
-        case .editorWindow:
+        case .editorWindow where editorWindowOpen:
             pages.startRedraw(from: .editorWindow)
+        case .editorWindow:
+            pages.startRedraw(interval: posture.tickInterval, from: .editorWindow)
         }
     }
 
@@ -487,7 +502,8 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     }
 
     /// The editor window closed. With it closed the panel owns, resting
-    /// or raised, whatever it was doing a moment ago.
+    /// or raised, whatever it was doing a moment ago. Under the never
+    /// grant policy nothing moves, and the page is mounted nowhere.
     func editorWindowClosed() {
         editorWindowOpen = false
         settleOwner()

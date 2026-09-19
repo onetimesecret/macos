@@ -60,24 +60,27 @@ final class PageOwnershipTests: XCTestCase {
 
     // MARK: The never grant policy
 
-    func testPolicyRestingPanelWithEditorWindowClosedIsPanel() {
-        // The policy restricts the panel against an open editor window.
-        // With that window closed there is nobody else to name, and the
-        // total rule still answers the panel.
+    func testPolicyRestingPanelWithEditorWindowClosedIsEditorWindow() {
+        // Never grant means never. With the editor window closed the
+        // answer names a window with nothing mounted in it, so nothing
+        // is mounted anywhere and the panel is a glance, which is what
+        // a read only panel is. Were these two rows the panel's, a
+        // person under the policy could edit in the card by closing the
+        // editor window first.
         XCTAssertEqual(
             PresentationOwner.resolve(
                 panelRaised: false, editorWindowOpen: false, panelMayOwn: false
             ),
-            .panel
+            .editorWindow
         )
     }
 
-    func testPolicyRaisedPanelWithEditorWindowClosedIsPanel() {
+    func testPolicyRaisedPanelWithEditorWindowClosedIsEditorWindow() {
         XCTAssertEqual(
             PresentationOwner.resolve(
                 panelRaised: true, editorWindowOpen: false, panelMayOwn: false
             ),
-            .panel
+            .editorWindow
         )
     }
 
@@ -91,10 +94,10 @@ final class PageOwnershipTests: XCTestCase {
     }
 
     func testPolicyRaisedPanelWithEditorWindowOpenIsEditorWindow() {
-        // The row the switch exists for, and the only one it changes: a
-        // summon raises the panel, and the editor window keeps the live
-        // page content anyway. A read only panel is this one answer and
-        // not a second architecture.
+        // The row the switch exists for: a summon raises the panel, and
+        // the editor window keeps the live page content anyway. A read
+        // only panel is one answer in every row and not a second
+        // architecture.
         XCTAssertEqual(
             PresentationOwner.resolve(
                 panelRaised: true, editorWindowOpen: true, panelMayOwn: false

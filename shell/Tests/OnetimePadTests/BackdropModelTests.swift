@@ -473,9 +473,24 @@ final class BackdropModelTests: XCTestCase {
 
     // MARK: The read only panel, as one policy switch
 
-    func testUnderTheNeverGrantPolicyTheEditorWindowOwnsWheneverItIsOpen() {
+    func testUnderTheNeverGrantPolicyThePanelIsGrantedNothingInAnyRow() {
         let model = makeModel(named: "policy-never-grant", panelMayOwn: false)
-        XCTAssertEqual(model.pages.owner, .panel, "a closed window has nothing to own")
+        XCTAssertEqual(
+            model.pages.owner, .editorWindow,
+            "the panel's root view must not find itself the owner for even its first pass"
+        )
+
+        // Closed rows: a summon raises a glance. The card takes the
+        // keyboard and the page does not hold it, since no editor is
+        // mounted for the keys to reach.
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertFalse(model.holdsKeys)
+        model.rest()
+        model.keyStatusChanged(of: .panel, keyed: false)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
 
         model.editorWindowOpened()
         model.keyStatusChanged(of: .editorWindow, keyed: true)
@@ -493,7 +508,7 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(model.pages.owner, .editorWindow)
 
         model.editorWindowClosed()
-        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertEqual(model.pages.owner, .editorWindow, "never means with the window shut too")
     }
 
     // MARK: The keyboard coming back with the page
