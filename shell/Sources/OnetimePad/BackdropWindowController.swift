@@ -384,7 +384,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
-            if NSApp.isActive {
+            if model.editorWindowOpen {
+                // Spike (issue #197): the editor window is key-able and
+                // is up or about to be, so the app has somewhere for
+                // the keyboard to go and the activation is not ours to
+                // hand back. Without this the rest that opening the
+                // window causes would deactivate the app under it.
+            } else if NSApp.isActive {
                 // A ⌘Tab or Dock summon made this app active; resting
                 // hands the whole activation back, not just key status
                 // — an active app with no key-able window would strand
