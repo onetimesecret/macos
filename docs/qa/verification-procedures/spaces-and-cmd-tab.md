@@ -203,12 +203,13 @@ Spaces. The checks below are how that is confirmed on hardware.
 
 They are judged by a probe and not by eye.
 `scripts/window-order-probe.swift` reads the window server's front to
-back list and prints one `VERDICT` line per sample; its header says how
-to compile it. Run it in a terminal on a desktop Space with `--watch`,
-so it samples 1.5 s after every app activation and Space change:
+back list and prints one `VERDICT` line per sample. `scripts/dev.sh`
+builds it into `dist/window-order-probe` alongside the app. On a
+desktop Space, start it in `--watch` mode so it samples 1.5 s after
+every app activation and Space change:
 
 ```
-/tmp/window-order-probe --watch --expect behind
+dist/window-order-probe --watch --expect behind
 ```
 
 `--expect behind` passes when the card is absent from the list or
@@ -227,7 +228,7 @@ thing being measured. For those, start a delayed sample on the desktop
 and walk back into A before it fires:
 
 ```
-/tmp/window-order-probe --after 8 --expect above
+dist/window-order-probe --after 8 --expect above
 ```
 
 Start it, go back to A, perform the route within the eight seconds,

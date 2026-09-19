@@ -19,11 +19,17 @@
 # persisted and fails closed at the next launch (ADR-0012), which is
 # why this is a flag and not the default. Exporting the variable in
 # the calling shell does the same thing.
+#
+# --with-probe also builds dist/window-order-probe from
+# scripts/window-order-probe.swift, the evidence standard for issue 184
+# and ADR-0034. Off by default because most dev cycles don't need it.
+# When on, the script prints the exact command to run afterwards.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 NO_LAUNCH=0
 ALLOW_CAPTURE=0
+WITH_PROBE=0
 # An exported COMPANION_ALLOW_CAPTURE means the same thing as the flag.
 # `open` does not forward the caller's environment to the app it starts,
 # so a variable set in this shell would otherwise be dropped on the way.
@@ -34,8 +40,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-launch) NO_LAUNCH=1 ;;
     --allow-capture) ALLOW_CAPTURE=1 ;;
+    --with-probe) WITH_PROBE=1 ;;
     *)
-      echo "unknown argument: $1 (the flags are --no-launch and --allow-capture)" >&2
+      echo "unknown argument: $1 (the flags are --no-launch, --allow-capture and --with-probe)" >&2
       exit 1
       ;;
   esac
@@ -83,6 +90,25 @@ fi
 echo "==> scripts/package-app.sh --debug"
 scripts/package-app.sh --debug
 
+PROBE_OUT="dist/window-order-probe"
+if ((WITH_PROBE)); then
+  # The window-order probe is the evidence standard for issue 184 and
+  # ADR-0034. Xcode-beta 26.0 first-launch leaves xcrun without a
+  # resolved SDK and a bare swiftc hangs at the frontend, so the SDK
+  # path is set explicitly.
+  PROBE_SRC="scripts/window-order-probe.swift"
+  if [[ ! -x "$PROBE_OUT" || "$PROBE_SRC" -nt "$PROBE_OUT" ]]; then
+    echo "==> Compiling $PROBE_SRC"
+    XCODE_DEV_DIR="/Applications/Xcode-beta.app/Contents/Developer"
+    if [[ ! -d "$XCODE_DEV_DIR" ]]; then
+      XCODE_DEV_DIR="$(xcode-select -p)"
+    fi
+    DEVELOPER_DIR="$XCODE_DEV_DIR" \
+      SDKROOT="$XCODE_DEV_DIR/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" \
+      swiftc -O "$PROBE_SRC" -o "$PROBE_OUT"
+  fi
+fi
+
 if [[ "$NO_LAUNCH" == 0 ]]; then
   if ((ALLOW_CAPTURE)); then
     echo "==> Launching $DIST_APP (screen capture allowed)"
@@ -91,4 +117,16 @@ if [[ "$NO_LAUNCH" == 0 ]]; then
     echo "==> Launching $DIST_APP"
     open "$DIST_APP"
   fi
+fi
+
+if ((WITH_PROBE)); then
+  cat <<EOF
+
+==> Window-order probe ready at $PROBE_OUT
+    Run in a terminal on a desktop Space, then perform the route:
+      $PROBE_OUT --watch --expect behind
+    For routes that activate nothing (hotkey summon, outside click
+    inside a full-screen Space):
+      $PROBE_OUT --after 8 --expect above
+EOF
 fi
