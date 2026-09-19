@@ -107,19 +107,28 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         model.keyStatusChanged(of: .editorWindow, keyed: false)
     }
 
-    /// Tear the content down before the panel is told, so this window's
-    /// editor is on its way out by the time the panel's mounts again.
+    /// The model is told while the window is still whole, and the
+    /// content is dropped after. The transfer the close causes is what
+    /// takes this window's editor off its page
+    /// (`PageModel.transferOwnership(to:)`), and it reads the caret and
+    /// the scroll on the way, which are only there to read while the
+    /// editor stands in a sized scroller over its own layout. When a
+    /// hosting view dismantles what it held is AppKit's to decide, in
+    /// this turn or a later one, and with the hand off done first
+    /// neither answer loses the person's place: the dismantle finds an
+    /// editor that has already left its page and has nothing to add.
+    ///
     /// Key status needs no word of its own: if this window owned, the
-    /// transfer the close causes forgets the keys with everything else
-    /// the outgoing owner held, and if the panel owned they were never
-    /// this window's.
+    /// transfer forgets the keys with everything else the outgoing
+    /// owner held, and if the panel owned they were never this
+    /// window's.
     func windowWillClose(_ notification: Notification) {
         captureObserver = nil
         ownerObserver = nil
         window?.delegate = nil
+        model.editorWindowClosed()
         window?.contentView = nil
         window = nil
-        model.editorWindowClosed()
         Self.logger.info("editor window=closed")
     }
 

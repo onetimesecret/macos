@@ -130,12 +130,17 @@ final class EditorOwnershipSequenceTests: XCTestCase {
                 }
             case .editorWindowCloses:
                 guard model.editorWindowOpen else { return }
-                // The controller drops the window's content and then
-                // tells the model (`windowWillClose`).
-                dismantle(.editorWindow)
+                // The controller tells the model and then drops the
+                // window's content (`windowWillClose`). When the
+                // hosting view dismantles what it held is AppKit's to
+                // decide, so the mount is left for the next pass, which
+                // takes it down before or after the panel's is built.
                 model.editorWindowClosed()
             case .editorWindowOpens:
                 guard !model.editorWindowOpen else { return }
+                // A window opened again is a new window with a new
+                // hosting view, never the closed one's mount revived.
+                dismantle(.editorWindow)
                 model.editorWindowOpened()
             case .anotherPageIsSelected:
                 let others = pages.tabs.filter { $0.hasPage && $0.id != pages.selection }
@@ -358,6 +363,32 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         XCTAssertTrue(windows.pages.activeEditor === before, "issue 201 reads the menus from this")
         XCTAssertTrue(windows.mounts[.editorWindow]?.editor === before, "the editor was rebuilt")
         try assertTheOwnerAloneIsMounted(windows, "after the keyboard went to Settings")
+    }
+
+    /// A close is a hand off like any other, and the person's place is
+    /// the model's before the window's content has gone anywhere: the
+    /// controller tells the model first, so the transfer reads the
+    /// place off an editor still standing in its window, whenever the
+    /// hosting view gets round to dismantling it.
+    func testClosingTheEditorWindowLeavesItsPlaceForThePanel() throws {
+        let windows = try makeWindows(named: "sequence-close-place")
+        windows.apply(.editorWindowOpens)
+        windows.render(newMountFirst: true)
+        let page = try XCTUnwrap(windows.pages.selectedPageID)
+        let editor = try XCTUnwrap(windows.mounts[.editorWindow]?.editor)
+        editor.insertText(
+            "a page worth a place", replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        let caret = NSRange(location: 7, length: 5)
+        editor.setSelectedRange(caret)
+
+        windows.apply(.editorWindowCloses)
+
+        XCTAssertNotNil(windows.mounts[.editorWindow], "the hosting view has dismantled nothing yet")
+        XCTAssertEqual(windows.pages.viewStates.carets[page], caret)
+        windows.render(newMountFirst: true)
+        XCTAssertEqual(windows.mounts[.panel]?.editor?.selectedRange(), caret)
+        try assertTheOwnerAloneIsMounted(windows, "after the close")
     }
 
     // MARK: The keyboard follows the page
