@@ -64,8 +64,8 @@ Primary source locations:
 - `shell/Sources/CompanionKit/SyncController.swift:4-43`
 - `shell/Sources/CompanionKit/SyncController.swift:83-91`
 - `shell/Sources/CompanionKit/SyncController.swift:147-208`
-- `shell/Sources/OnetimePad/BackdropModel.swift:72-168`
-- `shell/Sources/OnetimePad/BackdropModel.swift:680-754`
+- `shell/Sources/OnetimePad/BackdropModel.swift:73-169`
+- `shell/Sources/OnetimePad/BackdropModel.swift:719-793`
 - `shell/Sources/OnetimePad/BackdropGeometry.swift:99-160`
 - `shell/Sources/CompanionKit/SettingsSections.swift:5-42`
 - `shell/Sources/CompanionKit/SettingsSections.swift:62-70`
@@ -106,7 +106,7 @@ Verified persisted candidates are:
 | `restingPinned` | `BackdropModel` | Current backdrop pinning behavior |
 | `backdrop.geometry` | `BackdropGeometry` | Existing encoded shape includes a legacy decoding path |
 
-`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:642-650`; `shell/Sources/OnetimePad/BackdropModel.swift:72-86`).
+`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:642-650`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
 
 ## Persistence boundary
 
