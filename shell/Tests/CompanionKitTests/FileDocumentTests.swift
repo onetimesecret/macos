@@ -1728,7 +1728,7 @@ final class FileCloseSweepTests: XCTestCase {
         model.openFile(at: url)
         let id = try XCTUnwrap(model.openFiles.first?.id)
         model.viewStates.saveCaret(NSRange(location: 2, length: 0), for: id)
-        model.viewStates.saveScroll(NSPoint(x: 0, y: 40), for: id)
+        model.viewStates.saveScroll(ScrollAnchor(characterIndex: 2), for: id)
         XCTAssertNil(model.activeEditor, "the fixture must have no editor to go through")
 
         model.standOpenFiles([])

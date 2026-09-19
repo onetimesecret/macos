@@ -1310,12 +1310,19 @@ public struct InkEditorView: NSViewRepresentable {
         ///
         /// Both are written to the model's table rather than kept here
         /// (`PageModel.viewStates`), so the place survives this editor
-        /// and is there for whichever one mounts the page next.
+        /// and is there for whichever one mounts the page next. That
+        /// next editor may stand in a window of another width, so the
+        /// scroll is kept as the line at the top of the clip and never
+        /// as the clip's origin in points (`ScrollAnchor`).
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
             guard let sheet = currentSheet else { return }
             model.viewStates.saveCaret(textView.selectedRange(), for: sheet)
-            guard let scrollView else { return }
-            model.viewStates.saveScroll(scrollView.contentView.bounds.origin, for: sheet)
+            guard let scrollView,
+                  let anchor = ScrollAnchor(
+                      topOf: textView, clipOrigin: scrollView.contentView.bounds.origin
+                  )
+            else { return }
+            model.viewStates.saveScroll(anchor, for: sheet)
         }
 
         /// Return the incoming page's caret and scroll after the swap.
@@ -1339,12 +1346,18 @@ public struct InkEditorView: NSViewRepresentable {
         /// handed, though. A switch that fast has already saved the
         /// live origin over this sheet's entry, because the next
         /// `saveViewState` ran before the restore landed; the retired
-        /// closure still holds the true offset, so it writes that back
+        /// closure still holds the true anchor, so it writes that back
         /// on its way out. A sheet pruned in the interim stays gone:
         /// the write-back repairs entries, it never resurrects them.
         /// And because content can shrink while a page is in the
         /// background, the offset is clamped against the geometry that
         /// exists on arrival, not the geometry that was saved.
+        ///
+        /// The hop is also where the anchor becomes an offset. What was
+        /// saved is a line, not a distance, and how far down this view
+        /// that line sits is a fact about this view's layout, which
+        /// the hop has just forced current. The editor that saved it
+        /// may have been another one at another width.
         ///
         /// A mount with no scroller of its own takes the caret and stops
         /// there, as `saveViewState` did: there is no clip of this page's
@@ -1359,11 +1372,11 @@ public struct InkEditorView: NSViewRepresentable {
             )
             textView.setSelectedRange(caret)
             guard let scrollView else { return }
-            let offset = model.viewStates.scrolls[sheet] ?? .zero
+            let anchor = model.viewStates.scrolls[sheet]
             DispatchQueue.main.async { [weak self, weak textView, weak scrollView] in
                 guard let self else { return }
                 guard self.currentSheet == sheet else {
-                    self.model.viewStates.repairScroll(offset, for: sheet)
+                    self.model.viewStates.repairScroll(anchor, for: sheet)
                     return
                 }
                 guard let scrollView else { return }
@@ -1374,6 +1387,10 @@ public struct InkEditorView: NSViewRepresentable {
                 // the frame the clamp used to trust.
                 let documentHeight = textView.flatMap { self.documentHeight(of: $0) }
                     ?? scrollView.documentView?.frame.height ?? 0
+                // After the height, so the anchor's line is looked up
+                // in the layout that was just made certain. A page with
+                // nothing saved opens at the top.
+                let offset = textView.flatMap { anchor?.offset(in: $0) } ?? .zero
                 let clamped = Self.clampedScrollOffset(
                     offset,
                     documentHeight: documentHeight,

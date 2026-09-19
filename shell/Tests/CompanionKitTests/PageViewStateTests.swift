@@ -15,6 +15,12 @@ import XCTest
 /// round trip through one editor; this suite holds the trip from one
 /// editor to a different one.
 ///
+/// The two windows are not the same width, and a paragraph wraps into a
+/// different number of lines in each, so the scroll is kept as the line
+/// at the top of the clip (`ScrollAnchor`) and never as a distance in
+/// points. The width cases below are built so that a distance would
+/// have failed them.
+///
 /// Real AppKit in headless windows, in the `PageScrollTests` idiom, and
 /// every model is built with its seams named, so nothing here reaches
 /// the installed app's state directory.
@@ -78,13 +84,25 @@ final class PageViewStateTests: XCTestCase {
 
     func testARepairMendsAnEntryAndNeverResurrectsOne() {
         var states = PageViewStates()
-        states.saveScroll(NSPoint(x: 0, y: 10), for: 1)
+        states.saveScroll(ScrollAnchor(characterIndex: 10), for: 1)
 
-        states.repairScroll(NSPoint(x: 0, y: 90), for: 1)
-        states.repairScroll(NSPoint(x: 0, y: 90), for: 2)
+        states.repairScroll(ScrollAnchor(characterIndex: 90), for: 1)
+        states.repairScroll(ScrollAnchor(characterIndex: 90), for: 2)
 
-        XCTAssertEqual(states.scrolls[1], NSPoint(x: 0, y: 90))
+        XCTAssertEqual(states.scrolls[1], ScrollAnchor(characterIndex: 90))
         XCTAssertNil(states.scrolls[2], "a page pruned in the interim stays gone")
+    }
+
+    /// The page that had no place before the early save wrote one: what
+    /// the repair puts back is the absence, so the page opens at its
+    /// top rather than wherever the previous page's clip happened to be.
+    func testARepairWithNoAnchorPutsTheAbsenceBack() {
+        var states = PageViewStates()
+        states.saveScroll(ScrollAnchor(characterIndex: 10), for: 1)
+
+        states.repairScroll(nil, for: 1)
+
+        XCTAssertNil(states.scrolls[1])
     }
 
     func testThePruneTakesADeadPagesPlaceAndKeepsAFiles() {
@@ -92,7 +110,7 @@ final class PageViewStateTests: XCTestCase {
         var states = PageViewStates()
         for id in [1, 2, file] {
             states.saveCaret(NSRange(location: 3, length: 0), for: id)
-            states.saveScroll(NSPoint(x: 0, y: 20), for: id)
+            states.saveScroll(ScrollAnchor(characterIndex: 20), for: id)
         }
 
         states.prune(keeping: [1])
@@ -162,5 +180,181 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(
             second.scroll.contentView.bounds.origin.y, offset.y, accuracy: 0.5,
             "the second editor opened the page somewhere the person was not")
+    }
+
+    // MARK: Across two widths
+
+    /// Paragraphs long enough to wrap, so the number of lines above any
+    /// given sentence depends on the measure, which is the whole reason
+    /// a distance in points cannot be handed from one window to another.
+    private func wrappingText() -> String {
+        (0..<40).map { paragraph in
+            "paragraph \(paragraph) " + (0..<45).map { "word\($0)" }.joined(separator: " ") + "\n"
+        }.joined()
+    }
+
+    /// The characters of the line standing at the top of the clip, and
+    /// where that line's top edge is in the document view.
+    private func topLine(of mount: Mount) throws -> (characters: NSRange, minY: CGFloat) {
+        let layoutManager = try XCTUnwrap(mount.textView.layoutManager)
+        let container = try XCTUnwrap(mount.textView.textContainer)
+        let origin = mount.textView.textContainerOrigin
+        let top = mount.scroll.contentView.bounds.origin.y - origin.y
+        // A hair inside the line, so a top edge resting exactly on the
+        // boundary between two lines reads as the lower one.
+        let glyph = layoutManager.glyphIndex(for: NSPoint(x: 0, y: top + 0.5), in: container)
+        var glyphs = NSRange(location: 0, length: 0)
+        let rect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
+        return (
+            layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil),
+            rect.minY + origin.y
+        )
+    }
+
+    /// Scroll `mount` so the line holding `character` sits exactly at
+    /// the top of its clip, and answer the offset that took.
+    private func scroll(_ mount: Mount, toLineOf character: Int) throws -> CGFloat {
+        let layoutManager = try XCTUnwrap(mount.textView.layoutManager)
+        let glyph = layoutManager.glyphIndexForCharacter(at: character)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let y = line.minY + mount.textView.textContainerOrigin.y
+        mount.scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+        mount.scroll.reflectScrolledClipView(mount.scroll.contentView)
+        return y
+    }
+
+    func testAPlaceSavedInANarrowEditorLandsTheSameLineInAWideOne() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let narrow = mount(page, of: model, width: 320)
+        let text = wrappingText()
+        narrow.textView.insertText(
+            text, replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        try settleLayout(of: narrow)
+        let narrowOffset = try scroll(narrow, toLineOf: text.utf16.count / 2)
+        let read = try topLine(of: narrow).characters
+        let caret = NSRange(location: read.location + 5, length: 0)
+        narrow.textView.setSelectedRange(caret)
+
+        narrow.coordinator.saveViewState(textView: narrow.textView, scrollView: narrow.scroll)
+
+        XCTAssertEqual(
+            model.viewStates.scrolls[page]?.characterIndex, read.location,
+            "the place is kept as the first character of the line at the top")
+
+        let wide = mount(page, of: model, width: 640)
+        wide.coordinator.restoreViewState(
+            textView: wide.textView, scrollView: wide.scroll, for: page
+        )
+        pump()
+
+        let landed = try topLine(of: wide)
+        XCTAssertTrue(
+            NSLocationInRange(read.location, landed.characters),
+            "the wide editor opened on line \(landed.characters), which does not hold "
+                + "character \(read.location) that the narrow one was reading from")
+        XCTAssertEqual(
+            wide.scroll.contentView.bounds.origin.y, landed.minY, accuracy: 0.5,
+            "the line is on screen but not at the top")
+        XCTAssertEqual(wide.textView.selectedRange(), caret)
+        // The fixture has to be one where points would have failed, or
+        // the two assertions above prove nothing about the anchor.
+        XCTAssertGreaterThan(
+            narrowOffset - wide.scroll.contentView.bounds.origin.y, 100,
+            "the two measures laid this page out alike, so the offset alone would have passed")
+    }
+
+    /// And the way back, which is the rest of a hand off: the wide
+    /// editor's place, restored into a narrow one.
+    func testAPlaceSavedInAWideEditorLandsTheSameLineInANarrowOne() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let wide = mount(page, of: model, width: 640)
+        let text = wrappingText()
+        wide.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        try settleLayout(of: wide)
+        let wideOffset = try scroll(wide, toLineOf: text.utf16.count / 2)
+        let read = try topLine(of: wide).characters
+
+        wide.coordinator.saveViewState(textView: wide.textView, scrollView: wide.scroll)
+
+        let narrow = mount(page, of: model, width: 320)
+        narrow.coordinator.restoreViewState(
+            textView: narrow.textView, scrollView: narrow.scroll, for: page
+        )
+        pump()
+
+        let landed = try topLine(of: narrow)
+        XCTAssertTrue(NSLocationInRange(read.location, landed.characters))
+        XCTAssertEqual(
+            narrow.scroll.contentView.bounds.origin.y, landed.minY, accuracy: 0.5)
+        XCTAssertGreaterThan(narrow.scroll.contentView.bounds.origin.y - wideOffset, 100)
+    }
+
+    /// The top inset sits above the first line, so a page left at the
+    /// very top is a negative fraction of that line rather than the
+    /// line's own top edge, and it comes back at zero at any width.
+    func testAPageLeftAtTheVeryTopComesBackAtTheVeryTop() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let narrow = mount(page, of: model, width: 320)
+        narrow.textView.insertText(
+            wrappingText(), replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        try settleLayout(of: narrow)
+        // Typing followed the caret to the end of the page, so the top
+        // is somewhere the fixture has to go back to.
+        narrow.scroll.contentView.scroll(to: .zero)
+        narrow.scroll.reflectScrolledClipView(narrow.scroll.contentView)
+        XCTAssertEqual(narrow.scroll.contentView.bounds.origin.y, 0)
+
+        narrow.coordinator.saveViewState(textView: narrow.textView, scrollView: narrow.scroll)
+
+        let wide = mount(page, of: model, width: 640)
+        wide.scroll.contentView.scroll(to: NSPoint(x: 0, y: 60))
+        wide.coordinator.restoreViewState(
+            textView: wide.textView, scrollView: wide.scroll, for: page
+        )
+        pump()
+
+        XCTAssertEqual(wide.scroll.contentView.bounds.origin.y, 0, accuracy: 0.5)
+    }
+
+    /// Content can shrink while a page is in the background. The anchor
+    /// names a character the page may no longer have, and the layout
+    /// manager raises on an index it does not hold, so the lookup is
+    /// clamped to the page as it now stands.
+    func testAnAnchorPastTheEndOfAShrunkenPageResolvesToItsLastLine() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let editor = mount(page, of: model, width: 420)
+        editor.textView.insertText(
+            "one\ntwo\nthree", replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        try settleLayout(of: editor)
+        let layoutManager = try XCTUnwrap(editor.textView.layoutManager)
+        let lastLine = layoutManager.lineFragmentRect(
+            forGlyphAt: layoutManager.numberOfGlyphs - 1, effectiveRange: nil
+        )
+
+        let offset = try XCTUnwrap(
+            ScrollAnchor(characterIndex: 5_000).offset(in: editor.textView)
+        )
+
+        XCTAssertEqual(
+            offset.y, lastLine.minY + editor.textView.textContainerOrigin.y, accuracy: 0.5)
+    }
+
+    func testAnEmptyPageStillHasAPlace() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let editor = mount(page, of: model, width: 420)
+
+        let anchor = try XCTUnwrap(ScrollAnchor(topOf: editor.textView, clipOrigin: .zero))
+        let offset = try XCTUnwrap(anchor.offset(in: editor.textView))
+
+        XCTAssertEqual(anchor.characterIndex, 0)
+        XCTAssertEqual(offset.y, 0, accuracy: 0.5, "the top of an empty page is its top")
     }
 }
