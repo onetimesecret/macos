@@ -65,7 +65,7 @@ Primary source locations:
 - `shell/Sources/CompanionKit/SyncController.swift:83-91`
 - `shell/Sources/CompanionKit/SyncController.swift:147-208`
 - `shell/Sources/OnetimePad/BackdropModel.swift:72-168`
-- `shell/Sources/OnetimePad/BackdropModel.swift:531-605`
+- `shell/Sources/OnetimePad/BackdropModel.swift:680-754`
 - `shell/Sources/OnetimePad/BackdropGeometry.swift:99-160`
 - `shell/Sources/CompanionKit/SettingsSections.swift:5-42`
 - `shell/Sources/CompanionKit/SettingsSections.swift:62-70`
