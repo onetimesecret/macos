@@ -190,6 +190,10 @@ final class BackdropSettingsWindowController: NSObject {
                     keepsAbove: Binding(
                         get: { [model] in model.keepsAboveWhenInactive },
                         set: { [model] in model.keepsAboveWhenInactive = $0 }
+                    ),
+                    dockOpensEditorWindow: Binding(
+                        get: { [model] in model.dockOpensEditorWindow },
+                        set: { [model] in model.dockOpensEditorWindow = $0 }
                     )
                 ),
                 for: tab
