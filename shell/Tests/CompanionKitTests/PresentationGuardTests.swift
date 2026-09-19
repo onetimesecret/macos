@@ -70,6 +70,43 @@ final class PresentationGuardTests: XCTestCase {
         XCTAssertFalse(PageContentView.mounts(surface: .panel, owner: .editorWindow))
     }
 
+    func testOnlyTheOwnersRailDrivesTheRoll() {
+        XCTAssertTrue(TimeRailView.drivesRoll(surface: .panel, owner: .panel))
+        XCTAssertTrue(TimeRailView.drivesRoll(surface: .editorWindow, owner: .editorWindow))
+        XCTAssertFalse(TimeRailView.drivesRoll(surface: .editorWindow, owner: .panel))
+        XCTAssertFalse(TimeRailView.drivesRoll(surface: .panel, owner: .editorWindow))
+    }
+
+    func testTheRailThatDoesNotOwnIsHandedARollNobodyClaims() throws {
+        let model = try makeModel(recording: Refusals())
+        let unclaimed = RollGeometryModel()
+        let roll = NSObject()
+        var wheels = 0
+        var scrolls = 0
+        model.rollGeometry.claim(
+            by: roll, scroller: { _ in scrolls += 1 }, wheel: { _ in wheels += 1 }
+        )
+
+        // The owner's rail reads the owner's roll and reaches it.
+        let owners = TimeRailView.roll(
+            surface: .panel, owner: .panel,
+            owners: model.rollGeometry, unclaimed: unclaimed
+        )
+        XCTAssertTrue(owners === model.rollGeometry)
+
+        // The other window's rail is handed the stand in, and both of
+        // the rail's asks put to it reach no roll at all.
+        let others = TimeRailView.roll(
+            surface: .editorWindow, owner: .panel,
+            owners: model.rollGeometry, unclaimed: unclaimed
+        )
+        XCTAssertTrue(others === unclaimed)
+        others.scroll(toDocumentOffset: 120)
+        XCTAssertEqual(others.geometry, .unmeasured)
+        XCTAssertEqual(scrolls, 0)
+        XCTAssertEqual(wheels, 0)
+    }
+
     func testTheGuardNamesEveryFieldTheRecordLists() {
         // ADR-0033 lists eight, and a ninth added here without a guard
         // of its own would be a field with no owner again.

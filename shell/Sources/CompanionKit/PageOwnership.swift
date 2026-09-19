@@ -116,6 +116,11 @@ public enum PresentationField: String, Sendable, CaseIterable {
     case activeEditor = "active-editor"
     case sealedPasteRoute = "sealed-paste-route"
     case todayAnchor = "today-anchor"
+    /// Guarded twice. The claim is guarded at the write, and the
+    /// claim's two answers, the scroll and the wheel, are guarded by
+    /// construction: the rail in a window that does not own is handed
+    /// a roll nobody claims and installs no wheel relay
+    /// (`TimeRailView.drivesRoll`).
     case rollGeometry = "roll-geometry"
     case holdsKeys = "holds-keys"
     case redrawCadence = "redraw-cadence"
