@@ -115,14 +115,15 @@ final class EditorHandoffTests: XCTestCase {
     }
 
     private func mount(
-        _ page: UInt64, of model: PageModel, in surface: PresentationOwner
+        _ page: UInt64, of model: PageModel, in surface: PresentationOwner,
+        width: CGFloat = 420, height: CGFloat = 320
     ) -> Mount {
         let coordinator = InkEditorView.Coordinator(model: model)
         coordinator.surface = surface
         let scroll = InkEditorView.makePage(
             model: model, sheetID: page, readOnly: false, coordinator: coordinator
         )
-        let card = NSRect(x: 0, y: 0, width: 420, height: 320)
+        let card = NSRect(x: 0, y: 0, width: width, height: height)
         let window = NSWindow(
             contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
         )
@@ -269,5 +270,117 @@ final class EditorHandoffTests: XCTestCase {
         XCTAssertTrue(model.activeEditor === editor)
         XCTAssertTrue(model.rollGeometry.holdsClaim(stack))
         XCTAssertNotNil(model.onAnchorToday)
+    }
+
+    // MARK: The page's place across a hand off and back
+
+    /// The scroll restore lands one main queue hop after it is asked
+    /// for, so the loop is turned once to let it.
+    private func pump() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    /// Paragraphs long enough to wrap, so the two windows lay the page
+    /// out in different numbers of lines (`PageViewStateTests`).
+    private func wrappingText() -> String {
+        (0..<40).map { paragraph in
+            "paragraph \(paragraph) " + (0..<45).map { "word\($0)" }.joined(separator: " ") + "\n"
+        }.joined()
+    }
+
+    /// The characters of the line standing at the top of the clip, and
+    /// where that line's top edge is in the document view.
+    private func topLine(of mount: Mount) throws -> (characters: NSRange, minY: CGFloat) {
+        let textView = try XCTUnwrap(mount.textView)
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+        let container = try XCTUnwrap(textView.textContainer)
+        layoutManager.ensureLayout(for: container)
+        let origin = textView.textContainerOrigin
+        let top = mount.scroll.contentView.bounds.origin.y - origin.y
+        let glyph = layoutManager.glyphIndex(for: NSPoint(x: 0, y: top + 0.5), in: container)
+        var glyphs = NSRange(location: 0, length: 0)
+        let rect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
+        return (
+            layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil),
+            rect.minY + origin.y
+        )
+    }
+
+    /// The mount going away, as SwiftUI takes it down.
+    private func dismantle(_ mount: Mount) {
+        mount.scroll.removeFromSuperview()
+        InkEditorView.dismantleNSView(mount.scroll, coordinator: mount.coordinator)
+    }
+
+    /// The panel is card sized and the editor window is wider, so the
+    /// trip is made at two measures, and the late dismantle is the
+    /// order that used to lose the place: the incoming mount shed the
+    /// outgoing editor before it had been asked where it was.
+    func testTheCaretAndTheLineBeingReadSurviveThePanelToTheEditorWindowAndBack() throws {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let panel = mount(page, of: model, in: .panel, width: 320, height: 160)
+        pump()
+        let panelEditor = try XCTUnwrap(panel.textView)
+        let text = wrappingText()
+        panelEditor.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+        let layoutManager = try XCTUnwrap(panelEditor.layoutManager)
+        layoutManager.ensureLayout(for: try XCTUnwrap(panelEditor.textContainer))
+        panel.scroll.layoutSubtreeIfNeeded()
+        let reading = (text as NSString).range(of: "paragraph 20 ").location + 200
+        let line = layoutManager.lineFragmentRect(
+            forGlyphAt: layoutManager.glyphIndexForCharacter(at: reading), effectiveRange: nil
+        )
+        panel.scroll.contentView.scroll(
+            to: NSPoint(x: 0, y: line.minY + panelEditor.textContainerOrigin.y)
+        )
+        panel.scroll.reflectScrolledClipView(panel.scroll.contentView)
+        let readInPanel = try topLine(of: panel).characters
+        let caret = NSRange(location: readInPanel.location + 5, length: 3)
+        panelEditor.setSelectedRange(caret)
+        let panelOffset = panel.scroll.contentView.bounds.origin.y
+
+        // To the editor window, the old mount taken down late.
+        model.transferOwnership(to: .editorWindow)
+        let window = mount(page, of: model, in: .editorWindow, width: 640, height: 480)
+        dismantle(panel)
+        pump()
+
+        let windowEditor = try XCTUnwrap(window.textView)
+        let landedInWindow = try topLine(of: window)
+        XCTAssertTrue(
+            NSLocationInRange(readInPanel.location, landedInWindow.characters),
+            "the editor window opened on \(landedInWindow.characters), which does not hold "
+                + "character \(readInPanel.location) that the panel was reading from"
+        )
+        XCTAssertEqual(
+            window.scroll.contentView.bounds.origin.y, landedInWindow.minY, accuracy: 0.5
+        )
+        XCTAssertEqual(windowEditor.selectedRange(), caret)
+        XCTAssertGreaterThan(
+            panelOffset - window.scroll.contentView.bounds.origin.y, 100,
+            "the two measures laid this page out alike, so a distance in points would have passed"
+        )
+
+        // And back, the person having moved the caret meanwhile.
+        let moved = NSRange(location: caret.location + 40, length: 0)
+        windowEditor.setSelectedRange(moved)
+        model.transferOwnership(to: .panel)
+        let panelAgain = mount(page, of: model, in: .panel, width: 320, height: 160)
+        dismantle(window)
+        pump()
+
+        let landedInPanel = try topLine(of: panelAgain)
+        XCTAssertTrue(
+            NSLocationInRange(landedInWindow.characters.location, landedInPanel.characters),
+            "the panel came back on \(landedInPanel.characters), which does not hold the "
+                + "character the editor window's top line began with"
+        )
+        XCTAssertEqual(
+            panelAgain.scroll.contentView.bounds.origin.y, landedInPanel.minY, accuracy: 0.5
+        )
+        XCTAssertEqual(panelAgain.textView?.selectedRange(), moved)
+        XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
     }
 }
