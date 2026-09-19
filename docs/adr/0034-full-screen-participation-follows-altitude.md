@@ -4,7 +4,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 # ADR-0034: Full screen participation follows altitude
 
-- **Status:** ejected on second trigger, superseded on the full screen route by [Amendment 1](#amendment-1-second-eject-trigger-fired-ordering-reopens). The base Decision continues to govern the same-desktop route.
+- **Status:** accepted
 - **Date:** 2026-09-18
 - **Supersedes in part:** [ADR-0032](0032-inactive-raised-surfaces-follow-normal-app-stacking.md), whose clause "Do not change the surface's Space membership or full-screen participation." is replaced for full screen participation only. The Space membership half of that clause stands. Also [ADR-0019](0019-the-pad-is-on-every-space.md), whose Decision describes full-screen participation as something "the unpinned rest declines and both the pin and the raise accept": the raise now accepts it only while it floats. ADR-0019's membership constancy stands.
 - **Depends on:** [ADR-0019](0019-the-pad-is-on-every-space.md) for constant Space membership, and [ADR-0032](0032-inactive-raised-surfaces-follow-normal-app-stacking.md) for the altitude model this decision reads from.

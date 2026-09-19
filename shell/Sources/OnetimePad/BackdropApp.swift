@@ -296,7 +296,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
-    /// The primary editor window (ADR-0033), spike quality (issue #197).
+    /// The primary editor window (ADR-0033), the second of the two
+    /// content windows over the one model.
     private lazy var editorWindow = PrimaryEditorWindowController(model: model)
 
     /// Holds the About panel at the surface's keyless altitude while
@@ -336,6 +337,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// the life of the delegate, which is the life of the process.
     private var modalEndObserver: NSObjectProtocol?
 
+    /// The observation of every window's close, held as long, which is
+    /// how the model learns that the keyboard is coming back from a
+    /// window that is neither content window
+    /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
+    private var windowCloseObserver: NSObjectProtocol?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
     }
@@ -361,10 +368,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = BackdropWindowController(model: model)
         self.controller = controller
-        // Esc, and every other hand-back route, rests the surface: the
-        // backdrop's way of giving the keyboard back is to step behind
-        // everything again.
-        model.pages.onHandBackKeys = { [weak model] in model?.rest() }
+        // Esc, and every other hand-back route, rests a raised surface:
+        // the backdrop's way of giving the keyboard back is to step
+        // behind everything again. From the editor window, beside a
+        // card already resting, it moves nothing.
+        model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -390,6 +398,31 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             forName: ModalSession.didEndNotification, object: nil, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.modalSessionEnded() }
+        }
+
+        // A window of ours closing while it holds the keyboard leaves
+        // AppKit to choose who has it next, and the model needs to know
+        // that the choice was nobody's gesture (ADR-0033: a modal
+        // return goes back to the owner). The observation is of every
+        // window and asks only whether it was key. Settings and About
+        // are the ones it is for. The editor window closing arms it
+        // too and harmlessly, since no editor window is left to be
+        // keyed, and the panel and its key relay are ordered out and
+        // never closed. Queue nil: the word has to reach the model
+        // ahead of the key event the close is about to cause.
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: nil
+        ) { [weak self] notification in
+            // The window's identity crosses into the main actor's
+            // isolation and the notification does not, since it is not
+            // Sendable. AppKit posts this one on the main thread.
+            let closing = (notification.object as AnyObject?).map(ObjectIdentifier.init)
+            MainActor.assumeIsolated {
+                guard let closing,
+                    NSApp.keyWindow.map(ObjectIdentifier.init) == closing
+                else { return }
+                self?.model.auxiliaryWindowReleasedKeys()
+            }
         }
 
         // The backdrop exists by being there: it takes its place on
@@ -456,13 +489,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let reply = QuitPrompt.terminateReply(flushing: model)
         if reply == .terminateCancel {
-            // Spike (issue #197): with the editor window open the quit
-            // anyway line is under its page and not the panel's, and a
-            // raise would be refused, so that window comes forward.
-            if model.editorWindowOpen {
-                editorWindow.show()
-            } else {
-                model.raise(.activation)
+            // A cancelled quit goes back to the owner (ADR-0033): the
+            // quit anyway line is under the page, and the page is in
+            // the window that owns it.
+            switch model.pages.owner {
+            case .editorWindow: editorWindow.show()
+            case .panel: model.raise(.activation)
             }
         }
         return reply
@@ -493,7 +525,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // launch window or not: each was set only when an activation
         // was certain to follow, so this is that activation, and a flag
         // left standing here would swallow the next real ⌘Tab instead.
-        let claimed = aboutActivation || settingsActivation
+        //
+        // An editor window on screen claims the activation as About and
+        // Settings do, and for good rather than once: ⌘Tab names the
+        // app, the app's window is the editor window, and AppKit makes
+        // it key on the way in (ADR-0033). The raise used to refuse
+        // itself while that window was open. It no longer refuses
+        // anything, so the route is decided here, where routes are. A
+        // window in the Dock claims nothing: ⌘Tab does not bring it
+        // out, and an activation it claimed would bring nothing forward
+        // and leave the app active with no key window. B4 owns the
+        // routing's final form.
+        let claimed = aboutActivation || settingsActivation || model.editorWindowCanTakeKeys
         aboutActivation = false
         settingsActivation = false
         guard let raise = Self.activationRaises(
@@ -555,16 +598,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// `applicationDidBecomeActive` gives, so one gesture cannot mean
     /// two things depending on which of the two it arrived at. With the
     /// setting on it opens the primary editor window or brings the open
-    /// one forward. Spike (issue #197): this is the window's only
-    /// entrance, and `activationRaises` is left as it was, so ⌘Tab, the
-    /// launch and the summons still raise the panel whenever the window
-    /// is closed. B4 owns the real routing.
+    /// one forward. This is the window's only entrance, and
+    /// `activationRaises` is left as it was, so ⌘Tab, the launch and
+    /// the summons still raise the panel whenever the window is closed.
+    /// B4 owns the real routing.
     ///
     /// A Dock click on an inactive app sends an activation as well as
     /// this, in no promised order. Either order ends in the same place:
     /// the window opening rests a panel the activation raised first,
-    /// and a raise arriving second is refused while the window is open
-    /// (`BackdropModel.raise`).
+    /// and an activation arriving second finds the window open and
+    /// leaves the panel where it is (`applicationDidBecomeActive`).
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {

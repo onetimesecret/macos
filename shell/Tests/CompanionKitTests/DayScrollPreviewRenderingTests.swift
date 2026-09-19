@@ -570,9 +570,9 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         model.selectFileRenderMode(.source("swift"), for: fileID)
 
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: fileID, coordinator: coordinator
-        )
+        ))
         let storage = try XCTUnwrap(textView.textStorage)
         // The default typeface names one family for both prose and code
         // (System Monospaced), so font identity cannot distinguish the

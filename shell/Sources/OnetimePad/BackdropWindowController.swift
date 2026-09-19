@@ -384,18 +384,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
-            if model.editorWindowOpen {
-                // Spike (issue #197): the editor window is key-able and
-                // is up or about to be, so the app has somewhere for
-                // the keyboard to go and the activation is not ours to
-                // hand back. Without this the rest that opening the
-                // window causes would deactivate the app under it.
-            } else if NSApp.isActive {
+            if NSApp.isActive {
                 // A ⌘Tab or Dock summon made this app active; resting
                 // hands the whole activation back, not just key status
                 // — an active app with no key-able window would strand
-                // the keyboard.
-                NSApp.deactivate()
+                // the keyboard. With an editor window that can take the
+                // keyboard it has one: that window is up or about to
+                // be, the keyboard goes to it
+                // (`PrimaryEditorWindowController`), and the activation
+                // is not ours to hand back. Without the exception the
+                // rest that opening the window causes would deactivate
+                // the app under it. An editor window in the Dock is no
+                // exception, since it can take nothing, and the same
+                // fact decides the keyboard's return, so the two cannot
+                // disagree and leave an active app with no key window.
+                // B4 owns the rule's final form.
+                if BackdropModel.restHandsBackActivation(
+                    appActive: true, editorWindowCanTakeKeys: model.editorWindowCanTakeKeys
+                ) {
+                    NSApp.deactivate()
+                }
             } else if panel.isKeyWindow {
                 // The hotkey path: the app never activated, so there is
                 // no activation to return — only key status. A
@@ -668,9 +676,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// Key status feeds the model: the ember border shows exactly
-    /// while the surface holds the keyboard, and the summon decision
-    /// distinguishes raised-and-keyed (summon rests it) from
+    /// Key status is reported to the model, which keeps it only while
+    /// the panel owns the page content (`BackdropModel.keyStatusChanged`).
+    /// The ember border shows exactly while the panel owns and holds
+    /// the keyboard (`PageModel.holdsKeys(on:)`), and the summon
+    /// decision distinguishes raised-and-keyed (summon rests it) from
     /// raised-but-keyboard-less (summon re-keys it). The altitude the
     /// panel sits at is `BackdropAltitude.resolve`'s to decide from
     /// the four inputs together, and this passes the key answer that
@@ -681,7 +691,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             pinned: model.pinned,
             keepsAbove: model.keepsAboveWhenInactive
         )
-        model.holdsKeys = true
+        model.keyStatusChanged(of: .panel, keyed: true)
     }
 
     /// Losing the keyboard is never a rest, and that is load-bearing:
@@ -704,7 +714,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             pinned: model.pinned,
             keepsAbove: model.keepsAboveWhenInactive
         )
-        model.holdsKeys = false
+        model.keyStatusChanged(of: .panel, keyed: false)
     }
 
     /// The keyboard's waypoint on its way back to the active app: a

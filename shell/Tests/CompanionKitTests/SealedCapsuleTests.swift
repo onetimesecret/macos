@@ -24,8 +24,8 @@ final class SealedCapsuleTests: XCTestCase {
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let page = try XCTUnwrap(model.selectedPageID)
-        let textView = InkEditorView.makeInkTextView(
-            model: model, sheetID: page, coordinator: coordinator)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
         textView.insertText(
             "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
         textView.setSelectedRange(NSRange(location: 3, length: 6))

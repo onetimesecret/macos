@@ -36,9 +36,45 @@ import SwiftUI
 /// the claim that horizontal mode is untouched is a fact about the diff.
 public struct TimeRailView: View {
     @ObservedObject var model: PageModel
+    @Environment(\.presentationSurface) private var surface
+
+    /// The roll handed to a rail whose window does not own the page
+    /// content: a measurement nobody publishes to and a pair of asks
+    /// nobody answers. It is this view's own and is never claimed, so
+    /// the navigator over it packs its nodes from the top and draws no
+    /// band and no slivers, which is all a window with no roll mounted
+    /// can honestly say about one.
+    @StateObject private var unclaimedRoll = RollGeometryModel()
 
     public init(model: PageModel) {
         self.model = model
+    }
+
+    /// Whether this window's rail reads and drives the roll, pure: only
+    /// the owner's does (ADR-0033). The roll geometry is one of the
+    /// presentation fields with a single owner, and its claim guards
+    /// the write. The claim's two answers, the scroll and the wheel,
+    /// are reachable from any rail that holds the model, so the rail is
+    /// guarded by construction, as `PageKeyboardMap` is: a window that
+    /// does not own installs no wheel relay and is handed no roll to
+    /// scroll, and a wheel turned over its rail falls through to
+    /// whatever would have had it anyway.
+    nonisolated static func drivesRoll(
+        surface: PresentationOwner, owner: PresentationOwner
+    ) -> Bool {
+        PresentationOwner.mayWrite(surface, owner: owner)
+    }
+
+    /// Which roll a rail is handed, pure: the owner's own for the
+    /// owner's rail, and the stand in for the other window's. This is
+    /// the one place the choice is made, and so the one place B3's
+    /// glance (issue #199) changes when it decides what the rail beside
+    /// a glance draws.
+    static func roll(
+        surface: PresentationOwner, owner: PresentationOwner,
+        owners: RollGeometryModel, unclaimed: RollGeometryModel
+    ) -> RollGeometryModel {
+        drivesRoll(surface: surface, owner: owner) ? owners : unclaimed
     }
 
     /// The rail's width, fixed. It eats into the page's column and not
@@ -91,7 +127,11 @@ public struct TimeRailView: View {
             padHeading
             StreamNavigatorView(
                 model: model,
-                roll: model.rollGeometry,
+                roll: Self.roll(
+                    surface: surface, owner: model.owner,
+                    owners: model.rollGeometry, unclaimed: unclaimedRoll
+                ),
+                drivesRoll: Self.drivesRoll(surface: surface, owner: model.owner),
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.openFiles.count)
             )
@@ -270,6 +310,13 @@ public struct TimeRailView: View {
 struct StreamNavigatorView: View {
     @ObservedObject var model: PageModel
     @ObservedObject var roll: RollGeometryModel
+    /// Whether this rail reaches a roll at all
+    /// (`TimeRailView.drivesRoll`). False in the window that does not
+    /// own, where `roll` is the stand in, no wheel relay is installed,
+    /// and a click on a node selects its page without asking any roll
+    /// to move. Selection is the shared model's and either window may
+    /// change it; the scroll that follows is the owner's own business.
+    let drivesRoll: Bool
     let nodes: [StreamNavigator.Node]
     let chords: [UInt64: Keystroke]
 
@@ -318,7 +365,11 @@ struct StreamNavigatorView: View {
                     node(placed, width: proxy.size.width)
                 }
             }
-            .background(WheelRelay { event in roll.relay(wheel: event) })
+            // Only the owner's rail installs the relay. A relay in the
+            // other window would watch that window's wheel events and
+            // swallow each one over the column, for a roll it may not
+            // drive.
+            .background(drivesRoll ? WheelRelay { event in roll.relay(wheel: event) } : nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
@@ -533,13 +584,14 @@ struct StreamNavigatorView: View {
     /// rail that makes something (ADR-0017).
     private func jump(to placed: StreamNavigator.Placed) {
         model.select(target: placed.node.target)
+        guard drivesRoll else { return }
         roll.scroll(toDocumentOffset: StreamNavigator.jumpOffset(forDocumentTop: placed.documentTop))
     }
 
     /// Bare track was clicked: scroll the roll to the stretch under the
     /// click and select nothing.
     private func jump(toTrackY y: CGFloat, layout: StreamNavigator.Layout) {
-        guard layout.anchors.count >= 2 else { return }
+        guard drivesRoll, layout.anchors.count >= 2 else { return }
         roll.scroll(toDocumentOffset: layout.jumpOffset(
             forTrackY: y, viewportHeight: roll.geometry.viewportHeight
         ))
@@ -616,13 +668,36 @@ private struct WheelRelay: NSViewRepresentable {
     func updateNSView(_ view: WheelRelayView, context: Context) {
         view.relay = relay
     }
+
+    /// SwiftUI is done with the relay, which is every time ownership
+    /// leaves this window and the rail drops its wheel (ADR-0033). The
+    /// watch is retired here and not left to `viewDidMoveToWindow`,
+    /// since a dismantled view is not promised a last trip through its
+    /// window's lifecycle, and a monitor left standing is an app wide
+    /// tap holding a closure over a roll that is no longer this rail's.
+    /// As `DayScrollView.dismantleNSView` does for the roll's handle,
+    /// the release is unconditional: it is this view's own watch.
+    static func dismantleNSView(_ view: WheelRelayView, coordinator: ()) {
+        view.retire()
+    }
 }
 
 final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
-    /// its window or moves between windows.
+    /// its window or moves between windows, and by the representable's
+    /// dismantle (`retire`).
     private var monitor: Any?
+
+    /// Whether the view is watching its window's wheel events.
+    var isWatching: Bool { monitor != nil }
+
+    /// The representable's dismantle: stop watching and let go of the
+    /// roll's answer, whether or not the view ever leaves its window.
+    func retire() {
+        retireMonitor()
+        relay = nil
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 

@@ -30,14 +30,32 @@ public struct PageContentView: View {
     /// backdrop names the one that would make it typeable at all.
     let emptyHint: String
 
+    @Environment(\.presentationSurface) private var surface
+
     public init(model: PageModel, readOnly: Bool = false, emptyHint: String) {
         self.model = model
         self.readOnly = readOnly
         self.emptyHint = emptyHint
     }
 
+    /// Whether a window shows the content area at all, pure: only the
+    /// window that owns the page content does (ADR-0033).
+    nonisolated static func mounts(
+        surface: PresentationOwner, owner: PresentationOwner
+    ) -> Bool {
+        PresentationOwner.mayWrite(surface, owner: owner)
+    }
+
     public var body: some View {
-        if model.showingLedger {
+        if !Self.mounts(surface: surface, owner: model.owner) {
+            // A form factor's root view draws its own stand in for the
+            // window that does not own, and never reaches this. It is
+            // here so that a root which forgot to ask gets nothing,
+            // where it would otherwise get a second editor, a second
+            // roll, or an empty state whose click and Return mint a
+            // page from a window the person is not writing in.
+            Color.clear
+        } else if model.showingLedger {
             LedgerView(entries: model.ledgerEntries)
         } else if let file = model.activeFile {
             // A file replaces whatever the surface was showing, in
@@ -126,6 +144,11 @@ public struct PageStatusStack: View {
     /// and a nested object's changes do not republish through the
     /// model.
     @ObservedObject var sync: SyncController
+
+    /// Which window this stack stands in. Most of what it says is the
+    /// shared model's and reads the same in both windows. The
+    /// pasteboard offer is the exception: it is the owner's.
+    @Environment(\.presentationSurface) private var surface
 
     public init(model: PageModel) {
         self.model = model
@@ -257,7 +280,8 @@ public struct PageStatusStack: View {
         if PageModel.shouldShowPasteboardOffer(
             boardHolds: model.pasteboardOffer,
             hasPage: model.selectedPageID != nil,
-            ledgerShowing: model.showingLedger
+            ledgerShowing: model.showingLedger,
+            ownsPresentation: model.owner == surface
         ) {
             // The summon-time offer (ADR-0007 Amendment 1): one
             // gesture from "secret in hand" to "chip with a TTL,
@@ -341,8 +365,15 @@ public struct PageStatusStack: View {
 /// file and are not installed here. They are dispatched by the page's
 /// own text view, which sees a keystroke before any of these buttons
 /// do and which owns the caret they act on.
+///
+/// And only in the window that owns the page content (ADR-0033). The
+/// map is one of the things that has a single owner, and it is guarded
+/// here by construction: a window that does not own installs no chord,
+/// so there is never a second map to answer a keystroke meant for the
+/// first.
 public struct PageKeyboardMap: View {
     @ObservedObject var model: PageModel
+    @Environment(\.presentationSurface) private var surface
 
     public init(model: PageModel) {
         self.model = model
@@ -350,14 +381,23 @@ public struct PageKeyboardMap: View {
 
     public var body: some View {
         Group {
-            ForEach(model.keymap.surfaceShortcuts()) { installed in
-                Button("") { model.perform(installed.command) }
-                    .keyboardShortcut(installed.shortcut)
+            if Self.installs(surface: surface, owner: model.owner) {
+                ForEach(model.keymap.surfaceShortcuts()) { installed in
+                    Button("") { model.perform(installed.command) }
+                        .keyboardShortcut(installed.shortcut)
+                }
             }
         }
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+
+    /// Whether a window installs the map, pure: only the owner's does.
+    nonisolated static func installs(
+        surface: PresentationOwner, owner: PresentationOwner
+    ) -> Bool {
+        PresentationOwner.mayWrite(surface, owner: owner)
     }
 }
 

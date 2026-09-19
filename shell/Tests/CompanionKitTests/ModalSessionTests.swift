@@ -49,6 +49,31 @@ final class ModalSessionTests: XCTestCase {
         XCTAssertEqual(ends, 2)
     }
 
+    func testTheBracketIsOpenForTheWholeOfTheBodyAndShutByTheAnnouncement() {
+        // The panel orders itself out inside `runModal`, after AppKit's
+        // own session has ended, and the window AppKit keys next hears
+        // of it there. The bracket is the only fact that still says a
+        // modal of ours is why.
+        let center = NotificationCenter()
+        var atTheEnd: Bool?
+        let token = center.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { _ in
+            MainActor.assumeIsolated { atTheEnd = ModalSession.isBracketed }
+        }
+        defer { center.removeObserver(token) }
+
+        XCTAssertFalse(ModalSession.isBracketed)
+        let inside = ModalSession.run(center: center) {
+            ModalSession.run(center: center) { ModalSession.isBracketed }
+                && ModalSession.isBracketed
+        }
+
+        XCTAssertTrue(inside, "through a nested bracket and after it")
+        XCTAssertEqual(atTheEnd, false)
+        XCTAssertFalse(ModalSession.isBracketed)
+    }
+
     func testNoModalIsRunningUnderTheTestRunner() {
         // The AppKit fact the outside click rule reads, at rest. Run on
         // its own this case sees no application at all, since nothing

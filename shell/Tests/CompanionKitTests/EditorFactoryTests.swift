@@ -52,9 +52,9 @@ final class EditorFactoryTests: XCTestCase {
         let page = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
 
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
 
         XCTAssertTrue(
             textView.isRichText,
@@ -93,9 +93,9 @@ final class EditorFactoryTests: XCTestCase {
         let page = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
 
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
 
         XCTAssertTrue(textView.delegate === coordinator)
         XCTAssertTrue(textView.coordinator === coordinator, "the page's chords have nowhere to go")
@@ -126,17 +126,17 @@ final class EditorFactoryTests: XCTestCase {
         // The first editor and its manager are both held for the length
         // of the test, so what the count says below is the shed's doing
         // and never ARC's.
-        let torndown = InkEditorView.makeInkTextView(
+        let torndown = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: first
-        )
+        ))
         let oldManager = model.storage(for: page).layoutManagers.first
         XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
         XCTAssertTrue(torndown.layoutManager === oldManager)
 
         let second = InkEditorView.Coordinator(model: model)
-        let rebuilt = InkEditorView.makeInkTextView(
+        let rebuilt = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: second
-        )
+        ))
 
         XCTAssertEqual(
             model.storage(for: page).layoutManagers.count, 1,
@@ -165,9 +165,9 @@ final class EditorFactoryTests: XCTestCase {
         let page = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
 
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
         let scroll = InkEditorView.scrollStack(for: textView)
 
         XCTAssertEqual(textView.maxSize.width, CGFloat.greatestFiniteMagnitude)
@@ -204,9 +204,9 @@ final class EditorFactoryTests: XCTestCase {
         let first = try mintPage(in: model)
         let second = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: first, coordinator: coordinator
-        )
+        ))
 
         // Mounted in a plain view, not in a scroller: the editor is one
         // region among several rather than the only thing in its clip.
@@ -253,5 +253,179 @@ final class EditorFactoryTests: XCTestCase {
         XCTAssertNil(secondStorage.delegate)
         XCTAssertEqual(firstStorage.layoutManagers.count, 1)
         XCTAssertEqual(secondStorage.layoutManagers.count, 0)
+    }
+
+    // MARK: Building in the window that does not own (ADR-0033, issue #198)
+
+    /// What the guard declined, in order. A refusal traps in a debug
+    /// build, so these cases watch it through the seam that stands in
+    /// for the trap, as `PresentationGuardTests` does.
+    private final class Refusals {
+        var fields: [PresentationField] = []
+    }
+
+    private func makeModel(recording refusals: Refusals) throws -> PageModel {
+        let suiteName = "companion-editor-factory-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-factory-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return PageModel(
+            formFactor: .backdrop,
+            defaults: defaults,
+            seams: .init(
+                stateDirectory: directory,
+                client: .ephemeral(tag: UUID().uuidString),
+                declinedPresentationWrite: { field, _ in refusals.fields.append(field) }
+            )
+        )
+    }
+
+    private func coordinator(
+        of model: PageModel, in surface: PresentationOwner
+    ) -> InkEditorView.Coordinator {
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = surface
+        return coordinator
+    }
+
+    /// The hazard the guard exists for: the building sheds every
+    /// layout manager on the page, and in the window that does not own
+    /// the one it would shed is the owner's.
+    func testAPageMadeInTheWindowThatDoesNotOwnHasNoEditorAndShedsNothing() throws {
+        let refusals = Refusals()
+        let model = try makeModel(recording: refusals)
+        let page = try mintPage(in: model)
+        let owners = coordinator(of: model, in: .panel)
+        let ownersPage = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: owners
+        )
+        let ownersEditor = try XCTUnwrap(ownersPage.documentView as? InkTextView)
+        let storage = model.storage(for: page)
+
+        let others = coordinator(of: model, in: .editorWindow)
+        let othersPage = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: others
+        )
+
+        XCTAssertNil(othersPage.documentView, "a second editor was built over a live page")
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+        XCTAssertTrue(
+            storage.layoutManagers.first === ownersEditor.layoutManager,
+            "the mount in the other window took the page out from under the owner's editor"
+        )
+        XCTAssertTrue(storage.delegate === owners)
+        XCTAssertTrue(model.activeEditor === ownersEditor)
+        XCTAssertNil(others.currentSheet)
+        XCTAssertTrue(
+            refusals.fields.isEmpty,
+            "the mount site asks before it builds, so nothing should have reached the guard"
+        )
+    }
+
+    func testTheBuilderDeclinesACallerThatNeverAskedBeforeItShedsAnything() throws {
+        let refusals = Refusals()
+        let model = try makeModel(recording: refusals)
+        let page = try mintPage(in: model)
+        let owners = coordinator(of: model, in: .panel)
+        let ownersEditor = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: owners
+        ))
+        let storage = model.storage(for: page)
+
+        let built = InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator(of: model, in: .editorWindow)
+        )
+
+        XCTAssertNil(built)
+        XCTAssertEqual(refusals.fields, [.activeEditor], "this refusal is the loud one")
+        XCTAssertTrue(storage.layoutManagers.first === ownersEditor.layoutManager)
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+        XCTAssertTrue(storage.delegate === owners)
+    }
+
+    /// The swap sheds the incoming page's managers as the building
+    /// does, so it is declined the same way.
+    func testTheSwapIsDeclinedInTheWindowThatDoesNotOwn() throws {
+        let refusals = Refusals()
+        let model = try makeModel(recording: refusals)
+        let first = try mintPage(in: model)
+        let second = try mintPage(in: model)
+        let panels = coordinator(of: model, in: .panel)
+        let panelsEditor = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: first, coordinator: panels
+        ))
+        model.transferOwnership(to: .editorWindow)
+        let windows = coordinator(of: model, in: .editorWindow)
+        let windowsEditor = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: second, coordinator: windows
+        ))
+        let secondStorage = model.storage(for: second)
+
+        panels.moveEditor(
+            panelsEditor, to: second, storage: secondStorage, restoringScrollIn: nil
+        )
+
+        XCTAssertEqual(refusals.fields, [.activeEditor])
+        XCTAssertEqual(secondStorage.layoutManagers.count, 1)
+        XCTAssertTrue(secondStorage.layoutManagers.first === windowsEditor.layoutManager)
+        XCTAssertTrue(secondStorage.delegate === windows)
+        XCTAssertNil(panels.currentSheet)
+    }
+
+    func testAPageDeclinedAtTheMountIsBuiltByThePassThatFindsItsWindowOwning() throws {
+        let refusals = Refusals()
+        let model = try makeModel(recording: refusals)
+        let page = try mintPage(in: model)
+        let windows = coordinator(of: model, in: .editorWindow)
+        let scroll = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: windows
+        )
+        XCTAssertNil(scroll.documentView)
+
+        // A pass while the panel still owns builds nothing either.
+        InkEditorView.updatePage(
+            scroll, model: model, sheetID: page, readOnly: false, coordinator: windows
+        )
+        XCTAssertNil(scroll.documentView)
+
+        model.transferOwnership(to: .editorWindow)
+        InkEditorView.updatePage(
+            scroll, model: model, sheetID: page, readOnly: true, coordinator: windows
+        )
+
+        let editor = try XCTUnwrap(scroll.documentView as? InkTextView)
+        XCTAssertTrue(model.activeEditor === editor)
+        XCTAssertFalse(editor.isEditable, "the late mount takes the pass's own word on editing")
+        XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
+        XCTAssertTrue(refusals.fields.isEmpty)
+    }
+
+    func testARollMadeInTheWindowThatDoesNotOwnClaimsNothingAndBuildsNoEditor() throws {
+        let refusals = Refusals()
+        let model = try makeModel(recording: refusals)
+        model.showsTimeUnits = true
+        let page = try mintPage(in: model)
+        let owners = coordinator(of: model, in: .panel)
+        let ownersRoll = DayScrollView.makeRoll(model: model, coordinator: owners, emptyHint: "")
+        DayScrollView.updateRoll(ownersRoll, model: model, readOnly: false, coordinator: owners)
+        let ownersStack = try XCTUnwrap(ownersRoll.documentView as? DayStackView)
+        let ownersEditor = try XCTUnwrap(ownersStack.editor)
+
+        let others = coordinator(of: model, in: .editorWindow)
+        let othersRoll = DayScrollView.makeRoll(model: model, coordinator: others, emptyHint: "")
+        DayScrollView.updateRoll(othersRoll, model: model, readOnly: false, coordinator: others)
+        let othersStack = try XCTUnwrap(othersRoll.documentView as? DayStackView)
+        // And the pass the tests drive directly, which asks for itself.
+        othersStack.update(projection: model.timeUnits, selectedPage: page, readOnly: false)
+
+        XCTAssertNil(othersStack.editor)
+        XCTAssertTrue(model.rollGeometry.holdsClaim(ownersStack))
+        XCTAssertFalse(model.rollGeometry.holdsClaim(othersStack))
+        XCTAssertTrue(model.activeEditor === ownersEditor)
+        XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
+        XCTAssertTrue(model.storage(for: page).layoutManagers.first === ownersEditor.layoutManager)
+        XCTAssertTrue(refusals.fields.isEmpty)
     }
 }

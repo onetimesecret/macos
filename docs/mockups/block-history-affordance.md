@@ -2,7 +2,7 @@
 
 My recommendation is a hybrid: remove the permanent timestamp rows, retain a compact “edited” affordance only where it carries useful information, and put the full history one click away.
 
-The current treatment spends 20 points of vertical space per labeled block and repeats `EEE HH:mm` above the content ([InkEditorView.swift](../../shell/Sources/CompanionKit/InkEditorView.swift:2926)). In the time-tabs layout, the checkpoint header has already established the day, deliberately avoiding repeated dates ([DayScrollView.swift](../../shell/Sources/CompanionKit/DayScrollView.swift:1206)). The block labels undermine that otherwise economical hierarchy.
+The current treatment spends 20 points of vertical space per labeled block and repeats `EEE HH:mm` above the content ([InkEditorView.swift](../../shell/Sources/CompanionKit/InkEditorView.swift:3250)). In the time-tabs layout, the checkpoint header has already established the day, deliberately avoiding repeated dates ([DayScrollView.swift](../../shell/Sources/CompanionKit/DayScrollView.swift:1387)). The block labels undermine that otherwise economical hierarchy.
 
 ### Proposed resting state
 

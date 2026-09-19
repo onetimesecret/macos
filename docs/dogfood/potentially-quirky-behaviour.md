@@ -73,14 +73,14 @@ must be resolved before proceeding to #185–#190. The relevant implementation i
 
 Changing focus alone does **not** dismiss the surface:
 
-- `windowDidResignKey` only sets `holdsKeys = false`; it explicitly does not rest the surface: `shell/Sources/OnetimePad/BackdropWindowController.swift:634`.
-- `openSettings()` activates and shows Settings but does not call `model.rest()`: `shell/Sources/OnetimePad/BackdropApp.swift:706`.
+- `windowDidResignKey` only sets `holdsKeys = false`; it explicitly does not rest the surface: `shell/Sources/OnetimePad/BackdropWindowController.swift:697`.
+- `openSettings()` activates and shows Settings but does not call `model.rest()`: `shell/Sources/OnetimePad/BackdropApp.swift:771`.
 - Consequently, opening Settings with `⌘,` can leave the surface raised and visible.
 
 Mouse-driven routes can behave differently:
 
-- While raised, a global outside-click monitor asynchronously calls `model.rest()`: `shell/Sources/OnetimePad/BackdropWindowController.swift:557`.
-- The implementation explicitly classifies Settings and About as outside the surface: “Our ordinary windows, Settings and About, are outside by this rule and rest the card”: `shell/Sources/OnetimePad/BackdropWindowController.swift:540`.
+- While raised, a global outside-click monitor asynchronously calls `model.rest()`: `shell/Sources/OnetimePad/BackdropWindowController.swift:610`.
+- The implementation explicitly classifies Settings and About as outside the surface: “Our ordinary windows, Settings and About, are outside by this rule and rest the card”: `shell/Sources/OnetimePad/BackdropWindowController.swift:593`.
 - Menu-owned presses are exempt, so opening Settings through a tracked menu may leave the surface raised, while an unclaimed mouse press can rest it.
 - Once resting, an unpinned surface moves to desktop level and therefore appears to disappear behind normal windows. A pinned surface remains floating: `shell/Sources/OnetimePad/BackdropStance.swift:24`.
 

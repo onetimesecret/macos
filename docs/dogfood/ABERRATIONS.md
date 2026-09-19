@@ -40,7 +40,7 @@ Quick check: sample the rendered edge with Digital Colour Meter in "sRGB IEC6196
 
   Thought for 42s, searched for 4 patterns
 
-Confirmed: it IS ember, but not drawn honestly. shell/Sources/OnetimePad/Views/BackdropRootView.swift:229-230:
+Confirmed: it IS ember, but not drawn honestly. shell/Sources/OnetimePad/Views/BackdropRootView.swift:231-232:
 
 RoundedRectangle(cornerRadius: 12)
     .strokeBorder(Color.ember.opacity(pages.holdsKeys ? 0.8 : 0), lineWidth: 1.5)

@@ -1523,7 +1523,7 @@ final class FileReviewFixTests: XCTestCase {
         let file = CompanionClient.fileIDTag | 7
         let page: UInt64 = 3
         let dead: UInt64 = 9
-        let pruned = InkEditorView.Coordinator.pruned(
+        let pruned = PageViewStates.pruned(
             [file: 11, page: 22, dead: 33], keeping: Set([page])
         )
         XCTAssertEqual(pruned[file], 11, "a file is never in the live page set and must survive")
@@ -1639,9 +1639,9 @@ final class FileReviewFixTests: XCTestCase {
 /// roster leaves nothing behind in any of the three maps.
 ///
 /// Its own class because it needs a real editor mounted over the file,
-/// which is what puts a caret and a scroll offset in the coordinator's
-/// maps in the first place. Nothing else in the file suites builds
-/// one.
+/// which is what puts a caret and a scroll offset in the model's view
+/// state table in the first place. Nothing else in the file suites
+/// builds one.
 @MainActor
 final class FileCloseSweepTests: XCTestCase {
     private func makeFixture() throws -> (state: URL, workspace: URL, defaults: UserDefaults) {
@@ -1684,9 +1684,9 @@ final class FileCloseSweepTests: XCTestCase {
         // build one, because a caret and a scroll offset only exist
         // once something has actually been mounted and left.
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: id, coordinator: coordinator
-        )
+        ))
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
         scroll.documentView = textView
         textView.setSelectedRange(NSRange(location: 3, length: 0))
@@ -1694,18 +1694,46 @@ final class FileCloseSweepTests: XCTestCase {
         coordinator.saveViewState(textView: textView, scrollView: scroll)
 
         XCTAssertTrue(model.pagesWithStorage.contains(id))
-        XCTAssertTrue(coordinator.viewStateKeys.carets.contains(id))
-        XCTAssertTrue(coordinator.viewStateKeys.scrolls.contains(id))
+        XCTAssertNotNil(model.viewStates.carets[id])
+        XCTAssertNotNil(model.viewStates.scrolls[id])
 
         model.closeActiveFile()
 
         XCTAssertTrue(model.openFiles.isEmpty)
         XCTAssertFalse(
             model.pagesWithStorage.contains(id), "the storage went with the file")
-        XCTAssertFalse(
-            coordinator.viewStateKeys.carets.contains(id), "and so did the caret")
-        XCTAssertFalse(
-            coordinator.viewStateKeys.scrolls.contains(id), "and the scroll offset")
+        XCTAssertNil(model.viewStates.carets[id], "and so did the caret")
+        XCTAssertNil(model.viewStates.scrolls[id], "and the scroll offset")
+    }
+
+    /// The sweep no longer needs an editor to be standing anywhere. The
+    /// place is the model's, so a file whose editor was torn down before
+    /// the file went is swept all the same, where the coordinator's own
+    /// maps could only be reached through a mounted editor.
+    func testAClosedFileIsSweptWithNoEditorMounted() throws {
+        let fixture = try makeFixture()
+        let model = PageModel(
+            formFactor: .panel,
+            defaults: fixture.defaults,
+            seams: .init(
+                stateDirectory: fixture.state,
+                client: .ephemeral(tag: "sweep-\(UUID().uuidString)"),
+                saveDebounce: 0.05
+            )
+        )
+        model.fileCoordinator = FileCoordinator(panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = fixture.workspace.appendingPathComponent("notes.txt")
+        try Data("body\n".utf8).write(to: url)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        model.viewStates.saveCaret(NSRange(location: 2, length: 0), for: id)
+        model.viewStates.saveScroll(ScrollAnchor(characterIndex: 2), for: id)
+        XCTAssertNil(model.activeEditor, "the fixture must have no editor to go through")
+
+        model.standOpenFiles([])
+
+        XCTAssertFalse(model.viewStates.keys.contains(id))
     }
 
     /// The same sweep reached by the other door: a roster that simply

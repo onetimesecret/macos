@@ -221,13 +221,17 @@ struct BackdropRootView: View {
                 .fill(.ultraThinMaterial)
         )
         .overlay(
-            // The ember border shows exactly while the surface holds
-            // the keyboard — raised and keyed are distinct facts (a
-            // card the user ⌘Tabbed away from is raised, unkeyed, and
-            // unlit). Visible state, never colour alone; the caret and
-            // focus ring agree.
+            // The ember border shows exactly while this surface holds
+            // the keyboard. Raised and keyed are distinct facts: a card
+            // the user ⌘Tabbed away from is raised, unkeyed, and unlit.
+            // The model's key fact is the owner's, so the card asks for
+            // its own: a resting card beside a keyed editor window is
+            // unlit too. Visible state, never colour alone; the caret
+            // and focus ring agree.
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(pages.holdsKeys ? Color.ember : Color.clear, lineWidth: 1.5)
+                .strokeBorder(
+                    pages.holdsKeys(on: .panel) ? Color.ember : Color.clear, lineWidth: 1.5
+                )
                 .allowsHitTesting(false)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -271,21 +275,21 @@ struct BackdropRootView: View {
         }
     }
 
-    /// The page, or nothing while the editor window holds it (spike,
-    /// issue #197). The unmount is the point and not a side effect: the
-    /// one editor writes `activeEditor`, the storage's delegate and its
-    /// layout manager at mount and on every update, so two mounts over
-    /// one model fight, and the crude cure is that the panel has none.
-    /// The placeholder names no page and shows no ink. B3's glance
-    /// replaces it.
+    /// The page while the panel owns it, and a placeholder while the
+    /// editor window does (ADR-0033). The unmount is the point and not
+    /// a side effect: the one editor writes `activeEditor`, the
+    /// storage's delegate and its layout manager at mount and on every
+    /// update, so the window that does not own mounts no editor at all,
+    /// read only or otherwise. The placeholder names no page and shows
+    /// no ink. B3's glance replaces it.
     @ViewBuilder
     private var pageContent: some View {
-        if model.editorWindowOpen {
+        if pages.owner == .panel {
+            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+        } else {
             Text("Open in the editor window.")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.tertiary)
-        } else {
-            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
         }
     }
 

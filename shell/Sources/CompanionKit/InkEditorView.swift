@@ -34,9 +34,60 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        let textView = Self.makeInkTextView(
-            model: model, sheetID: sheetID, coordinator: context.coordinator
+        // Before anything is built, because the building writes to the
+        // model and every such write says which window it comes from.
+        context.coordinator.surface = context.environment.presentationSurface
+        return Self.makePage(
+            model: model, sheetID: sheetID, readOnly: readOnly,
+            coordinator: context.coordinator
         )
+    }
+
+    /// The page surface, assembled: the one editor inside its scroller,
+    /// opened where the page was last left.
+    ///
+    /// A static rather than the body of `makeNSView`, for the reason
+    /// `DayScrollView.makeRoll` is one: a test cannot make a SwiftUI
+    /// `Context`, and what this mount owes the page is worth asserting.
+    /// The app and the tests build the same object out of the same call.
+    ///
+    /// In a window that does not own the page content the scroller
+    /// comes back empty (ADR-0033). SwiftUI has to be handed a view
+    /// either way, and an empty one is the mount that sheds nothing,
+    /// announces nothing and shows no ink.
+    @MainActor
+    static func makePage(
+        model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
+    ) -> NSScrollView {
+        let scroll = bareScroller()
+        mountPage(
+            in: scroll, model: model, sheetID: sheetID, readOnly: readOnly,
+            coordinator: coordinator
+        )
+        return scroll
+    }
+
+    /// Build the editor into a scroller that has none, when this window
+    /// owns the page content, and say whether it did.
+    ///
+    /// The question comes before the building and not after it, because
+    /// the building sheds every layout manager it finds on the page's
+    /// storage, and in a window that does not own the one it would find
+    /// is the owner's. Asked quietly here: a root view that mounted a
+    /// page in the wrong window is declined without a trap, and the
+    /// builder's own guard is the loud one for a caller that never
+    /// asked.
+    @MainActor
+    @discardableResult
+    static func mountPage(
+        in scroll: NSScrollView,
+        model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
+    ) -> Bool {
+        guard model.owner == coordinator.surface,
+              let textView = makeInkTextView(
+                  model: model, sheetID: sheetID, coordinator: coordinator
+              )
+        else { return false }
         // Whether the page accepts typing is the stance's business and
         // not the editor's, which is why it is set here rather than in
         // the building: `updateNSView` re-gates it on every pass, since
@@ -44,10 +95,16 @@ public struct InkEditorView: NSViewRepresentable {
         // changing the editor.
         textView.isEditable = !readOnly
 
-        let scroll = Self.scrollStack(for: textView)
-        context.coordinator.observeClip(of: scroll)
-        context.coordinator.applyWrap(model.wrapsLines)
-        return scroll
+        seat(textView, in: scroll)
+        coordinator.observeClip(of: scroll)
+        coordinator.applyWrap(model.wrapsLines)
+        // The scroll half of the place, which is this mount's to put
+        // back because the clip is this mount's. The building has
+        // already seated the caret. An editor that was torn down, or
+        // another window's editor, may have read this page further
+        // than the top, and whoever mounts it next opens it there.
+        coordinator.restoreScroll(textView: textView, scrollView: scroll, for: sheetID)
+        return true
     }
 
     /// The editor is going away: a ledger round trip, or the empty
@@ -67,12 +124,23 @@ public struct InkEditorView: NSViewRepresentable {
     /// replacement before dismantling what it replaces, and clearing
     /// unconditionally would then drop the live editor a moment after it
     /// arrived.
+    ///
+    /// The editor comes off its page on the way out, as it does at a
+    /// hand off between windows (`Coordinator.leavePage`): the page's
+    /// place is left with the model, so the editor that mounts this
+    /// page next, here or in another window, opens it where this one
+    /// was reading, and the layout manager leaves the storage with it.
+    /// The storage outlives every editor and owns whatever is attached
+    /// to it, so an editor left on would go on laying the page out,
+    /// unseen, until something happened to mount that same page again,
+    /// and a page selected in between would never be that something.
+    /// An editor already replaced over the same page has had its
+    /// layout manager shed, and neither says nor does anything.
     public static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.invalidateOrdinaryPasteMeasurement()
-        guard let textView = scroll.documentView as? InkTextView,
-              coordinator.model.activeEditor === textView else { return }
-        coordinator.parkEditor()
-        coordinator.model.activeEditor = nil
+        guard let textView = scroll.documentView as? InkTextView else { return }
+        coordinator.leavePage(textView, scrollView: scroll)
+        coordinator.model.retireEditor(textView)
     }
 
     /// The one editor, built: a TextKit 1 stack over the page's storage,
@@ -98,10 +166,21 @@ public struct InkEditorView: NSViewRepresentable {
     /// belongs to the main thread (the model, the styling, the view), and
     /// a builder called from somewhere other than a representable's
     /// own lifecycle should say so at its declaration.
+    ///
+    /// Nil in a window that does not own the page content (ADR-0033),
+    /// and the refusal is the first thing that happens. A few lines
+    /// down the building sheds every layout manager on the page's
+    /// storage, and for a window that does not own, the one standing
+    /// there is the owner's: an editor built here would take the page
+    /// out from under the editor the person is typing into. The mount
+    /// sites ask who owns before they call, so a refusal here is a
+    /// caller that forgot, and it is as loud as any other declined
+    /// write (`PageModel.admits`).
     @MainActor
     static func makeInkTextView(
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
-    ) -> InkTextView {
+    ) -> InkTextView? {
+        guard model.admits(.activeEditor, from: coordinator.surface) else { return nil }
         let layoutManager = InkLayoutManager()
         let container = InkTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
@@ -110,9 +189,12 @@ public struct InkEditorView: NSViewRepresentable {
         let storage = model.storage(for: sheetID)
         // The page's storage outlives any one editor instance, the
         // ledger and the empty state unmount the editor, even though
-        // page↔page switches no longer do (ADR-0006). Detach layout
-        // managers a torn-down editor left behind so exactly one
-        // drives this storage.
+        // page↔page switches no longer do (ADR-0006). A dismantle and
+        // a hand off both take their editor off the page
+        // (`Coordinator.leavePage`), so this usually finds nothing. It
+        // stays for the one order that leaves something: SwiftUI
+        // building this editor before it dismantles the one it
+        // replaces. Exactly one manager drives this storage.
         Coordinator.shedLayoutManagers(from: storage, keeping: nil)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
@@ -173,23 +255,28 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
-        model.activeEditor = textView
-        // One line per editor built (issue #197). Two surfaces share
-        // this model, and how many editors stand over it is a claim to
-        // check in the log stream rather than by eye: opening the editor
-        // window must produce exactly one of these. A later one while
-        // it stays open is that window's own rebuild after the ledger
-        // or an empty slot, or else the panel mounting when it must
-        // not. Mechanics only, never the page.
+        // The caret is the page's wherever the page is mounted, so the
+        // building seats it and every mount gets it: the page in its
+        // own scroller and the roll alike. Only when one was kept. A
+        // page nobody has left yet keeps the fresh view's caret, and
+        // the building stays silent about a selection it did not move.
+        if model.viewStates.carets[sheetID] != nil {
+            coordinator.restoreCaret(textView: textView, for: sheetID)
+        }
+        // The editor and the sealed paste route, which the summon-time
+        // offer's button takes so the chip lands at the caret and
+        // consent stays a gesture aimed at this page.
+        coordinator.announce(textView)
+        // One line per editor built. Two windows share this model
+        // (ADR-0033), and how many editors stand over it is a claim to
+        // check in the log stream rather than by eye: a transfer of
+        // ownership must produce exactly one of these, from the window
+        // that now owns. A later one with no transfer before it is the
+        // owner's own rebuild after the ledger or an empty slot.
+        // Mechanics only, never the page.
         Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
             .info("editor=built")
         coordinator.refreshLanguageActionAvailability()
-        // The summon-time offer's button takes the same road as ⇧⌘V,
-        // so the chip lands at the caret and consent stays a gesture
-        // aimed at this page (ADR-0007 Amendment 1).
-        model.performSealedPaste = { [weak coordinator] in
-            coordinator?.sealedPaste()
-        }
         return textView
     }
 
@@ -208,6 +295,24 @@ public struct InkEditorView: NSViewRepresentable {
     /// grows, so the ceiling would be whatever height the card happened
     /// to have the moment the editor mounted.
     static func scrollStack(for textView: InkTextView) -> NSScrollView {
+        let scroll = bareScroller()
+        seat(textView, in: scroll)
+        return scroll
+    }
+
+    /// The scroller with nothing in it yet: what a mount starts from,
+    /// and all that a window which does not own the page content ever
+    /// gets (`makePage`).
+    static func bareScroller() -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        return scroll
+    }
+
+    /// The editor put into its scroller, with the freedom to grow that
+    /// `scrollStack(for:)` describes.
+    static func seat(_ textView: InkTextView, in scroll: NSScrollView) {
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         // Width is the container's business (`widthTracksTextView`), so
@@ -218,11 +323,7 @@ public struct InkEditorView: NSViewRepresentable {
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
         scroll.documentView = textView
-        return scroll
     }
 
     /// End an in-progress IME composition on the page that is leaving,
@@ -315,9 +416,38 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
-        let coordinator = context.coordinator
-        guard let textView = scroll.documentView as? InkTextView else { return }
-        model.activeEditor = textView
+        Self.updatePage(
+            scroll, model: model, sheetID: sheetID, readOnly: readOnly,
+            coordinator: context.coordinator
+        )
+    }
+
+    /// The pass SwiftUI asks for on every published change. A static
+    /// for `makePage`'s reason: what a pass does and declines to do
+    /// around a change of owner is worth asserting, and a test cannot
+    /// make a `Context`.
+    @MainActor
+    static func updatePage(
+        _ scroll: NSScrollView,
+        model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
+    ) {
+        // A pass over a mount whose window no longer owns does nothing
+        // (ADR-0033). Ownership moves before SwiftUI takes the old
+        // mount down, and a pass arriving in between must not announce
+        // this editor over the owner's, nor reach the swap below, which
+        // sheds the layout managers of whatever page it swaps in.
+        guard model.owner == coordinator.surface else { return }
+        guard let textView = scroll.documentView as? InkTextView else {
+            // The mount was made while the other window owned, and came
+            // back empty. This window owns now, so the editor is built
+            // on the pass that finds that out.
+            mountPage(
+                in: scroll, model: model, sheetID: sheetID, readOnly: readOnly,
+                coordinator: coordinator
+            )
+            return
+        }
+        coordinator.announce(textView)
         // The stance can change without the page changing, so editing
         // is re-gated on every pass rather than at mount alone.
         coordinator.updateEditability(of: textView, to: !readOnly)
@@ -334,12 +464,6 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.applyPreviewRendering(model.previewRendering)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
-        // Dead pages take their saved view state with them — the same
-        // pruning `refresh()` applies to the storage cache, and keyed
-        // the same way, by page identity: a tab outlives its pages
-        // (ADR-0017), so a slot's id would keep a dead page's caret and
-        // scroll alive for whatever page came next.
-        coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
         // The stance may have flipped editing on or off above, so the
         // Edit menu's two items are re-asked on every pass, before the
         // early return that a page which did not change takes.
@@ -349,6 +473,12 @@ public struct InkEditorView: NSViewRepresentable {
         // The scroller goes with it: on this surface the editor is the
         // only page in its clip, so the offset the user left this page
         // at is the offset to put back when they return.
+        //
+        // An editor that a transfer of ownership took off its page
+        // stands on none (`Coordinator.leavePage`), so a mount that
+        // outlived one, because ownership came back before SwiftUI had
+        // taken it down, arrives here too and is put back on the page
+        // at the place the transfer kept.
         coordinator.moveEditor(
             textView, to: sheetID,
             storage: model.storage(for: sheetID), restoringScrollIn: scroll
@@ -368,6 +498,26 @@ public struct InkEditorView: NSViewRepresentable {
         let model: PageModel
         weak var textView: InkTextView?
         var currentSheet: UInt64?
+
+        /// Which content window this coordinator's mount stands in
+        /// (ADR-0033), named on every presentation write it makes so
+        /// the model can tell the owner's from the other window's. Read
+        /// from the environment as the mount is made. The panel until
+        /// then, which is also what a test that builds a page by hand
+        /// gets, over a model the panel owns by default.
+        var surface: PresentationOwner = .panel
+
+        /// The mount's two handles on the model, announced together:
+        /// the editor a summon hands the keyboard to, and the road the
+        /// offer's button takes to the same caret as ⇧⌘V (ADR-0007
+        /// Amendment 1). Together because a transfer of ownership drops
+        /// both, and an editor that outlived one, because ownership
+        /// came back before SwiftUI had taken it down, has to put both
+        /// back on its next pass.
+        func announce(_ textView: InkTextView) {
+            model.mountEditor(textView, from: surface)
+            model.routeSealedPaste({ [weak self] in self?.sealedPaste() }, from: surface)
+        }
 
         struct OrdinaryPasteMeasurement: Sendable {
             let result: LanguageDetectionResult
@@ -426,21 +576,13 @@ public struct InkEditorView: NSViewRepresentable {
         /// deliberately absent from the reported value.
         var onOrdinaryPasteMeasurement: ((OrdinaryPasteMeasurement) -> Void)?
 
-        /// Caret and scroll are view state. With one editor serving
-        /// every page (ADR-0006) they no longer die with a torn-down
-        /// view — they must be carried per page by hand: saved before
-        /// the storage swap takes the page away, restored after its
-        /// return.
-        private var savedCarets: [UInt64: NSRange] = [:]
-        private var savedScrolls: [UInt64: NSPoint] = [:]
-
-        /// The live set the last prune saw. `pruneViewState` runs on
-        /// every `updateNSView` pass, and the set rarely changes, so
-        /// this gate lets the common pass skip the dictionary filters.
-        /// The last set `pruneViewState` was handed, so a pass that
-        /// changed nothing costs nothing. Nil means "ask again",
-        /// which is what a file leaving the roster sets it to.
-        private var lastLiveSheets: Set<UInt64>?
+        /// A scroll restore that landed before its clip had any size,
+        /// waiting for the frame that gives it one. The caret and the
+        /// scroll themselves are the model's (`PageModel.viewStates`);
+        /// this is only the one restore in flight, with the anchor it
+        /// was handed. A nil anchor is a page with no place kept, which
+        /// opens at the top.
+        private var deferredScrollRestore: (sheet: UInt64, anchor: ScrollAnchor?)?
 
         init(
             model: PageModel,
@@ -1290,6 +1432,11 @@ public struct InkEditorView: NSViewRepresentable {
             storage incoming: NSTextStorage,
             restoringScrollIn scrollView: NSScrollView?
         ) {
+            // The swap sheds the incoming page's layout managers, so it
+            // is the owner's to make, for the builder's reason
+            // (`makeInkTextView`). Both mount sites ask before they get
+            // here, and this is the guard for one that did not.
+            guard model.admits(.activeEditor, from: surface) else { return }
             invalidateOrdinaryPasteMeasurement()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
@@ -1309,10 +1456,52 @@ public struct InkEditorView: NSViewRepresentable {
             textView.layoutManager?.replaceTextStorage(incoming)
             outgoing?.delegate = nil
             incoming.delegate = self
+            vacantStorage = nil
             currentSheet = sheetID
             restyle()
             restoreViewState(textView: textView, scrollView: scrollView, for: sheetID)
             refreshLanguageActionAvailability()
+        }
+
+        /// What the editor stands on between leaving a page at a hand
+        /// off and being taken down or put back. Held here because a
+        /// TextKit 1 storage that nobody retains is freed under the
+        /// view laying it out.
+        private var vacantStorage: NSTextStorage?
+
+        /// The unmount half of a hand off (ADR-0033): this editor comes
+        /// off its page, now, because the other window is about to own
+        /// it. Called by `PageModel.transferOwnership(to:)` before the
+        /// owner changes, so the order of a hand off is written down in
+        /// one place: the outgoing editor settles its composition,
+        /// leaves its place with the model, lets go of the storage, and
+        /// only then can the incoming window mount.
+        ///
+        /// Without this the unmount was the incoming mount's doing, its
+        /// shed taking this editor's layout manager off the storage
+        /// whenever SwiftUI got round to building it, with the old
+        /// editor still the storage's delegate until then. Now a page
+        /// changing hands has no layout manager and no delegate in
+        /// between, and the incoming shed finds nothing of this
+        /// window's to remove.
+        ///
+        /// The editor itself stays where it is, over an empty storage,
+        /// as the roll's parked editor does. SwiftUI takes it down on
+        /// its next pass. If ownership comes back first, the pass that
+        /// finds this window owning again sees an editor standing on no
+        /// page and moves it back (`updatePage`, `DayStackView.update`).
+        /// Editing is refused in the meantime, and re-gated by that
+        /// same pass.
+        func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
+            guard currentSheet != nil, let outgoing = textView.textStorage else { return }
+            InkEditorView.discardComposition(in: textView)
+            saveViewState(textView: textView, scrollView: scrollView)
+            let vacant = NSTextStorage()
+            vacantStorage = vacant
+            textView.layoutManager?.replaceTextStorage(vacant)
+            outgoing.delegate = nil
+            textView.isEditable = false
+            parkEditor()
         }
 
         // MARK: Per-page view state (ADR-0006)
@@ -1329,11 +1518,31 @@ public struct InkEditorView: NSViewRepresentable {
         /// undo steps are the core's and each page's stack is its own,
         /// so a swap cannot leave half a word open in a page that is
         /// going away (issue #132).
+        ///
+        /// Both are written to the model's table rather than kept here
+        /// (`PageModel.viewStates`), so the place survives this editor
+        /// and is there for whichever one mounts the page next. That
+        /// next editor may stand in a window of another width, so the
+        /// scroll is kept as the line at the top of the clip and never
+        /// as the clip's origin in points (`ScrollAnchor`).
+        ///
+        /// Two editors have nothing true to say and are not asked. One
+        /// whose layout manager has been shed from the page, because
+        /// another editor mounted over the same storage before this one
+        /// was dismantled: its selection and its layout describe
+        /// nothing any more, and the place it would write over is the
+        /// live editor's. And one whose clip has no size yet, which has
+        /// not shown the page at all and keeps the scroll it was handed
+        /// rather than replacing it with the top of a view nobody saw.
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
-            guard let sheet = currentSheet else { return }
-            savedCarets[sheet] = textView.selectedRange()
-            guard let scrollView else { return }
-            savedScrolls[sheet] = scrollView.contentView.bounds.origin
+            guard let sheet = currentSheet, textView.textStorage != nil else { return }
+            model.viewStates.saveCaret(textView.selectedRange(), for: sheet)
+            guard let scrollView, !scrollView.contentView.bounds.isEmpty,
+                  let anchor = ScrollAnchor(
+                      topOf: textView, clipOrigin: scrollView.contentView.bounds.origin
+                  )
+            else { return }
+            model.viewStates.saveScroll(anchor, for: sheet)
         }
 
         /// Return the incoming page's caret and scroll after the swap.
@@ -1357,36 +1566,85 @@ public struct InkEditorView: NSViewRepresentable {
         /// handed, though. A switch that fast has already saved the
         /// live origin over this sheet's entry, because the next
         /// `saveViewState` ran before the restore landed; the retired
-        /// closure still holds the true offset, so it writes that back
+        /// closure still holds the true anchor, so it writes that back
         /// on its way out. A sheet pruned in the interim stays gone:
         /// the write-back repairs entries, it never resurrects them.
         /// And because content can shrink while a page is in the
         /// background, the offset is clamped against the geometry that
         /// exists on arrival, not the geometry that was saved.
         ///
+        /// The hop is also where the anchor becomes an offset. What was
+        /// saved is a line, not a distance, and how far down this view
+        /// that line sits is a fact about this view's layout, which
+        /// the hop has just forced current. The editor that saved it
+        /// may have been another one at another width.
+        ///
         /// A mount with no scroller of its own takes the caret and stops
         /// there, as `saveViewState` did: there is no clip of this page's
         /// to move, so no hop is scheduled and any offset a scrolled
         /// mount saved stays where it is, waiting for that mount.
+        ///
+        /// The two legs are separate calls as well, because a mount
+        /// takes them at different moments: the building seats the
+        /// caret for every surface, and the surface that owns a clip
+        /// asks for the scroll once the clip exists.
         func restoreViewState(
             textView: InkTextView, scrollView: NSScrollView?, for sheet: UInt64
         ) {
+            restoreCaret(textView: textView, for: sheet)
+            guard let scrollView else { return }
+            restoreScroll(textView: textView, scrollView: scrollView, for: sheet)
+        }
+
+        /// The caret leg: synchronous, clamped, and owing layout nothing.
+        func restoreCaret(textView: InkTextView, for sheet: UInt64) {
             let caret = Self.clamped(
-                savedCarets[sheet] ?? NSRange(location: 0, length: 0),
+                model.viewStates.carets[sheet] ?? NSRange(location: 0, length: 0),
                 to: textView.textStorage?.length ?? 0
             )
             textView.setSelectedRange(caret)
-            guard let scrollView else { return }
-            let offset = savedScrolls[sheet] ?? .zero
+        }
+
+        /// The scroll leg, for the surface that owns a clip.
+        func restoreScroll(
+            textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64
+        ) {
+            scheduleScrollRestore(
+                of: model.viewStates.scrolls[sheet],
+                textView: textView, scrollView: scrollView, for: sheet
+            )
+        }
+
+        /// The hop itself, taking the anchor as a value so a restore
+        /// that had to wait can be asked for again with the anchor it
+        /// was first given rather than whatever the table holds by then.
+        ///
+        /// Waiting is for a mount. SwiftUI is free to let the hop run
+        /// before it has given a newly made scroller any size, and a
+        /// container with no width lays the page out unwrapped, one
+        /// line to a paragraph. The anchor's line would go to the top
+        /// of that, and when the real width arrived the text view would
+        /// hold on to the first character it was showing, which by then
+        /// is the start of the paragraph rather than the line inside it
+        /// that was being read. Near, and wrong. So a hop that lands on
+        /// an empty clip sets the anchor down, and the clip's first
+        /// real frame picks it up (`clipFrameChanged`).
+        private func scheduleScrollRestore(
+            of anchor: ScrollAnchor?,
+            textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64
+        ) {
+            deferredScrollRestore = nil
             DispatchQueue.main.async { [weak self, weak textView, weak scrollView] in
                 guard let self else { return }
                 guard self.currentSheet == sheet else {
-                    if self.savedScrolls[sheet] != nil {
-                        self.savedScrolls[sheet] = offset
-                    }
+                    self.model.viewStates.repairScroll(anchor, for: sheet)
                     return
                 }
                 guard let scrollView else { return }
+                guard !scrollView.contentView.bounds.isEmpty else {
+                    self.deferredScrollRestore = (sheet, anchor)
+                    return
+                }
                 // Measure against layout that has been forced current,
                 // not the `frame` height a relayout still in flight can
                 // report as zero. The text view is the document view;
@@ -1394,6 +1652,10 @@ public struct InkEditorView: NSViewRepresentable {
                 // the frame the clamp used to trust.
                 let documentHeight = textView.flatMap { self.documentHeight(of: $0) }
                     ?? scrollView.documentView?.frame.height ?? 0
+                // After the height, so the anchor's line is looked up
+                // in the layout that was just made certain. A page with
+                // nothing saved opens at the top.
+                let offset = textView.flatMap { anchor?.offset(in: $0) } ?? .zero
                 let clamped = Self.clampedScrollOffset(
                     offset,
                     documentHeight: documentHeight,
@@ -1420,58 +1682,6 @@ public struct InkEditorView: NSViewRepresentable {
             layoutManager.ensureLayout(for: container)
             return layoutManager.usedRect(for: container).height
                 + textView.textContainerInset.height * 2
-        }
-
-        /// Dead pages take their view state with them — the same
-        /// pruning `refresh()` applies to the storage cache.
-        func pruneViewState(keeping live: Set<UInt64>) {
-            guard live != lastLiveSheets else { return }
-            lastLiveSheets = live
-            savedCarets = Self.pruned(savedCarets, keeping: live)
-            savedScrolls = Self.pruned(savedScrolls, keeping: live)
-        }
-
-        /// Forget one id's caret and scroll outright.
-        ///
-        /// The counterpart to the tag exemption in `pruned`. A file is
-        /// exempt from the page prune because it is never in the live
-        /// page set, so something has to drop its entries when it
-        /// actually goes, and this is that something. Called when a
-        /// file leaves the roster, never on a page: a page's entries
-        /// are the prune's business.
-        func forgetViewState(for sheet: UInt64) {
-            savedCarets[sheet] = nil
-            savedScrolls[sheet] = nil
-            // The prune's guard compares against the last live set and
-            // returns early when it has not changed. Clearing it means
-            // the next prune actually runs rather than skipping over a
-            // set that looks familiar.
-            lastLiveSheets = nil
-        }
-
-        /// Which ids hold a caret and which hold a scroll offset.
-        ///
-        /// A reading seam for the test that a closed file leaves
-        /// nothing behind in either map. Both are private, and asking
-        /// through the save or restore paths would write an entry
-        /// rather than read one.
-        var viewStateKeys: (carets: Set<UInt64>, scrolls: Set<UInt64>) {
-            (Set(savedCarets.keys), Set(savedScrolls.keys))
-        }
-
-        /// The pure half of `pruneViewState`: keep only the entries
-        /// whose keys are still live.
-        ///
-        /// A file id is always live here. The set is built from page
-        /// identities and a file is never among them, so without the
-        /// exemption a file's caret and scroll are thrown away on every
-        /// pass of `updateNSView`, and page to file to page returns the
-        /// file to the top with the caret at zero. A file's entries go
-        /// when the file closes, which drops the whole id.
-        nonisolated static func pruned<Value>(
-            _ table: [UInt64: Value], keeping live: Set<UInt64>
-        ) -> [UInt64: Value] {
-            table.filter { $0.key.isFileID || live.contains($0.key) }
         }
 
         // MARK: Wrapping (⌥Z, Settings)
@@ -1610,8 +1820,24 @@ public struct InkEditorView: NSViewRepresentable {
         /// to its text and nothing else would ever widen it, so the floor
         /// is re-levelled here and a page narrower than the card is
         /// stretched to meet it.
+        ///
+        /// A newly mounted page's first real frame also arrives here,
+        /// and with it the scroll restore that could not be resolved
+        /// against a clip with no size. It goes back through the hop
+        /// rather than landing in this callback, since the text view is
+        /// about to be laid out again at the width it was just given.
         @objc private func clipFrameChanged(_ notification: Notification) {
             defer { textView?.refreshHover() }
+            if let deferred = deferredScrollRestore, let textView, let scroll = scrollView,
+               !scroll.contentView.bounds.isEmpty {
+                deferredScrollRestore = nil
+                if deferred.sheet == currentSheet {
+                    scheduleScrollRestore(
+                        of: deferred.anchor,
+                        textView: textView, scrollView: scroll, for: deferred.sheet
+                    )
+                }
+            }
             guard appliedWrap == false, let textView, let scroll = scrollView else { return }
             let width = scroll.contentSize.width
             textView.minSize = NSSize(width: width, height: 0)
@@ -3641,11 +3867,14 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
-    /// Which window the editor landed in, by class (issue #197). The
-    /// build line cannot say, since an editor is built before it has a
-    /// window, and with two surfaces over one model "which one mounted"
-    /// is the question the log is read for. The class and nothing else:
-    /// `BackdropPanel` is the card, `NSWindow` the editor window.
+    /// Which window the editor landed in, by class. The build line
+    /// cannot say, since an editor is built before it has a window, and
+    /// with two windows over one model "which one mounted" is the
+    /// question the log is read for: a hand off (ADR-0033) shows as one
+    /// build and one mount in the window that owns now, and a second
+    /// mount line with no transfer between is the defect ownership
+    /// exists to prevent. The class and nothing else: `BackdropPanel`
+    /// is the card, `NSWindow` the editor window.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window, let model = coordinator?.model else { return }

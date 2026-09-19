@@ -72,20 +72,97 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
+        // Before the roll is built, because the building writes to the
+        // model and every such write says which window it comes from
+        // (ADR-0033).
+        context.coordinator.surface = context.environment.presentationSurface
         let scroll = Self.makeRoll(
             model: model, coordinator: context.coordinator, emptyHint: emptyHint
         )
         // The summon half of the anchor rule. Held weakly, so a surface
         // that has gone away cannot be scrolled and cannot be kept
-        // alive by the model holding a way to reach it.
-        model.onAnchorToday = { [weak scroll] in
-            (scroll?.documentView as? DayStackView)?.scrollToDayZero()
+        // alive by the model holding a way to reach it. The owner's
+        // roll only: one made in the other window installs nothing,
+        // and the pass that finds its window owning puts the anchor in
+        // (`updateRoll`).
+        let surface = context.coordinator.surface
+        if model.owner == surface {
+            Self.installTodayAnchor(on: scroll, model: model, from: surface)
         }
         return scroll
     }
 
+    private static func installTodayAnchor(
+        on scroll: NSScrollView, model: PageModel, from surface: PresentationOwner
+    ) {
+        model.installTodayAnchor(
+            { [weak scroll] in
+                (scroll?.documentView as? DayStackView)?.scrollToDayZero()
+            },
+            from: surface
+        )
+    }
+
+    /// The roll's claim on the rail's navigator: this stack is the one
+    /// the rail listens to, and these are its answers to the two things
+    /// the rail may ask of a roll, a jump to an offset and a wheel that
+    /// turned over the rail, and to the one thing the model asks at a
+    /// hand off, where the roll stands. All weak, so a torn-down roll
+    /// answers with nothing.
+    private static func claimRollGeometry(
+        for stack: DayStackView, in scroll: NSScrollView,
+        model: PageModel, from surface: PresentationOwner
+    ) {
+        model.claimRollGeometry(
+            by: stack,
+            scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
+            wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) },
+            place: { [weak stack] in stack?.currentPlace },
+            from: surface
+        )
+    }
+
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
+        Self.updateRoll(
+            scroll, model: model, readOnly: readOnly, coordinator: context.coordinator
+        )
+    }
+
+    /// The pass SwiftUI asks for on every published change. A static
+    /// for `makeRoll`'s reason: what a pass puts back when ownership
+    /// returns is worth asserting, and a test cannot make a `Context`.
+    static func updateRoll(
+        _ scroll: NSScrollView,
+        model: PageModel, readOnly: Bool, coordinator: InkEditorView.Coordinator
+    ) {
         guard let stack = scroll.documentView as? DayStackView else { return }
+        // A pass over a roll whose window does not own does nothing,
+        // for `InkEditorView.updatePage`'s reason: the pass settles
+        // the editor on a page, and settling sheds that page's layout
+        // managers.
+        let surface = coordinator.surface
+        guard model.owner == surface else { return }
+        // Ownership can leave and come back before SwiftUI has taken
+        // this roll down, and the transfer dropped what the mount
+        // installed. A roll still standing when its window owns again
+        // puts both back, and so does a roll that was made while the
+        // other window owned and so installed neither. The ordinary
+        // pass finds them in place and writes nothing: a fresh claim
+        // blanks the navigator until the next measurement, which is
+        // not something to do every second.
+        if model.onAnchorToday == nil {
+            Self.installTodayAnchor(on: scroll, model: model, from: surface)
+        }
+        if !model.rollGeometry.holdsClaim(stack) {
+            Self.claimRollGeometry(for: stack, in: scroll, model: model, from: surface)
+        }
+        // The place the other window's roll left at the hand off, for
+        // the first owned pass of this one. Set down in the stack and
+        // not applied here: the rows it names are assembled by the pass
+        // below, and SwiftUI may not have sized the clip yet.
+        if let place = model.viewStates.takeRollPlace() {
+            stack.open(at: place)
+        }
         stack.update(
             projection: model.timeUnits,
             selectedPage: model.selectedPageID,
@@ -123,10 +200,19 @@ public struct DayScrollView: NSViewRepresentable {
         // measurement has also already published one, and this parting
         // word would blank it until the next pass happened to re-measure.
         coordinator.model.rollGeometry.reset(from: stack)
-        guard let editor = stack.editor,
-              coordinator.model.activeEditor === editor else { return }
-        coordinator.parkEditor()
-        coordinator.model.activeEditor = nil
+        guard let editor = stack.editor else { return }
+        // The editor comes off its page on the way out, as the page's
+        // own dismantle takes it off: the caret is left with the model,
+        // so the surface that mounts this page next finds it, and the
+        // layout manager leaves the storage. The caret only: the roll's
+        // offset belongs to the roll's one clip and to no page in it,
+        // and it is the hand off that carries it to the other window
+        // (`PageModel.transferOwnership`), never a dismantle, since a
+        // roll rebuilt in its own window opens at Day 0. A parked
+        // editor stands on no page and an editor already replaced has
+        // no storage, and `leavePage` declines both.
+        coordinator.leavePage(editor, scrollView: nil)
+        coordinator.model.retireEditor(editor)
     }
 
     /// The roll, assembled: one scroller over one flipped stack.
@@ -152,16 +238,14 @@ public struct DayScrollView: NSViewRepresentable {
         // drawing the shape of the roll it is replacing (issue #131).
         // The claim also names this stack as the one the rail listens
         // to, so the roll it replaces cannot answer for it on the way
-        // out, and hands over the two things the rail may ask of a
-        // roll: a jump to an offset, and a wheel that turned over the
-        // rail. Both weak, so a torn-down roll answers with nothing.
-        // The first `relayout` publishes the real measurement a moment
-        // later.
-        model.rollGeometry.claim(
-            by: stack,
-            scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
-            wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) }
-        )
+        // out. The first `relayout` publishes the real measurement a
+        // moment later. The claim is the owner's (ADR-0033): a roll
+        // made in the window that does not own leaves the navigator
+        // with the roll that has it, and claims on the pass that finds
+        // its own window owning (`updateRoll`).
+        if model.owner == coordinator.surface {
+            claimRollGeometry(for: stack, in: scroll, model: model, from: coordinator.surface)
+        }
         scroll.documentView = stack
         stack.observeRoll()
         // The clip the wrap geometry is levelled against is the roll's,
@@ -170,7 +254,9 @@ public struct DayScrollView: NSViewRepresentable {
         // The mount half of the anchor rule. A fresh clip is at its
         // origin already, so this says the rule rather than enforcing
         // it, which is the point: there is no anchoring state that can
-        // be wrong, only a place the roll opens at.
+        // be wrong, only a place the roll opens at. The one roll that
+        // opens elsewhere is the one a hand off left a place for, and
+        // it is moved there by its first owned pass (`updateRoll`).
         stack.scrollToDayZero()
         return scroll
     }
@@ -366,6 +452,9 @@ final class DayStackView: NSView {
     /// mid-render.
     @objc private func surroundingsChanged(_ notification: Notification) {
         relayout()
+        // A roll mounted before SwiftUI sized its clip finds the place
+        // a hand off left for it here, on the clip's first real frame.
+        settlePendingPlace()
     }
 
     /// The reader moved over the roll. No frame changed, so nothing is
@@ -392,6 +481,12 @@ final class DayStackView: NSView {
     /// editor belongs on, and here is whether the card will accept
     /// typing.
     func update(projection: TimeUnitProjection, selectedPage: UInt64?, readOnly: Bool) {
+        // The pass builds the editor and moves it between pages, and
+        // both shed the layout managers of the page they arrive on, so
+        // the pass is the owner's (ADR-0033). `updateRoll` has already
+        // asked. It is asked again here because this is the mount site
+        // and the tests drive it directly.
+        guard model.owner == coordinator.surface else { return }
         let signature = Signature(
             buckets: projection.units.map(\.bucket),
             pages: projection.units.map(\.pageIDs),
@@ -411,10 +506,24 @@ final class DayStackView: NSView {
             // The countdowns in the gutters move every second and the
             // regions have to be re-measured against text that just
             // changed, but nothing is assembled.
-            if let editor, coordinator.currentSheet != nil { model.activeEditor = editor }
+            if let selectedPage, editor != nil, coordinator.currentSheet == nil {
+                // An editor standing on no page while the roll has one
+                // selected was taken off it by a transfer of ownership
+                // (`Coordinator.leavePage`), and this roll outlived the
+                // transfer because ownership came back before SwiftUI
+                // had taken it down. Nothing about the rows moved, so
+                // the editor goes back on the page it left, shut away
+                // from `relayout` as the assembling pass shuts it.
+                isLayingOut = true
+                settleEditor(on: selectedPage)
+                isLayingOut = false
+            } else if let editor, coordinator.currentSheet != nil {
+                coordinator.announce(editor)
+            }
             refreshGutters()
             refreshQuietRegions()
             relayout()
+            settlePendingPlace()
             if let editor {
                 coordinator.updateEditability(of: editor, to: !readOnly)
             }
@@ -452,6 +561,7 @@ final class DayStackView: NSView {
         model.scheduleEditStepsRefresh()
         relayout()
         keepStill(anchoredOn: anchor)
+        settlePendingPlace()
     }
 
     /// The clip's width, which is the width every region wraps at. Zero
@@ -523,9 +633,12 @@ final class DayStackView: NSView {
                 )
                 header.isActive = page == selectedPage
                 wantedPages.insert(page)
-                let body: NSView = page == selectedPage
-                    ? editorView(for: page)
-                    : quietRegion(for: page)
+                // The rendering also stands in where the builder
+                // declined an editor, which `update`'s own guard keeps
+                // from happening: a day with no editor on it is a quiet
+                // day.
+                let body: NSView = (page == selectedPage ? editorView(for: page) : nil)
+                    ?? quietRegion(for: page)
                 built.append(Row(
                     header: header, body: body, bucket: unit.bucket, page: page,
                     fillsViewport: false
@@ -589,7 +702,12 @@ final class DayStackView: NSView {
     /// Which page it is *showing* is settled by `settleEditor(on:)`
     /// after the rows are assembled, so that the region it is leaving is
     /// out of the stack before the swap happens.
-    private func editorView(for page: UInt64) -> InkTextView {
+    ///
+    /// Nil only when the builder declined, which it does for a window
+    /// that does not own the page content. `update` asks before it gets
+    /// this far, so the nil is the builder's guard being honoured and
+    /// never an ordinary outcome.
+    private func editorView(for page: UInt64) -> InkTextView? {
         editor ?? buildEditor(on: page)
     }
 
@@ -669,8 +787,8 @@ final class DayStackView: NSView {
             parkEditor()
             return
         }
-        let mounted = editorView(for: page)
-        model.activeEditor = mounted
+        guard let mounted = editorView(for: page) else { return }
+        coordinator.announce(mounted)
         // Above the guard, because the guard is taken on the pass that
         // *builds* the editor: `makeInkTextView` sets `currentSheet`
         // itself, so a fresh mount looks to the line below like a page
@@ -692,11 +810,11 @@ final class DayStackView: NSView {
         model.refocusEditorIfKeyed()
     }
 
-    private func buildEditor(on page: UInt64) -> InkTextView {
+    private func buildEditor(on page: UInt64) -> InkTextView? {
         if let editor { return editor }
-        let built = InkEditorView.makeInkTextView(
+        guard let built = InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ) else { return nil }
         editor = built
         addSubview(built)
         observeEditor(built)
@@ -751,7 +869,7 @@ final class DayStackView: NSView {
         outgoing?.delegate = nil
         coordinator.parkEditor()
         editor.frame = .zero
-        if model.activeEditor === editor { model.activeEditor = nil }
+        model.retireEditor(editor)
     }
 
     /// A click landed in a day the editor was not standing on: make that
@@ -967,9 +1085,72 @@ final class DayStackView: NSView {
     /// can be wrong, and nothing to reduce for a reader who asked for
     /// less motion.
     func scrollToDayZero() {
+        // A summon outranks a place still waiting to be opened on.
+        pendingPlace = nil
         guard let scroll = enclosingScrollView else { return }
         scroll.contentView.scroll(to: .zero)
         scroll.reflectScrolledClipView(scroll.contentView)
+    }
+
+    // MARK: The roll's place across a hand off (ADR-0033)
+
+    /// Where the roll stands: the first page with anything below the
+    /// top edge of the clip, and the line of it at that edge. Nil at
+    /// Day 0, which is no place at all (`RollPlace`), and nil from a
+    /// roll that is in no window, which nobody is reading.
+    ///
+    /// A top edge in a header, or in the empty Today above the first
+    /// page, is a place above that page's first line, and the anchor
+    /// says so with a negative fraction, as it does for a top inset.
+    var currentPlace: RollPlace? {
+        guard window != nil, let scroll = enclosingScrollView else { return nil }
+        let origin = scroll.contentView.bounds.origin
+        guard origin.y > 0,
+              let row = rows.first(where: { $0.page != nil && $0.body.frame.maxY > origin.y }),
+              let page = row.page, let text = row.body as? NSTextView,
+              let anchor = ScrollAnchor(
+                  topOf: text,
+                  clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
+              )
+        else { return nil }
+        return RollPlace(page: page, anchor: anchor)
+    }
+
+    /// The place the other window's roll left, waiting for rows to find
+    /// it in and a clip with a size. SwiftUI sizes a new scroller when
+    /// it pleases, so the place is set down here and picked up by the
+    /// first pass that can honour it, which is the page surface's rule
+    /// for its own restore (`Coordinator.deferredScrollRestore`).
+    private var pendingPlace: RollPlace?
+
+    /// Open the roll on `place` once it can be found.
+    func open(at place: RollPlace) {
+        pendingPlace = place
+    }
+
+    /// Move the clip to the waiting place, against this roll's own
+    /// layout: the other window wrapped every page above it
+    /// differently, so the distance is worked out here and was never
+    /// carried. Called after `relayout`, which has just forced every
+    /// region's layout current. A page that died in between leaves the
+    /// roll at Day 0, and so does one that is no longer a text region.
+    /// Never from inside a pass, where the rows are half assembled and
+    /// a frame change arrives for every region being built.
+    private func settlePendingPlace() {
+        guard !isLayingOut, let place = pendingPlace, !rows.isEmpty,
+              let scroll = enclosingScrollView, !scroll.contentView.bounds.isEmpty
+        else { return }
+        pendingPlace = nil
+        guard let row = rows.first(where: { $0.page == place.page }),
+              let text = row.body as? NSTextView,
+              let within = place.anchor.offset(in: text) else { return }
+        let clip = scroll.contentView
+        let floor = max(frame.height - clip.bounds.height, 0)
+        let target = NSPoint(
+            x: within.x, y: min(max(text.frame.minY + within.y, 0), floor)
+        )
+        clip.scroll(to: target)
+        scroll.reflectScrolledClipView(clip)
     }
 
     /// The topmost page on the roll and where its ink stands, taken

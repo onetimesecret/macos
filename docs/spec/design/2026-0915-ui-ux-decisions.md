@@ -98,7 +98,7 @@ chrome.
   on page and card, light and dark.
 - **D-04 (open)** Is the resting card opaque or translucent? Today both
   stances share one material: `.ultraThinMaterial` in `BackdropRootView`
-  (`BackdropRootView.swift:169`); the resting look is that material
+  (`BackdropRootView.swift:221`); the resting look is that material
   with contents at 0.72. The background-surface spec says transparent
   for both stances; the working copy's "resting: opaque fill" callout
   is a mockup artefact, not a decision. Whichever way this closes,
@@ -584,7 +584,7 @@ read as a page an instant from death rather than a slot standing ready.
   where the default is headed; the default does not flip before D-26's
   two settings exist, or Days + side would ship as the only
   alternative. There is no page cap to design for: the core has had
-  none since issue #158 (`PageModel.swift:3373`), so no refusal is
+  none since issue #158 (`PageModel.swift:3720`), so no refusal is
   drawn. What remains open is when the prototype label comes off and
   the default flips.
 - **D-26 (fixed)** Two settings, four combinations, as above. The single

@@ -44,14 +44,14 @@ final class EditorPersistenceTests: XCTestCase {
         let first = try mintPage(in: model)
         let second = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: first, coordinator: coordinator
-        )
+        ))
         textView.isEditable = true
         textView.delegate = coordinator
         coordinator.textView = textView
         coordinator.currentSheet = first
-        model.activeEditor = textView
+        model.mountEditor(textView, from: .panel)
 
         // A short card, so the page written below outgrows its clip and
         // the scroll offset is a real position rather than zero.
