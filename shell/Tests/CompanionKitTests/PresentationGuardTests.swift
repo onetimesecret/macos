@@ -283,9 +283,9 @@ final class PresentationGuardTests: XCTestCase {
 
         model.transferOwnership(to: .editorWindow)
 
-        // The mount that follows sheds this editor's layout manager,
-        // and an editor asked for its place after that declines to
-        // answer. The place has to be in the model already.
+        // The transfer takes this editor off the page, and an editor
+        // asked for its place after that declines to answer. The place
+        // has to be in the model already.
         XCTAssertEqual(model.viewStates.carets[page], NSRange(location: 7, length: 0))
     }
 }

@@ -490,7 +490,20 @@ final class DayStackView: NSView {
             // The countdowns in the gutters move every second and the
             // regions have to be re-measured against text that just
             // changed, but nothing is assembled.
-            if let editor, coordinator.currentSheet != nil { coordinator.announce(editor) }
+            if let selectedPage, editor != nil, coordinator.currentSheet == nil {
+                // An editor standing on no page while the roll has one
+                // selected was taken off it by a transfer of ownership
+                // (`Coordinator.leavePage`), and this roll outlived the
+                // transfer because ownership came back before SwiftUI
+                // had taken it down. Nothing about the rows moved, so
+                // the editor goes back on the page it left, shut away
+                // from `relayout` as the assembling pass shuts it.
+                isLayingOut = true
+                settleEditor(on: selectedPage)
+                isLayingOut = false
+            } else if let editor, coordinator.currentSheet != nil {
+                coordinator.announce(editor)
+            }
             refreshGutters()
             refreshQuietRegions()
             relayout()

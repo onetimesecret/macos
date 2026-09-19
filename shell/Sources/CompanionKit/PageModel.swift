@@ -4731,12 +4731,15 @@ public final class PageModel: ObservableObject {
     /// every event without asking first whether anything moved.
     ///
     /// The order is the hand off, stated once: the window that is
-    /// leaving lets go, and only then does the owner change. The mount
-    /// that follows sheds every layout manager on the page's storage
-    /// (`InkEditorView.makeInkTextView`), so an editor asked for its
-    /// place after that has none to give. SwiftUI takes the old mount
-    /// down in its own time, before or after the new one is built, and
-    /// by then its place is already kept here.
+    /// leaving unmounts, and only then does the owner change, and only
+    /// an owner mounts. Unmounting is the outgoing editor leaving its
+    /// place here and coming off the page's storage
+    /// (`InkEditorView.Coordinator.leavePage`), so the storage changes
+    /// hands with no layout manager on it and the mount that follows
+    /// has nothing of the other window's to shed. SwiftUI takes the
+    /// old mount's views down in its own time, before or after the new
+    /// one is built, and by then there is nothing left for the order
+    /// of those two callbacks to decide.
     public func transferOwnership(to newOwner: PresentationOwner) {
         guard newOwner != owner else { return }
         relinquishPresentation()
@@ -4750,11 +4753,12 @@ public final class PageModel: ObservableObject {
     /// field describes a window that no longer owns. The incoming owner
     /// writes its own as it mounts and as its window reports.
     ///
-    /// The page's place is left first, while the editor's layout
-    /// manager is still its own. The scroll half goes with it only when
-    /// the editor stands in a scroller of its own: the roll's clip
-    /// belongs to the roll and to no page in it, which is the rule the
-    /// roll's dismantle follows too.
+    /// The editor comes off the page first, leaving the page's place
+    /// on its way while its layout manager is still its own. The
+    /// scroll half goes with it only when the editor stands in a
+    /// scroller of its own: the roll's clip belongs to the roll and to
+    /// no page in it, which is the rule the roll's dismantle follows
+    /// too.
     ///
     /// Key status is forgotten and not carried, because it described
     /// the other window. The window that owns now reports its own, and
@@ -4762,8 +4766,8 @@ public final class PageModel: ObservableObject {
     private func relinquishPresentation() {
         if let editor = activeEditor as? InkTextView, let coordinator = editor.coordinator {
             let scroll = editor.enclosingScrollView
-            coordinator.saveViewState(
-                textView: editor,
+            coordinator.leavePage(
+                editor,
                 scrollView: scroll?.documentView === editor ? scroll : nil
             )
         }

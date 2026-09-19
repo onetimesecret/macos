@@ -101,4 +101,173 @@ final class EditorHandoffTests: XCTestCase {
             "the live editor's handle was thrown away with the dead one's"
         )
     }
+
+    // MARK: The order of a hand off between windows (ADR-0033, issue #198)
+
+    /// A page mounted the way a window mounts it, in a window of its
+    /// own so the geometry is real.
+    @MainActor
+    private struct Mount {
+        let window: NSWindow
+        let scroll: NSScrollView
+        let coordinator: InkEditorView.Coordinator
+        var textView: InkTextView? { scroll.documentView as? InkTextView }
+    }
+
+    private func mount(
+        _ page: UInt64, of model: PageModel, in surface: PresentationOwner
+    ) -> Mount {
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = surface
+        let scroll = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: coordinator
+        )
+        let card = NSRect(x: 0, y: 0, width: 420, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.contentView?.addSubview(scroll)
+        scroll.frame = card
+        scroll.layoutSubtreeIfNeeded()
+        return Mount(window: window, scroll: scroll, coordinator: coordinator)
+    }
+
+    func testATransferTakesTheOutgoingEditorOffThePageBeforeTheOwnerMoves() throws {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let panel = mount(page, of: model, in: .panel)
+        let editor = try XCTUnwrap(panel.textView)
+        let storage = model.storage(for: page)
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+
+        model.transferOwnership(to: .editorWindow)
+
+        // Nothing has mounted in the other window and SwiftUI has not
+        // dismantled this one. The page is already free of it, which
+        // is the order said out loud: no later callback does this.
+        XCTAssertEqual(
+            storage.layoutManagers.count, 0,
+            "the page changed hands with the outgoing window's editor still laying it out"
+        )
+        XCTAssertNil(storage.delegate, "the outgoing coordinator would still emit ops for this page")
+        XCTAssertNil(panel.coordinator.currentSheet)
+        XCTAssertFalse(editor.textStorage === storage)
+        XCTAssertFalse(editor.isEditable, "an editor on no page accepts no typing")
+        XCTAssertNil(model.activeEditor)
+    }
+
+    func testTheIncomingMountFindsNothingOfTheOtherWindowsToShed() throws {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let panel = mount(page, of: model, in: .panel)
+        let storage = model.storage(for: page)
+
+        model.transferOwnership(to: .editorWindow)
+        let window = mount(page, of: model, in: .editorWindow)
+        // SwiftUI takes the old mount down after the new one is built,
+        // which is the order that used to decide who held the page.
+        InkEditorView.dismantleNSView(panel.scroll, coordinator: panel.coordinator)
+
+        let incoming = try XCTUnwrap(window.textView)
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+        XCTAssertTrue(storage.layoutManagers.first === incoming.layoutManager)
+        XCTAssertTrue(storage.delegate === window.coordinator)
+        XCTAssertTrue(
+            model.activeEditor === incoming,
+            "the late dismantle retired the live editor's handle"
+        )
+    }
+
+    func testAMountThatOutlivedTheHandOffGoesBackOnItsPageWhenOwnershipReturns() throws {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let panel = mount(page, of: model, in: .panel)
+        let editor = try XCTUnwrap(panel.textView)
+        editor.insertText(
+            "a line the caret stands inside", replacementRange: NSRange(location: 0, length: 0)
+        )
+        editor.setSelectedRange(NSRange(location: 7, length: 0))
+        let storage = model.storage(for: page)
+
+        // There and back inside one turn: no SwiftUI pass ran, so the
+        // panel's mount was never taken down and nothing else mounted.
+        model.transferOwnership(to: .editorWindow)
+        model.transferOwnership(to: .panel)
+        InkEditorView.updatePage(
+            panel.scroll, model: model, sheetID: page, readOnly: false,
+            coordinator: panel.coordinator
+        )
+
+        XCTAssertTrue(editor.textStorage === storage, "the editor is still standing on nothing")
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+        XCTAssertTrue(storage.delegate === panel.coordinator)
+        XCTAssertEqual(panel.coordinator.currentSheet, page)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 0))
+        XCTAssertTrue(editor.isEditable, "the pass re-gates the editing the hand off refused")
+        XCTAssertTrue(model.activeEditor === editor)
+        XCTAssertNotNil(model.performSealedPaste)
+    }
+
+    func testAPassInTheWindowThatNoLongerOwnsTouchesNothing() throws {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let panel = mount(page, of: model, in: .panel)
+        let storage = model.storage(for: page)
+        model.transferOwnership(to: .editorWindow)
+        let window = mount(page, of: model, in: .editorWindow)
+        let owners = try XCTUnwrap(window.textView)
+
+        // The panel's mount is still standing and SwiftUI runs a pass
+        // over it, as it does on every published change.
+        InkEditorView.updatePage(
+            panel.scroll, model: model, sheetID: page, readOnly: false,
+            coordinator: panel.coordinator
+        )
+
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+        XCTAssertTrue(storage.layoutManagers.first === owners.layoutManager)
+        XCTAssertTrue(model.activeEditor === owners)
+        XCTAssertNil(panel.coordinator.currentSheet)
+    }
+
+    func testARollThatOutlivedTheHandOffPutsItsEditorBackToo() throws {
+        let model = try makeModel()
+        model.showsTimeUnits = true
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let roll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "")
+        let card = NSRect(x: 0, y: 0, width: 420, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.contentView?.addSubview(roll)
+        roll.frame = card
+        roll.layoutSubtreeIfNeeded()
+        DayScrollView.updateRoll(roll, model: model, readOnly: false, coordinator: coordinator)
+        let stack = try XCTUnwrap(roll.documentView as? DayStackView)
+        let editor = try XCTUnwrap(stack.editor)
+        editor.insertText("a day's page", replacementRange: NSRange(location: 0, length: 0))
+        editor.setSelectedRange(NSRange(location: 5, length: 2))
+        let storage = model.storage(for: page)
+
+        model.transferOwnership(to: .editorWindow)
+        XCTAssertEqual(storage.layoutManagers.count, 0)
+        XCTAssertFalse(model.rollGeometry.holdsClaim(stack))
+
+        model.transferOwnership(to: .panel)
+        DayScrollView.updateRoll(roll, model: model, readOnly: false, coordinator: coordinator)
+
+        XCTAssertTrue(stack.editor === editor, "the roll built a second editor")
+        XCTAssertTrue(editor.textStorage === storage)
+        XCTAssertEqual(storage.layoutManagers.count, 1)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 5, length: 2))
+        XCTAssertTrue(model.activeEditor === editor)
+        XCTAssertTrue(model.rollGeometry.holdsClaim(stack))
+        XCTAssertNotNil(model.onAnchorToday)
+    }
 }

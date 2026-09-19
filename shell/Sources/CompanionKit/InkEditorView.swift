@@ -467,6 +467,12 @@ public struct InkEditorView: NSViewRepresentable {
         // The scroller goes with it: on this surface the editor is the
         // only page in its clip, so the offset the user left this page
         // at is the offset to put back when they return.
+        //
+        // An editor that a transfer of ownership took off its page
+        // stands on none (`Coordinator.leavePage`), so a mount that
+        // outlived one, because ownership came back before SwiftUI had
+        // taken it down, arrives here too and is put back on the page
+        // at the place the transfer kept.
         coordinator.moveEditor(
             textView, to: sheetID,
             storage: model.storage(for: sheetID), restoringScrollIn: scroll
@@ -1444,10 +1450,52 @@ public struct InkEditorView: NSViewRepresentable {
             textView.layoutManager?.replaceTextStorage(incoming)
             outgoing?.delegate = nil
             incoming.delegate = self
+            vacantStorage = nil
             currentSheet = sheetID
             restyle()
             restoreViewState(textView: textView, scrollView: scrollView, for: sheetID)
             refreshLanguageActionAvailability()
+        }
+
+        /// What the editor stands on between leaving a page at a hand
+        /// off and being taken down or put back. Held here because a
+        /// TextKit 1 storage that nobody retains is freed under the
+        /// view laying it out.
+        private var vacantStorage: NSTextStorage?
+
+        /// The unmount half of a hand off (ADR-0033): this editor comes
+        /// off its page, now, because the other window is about to own
+        /// it. Called by `PageModel.transferOwnership(to:)` before the
+        /// owner changes, so the order of a hand off is written down in
+        /// one place: the outgoing editor settles its composition,
+        /// leaves its place with the model, lets go of the storage, and
+        /// only then can the incoming window mount.
+        ///
+        /// Without this the unmount was the incoming mount's doing, its
+        /// shed taking this editor's layout manager off the storage
+        /// whenever SwiftUI got round to building it, with the old
+        /// editor still the storage's delegate until then. Now a page
+        /// changing hands has no layout manager and no delegate in
+        /// between, and the incoming shed finds nothing of this
+        /// window's to remove.
+        ///
+        /// The editor itself stays where it is, over an empty storage,
+        /// as the roll's parked editor does. SwiftUI takes it down on
+        /// its next pass. If ownership comes back first, the pass that
+        /// finds this window owning again sees an editor standing on no
+        /// page and moves it back (`updatePage`, `DayStackView.update`).
+        /// Editing is refused in the meantime, and re-gated by that
+        /// same pass.
+        func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
+            guard currentSheet != nil, let outgoing = textView.textStorage else { return }
+            InkEditorView.discardComposition(in: textView)
+            saveViewState(textView: textView, scrollView: scrollView)
+            let vacant = NSTextStorage()
+            vacantStorage = vacant
+            textView.layoutManager?.replaceTextStorage(vacant)
+            outgoing.delegate = nil
+            textView.isEditable = false
+            parkEditor()
         }
 
         // MARK: Per-page view state (ADR-0006)
