@@ -238,6 +238,37 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(model.pages.owner, .editorWindow)
     }
 
+    func testEscOverARaisedPanelRestsItAndReturnsThePage() {
+        let model = makeModel(named: "esc-raised")
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+
+        model.handBackKeys()
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    /// Esc pressed in the editor window reaches the same road, and
+    /// there is no raised panel for it to rest. A stance published
+    /// again is an event to the window controller, which answers every
+    /// one by ordering the card, so nothing is published.
+    func testEscInTheEditorWindowPublishesNoStance() {
+        let model = makeModel(named: "esc-editor-window")
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+        var published: [BackdropStance] = []
+        let watch = model.$stance.dropFirst().sink { published.append($0) }
+        defer { watch.cancel() }
+
+        model.handBackKeys()
+
+        XCTAssertEqual(published, [])
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertTrue(model.holdsKeys, "the editor window keeps the keyboard it had")
+    }
+
     func testTheEditorWindowTakingTheKeyboardRestsARaisedPanel() {
         let model = makeModel(named: "owner-editor-takes-keys")
         model.editorWindowOpened()

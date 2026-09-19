@@ -362,10 +362,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = BackdropWindowController(model: model)
         self.controller = controller
-        // Esc, and every other hand-back route, rests the surface: the
-        // backdrop's way of giving the keyboard back is to step behind
-        // everything again.
-        model.pages.onHandBackKeys = { [weak model] in model?.rest() }
+        // Esc, and every other hand-back route, rests a raised surface:
+        // the backdrop's way of giving the keyboard back is to step
+        // behind everything again. From the editor window, beside a
+        // card already resting, it moves nothing.
+        model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

@@ -286,14 +286,28 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     func rest() {
         // The offer is a summon-time thing; a resting card makes no
         // offers, and one standing from the last raise would be stale
-        // by the next. The panel's own offer only: a rest can arrive
-        // while the editor window owns (Esc there hands the keys back
-        // through this same road), and what stands under that window's
-        // page is not the panel's to withdraw.
+        // by the next. The panel's own offer only: under the never
+        // grant policy a raised panel rests while the editor window
+        // owns, and what stands under that window's page is not the
+        // panel's to withdraw.
         if pages.owner == .panel { pages.withdrawPasteboardOffer() }
         panelRaised = false
         settleOwner()
         publish(.resting)
+    }
+
+    /// Esc with no ledger to leave, from whichever window the page is
+    /// in (`PageModel.escape`). The backdrop's way of giving the
+    /// keyboard back is to step behind everything again, so over a
+    /// raised panel this is a rest. Over a resting one it is nothing:
+    /// the key was pressed in the editor window, an ordinary window
+    /// that keeps the keyboard until the person takes it elsewhere, and
+    /// a rest published over a resting panel would send the window
+    /// controller through its whole resting turn, reordering a card
+    /// nobody touched.
+    func handBackKeys() {
+        guard panelRaised else { return }
+        rest()
     }
 
     /// The posture the model has committed to, set before the stance is
