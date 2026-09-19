@@ -174,6 +174,15 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
         model.activeEditor = textView
+        // One line per editor built (issue #197). Two surfaces share
+        // this model, and how many editors stand over it is a claim to
+        // check in the log stream rather than by eye: opening the editor
+        // window must produce exactly one of these. A later one while
+        // it stays open is that window's own rebuild after the ledger
+        // or an empty slot, or else the panel mounting when it must
+        // not. Mechanics only, never the page.
+        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+            .info("editor=built")
         coordinator.refreshLanguageActionAvailability()
         // The summon-time offer's button takes the same road as ⇧⌘V,
         // so the chip lands at the caret and consent stays a gesture
@@ -3631,6 +3640,19 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 {
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
+
+    /// Which window the editor landed in, by class (issue #197). The
+    /// build line cannot say, since an editor is built before it has a
+    /// window, and with two surfaces over one model "which one mounted"
+    /// is the question the log is read for. The class and nothing else:
+    /// `BackdropPanel` is the card, `NSWindow` the editor window.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, let model = coordinator?.model else { return }
+        let surface = String(describing: type(of: window))
+        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+            .info("editor=mounted window=\(surface, privacy: .public)")
+    }
 
     #if DEBUG
         /// Deterministic screen-space input for hover-refresh wiring tests.

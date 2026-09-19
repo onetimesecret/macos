@@ -95,4 +95,84 @@ final class BackdropModelTests: XCTestCase {
         )
         XCTAssertFalse(second.keepsAboveWhenInactive)
     }
+
+    // MARK: The editor window (spike, issue #197)
+
+    func testOpeningTheEditorWindowRestsARaisedPanel() {
+        // Crude exclusive ownership: the window opening is what takes
+        // the pages away from the panel, whatever the panel was doing.
+        let defaults = makeDefaults(named: "editor-window-rests")
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "editor-window-rests")
+        )
+        model.raise(.summon)
+        model.editorWindowOpened()
+        XCTAssertTrue(model.editorWindowOpen)
+        XCTAssertEqual(model.stance, .resting)
+    }
+
+    func testNoRouteRaisesThePanelWhileTheEditorWindowIsOpen() {
+        // The one scenario the guard exists for: a Dock click on an
+        // inactive app sends the reopen and an activation, in no
+        // promised order, and the activation arriving second must not
+        // put a second editor over the pages the window now owns.
+        let defaults = makeDefaults(named: "editor-window-refuses")
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "editor-window-refuses")
+        )
+        model.editorWindowOpened()
+        model.raise(.activation)
+        XCTAssertEqual(model.stance, .resting)
+        model.summon()
+        XCTAssertEqual(model.stance, .resting)
+    }
+
+    func testDockOpensEditorWindowDefaultsOffAndPersists() {
+        // Off is what lets a build carry the spike without changing
+        // what the Dock does for anyone who has not asked.
+        let defaults = makeDefaults(named: "dock-opens-editor")
+        let first = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "dock-opens-editor-a")
+        )
+        XCTAssertFalse(first.dockOpensEditorWindow)
+        first.dockOpensEditorWindow = true
+
+        let second = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "dock-opens-editor-b")
+        )
+        XCTAssertTrue(second.dockOpensEditorWindow)
+    }
+
+    func testReopenRoutingOverTheWholeMatrix() {
+        // Off and closed is the old behaviour, a raise. The case worth
+        // the function is off and open: the setting was turned off
+        // under an open window, a raise would be refused, and the click
+        // must still do something.
+        XCTAssertFalse(
+            BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: false))
+        XCTAssertTrue(
+            BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: true))
+        XCTAssertTrue(
+            BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: false))
+        XCTAssertTrue(
+            BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: true))
+    }
+
+    func testClosingTheEditorWindowGivesThePanelItsRaiseBack() {
+        let defaults = makeDefaults(named: "editor-window-closes")
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "editor-window-closes")
+        )
+        model.editorWindowOpened()
+        model.editorWindowClosed()
+        XCTAssertFalse(model.editorWindowOpen)
+        XCTAssertEqual(model.stance, .resting)
+        model.raise(.summon)
+        XCTAssertEqual(model.stance, .raised)
+    }
 }

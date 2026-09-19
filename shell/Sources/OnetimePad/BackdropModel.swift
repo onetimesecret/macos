@@ -128,6 +128,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         geometry = BackdropGeometry.load(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
+        dockOpensEditorWindow = defaults.bool(forKey: Self.dockOpensEditorKey)
         // The pages seam is nil for every shipping construction, where
         // the model builds the form factor's own `PageModel`. A test
         // has to hand one in (built with `PageModel.Seams` that name a
@@ -225,6 +226,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Every caller says why it is raising, because one thing here is
     /// not the same on both routes: see `BackdropRaise`.
     func raise(_ reason: BackdropRaise) {
+        // Spike (issue #197): the editor window owns the pages while it
+        // is open, and the crude form of that is a panel that cannot
+        // come forward at all. Every route lands here, so the refusal
+        // is stated once. B4 replaces it with real routing.
+        guard !editorWindowOpen else { return }
         stance = .raised
         pages.startRedraw(interval: stance.tickInterval)
         // Each raise looks at the board once, never a poll: coming
@@ -265,6 +271,57 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // offers, and one standing from the last raise would be stale
         // by the next.
         pages.withdrawPasteboardOffer()
+    }
+
+    // MARK: The editor window (spike, issue #197)
+
+    /// True while the primary editor window is open. ADR-0033 gives the
+    /// pages one owner at a time; the spike's crude form of that is this
+    /// flag: while it stands the panel rests, mounts no page content
+    /// (`BackdropRootView`) and refuses every raise. B2 replaces it with
+    /// presentation ownership in CompanionKit, and it does not ship.
+    @Published private(set) var editorWindowOpen = false
+
+    /// Whether the Dock icon opens the editor window, where it would
+    /// otherwise raise the card. Off by default, so a build carrying the
+    /// spike behaves as it did before for anyone who has not asked for
+    /// the window. It governs the entrance only: a window already open
+    /// stays open when this goes off, and the next Dock click still
+    /// brings it forward. Persisted beside the pin. This is the spike's
+    /// own switch and not ADR-0033's ambient panel preference, which
+    /// turns the panel off and belongs to B4.
+    @Published var dockOpensEditorWindow: Bool {
+        didSet { defaults.set(dockOpensEditorWindow, forKey: Self.dockOpensEditorKey) }
+    }
+    private static let dockOpensEditorKey = "dockOpensEditorWindow"
+
+    /// What a reopen does, pure: the window when the person asked for
+    /// it, and also when one is already up, since a raise would be
+    /// refused under it and the click would do nothing at all.
+    nonisolated static func reopenOpensEditorWindow(
+        preference: Bool, windowOpen: Bool
+    ) -> Bool {
+        preference || windowOpen
+    }
+
+    /// The editor window is about to come up. The flag goes first, so
+    /// the rest it causes is already judged with the window open: the
+    /// controller must not hand the activation back under a window that
+    /// is about to take the keyboard.
+    func editorWindowOpened() {
+        editorWindowOpen = true
+        rest()
+        // The rest coarsened the redraw to the resting glance's cadence.
+        // The countdowns are on screen in the editor window now, and
+        // they tick by the second there.
+        pages.startRedraw()
+    }
+
+    /// The editor window closed: the panel is the pages' only surface
+    /// again, at whatever stance it holds, which is resting.
+    func editorWindowClosed() {
+        editorWindowOpen = false
+        pages.startRedraw(interval: stance.tickInterval)
     }
 
     // MARK: Geometry

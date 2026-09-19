@@ -92,18 +92,24 @@ public struct GeneralSettingsView: View {
     /// form drawing the same shape for both callers.
     private let keepsAbove: Binding<Bool>?
 
+    /// Whether the Dock icon opens the editor window (spike, issue
+    /// #197). Nil hides the row, as it does for `keepsAbove`.
+    private let dockOpensEditorWindow: Binding<Bool>?
+
     public init(
         model: PageModel,
         loginPresence: String,
         offersCaptureToggle: Bool = true,
         resetSurface: (() -> Void)? = nil,
-        keepsAbove: Binding<Bool>? = nil
+        keepsAbove: Binding<Bool>? = nil,
+        dockOpensEditorWindow: Binding<Bool>? = nil
     ) {
         self.model = model
         self.loginPresence = loginPresence
         self.offersCaptureToggle = offersCaptureToggle
         self.resetSurface = resetSurface
         self.keepsAbove = keepsAbove
+        self.dockOpensEditorWindow = dockOpensEditorWindow
     }
 
     @State private var confirmingLedgerClear = false
@@ -127,11 +133,22 @@ public struct GeneralSettingsView: View {
                             isOn: keepsAbove
                         )
                     }
+                    if let dockOpensEditorWindow {
+                        Toggle(
+                            "Dock icon opens an editor window (experimental)",
+                            isOn: dockOpensEditorWindow
+                        )
+                    }
                     Button("Reset to default position and size", action: resetSurface)
                 } header: {
                     Text("Surface")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
+                        if dockOpensEditorWindow != nil {
+                            SettingsCaption(
+                                "An ordinary window over the same pages. While it is open the card rests and cannot be raised; close the window to get the card back. Takes effect on the next Dock click."
+                            )
+                        }
                         if keepsAbove != nil {
                             SettingsCaption(
                                 "Pin keeps the card above regardless. A click outside the card still rests it."

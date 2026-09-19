@@ -191,12 +191,12 @@ struct BackdropRootView: View {
                     }
                     .stanceFaded(raised: raised, animation: stanceFade)
                     Divider()
-                    PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+                    pageContent
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .stanceFaded(raised: raised, animation: stanceFade)
                 }
             } else {
-                PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+                pageContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     // The glance is the same ink at the same measure,
                     // dimmed. Raising and lowering must not make the
@@ -268,6 +268,24 @@ struct BackdropRootView: View {
                     .onTapGesture { model.raise(.summon) }
                     .help("Click to raise the card")
             }
+        }
+    }
+
+    /// The page, or nothing while the editor window holds it (spike,
+    /// issue #197). The unmount is the point and not a side effect: the
+    /// one editor writes `activeEditor`, the storage's delegate and its
+    /// layout manager at mount and on every update, so two mounts over
+    /// one model fight, and the crude cure is that the panel has none.
+    /// The placeholder names no page and shows no ink. B3's glance
+    /// replaces it.
+    @ViewBuilder
+    private var pageContent: some View {
+        if model.editorWindowOpen {
+            Text("Open in the editor window.")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        } else {
+            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
         }
     }
 
