@@ -541,16 +541,37 @@ final class BackdropModelTests: XCTestCase {
 
     func testAHandBackIsDeclinedOverARestingPanelOrAModal() {
         func handsBack(
-            raised: Bool = true, owner: PresentationOwner = .panel, modal: Bool = false
+            raised: Bool = true, owner: PresentationOwner = .panel,
+            keyed: Bool = false, modal: Bool = false
         ) -> Bool {
             BackdropModel.handsKeysBackToPanel(
-                panelRaised: raised, owner: owner, modalSessionRunning: modal
+                panelRaised: raised, owner: owner,
+                panelHoldsKeys: keyed, modalSessionRunning: modal
             )
         }
         XCTAssertTrue(handsBack())
         XCTAssertFalse(handsBack(raised: false))
         XCTAssertFalse(handsBack(owner: .editorWindow))
         XCTAssertFalse(handsBack(modal: true))
+        // Keyed again already, by the modal's own end or by AppKit.
+        XCTAssertFalse(handsBack(keyed: true))
+    }
+
+    func testAHandBackThatFindsThePanelKeyedAgainRaisesNothing() async {
+        let model = makeModelWithKeysAtAnAuxiliary(named: "return-already-keyed")
+        var published: [BackdropStance] = []
+        let relay = model.$stance.dropFirst().sink { published.append($0) }
+        defer { relay.cancel() }
+
+        model.auxiliaryWindowReleasedKeys()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+        // The panel is keyed before the hand back's turn comes round.
+        model.keyStatusChanged(of: .panel, keyed: true)
+        await settle()
+
+        XCTAssertEqual(published, [], "a card raised and keyed was raised again")
+        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertTrue(model.holdsKeys)
     }
 
     // MARK: Key events from inside a stance change

@@ -491,11 +491,15 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Whether the deferred hand back keys the panel again, pure: only
     /// a panel still raised and still owning, and never under a modal
     /// of ours, whose own end raises the panel once it is over
-    /// (`BackdropAppDelegate.modalSessionEnded`).
+    /// (`BackdropAppDelegate.modalSessionEnded`). A panel that holds
+    /// the keys already is owed nothing: somebody keyed it in the turn
+    /// between, and a second raise would only order a card that is
+    /// where it should be and read the board again.
     nonisolated static func handsKeysBackToPanel(
-        panelRaised: Bool, owner: PresentationOwner, modalSessionRunning: Bool
+        panelRaised: Bool, owner: PresentationOwner,
+        panelHoldsKeys: Bool, modalSessionRunning: Bool
     ) -> Bool {
-        panelRaised && owner == .panel && !modalSessionRunning
+        panelRaised && owner == .panel && !panelHoldsKeys && !modalSessionRunning
     }
 
     /// The keyboard goes back to the panel, a turn after the key event
@@ -510,8 +514,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// editor window, which has been key since the event that was set
     /// aside, so its keys are reported now.
     private func handKeysBack() {
+        // `holdsKeys` is the owner's key fact, so beside an owning
+        // panel it is the panel's.
         if Self.handsKeysBackToPanel(
             panelRaised: panelRaised, owner: pages.owner,
+            panelHoldsKeys: pages.owner == .panel && pages.holdsKeys,
             modalSessionRunning: ModalSession.isRunning
         ) {
             raise(.activation)
