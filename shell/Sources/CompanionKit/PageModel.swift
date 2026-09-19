@@ -4747,7 +4747,29 @@ public final class PageModel: ObservableObject {
             "owner=\(newOwner.logName, privacy: .public) was=\(self.owner.logName, privacy: .public)"
         )
         owner = newOwner
+        owesIncomingEditorTheKeys = true
     }
+
+    /// A hand off has happened and the incoming owner's editor has not
+    /// been handed the keyboard yet.
+    ///
+    /// The window that receives the page content shows a placeholder
+    /// until SwiftUI's next pass builds its editor, and it is often key
+    /// before that pass: a summon keys the panel from inside the raise,
+    /// and a click on the editor window keys it before the page has
+    /// even moved. A key window whose editor arrives later has the
+    /// window itself as first responder, which is the ember lit over
+    /// typing that beeps (issue #19), on a route that did not exist
+    /// while each window kept its editor mounted.
+    ///
+    /// So the debt is recorded at the transfer and settled when the
+    /// owner's window reports the keys (`reportKeys(_:from:)`), in
+    /// whichever order the window's controller got there, reordering or
+    /// not. Settled once: a later key gain, the keyboard coming back
+    /// from Settings, follows no hand off, and the window's first
+    /// responder is AppKit's to restore. A window that never takes the
+    /// keys is never focused, since focus only ever accepts (ADR-0005).
+    private var owesIncomingEditorTheKeys = false
 
     /// The outgoing owner lets go of everything it held, so that no
     /// field describes a window that no longer owns. The incoming owner
@@ -4856,10 +4878,20 @@ public final class PageModel: ObservableObject {
     /// whether the page holds it. The form factor decides which reports
     /// to pass on before it calls (`BackdropModel`), and this declines
     /// the ones it should not have.
+    ///
+    /// The first keys to arrive after a hand off are passed on to the
+    /// incoming editor (`owesIncomingEditorTheKeys`).
     public func reportKeys(_ keyed: Bool, from surface: PresentationOwner) {
         guard admits(.holdsKeys, from: surface) else { return }
         guard holdsKeys != keyed else { return }
         holdsKeys = keyed
+        // The keys have reached the window a hand off gave the page to:
+        // pass them on to its editor, waiting for the mount if SwiftUI
+        // has not built it yet.
+        if keyed, owesIncomingEditorTheKeys {
+            owesIncomingEditorTheKeys = false
+            refocusEditorIfKeyed()
+        }
     }
 
     // MARK: Timers

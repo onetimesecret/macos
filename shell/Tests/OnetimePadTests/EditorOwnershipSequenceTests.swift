@@ -360,6 +360,93 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         try assertTheOwnerAloneIsMounted(windows, "after the keyboard went to Settings")
     }
 
+    // MARK: The keyboard follows the page
+
+    /// Long enough for `focusEditorWhenMounted` to find the editor, and
+    /// no longer than it polls for.
+    private func letTheHandOffLand() async throws {
+        try await Task.sleep(nanoseconds: 120_000_000)
+    }
+
+    /// A hotkey summon beside an open editor window makes the panel key
+    /// before SwiftUI has built the panel's editor. The window holds
+    /// the keys with nothing in it to type into, so the hand off owes
+    /// the editor the keyboard when it arrives.
+    func testASummonBesideTheEditorWindowHandsThePanelsEditorTheKeyboard() async throws {
+        let windows = try makeWindows(named: "focus-summon")
+        windows.apply(.editorWindowOpens)
+        windows.apply(.editorWindowTakesKeys)
+        windows.render(newMountFirst: true)
+
+        windows.apply(.summon)
+        XCTAssertNil(windows.mounts[.panel], "the panel is keyed before its editor exists")
+        windows.render(newMountFirst: false)
+        try await letTheHandOffLand()
+
+        let mount = try XCTUnwrap(windows.mounts[.panel])
+        let editor = try XCTUnwrap(mount.editor)
+        XCTAssertTrue(windows.pages.holdsKeys)
+        XCTAssertTrue(
+            mount.window.firstResponder === editor,
+            "the panel holds the keys and its editor was never handed them"
+        )
+    }
+
+    /// The mirror route: the person clicks the editor window while a
+    /// raised panel owns. The window is key already when the page
+    /// comes to it, so nothing reorders, and the editor that mounts a
+    /// pass later is still owed the keyboard.
+    func testTheEditorWindowTakingThePageWhileKeyHandsItsEditorTheKeyboard() async throws {
+        let windows = try makeWindows(named: "focus-editor-key")
+        windows.apply(.editorWindowOpens)
+        windows.apply(.summon)
+        windows.render(newMountFirst: true)
+
+        windows.apply(.editorWindowTakesKeys)
+        XCTAssertEqual(windows.pages.owner, .editorWindow)
+        XCTAssertNil(windows.mounts[.editorWindow], "the window is keyed before its editor exists")
+        windows.render(newMountFirst: true)
+        try await letTheHandOffLand()
+
+        let mount = try XCTUnwrap(windows.mounts[.editorWindow])
+        let editor = try XCTUnwrap(mount.editor)
+        XCTAssertTrue(windows.pages.holdsKeys)
+        XCTAssertTrue(
+            mount.window.firstResponder === editor,
+            "the editor window holds the keys and its editor was never handed them"
+        )
+    }
+
+    /// The keyboard coming back from Settings follows no hand off, and
+    /// the window's own first responder is AppKit's to restore. Focus
+    /// only ever accepts (ADR-0005), so nothing is taken here.
+    func testTheKeysComingBackFromSettingsTakeNothing() throws {
+        let windows = try makeWindows(named: "focus-settings")
+        windows.apply(.summon)
+        windows.render(newMountFirst: true)
+        windows.apply(.keysGoToSettings)
+        let before = windows.pages.keyboardHandoffs
+
+        windows.model.keyStatusChanged(of: .panel, keyed: true)
+
+        XCTAssertTrue(windows.pages.holdsKeys)
+        XCTAssertEqual(windows.pages.keyboardHandoffs, before)
+    }
+
+    /// A hand off into a window that is not key owes the editor
+    /// nothing until the keys arrive: focusing there would be taking.
+    func testAHandOffIntoAnUnkeyedWindowWaitsForTheKeys() throws {
+        let windows = try makeWindows(named: "focus-unkeyed")
+        let before = windows.pages.keyboardHandoffs
+
+        windows.apply(.editorWindowOpens)
+        XCTAssertEqual(windows.pages.owner, .editorWindow)
+        XCTAssertEqual(windows.pages.keyboardHandoffs, before)
+
+        windows.model.keyStatusChanged(of: .editorWindow, keyed: true)
+        XCTAssertEqual(windows.pages.keyboardHandoffs, before + 1)
+    }
+
     // MARK: Any sequence
 
     private func walk(

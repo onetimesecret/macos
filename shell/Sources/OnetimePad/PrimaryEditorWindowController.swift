@@ -136,6 +136,12 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     /// transfer itself runs ahead of the panel's rest; ordering a window
     /// from here would bring its key delegates into a model that is
     /// halfway through both.
+    ///
+    /// Bringing the window forward is all that happens here. Handing
+    /// the editor the keyboard is the model's half, settled when this
+    /// window reports the keys (`PageModel.reportKeys(_:from:)`), so a
+    /// window that was key already when the page came to it, which has
+    /// nothing to reorder, still gets its editor focused.
     private func observeOwner() {
         ownerObserver = model.pages.$owner
             .dropFirst()
@@ -154,7 +160,6 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
             modalSessionRunning: ModalSession.isRunning
         ) else { return }
         window.makeKeyAndOrderFront(nil)
-        model.pages.focusEditorWhenMounted(in: window)
     }
 
     /// Whether the keyboard comes back with the page content, pure.
