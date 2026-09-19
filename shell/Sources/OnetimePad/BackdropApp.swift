@@ -296,7 +296,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
-    /// The primary editor window (ADR-0033), spike quality (issue #197).
+    /// The primary editor window (ADR-0033), the second of the two
+    /// content windows over the one model.
     private lazy var editorWindow = PrimaryEditorWindowController(model: model)
 
     /// Holds the About panel at the surface's keyless altitude while
@@ -456,13 +457,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let reply = QuitPrompt.terminateReply(flushing: model)
         if reply == .terminateCancel {
-            // Spike (issue #197): with the editor window open the quit
-            // anyway line is under its page and not the panel's, and a
-            // raise would be refused, so that window comes forward.
-            if model.editorWindowOpen {
-                editorWindow.show()
-            } else {
-                model.raise(.activation)
+            // A cancelled quit goes back to the owner (ADR-0033): the
+            // quit anyway line is under the page, and the page is in
+            // the window that owns it.
+            switch model.pages.owner {
+            case .editorWindow: editorWindow.show()
+            case .panel: model.raise(.activation)
             }
         }
         return reply
@@ -493,7 +493,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // launch window or not: each was set only when an activation
         // was certain to follow, so this is that activation, and a flag
         // left standing here would swallow the next real ⌘Tab instead.
-        let claimed = aboutActivation || settingsActivation
+        //
+        // An open editor window claims the activation as About and
+        // Settings do, and for good rather than once: ⌘Tab names the
+        // app, the app's window is the editor window, and AppKit makes
+        // it key on the way in (ADR-0033). The raise used to refuse
+        // itself while that window was open. It no longer refuses
+        // anything, so the route is decided here, where routes are.
+        // B4 owns the routing's final form.
+        let claimed = aboutActivation || settingsActivation || model.editorWindowOpen
         aboutActivation = false
         settingsActivation = false
         guard let raise = Self.activationRaises(
@@ -555,16 +563,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// `applicationDidBecomeActive` gives, so one gesture cannot mean
     /// two things depending on which of the two it arrived at. With the
     /// setting on it opens the primary editor window or brings the open
-    /// one forward. Spike (issue #197): this is the window's only
-    /// entrance, and `activationRaises` is left as it was, so ⌘Tab, the
-    /// launch and the summons still raise the panel whenever the window
-    /// is closed. B4 owns the real routing.
+    /// one forward. This is the window's only entrance, and
+    /// `activationRaises` is left as it was, so ⌘Tab, the launch and
+    /// the summons still raise the panel whenever the window is closed.
+    /// B4 owns the real routing.
     ///
     /// A Dock click on an inactive app sends an activation as well as
     /// this, in no promised order. Either order ends in the same place:
     /// the window opening rests a panel the activation raised first,
-    /// and a raise arriving second is refused while the window is open
-    /// (`BackdropModel.raise`).
+    /// and an activation arriving second finds the window open and
+    /// leaves the panel where it is (`applicationDidBecomeActive`).
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {

@@ -4,28 +4,29 @@ import CompanionKit
 import SwiftUI
 import os
 
-/// The primary editor window (ADR-0033), spike quality (issue #197):
-/// an ordinary titled, resizable window at normal level over the same
-/// pages the panel shows. It exists to dogfood the ADR's first three
-/// eject triggers before presentation ownership (B2) is built, and it
-/// does not ship in this form.
+/// The primary editor window (ADR-0033): an ordinary titled, resizable
+/// window at normal level over the same pages the panel shows. Its
+/// entrance and its routes are still the dogfood build's, and B4 owns
+/// their final form.
 ///
 /// One store, one model: the root view is handed the panel's own
-/// `PageModel`, never a second one. Two surfaces over one model cannot
-/// both mount the editor yet, so ownership here is the crudest thing
-/// that works: `BackdropModel.editorWindowOpen` stands for as long as
-/// this window is open, and while it stands the panel rests, mounts no
-/// page content and refuses every raise.
+/// `PageModel`, never a second one. Exactly one of the two windows owns
+/// the live page content at a time (`PageModel.owner`). This one owns
+/// while it is open and the panel rests, and shows a placeholder while
+/// a raised panel has the page. What it reports to the model is two
+/// facts, that it opened or closed and that it gained or lost the
+/// keyboard, and `BackdropModel` decides what each one moves.
 ///
 /// The window is built on each open and dropped on each close. A closed
 /// window keeps its hosting view, and a hosting view keeps its editor
-/// mounted, which is exactly the second mount the flag exists to
+/// mounted, which is exactly the second mount ownership exists to
 /// prevent. The frame survives through the autosave name, in defaults.
 @MainActor
 final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     private let model: BackdropModel
     private var window: NSWindow?
     private var captureObserver: AnyCancellable?
+    private var ownerObserver: AnyCancellable?
 
     /// The defaults key the frame rests under between runs. State
     /// restoration is off (`isRestorable`), so this is the only thing
@@ -43,8 +44,9 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        // The flag before the window: the panel has to have let go of
-        // the pages by the time this window's editor mounts.
+        // The fact before the window: the panel has to have let go of
+        // the page, its place kept, by the time this window's editor
+        // mounts and sheds what it finds on the storage.
         model.editorWindowOpened()
 
         let window = NSWindow(
@@ -83,6 +85,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         window.center()
         window.setFrameAutosaveName(Self.frameAutosaveName)
         self.window = window
+        observeOwner()
 
         window.makeKeyAndOrderFront(nil)
         model.pages.focusEditorWhenMounted(in: window)
@@ -91,26 +94,79 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// Key status feeds the shared model, as the panel's does: the
-    /// editor's focus rules and the ember border read it there.
+    /// Key status is reported and never written here. Taking the
+    /// keyboard is the one key event that moves ownership (a raised
+    /// panel rests), and losing it, to Settings, About, a modal panel
+    /// or another app, moves nothing; `BackdropModel.keyTurn` holds
+    /// both rules.
     func windowDidBecomeKey(_ notification: Notification) {
-        model.holdsKeys = true
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        model.holdsKeys = false
+        model.keyStatusChanged(of: .editorWindow, keyed: false)
     }
 
     /// Tear the content down before the panel is told, so this window's
     /// editor is on its way out by the time the panel's mounts again.
+    /// Key status needs no word of its own: if this window owned, the
+    /// transfer the close causes forgets the keys with everything else
+    /// the outgoing owner held, and if the panel owned they were never
+    /// this window's.
     func windowWillClose(_ notification: Notification) {
         captureObserver = nil
+        ownerObserver = nil
         window?.delegate = nil
         window?.contentView = nil
         window = nil
-        model.holdsKeys = false
         model.editorWindowClosed()
         Self.logger.info("editor window=closed")
+    }
+
+    // MARK: Ownership coming back
+
+    /// Follow the owner for the one thing a transfer asks of this
+    /// window: when a raised panel rests beside it, the page content
+    /// comes back here, and the keyboard comes with it if the app is
+    /// active (ADR-0033). The panel cannot do that part, since a panel
+    /// has no way to hand its key status to a particular window.
+    ///
+    /// A turn later and never inside the sink. A `@Published` tells its
+    /// subscribers on willSet, before the owner has landed, and the
+    /// transfer itself runs ahead of the panel's rest; ordering a window
+    /// from here would bring its key delegates into a model that is
+    /// halfway through both.
+    private func observeOwner() {
+        ownerObserver = model.pages.$owner
+            .dropFirst()
+            .sink { [weak self] owner in
+                guard owner == .editorWindow else { return }
+                Task { @MainActor [weak self] in self?.ownershipCameBack() }
+            }
+    }
+
+    private func ownershipCameBack() {
+        guard let window, model.pages.owner == .editorWindow else { return }
+        guard Self.takesKeysWithOwnership(
+            appActive: NSApp?.isActive ?? false,
+            onScreen: window.isVisible && !window.isMiniaturized,
+            alreadyKey: window.isKeyWindow,
+            modalSessionRunning: ModalSession.isRunning
+        ) else { return }
+        window.makeKeyAndOrderFront(nil)
+        model.pages.focusEditorWhenMounted(in: window)
+    }
+
+    /// Whether the keyboard comes back with the page content, pure.
+    /// Only into an active app: the hotkey raises the panel without
+    /// activating, and resting it from there returns the keyboard to
+    /// the app the person was in, which a window of ours made key would
+    /// take away again. Only a window the person can see, never over a
+    /// modal panel of ours, and not when there is nothing to do.
+    nonisolated static func takesKeysWithOwnership(
+        appActive: Bool, onScreen: Bool, alreadyKey: Bool, modalSessionRunning: Bool
+    ) -> Bool {
+        appActive && onScreen && !alreadyKey && !modalSessionRunning
     }
 
     /// Mechanics only, never content; the surface's own subsystem.
@@ -153,10 +209,28 @@ private struct PrimaryEditorRootView: View {
         }
         .background(Color.panelBackground)
         .background(PageKeyboardMap(model: pages))
+        // Said once, at the root, and read by everything under it that
+        // writes to the model: the editor's mount, the roll and the
+        // keyboard map all name this window as the one writing.
+        .environment(\.presentationSurface, .editorWindow)
     }
 
+    /// The page while this window owns it, and a placeholder while a
+    /// raised panel does (ADR-0033). The unmount is the point and not a
+    /// side effect: a page's storage takes one layout manager, so the
+    /// window that does not own mounts no editor at all. The
+    /// placeholder names no page and shows no ink. B3's glance replaces
+    /// it.
+    @ViewBuilder
     private var content: some View {
-        PageContentView(model: pages, emptyHint: "click or ↩ to start one")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if pages.owner == .editorWindow {
+            PageContentView(model: pages, emptyHint: "click or ↩ to start one")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Open in the card.")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }

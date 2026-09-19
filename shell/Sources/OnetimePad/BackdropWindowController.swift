@@ -384,18 +384,18 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
-            if model.editorWindowOpen {
-                // Spike (issue #197): the editor window is key-able and
-                // is up or about to be, so the app has somewhere for
-                // the keyboard to go and the activation is not ours to
-                // hand back. Without this the rest that opening the
-                // window causes would deactivate the app under it.
-            } else if NSApp.isActive {
+            if NSApp.isActive {
                 // A ⌘Tab or Dock summon made this app active; resting
                 // hands the whole activation back, not just key status
                 // — an active app with no key-able window would strand
-                // the keyboard.
-                NSApp.deactivate()
+                // the keyboard. With the editor window open it has one:
+                // that window is up or about to be, the keyboard goes
+                // to it (`PrimaryEditorWindowController`), and the
+                // activation is not ours to hand back. Without the
+                // exception the rest that opening the window causes
+                // would deactivate the app under it. B4 owns the rule's
+                // final form.
+                if !model.editorWindowOpen { NSApp.deactivate() }
             } else if panel.isKeyWindow {
                 // The hotkey path: the app never activated, so there is
                 // no activation to return — only key status. A
@@ -681,7 +681,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             pinned: model.pinned,
             keepsAbove: model.keepsAboveWhenInactive
         )
-        model.holdsKeys = true
+        model.keyStatusChanged(of: .panel, keyed: true)
     }
 
     /// Losing the keyboard is never a rest, and that is load-bearing:
@@ -704,7 +704,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             pinned: model.pinned,
             keepsAbove: model.keepsAboveWhenInactive
         )
-        model.holdsKeys = false
+        model.keyStatusChanged(of: .panel, keyed: false)
     }
 
     /// The keyboard's waypoint on its way back to the active app: a

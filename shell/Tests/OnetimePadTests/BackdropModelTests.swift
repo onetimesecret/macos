@@ -1,3 +1,4 @@
+import AppKit
 import CompanionCore
 import XCTest
 
@@ -31,6 +32,12 @@ final class BackdropModelTests: XCTestCase {
     /// construction under the runner outright; this is the sentence
     /// that answers the refusal for a BackdropModel test that only
     /// cares about the surface's own persistence.
+    ///
+    /// A presentation write the model declines fails the test that
+    /// caused it. The shipping answer is a debug assertion, which would
+    /// take the whole run down without saying which sequence did it,
+    /// and no sequence in this suite is meant to produce one: the
+    /// surface model asks who owns before it writes.
     private func ephemeralPages(defaults: UserDefaults, tag: String) -> PageModel {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("backdrop-\(UUID().uuidString)", isDirectory: true)
@@ -44,7 +51,10 @@ final class BackdropModelTests: XCTestCase {
             defaults: defaults,
             seams: .init(
                 stateDirectory: directory,
-                client: CompanionClient(adopting: handle)
+                client: CompanionClient(adopting: handle),
+                declinedPresentationWrite: { field, surface in
+                    XCTFail("\(surface) wrote \(field.rawValue) without owning the page content")
+                }
             )
         )
     }
@@ -96,38 +106,7 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(second.keepsAboveWhenInactive)
     }
 
-    // MARK: The editor window (spike, issue #197)
-
-    func testOpeningTheEditorWindowRestsARaisedPanel() {
-        // Crude exclusive ownership: the window opening is what takes
-        // the pages away from the panel, whatever the panel was doing.
-        let defaults = makeDefaults(named: "editor-window-rests")
-        let model = BackdropModel(
-            defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "editor-window-rests")
-        )
-        model.raise(.summon)
-        model.editorWindowOpened()
-        XCTAssertTrue(model.editorWindowOpen)
-        XCTAssertEqual(model.stance, .resting)
-    }
-
-    func testNoRouteRaisesThePanelWhileTheEditorWindowIsOpen() {
-        // The one scenario the guard exists for: a Dock click on an
-        // inactive app sends the reopen and an activation, in no
-        // promised order, and the activation arriving second must not
-        // put a second editor over the pages the window now owns.
-        let defaults = makeDefaults(named: "editor-window-refuses")
-        let model = BackdropModel(
-            defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "editor-window-refuses")
-        )
-        model.editorWindowOpened()
-        model.raise(.activation)
-        XCTAssertEqual(model.stance, .resting)
-        model.summon()
-        XCTAssertEqual(model.stance, .resting)
-    }
+    // MARK: The editor window's entrance
 
     func testDockOpensEditorWindowDefaultsOffAndPersists() {
         // Off is what lets a build carry the spike without changing
@@ -150,8 +129,7 @@ final class BackdropModelTests: XCTestCase {
     func testReopenRoutingOverTheWholeMatrix() {
         // Off and closed is the old behaviour, a raise. The case worth
         // the function is off and open: the setting was turned off
-        // under an open window, a raise would be refused, and the click
-        // must still do something.
+        // under an open window, and a reopen still names that window.
         XCTAssertFalse(
             BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: false))
         XCTAssertTrue(
@@ -162,17 +140,349 @@ final class BackdropModelTests: XCTestCase {
             BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: true))
     }
 
-    func testClosingTheEditorWindowGivesThePanelItsRaiseBack() {
-        let defaults = makeDefaults(named: "editor-window-closes")
-        let model = BackdropModel(
+    // MARK: Who owns the page content (ADR-0033, issue #198)
+
+    /// The rule is `PresentationOwner.resolve`, and its matrix is
+    /// tested beside it. What is tested here is the feed: that every
+    /// event which moves one of the rule's two facts reaches the shared
+    /// model as the right owner, that the one key event which moves
+    /// ownership does and no other does, and that the surface model
+    /// never writes a presentation field for a window that does not
+    /// own (`ephemeralPages` fails the test if it tries).
+    ///
+    /// No window controller is built. Both of them order real windows
+    /// and take the keyboard, so what they decide is in the model and
+    /// its pure helpers, and these cases call what the delegates call.
+    private func makeModel(named name: String, panelMayOwn: Bool = true) -> BackdropModel {
+        let defaults = makeDefaults(named: name)
+        return BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "editor-window-closes")
+            pages: ephemeralPages(defaults: defaults, tag: name),
+            panelMayOwn: panelMayOwn
         )
+    }
+
+    func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {
+        let model = makeModel(named: "owner-closed")
+        XCTAssertEqual(model.pages.owner, .panel)
+        model.raise(.summon)
+        XCTAssertEqual(model.pages.owner, .panel)
+        model.rest()
+        XCTAssertEqual(model.pages.owner, .panel)
+    }
+
+    func testOpeningTheEditorWindowBesideARestingPanelGivesItThePage() {
+        let model = makeModel(named: "owner-opened-resting")
         model.editorWindowOpened()
-        model.editorWindowClosed()
-        XCTAssertFalse(model.editorWindowOpen)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
         XCTAssertEqual(model.stance, .resting)
+    }
+
+    func testOpeningTheEditorWindowRestsARaisedPanelAndTakesThePage() {
+        // The window opening takes the keyboard, and when the editor
+        // window takes the keyboard a raised panel rests.
+        let model = makeModel(named: "owner-opened-raised")
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+
+        model.editorWindowOpened()
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertFalse(model.holdsKeys, "the panel's keys are not the editor window's")
+    }
+
+    func testEveryRouteRaisesThePanelBesideAnOpenEditorWindowAndGivesItThePage() {
+        // Nothing in the raise refuses. A summon is the person asking
+        // to type into the card, and the editor window shows a
+        // placeholder for as long as the card is up.
+        for reason in [BackdropRaise.summon, .activation] {
+            let model = makeModel(named: "owner-raise-beside-\(reason)")
+            model.editorWindowOpened()
+            model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+            model.raise(reason)
+
+            XCTAssertEqual(model.stance, .raised)
+            XCTAssertEqual(model.pages.owner, .panel)
+        }
+    }
+
+    func testTheHotkeyBesideAKeyedEditorWindowRaisesAndThenRests() {
+        let model = makeModel(named: "owner-summon-toggle")
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        // The editor window holding the keyboard is not the card
+        // holding it, so the first summon raises.
+        model.summon()
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertFalse(model.holdsKeys, "until the panel's own window reports")
+
+        model.keyStatusChanged(of: .editorWindow, keyed: false)
+        model.keyStatusChanged(of: .panel, keyed: true)
+        XCTAssertTrue(model.holdsKeys)
+
+        model.summon()
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertFalse(model.holdsKeys)
+    }
+
+    func testRestingBesideAnOpenEditorWindowReturnsThePage() {
+        let model = makeModel(named: "owner-rest-returns")
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.rest()
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    func testTheEditorWindowTakingTheKeyboardRestsARaisedPanel() {
+        let model = makeModel(named: "owner-editor-takes-keys")
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertTrue(model.holdsKeys, "the owner's window has the keyboard")
+    }
+
+    func testClosingTheEditorWindowReturnsThePageToThePanel() {
+        let model = makeModel(named: "owner-closes")
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        model.editorWindowClosed()
+
+        XCTAssertFalse(model.editorWindowOpen)
+        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertFalse(model.holdsKeys, "the keys went with the window that had them")
         model.raise(.summon)
         XCTAssertEqual(model.stance, .raised)
+    }
+
+    func testClosingTheEditorWindowUnderARaisedPanelMovesNothing() {
+        let model = makeModel(named: "owner-closes-under-raised")
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+
+        model.editorWindowClosed()
+
+        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertTrue(model.holdsKeys)
+    }
+
+    // MARK: Key loss moves nothing
+
+    /// Settings, About and a modal open or save panel are one case to
+    /// the model and that is the design: a content window is told that
+    /// it lost the keyboard and never to whom, so nothing downstream
+    /// can treat one taker differently from another. Each is named here
+    /// so the promise reads in the terms the record makes it in.
+    private static let keyTakers = ["Settings", "About", "an open panel"]
+
+    func testKeyLossToSettingsAboutOrAnOpenPanelMovesNothingWhileThePanelOwns() {
+        for taker in Self.keyTakers {
+            let model = makeModel(named: "key-loss-panel-\(taker)")
+            let editor = NSTextView()
+            model.raise(.summon)
+            model.pages.mountEditor(editor, from: .panel)
+            model.keyStatusChanged(of: .panel, keyed: true)
+
+            model.keyStatusChanged(of: .panel, keyed: false)
+
+            XCTAssertFalse(model.holdsKeys, taker)
+            XCTAssertEqual(model.pages.owner, .panel, taker)
+            XCTAssertTrue(model.pages.activeEditor === editor, taker)
+            XCTAssertEqual(model.stance, .raised, "losing the keyboard is never a rest")
+
+            model.keyStatusChanged(of: .panel, keyed: true)
+            XCTAssertTrue(model.holdsKeys, taker)
+            XCTAssertTrue(model.pages.activeEditor === editor, taker)
+        }
+    }
+
+    func testKeyLossToSettingsAboutOrAnOpenPanelMovesNothingWhileTheEditorWindowOwns() {
+        for taker in Self.keyTakers {
+            let model = makeModel(named: "key-loss-editor-\(taker)")
+            let editor = NSTextView()
+            model.editorWindowOpened()
+            model.pages.mountEditor(editor, from: .editorWindow)
+            model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+            model.keyStatusChanged(of: .editorWindow, keyed: false)
+
+            XCTAssertFalse(model.holdsKeys, taker)
+            XCTAssertEqual(model.pages.owner, .editorWindow, taker)
+            XCTAssertTrue(model.pages.activeEditor === editor, taker)
+            XCTAssertEqual(model.stance, .resting, taker)
+
+            model.keyStatusChanged(of: .editorWindow, keyed: true)
+            XCTAssertTrue(model.holdsKeys, taker)
+            XCTAssertEqual(model.pages.owner, .editorWindow, taker)
+        }
+    }
+
+    func testKeyLossBesideTheOtherWindowMovesNothingEither() {
+        // Both windows up, the panel raised and owning, and the
+        // keyboard goes to Settings. The editor window is right there
+        // and still receives nothing.
+        let model = makeModel(named: "key-loss-both-windows")
+        let editor = NSTextView()
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.pages.mountEditor(editor, from: .panel)
+        model.keyStatusChanged(of: .panel, keyed: true)
+
+        model.keyStatusChanged(of: .panel, keyed: false)
+
+        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertTrue(model.pages.activeEditor === editor)
+        XCTAssertFalse(model.holdsKeys)
+    }
+
+    func testTheWindowThatDoesNotOwnSaysNothingAboutTheKeys() {
+        let model = makeModel(named: "key-other-window")
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        // A resting panel resigning, as it does from inside its own
+        // rest, is not the page losing the keyboard.
+        model.keyStatusChanged(of: .panel, keyed: false)
+        XCTAssertTrue(model.holdsKeys)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    func testTheKeyTurnOverTheWholeMatrix() {
+        typealias Turn = BackdropModel.KeyTurn
+        func turn(
+            _ surface: PresentationOwner, _ keyed: Bool,
+            owner: PresentationOwner, mid: Bool = false
+        ) -> Turn {
+            BackdropModel.keyTurn(
+                surface: surface, keyed: keyed, owner: owner, midTransition: mid
+            )
+        }
+        // The owner's window: the keys follow it and nothing else moves.
+        XCTAssertEqual(turn(.panel, true, owner: .panel), .reports(true))
+        XCTAssertEqual(turn(.panel, false, owner: .panel), .reports(false))
+        XCTAssertEqual(turn(.editorWindow, true, owner: .editorWindow), .reports(true))
+        XCTAssertEqual(turn(.editorWindow, false, owner: .editorWindow), .reports(false))
+        // The other window: only the editor window taking the keyboard
+        // moves anything.
+        XCTAssertEqual(turn(.editorWindow, true, owner: .panel), .restsPanel)
+        XCTAssertEqual(turn(.editorWindow, false, owner: .panel), .ignored)
+        XCTAssertEqual(turn(.panel, true, owner: .editorWindow), .ignored)
+        XCTAssertEqual(turn(.panel, false, owner: .editorWindow), .ignored)
+        // Mid transition the owner's reports still count and the take
+        // over waits.
+        XCTAssertEqual(turn(.editorWindow, true, owner: .panel, mid: true), .ignored)
+        XCTAssertEqual(turn(.panel, false, owner: .panel, mid: true), .reports(false))
+        XCTAssertEqual(
+            turn(.editorWindow, true, owner: .editorWindow, mid: true), .reports(true))
+    }
+
+    // MARK: Key events from inside a stance change
+
+    /// The window controller orders windows from inside the stance's
+    /// publication, and the key delegates those orders fire come back
+    /// into the model before `stance` has landed. A subscriber stands
+    /// in for the controller here and reports from exactly that turn.
+    func testKeyEventsFromInsideARestAreJudgedAgainstTheSettledOwner() {
+        let model = makeModel(named: "mid-rest")
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+        var stanceSeenFromInside: BackdropStance?
+        let relay = model.$stance.dropFirst().sink { [unowned model] _ in
+            // The rest hands the keyboard from the panel to the editor
+            // window. `stance` still names the raise being left.
+            stanceSeenFromInside = model.stance
+            model.keyStatusChanged(of: .panel, keyed: false)
+            model.keyStatusChanged(of: .editorWindow, keyed: true)
+        }
+        defer { relay.cancel() }
+
+        model.rest()
+
+        XCTAssertEqual(stanceSeenFromInside, .raised, "the fixture reports from mid transition")
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertTrue(model.holdsKeys, "the editor window's report counted")
+    }
+
+    func testTheEditorWindowKeyedFromInsideARaiseDoesNotNestARest() {
+        let model = makeModel(named: "mid-raise")
+        model.editorWindowOpened()
+        var published: [BackdropStance] = []
+        let relay = model.$stance.dropFirst().sink { [unowned model] stance in
+            published.append(stance)
+            // The raise's order out can hand the editor window the
+            // keyboard for a moment, before the panel takes it.
+            if published.count == 1 {
+                model.keyStatusChanged(of: .editorWindow, keyed: true)
+            }
+        }
+        defer { relay.cancel() }
+
+        model.raise(.summon)
+
+        XCTAssertEqual(published, [.raised], "no rest was published from inside the raise")
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertEqual(model.pages.owner, .panel)
+    }
+
+    // MARK: The read only panel, as one policy switch
+
+    func testUnderTheNeverGrantPolicyTheEditorWindowOwnsWheneverItIsOpen() {
+        let model = makeModel(named: "policy-never-grant", panelMayOwn: false)
+        XCTAssertEqual(model.pages.owner, .panel, "a closed window has nothing to own")
+
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+
+        // The panel comes forward and is granted nothing, and asks for
+        // nothing either: no offer, no cadence, no keys.
+        model.raise(.summon)
+        model.keyStatusChanged(of: .editorWindow, keyed: false)
+        model.keyStatusChanged(of: .panel, keyed: true)
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+
+        model.rest()
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+
+        model.editorWindowClosed()
+        XCTAssertEqual(model.pages.owner, .panel)
+    }
+
+    // MARK: The keyboard coming back with the page
+
+    func testTheKeyboardComesBackWithThePageOnlyIntoAnActiveApp() {
+        func takes(
+            active: Bool = true, onScreen: Bool = true,
+            alreadyKey: Bool = false, modal: Bool = false
+        ) -> Bool {
+            PrimaryEditorWindowController.takesKeysWithOwnership(
+                appActive: active, onScreen: onScreen,
+                alreadyKey: alreadyKey, modalSessionRunning: modal
+            )
+        }
+        XCTAssertTrue(takes())
+        // The hotkey path: the app never activated, and the keyboard
+        // goes back to the app the person was in.
+        XCTAssertFalse(takes(active: false))
+        XCTAssertFalse(takes(onScreen: false))
+        XCTAssertFalse(takes(alreadyKey: true))
+        XCTAssertFalse(takes(modal: true))
     }
 }

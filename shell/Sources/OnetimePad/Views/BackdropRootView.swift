@@ -271,21 +271,21 @@ struct BackdropRootView: View {
         }
     }
 
-    /// The page, or nothing while the editor window holds it (spike,
-    /// issue #197). The unmount is the point and not a side effect: the
-    /// one editor writes `activeEditor`, the storage's delegate and its
-    /// layout manager at mount and on every update, so two mounts over
-    /// one model fight, and the crude cure is that the panel has none.
-    /// The placeholder names no page and shows no ink. B3's glance
-    /// replaces it.
+    /// The page while the panel owns it, and a placeholder while the
+    /// editor window does (ADR-0033). The unmount is the point and not
+    /// a side effect: the one editor writes `activeEditor`, the
+    /// storage's delegate and its layout manager at mount and on every
+    /// update, so the window that does not own mounts no editor at all,
+    /// read only or otherwise. The placeholder names no page and shows
+    /// no ink. B3's glance replaces it.
     @ViewBuilder
     private var pageContent: some View {
-        if model.editorWindowOpen {
+        if pages.owner == .panel {
+            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+        } else {
             Text("Open in the editor window.")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.tertiary)
-        } else {
-            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
         }
     }
 

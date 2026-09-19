@@ -120,11 +120,20 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     private var started = false
 
+    /// Whether the panel may ever own the page content while the editor
+    /// window is open. True in every shipping construction. False is
+    /// ADR-0033's read only panel, kept as one input to the rule so the
+    /// policy can be proved against the model the app runs; nothing
+    /// outside a test passes it.
+    private let panelMayOwn: Bool
+
     init(
         defaults: UserDefaults = FormFactor.settingsDefaults,
-        pages: PageModel? = nil
+        pages: PageModel? = nil,
+        panelMayOwn: Bool = true
     ) {
         self.defaults = defaults
+        self.panelMayOwn = panelMayOwn
         geometry = BackdropGeometry.load(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
@@ -139,15 +148,12 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         self.pages = pages ?? PageModel(formFactor: .backdrop, defaults: defaults)
     }
 
-    /// True while the surface holds the keyboard, set by the window
-    /// controller from key status and kept on the shared model because
-    /// the editor's focus rules read it there. Raised and keyed are
-    /// distinct facts: the user can ⌘Tab away to work beside a raised
-    /// card.
-    var holdsKeys: Bool {
-        get { pages.holdsKeys }
-        set { pages.reportKeys(newValue, from: .panel) }
-    }
+    /// True while the window that owns the page content holds the
+    /// keyboard. Kept on the shared model because the editor's focus
+    /// rules read it there, and fed by both window controllers through
+    /// `keyStatusChanged(of:keyed:)`. Raised and keyed are distinct
+    /// facts: the user can ⌘Tab away to work beside a raised card.
+    var holdsKeys: Bool { pages.holdsKeys }
 
     /// Launch: open yesterday's pages, conjure one if there were none,
     /// and start the clocks.
@@ -164,7 +170,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         guard !started else { return }
         started = true
         pages.loadStateIfNeeded()
-        pages.startRedraw(interval: stance.tickInterval, from: .panel)
+        retime()
     }
 
     /// Quit: seal the pages into the state file. Returns true when the
@@ -225,21 +231,28 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     ///
     /// Every caller says why it is raising, because one thing here is
     /// not the same on both routes: see `BackdropRaise`.
+    ///
+    /// A raise gives the panel the page content whether or not the
+    /// editor window is open (ADR-0033), and nothing here refuses one.
+    /// Which gestures reach this with the editor window open is the
+    /// routes' question and not the raise's.
     func raise(_ reason: BackdropRaise) {
-        // Spike (issue #197): the editor window owns the pages while it
-        // is open, and the crude form of that is a panel that cannot
-        // come forward at all. Every route lands here, so the refusal
-        // is stated once. B4 replaces it with real routing.
-        guard !editorWindowOpen else { return }
-        stance = .raised
-        pages.startRedraw(interval: stance.tickInterval, from: .panel)
+        // The owner before the stance. The stance's publication is what
+        // the window controller acts on, and its ordering calls bring
+        // key delegates of both windows back in here before it returns;
+        // each of those is judged against an owner that has already
+        // settled.
+        panelRaised = true
+        settleOwner()
+        publish(.raised)
         // Each raise looks at the board once, never a poll: coming
         // forward is the moment the offer is worth making (ADR-0007
         // Amendment 1), and it is the same moment the panel picks. Both
         // reasons take this: an offer is about what is on the board now,
         // and coming forward is when it is worth making however the user
-        // got here.
-        pages.refreshPasteboardOffer(from: .panel)
+        // got here. The offer stands under the owner's page, so a panel
+        // that was not granted the page makes none.
+        if pages.owner == .panel { pages.refreshPasteboardOffer(from: .panel) }
         // The days go back to today on a summon and not on a bare
         // activation (issue #79). Between summons the roll's scroll is
         // the reader's own, and a summon is where the pad goes back to
@@ -264,23 +277,152 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     /// Esc, a click outside the card, or a summon from a keyed
     /// surface: back behind everything.
+    ///
+    /// With the editor window open this is also where the page content
+    /// goes back to it (ADR-0033), and the owner settles before the
+    /// stance is published for `raise(_:)`'s reason: the rest hands the
+    /// keyboard away from inside the publication, and the window that
+    /// receives it has to find itself the owner already.
     func rest() {
-        stance = .resting
-        pages.startRedraw(interval: stance.tickInterval, from: .panel)
         // The offer is a summon-time thing; a resting card makes no
         // offers, and one standing from the last raise would be stale
-        // by the next.
-        pages.withdrawPasteboardOffer()
+        // by the next. The panel's own offer only: a rest can arrive
+        // while the editor window owns (Esc there hands the keys back
+        // through this same road), and what stands under that window's
+        // page is not the panel's to withdraw.
+        if pages.owner == .panel { pages.withdrawPasteboardOffer() }
+        panelRaised = false
+        settleOwner()
+        publish(.resting)
     }
 
-    // MARK: The editor window (spike, issue #197)
+    /// The posture the model has committed to, set before the stance is
+    /// published. `stance` cannot serve: a `@Published` tells its
+    /// subscribers on willSet, the window controller orders windows
+    /// from inside that turn, and a key delegate arriving there reads a
+    /// `stance` that still names the posture being left. The window
+    /// controller keeps the same kind of record for the same reason
+    /// (`BackdropAltitudeKeeper.committedStance`).
+    private var panelRaised = false
 
-    /// True while the primary editor window is open. ADR-0033 gives the
-    /// pages one owner at a time; the spike's crude form of that is this
-    /// flag: while it stands the panel rests, mounts no page content
-    /// (`BackdropRootView`) and refuses every raise. B2 replaces it with
-    /// presentation ownership in CompanionKit, and it does not ship.
-    @Published private(set) var editorWindowOpen = false
+    /// How many stance publications are on the stack right now. More
+    /// than zero means a key event is arriving from inside the window
+    /// controller's own ordering, mid transition, where a second stance
+    /// change would nest inside the first and leave the two disagreeing
+    /// about which came last.
+    private var stancePublications = 0
+
+    private func publish(_ new: BackdropStance) {
+        stancePublications += 1
+        defer { stancePublications -= 1 }
+        stance = new
+    }
+
+    // MARK: Ownership (ADR-0033)
+
+    /// Resolve who owns the live page content from the two facts that
+    /// decide it and hand the answer to the shared model, then give the
+    /// redraw the owner's cadence. Called at every event that moves
+    /// either fact. A transfer to the window that already owns is
+    /// nothing, so nobody asks first whether the answer changed.
+    private func settleOwner() {
+        pages.transferOwnership(
+            to: PresentationOwner.resolve(
+                panelRaised: panelRaised,
+                editorWindowOpen: editorWindowOpen,
+                panelMayOwn: panelMayOwn
+            )
+        )
+        retime()
+    }
+
+    /// The countdown redraw, at the cadence of the window showing the
+    /// countdowns. The panel coarsens to the resting glance's tick
+    /// while it rests. The editor window is an ordinary window a person
+    /// is looking at, and ticks by the second.
+    private func retime() {
+        switch pages.owner {
+        case .panel:
+            let posture: BackdropStance = panelRaised ? .raised : .resting
+            pages.startRedraw(interval: posture.tickInterval, from: .panel)
+        case .editorWindow:
+            pages.startRedraw(from: .editorWindow)
+        }
+    }
+
+    /// What a key event from one of the two content windows does.
+    enum KeyTurn: Equatable {
+        /// The window that does not own gained or lost the keyboard,
+        /// which says nothing about whether the page holds it.
+        case ignored
+        /// The owner's window: `holdsKeys` follows it, and nothing else
+        /// moves. This is the whole of what Settings, About or a modal
+        /// panel taking the keyboard does.
+        case reports(Bool)
+        /// The editor window took the keyboard while the panel owned,
+        /// which is a raised panel: the panel rests, the page content
+        /// goes to the editor window, and then its keys are reported.
+        case restsPanel
+    }
+
+    /// The key event decision, pure. Ownership moves on exactly one key
+    /// event, the other content window taking the keyboard, and only
+    /// the editor window can do that to the panel: a resting panel
+    /// refuses the keyboard, so it takes ownership by being raised and
+    /// never by becoming key. Every loss of the keyboard, to anything,
+    /// moves nothing.
+    ///
+    /// `midTransition` is a stance publication on the stack. The editor
+    /// window can be handed the keyboard for a moment from inside the
+    /// panel's own raise (the order out that lands the card on this
+    /// Space), and resting the panel from there would nest a rest
+    /// inside the raise that is about to make the panel key anyway.
+    nonisolated static func keyTurn(
+        surface: PresentationOwner, keyed: Bool,
+        owner: PresentationOwner, midTransition: Bool
+    ) -> KeyTurn {
+        if surface == owner { return .reports(keyed) }
+        if surface == .editorWindow, keyed, !midTransition { return .restsPanel }
+        return .ignored
+    }
+
+    /// A content window gained or lost the keyboard. Both window
+    /// controllers report here and neither writes `holdsKeys` itself.
+    ///
+    /// The owner read here is the committed one: `settleOwner` runs
+    /// before any stance is published, so a delegate turn arriving from
+    /// inside `apply(.resting)` finds the owner the rest settled on and
+    /// never `stance`, which is halfway at that moment.
+    func keyStatusChanged(of surface: PresentationOwner, keyed: Bool) {
+        let turn = Self.keyTurn(
+            surface: surface, keyed: keyed,
+            owner: pages.owner, midTransition: stancePublications > 0
+        )
+        switch turn {
+        case .ignored:
+            break
+        case .reports(let keyed):
+            pages.reportKeys(keyed, from: surface)
+        case .restsPanel:
+            rest()
+            // The rest gave the page content to the editor window,
+            // unless the policy or a window closing under this call
+            // said otherwise, in which case there is nothing of this
+            // window's to report.
+            if pages.owner == surface { pages.reportKeys(true, from: surface) }
+        }
+    }
+
+    // MARK: The editor window
+
+    /// True while the primary editor window is open: one of the two
+    /// facts the owner is resolved from, and nothing more than a fact.
+    /// It refuses no raise and no view draws by it; the surfaces read
+    /// `pages.owner`. Deliberately not published, so that it cannot
+    /// grow a subscriber that reads it halfway through a change. The
+    /// reopen route and the rest's activation hand back still ask it,
+    /// and both of those are B4's to replace.
+    private(set) var editorWindowOpen = false
 
     /// Whether the Dock icon opens the editor window, where it would
     /// otherwise raise the card. Off by default, so a build carrying the
@@ -296,32 +438,36 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     private static let dockOpensEditorKey = "dockOpensEditorWindow"
 
     /// What a reopen does, pure: the window when the person asked for
-    /// it, and also when one is already up, since a raise would be
-    /// refused under it and the click would do nothing at all.
+    /// it, and also when one is already up, since a reopen names the
+    /// app and the app's window is the editor window (ADR-0033). B4
+    /// owns the real routing.
     nonisolated static func reopenOpensEditorWindow(
         preference: Bool, windowOpen: Bool
     ) -> Bool {
         preference || windowOpen
     }
 
-    /// The editor window is about to come up. The flag goes first, so
-    /// the rest it causes is already judged with the window open: the
-    /// controller must not hand the activation back under a window that
-    /// is about to take the keyboard.
+    /// The editor window is about to come up and take the keyboard,
+    /// and when the editor window takes the keyboard a raised panel
+    /// rests (ADR-0033). The fact goes first, so the rest is already
+    /// judged with the window open: the page content goes to the editor
+    /// window, and the controller does not hand the activation back
+    /// under a window that is about to become key. A resting panel has
+    /// no stance to change, and only the owner moves.
+    ///
+    /// Called before the window's content is built, which is the order
+    /// of the hand off: the panel has let go of the page, its place
+    /// kept, by the time the editor window's editor mounts.
     func editorWindowOpened() {
         editorWindowOpen = true
-        rest()
-        // The rest coarsened the redraw to the resting glance's cadence.
-        // The countdowns are on screen in the editor window now, and
-        // they tick by the second there.
-        pages.startRedraw(from: .panel)
+        if panelRaised { rest() } else { settleOwner() }
     }
 
-    /// The editor window closed: the panel is the pages' only surface
-    /// again, at whatever stance it holds, which is resting.
+    /// The editor window closed. With it closed the panel owns, resting
+    /// or raised, whatever it was doing a moment ago.
     func editorWindowClosed() {
         editorWindowOpen = false
-        pages.startRedraw(interval: stance.tickInterval, from: .panel)
+        settleOwner()
     }
 
     // MARK: Geometry
