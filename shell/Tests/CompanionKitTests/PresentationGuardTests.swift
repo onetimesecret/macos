@@ -87,24 +87,53 @@ final class PresentationGuardTests: XCTestCase {
             by: roll, scroller: { _ in scrolls += 1 }, wheel: { _ in wheels += 1 }
         )
 
-        // The owner's rail reads the owner's roll and reaches it.
+        let wheel = try Self.syntheticWheel()
+
+        // The other window's rail first, while both counts are still
+        // nought: it is handed the stand in, and the rail's two asks,
+        // a scroll and a wheel turned over the column, are put to
+        // whatever it was handed. Neither reaches the owner's roll.
+        for (surface, owner) in [
+            (PresentationOwner.editorWindow, PresentationOwner.panel),
+            (.panel, .editorWindow),
+        ] {
+            let others = TimeRailView.roll(
+                surface: surface, owner: owner,
+                owners: model.rollGeometry, unclaimed: unclaimed
+            )
+            XCTAssertTrue(others === unclaimed)
+            others.scroll(toDocumentOffset: 120)
+            others.relay(wheel: wheel)
+            XCTAssertEqual(others.geometry, .unmeasured)
+        }
+        XCTAssertEqual(scrolls, 0, "a click on the other window's rail moved the owner's roll")
+        XCTAssertEqual(wheels, 0, "a wheel over the other window's rail reached the owner's roll")
+
+        // The owner's rail is handed the owner's roll, and the same two
+        // asks arrive, which is what makes the noughts above mean
+        // something: the counters are wired to the roll being guarded.
         let owners = TimeRailView.roll(
             surface: .panel, owner: .panel,
             owners: model.rollGeometry, unclaimed: unclaimed
         )
         XCTAssertTrue(owners === model.rollGeometry)
+        owners.scroll(toDocumentOffset: 120)
+        owners.relay(wheel: wheel)
+        XCTAssertEqual(scrolls, 1)
+        XCTAssertEqual(wheels, 1)
+    }
 
-        // The other window's rail is handed the stand in, and both of
-        // the rail's asks put to it reach no roll at all.
-        let others = TimeRailView.roll(
-            surface: .editorWindow, owner: .panel,
-            owners: model.rollGeometry, unclaimed: unclaimed
+    /// A wheel event nobody turned, built from a Quartz event since
+    /// AppKit offers no constructor for one. It is only ever handed to
+    /// a closure, never posted, so no window or responder sees it.
+    private static func syntheticWheel() throws -> NSEvent {
+        let quartz = try XCTUnwrap(
+            CGEvent(
+                scrollWheelEvent2Source: nil, units: .pixel,
+                wheelCount: 1, wheel1: -12, wheel2: 0, wheel3: 0
+            )
         )
-        XCTAssertTrue(others === unclaimed)
-        others.scroll(toDocumentOffset: 120)
-        XCTAssertEqual(others.geometry, .unmeasured)
-        XCTAssertEqual(scrolls, 0)
-        XCTAssertEqual(wheels, 0)
+        return try XCTUnwrap(NSEvent(cgEvent: quartz))
     }
 
     func testTheGuardNamesEveryFieldTheRecordLists() {
