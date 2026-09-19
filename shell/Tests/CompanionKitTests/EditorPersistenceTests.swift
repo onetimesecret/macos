@@ -44,9 +44,9 @@ final class EditorPersistenceTests: XCTestCase {
         let first = try mintPage(in: model)
         let second = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: first, coordinator: coordinator
-        )
+        ))
         textView.isEditable = true
         textView.delegate = coordinator
         coordinator.textView = textView

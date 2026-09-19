@@ -170,7 +170,9 @@ final class TypefaceTests: XCTestCase {
         model.newPage()
         let page = try XCTUnwrap(model.selectedPageID)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator)
+        let textView = try XCTUnwrap(
+            InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator)
+        )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
             styleMask: [.titled], backing: .buffered, defer: false
@@ -205,9 +207,9 @@ final class TypefaceTests: XCTestCase {
         model.newPage()
         let page = try XCTUnwrap(model.selectedPageID)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
         let source = "iiiiiiiiiiii\n```swift\niiiiiiiiiiii\n```\nafter"
         textView.insertText(source, replacementRange: NSRange(location: 0, length: 0))
         coordinator.restyle()

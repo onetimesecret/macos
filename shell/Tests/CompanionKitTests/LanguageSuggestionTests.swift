@@ -25,9 +25,9 @@ final class LanguageSuggestionTests: XCTestCase {
             ordinaryPasteShadowEnabled: false,
             languageDetectionService: LanguageDetectionService(detector: detector)
         )
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
         textView.isEditable = true
         return (model, coordinator, textView)
     }

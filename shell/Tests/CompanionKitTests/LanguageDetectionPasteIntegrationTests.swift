@@ -40,9 +40,11 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
             languageDetectionService: service,
             ordinaryPastePayload: payload
         )
-        let textView = InkEditorView.makeInkTextView(
+        // The builder declines only for a window that does not own the
+        // page content, and a fresh model's panel owns it.
+        guard let textView = InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ) else { fatalError("the builder declined an editor the panel owns") }
         textView.isEditable = true
         return (coordinator, textView)
     }

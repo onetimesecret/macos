@@ -1684,9 +1684,9 @@ final class FileCloseSweepTests: XCTestCase {
         // build one, because a caret and a scroll offset only exist
         // once something has actually been mounted and left.
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: id, coordinator: coordinator
-        )
+        ))
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
         scroll.documentView = textView
         textView.setSelectedRange(NSRange(location: 3, length: 0))

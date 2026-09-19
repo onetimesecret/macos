@@ -52,9 +52,9 @@ final class EditorFactoryTests: XCTestCase {
         let page = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
 
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
 
         XCTAssertTrue(
             textView.isRichText,
@@ -93,9 +93,9 @@ final class EditorFactoryTests: XCTestCase {
         let page = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
 
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
 
         XCTAssertTrue(textView.delegate === coordinator)
         XCTAssertTrue(textView.coordinator === coordinator, "the page's chords have nowhere to go")
@@ -126,17 +126,17 @@ final class EditorFactoryTests: XCTestCase {
         // The first editor and its manager are both held for the length
         // of the test, so what the count says below is the shed's doing
         // and never ARC's.
-        let torndown = InkEditorView.makeInkTextView(
+        let torndown = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: first
-        )
+        ))
         let oldManager = model.storage(for: page).layoutManagers.first
         XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
         XCTAssertTrue(torndown.layoutManager === oldManager)
 
         let second = InkEditorView.Coordinator(model: model)
-        let rebuilt = InkEditorView.makeInkTextView(
+        let rebuilt = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: second
-        )
+        ))
 
         XCTAssertEqual(
             model.storage(for: page).layoutManagers.count, 1,
@@ -165,9 +165,9 @@ final class EditorFactoryTests: XCTestCase {
         let page = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
 
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ))
         let scroll = InkEditorView.scrollStack(for: textView)
 
         XCTAssertEqual(textView.maxSize.width, CGFloat.greatestFiniteMagnitude)
@@ -204,9 +204,9 @@ final class EditorFactoryTests: XCTestCase {
         let first = try mintPage(in: model)
         let second = try mintPage(in: model)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: first, coordinator: coordinator
-        )
+        ))
 
         // Mounted in a plain view, not in a scroller: the editor is one
         // region among several rather than the only thing in its clip.

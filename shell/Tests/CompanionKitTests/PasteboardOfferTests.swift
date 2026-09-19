@@ -4,30 +4,40 @@ import XCTest
 
 /// The summon-time offer's truth table (ADR-0007 Amendment 1). The
 /// board's state comes from the core's probe at reveal time; the row
-/// shows only where a take could land: a page, not the ledger.
+/// shows only where a take could land: a page, not the ledger, and in
+/// the window that owns the page content, not the other one (ADR-0033).
 final class PasteboardOfferTests: XCTestCase {
     func testContentAndAPageShowTheOffer() {
         XCTAssertTrue(
             PageModel.shouldShowPasteboardOffer(
-                boardHolds: true, hasPage: true, ledgerShowing: false))
+                boardHolds: true, hasPage: true, ledgerShowing: false, ownsPresentation: true))
     }
 
     func testAnEmptyBoardOffersNothing() {
         XCTAssertFalse(
             PageModel.shouldShowPasteboardOffer(
-                boardHolds: false, hasPage: true, ledgerShowing: false))
+                boardHolds: false, hasPage: true, ledgerShowing: false, ownsPresentation: true))
     }
 
     func testNoPageMeansNowhereToLand() {
         XCTAssertFalse(
             PageModel.shouldShowPasteboardOffer(
-                boardHolds: true, hasPage: false, ledgerShowing: false))
+                boardHolds: true, hasPage: false, ledgerShowing: false, ownsPresentation: true))
     }
 
     func testTheLedgerIsAReadingSurface() {
         XCTAssertFalse(
             PageModel.shouldShowPasteboardOffer(
-                boardHolds: true, hasPage: true, ledgerShowing: true))
+                boardHolds: true, hasPage: true, ledgerShowing: true, ownsPresentation: true))
+    }
+
+    func testTheWindowThatDoesNotOwnThePageOffersNothing() {
+        // The button takes the owner's road to the owner's caret, so
+        // the row in the other window would seal into a page the
+        // person pressing it is not looking at.
+        XCTAssertFalse(
+            PageModel.shouldShowPasteboardOffer(
+                boardHolds: true, hasPage: true, ledgerShowing: false, ownsPresentation: false))
     }
 }
 

@@ -46,9 +46,9 @@ final class UndoRerouteTests: XCTestCase {
         // AppKit is allowed to hold, and whether the page accepts
         // typing at all.
         coordinator = InkEditorView.Coordinator(model: model)
-        textView = InkEditorView.makeInkTextView(
+        textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: sheet, coordinator: coordinator
-        )
+        ))
         textView.isEditable = true
         textView.delegate = coordinator
         coordinator.textView = textView

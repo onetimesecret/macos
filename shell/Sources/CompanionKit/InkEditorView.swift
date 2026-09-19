@@ -50,13 +50,44 @@ public struct InkEditorView: NSViewRepresentable {
     /// `DayScrollView.makeRoll` is one: a test cannot make a SwiftUI
     /// `Context`, and what this mount owes the page is worth asserting.
     /// The app and the tests build the same object out of the same call.
+    ///
+    /// In a window that does not own the page content the scroller
+    /// comes back empty (ADR-0033). SwiftUI has to be handed a view
+    /// either way, and an empty one is the mount that sheds nothing,
+    /// announces nothing and shows no ink.
     @MainActor
     static func makePage(
         model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
     ) -> NSScrollView {
-        let textView = makeInkTextView(
-            model: model, sheetID: sheetID, coordinator: coordinator
+        let scroll = bareScroller()
+        mountPage(
+            in: scroll, model: model, sheetID: sheetID, readOnly: readOnly,
+            coordinator: coordinator
         )
+        return scroll
+    }
+
+    /// Build the editor into a scroller that has none, when this window
+    /// owns the page content, and say whether it did.
+    ///
+    /// The question comes before the building and not after it, because
+    /// the building sheds every layout manager it finds on the page's
+    /// storage, and in a window that does not own the one it would find
+    /// is the owner's. Asked quietly here: a root view that mounted a
+    /// page in the wrong window is declined without a trap, and the
+    /// builder's own guard is the loud one for a caller that never
+    /// asked.
+    @MainActor
+    @discardableResult
+    static func mountPage(
+        in scroll: NSScrollView,
+        model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
+    ) -> Bool {
+        guard model.owner == coordinator.surface,
+              let textView = makeInkTextView(
+                  model: model, sheetID: sheetID, coordinator: coordinator
+              )
+        else { return false }
         // Whether the page accepts typing is the stance's business and
         // not the editor's, which is why it is set here rather than in
         // the building: `updateNSView` re-gates it on every pass, since
@@ -64,7 +95,7 @@ public struct InkEditorView: NSViewRepresentable {
         // changing the editor.
         textView.isEditable = !readOnly
 
-        let scroll = scrollStack(for: textView)
+        seat(textView, in: scroll)
         coordinator.observeClip(of: scroll)
         coordinator.applyWrap(model.wrapsLines)
         // The scroll half of the place, which is this mount's to put
@@ -73,7 +104,7 @@ public struct InkEditorView: NSViewRepresentable {
         // another window's editor, may have read this page further
         // than the top, and whoever mounts it next opens it there.
         coordinator.restoreScroll(textView: textView, scrollView: scroll, for: sheetID)
-        return scroll
+        return true
     }
 
     /// The editor is going away: a ledger round trip, or the empty
@@ -132,10 +163,21 @@ public struct InkEditorView: NSViewRepresentable {
     /// belongs to the main thread (the model, the styling, the view), and
     /// a builder called from somewhere other than a representable's
     /// own lifecycle should say so at its declaration.
+    ///
+    /// Nil in a window that does not own the page content (ADR-0033),
+    /// and the refusal is the first thing that happens. A few lines
+    /// down the building sheds every layout manager on the page's
+    /// storage, and for a window that does not own, the one standing
+    /// there is the owner's: an editor built here would take the page
+    /// out from under the editor the person is typing into. The mount
+    /// sites ask who owns before they call, so a refusal here is a
+    /// caller that forgot, and it is as loud as any other declined
+    /// write (`PageModel.admits`).
     @MainActor
     static func makeInkTextView(
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
-    ) -> InkTextView {
+    ) -> InkTextView? {
+        guard model.admits(.activeEditor, from: coordinator.surface) else { return nil }
         let layoutManager = InkLayoutManager()
         let container = InkTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
@@ -247,6 +289,24 @@ public struct InkEditorView: NSViewRepresentable {
     /// grows, so the ceiling would be whatever height the card happened
     /// to have the moment the editor mounted.
     static func scrollStack(for textView: InkTextView) -> NSScrollView {
+        let scroll = bareScroller()
+        seat(textView, in: scroll)
+        return scroll
+    }
+
+    /// The scroller with nothing in it yet: what a mount starts from,
+    /// and all that a window which does not own the page content ever
+    /// gets (`makePage`).
+    static func bareScroller() -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        return scroll
+    }
+
+    /// The editor put into its scroller, with the freedom to grow that
+    /// `scrollStack(for:)` describes.
+    static func seat(_ textView: InkTextView, in scroll: NSScrollView) {
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         // Width is the container's business (`widthTracksTextView`), so
@@ -257,11 +317,7 @@ public struct InkEditorView: NSViewRepresentable {
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
         scroll.documentView = textView
-        return scroll
     }
 
     /// End an in-progress IME composition on the page that is leaving,
@@ -354,14 +410,37 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
-        let coordinator = context.coordinator
-        guard let textView = scroll.documentView as? InkTextView else { return }
+        Self.updatePage(
+            scroll, model: model, sheetID: sheetID, readOnly: readOnly,
+            coordinator: context.coordinator
+        )
+    }
+
+    /// The pass SwiftUI asks for on every published change. A static
+    /// for `makePage`'s reason: what a pass does and declines to do
+    /// around a change of owner is worth asserting, and a test cannot
+    /// make a `Context`.
+    @MainActor
+    static func updatePage(
+        _ scroll: NSScrollView,
+        model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
+    ) {
         // A pass over a mount whose window no longer owns does nothing
         // (ADR-0033). Ownership moves before SwiftUI takes the old
         // mount down, and a pass arriving in between must not announce
         // this editor over the owner's, nor reach the swap below, which
         // sheds the layout managers of whatever page it swaps in.
         guard model.owner == coordinator.surface else { return }
+        guard let textView = scroll.documentView as? InkTextView else {
+            // The mount was made while the other window owned, and came
+            // back empty. This window owns now, so the editor is built
+            // on the pass that finds that out.
+            mountPage(
+                in: scroll, model: model, sheetID: sheetID, readOnly: readOnly,
+                coordinator: coordinator
+            )
+            return
+        }
         coordinator.announce(textView)
         // The stance can change without the page changing, so editing
         // is re-gated on every pass rather than at mount alone.
@@ -1341,6 +1420,11 @@ public struct InkEditorView: NSViewRepresentable {
             storage incoming: NSTextStorage,
             restoringScrollIn scrollView: NSScrollView?
         ) {
+            // The swap sheds the incoming page's layout managers, so it
+            // is the owner's to make, for the builder's reason
+            // (`makeInkTextView`). Both mount sites ask before they get
+            // here, and this is the guard for one that did not.
+            guard model.admits(.activeEditor, from: surface) else { return }
             invalidateOrdinaryPasteMeasurement()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)

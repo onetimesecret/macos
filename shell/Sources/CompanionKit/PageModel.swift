@@ -4139,11 +4139,15 @@ public final class PageModel: ObservableObject {
 
     /// Whether the offer row should show: the board must hold content
     /// and a page must be there to take it; the ledger is a reading
-    /// surface, not an ingest one.
+    /// surface, not an ingest one. And only in the window that owns
+    /// the page content (ADR-0033): the offer stands under the owner's
+    /// page and its button takes the owner's road to the owner's
+    /// caret, so the same row in the other window would seal into a
+    /// page the person pressing it cannot see.
     public nonisolated static func shouldShowPasteboardOffer(
-        boardHolds: Bool, hasPage: Bool, ledgerShowing: Bool
+        boardHolds: Bool, hasPage: Bool, ledgerShowing: Bool, ownsPresentation: Bool
     ) -> Bool {
-        boardHolds && hasPage && !ledgerShowing
+        ownsPresentation && boardHolds && hasPage && !ledgerShowing
     }
 
     /// Drop-to-seal: the core reads the drag pasteboard itself; the

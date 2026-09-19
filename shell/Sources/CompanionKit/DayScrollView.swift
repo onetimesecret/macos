@@ -81,8 +81,14 @@ public struct DayScrollView: NSViewRepresentable {
         )
         // The summon half of the anchor rule. Held weakly, so a surface
         // that has gone away cannot be scrolled and cannot be kept
-        // alive by the model holding a way to reach it.
-        Self.installTodayAnchor(on: scroll, model: model, from: context.coordinator.surface)
+        // alive by the model holding a way to reach it. The owner's
+        // roll only: one made in the other window installs nothing,
+        // and the pass that finds its window owning puts the anchor in
+        // (`updateRoll`).
+        let surface = context.coordinator.surface
+        if model.owner == surface {
+            Self.installTodayAnchor(on: scroll, model: model, from: surface)
+        }
         return scroll
     }
 
@@ -115,19 +121,33 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
+        Self.updateRoll(
+            scroll, model: model, readOnly: readOnly, coordinator: context.coordinator
+        )
+    }
+
+    /// The pass SwiftUI asks for on every published change. A static
+    /// for `makeRoll`'s reason: what a pass puts back when ownership
+    /// returns is worth asserting, and a test cannot make a `Context`.
+    static func updateRoll(
+        _ scroll: NSScrollView,
+        model: PageModel, readOnly: Bool, coordinator: InkEditorView.Coordinator
+    ) {
         guard let stack = scroll.documentView as? DayStackView else { return }
-        // A pass over a roll whose window no longer owns does nothing,
-        // for `InkEditorView.updateNSView`'s reason: the pass settles
+        // A pass over a roll whose window does not own does nothing,
+        // for `InkEditorView.updatePage`'s reason: the pass settles
         // the editor on a page, and settling sheds that page's layout
         // managers.
-        let surface = context.coordinator.surface
+        let surface = coordinator.surface
         guard model.owner == surface else { return }
         // Ownership can leave and come back before SwiftUI has taken
         // this roll down, and the transfer dropped what the mount
         // installed. A roll still standing when its window owns again
-        // puts both back. The ordinary pass finds them in place and
-        // writes nothing: a fresh claim blanks the navigator until the
-        // next measurement, which is not something to do every second.
+        // puts both back, and so does a roll that was made while the
+        // other window owned and so installed neither. The ordinary
+        // pass finds them in place and writes nothing: a fresh claim
+        // blanks the navigator until the next measurement, which is
+        // not something to do every second.
         if model.onAnchorToday == nil {
             Self.installTodayAnchor(on: scroll, model: model, from: surface)
         }
@@ -208,8 +228,13 @@ public struct DayScrollView: NSViewRepresentable {
         // The claim also names this stack as the one the rail listens
         // to, so the roll it replaces cannot answer for it on the way
         // out. The first `relayout` publishes the real measurement a
-        // moment later.
-        claimRollGeometry(for: stack, in: scroll, model: model, from: coordinator.surface)
+        // moment later. The claim is the owner's (ADR-0033): a roll
+        // made in the window that does not own leaves the navigator
+        // with the roll that has it, and claims on the pass that finds
+        // its own window owning (`updateRoll`).
+        if model.owner == coordinator.surface {
+            claimRollGeometry(for: stack, in: scroll, model: model, from: coordinator.surface)
+        }
         scroll.documentView = stack
         stack.observeRoll()
         // The clip the wrap geometry is levelled against is the roll's,
@@ -440,6 +465,12 @@ final class DayStackView: NSView {
     /// editor belongs on, and here is whether the card will accept
     /// typing.
     func update(projection: TimeUnitProjection, selectedPage: UInt64?, readOnly: Bool) {
+        // The pass builds the editor and moves it between pages, and
+        // both shed the layout managers of the page they arrive on, so
+        // the pass is the owner's (ADR-0033). `updateRoll` has already
+        // asked. It is asked again here because this is the mount site
+        // and the tests drive it directly.
+        guard model.owner == coordinator.surface else { return }
         let signature = Signature(
             buckets: projection.units.map(\.bucket),
             pages: projection.units.map(\.pageIDs),
@@ -571,9 +602,12 @@ final class DayStackView: NSView {
                 )
                 header.isActive = page == selectedPage
                 wantedPages.insert(page)
-                let body: NSView = page == selectedPage
-                    ? editorView(for: page)
-                    : quietRegion(for: page)
+                // The rendering also stands in where the builder
+                // declined an editor, which `update`'s own guard keeps
+                // from happening: a day with no editor on it is a quiet
+                // day.
+                let body: NSView = (page == selectedPage ? editorView(for: page) : nil)
+                    ?? quietRegion(for: page)
                 built.append(Row(
                     header: header, body: body, bucket: unit.bucket, page: page,
                     fillsViewport: false
@@ -637,7 +671,12 @@ final class DayStackView: NSView {
     /// Which page it is *showing* is settled by `settleEditor(on:)`
     /// after the rows are assembled, so that the region it is leaving is
     /// out of the stack before the swap happens.
-    private func editorView(for page: UInt64) -> InkTextView {
+    ///
+    /// Nil only when the builder declined, which it does for a window
+    /// that does not own the page content. `update` asks before it gets
+    /// this far, so the nil is the builder's guard being honoured and
+    /// never an ordinary outcome.
+    private func editorView(for page: UInt64) -> InkTextView? {
         editor ?? buildEditor(on: page)
     }
 
@@ -717,7 +756,7 @@ final class DayStackView: NSView {
             parkEditor()
             return
         }
-        let mounted = editorView(for: page)
+        guard let mounted = editorView(for: page) else { return }
         coordinator.announce(mounted)
         // Above the guard, because the guard is taken on the pass that
         // *builds* the editor: `makeInkTextView` sets `currentSheet`
@@ -740,11 +779,11 @@ final class DayStackView: NSView {
         model.refocusEditorIfKeyed()
     }
 
-    private func buildEditor(on page: UInt64) -> InkTextView {
+    private func buildEditor(on page: UInt64) -> InkTextView? {
         if let editor { return editor }
-        let built = InkEditorView.makeInkTextView(
+        guard let built = InkEditorView.makeInkTextView(
             model: model, sheetID: page, coordinator: coordinator
-        )
+        ) else { return nil }
         editor = built
         addSubview(built)
         observeEditor(built)

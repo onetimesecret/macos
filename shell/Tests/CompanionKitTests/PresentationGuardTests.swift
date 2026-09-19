@@ -63,6 +63,13 @@ final class PresentationGuardTests: XCTestCase {
         XCTAssertFalse(PageKeyboardMap.installs(surface: .panel, owner: .editorWindow))
     }
 
+    func testOnlyTheOwnersWindowShowsTheContentArea() {
+        XCTAssertTrue(PageContentView.mounts(surface: .panel, owner: .panel))
+        XCTAssertTrue(PageContentView.mounts(surface: .editorWindow, owner: .editorWindow))
+        XCTAssertFalse(PageContentView.mounts(surface: .editorWindow, owner: .panel))
+        XCTAssertFalse(PageContentView.mounts(surface: .panel, owner: .editorWindow))
+    }
+
     func testTheGuardNamesEveryFieldTheRecordLists() {
         // ADR-0033 lists eight, and a ninth added here without a guard
         // of its own would be a field with no owner again.
