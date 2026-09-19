@@ -388,14 +388,22 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 // A ⌘Tab or Dock summon made this app active; resting
                 // hands the whole activation back, not just key status
                 // — an active app with no key-able window would strand
-                // the keyboard. With the editor window open it has one:
-                // that window is up or about to be, the keyboard goes
-                // to it (`PrimaryEditorWindowController`), and the
-                // activation is not ours to hand back. Without the
-                // exception the rest that opening the window causes
-                // would deactivate the app under it. B4 owns the rule's
-                // final form.
-                if !model.editorWindowOpen { NSApp.deactivate() }
+                // the keyboard. With an editor window that can take the
+                // keyboard it has one: that window is up or about to
+                // be, the keyboard goes to it
+                // (`PrimaryEditorWindowController`), and the activation
+                // is not ours to hand back. Without the exception the
+                // rest that opening the window causes would deactivate
+                // the app under it. An editor window in the Dock is no
+                // exception, since it can take nothing, and the same
+                // fact decides the keyboard's return, so the two cannot
+                // disagree and leave an active app with no key window.
+                // B4 owns the rule's final form.
+                if BackdropModel.restHandsBackActivation(
+                    appActive: true, editorWindowCanTakeKeys: model.editorWindowCanTakeKeys
+                ) {
+                    NSApp.deactivate()
+                }
             } else if panel.isKeyWindow {
                 // The hotkey path: the app never activated, so there is
                 // no activation to return — only key status. A

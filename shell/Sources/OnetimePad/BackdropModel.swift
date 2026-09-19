@@ -469,17 +469,69 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// `pages.owner`. Deliberately not published, so that it cannot
     /// grow a subscriber that reads it halfway through a change.
     ///
-    /// Three routes outside this type still ask it, and all three are
-    /// B4's to replace (issue #200): the reopen
-    /// (`applicationShouldHandleReopen`), the activation, which an open
-    /// editor window claims as About and Settings do
-    /// (`applicationDidBecomeActive`), and the rest's activation hand
-    /// back (`BackdropWindowController.apply`). Open is all any of them
-    /// knows. A window that is open and miniaturized answers as one the
-    /// person can see, so the activation it claims brings nothing
-    /// forward, and whichever rule replaces these has to ask about
-    /// visibility as `takesKeysWithOwnership` already does.
+    /// One route outside this type still asks it, the reopen
+    /// (`applicationShouldHandleReopen`), for which open is the right
+    /// question: a Dock click on a window in the Dock brings it back
+    /// out. The two routes that need to know whether the window can
+    /// take the keyboard ask `editorWindowCanTakeKeys`. All three are
+    /// B4's to replace (issue #200).
+    ///
+    /// A miniaturized window is still open, and still owns while the
+    /// panel rests. ADR-0033 resolves the owner from open and closed,
+    /// and keeps visible for the one sentence about the activation, so
+    /// the two facts are kept apart here as they are there. A window
+    /// going into the Dock is also not among the events the record lets
+    /// move ownership. What the resting card shows beside an owner
+    /// nobody can see is the glance's question (issue #199).
     private(set) var editorWindowOpen = false
+
+    /// True while the editor window is somewhere the person can see it
+    /// and type into it: visible and not miniaturized. Fed by the
+    /// window's controller from its delegate callbacks
+    /// (`PrimaryEditorWindowController.onScreen`). A plain fact like the
+    /// one above, unpublished for the same reason, and no input to the
+    /// owner.
+    ///
+    /// It is set with `editorWindowOpen` at the open, before the window
+    /// exists, because the rest that the open causes is judged inside
+    /// that call and the window is on its way up.
+    private(set) var editorWindowOnScreen = false
+
+    /// Whether the editor window can take the keyboard right now. The
+    /// rest's activation hand back and the activation's claim both ask
+    /// this, and the keyboard's return with the page asks the same
+    /// question of the window itself (`takesKeysWithOwnership`), so an
+    /// active app is never left waiting on a window in the Dock.
+    var editorWindowCanTakeKeys: Bool {
+        Self.editorWindowCanTakeKeys(open: editorWindowOpen, onScreen: editorWindowOnScreen)
+    }
+
+    nonisolated static func editorWindowCanTakeKeys(open: Bool, onScreen: Bool) -> Bool {
+        open && onScreen
+    }
+
+    /// Whether a rest hands the app's activation back, pure. An active
+    /// app whose only other window cannot take the keyboard would
+    /// strand it, so the activation goes back to whoever had it before.
+    /// With an editor window that can take the keyboard the activation
+    /// stays, since the keyboard goes to that window with the page
+    /// (ADR-0033: the deactivation on rest does not fire while the
+    /// editor window is visible). An inactive app has no activation to
+    /// return, and the hotkey path's key relay covers it.
+    nonisolated static func restHandsBackActivation(
+        appActive: Bool, editorWindowCanTakeKeys: Bool
+    ) -> Bool {
+        appActive && !editorWindowCanTakeKeys
+    }
+
+    /// The editor window went into the Dock, came out of it, or had its
+    /// visibility change some other way. Only the fact moves. A report
+    /// from a window that has closed is dropped, since its controller
+    /// may still hear from AppKit on the way out.
+    func editorWindowOnScreenChanged(_ onScreen: Bool) {
+        guard editorWindowOpen else { return }
+        editorWindowOnScreen = onScreen
+    }
 
     /// Whether the Dock icon opens the editor window, where it would
     /// otherwise raise the card. Off by default, so a build carrying the
@@ -517,6 +569,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// kept, by the time the editor window's editor mounts.
     func editorWindowOpened() {
         editorWindowOpen = true
+        editorWindowOnScreen = true
         if panelRaised { rest() } else { settleOwner() }
     }
 
@@ -525,6 +578,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// grant policy nothing moves, and the page is mounted nowhere.
     func editorWindowClosed() {
         editorWindowOpen = false
+        editorWindowOnScreen = false
         settleOwner()
     }
 

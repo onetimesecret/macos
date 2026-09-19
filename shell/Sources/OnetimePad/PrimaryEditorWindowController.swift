@@ -13,9 +13,10 @@ import os
 /// `PageModel`, never a second one. Exactly one of the two windows owns
 /// the live page content at a time (`PageModel.owner`). This one owns
 /// while it is open and the panel rests, and shows a placeholder while
-/// a raised panel has the page. What it reports to the model is two
-/// facts, that it opened or closed and that it gained or lost the
-/// keyboard, and `BackdropModel` decides what each one moves.
+/// a raised panel has the page. What it reports to the model is three
+/// facts, that it opened or closed, that it gained or lost the keyboard
+/// and whether it is on screen, and `BackdropModel` decides what each
+/// one moves.
 ///
 /// The window is built on each open and dropped on each close. A closed
 /// window keeps its hosting view, and a hosting view keeps its editor
@@ -41,6 +42,10 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     /// Open the window, or bring the open one forward.
     func show() {
         if let window {
+            // Out of the Dock first. The reopen answers false to AppKit,
+            // which is what would otherwise have restored a miniaturized
+            // window, so bringing it forward is wholly this call's.
+            if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -99,12 +104,59 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     /// panel rests), and losing it, to Settings, About, a modal panel
     /// or another app, moves nothing; `BackdropModel.keyTurn` holds
     /// both rules.
+    ///
+    /// The on screen fact goes first. Taking the keyboard can rest a
+    /// raised panel, the rest decides whether to hand the activation
+    /// back by asking whether this window can take the keyboard, and a
+    /// window coming out of the Dock may be key before AppKit has said
+    /// it is out.
     func windowDidBecomeKey(_ notification: Notification) {
+        reportOnScreen()
         model.keyStatusChanged(of: .editorWindow, keyed: true)
     }
 
     func windowDidResignKey(_ notification: Notification) {
         model.keyStatusChanged(of: .editorWindow, keyed: false)
+    }
+
+    /// Into the Dock, out of it, and any other change to whether the
+    /// window can be seen (the app hidden and shown again). Each one
+    /// reads the window afresh and tells the model the one fact it
+    /// keeps; none of them moves ownership, since a miniaturized window
+    /// is still open (`BackdropModel.editorWindowOpen`).
+    func windowDidMiniaturize(_ notification: Notification) {
+        reportOnScreen()
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        reportOnScreen()
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        reportOnScreen()
+    }
+
+    private func reportOnScreen() {
+        guard let window else { return }
+        model.editorWindowOnScreenChanged(Self.isOnScreen(window))
+    }
+
+    private static func isOnScreen(_ window: NSWindow) -> Bool {
+        onScreen(
+            visible: window.isVisible, miniaturized: window.isMiniaturized,
+            key: window.isKeyWindow
+        )
+    }
+
+    /// Whether the window is somewhere the person can see it and type
+    /// into it, pure: visible and not miniaturized. A key window is on
+    /// screen whatever its flags say, which covers the moment a window
+    /// leaving the Dock is handed the keyboard ahead of the flag. One
+    /// predicate, read by the model's fact and by the keyboard's return
+    /// alike, so the rest's hand back and the return cannot disagree
+    /// about the same window.
+    nonisolated static func onScreen(visible: Bool, miniaturized: Bool, key: Bool) -> Bool {
+        key || (visible && !miniaturized)
     }
 
     /// The model is told while the window is still whole, and the
@@ -164,7 +216,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         guard let window, model.pages.owner == .editorWindow else { return }
         guard Self.takesKeysWithOwnership(
             appActive: NSApp?.isActive ?? false,
-            onScreen: window.isVisible && !window.isMiniaturized,
+            onScreen: Self.isOnScreen(window),
             alreadyKey: window.isKeyWindow,
             modalSessionRunning: ModalSession.isRunning
         ) else { return }

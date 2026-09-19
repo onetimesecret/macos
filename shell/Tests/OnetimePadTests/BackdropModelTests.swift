@@ -554,4 +554,105 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(takes(alreadyKey: true))
         XCTAssertFalse(takes(modal: true))
     }
+
+    // MARK: An editor window the person cannot see
+
+    func testAWindowIsOnScreenWhileItIsVisibleAndNotMiniaturizedOrWhileItIsKey() {
+        func onScreen(visible: Bool, miniaturized: Bool, key: Bool = false) -> Bool {
+            PrimaryEditorWindowController.onScreen(
+                visible: visible, miniaturized: miniaturized, key: key
+            )
+        }
+        XCTAssertTrue(onScreen(visible: true, miniaturized: false))
+        XCTAssertFalse(onScreen(visible: true, miniaturized: true))
+        XCTAssertFalse(onScreen(visible: false, miniaturized: false))
+        XCTAssertFalse(onScreen(visible: false, miniaturized: true))
+        // A window coming out of the Dock can be key before the flag
+        // drops, and a key window has the keyboard whatever else it
+        // says about itself.
+        XCTAssertTrue(onScreen(visible: true, miniaturized: true, key: true))
+    }
+
+    func testOnlyAnOpenEditorWindowOnScreenCanTakeTheKeyboard() {
+        XCTAssertTrue(BackdropModel.editorWindowCanTakeKeys(open: true, onScreen: true))
+        XCTAssertFalse(BackdropModel.editorWindowCanTakeKeys(open: true, onScreen: false))
+        XCTAssertFalse(BackdropModel.editorWindowCanTakeKeys(open: false, onScreen: true))
+        XCTAssertFalse(BackdropModel.editorWindowCanTakeKeys(open: false, onScreen: false))
+    }
+
+    func testARestHandsTheActivationBackUnlessTheEditorWindowCanTakeTheKeyboard() {
+        XCTAssertTrue(
+            BackdropModel.restHandsBackActivation(appActive: true, editorWindowCanTakeKeys: false))
+        XCTAssertFalse(
+            BackdropModel.restHandsBackActivation(appActive: true, editorWindowCanTakeKeys: true))
+        // The hotkey path: there is no activation to hand back.
+        XCTAssertFalse(
+            BackdropModel.restHandsBackActivation(appActive: false, editorWindowCanTakeKeys: false))
+        XCTAssertFalse(
+            BackdropModel.restHandsBackActivation(appActive: false, editorWindowCanTakeKeys: true))
+    }
+
+    func testAnEditorWindowIsTakenToBeOnScreenFromTheMomentItOpens() {
+        // The rest that opening the window causes runs before the
+        // window exists, and it must not hand back the activation the
+        // window is about to take.
+        let model = makeModel(named: "on-screen-at-open")
+        XCTAssertFalse(model.editorWindowCanTakeKeys)
+        model.raise(.summon)
+        var canTakeKeysSeenFromInsideTheRest: Bool?
+        let relay = model.$stance.dropFirst().sink { [unowned model] _ in
+            canTakeKeysSeenFromInsideTheRest = model.editorWindowCanTakeKeys
+        }
+        defer { relay.cancel() }
+
+        model.editorWindowOpened()
+
+        XCTAssertEqual(canTakeKeysSeenFromInsideTheRest, true)
+        XCTAssertTrue(model.editorWindowCanTakeKeys)
+    }
+
+    func testAMiniaturizedEditorWindowStillOwnsAndCannotTakeTheKeyboard() {
+        let model = makeModel(named: "miniaturized")
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        model.keyStatusChanged(of: .editorWindow, keyed: false)
+        model.editorWindowOnScreenChanged(false)
+
+        // Open is what ownership is resolved from (ADR-0033), so the
+        // page stays where it was and nothing is published.
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertFalse(model.editorWindowCanTakeKeys)
+
+        // The panel is raised beside it and rested again: the page goes
+        // to the panel and comes back, and the rest finds a window that
+        // cannot take the keyboard, so the activation is handed back.
+        model.raise(.summon)
+        XCTAssertEqual(model.pages.owner, .panel)
+        var canTakeKeysSeenFromInsideTheRest: Bool?
+        let relay = model.$stance.dropFirst().sink { [unowned model] _ in
+            canTakeKeysSeenFromInsideTheRest = model.editorWindowCanTakeKeys
+        }
+        defer { relay.cancel() }
+        model.rest()
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertEqual(canTakeKeysSeenFromInsideTheRest, false)
+
+        // Back out of the Dock.
+        model.editorWindowOnScreenChanged(true)
+        XCTAssertTrue(model.editorWindowCanTakeKeys)
+    }
+
+    func testAClosedEditorWindowIsNotOnScreen() {
+        let model = makeModel(named: "closed-not-on-screen")
+        model.editorWindowOpened()
+        model.editorWindowClosed()
+        XCTAssertFalse(model.editorWindowCanTakeKeys)
+
+        // A report that arrives after the close, from a window on its
+        // way out, makes nothing of a closed window.
+        model.editorWindowOnScreenChanged(true)
+        XCTAssertFalse(model.editorWindowCanTakeKeys)
+    }
 }

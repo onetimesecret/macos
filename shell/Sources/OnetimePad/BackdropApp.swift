@@ -495,14 +495,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // was certain to follow, so this is that activation, and a flag
         // left standing here would swallow the next real ⌘Tab instead.
         //
-        // An open editor window claims the activation as About and
+        // An editor window on screen claims the activation as About and
         // Settings do, and for good rather than once: ⌘Tab names the
         // app, the app's window is the editor window, and AppKit makes
         // it key on the way in (ADR-0033). The raise used to refuse
         // itself while that window was open. It no longer refuses
-        // anything, so the route is decided here, where routes are.
-        // B4 owns the routing's final form.
-        let claimed = aboutActivation || settingsActivation || model.editorWindowOpen
+        // anything, so the route is decided here, where routes are. A
+        // window in the Dock claims nothing: ⌘Tab does not bring it
+        // out, and an activation it claimed would bring nothing forward
+        // and leave the app active with no key window. B4 owns the
+        // routing's final form.
+        let claimed = aboutActivation || settingsActivation || model.editorWindowCanTakeKeys
         aboutActivation = false
         settingsActivation = false
         guard let raise = Self.activationRaises(
