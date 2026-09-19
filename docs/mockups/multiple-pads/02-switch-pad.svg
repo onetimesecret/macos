@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">OnetimePad searchable pad switcher</title>
+  <desc id="desc">An anchored popover lists Personal and two folder-bound pads, with major-loon selected and an action to create a pad from a folder.</desc>
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#000" flood-opacity=".62"/>
+    </filter>
+    <style>
+      .ui{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+      .mono{font-family:ui-monospace,"SFMono-Regular",Menlo,monospace}
+      .ink{fill:#e7e7ea}.quiet{fill:#aaaab0}.muted{fill:#75757c}.ember{fill:#ff5a2b}
+      .hair{stroke:#49494e;stroke-width:1}.call{stroke:#8b8b92;stroke-width:1.5;stroke-dasharray:5 5;fill:none}
+    </style>
+  </defs>
+
+  <rect width="1440" height="960" fill="#111113"/>
+  <rect x="34" y="28" width="1372" height="884" rx="18" fill="#28282b" stroke="#55555a"/>
+  <path d="M52 28h1336a18 18 0 0 1 18 18v36H34V46a18 18 0 0 1 18-18Z" fill="#2d2d30"/>
+  <circle cx="58" cy="54" r="6" fill="#ff5f57"/>
+  <circle cx="78" cy="54" r="6" fill="#febc2e"/>
+  <circle cx="98" cy="54" r="6" fill="#28c840"/>
+  <text x="720" y="59" text-anchor="middle" class="ui quiet" font-size="14" font-weight="600">major-loon — OnetimePad</text>
+
+  <!-- Dimmed app beneath the switcher -->
+  <rect x="34" y="82" width="278" height="830" fill="#1c1c1f"/>
+  <line x1="312" y1="82" x2="312" y2="912" class="hair"/>
+  <text x="54" y="112" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">PAD</text>
+  <rect x="48" y="126" width="250" height="68" rx="10" fill="#353539" stroke="#ff5a2b" stroke-opacity=".85"/>
+  <path d="M64 147h14l4 5h23v19H64Z" fill="none" stroke="#d6d6da" stroke-width="1.6" stroke-linejoin="round"/>
+  <text x="116" y="153" class="ui ink" font-size="15" font-weight="650">major-loon</text>
+  <text x="116" y="175" class="mono muted" font-size="10">…/worktrees/macos/major-loon</text>
+  <path d="M274 153l5 5 5-5" fill="none" stroke="#aaaab0" stroke-width="1.5"/>
+  <text x="54" y="232" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">FILES</text>
+  <text x="84" y="264" class="mono quiet" font-size="13">what.txt</text>
+  <text x="54" y="330" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">TIMELINE</text>
+  <line x1="73" y1="356" x2="73" y2="780" stroke="#3f3f44" stroke-width="2"/>
+  <circle cx="73" cy="390" r="6" fill="#ff5a2b"/>
+  <text x="94" y="386" class="mono quiet" font-size="13">Today</text>
+  <rect x="313" y="82" width="1093" height="830" fill="#252528"/>
+  <text x="365" y="180" class="mono muted" font-size="23">The editor remains in place while choosing a pad.</text>
+
+  <!-- Popover -->
+  <g filter="url(#shadow)">
+    <path d="M326 111h432a16 16 0 0 1 16 16v498a16 16 0 0 1-16 16H326a16 16 0 0 1-16-16V127a16 16 0 0 1 16-16Z" fill="#343438" stroke="#626268"/>
+    <path d="M310 147l-12 12 12 12Z" fill="#343438" stroke="#626268" stroke-linejoin="round"/>
+  </g>
+  <text x="336" y="148" class="ui ink" font-size="16" font-weight="680">Switch Pad</text>
+  <text x="748" y="148" text-anchor="end" class="ui muted" font-size="12">3 pads</text>
+
+  <!-- Search -->
+  <rect x="334" y="169" width="416" height="38" rx="9" fill="#252528" stroke="#57575d"/>
+  <circle cx="355" cy="188" r="6" fill="none" stroke="#8d8d94" stroke-width="1.5"/>
+  <path d="M360 193l5 5" stroke="#8d8d94" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="377" y="193" class="ui muted" font-size="13">Filter pads</text>
+
+  <text x="336" y="242" class="ui muted" font-size="10" font-weight="700" letter-spacing="1.4">RECENT</text>
+
+  <!-- Personal -->
+  <g transform="translate(328 255)">
+    <rect width="428" height="76" rx="10" fill="transparent"/>
+    <path d="M16 22h14l4 5h23v19H16Z" fill="none" stroke="#9b9ba2" stroke-width="1.4" stroke-linejoin="round"/>
+    <text x="72" y="29" class="ui ink" font-size="14" font-weight="620">Personal</text>
+    <text x="72" y="51" class="ui muted" font-size="12">Unbound · last used 18 min ago</text>
+  </g>
+
+  <!-- Worktree 5509 -->
+  <g transform="translate(328 333)">
+    <rect width="428" height="76" rx="10" fill="transparent"/>
+    <path d="M16 22h14l4 5h23v19H16Z" fill="none" stroke="#9b9ba2" stroke-width="1.4" stroke-linejoin="round"/>
+    <text x="72" y="29" class="ui ink" font-size="14" font-weight="620">macos · 5509</text>
+    <text x="72" y="51" class="mono muted" font-size="11">~/.codex/worktrees/5509/macos</text>
+    <text x="405" y="40" text-anchor="end" class="mono muted" font-size="10">1 live</text>
+  </g>
+
+  <!-- Selected -->
+  <g transform="translate(328 411)">
+    <rect width="428" height="80" rx="10" fill="#4a332e" stroke="#ff6a40" stroke-opacity=".8"/>
+    <path d="M16 23h14l4 5h23v19H16Z" fill="none" stroke="#ffb29c" stroke-width="1.5" stroke-linejoin="round"/>
+    <text x="72" y="30" class="ui ink" font-size="14" font-weight="680">major-loon</text>
+    <text x="72" y="53" class="mono" fill="#c89f94" font-size="11">…/worktrees/macos/major-loon</text>
+    <path d="M392 36l6 6 12-14" fill="none" stroke="#ff8a68" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <line x1="334" y1="513" x2="750" y2="513" class="hair"/>
+  <g transform="translate(328 528)">
+    <rect width="428" height="52" rx="9" fill="#3d3d42"/>
+    <path d="M20 17v18m-9-9h18" stroke="#ff7955" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="53" y="31" class="ui ink" font-size="13" font-weight="620">New Pad from Folder…</text>
+  </g>
+  <text x="336" y="613" class="ui muted" font-size="11">Manage Pads…</text>
+  <text x="748" y="613" text-anchor="end" class="ui muted" font-size="11">Return to open</text>
+
+  <!-- Callouts -->
+  <path d="M786 187h104v-20h94" class="call"/>
+  <circle cx="1002" cy="167" r="13" fill="#ff5a2b"/>
+  <text x="1002" y="172" text-anchor="middle" class="ui" font-size="12" font-weight="750" fill="#211713">1</text>
+  <text x="1024" y="161" class="ui quiet" font-size="13">Search appears only when switching.</text>
+  <text x="1024" y="181" class="ui muted" font-size="12">The resting sidebar stays quiet.</text>
+
+  <path d="M786 450h104v48h94" class="call"/>
+  <circle cx="1002" cy="498" r="13" fill="#ff5a2b"/>
+  <text x="1002" y="503" text-anchor="middle" class="ui" font-size="12" font-weight="750" fill="#211713">2</text>
+  <text x="1024" y="492" class="ui quiet" font-size="13">Folder path disambiguates worktrees.</text>
+  <text x="1024" y="512" class="ui muted" font-size="12">Branch can be secondary, never identity.</text>
+
+  <path d="M786 554h104v70h94" class="call"/>
+  <circle cx="1002" cy="624" r="13" fill="#ff5a2b"/>
+  <text x="1002" y="629" text-anchor="middle" class="ui" font-size="12" font-weight="750" fill="#211713">3</text>
+  <text x="1024" y="618" class="ui quiet" font-size="13">A standard folder panel creates scope.</text>
+  <text x="1024" y="638" class="ui muted" font-size="12">No checkout file is created automatically.</text>
+
+  <text x="40" y="944" class="ui muted" font-size="11">Proposal · anchored switcher · one active context · keyboard-searchable without a permanent project tree</text>
+</svg>
