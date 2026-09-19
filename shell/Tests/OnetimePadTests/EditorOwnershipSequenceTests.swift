@@ -159,6 +159,18 @@ final class EditorOwnershipSequenceTests: XCTestCase {
             }
         }
 
+        /// A root view that forgot to ask, mounting the page in its
+        /// window whoever owns, and running a pass over it. Answers
+        /// whether an editor came of it.
+        func mountWithoutAsking(in surface: PresentationOwner) -> Bool {
+            let mount = make(in: surface)
+            update(mount)
+            let built = mount.editor != nil
+            if let editor = mount.editor { everyEditor.append(editor) }
+            take(down: mount)
+            return built
+        }
+
         private func show(_ surface: PresentationOwner) {
             if surface == .editorWindow, !model.editorWindowOpen { return }
             if let standing = mounts[surface] {
@@ -350,16 +362,21 @@ final class EditorOwnershipSequenceTests: XCTestCase {
 
     // MARK: Any sequence
 
-    private func walk(_ windows: TwoWindows, seed: UInt64, steps: Int) throws {
+    private func walk(
+        _ windows: TwoWindows, seed: UInt64, steps: Int,
+        over events: [Event] = Event.allCases,
+        afterEach check: (_ context: String) throws -> Void = { _ in }
+    ) throws {
         var walk = Walk(state: seed)
         windows.render(newMountFirst: true)
         var trail: [Event] = []
         for step in 0..<steps {
-            let event = Event.allCases[walk.next(below: Event.allCases.count)]
+            let event = events[walk.next(below: events.count)]
             trail.append(event)
             let recent = trail.suffix(6).map { "\($0)" }.joined(separator: ", ")
             windows.apply(event)
             assertNoPageIsLaidOutTwice(windows, "at step \(step), after \(recent)")
+            try check("at step \(step), after \(recent)")
             // One time in four SwiftUI has not rendered yet when the
             // next event arrives.
             guard walk.next(below: 4) != 0 else { continue }
@@ -376,5 +393,102 @@ final class EditorOwnershipSequenceTests: XCTestCase {
 
     func testAnySequenceOverTheRollLeavesEveryPageWithOneEditorAtMost() throws {
         try walk(try makeWindows(named: "sequence-walk-roll", asRoll: true), seed: 33, steps: 400)
+    }
+
+    // MARK: The never grant policy
+
+    /// ADR-0033 keeps a second design in reserve: a panel that is
+    /// never granted the page content while the editor window is open,
+    /// raised or not. It ships off (`panelMayOwn` defaults to true and
+    /// no call site passes false), and it is proved here against the
+    /// same model, the same factory and the same sequences as the
+    /// shipped rule, so turning it on would be one argument and not a
+    /// second architecture.
+    ///
+    /// What is proved is the mount and not only the owner. After every
+    /// event the panel tries to mount the page without asking, as a
+    /// root view with a defect would, and no editor comes of it, the
+    /// editor window's editor is still the only one on the page, and
+    /// the model declined nothing, because the factory asked first.
+    private func assertThePanelCannotMount(
+        _ windows: TwoWindows, _ context: String, line: UInt = #line
+    ) throws {
+        XCTAssertEqual(windows.pages.owner, .editorWindow, context, line: line)
+        XCTAssertNil(windows.mounts[.panel], "the panel has a mount \(context)", line: line)
+        XCTAssertFalse(
+            windows.mountWithoutAsking(in: .panel),
+            "the panel built an editor beside the editor window's \(context)", line: line
+        )
+        assertNoPageIsLaidOutTwice(windows, context, line: line)
+    }
+
+    /// Everything that can happen while the editor window stays open.
+    private let eventsBesideAnOpenEditorWindow: [Event] = [
+        .summon, .rest, .editorWindowTakesKeys, .keysGoToSettings, .editorWindowOpens,
+        .anotherPageIsSelected,
+    ]
+
+    func testUnderTheNeverGrantPolicyThePanelNeverMountsBesideAnOpenEditorWindow() throws {
+        let windows = try makeWindows(named: "policy-named", panelMayOwn: false)
+        windows.render(newMountFirst: true)
+        XCTAssertNotNil(
+            windows.mounts[.panel]?.editor,
+            "with the editor window closed the panel owns under either policy"
+        )
+
+        windows.apply(.editorWindowOpens)
+        windows.render(newMountFirst: true)
+        try assertThePanelCannotMount(windows, "after the editor window opened")
+
+        let sequence: [Event] = [
+            .summon, .summon, .rest, .editorWindowTakesKeys, .summon, .keysGoToSettings,
+            .anotherPageIsSelected, .summon, .editorWindowTakesKeys, .rest,
+        ]
+        for (index, event) in sequence.enumerated() {
+            windows.apply(event)
+            try assertThePanelCannotMount(windows, "after \(event), before SwiftUI's pass")
+            windows.render(newMountFirst: index.isMultiple(of: 2))
+            try assertThePanelCannotMount(windows, "after \(event) at step \(index)")
+            try assertTheOwnerAloneIsMounted(windows, "after \(event) at step \(index)")
+        }
+
+        // The boundary of the policy: it restricts the panel beside an
+        // open editor window and nowhere else.
+        windows.apply(.editorWindowCloses)
+        windows.render(newMountFirst: true)
+        XCTAssertEqual(windows.pages.owner, .panel)
+        try assertTheOwnerAloneIsMounted(windows, "after the editor window closed")
+    }
+
+    func testUnderTheNeverGrantPolicyNoSequenceGetsThePanelAnEditor() throws {
+        for asRoll in [false, true] {
+            let windows = try makeWindows(
+                named: "policy-walk-\(asRoll ? "roll" : "page")", asRoll: asRoll,
+                panelMayOwn: false
+            )
+            windows.apply(.editorWindowOpens)
+            try walk(
+                windows, seed: asRoll ? 0x33 : 0x198, steps: 250,
+                over: eventsBesideAnOpenEditorWindow
+            ) { context in
+                try assertThePanelCannotMount(windows, context)
+            }
+        }
+    }
+
+    /// The control for the two cases above: under the shipped rule the
+    /// same summon does get the panel an editor, so what they show is
+    /// the policy and not a harness that cannot mount a panel at all.
+    func testUnderTheShippedRuleTheSameSummonDoesGetThePanelAnEditor() throws {
+        let windows = try makeWindows(named: "policy-control")
+        windows.apply(.editorWindowOpens)
+        windows.render(newMountFirst: true)
+
+        windows.apply(.summon)
+        windows.render(newMountFirst: true)
+
+        XCTAssertEqual(windows.pages.owner, .panel)
+        XCTAssertNotNil(windows.mounts[.panel]?.editor)
+        try assertTheOwnerAloneIsMounted(windows, "after a summon under the shipped rule")
     }
 }
