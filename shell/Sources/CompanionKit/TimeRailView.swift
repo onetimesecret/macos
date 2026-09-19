@@ -668,13 +668,36 @@ private struct WheelRelay: NSViewRepresentable {
     func updateNSView(_ view: WheelRelayView, context: Context) {
         view.relay = relay
     }
+
+    /// SwiftUI is done with the relay, which is every time ownership
+    /// leaves this window and the rail drops its wheel (ADR-0033). The
+    /// watch is retired here and not left to `viewDidMoveToWindow`,
+    /// since a dismantled view is not promised a last trip through its
+    /// window's lifecycle, and a monitor left standing is an app wide
+    /// tap holding a closure over a roll that is no longer this rail's.
+    /// As `DayScrollView.dismantleNSView` does for the roll's handle,
+    /// the release is unconditional: it is this view's own watch.
+    static func dismantleNSView(_ view: WheelRelayView, coordinator: ()) {
+        view.retire()
+    }
 }
 
 final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
-    /// its window or moves between windows.
+    /// its window or moves between windows, and by the representable's
+    /// dismantle (`retire`).
     private var monitor: Any?
+
+    /// Whether the view is watching its window's wheel events.
+    var isWatching: Bool { monitor != nil }
+
+    /// The representable's dismantle: stop watching and let go of the
+    /// roll's answer, whether or not the view ever leaves its window.
+    func retire() {
+        retireMonitor()
+        relay = nil
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 

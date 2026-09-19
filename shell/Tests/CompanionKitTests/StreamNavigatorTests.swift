@@ -657,6 +657,28 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertNil(WheelRelayView.occludingView(at: point, in: nil))
     }
 
+    /// SwiftUI dismantles the relay when ownership leaves the window,
+    /// and the view is still standing in its window when it does. The
+    /// watch ends there and then, with the roll's answer let go.
+    func testWheelRelayStopsWatchingWhenItIsRetiredInsideItsWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [], backing: .buffered, defer: false)
+        let root = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = root
+        let relay = WheelRelayView(frame: root.bounds)
+        relay.relay = { _ in }
+        XCTAssertFalse(relay.isWatching, "a view in no window watches nothing")
+
+        root.addSubview(relay)
+        XCTAssertTrue(relay.isWatching)
+
+        relay.retire()
+        XCTAssertFalse(relay.isWatching)
+        XCTAssertNil(relay.relay)
+        XCTAssertTrue(relay.window === window, "and it never had to leave the window for that")
+    }
+
     /// A node's click lands just above its page, never above the
     /// document, and takes no time for a reader who asked for less
     /// motion.
