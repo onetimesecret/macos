@@ -212,6 +212,31 @@ public final class RollGeometryModel: ObservableObject {
     /// moves no frame.
     func publish(_ measured: RollGeometry, from roll: AnyObject) {
         guard publisher == ObjectIdentifier(roll) else { return }
+        book(measured)
+    }
+
+    /// Whether this roll is the one the rail is listening to.
+    func holdsClaim(_ roll: AnyObject) -> Bool {
+        publisher == ObjectIdentifier(roll)
+    }
+
+    /// Ownership of the page content is moving to the other window
+    /// (ADR-0033), so whichever roll holds the claim stops speaking for
+    /// the rail: its measurement is withdrawn and its two answers are
+    /// dropped. The roll itself may stand a moment longer, until
+    /// SwiftUI takes it down, and what it says in that moment is
+    /// answered with silence, as a replaced roll's is. The window that
+    /// owns next claims afresh when its roll mounts.
+    func relinquish() {
+        guard publisher != nil else { return }
+        publisher = nil
+        scroller = nil
+        wheelRelay = nil
+        book(.unmeasured)
+    }
+
+    /// A measurement on its way to the rail, through the hop.
+    private func book(_ measured: RollGeometry) {
         guard measured != geometry else {
             // The roll came back to where it already was before the hop
             // could run, so there is nothing left to say and the turn of

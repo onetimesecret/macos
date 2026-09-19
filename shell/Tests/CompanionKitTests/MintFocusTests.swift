@@ -57,7 +57,7 @@ final class MintFocusTests: XCTestCase {
     func testSelectingAnEmptySlotHandsTheMintedPageTheKeys() throws {
         let model = try makeModel()
         let slots = try twoEmptySlots(in: model)
-        model.holdsKeys = true
+        model.reportKeys(true, from: .panel)
         let before = model.keyboardHandoffs
 
         model.select(slots.second)
@@ -72,7 +72,7 @@ final class MintFocusTests: XCTestCase {
     func testSelectingAnEmptySlotOnAnUnkeyedSurfaceTakesNothing() throws {
         let model = try makeModel()
         let slots = try twoEmptySlots(in: model)
-        model.holdsKeys = false
+        model.reportKeys(false, from: .panel)
         let before = model.keyboardHandoffs
 
         model.select(slots.second)
@@ -91,7 +91,7 @@ final class MintFocusTests: XCTestCase {
         model.newPage()
         let second = try XCTUnwrap(model.selection)
         XCTAssertNotEqual(first, second)
-        model.holdsKeys = true
+        model.reportKeys(true, from: .panel)
         let before = model.keyboardHandoffs
 
         model.select(first)
@@ -110,7 +110,7 @@ final class MintFocusTests: XCTestCase {
     func testSteppingOntoAnEmptySlotHandsTheMintedPageTheKeys() throws {
         let model = try makeModel()
         _ = try twoEmptySlots(in: model)
-        model.holdsKeys = true
+        model.reportKeys(true, from: .panel)
         let before = model.keyboardHandoffs
 
         model.step(1)
@@ -122,7 +122,7 @@ final class MintFocusTests: XCTestCase {
     func testSteppingOntoAnEmptySlotUnkeyedTakesNothing() throws {
         let model = try makeModel()
         _ = try twoEmptySlots(in: model)
-        model.holdsKeys = false
+        model.reportKeys(false, from: .panel)
         let before = model.keyboardHandoffs
 
         model.step(1)
@@ -137,7 +137,7 @@ final class MintFocusTests: XCTestCase {
     func testAStepThatLeavesTheLedgerAndMintsAsksOnce() throws {
         let model = try makeModel()
         _ = try twoEmptySlots(in: model)
-        model.holdsKeys = true
+        model.reportKeys(true, from: .panel)
         model.showLedger()
         let before = model.keyboardHandoffs
 
@@ -153,7 +153,7 @@ final class MintFocusTests: XCTestCase {
     func testConjuringAPageHandsItTheKeys() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()
-        model.holdsKeys = true
+        model.reportKeys(true, from: .panel)
         let before = model.keyboardHandoffs
 
         model.newPage()
@@ -165,7 +165,7 @@ final class MintFocusTests: XCTestCase {
     func testConjuringAPageOnAnUnkeyedSurfaceTakesNothing() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()
-        model.holdsKeys = false
+        model.reportKeys(false, from: .panel)
         let before = model.keyboardHandoffs
 
         model.newPage()
@@ -178,7 +178,7 @@ final class MintFocusTests: XCTestCase {
         let model = try makeModel()
         model.loadStateIfNeeded()
         let tab = try XCTUnwrap(model.selection)
-        model.holdsKeys = true
+        model.reportKeys(true, from: .panel)
         model.showLedger()
         let before = model.keyboardHandoffs
 

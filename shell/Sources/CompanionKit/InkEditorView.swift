@@ -34,7 +34,10 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        Self.makePage(
+        // Before anything is built, because the building writes to the
+        // model and every such write says which window it comes from.
+        context.coordinator.surface = context.environment.presentationSurface
+        return Self.makePage(
             model: model, sheetID: sheetID, readOnly: readOnly,
             coordinator: context.coordinator
         )
@@ -103,7 +106,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.saveViewState(textView: textView, scrollView: scroll)
         guard coordinator.model.activeEditor === textView else { return }
         coordinator.parkEditor()
-        coordinator.model.activeEditor = nil
+        coordinator.model.retireEditor(textView)
     }
 
     /// The one editor, built: a TextKit 1 stack over the page's storage,
@@ -212,23 +215,20 @@ public struct InkEditorView: NSViewRepresentable {
         if model.viewStates.carets[sheetID] != nil {
             coordinator.restoreCaret(textView: textView, for: sheetID)
         }
-        model.activeEditor = textView
-        // One line per editor built (issue #197). Two surfaces share
-        // this model, and how many editors stand over it is a claim to
-        // check in the log stream rather than by eye: opening the editor
-        // window must produce exactly one of these. A later one while
-        // it stays open is that window's own rebuild after the ledger
-        // or an empty slot, or else the panel mounting when it must
-        // not. Mechanics only, never the page.
+        // The editor and the sealed paste route, which the summon-time
+        // offer's button takes so the chip lands at the caret and
+        // consent stays a gesture aimed at this page.
+        coordinator.announce(textView)
+        // One line per editor built. Two windows share this model
+        // (ADR-0033), and how many editors stand over it is a claim to
+        // check in the log stream rather than by eye: a transfer of
+        // ownership must produce exactly one of these, from the window
+        // that now owns. A later one with no transfer before it is the
+        // owner's own rebuild after the ledger or an empty slot.
+        // Mechanics only, never the page.
         Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
             .info("editor=built")
         coordinator.refreshLanguageActionAvailability()
-        // The summon-time offer's button takes the same road as ⇧⌘V,
-        // so the chip lands at the caret and consent stays a gesture
-        // aimed at this page (ADR-0007 Amendment 1).
-        model.performSealedPaste = { [weak coordinator] in
-            coordinator?.sealedPaste()
-        }
         return textView
     }
 
@@ -356,7 +356,13 @@ public struct InkEditorView: NSViewRepresentable {
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         guard let textView = scroll.documentView as? InkTextView else { return }
-        model.activeEditor = textView
+        // A pass over a mount whose window no longer owns does nothing
+        // (ADR-0033). Ownership moves before SwiftUI takes the old
+        // mount down, and a pass arriving in between must not announce
+        // this editor over the owner's, nor reach the swap below, which
+        // sheds the layout managers of whatever page it swaps in.
+        guard model.owner == coordinator.surface else { return }
+        coordinator.announce(textView)
         // The stance can change without the page changing, so editing
         // is re-gated on every pass rather than at mount alone.
         coordinator.updateEditability(of: textView, to: !readOnly)
@@ -401,6 +407,26 @@ public struct InkEditorView: NSViewRepresentable {
         let model: PageModel
         weak var textView: InkTextView?
         var currentSheet: UInt64?
+
+        /// Which content window this coordinator's mount stands in
+        /// (ADR-0033), named on every presentation write it makes so
+        /// the model can tell the owner's from the other window's. Read
+        /// from the environment as the mount is made. The panel until
+        /// then, which is also what a test that builds a page by hand
+        /// gets, over a model the panel owns by default.
+        var surface: PresentationOwner = .panel
+
+        /// The mount's two handles on the model, announced together:
+        /// the editor a summon hands the keyboard to, and the road the
+        /// offer's button takes to the same caret as ⇧⌘V (ADR-0007
+        /// Amendment 1). Together because a transfer of ownership drops
+        /// both, and an editor that outlived one, because ownership
+        /// came back before SwiftUI had taken it down, has to put both
+        /// back on its next pass.
+        func announce(_ textView: InkTextView) {
+            model.mountEditor(textView, from: surface)
+            model.routeSealedPaste({ [weak self] in self?.sealedPaste() }, from: surface)
+        }
 
         struct OrdinaryPasteMeasurement: Sendable {
             let result: LanguageDetectionResult

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Which of the two content windows owns the live page content, as one
 /// explicit answer rather than whichever mount site wrote last.
@@ -57,5 +58,69 @@ public enum PresentationOwner: Equatable, Sendable {
         guard editorWindowOpen else { return .panel }
         guard panelMayOwn else { return .editorWindow }
         return panelRaised ? .panel : .editorWindow
+    }
+
+    /// Whether a surface may write a presentation field, pure: only the
+    /// owner may. One line, and a function anyway, so that the refusal
+    /// is an assertion in a test and not a reading of the guard that
+    /// wraps it (`PageModel.admits(_:from:)`), which traps in a debug
+    /// build and so cannot be walked into by a test process.
+    public nonisolated static func mayWrite(
+        _ surface: PresentationOwner, owner: PresentationOwner
+    ) -> Bool {
+        surface == owner
+    }
+
+    /// The word the log uses for this surface. Mechanics only.
+    var logName: String {
+        switch self {
+        case .panel: "panel"
+        case .editorWindow: "editor-window"
+        }
+    }
+}
+
+/// The presentation state that has exactly one writer at a time, named
+/// so that a declined write can say what it was reaching for. These are
+/// the eight ADR-0033 lists. Selection, the selected file, the active
+/// target and the ledger's visibility are not among them: those are
+/// the shared model, which either window may change.
+///
+/// A claim on one of these is the owner's alone. Letting go is not
+/// guarded by ownership, because ownership has usually moved by the
+/// time a surface is torn down, and a surface that could not retire its
+/// own handle would leave it standing. A release is guarded by identity
+/// where there is one to check (`PageModel.retireEditor(_:)`, the roll
+/// geometry's claim), so a surface can only ever let go of what is its
+/// own.
+public enum PresentationField: String, Sendable, CaseIterable {
+    case activeEditor = "active-editor"
+    case sealedPasteRoute = "sealed-paste-route"
+    case todayAnchor = "today-anchor"
+    case rollGeometry = "roll-geometry"
+    case holdsKeys = "holds-keys"
+    case redrawCadence = "redraw-cadence"
+    case pasteboardOffer = "pasteboard-offer"
+    /// Guarded by construction, where the others are guarded at the
+    /// write: `PageKeyboardMap` installs no chord in a window that does
+    /// not own, so there is no write to decline.
+    case keyboardMap = "keyboard-map"
+}
+
+// MARK: - Which surface a view is standing in
+
+private struct PresentationSurfaceKey: EnvironmentKey {
+    static let defaultValue: PresentationOwner = .panel
+}
+
+extension EnvironmentValues {
+    /// Which of the two content windows this view hierarchy belongs to.
+    /// The mount sites read it to say who is writing, and the guard on
+    /// the model compares that with who owns. The panel is the default
+    /// because it is the surface that has always been there; the editor
+    /// window names itself at its root.
+    public var presentationSurface: PresentationOwner {
+        get { self[PresentationSurfaceKey.self] }
+        set { self[PresentationSurfaceKey.self] = newValue }
     }
 }

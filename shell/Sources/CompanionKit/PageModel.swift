@@ -586,9 +586,23 @@ public final class PageModel: ObservableObject {
     /// not a notice, because the condition is.
     @Published public private(set) var quitRefusal: QuitSaveOutcome?
 
-    /// True while the page holds the keyboard — drives the ember
-    /// border. Set by the controller from window key status.
-    @Published public var holdsKeys = false
+    /// Which of the two content windows owns the live page content
+    /// right now (ADR-0033). Published, so a surface's root view can ask
+    /// whether it is the one and mount the page only when it is. The
+    /// form factor resolves it (`PresentationOwner.resolve`) and moves
+    /// it through `transferOwnership(to:)`, which is its only writer.
+    /// The panel until somebody says otherwise, which is every launch:
+    /// the editor window starts closed, and the closed rows of the rule
+    /// all answer the panel.
+    @Published public private(set) var owner: PresentationOwner = .panel
+
+    /// True while the owner's window holds the keyboard, which drives
+    /// the ember border and the editor's focus rules. A plain fact and
+    /// not a claim on anything: the keyboard passing to Settings, About
+    /// or a modal panel makes it false and moves neither `owner` nor
+    /// `activeEditor`. Written through `reportKeys(_:from:)` by the
+    /// owner's window controller from its key status.
+    @Published public private(set) var holdsKeys = false
 
     /// The tab currently being drag-reordered, if any.
     @Published public var draggingTab: UInt64?
@@ -602,8 +616,9 @@ public final class PageModel: ObservableObject {
 
     /// Set by the editor's coordinator: the offer's button routes
     /// through the same path as ⇧⌘V, so the chip lands at the caret
-    /// and this model never places document content itself.
-    public var performSealedPaste: (() -> Void)?
+    /// and this model never places document content itself. The owner's
+    /// editor installs it (`routeSealedPaste(_:from:)`).
+    public private(set) var performSealedPaste: (() -> Void)?
 
     /// The inline conceal confirmation, when one is open.
     @Published public var concealDraft: ConcealDraft?
@@ -951,7 +966,11 @@ public final class PageModel: ObservableObject {
     /// unmount re-asks. On the next turn of the loop rather than now:
     /// every assignment happens inside a SwiftUI update pass, and
     /// publishing from inside one is what the runtime warns about.
-    public weak var activeEditor: NSTextView? {
+    ///
+    /// Always the owner's editor or nothing. A mount announces itself
+    /// through `mountEditor(_:from:)` and lets go through
+    /// `retireEditor(_:)`.
+    public private(set) weak var activeEditor: NSTextView? {
         didSet { scheduleEditStepsRefresh() }
     }
 
@@ -981,8 +1000,9 @@ public final class PageModel: ObservableObject {
     /// summon), and a publisher would mean a subscription to keep
     /// alive, a value to invent for it, and an anchor that could fire on
     /// a pass nobody asked for. The mounted surface hands the model a
-    /// way to reach it and takes it back on dismantle.
-    public var onAnchorToday: (() -> Void)?
+    /// way to reach it (`installTodayAnchor(_:from:)`), and the model
+    /// drops it when ownership moves.
+    public private(set) var onAnchorToday: (() -> Void)?
 
     /// What the keyboard does, resolved once at launch from the bundled
     /// default keymap and whatever override the user wrote
@@ -1205,6 +1225,13 @@ public final class PageModel: ObservableObject {
         /// only the timer's wait is shortened.
         let clipboardClearDebounce: TimeInterval?
         let clearClipboardIfOurs: (@Sendable () -> Bool)?
+        /// What a declined presentation write does besides being
+        /// declined and logged. Nil is the shipping answer, a debug
+        /// assertion, which a test process cannot walk into; a suite
+        /// that wants to watch the refusal hands in a recorder. The
+        /// write is declined either way: the seam replaces the trap and
+        /// never the verdict.
+        let declinedPresentationWrite: (@MainActor (PresentationField, PresentationOwner) -> Void)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1214,7 +1241,10 @@ public final class PageModel: ObservableObject {
             keymapOverride: URL? = nil,
             fileLanguageDetection: LanguageDetectionService? = nil,
             clipboardClearDebounce: TimeInterval? = nil,
-            clearClipboardIfOurs: (@Sendable () -> Bool)? = nil
+            clearClipboardIfOurs: (@Sendable () -> Bool)? = nil,
+            declinedPresentationWrite: (
+                @MainActor (PresentationField, PresentationOwner) -> Void
+            )? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1224,6 +1254,7 @@ public final class PageModel: ObservableObject {
             self.fileLanguageDetection = fileLanguageDetection
             self.clipboardClearDebounce = clipboardClearDebounce
             self.clearClipboardIfOurs = clearClipboardIfOurs
+            self.declinedPresentationWrite = declinedPresentationWrite
         }
     }
 
@@ -1302,7 +1333,9 @@ public final class PageModel: ObservableObject {
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         clipboardClearDebounce = seams.clipboardClearDebounce
+        declinedPresentationWrite = seams.declinedPresentationWrite
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
+        ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
         // Resolved once, here, so the surface and the page's text view
         // are answering out of one map. A test reads only the override
         // it named, which for most of them is none.
@@ -1468,6 +1501,16 @@ public final class PageModel: ObservableObject {
     /// save failures, never content — the file is ciphertext and
     /// these lines carry only what happened to it.
     private let logger: Logger
+
+    /// Who owns the live page content, and every write a surface that
+    /// does not own was refused. Surfaces and field names only, never a
+    /// page.
+    private let ownershipLogger: Logger
+
+    /// The test seam for a declined presentation write, or nil for the
+    /// shipping assertion (`Seams.declinedPresentationWrite`).
+    private let declinedPresentationWrite:
+        (@MainActor (PresentationField, PresentationOwner) -> Void)?
 
     /// The first reveal loads yesterday's pages: the core decrypts the
     /// state file (the key comes from the Keychain — a prompt, if the
@@ -4079,12 +4122,18 @@ public final class PageModel: ObservableObject {
 
     /// Reveal-time check for the offer: consult the core's probe once
     /// per reveal. Never a poll — the board is looked at exactly when
-    /// the surface comes forward.
-    public func refreshPasteboardOffer() {
+    /// the surface comes forward. The offer is made under the owner's
+    /// page, so only the owner makes one.
+    public func refreshPasteboardOffer(from surface: PresentationOwner) {
+        guard admits(.pasteboardOffer, from: surface) else { return }
         pasteboardOffer = client.pasteboardHasContent()
     }
 
+    /// Withdrawing is a release and asks nobody: an offer nobody is
+    /// making is the safe state, and the surface that made this one may
+    /// already have handed ownership on.
     public func withdrawPasteboardOffer() {
+        guard pasteboardOffer else { return }
         pasteboardOffer = false
     }
 
@@ -4670,6 +4719,141 @@ public final class PageModel: ObservableObject {
         }
     }
 
+    // MARK: Presentation ownership (ADR-0033)
+
+    /// Move ownership of the live page content to the other window.
+    /// A transfer to the window that already owns is nothing at all,
+    /// which is what lets the form factor resolve and call this at
+    /// every event without asking first whether anything moved.
+    ///
+    /// The order is the hand off, stated once: the window that is
+    /// leaving lets go, and only then does the owner change. The mount
+    /// that follows sheds every layout manager on the page's storage
+    /// (`InkEditorView.makeInkTextView`), so an editor asked for its
+    /// place after that has none to give. SwiftUI takes the old mount
+    /// down in its own time, before or after the new one is built, and
+    /// by then its place is already kept here.
+    public func transferOwnership(to newOwner: PresentationOwner) {
+        guard newOwner != owner else { return }
+        relinquishPresentation()
+        ownershipLogger.info(
+            "owner=\(newOwner.logName, privacy: .public) was=\(self.owner.logName, privacy: .public)"
+        )
+        owner = newOwner
+    }
+
+    /// The outgoing owner lets go of everything it held, so that no
+    /// field describes a window that no longer owns. The incoming owner
+    /// writes its own as it mounts and as its window reports.
+    ///
+    /// The page's place is left first, while the editor's layout
+    /// manager is still its own. The scroll half goes with it only when
+    /// the editor stands in a scroller of its own: the roll's clip
+    /// belongs to the roll and to no page in it, which is the rule the
+    /// roll's dismantle follows too.
+    ///
+    /// Key status is forgotten and not carried, because it described
+    /// the other window. The window that owns now reports its own, and
+    /// until it does the honest reading is that nobody holds the keys.
+    private func relinquishPresentation() {
+        if let editor = activeEditor as? InkTextView, let coordinator = editor.coordinator {
+            let scroll = editor.enclosingScrollView
+            coordinator.saveViewState(
+                textView: editor,
+                scrollView: scroll?.documentView === editor ? scroll : nil
+            )
+        }
+        activeEditor = nil
+        performSealedPaste = nil
+        onAnchorToday = nil
+        rollGeometry.relinquish()
+        withdrawPasteboardOffer()
+        if holdsKeys { holdsKeys = false }
+    }
+
+    /// The guard every claim on a presentation field passes through:
+    /// true when `surface` owns and the write may go ahead.
+    ///
+    /// A refusal is a defect in the caller, never an event. The mount
+    /// sites ask `owner` before they write, so nothing reaches here
+    /// from a window that does not own unless somebody forgot to ask.
+    /// A debug build says so at once. A release build declines the
+    /// write and leaves a line, because the alternative is the last
+    /// writer winning, which is two windows each believing the editor,
+    /// the paste route and the keyboard are theirs.
+    func admits(_ field: PresentationField, from surface: PresentationOwner) -> Bool {
+        if PresentationOwner.mayWrite(surface, owner: owner) { return true }
+        ownershipLogger.error(
+            "declined write field=\(field.rawValue, privacy: .public) from=\(surface.logName, privacy: .public) owner=\(self.owner.logName, privacy: .public)"
+        )
+        if let declinedPresentationWrite {
+            declinedPresentationWrite(field, surface)
+        } else {
+            assertionFailure(
+                "\(surface.logName) wrote \(field.rawValue) while \(owner.logName) owns (ADR-0033)"
+            )
+        }
+        return false
+    }
+
+    /// A mount, or an update pass over one, announcing its editor.
+    public func mountEditor(_ editor: NSTextView, from surface: PresentationOwner) {
+        guard admits(.activeEditor, from: surface) else { return }
+        activeEditor = editor
+    }
+
+    /// An editor leaving: parked, dismantled, or replaced. A release,
+    /// guarded by identity and not by ownership. A teardown usually
+    /// runs after ownership has moved, and the handle is cleared only
+    /// when it is still this editor's, so a surface can never retire
+    /// the other window's editor or a replacement that SwiftUI built
+    /// before dismantling what it replaces.
+    public func retireEditor(_ editor: NSTextView) {
+        guard activeEditor === editor else { return }
+        activeEditor = nil
+    }
+
+    /// The owner's editor naming the road the offer's button takes.
+    public func routeSealedPaste(
+        _ route: @escaping () -> Void, from surface: PresentationOwner
+    ) {
+        guard admits(.sealedPasteRoute, from: surface) else { return }
+        performSealedPaste = route
+    }
+
+    /// The owner's roll handing over the way to reach Day 0.
+    public func installTodayAnchor(
+        _ anchor: @escaping () -> Void, from surface: PresentationOwner
+    ) {
+        guard admits(.todayAnchor, from: surface) else { return }
+        onAnchorToday = anchor
+    }
+
+    /// The owner's roll claiming the rail's navigator. Publishing and
+    /// resetting stay with `RollGeometryModel`, which answers only the
+    /// roll that holds the claim, so the claim is the one write that
+    /// needs the owner's word.
+    func claimRollGeometry(
+        by roll: AnyObject,
+        scroller: ((CGFloat) -> Void)? = nil,
+        wheel: ((NSEvent) -> Void)? = nil,
+        from surface: PresentationOwner
+    ) {
+        guard admits(.rollGeometry, from: surface) else { return }
+        rollGeometry.claim(by: roll, scroller: scroller, wheel: wheel)
+    }
+
+    /// A window reporting its key status. Only the owner's counts: the
+    /// other window gaining or losing the keyboard says nothing about
+    /// whether the page holds it. The form factor decides which reports
+    /// to pass on before it calls (`BackdropModel`), and this declines
+    /// the ones it should not have.
+    public func reportKeys(_ keyed: Bool, from surface: PresentationOwner) {
+        guard admits(.holdsKeys, from: surface) else { return }
+        guard holdsKeys != keyed else { return }
+        holdsKeys = keyed
+    }
+
     // MARK: Timers
 
     /// The surface became visible: start the countdown redraw at
@@ -4678,7 +4862,11 @@ public final class PageModel: ObservableObject {
     /// Restarting with a different interval is meaningful — it is how
     /// the backdrop's stance change retimes the clock — so a live timer
     /// at the wrong cadence is replaced rather than kept.
-    public func startRedraw(interval: TimeInterval = 1.0) {
+    ///
+    /// There is one timer, so the cadence is the owner's to set: the
+    /// countdowns that are on screen are the ones in its window.
+    public func startRedraw(interval: TimeInterval = 1.0, from surface: PresentationOwner) {
+        guard admits(.redrawCadence, from: surface) else { return }
         if let redrawTimer, redrawTimer.timeInterval == interval { return }
         redrawTimer?.invalidate()
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
@@ -4689,8 +4877,11 @@ public final class PageModel: ObservableObject {
     }
 
     /// The surface is hidden: stop redrawing. The armed event timer is
-    /// the only remaining wakeup.
-    public func stopRedraw() {
+    /// the only remaining wakeup. The owner's call, as starting is: a
+    /// window that does not own has no say over a clock the other one
+    /// is showing.
+    public func stopRedraw(from surface: PresentationOwner) {
+        guard admits(.redrawCadence, from: surface) else { return }
         redrawTimer?.invalidate()
         redrawTimer = nil
     }

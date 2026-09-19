@@ -73,7 +73,7 @@ final class EditorHandoffTests: XCTestCase {
         let textView = InkTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 320))
         let scroll = InkEditorView.scrollStack(for: textView)
         let coordinator = InkEditorView.Coordinator(model: model)
-        model.activeEditor = textView
+        model.mountEditor(textView, from: .panel)
 
         InkEditorView.dismantleNSView(scroll, coordinator: coordinator)
 
@@ -92,7 +92,7 @@ final class EditorHandoffTests: XCTestCase {
         // what it replaces, in which case the handle already names the
         // new editor and the teardown has nothing to retire.
         let incoming = InkTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 320))
-        model.activeEditor = incoming
+        model.mountEditor(incoming, from: .panel)
 
         InkEditorView.dismantleNSView(scroll, coordinator: coordinator)
 

@@ -72,20 +72,68 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
+        // Before the roll is built, because the building writes to the
+        // model and every such write says which window it comes from
+        // (ADR-0033).
+        context.coordinator.surface = context.environment.presentationSurface
         let scroll = Self.makeRoll(
             model: model, coordinator: context.coordinator, emptyHint: emptyHint
         )
         // The summon half of the anchor rule. Held weakly, so a surface
         // that has gone away cannot be scrolled and cannot be kept
         // alive by the model holding a way to reach it.
-        model.onAnchorToday = { [weak scroll] in
-            (scroll?.documentView as? DayStackView)?.scrollToDayZero()
-        }
+        Self.installTodayAnchor(on: scroll, model: model, from: context.coordinator.surface)
         return scroll
+    }
+
+    private static func installTodayAnchor(
+        on scroll: NSScrollView, model: PageModel, from surface: PresentationOwner
+    ) {
+        model.installTodayAnchor(
+            { [weak scroll] in
+                (scroll?.documentView as? DayStackView)?.scrollToDayZero()
+            },
+            from: surface
+        )
+    }
+
+    /// The roll's claim on the rail's navigator: this stack is the one
+    /// the rail listens to, and these are its answers to the two things
+    /// the rail may ask of a roll, a jump to an offset and a wheel that
+    /// turned over the rail. Both weak, so a torn-down roll answers
+    /// with nothing.
+    private static func claimRollGeometry(
+        for stack: DayStackView, in scroll: NSScrollView,
+        model: PageModel, from surface: PresentationOwner
+    ) {
+        model.claimRollGeometry(
+            by: stack,
+            scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
+            wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) },
+            from: surface
+        )
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let stack = scroll.documentView as? DayStackView else { return }
+        // A pass over a roll whose window no longer owns does nothing,
+        // for `InkEditorView.updateNSView`'s reason: the pass settles
+        // the editor on a page, and settling sheds that page's layout
+        // managers.
+        let surface = context.coordinator.surface
+        guard model.owner == surface else { return }
+        // Ownership can leave and come back before SwiftUI has taken
+        // this roll down, and the transfer dropped what the mount
+        // installed. A roll still standing when its window owns again
+        // puts both back. The ordinary pass finds them in place and
+        // writes nothing: a fresh claim blanks the navigator until the
+        // next measurement, which is not something to do every second.
+        if model.onAnchorToday == nil {
+            Self.installTodayAnchor(on: scroll, model: model, from: surface)
+        }
+        if !model.rollGeometry.holdsClaim(stack) {
+            Self.claimRollGeometry(for: stack, in: scroll, model: model, from: surface)
+        }
         stack.update(
             projection: model.timeUnits,
             selectedPage: model.selectedPageID,
@@ -133,7 +181,7 @@ public struct DayScrollView: NSViewRepresentable {
         coordinator.saveViewState(textView: editor, scrollView: nil)
         guard coordinator.model.activeEditor === editor else { return }
         coordinator.parkEditor()
-        coordinator.model.activeEditor = nil
+        coordinator.model.retireEditor(editor)
     }
 
     /// The roll, assembled: one scroller over one flipped stack.
@@ -159,16 +207,9 @@ public struct DayScrollView: NSViewRepresentable {
         // drawing the shape of the roll it is replacing (issue #131).
         // The claim also names this stack as the one the rail listens
         // to, so the roll it replaces cannot answer for it on the way
-        // out, and hands over the two things the rail may ask of a
-        // roll: a jump to an offset, and a wheel that turned over the
-        // rail. Both weak, so a torn-down roll answers with nothing.
-        // The first `relayout` publishes the real measurement a moment
-        // later.
-        model.rollGeometry.claim(
-            by: stack,
-            scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
-            wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) }
-        )
+        // out. The first `relayout` publishes the real measurement a
+        // moment later.
+        claimRollGeometry(for: stack, in: scroll, model: model, from: coordinator.surface)
         scroll.documentView = stack
         stack.observeRoll()
         // The clip the wrap geometry is levelled against is the roll's,
@@ -418,7 +459,7 @@ final class DayStackView: NSView {
             // The countdowns in the gutters move every second and the
             // regions have to be re-measured against text that just
             // changed, but nothing is assembled.
-            if let editor, coordinator.currentSheet != nil { model.activeEditor = editor }
+            if let editor, coordinator.currentSheet != nil { coordinator.announce(editor) }
             refreshGutters()
             refreshQuietRegions()
             relayout()
@@ -677,7 +718,7 @@ final class DayStackView: NSView {
             return
         }
         let mounted = editorView(for: page)
-        model.activeEditor = mounted
+        coordinator.announce(mounted)
         // Above the guard, because the guard is taken on the pass that
         // *builds* the editor: `makeInkTextView` sets `currentSheet`
         // itself, so a fresh mount looks to the line below like a page
@@ -758,7 +799,7 @@ final class DayStackView: NSView {
         outgoing?.delegate = nil
         coordinator.parkEditor()
         editor.frame = .zero
-        if model.activeEditor === editor { model.activeEditor = nil }
+        model.retireEditor(editor)
     }
 
     /// A click landed in a day the editor was not standing on: make that

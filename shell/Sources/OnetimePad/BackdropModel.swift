@@ -146,7 +146,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// card.
     var holdsKeys: Bool {
         get { pages.holdsKeys }
-        set { pages.holdsKeys = newValue }
+        set { pages.reportKeys(newValue, from: .panel) }
     }
 
     /// Launch: open yesterday's pages, conjure one if there were none,
@@ -164,7 +164,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         guard !started else { return }
         started = true
         pages.loadStateIfNeeded()
-        pages.startRedraw(interval: stance.tickInterval)
+        pages.startRedraw(interval: stance.tickInterval, from: .panel)
     }
 
     /// Quit: seal the pages into the state file. Returns true when the
@@ -232,14 +232,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // is stated once. B4 replaces it with real routing.
         guard !editorWindowOpen else { return }
         stance = .raised
-        pages.startRedraw(interval: stance.tickInterval)
+        pages.startRedraw(interval: stance.tickInterval, from: .panel)
         // Each raise looks at the board once, never a poll: coming
         // forward is the moment the offer is worth making (ADR-0007
         // Amendment 1), and it is the same moment the panel picks. Both
         // reasons take this: an offer is about what is on the board now,
         // and coming forward is when it is worth making however the user
         // got here.
-        pages.refreshPasteboardOffer()
+        pages.refreshPasteboardOffer(from: .panel)
         // The days go back to today on a summon and not on a bare
         // activation (issue #79). Between summons the roll's scroll is
         // the reader's own, and a summon is where the pad goes back to
@@ -266,7 +266,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// surface: back behind everything.
     func rest() {
         stance = .resting
-        pages.startRedraw(interval: stance.tickInterval)
+        pages.startRedraw(interval: stance.tickInterval, from: .panel)
         // The offer is a summon-time thing; a resting card makes no
         // offers, and one standing from the last raise would be stale
         // by the next.
@@ -314,14 +314,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // The rest coarsened the redraw to the resting glance's cadence.
         // The countdowns are on screen in the editor window now, and
         // they tick by the second there.
-        pages.startRedraw()
+        pages.startRedraw(from: .panel)
     }
 
     /// The editor window closed: the panel is the pages' only surface
     /// again, at whatever stance it holds, which is resting.
     func editorWindowClosed() {
         editorWindowOpen = false
-        pages.startRedraw(interval: stance.tickInterval)
+        pages.startRedraw(interval: stance.tickInterval, from: .panel)
     }
 
     // MARK: Geometry

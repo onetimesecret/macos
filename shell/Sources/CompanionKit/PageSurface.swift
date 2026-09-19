@@ -341,8 +341,15 @@ public struct PageStatusStack: View {
 /// file and are not installed here. They are dispatched by the page's
 /// own text view, which sees a keystroke before any of these buttons
 /// do and which owns the caret they act on.
+///
+/// And only in the window that owns the page content (ADR-0033). The
+/// map is one of the things that has a single owner, and it is guarded
+/// here by construction: a window that does not own installs no chord,
+/// so there is never a second map to answer a keystroke meant for the
+/// first.
 public struct PageKeyboardMap: View {
     @ObservedObject var model: PageModel
+    @Environment(\.presentationSurface) private var surface
 
     public init(model: PageModel) {
         self.model = model
@@ -350,14 +357,23 @@ public struct PageKeyboardMap: View {
 
     public var body: some View {
         Group {
-            ForEach(model.keymap.surfaceShortcuts()) { installed in
-                Button("") { model.perform(installed.command) }
-                    .keyboardShortcut(installed.shortcut)
+            if Self.installs(surface: surface, owner: model.owner) {
+                ForEach(model.keymap.surfaceShortcuts()) { installed in
+                    Button("") { model.perform(installed.command) }
+                        .keyboardShortcut(installed.shortcut)
+                }
             }
         }
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+
+    /// Whether a window installs the map, pure: only the owner's does.
+    nonisolated static func installs(
+        surface: PresentationOwner, owner: PresentationOwner
+    ) -> Bool {
+        PresentationOwner.mayWrite(surface, owner: owner)
     }
 }
 

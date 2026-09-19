@@ -290,7 +290,7 @@ final class UndoRerouteTests: XCTestCase {
     /// editor.
     func testTheMenusEnablementFollowsTheCoresAnswer() throws {
         try makeEditor()
-        model.activeEditor = textView
+        model.mountEditor(textView, from: .panel)
         model.refreshEditSteps()
         XCTAssertFalse(model.editSteps.canUndo)
         XCTAssertFalse(model.editSteps.canRedo)
@@ -316,7 +316,7 @@ final class UndoRerouteTests: XCTestCase {
         textView.isEditable = true
         model.refreshEditSteps()
         XCTAssertTrue(model.editSteps.canRedo)
-        model.activeEditor = nil
+        model.retireEditor(textView)
         model.refreshEditSteps()
         XCTAssertFalse(model.editSteps.canUndo)
         XCTAssertFalse(model.editSteps.canRedo)

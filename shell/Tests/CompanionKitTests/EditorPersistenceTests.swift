@@ -51,7 +51,7 @@ final class EditorPersistenceTests: XCTestCase {
         textView.delegate = coordinator
         coordinator.textView = textView
         coordinator.currentSheet = first
-        model.activeEditor = textView
+        model.mountEditor(textView, from: .panel)
 
         // A short card, so the page written below outgrows its clip and
         // the scroll offset is a real position rather than zero.
