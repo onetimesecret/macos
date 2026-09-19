@@ -18,16 +18,16 @@ Track A is small and ships alone. Track A is not wasted by ADR-0033: the three f
 Nothing of ADR-0032 is implemented. PR 183 changed documents only.
 
 - `BackdropStance.level(pinned:)` returns `.floating` for every raised surface (`shell/Sources/OnetimePad/BackdropStance.swift:24`).
-- `windowDidBecomeKey` and `windowDidResignKey` only set `model.holdsKeys` (`BackdropWindowController.swift:680`, `:703`). Level is written in `apply(_:)` and in the pin sink, nowhere else.
+- `windowDidBecomeKey` and `windowDidResignKey` only set `model.holdsKeys` (`BackdropWindowController.swift:688`, `:711`). Level is written in `apply(_:)` and in the pin sink, nowhere else.
 - No keep above preference exists in the model, in defaults, or in Settings.
-- Settings picks its level once, at `show()`, from `stance == .raised || pinned` (`BackdropSettingsWindow.swift:138`). About gets no level rule at all (`BackdropApp.swift:756`).
+- Settings picks its level once, at `show()`, from `stance == .raised || pinned` (`BackdropSettingsWindow.swift:138`). About gets no level rule at all (`BackdropApp.swift:790`).
 - `BackdropStanceTests` pins raised as floating at lines 63 and 165.
 - The background surface spec already carries the altitude table (commit `1f9d87d`).
 
 For ADR-0033, the one presentation assumption runs deep in the views and shallow in persistence:
 
-- One `NSTextStorage` per page with exactly one layout manager, enforced by `Coordinator.shedLayoutManagers` (`InkEditorView.swift:1852`) at every mount and swap, and one storage delegate (`:204`). A second `InkEditorView` on the same page loses its layout manager at the other window's next mount. The resting card uses this same editor with `readOnly: true`, so even a read only second window collides.
-- `PageModel` holds about twenty presentation fields with no owner: `activeEditor` (`PageModel.swift:985`), `performSealedPaste` (`:633`), `onAnchorToday` (`:1017`), `rollGeometry` (`:1049`), `holdsKeys` (`:610`), `selection`, `selectedFile`, `activeTarget`, `showingLedger`, `pasteboardOffer`, the redraw timer. Mount sites write them last writer wins.
+- One `NSTextStorage` per page with exactly one layout manager, enforced by `Coordinator.shedLayoutManagers` (`InkEditorView.swift:1852`) at every mount and swap, and one storage delegate (`:204`). A second `InkEditorView` on the same page would lose its layout manager at the other window's next mount, and the resting card uses this same editor with `readOnly: true`, so even a read only second window would collide. Since B2 (issue #198) the window that does not own mounts no editor, and the shed is the backstop.
+- `PageModel` held about twenty presentation fields with no owner, written by the mount sites last writer wins. Since B2 it keeps one `owner` (`PresentationOwner`), and the eight fields ADR-0033 lists are guarded by it (`PresentationField`): `activeEditor`, `performSealedPaste`, `onAnchorToday`, `rollGeometry`, `holdsKeys`, the redraw timer and `pasteboardOffer` decline a write from the other window, and the keyboard map is installed by the owner only. `selection`, `selectedFile`, `activeTarget` and `showingLedger` are the shared model, which either window may change.
 - Menu actions route to the key window's first responder, but menu enablement reads `activeEditor`. With two windows these can name different editors.
 - ADR-0006 and `DayScrollView.swift:30` state the one editor rule as contract. ADR-0033 as proposed did not cite it. As accepted it depends on ADR-0006, and the second eject trigger does not fire, because one owner at a time keeps one mounted editor.
 - Persistence, Keychain scope and `FormFactor` are already single and window agnostic. "One document model" costs nothing there.
@@ -50,7 +50,7 @@ All six items were taken into the accepted ADR on 2026-09-18, with three correct
 2. **Cite ADR-0006, ADR-0020 and ADR-0014.** ADR-0010 Amendment 1 argued against merging two apps with opposite activation policies, separate TCC identities and separate stores. The panel app is archived and the process is already `.regular` with one store, so three of its four arguments no longer apply. Only the launch story remains: a login launch must show the ambient panel only, never open the editor window. That settles half of open question 2.
 3. **"Restoration" needs a limit.** AppKit state restoration writes window state and snapshots to Saved Application State. That conflicts with the persistence model (ADR-0012, ADR-0016) and with capture exclusion. The decision should say: frame autosave only, `isRestorable = false`, `sharingType = .none` on the new window.
 4. **⌘W collides.** The keymap binds it to `pageClose`. A conventional window expects it to close the window. The ADR's open question 3 should name this case.
-5. **`NSApp.deactivate()` on rest** (`BackdropWindowController.swift:398`) would deactivate the app under an open editor window. Every route that raises the panel today as an activation (⌘Tab, Dock, reopen, modal return, cancelled quit) must move to the editor window; hotkey, status item and the resting card's click stay with the panel.
+5. **`NSApp.deactivate()` on rest** (`BackdropWindowController.swift:405`) would deactivate the app under an open editor window. Every route that raises the panel today as an activation (⌘Tab, Dock, reopen, modal return, cancelled quit) must move to the editor window; hotkey, status item and the resting card's click stay with the panel.
 6. Accepting ADR-0033 weakens ADR-0032's preference further: ⌘Tab would select the editor window, so the panel reaches raised and keyless only from a hotkey summon.
 
 ## Track A: implement ADR-0032
