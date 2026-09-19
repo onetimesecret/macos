@@ -4,13 +4,22 @@ docs/dogfood/potentially-quirky-behaviour.md
 
 During #192 / #184 work.
 
-Resolution, 2026-09-18: [ADR-0034](../adr/0034-full-screen-participation-follows-altitude.md).
-The fix was not ordering, as the note below expected. The lowered card was
-still a full screen auxiliary window, and those are shown with the full screen
-window whatever their level. Full screen participation now follows the
-altitude, so a card at normal level stays out of another app's full screen
-Space. Hardware confirmation is owed, by the checks in
-`docs/qa/verification-procedures/spaces-and-cmd-tab.md`.
+Resolution, 2026-09-18: [ADR-0034](../adr/0034-full-screen-participation-follows-altitude.md),
+then reopened the same day. The fix was not ordering, as the note below
+expected. The lowered card was still a full screen auxiliary window, and
+those are shown with the full screen window whatever their level. Full
+screen participation was made to follow altitude so a card at normal level
+would stay out of another app's full screen Space. The hardware run later
+that day tripped ADR-0034's second eject trigger: with the card unpinned
+and the keep above preference off, `dist/window-order-probe --watch
+--expect behind` returned `VERDICT FAIL expect=behind card=2 target=4
+front=Zed` after ⌘Tab into Zed's full screen Space, and the screen
+recording agrees. The participation bit alone does not remove a raised
+card from the full screen Space of the app being switched to. ADR-0034
+Amendment 1 records the reopen: the same-desktop route stands, the full
+screen route is back on the table. The alternatives named in the base
+Context (`orderBack`, `order(.below, relativeTo:)`), together with hide
+and reshow across the transition, are the shape of the next spike.
 
 > What macos API is used when command-tabbing to another application that is in another desktop and/or full screen? Currently, unlike
 > when the applications are on the same desktop screen which alternate "top-ness", switching to the fullscreen application brings the

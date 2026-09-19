@@ -4,7 +4,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 # ADR-0034: Full screen participation follows altitude
 
-- **Status:** accepted
+- **Status:** ejected on second trigger, superseded on the full screen route by [Amendment 1](#amendment-1-second-eject-trigger-fired-ordering-reopens). The base Decision continues to govern the same-desktop route.
 - **Date:** 2026-09-18
 - **Supersedes in part:** [ADR-0032](0032-inactive-raised-surfaces-follow-normal-app-stacking.md), whose clause "Do not change the surface's Space membership or full-screen participation." is replaced for full screen participation only. The Space membership half of that clause stands. Also [ADR-0019](0019-the-pad-is-on-every-space.md), whose Decision describes full-screen participation as something "the unpinned rest declines and both the pin and the raise accept": the raise now accepts it only while it floats. ADR-0019's membership constancy stands.
 - **Depends on:** [ADR-0019](0019-the-pad-is-on-every-space.md) for constant Space membership, and [ADR-0032](0032-inactive-raised-surfaces-follow-normal-app-stacking.md) for the altitude model this decision reads from.
@@ -161,3 +161,82 @@ Space round trip check and before `makeKeyAndOrderFront`.
 - 2026-09-18: Accepted. Replaces the full screen participation half of one
   clause of ADR-0032 after that ADR's first eject trigger fired for the full
   screen route in issue 184, and the matching descriptive clause of ADR-0019.
+- 2026-09-18, later the same day: Amendment 1 records the second eject
+  trigger firing on hardware. The base Decision governs the same-desktop
+  route; ordering reopens for the full screen route.
+
+## Amendment 1: second eject trigger fired, ordering reopens
+
+- **Status:** accepted
+- **Date:** 2026-09-18
+
+Appended, not folded in. The base Decision text above is left as written.
+This amendment records that the second eject trigger under **Eject
+triggers** fired on hardware later the same day and names what stands and
+what reopens.
+
+### What the probe saw
+
+The evidence standard is `dist/window-order-probe`, built from
+`scripts/window-order-probe.swift` by `scripts/dev.sh --with-probe`. Run
+in `--watch --expect behind` on a desktop Space, with the card unpinned
+and the keep above preference off, ⌘Tab into an application in its own
+full screen Space produced:
+
+```
+VERDICT FAIL expect=behind card=2 target=4 pad=3125 front=Zed
+```
+
+The card sits at window list index 2, the full screen target at index 4.
+The card is drawn ahead of the target. The `layer=0` on the card sample
+rules out the raised floating level and the keep above raised level: the
+resolver had lowered the card to normal, exactly as the base Decision
+prescribes, and the participation write is not what decides the order.
+
+A screen recording of the same route agrees with the probe: OnetimePad
+remains onscreen as a floating overlay above Zed's full screen interface
+after ⌘Tab into that Space, then goes back into place when the user
+returns.
+
+### What stands
+
+The base Decision governs the same-desktop route. Two PASS verdicts in
+the same probe run, one before Zed entered full screen and one against
+Proton Pass, show the altitude to full screen bit table holding where
+both applications share a desktop. Altitude is still the axis the level
+and the participation bit read from. `.canJoinAllSpaces` still stays on
+every surface in every state. ADR-0019's membership decision is still
+untouched. The Settings and About delegate paths still write only the
+level and the participation bit.
+
+### What reopens
+
+The full screen route. The base Decision's inferred piece was that a
+`.fullScreenNone` window at normal level would stay out of another app's
+full screen Space in the same way the unpinned rest does. On hardware
+that inference does not hold for a raised card that is lowered to normal
+on ⌘Tab into the full screen Space of the newly active app. Either the
+transition is happening before the participation write lands, or the
+`.fullScreenNone` bit does not by itself remove a window that is already
+listed as a participant in the Space it is being sent into. The rejected
+alternatives in the base Context (`orderBack`, `order(.below, relativeTo:)`
+against the full screen window) come back on the table with this new
+data, and so do options the base Context did not weigh: hiding and
+reshowing across the transition, and asking the Space machinery for the
+membership by an explicit method rather than by the collection behavior
+alone.
+
+### Consequences of the amendment
+
+- ⌘Tab into an app in its own full screen Space, with the card unpinned
+  and the preference off, leaves the card drawn above the full screen
+  app. Until the ordering reopens, this is the observed behavior.
+- The base Decision's other consequences continue to hold on the
+  same-desktop route.
+- Issue 184 does not close on the full screen route. A new spike, or a
+  new ADR when a mechanism is chosen, sits between this record and that
+  close.
+- The hardware procedure at
+  `docs/qa/verification-procedures/spaces-and-cmd-tab.md` is unchanged
+  as a probe recipe. Its verdicts are what the reopened ordering must
+  satisfy.

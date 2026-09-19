@@ -63,3 +63,13 @@ switch because the responder never changes.
 - The persistent view accumulates state that *should* die per switch
   (stale marked text, IME state, layout-manager drift), observed as
   cross-page contamination on hardware.
+
+## Decision history
+
+- 2026-09-18: [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md)
+  adds a second window and depends on this record. "One persistent editor" now
+  reads per window, and across windows the rule is one owner per page: only the
+  owning window mounts an editor on a page's storage. The one layout manager
+  per storage invariant stands unchanged. The second eject trigger was tested
+  by that proposal and did not fire, because exclusive ownership keeps one
+  mounted editor at a time.

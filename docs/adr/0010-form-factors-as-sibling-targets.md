@@ -6,6 +6,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-07-16
+- **Superseded in part by:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically Amendment 1 except its login launch clause. The sibling target decision stands.
 
 ## Context
 
@@ -164,3 +165,16 @@ merge would deduplicate exactly the part that is genuinely different.
 And if state sharing ever fires the last eject trigger above, the
 likely answer is still two shells over a core-side store or daemon, not
 one app.
+
+## Decision history
+
+- 2026-09-18: Superseded in part by
+  [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md).
+  Amendment 1 is replaced: OnetimePad is one app with two windows, a primary
+  editor window and the ambient panel. Since ADR-0014 there is one process, one
+  bundle id and one store, so the amendment's activation policy, permission and
+  lifecycle arguments no longer describe anything. What stands of the amendment
+  is its login launch clause: the ambient surface is at the desktop from login,
+  and a login launch never opens the editor window. The decision that form
+  factors are sibling targets stands, and the fourth eject trigger has not
+  fired.

@@ -13,12 +13,11 @@
 // id is com.onetimesecret.pad or dev.onetimesecret.pad, and app names
 // come from NSRunningApplication.
 //
-// Compile and run (xcrun hangs here without the two exports):
+// scripts/dev.sh builds dist/window-order-probe alongside the app. Run
+// it from there; the source is only edited in place. Typical use:
 //
-//   export SDKROOT=/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
-//   export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
-//   swiftc -O scripts/window-order-probe.swift -o /tmp/window-order-probe
-//   /tmp/window-order-probe --expect behind
+//   dist/window-order-probe --watch --expect behind
+//   dist/window-order-probe --after 8 --expect behind
 //
 // Options:
 //
