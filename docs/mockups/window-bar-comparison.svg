@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1240" viewBox="0 0 1600 1240" role="img" aria-labelledby="title desc">
+  <title id="title">Window-bar comparison and OnetimePad recommendations</title>
+  <desc id="desc">Wireframes comparing Codex, Zed, and two OnetimePad header treatments. The diagram recommends stable edge anchors, scoped grouping, labels for ambiguous icons, and restrained control density.</desc>
+  <defs>
+    <style>
+      .bg { fill: #111315; }
+      .panel { fill: #1a1d20; stroke: #353a40; stroke-width: 1.5; }
+      .bar { fill: #23272b; stroke: #424850; stroke-width: 1.5; }
+      .surface { fill: #171a1d; stroke: #2e3338; stroke-width: 1.5; }
+      .chip { fill: #2b3035; stroke: #4a5159; stroke-width: 1; }
+      .chip-hot { fill: #34393f; stroke: #89939d; stroke-width: 1; }
+      .ink { fill: #f1f3f5; }
+      .muted { fill: #aab1b8; }
+      .faint { fill: #727b84; }
+      .ember { fill: #dc4a22; }
+      .ember-stroke { stroke: #dc4a22; }
+      .blue { fill: #6eb4ff; }
+      .green { fill: #6fd39a; }
+      .amber { fill: #f4bd67; }
+      .red { fill: #ff6b6b; }
+      .title { font: 700 34px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.5px; }
+      .subtitle { font: 400 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .section { font: 700 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .label { font: 600 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .body { font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .small { font: 400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .mono { font: 500 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .callout { fill: none; stroke: #7c858f; stroke-width: 1.5; stroke-dasharray: 5 5; }
+      .divider { stroke: #454b52; stroke-width: 1; }
+      .icon { fill: none; stroke: #c5cbd1; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#7c858f"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="1240"/>
+
+  <g transform="translate(64 58)">
+    <text class="title ink" x="0" y="0">Window-bar grammar</text>
+    <text class="subtitle muted" x="0" y="34">Borrow structure and disclosure—not editor-scale control density.</text>
+    <rect x="1268" y="-23" width="204" height="36" rx="18" fill="#2a211e" stroke="#8e3d24"/>
+    <text class="small amber" x="1370" y="0" text-anchor="middle">ANALYTICAL WIREFRAME</text>
+  </g>
+
+  <!-- Source applications -->
+  <g transform="translate(64 132)">
+    <text class="section ink" x="0" y="0">1 · What the recordings reveal</text>
+
+    <!-- Codex -->
+    <g transform="translate(0 34)" filter="url(#shadow)">
+      <rect class="panel" x="0" y="0" width="716" height="250" rx="18"/>
+      <text class="label ink" x="24" y="31">Codex / ChatGPT</text>
+      <text class="small muted" x="692" y="31" text-anchor="end">lower density · stronger explanation</text>
+      <rect class="bar" x="20" y="52" width="676" height="82" rx="12"/>
+
+      <circle cx="43" cy="76" r="7" fill="#ff6259"/>
+      <circle cx="65" cy="76" r="7" fill="#ffbf37"/>
+      <circle cx="87" cy="76" r="7" fill="#27c840"/>
+      <rect class="chip-hot" x="108" y="62" width="38" height="28" rx="8"/>
+      <path class="icon" d="M119 68v16M135 68v16M119 68h16v16h-16z"/>
+      <path class="icon" d="M168 76h22M168 76l7-7M168 76l7 7" opacity=".65"/>
+      <path class="icon" d="M207 76h22M229 76l-7-7M229 76l-7 7" opacity=".35"/>
+      <line class="divider" x1="249" y1="60" x2="249" y2="126"/>
+      <path class="icon" d="M272 69h9l3 4h18v16h-30z"/>
+      <text class="label ink" x="314" y="81">Draft Omniauth Adapter ADR</text>
+
+      <text class="label muted" x="548" y="80">•••</text>
+      <path class="icon" d="M589 84v-15M583 75l6-6 6 6M581 85h16"/>
+      <rect class="chip" x="620" y="61" width="31" height="30" rx="8"/>
+      <path class="icon" d="M628 68v16h15V68z"/>
+      <rect class="chip-hot" x="657" y="61" width="31" height="30" rx="8"/>
+      <path class="icon" d="M665 68v16h15V68zM674 68v16"/>
+
+      <rect x="420" y="100" width="249" height="42" rx="12" fill="#30353a" stroke="#515860"/>
+      <text class="body ink" x="437" y="126">Toggle side panel</text>
+      <text class="mono muted" x="648" y="126" text-anchor="end">⌥⌘B</text>
+
+      <circle cx="36" cy="170" r="5" class="green"/>
+      <text class="body ink" x="52" y="175">Stable edge anchors survive layout changes</text>
+      <circle cx="36" cy="200" r="5" class="green"/>
+      <text class="body ink" x="52" y="205">Hover supplies verbs and shortcuts</text>
+      <circle cx="36" cy="230" r="5" class="amber"/>
+      <text class="body ink" x="52" y="235">Similar pane glyphs still require recall</text>
+    </g>
+
+    <!-- Zed -->
+    <g transform="translate(756 34)" filter="url(#shadow)">
+      <rect class="panel" x="0" y="0" width="716" height="250" rx="18"/>
+      <text class="label ink" x="24" y="31">Zed</text>
+      <text class="small muted" x="692" y="31" text-anchor="end">higher density · stronger context</text>
+      <rect class="bar" x="20" y="52" width="676" height="82" rx="12"/>
+
+      <rect class="chip-hot" x="34" y="63" width="118" height="32" rx="7"/>
+      <text class="body ink" x="48" y="84">onetimesecret</text>
+      <text class="body muted" x="170" y="84">↗ main</text>
+      <text class="body muted" x="240" y="84">/</text>
+      <text class="body muted" x="260" y="84">⌘ main</text>
+      <line class="divider" x1="335" y1="60" x2="335" y2="126"/>
+      <text class="body muted" x="354" y="84">what.txt</text>
+      <circle cx="536" cy="78" r="12" fill="#695f57" stroke="#c5cbd1"/>
+      <text class="small ink" x="536" y="83" text-anchor="middle">D</text>
+      <path class="icon" d="M568 78h18M577 69v18"/>
+      <rect class="chip" x="600" y="63" width="34" height="31" rx="7"/>
+      <path class="icon" d="M608 70v16h18V70zM617 70v16"/>
+      <text class="label muted" x="650" y="84">•••</text>
+
+      <path class="callout" marker-end="url(#arrow)" d="M120 151 C135 130 188 126 214 95"/>
+      <text class="small blue" x="28" y="162">Context is a clickable hierarchy</text>
+      <path class="callout" marker-end="url(#arrow)" d="M557 151 C565 129 586 114 612 95"/>
+      <text class="small amber" x="462" y="162">Right edge crowds quickly</text>
+
+      <circle cx="36" cy="192" r="5" class="green"/>
+      <text class="body ink" x="52" y="197">Excellent project/worktree/branch compression</text>
+      <circle cx="36" cy="222" r="5" class="amber"/>
+      <text class="body ink" x="52" y="227">Expert efficiency trades away first-use scent</text>
+    </g>
+  </g>
+
+  <!-- General grammar -->
+  <g transform="translate(64 458)">
+    <text class="section ink" x="0" y="0">2 · The transferable grammar</text>
+    <rect class="panel" x="0" y="28" width="1472" height="160" rx="18"/>
+    <text class="small muted" x="24" y="55">ORDER CONTROLS BY SCOPE</text>
+
+    <rect x="24" y="70" width="296" height="72" rx="10" fill="#202d38" stroke="#47799e"/>
+    <text class="label blue" x="44" y="98">Context</text>
+    <text class="small ink" x="44" y="122">Where am I? What object is active?</text>
+
+    <rect x="328" y="70" width="440" height="72" rx="10" fill="#22272b" stroke="#505860"/>
+    <text class="label ink" x="548" y="99" text-anchor="middle">Flexible identity / drag region</text>
+    <text class="small muted" x="548" y="122" text-anchor="middle">Absorbs width; does not reorder controls</text>
+
+    <rect x="776" y="70" width="318" height="72" rx="10" fill="#2e2a23" stroke="#8b7046"/>
+    <text class="label amber" x="796" y="98">Object actions</text>
+    <text class="small ink" x="796" y="122">Share · rename · overflow</text>
+
+    <rect x="1102" y="70" width="346" height="72" rx="10" fill="#2d2422" stroke="#8e4d39"/>
+    <text class="label" fill="#ef997f" x="1122" y="98">Surface / window actions</text>
+    <text class="small ink" x="1122" y="122">Panels · pin · split · window state</text>
+
+    <text class="small muted" x="24" y="169">Left answers identity; right answers action. Proximity communicates scope before any tooltip appears.</text>
+  </g>
+
+  <!-- OnetimePad -->
+  <g transform="translate(64 690)">
+    <text class="section ink" x="0" y="0">3 · OnetimePad: preserve calm, test the pressure points</text>
+
+    <!-- Current/recommended -->
+    <g transform="translate(0 34)" filter="url(#shadow)">
+      <rect class="panel" x="0" y="0" width="716" height="260" rx="18"/>
+      <rect x="0" y="0" width="7" height="260" rx="3.5" class="ember"/>
+      <text class="label ink" x="28" y="34">A · Current grammar — recommended baseline</text>
+      <text class="small green" x="688" y="34" text-anchor="end">KEEP</text>
+
+      <rect class="bar" x="28" y="62" width="660" height="64" rx="12"/>
+      <rect x="42" y="74" width="106" height="40" rx="6" fill="none" stroke="#5a626a" stroke-dasharray="5 4"/>
+      <text class="small faint" x="95" y="98" text-anchor="middle">drag area</text>
+      <text class="mono muted" x="358" y="100" text-anchor="middle">OnetimePad</text>
+      <text class="mono muted" x="534" y="100">saved</text>
+      <text class="mono muted" x="586" y="100">synced</text>
+      <rect class="chip-hot" x="642" y="77" width="34" height="34" rx="8"/>
+      <path class="icon ember-stroke" d="M655 84l9 9M663 85l-7 7v10M652 102h8"/>
+
+      <path class="callout" marker-end="url(#arrow)" d="M110 158 C120 145 128 132 132 114"/>
+      <text class="small muted" x="28" y="176">Header remains the generous move target</text>
+      <path class="callout" marker-end="url(#arrow)" d="M436 158 C421 143 400 128 381 112"/>
+      <text class="small muted" x="300" y="176">Identity stays optically centered</text>
+      <path class="callout" marker-end="url(#arrow)" d="M618 158 C636 145 651 130 655 112"/>
+      <text class="small muted" x="508" y="176">State + pin stay trailing</text>
+
+      <circle cx="42" cy="213" r="5" class="green"/>
+      <text class="body ink" x="58" y="218">Stable, quiet, and consistent with the card form factor</text>
+      <circle cx="42" cy="242" r="5" class="green"/>
+      <text class="body ink" x="58" y="247">Words carry nuanced state; glyph carries the binary pin</text>
+    </g>
+
+    <!-- Stress test -->
+    <g transform="translate(756 34)" filter="url(#shadow)">
+      <rect class="panel" x="0" y="0" width="716" height="260" rx="18"/>
+      <rect x="0" y="0" width="7" height="260" rx="3.5" class="amber"/>
+      <text class="label ink" x="28" y="34">B · File + warning stress state</text>
+      <text class="small amber" x="688" y="34" text-anchor="end">TEST BEFORE CHANGING</text>
+
+      <rect class="bar" x="28" y="62" width="660" height="64" rx="12"/>
+      <rect x="42" y="74" width="126" height="40" rx="6" fill="none" stroke="#5a626a" stroke-dasharray="5 4"/>
+      <text class="small faint" x="105" y="98" text-anchor="middle">reserved symmetry</text>
+      <text class="mono ink" x="338" y="92" text-anchor="middle">customer-export-config…</text>
+      <text class="small amber" x="338" y="110" text-anchor="middle">unsaved · Thu 14:32</text>
+      <text class="mono red" x="524" y="100">sync offline</text>
+      <rect class="chip" x="642" y="77" width="34" height="34" rx="8"/>
+      <path class="icon" d="M655 84l9 9M663 85l-7 7v10M652 102h8"/>
+
+      <rect x="214" y="134" width="276" height="34" rx="8" fill="#382821" stroke="#a75939"/>
+      <text class="small amber" x="352" y="156" text-anchor="middle">Does the identity truncate too early?</text>
+      <path class="callout" marker-end="url(#arrow)" d="M351 134 C350 122 347 115 344 111"/>
+
+      <text class="body ink" x="28" y="202">Test at minimum width, long names, simultaneous states,</text>
+      <text class="body ink" x="28" y="226">font sizes 8–40, VoiceOver, and both appearances.</text>
+      <text class="small muted" x="28" y="250">Only a demonstrated failure justifies changing alignment.</text>
+    </g>
+  </g>
+
+  <!-- Decision strip -->
+  <g transform="translate(64 1040)">
+    <rect class="panel" x="0" y="0" width="1472" height="134" rx="18"/>
+    <text class="label green" x="24" y="34">KEEP</text>
+    <text class="body ink" x="24" y="62">Stable seats · verbal status · full header drag target · real pin toggle · help + accessibility labels</text>
+
+    <text class="label red" x="24" y="96">DO NOT IMPORT</text>
+    <text class="body ink" x="163" y="96">Account avatar · back/forward · split panes · generic overflow · editor-scale command density</text>
+
+    <line class="divider" x1="965" y1="20" x2="965" y2="114"/>
+    <text class="label amber" x="990" y="34">DECISION TRIGGER</text>
+    <text class="body ink" x="990" y="62">If the stress state fails, compare centered identity</text>
+    <text class="body ink" x="990" y="84">against a leading flexible region in a new decision.</text>
+    <text class="small muted" x="990" y="108">This diagram proposes; the accepted design record governs.</text>
+  </g>
+
+  <text class="small faint" x="64" y="1212">Based on the supplied Codex and Zed recordings · 2026-09-18 · wireframe, not a pixel specification</text>
+</svg>
