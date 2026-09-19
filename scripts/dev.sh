@@ -11,14 +11,16 @@
 #
 # --no-launch builds without opening the app afterwards.
 #
-# --allow-capture launches with COMPANION_ALLOW_CAPTURE=1, which lifts
-# the surface's screen-capture exclusion for the life of that run, so
-# the window shows up in screenshots and screen recordings. A debug
+# The dev lane launches with COMPANION_ALLOW_CAPTURE=1 by default, which
+# lifts the surface's screen-capture exclusion for the life of that run,
+# so the window shows up in screenshots and screen recordings. A debug
 # build always offers the Settings switch; the variable is what seeds
 # it on, so a scripted run needs no click. The opt-out is never
 # persisted and fails closed at the next launch (ADR-0012), which is
-# why this is a flag and not the default. Exporting the variable in
-# the calling shell does the same thing.
+# why production keeps this a flag; the dev lane deviates because
+# hand checks and scripted runs need the surface to render into
+# captures without a click. Export COMPANION_ALLOW_CAPTURE=0 in the
+# calling shell to force the fail-closed shape.
 #
 # --with-probe also builds dist/window-order-probe from
 # scripts/window-order-probe.swift, the evidence standard for issue 184
@@ -28,13 +30,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 NO_LAUNCH=0
-ALLOW_CAPTURE=0
+# The dev lane defaults to allowing screen capture so scripted runs and
+# hand checks can screenshot the surface without a flag. The header
+# explains why this is a flag in production (ADR-0012 fail-closed); the
+# dev lane deliberately deviates because a running dev build already
+# offers the Settings switch. Export COMPANION_ALLOW_CAPTURE=0 in the
+# calling shell to opt back out for a single run.
+ALLOW_CAPTURE=1
 WITH_PROBE=0
-# An exported COMPANION_ALLOW_CAPTURE means the same thing as the flag.
-# `open` does not forward the caller's environment to the app it starts,
-# so a variable set in this shell would otherwise be dropped on the way.
+# An exported COMPANION_ALLOW_CAPTURE overrides the default. `open` does
+# not forward the caller's environment to the app it starts, so a
+# variable set in this shell would otherwise be dropped on the way.
 if [[ -n "${COMPANION_ALLOW_CAPTURE:-}" ]]; then
-  ALLOW_CAPTURE=1
+  if [[ "$COMPANION_ALLOW_CAPTURE" == "0" ]]; then
+    ALLOW_CAPTURE=0
+  else
+    ALLOW_CAPTURE=1
+  fi
 fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
