@@ -337,6 +337,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// the life of the delegate, which is the life of the process.
     private var modalEndObserver: NSObjectProtocol?
 
+    /// The observation of every window's close, held as long, which is
+    /// how the model learns that the keyboard is coming back from a
+    /// window that is neither content window
+    /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
+    private var windowCloseObserver: NSObjectProtocol?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
     }
@@ -392,6 +398,31 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             forName: ModalSession.didEndNotification, object: nil, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.modalSessionEnded() }
+        }
+
+        // A window of ours closing while it holds the keyboard leaves
+        // AppKit to choose who has it next, and the model needs to know
+        // that the choice was nobody's gesture (ADR-0033: a modal
+        // return goes back to the owner). The observation is of every
+        // window and asks only whether it was key. Settings and About
+        // are the ones it is for. The editor window closing arms it
+        // too and harmlessly, since no editor window is left to be
+        // keyed, and the panel and its key relay are ordered out and
+        // never closed. Queue nil: the word has to reach the model
+        // ahead of the key event the close is about to cause.
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: nil
+        ) { [weak self] notification in
+            // The window's identity crosses into the main actor's
+            // isolation and the notification does not, since it is not
+            // Sendable. AppKit posts this one on the main thread.
+            let closing = (notification.object as AnyObject?).map(ObjectIdentifier.init)
+            MainActor.assumeIsolated {
+                guard let closing,
+                    NSApp.keyWindow.map(ObjectIdentifier.init) == closing
+                else { return }
+                self?.model.auxiliaryWindowReleasedKeys()
+            }
         }
 
         // The backdrop exists by being there: it takes its place on

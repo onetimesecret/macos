@@ -411,6 +411,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         /// which is a raised panel: the panel rests, the page content
         /// goes to the editor window, and then its keys are reported.
         case restsPanel
+        /// The editor window was keyed while the panel owned, and by
+        /// nobody's hand: a window of ours that is neither content
+        /// window let the keyboard go, and AppKit chose who had it
+        /// next. Nothing moves, and the keys go back to the panel.
+        case returnsKeysToOwner
     }
 
     /// The key event decision, pure. Ownership moves on exactly one key
@@ -425,13 +430,94 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// panel's own raise (the order out that lands the card on this
     /// Space), and resting the panel from there would nest a rest
     /// inside the raise that is about to make the panel key anyway.
+    ///
+    /// `returningFromAuxiliary` is the keyboard on its way back from
+    /// Settings, About or a modal panel. A key gain says who has the
+    /// keyboard and never why, and the editor window is the app's main
+    /// window, so it is who AppKit picks when one of those closes over
+    /// a raised panel, which cannot be main. Read as a person taking
+    /// the editor window, that pick would rest the panel and move the
+    /// page on the way back from a key loss that moved nothing. A modal
+    /// return goes back to the owner (ADR-0033), so the pick is set
+    /// aside and the panel is keyed again.
     nonisolated static func keyTurn(
         surface: PresentationOwner, keyed: Bool,
-        owner: PresentationOwner, midTransition: Bool
+        owner: PresentationOwner, midTransition: Bool,
+        returningFromAuxiliary: Bool
     ) -> KeyTurn {
         if surface == owner { return .reports(keyed) }
-        if surface == .editorWindow, keyed, !midTransition { return .restsPanel }
-        return .ignored
+        guard surface == .editorWindow, keyed, !midTransition else { return .ignored }
+        return returningFromAuxiliary ? .returnsKeysToOwner : .restsPanel
+    }
+
+    /// True for the turn in which a window of ours that is neither
+    /// content window closed while it held the keyboard.
+    private var keysReturning = false
+
+    /// Which arming the pending expiry belongs to, so that a second
+    /// close inside one turn is not disarmed by the first one's expiry.
+    private var keyReturnArming = 0
+
+    /// Whether the editor window holds the keyboard, as its controller
+    /// last said, whoever owns. The owner's key fact is the shared
+    /// model's (`PageModel.holdsKeys`). This one exists for the single
+    /// case where a key gain was set aside as a return and the page
+    /// then came to the window anyway, with no second key event on its
+    /// way to say so.
+    private var editorWindowIsKey = false
+
+    /// Settings, About or another window of ours that is not a content
+    /// window is closing while it holds the keyboard, so the next
+    /// content window keyed was keyed by AppKit's choice of successor.
+    /// Armed for this turn only: AppKit chooses from inside the close,
+    /// and a person's click cannot land before the turn is out, so a
+    /// later key gain is read as the claim it is. A return nobody
+    /// recognises is the behaviour before this existed, and a claim
+    /// misread as a return would take the keyboard from the window the
+    /// person had just clicked, which is why the window is kept short.
+    ///
+    /// A modal panel arms nothing here. It is bracketed, and the
+    /// bracket is read where the key event is judged.
+    func auxiliaryWindowReleasedKeys() {
+        keysReturning = true
+        keyReturnArming += 1
+        let arming = keyReturnArming
+        Task { @MainActor [weak self] in
+            guard let self, self.keyReturnArming == arming else { return }
+            self.keysReturning = false
+        }
+    }
+
+    /// Whether the deferred hand back keys the panel again, pure: only
+    /// a panel still raised and still owning, and never under a modal
+    /// of ours, whose own end raises the panel once it is over
+    /// (`BackdropAppDelegate.modalSessionEnded`).
+    nonisolated static func handsKeysBackToPanel(
+        panelRaised: Bool, owner: PresentationOwner, modalSessionRunning: Bool
+    ) -> Bool {
+        panelRaised && owner == .panel && !modalSessionRunning
+    }
+
+    /// The keyboard goes back to the panel, a turn after the key event
+    /// that asked for it. A raise over a raise is the window
+    /// controller's cue to key the panel where it stands, and it is an
+    /// activation: nobody named the surface, and the roll stays where
+    /// it was. A turn later because the key event arrives from inside
+    /// the closing window's own order out, which is no place to order
+    /// another window from.
+    ///
+    /// If the panel rested in the meantime the page has gone to the
+    /// editor window, which has been key since the event that was set
+    /// aside, so its keys are reported now.
+    private func handKeysBack() {
+        if Self.handsKeysBackToPanel(
+            panelRaised: panelRaised, owner: pages.owner,
+            modalSessionRunning: ModalSession.isRunning
+        ) {
+            raise(.activation)
+        } else if pages.owner == .editorWindow, editorWindowOpen, editorWindowIsKey {
+            pages.reportKeys(true, from: .editorWindow)
+        }
     }
 
     /// A content window gained or lost the keyboard. Both window
@@ -442,10 +528,16 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// inside `apply(.resting)` finds the owner the rest settled on and
     /// never `stance`, which is halfway at that moment.
     func keyStatusChanged(of surface: PresentationOwner, keyed: Bool) {
+        if surface == .editorWindow { editorWindowIsKey = keyed }
         let turn = Self.keyTurn(
             surface: surface, keyed: keyed,
-            owner: pages.owner, midTransition: stancePublications > 0
+            owner: pages.owner, midTransition: stancePublications > 0,
+            returningFromAuxiliary: keysReturning
+                || ModalSession.isRunning || ModalSession.isBracketed
         )
+        // A return explains one key gain, the one it caused. Whichever
+        // content window was keyed, the next gain is somebody's own.
+        if keyed { keysReturning = false }
         switch turn {
         case .ignored:
             break
@@ -458,6 +550,8 @@ final class BackdropModel: ObservableObject, QuitFlushable {
             // said otherwise, in which case there is nothing of this
             // window's to report.
             if pages.owner == surface { pages.reportKeys(true, from: surface) }
+        case .returnsKeysToOwner:
+            Task { @MainActor [weak self] in self?.handKeysBack() }
         }
     }
 
@@ -579,6 +673,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     func editorWindowClosed() {
         editorWindowOpen = false
         editorWindowOnScreen = false
+        editorWindowIsKey = false
         settleOwner()
     }
 

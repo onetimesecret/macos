@@ -50,6 +50,21 @@ public enum ModalSession {
     @MainActor
     public static var isRunning: Bool { NSApp?.modalWindow != nil }
 
+    /// Whether a bracketed body is on the stack right now. It covers
+    /// the stretch `isRunning` cannot: a panel orders itself out inside
+    /// `runModal` once AppKit's session is over, AppKit picks the next
+    /// key window from inside that order out, and whichever window it
+    /// picks hears of it with no modal window left to read. A window
+    /// keyed in that stretch was keyed by the panel leaving and by
+    /// nobody's hand (ADR-0033: a modal return goes back to the owner).
+    /// Shut before the end is announced, so an observer of the
+    /// announcement reads a bracket that is over.
+    @MainActor
+    public static var isBracketed: Bool { bracketDepth > 0 }
+
+    @MainActor
+    private static var bracketDepth = 0
+
     /// Run a modal body and say so when it is over.
     ///
     /// The centre is injectable so a test can watch the notification
@@ -58,7 +73,11 @@ public enum ModalSession {
     @MainActor
     @discardableResult
     public static func run<T>(center: NotificationCenter = .default, _ body: () -> T) -> T {
-        defer { center.post(name: didEndNotification, object: nil) }
+        bracketDepth += 1
+        defer {
+            bracketDepth -= 1
+            center.post(name: didEndNotification, object: nil)
+        }
         return body()
     }
 }

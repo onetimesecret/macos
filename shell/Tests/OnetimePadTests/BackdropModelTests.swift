@@ -396,10 +396,11 @@ final class BackdropModelTests: XCTestCase {
         typealias Turn = BackdropModel.KeyTurn
         func turn(
             _ surface: PresentationOwner, _ keyed: Bool,
-            owner: PresentationOwner, mid: Bool = false
+            owner: PresentationOwner, mid: Bool = false, returning: Bool = false
         ) -> Turn {
             BackdropModel.keyTurn(
-                surface: surface, keyed: keyed, owner: owner, midTransition: mid
+                surface: surface, keyed: keyed, owner: owner,
+                midTransition: mid, returningFromAuxiliary: returning
             )
         }
         // The owner's window: the keys follow it and nothing else moves.
@@ -419,6 +420,137 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(turn(.panel, false, owner: .panel, mid: true), .reports(false))
         XCTAssertEqual(
             turn(.editorWindow, true, owner: .editorWindow, mid: true), .reports(true))
+        // The keyboard coming back from Settings, About or a modal
+        // panel: AppKit keyed the editor window, nobody took it, and
+        // the keys go back to the panel that owns.
+        XCTAssertEqual(
+            turn(.editorWindow, true, owner: .panel, returning: true), .returnsKeysToOwner)
+        XCTAssertEqual(
+            turn(.editorWindow, true, owner: .panel, mid: true, returning: true), .ignored)
+        // To the owner's own window a return is a report like any other.
+        XCTAssertEqual(
+            turn(.editorWindow, true, owner: .editorWindow, returning: true), .reports(true))
+        XCTAssertEqual(turn(.panel, true, owner: .panel, returning: true), .reports(true))
+        XCTAssertEqual(turn(.editorWindow, false, owner: .panel, returning: true), .ignored)
+        XCTAssertEqual(turn(.panel, true, owner: .editorWindow, returning: true), .ignored)
+    }
+
+    // MARK: A modal return goes back to the owner
+
+    /// One turn of the main actor's queue and a little more, which is
+    /// how long the model waits before it hands the keys back.
+    private func settle() async {
+        for _ in 0..<3 { await Task.yield() }
+    }
+
+    /// Both windows up, the panel raised, owning and keyed, and the
+    /// keyboard gone to a window of ours that is neither of them.
+    private func makeModelWithKeysAtAnAuxiliary(named name: String) -> BackdropModel {
+        let model = makeModel(named: name)
+        model.editorWindowOpened()
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+        model.keyStatusChanged(of: .panel, keyed: false)
+        return model
+    }
+
+    func testTheEditorWindowKeyedAsSettingsClosesMovesNothingAndThePanelIsKeyedAgain() async {
+        let model = makeModelWithKeysAtAnAuxiliary(named: "return-settings")
+        var published: [BackdropStance] = []
+        let relay = model.$stance.dropFirst().sink { published.append($0) }
+        defer { relay.cancel() }
+
+        // Settings closes while it holds the keyboard, and AppKit picks
+        // the app's main window to have it next.
+        model.auxiliaryWindowReleasedKeys()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        XCTAssertEqual(model.pages.owner, .panel, "nobody took the editor window")
+        XCTAssertEqual(model.stance, .raised)
+        XCTAssertEqual(published, [], "and nothing is ordered from inside the key event")
+
+        await settle()
+
+        // The raise over a raise is the window controller's cue to key
+        // the panel again.
+        XCTAssertEqual(published, [.raised])
+        XCTAssertEqual(model.pages.owner, .panel)
+    }
+
+    func testAReturnIsOnlyTheTurnTheAuxiliaryWindowClosedIn() async {
+        let model = makeModelWithKeysAtAnAuxiliary(named: "return-expires")
+        model.auxiliaryWindowReleasedKeys()
+        await settle()
+
+        // A later click on the editor window is the person taking it.
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertTrue(model.holdsKeys)
+    }
+
+    func testAReturnIsSpentByTheKeyEventItExplains() async {
+        let model = makeModelWithKeysAtAnAuxiliary(named: "return-spent")
+        model.auxiliaryWindowReleasedKeys()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+        model.keyStatusChanged(of: .editorWindow, keyed: false)
+
+        // Within the same turn, which no person manages, and still.
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        await settle()
+        XCTAssertEqual(model.stance, .resting, "the hand back found no raised panel to key")
+    }
+
+    func testTheEditorWindowKeyedInsideAModalBracketMovesNothing() async {
+        let model = makeModelWithKeysAtAnAuxiliary(named: "return-modal")
+
+        // An open panel orders itself out inside `runModal`, and the
+        // editor window is keyed from there.
+        ModalSession.run(center: NotificationCenter()) {
+            model.keyStatusChanged(of: .editorWindow, keyed: true)
+        }
+
+        XCTAssertEqual(model.pages.owner, .panel)
+        XCTAssertEqual(
+            model.stance, .raised,
+            "so the raise the modal's end asks for still finds a raised panel"
+        )
+        await settle()
+        XCTAssertEqual(model.pages.owner, .panel)
+    }
+
+    func testARestBeforeTheHandBackLeavesTheKeyedEditorWindowHoldingTheKeys() async {
+        let model = makeModelWithKeysAtAnAuxiliary(named: "return-rested")
+        model.auxiliaryWindowReleasedKeys()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+
+        // A click outside the card lands before the hand back runs.
+        model.rest()
+        await settle()
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+        XCTAssertTrue(
+            model.holdsKeys,
+            "the window was key all along, and its report was set aside as a return"
+        )
+    }
+
+    func testAHandBackIsDeclinedOverARestingPanelOrAModal() {
+        func handsBack(
+            raised: Bool = true, owner: PresentationOwner = .panel, modal: Bool = false
+        ) -> Bool {
+            BackdropModel.handsKeysBackToPanel(
+                panelRaised: raised, owner: owner, modalSessionRunning: modal
+            )
+        }
+        XCTAssertTrue(handsBack())
+        XCTAssertFalse(handsBack(raised: false))
+        XCTAssertFalse(handsBack(owner: .editorWindow))
+        XCTAssertFalse(handsBack(modal: true))
     }
 
     // MARK: Key events from inside a stance change
