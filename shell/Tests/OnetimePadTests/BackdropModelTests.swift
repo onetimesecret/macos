@@ -511,6 +511,29 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(model.pages.owner, .editorWindow, "never means with the window shut too")
     }
 
+    /// What the policy still owes, held as a fact so that the comment
+    /// on `panelMayOwn` cannot drift from it again. Esc reaches the
+    /// model through the editor, the empty state's catcher or the
+    /// keymap, and a raised card that owns nothing mounts none of the
+    /// three. Whoever ships the policy gives the panel an Esc of its
+    /// own and turns this test over.
+    func testUnderTheNeverGrantPolicyARaisedCardMountsNoRouteForEsc() {
+        let model = makeModel(named: "policy-never-grant-esc", panelMayOwn: false)
+        model.raise(.summon)
+        model.keyStatusChanged(of: .panel, keyed: true)
+        XCTAssertEqual(model.stance, .raised)
+
+        // The editor and the catcher both live inside the content area.
+        XCTAssertFalse(PageContentView.mounts(surface: .panel, owner: model.pages.owner))
+        XCTAssertFalse(PageKeyboardMap.installs(surface: .panel, owner: model.pages.owner))
+
+        // The shipped rule beside it: the same raise mounts all three.
+        let shipped = makeModel(named: "policy-shipped-esc")
+        shipped.raise(.summon)
+        XCTAssertTrue(PageContentView.mounts(surface: .panel, owner: shipped.pages.owner))
+        XCTAssertTrue(PageKeyboardMap.installs(surface: .panel, owner: shipped.pages.owner))
+    }
+
     // MARK: The keyboard coming back with the page
 
     func testTheKeyboardComesBackWithThePageOnlyIntoAnActiveApp() {

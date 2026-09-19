@@ -127,17 +127,24 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// against the model the app runs; nothing outside a test passes
     /// it.
     ///
-    /// Two things stand between this and a shipped setting, both of
-    /// them in this type and both the work of whoever ships it. The key
-    /// fact is the owner's, so a raised card that never owns is never
-    /// known to be keyed, and `summon()` never reads the hotkey as "put
-    /// it away": Esc still rests the card and the hotkey only ever
-    /// raises it. And `keyTurn` rests the panel on the editor window
-    /// taking the keyboard from an owning panel, which under this
-    /// policy is no panel at all, so a raised card stays raised beside
-    /// an editor window the person has gone to type in. Both want the
-    /// panel's own key status kept apart from the owner's, which the
-    /// shipped rule has no use for, since a raised panel always owns.
+    /// Three things stand between this and a shipped setting, all of
+    /// them the work of whoever ships it. Esc does not reach a panel
+    /// that never owns. Every route to `PageModel.escape()` lives
+    /// inside something only the owner mounts (the editor's
+    /// `cancelOperation`, the empty state's catcher, the keymap's
+    /// escape command), and this target has no key handling of its
+    /// own, so a raised card is put away by a click outside it and by
+    /// nothing on the keyboard. The key fact is the owner's, so a
+    /// raised card that never owns is never known to be keyed, and
+    /// `summon()` never reads the hotkey as "put it away": the hotkey
+    /// only ever raises it. And `keyTurn` rests the panel on the editor
+    /// window taking the keyboard from an owning panel, which under
+    /// this policy is no panel at all, so a raised card stays raised
+    /// beside an editor window the person has gone to type in. The
+    /// first wants an Esc the panel keeps for itself, and the other two
+    /// want the panel's own key status kept apart from the owner's.
+    /// The shipped rule has no use for either, since a raised panel
+    /// always owns.
     private let panelMayOwn: Bool
 
     init(
