@@ -126,6 +126,18 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// kept as one input to the rule so the policy can be proved
     /// against the model the app runs; nothing outside a test passes
     /// it.
+    ///
+    /// Two things stand between this and a shipped setting, both of
+    /// them in this type and both the work of whoever ships it. The key
+    /// fact is the owner's, so a raised card that never owns is never
+    /// known to be keyed, and `summon()` never reads the hotkey as "put
+    /// it away": Esc still rests the card and the hotkey only ever
+    /// raises it. And `keyTurn` rests the panel on the editor window
+    /// taking the keyboard from an owning panel, which under this
+    /// policy is no panel at all, so a raised card stays raised beside
+    /// an editor window the person has gone to type in. Both want the
+    /// panel's own key status kept apart from the owner's, which the
+    /// shipped rule has no use for, since a raised panel always owns.
     private let panelMayOwn: Bool
 
     init(
