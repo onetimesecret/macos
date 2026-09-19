@@ -1034,6 +1034,16 @@ public final class PageModel: ObservableObject {
     /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
 
+    /// Each page's caret and scroll, keyed and pruned with `storages`.
+    ///
+    /// Here rather than in the editor's coordinator because a page can
+    /// be mounted by more than one editor over its life, and across two
+    /// windows (ADR-0033): whichever mounts it next has to find the
+    /// place the last one left. Written by the editor on the way off a
+    /// page and read on the way onto one; nothing draws from it, so it
+    /// is deliberately not published.
+    var viewStates = PageViewStates()
+
     /// Each visible day's page as the roll renders it while the editor
     /// is standing somewhere else (issue #79): the same ink and the same
     /// chip faces, in an attributed string the quiet regions copy into
@@ -2301,6 +2311,10 @@ public final class PageModel: ObservableObject {
         // still shows the discarded draft. A file's storage is dropped
         // by exactly one place, the close, which does it by name.
         storages = storages.filter { $0.key.isFileID || livePages.contains($0.key) }
+        // The caret and the scroll go with the page they were kept for,
+        // under the same exemption: a file's place is dropped by the
+        // roster, never by a set it was never in.
+        viewStates.prune(keeping: livePages)
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -2708,23 +2722,18 @@ public final class PageModel: ObservableObject {
     private func forgetFilesOffTheRoster(_ files: [FileSummary]) {
         let live = Set(files.map(\.id))
         let gone = storages.keys.filter { $0.isFileID && !live.contains($0) }
-        // The editor's own two maps are asked for as well, because
-        // the caret and the scroll are the editor's and it is the one
-        // object that can drop them.
-        let coordinator = (activeEditor as? InkTextView)?.coordinator
         for id in gone {
             storages[id] = nil
-            coordinator?.forgetViewState(for: id)
+            viewStates.forget(id)
         }
         // A file can leave with no storage ever built, if it was never
-        // drawn, and the editor may still hold a caret for it from a
-        // mount that came and went. So the editor's maps are swept on
-        // their own terms too rather than only alongside a storage.
-        if let coordinator {
-            for id in coordinator.viewStateKeys.carets.union(coordinator.viewStateKeys.scrolls)
-            where id.isFileID && !live.contains(id) {
-                coordinator.forgetViewState(for: id)
-            }
+        // drawn, and a caret may still be held for it from a mount that
+        // came and went. So the view state is swept on its own terms
+        // too rather than only alongside a storage. It is the model's
+        // own table now, so the sweep reaches it whether or not an
+        // editor happens to be mounted when the file goes.
+        for id in viewStates.keys where id.isFileID && !live.contains(id) {
+            viewStates.forget(id)
         }
     }
 

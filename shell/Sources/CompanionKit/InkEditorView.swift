@@ -334,12 +334,6 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.applyPreviewRendering(model.previewRendering)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
-        // Dead pages take their saved view state with them — the same
-        // pruning `refresh()` applies to the storage cache, and keyed
-        // the same way, by page identity: a tab outlives its pages
-        // (ADR-0017), so a slot's id would keep a dead page's caret and
-        // scroll alive for whatever page came next.
-        coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
         // The stance may have flipped editing on or off above, so the
         // Edit menu's two items are re-asked on every pass, before the
         // early return that a page which did not change takes.
@@ -425,22 +419,6 @@ public struct InkEditorView: NSViewRepresentable {
         /// In-memory development/test observation only. The source payload is
         /// deliberately absent from the reported value.
         var onOrdinaryPasteMeasurement: ((OrdinaryPasteMeasurement) -> Void)?
-
-        /// Caret and scroll are view state. With one editor serving
-        /// every page (ADR-0006) they no longer die with a torn-down
-        /// view — they must be carried per page by hand: saved before
-        /// the storage swap takes the page away, restored after its
-        /// return.
-        private var savedCarets: [UInt64: NSRange] = [:]
-        private var savedScrolls: [UInt64: NSPoint] = [:]
-
-        /// The live set the last prune saw. `pruneViewState` runs on
-        /// every `updateNSView` pass, and the set rarely changes, so
-        /// this gate lets the common pass skip the dictionary filters.
-        /// The last set `pruneViewState` was handed, so a pass that
-        /// changed nothing costs nothing. Nil means "ask again",
-        /// which is what a file leaving the roster sets it to.
-        private var lastLiveSheets: Set<UInt64>?
 
         init(
             model: PageModel,
@@ -1329,11 +1307,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// undo steps are the core's and each page's stack is its own,
         /// so a swap cannot leave half a word open in a page that is
         /// going away (issue #132).
+        ///
+        /// Both are written to the model's table rather than kept here
+        /// (`PageModel.viewStates`), so the place survives this editor
+        /// and is there for whichever one mounts the page next.
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
             guard let sheet = currentSheet else { return }
-            savedCarets[sheet] = textView.selectedRange()
+            model.viewStates.saveCaret(textView.selectedRange(), for: sheet)
             guard let scrollView else { return }
-            savedScrolls[sheet] = scrollView.contentView.bounds.origin
+            model.viewStates.saveScroll(scrollView.contentView.bounds.origin, for: sheet)
         }
 
         /// Return the incoming page's caret and scroll after the swap.
@@ -1372,18 +1354,16 @@ public struct InkEditorView: NSViewRepresentable {
             textView: InkTextView, scrollView: NSScrollView?, for sheet: UInt64
         ) {
             let caret = Self.clamped(
-                savedCarets[sheet] ?? NSRange(location: 0, length: 0),
+                model.viewStates.carets[sheet] ?? NSRange(location: 0, length: 0),
                 to: textView.textStorage?.length ?? 0
             )
             textView.setSelectedRange(caret)
             guard let scrollView else { return }
-            let offset = savedScrolls[sheet] ?? .zero
+            let offset = model.viewStates.scrolls[sheet] ?? .zero
             DispatchQueue.main.async { [weak self, weak textView, weak scrollView] in
                 guard let self else { return }
                 guard self.currentSheet == sheet else {
-                    if self.savedScrolls[sheet] != nil {
-                        self.savedScrolls[sheet] = offset
-                    }
+                    self.model.viewStates.repairScroll(offset, for: sheet)
                     return
                 }
                 guard let scrollView else { return }
@@ -1420,58 +1400,6 @@ public struct InkEditorView: NSViewRepresentable {
             layoutManager.ensureLayout(for: container)
             return layoutManager.usedRect(for: container).height
                 + textView.textContainerInset.height * 2
-        }
-
-        /// Dead pages take their view state with them — the same
-        /// pruning `refresh()` applies to the storage cache.
-        func pruneViewState(keeping live: Set<UInt64>) {
-            guard live != lastLiveSheets else { return }
-            lastLiveSheets = live
-            savedCarets = Self.pruned(savedCarets, keeping: live)
-            savedScrolls = Self.pruned(savedScrolls, keeping: live)
-        }
-
-        /// Forget one id's caret and scroll outright.
-        ///
-        /// The counterpart to the tag exemption in `pruned`. A file is
-        /// exempt from the page prune because it is never in the live
-        /// page set, so something has to drop its entries when it
-        /// actually goes, and this is that something. Called when a
-        /// file leaves the roster, never on a page: a page's entries
-        /// are the prune's business.
-        func forgetViewState(for sheet: UInt64) {
-            savedCarets[sheet] = nil
-            savedScrolls[sheet] = nil
-            // The prune's guard compares against the last live set and
-            // returns early when it has not changed. Clearing it means
-            // the next prune actually runs rather than skipping over a
-            // set that looks familiar.
-            lastLiveSheets = nil
-        }
-
-        /// Which ids hold a caret and which hold a scroll offset.
-        ///
-        /// A reading seam for the test that a closed file leaves
-        /// nothing behind in either map. Both are private, and asking
-        /// through the save or restore paths would write an entry
-        /// rather than read one.
-        var viewStateKeys: (carets: Set<UInt64>, scrolls: Set<UInt64>) {
-            (Set(savedCarets.keys), Set(savedScrolls.keys))
-        }
-
-        /// The pure half of `pruneViewState`: keep only the entries
-        /// whose keys are still live.
-        ///
-        /// A file id is always live here. The set is built from page
-        /// identities and a file is never among them, so without the
-        /// exemption a file's caret and scroll are thrown away on every
-        /// pass of `updateNSView`, and page to file to page returns the
-        /// file to the top with the caret at zero. A file's entries go
-        /// when the file closes, which drops the whole id.
-        nonisolated static func pruned<Value>(
-            _ table: [UInt64: Value], keeping live: Set<UInt64>
-        ) -> [UInt64: Value] {
-            table.filter { $0.key.isFileID || live.contains($0.key) }
         }
 
         // MARK: Wrapping (⌥Z, Settings)

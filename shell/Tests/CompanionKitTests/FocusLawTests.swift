@@ -244,13 +244,13 @@ final class FocusLawTests: XCTestCase {
     }
 
     // MARK: Pruning per-page view state (ADR-0006), the pure half.
-    // The MainActor gate in `pruneViewState` (skip when the live set
-    // is unchanged) is coordinator state and stays hand-tested.
+    // The table is the model's now (`PageViewStates`), pruned beside
+    // the storage cache on every `refresh()`.
 
     func testADeadPagesEntryIsPruned() {
         let table: [UInt64: Int] = [1: 10, 2: 20, 3: 30]
         XCTAssertEqual(
-            InkEditorView.Coordinator.pruned(table, keeping: [1, 3]),
+            PageViewStates.pruned(table, keeping: [1, 3]),
             [1: 10, 3: 30]
         )
     }
@@ -258,20 +258,20 @@ final class FocusLawTests: XCTestCase {
     func testLivePagesKeepTheirEntriesUntouched() {
         let table: [UInt64: Int] = [1: 10, 2: 20]
         XCTAssertEqual(
-            InkEditorView.Coordinator.pruned(table, keeping: [1, 2]),
+            PageViewStates.pruned(table, keeping: [1, 2]),
             table
         )
     }
 
     func testAnEmptyLiveSetClearsEveryEntry() {
         let table: [UInt64: Int] = [1: 10, 2: 20]
-        XCTAssertTrue(InkEditorView.Coordinator.pruned(table, keeping: []).isEmpty)
+        XCTAssertTrue(PageViewStates.pruned(table, keeping: []).isEmpty)
     }
 
     func testLiveKeysWithoutEntriesAskNothingOfTheTable() {
         let table: [UInt64: Int] = [1: 10]
         XCTAssertEqual(
-            InkEditorView.Coordinator.pruned(table, keeping: [1, 99]),
+            PageViewStates.pruned(table, keeping: [1, 99]),
             table
         )
     }
