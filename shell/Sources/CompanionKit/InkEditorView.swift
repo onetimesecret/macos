@@ -34,8 +34,25 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        let textView = Self.makeInkTextView(
-            model: model, sheetID: sheetID, coordinator: context.coordinator
+        Self.makePage(
+            model: model, sheetID: sheetID, readOnly: readOnly,
+            coordinator: context.coordinator
+        )
+    }
+
+    /// The page surface, assembled: the one editor inside its scroller,
+    /// opened where the page was last left.
+    ///
+    /// A static rather than the body of `makeNSView`, for the reason
+    /// `DayScrollView.makeRoll` is one: a test cannot make a SwiftUI
+    /// `Context`, and what this mount owes the page is worth asserting.
+    /// The app and the tests build the same object out of the same call.
+    @MainActor
+    static func makePage(
+        model: PageModel, sheetID: UInt64, readOnly: Bool, coordinator: Coordinator
+    ) -> NSScrollView {
+        let textView = makeInkTextView(
+            model: model, sheetID: sheetID, coordinator: coordinator
         )
         // Whether the page accepts typing is the stance's business and
         // not the editor's, which is why it is set here rather than in
@@ -44,9 +61,15 @@ public struct InkEditorView: NSViewRepresentable {
         // changing the editor.
         textView.isEditable = !readOnly
 
-        let scroll = Self.scrollStack(for: textView)
-        context.coordinator.observeClip(of: scroll)
-        context.coordinator.applyWrap(model.wrapsLines)
+        let scroll = scrollStack(for: textView)
+        coordinator.observeClip(of: scroll)
+        coordinator.applyWrap(model.wrapsLines)
+        // The scroll half of the place, which is this mount's to put
+        // back because the clip is this mount's. The building has
+        // already seated the caret. An editor that was torn down, or
+        // another window's editor, may have read this page further
+        // than the top, and whoever mounts it next opens it there.
+        coordinator.restoreScroll(textView: textView, scrollView: scroll, for: sheetID)
         return scroll
     }
 
@@ -67,10 +90,18 @@ public struct InkEditorView: NSViewRepresentable {
     /// replacement before dismantling what it replaces, and clearing
     /// unconditionally would then drop the live editor a moment after it
     /// arrived.
+    ///
+    /// The page's place is left with the model on the way out, so the
+    /// editor that mounts this page next, here or in another window,
+    /// opens it where this one was reading. That is above the handle's
+    /// guard because it is not about the handle, and it has a guard of
+    /// its own: an editor already replaced over the same page has had
+    /// its layout manager shed, and says nothing (`saveViewState`).
     public static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.invalidateOrdinaryPasteMeasurement()
-        guard let textView = scroll.documentView as? InkTextView,
-              coordinator.model.activeEditor === textView else { return }
+        guard let textView = scroll.documentView as? InkTextView else { return }
+        coordinator.saveViewState(textView: textView, scrollView: scroll)
+        guard coordinator.model.activeEditor === textView else { return }
         coordinator.parkEditor()
         coordinator.model.activeEditor = nil
     }
@@ -173,6 +204,14 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
+        // The caret is the page's wherever the page is mounted, so the
+        // building seats it and every mount gets it: the page in its
+        // own scroller and the roll alike. Only when one was kept. A
+        // page nobody has left yet keeps the fresh view's caret, and
+        // the building stays silent about a selection it did not move.
+        if model.viewStates.carets[sheetID] != nil {
+            coordinator.restoreCaret(textView: textView, for: sheetID)
+        }
         model.activeEditor = textView
         // One line per editor built (issue #197). Two surfaces share
         // this model, and how many editors stand over it is a claim to
@@ -419,6 +458,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// In-memory development/test observation only. The source payload is
         /// deliberately absent from the reported value.
         var onOrdinaryPasteMeasurement: ((OrdinaryPasteMeasurement) -> Void)?
+
+        /// A scroll restore that landed before its clip had any size,
+        /// waiting for the frame that gives it one. The caret and the
+        /// scroll themselves are the model's (`PageModel.viewStates`);
+        /// this is only the one restore in flight, with the anchor it
+        /// was handed. A nil anchor is a page with no place kept, which
+        /// opens at the top.
+        private var deferredScrollRestore: (sheet: UInt64, anchor: ScrollAnchor?)?
 
         init(
             model: PageModel,
@@ -1314,10 +1361,19 @@ public struct InkEditorView: NSViewRepresentable {
         /// next editor may stand in a window of another width, so the
         /// scroll is kept as the line at the top of the clip and never
         /// as the clip's origin in points (`ScrollAnchor`).
+        ///
+        /// Two editors have nothing true to say and are not asked. One
+        /// whose layout manager has been shed from the page, because
+        /// another editor mounted over the same storage before this one
+        /// was dismantled: its selection and its layout describe
+        /// nothing any more, and the place it would write over is the
+        /// live editor's. And one whose clip has no size yet, which has
+        /// not shown the page at all and keeps the scroll it was handed
+        /// rather than replacing it with the top of a view nobody saw.
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
-            guard let sheet = currentSheet else { return }
+            guard let sheet = currentSheet, textView.textStorage != nil else { return }
             model.viewStates.saveCaret(textView.selectedRange(), for: sheet)
-            guard let scrollView,
+            guard let scrollView, !scrollView.contentView.bounds.isEmpty,
                   let anchor = ScrollAnchor(
                       topOf: textView, clipOrigin: scrollView.contentView.bounds.origin
                   )
@@ -1363,16 +1419,57 @@ public struct InkEditorView: NSViewRepresentable {
         /// there, as `saveViewState` did: there is no clip of this page's
         /// to move, so no hop is scheduled and any offset a scrolled
         /// mount saved stays where it is, waiting for that mount.
+        ///
+        /// The two legs are separate calls as well, because a mount
+        /// takes them at different moments: the building seats the
+        /// caret for every surface, and the surface that owns a clip
+        /// asks for the scroll once the clip exists.
         func restoreViewState(
             textView: InkTextView, scrollView: NSScrollView?, for sheet: UInt64
         ) {
+            restoreCaret(textView: textView, for: sheet)
+            guard let scrollView else { return }
+            restoreScroll(textView: textView, scrollView: scrollView, for: sheet)
+        }
+
+        /// The caret leg: synchronous, clamped, and owing layout nothing.
+        func restoreCaret(textView: InkTextView, for sheet: UInt64) {
             let caret = Self.clamped(
                 model.viewStates.carets[sheet] ?? NSRange(location: 0, length: 0),
                 to: textView.textStorage?.length ?? 0
             )
             textView.setSelectedRange(caret)
-            guard let scrollView else { return }
-            let anchor = model.viewStates.scrolls[sheet]
+        }
+
+        /// The scroll leg, for the surface that owns a clip.
+        func restoreScroll(
+            textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64
+        ) {
+            scheduleScrollRestore(
+                of: model.viewStates.scrolls[sheet],
+                textView: textView, scrollView: scrollView, for: sheet
+            )
+        }
+
+        /// The hop itself, taking the anchor as a value so a restore
+        /// that had to wait can be asked for again with the anchor it
+        /// was first given rather than whatever the table holds by then.
+        ///
+        /// Waiting is for a mount. SwiftUI is free to let the hop run
+        /// before it has given a newly made scroller any size, and a
+        /// container with no width lays the page out unwrapped, one
+        /// line to a paragraph. The anchor's line would go to the top
+        /// of that, and when the real width arrived the text view would
+        /// hold on to the first character it was showing, which by then
+        /// is the start of the paragraph rather than the line inside it
+        /// that was being read. Near, and wrong. So a hop that lands on
+        /// an empty clip sets the anchor down, and the clip's first
+        /// real frame picks it up (`clipFrameChanged`).
+        private func scheduleScrollRestore(
+            of anchor: ScrollAnchor?,
+            textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64
+        ) {
+            deferredScrollRestore = nil
             DispatchQueue.main.async { [weak self, weak textView, weak scrollView] in
                 guard let self else { return }
                 guard self.currentSheet == sheet else {
@@ -1380,6 +1477,10 @@ public struct InkEditorView: NSViewRepresentable {
                     return
                 }
                 guard let scrollView else { return }
+                guard !scrollView.contentView.bounds.isEmpty else {
+                    self.deferredScrollRestore = (sheet, anchor)
+                    return
+                }
                 // Measure against layout that has been forced current,
                 // not the `frame` height a relayout still in flight can
                 // report as zero. The text view is the document view;
@@ -1555,8 +1656,24 @@ public struct InkEditorView: NSViewRepresentable {
         /// to its text and nothing else would ever widen it, so the floor
         /// is re-levelled here and a page narrower than the card is
         /// stretched to meet it.
+        ///
+        /// A newly mounted page's first real frame also arrives here,
+        /// and with it the scroll restore that could not be resolved
+        /// against a clip with no size. It goes back through the hop
+        /// rather than landing in this callback, since the text view is
+        /// about to be laid out again at the width it was just given.
         @objc private func clipFrameChanged(_ notification: Notification) {
             defer { textView?.refreshHover() }
+            if let deferred = deferredScrollRestore, let textView, let scroll = scrollView,
+               !scroll.contentView.bounds.isEmpty {
+                deferredScrollRestore = nil
+                if deferred.sheet == currentSheet {
+                    scheduleScrollRestore(
+                        of: deferred.anchor,
+                        textView: textView, scrollView: scroll, for: deferred.sheet
+                    )
+                }
+            }
             guard appliedWrap == false, let textView, let scroll = scrollView else { return }
             let width = scroll.contentSize.width
             textView.minSize = NSSize(width: width, height: 0)

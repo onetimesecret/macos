@@ -123,8 +123,15 @@ public struct DayScrollView: NSViewRepresentable {
         // measurement has also already published one, and this parting
         // word would blank it until the next pass happened to re-measure.
         coordinator.model.rollGeometry.reset(from: stack)
-        guard let editor = stack.editor,
-              coordinator.model.activeEditor === editor else { return }
+        guard let editor = stack.editor else { return }
+        // The caret is left with the model on the way out, as the
+        // page's own dismantle leaves it, so the surface that mounts
+        // this page next finds it. The caret only: the roll's offset
+        // belongs to the roll's one clip and to no page in it. A parked
+        // editor stands on no page and an editor already replaced has
+        // no storage, and `saveViewState` declines both.
+        coordinator.saveViewState(textView: editor, scrollView: nil)
+        guard coordinator.model.activeEditor === editor else { return }
         coordinator.parkEditor()
         coordinator.model.activeEditor = nil
     }

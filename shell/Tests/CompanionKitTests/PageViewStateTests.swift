@@ -38,10 +38,11 @@ final class PageViewStateTests: XCTestCase {
         return try XCTUnwrap(model.selectedPageID)
     }
 
-    /// One mounted editor: a coordinator of its own, a text view built
-    /// by the shipped factory, and the scroller the page surface wraps
-    /// it in, inside a window of the given width. The window is
-    /// returned so the caller keeps the whole mount alive.
+    /// One mounted editor: a coordinator of its own and the page
+    /// surface the shipped mount builds (`InkEditorView.makePage` is
+    /// the call `makeNSView` makes), inside a window of the given
+    /// width. The window is returned so the caller keeps the whole
+    /// mount alive.
     private struct Mount {
         let coordinator: InkEditorView.Coordinator
         let textView: InkTextView
@@ -51,20 +52,44 @@ final class PageViewStateTests: XCTestCase {
 
     private func mount(
         _ page: UInt64, of model: PageModel, width: CGFloat, height: CGFloat = 160
-    ) -> Mount {
+    ) throws -> Mount {
         let coordinator = InkEditorView.Coordinator(model: model)
-        let textView = InkEditorView.makeInkTextView(
-            model: model, sheetID: page, coordinator: coordinator
+        let scroll = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: coordinator
         )
-        let scroll = InkEditorView.scrollStack(for: textView)
-        let card = NSRect(x: 0, y: 0, width: width, height: height)
+        let textView = try XCTUnwrap(scroll.documentView as? InkTextView)
         let window = NSWindow(
-            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.titled], backing: .buffered, defer: false
         )
-        window.contentView?.addSubview(scroll)
-        scroll.frame = card
-        scroll.layoutSubtreeIfNeeded()
-        return Mount(coordinator: coordinator, textView: textView, scroll: scroll, window: window)
+        let mount = Mount(
+            coordinator: coordinator, textView: textView, scroll: scroll, window: window
+        )
+        size(mount, width: width, height: height)
+        // Let the mount's own restore land before the test touches the
+        // clip. A hop still in flight holds the anchor it was handed,
+        // and when its editor goes before it lands it puts that anchor
+        // back over whatever was saved in between, which is right for
+        // an editor that never showed the page and wrong for a fixture
+        // that scrolled one by hand without waiting.
+        pump()
+        return mount
+    }
+
+    /// Give the mount's scroller its frame, which is SwiftUI's part of
+    /// a mount and arrives when SwiftUI pleases.
+    private func size(_ mount: Mount, width: CGFloat, height: CGFloat = 160) {
+        if mount.scroll.superview == nil {
+            mount.window.contentView?.addSubview(mount.scroll)
+        }
+        mount.scroll.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        mount.scroll.layoutSubtreeIfNeeded()
+    }
+
+    /// The mount going away, as SwiftUI takes it down.
+    private func dismantle(_ mount: Mount) {
+        mount.scroll.removeFromSuperview()
+        InkEditorView.dismantleNSView(mount.scroll, coordinator: mount.coordinator)
     }
 
     private func settleLayout(of mount: Mount) throws {
@@ -147,7 +172,7 @@ final class PageViewStateTests: XCTestCase {
     func testAPlaceSavedByOneEditorIsRestoredByAnother() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)
-        let first = mount(page, of: model, width: 420)
+        let first = try mount(page, of: model, width: 420)
 
         let text = (0..<80).map { "line \($0) of the page\n" }.joined()
         first.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -160,18 +185,15 @@ final class PageViewStateTests: XCTestCase {
         first.scroll.contentView.scroll(to: offset)
         first.scroll.reflectScrolledClipView(first.scroll.contentView)
 
-        first.coordinator.saveViewState(textView: first.textView, scrollView: first.scroll)
-
-        // A different editor, with a different coordinator, over the
-        // same page: the ledger round trip's shape, and the hand off
-        // between two windows'.
-        let second = mount(page, of: model, width: 420)
+        // The old mount goes and then the new one comes, which is the
+        // order a hand off between two windows has to keep. A different
+        // editor, with a different coordinator, over the same page: the
+        // ledger round trip's shape too. Nothing below asks for a save
+        // or a restore by name; the mount and the dismantle do both.
+        dismantle(first)
+        let second = try mount(page, of: model, width: 420)
         XCTAssertFalse(second.coordinator === first.coordinator)
-        XCTAssertEqual(second.textView.selectedRange(), NSRange(location: 0, length: 0))
-
-        second.coordinator.restoreViewState(
-            textView: second.textView, scrollView: second.scroll, for: page
-        )
+        XCTAssertFalse(second.textView === first.textView)
         pump()
 
         XCTAssertEqual(
@@ -191,6 +213,14 @@ final class PageViewStateTests: XCTestCase {
         (0..<40).map { paragraph in
             "paragraph \(paragraph) " + (0..<45).map { "word\($0)" }.joined(separator: " ") + "\n"
         }.joined()
+    }
+
+    /// A character well inside a paragraph in the middle of the page,
+    /// so the line it stands on at either width begins partway through
+    /// the paragraph. A line that began a paragraph would begin the
+    /// same line at every measure and prove much less.
+    private func midParagraph(of text: String) -> Int {
+        (text as NSString).range(of: "paragraph 20 ").location + 200
     }
 
     /// The characters of the line standing at the top of the clip, and
@@ -226,27 +256,24 @@ final class PageViewStateTests: XCTestCase {
     func testAPlaceSavedInANarrowEditorLandsTheSameLineInAWideOne() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)
-        let narrow = mount(page, of: model, width: 320)
+        let narrow = try mount(page, of: model, width: 320)
         let text = wrappingText()
         narrow.textView.insertText(
             text, replacementRange: NSRange(location: NSNotFound, length: 0)
         )
         try settleLayout(of: narrow)
-        let narrowOffset = try scroll(narrow, toLineOf: text.utf16.count / 2)
+        let narrowOffset = try scroll(narrow, toLineOf: midParagraph(of: text))
         let read = try topLine(of: narrow).characters
         let caret = NSRange(location: read.location + 5, length: 0)
         narrow.textView.setSelectedRange(caret)
 
-        narrow.coordinator.saveViewState(textView: narrow.textView, scrollView: narrow.scroll)
+        dismantle(narrow)
 
         XCTAssertEqual(
             model.viewStates.scrolls[page]?.characterIndex, read.location,
             "the place is kept as the first character of the line at the top")
 
-        let wide = mount(page, of: model, width: 640)
-        wide.coordinator.restoreViewState(
-            textView: wide.textView, scrollView: wide.scroll, for: page
-        )
+        let wide = try mount(page, of: model, width: 640)
         pump()
 
         let landed = try topLine(of: wide)
@@ -270,19 +297,15 @@ final class PageViewStateTests: XCTestCase {
     func testAPlaceSavedInAWideEditorLandsTheSameLineInANarrowOne() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)
-        let wide = mount(page, of: model, width: 640)
+        let wide = try mount(page, of: model, width: 640)
         let text = wrappingText()
         wide.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
         try settleLayout(of: wide)
-        let wideOffset = try scroll(wide, toLineOf: text.utf16.count / 2)
+        let wideOffset = try scroll(wide, toLineOf: midParagraph(of: text))
         let read = try topLine(of: wide).characters
 
-        wide.coordinator.saveViewState(textView: wide.textView, scrollView: wide.scroll)
-
-        let narrow = mount(page, of: model, width: 320)
-        narrow.coordinator.restoreViewState(
-            textView: narrow.textView, scrollView: narrow.scroll, for: page
-        )
+        dismantle(wide)
+        let narrow = try mount(page, of: model, width: 320)
         pump()
 
         let landed = try topLine(of: narrow)
@@ -298,7 +321,7 @@ final class PageViewStateTests: XCTestCase {
     func testAPageLeftAtTheVeryTopComesBackAtTheVeryTop() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)
-        let narrow = mount(page, of: model, width: 320)
+        let narrow = try mount(page, of: model, width: 320)
         narrow.textView.insertText(
             wrappingText(), replacementRange: NSRange(location: NSNotFound, length: 0)
         )
@@ -309,16 +332,16 @@ final class PageViewStateTests: XCTestCase {
         narrow.scroll.reflectScrolledClipView(narrow.scroll.contentView)
         XCTAssertEqual(narrow.scroll.contentView.bounds.origin.y, 0)
 
-        narrow.coordinator.saveViewState(textView: narrow.textView, scrollView: narrow.scroll)
+        dismantle(narrow)
+        let kept = try XCTUnwrap(model.viewStates.scrolls[page])
+        XCTAssertEqual(kept.characterIndex, 0)
+        XCTAssertLessThan(kept.lineFraction, 0, "the inset above the first line went missing")
 
-        let wide = mount(page, of: model, width: 640)
-        wide.scroll.contentView.scroll(to: NSPoint(x: 0, y: 60))
-        wide.coordinator.restoreViewState(
-            textView: wide.textView, scrollView: wide.scroll, for: page
-        )
-        pump()
+        let wide = try mount(page, of: model, width: 640)
 
-        XCTAssertEqual(wide.scroll.contentView.bounds.origin.y, 0, accuracy: 0.5)
+        XCTAssertEqual(
+            wide.scroll.contentView.bounds.origin.y, 0, accuracy: 0.5,
+            "the page came back one inset down, with its top margin out of sight")
     }
 
     /// Content can shrink while a page is in the background. The anchor
@@ -328,7 +351,7 @@ final class PageViewStateTests: XCTestCase {
     func testAnAnchorPastTheEndOfAShrunkenPageResolvesToItsLastLine() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)
-        let editor = mount(page, of: model, width: 420)
+        let editor = try mount(page, of: model, width: 420)
         editor.textView.insertText(
             "one\ntwo\nthree", replacementRange: NSRange(location: NSNotFound, length: 0)
         )
@@ -349,12 +372,147 @@ final class PageViewStateTests: XCTestCase {
     func testAnEmptyPageStillHasAPlace() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)
-        let editor = mount(page, of: model, width: 420)
+        let editor = try mount(page, of: model, width: 420)
 
         let anchor = try XCTUnwrap(ScrollAnchor(topOf: editor.textView, clipOrigin: .zero))
         let offset = try XCTUnwrap(anchor.offset(in: editor.textView))
 
         XCTAssertEqual(anchor.characterIndex, 0)
         XCTAssertEqual(offset.y, 0, accuracy: 0.5, "the top of an empty page is its top")
+    }
+
+    // MARK: What a mount and a dismantle owe the place
+
+    /// A long page read to its middle and then left, for the tests that
+    /// need a place worth keeping. Answers the line that was at the top.
+    private func leaveAPlace(on page: UInt64, of model: PageModel) throws -> NSRange {
+        let reader = try mount(page, of: model, width: 320)
+        let text = wrappingText()
+        reader.textView.insertText(
+            text, replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        try settleLayout(of: reader)
+        _ = try scroll(reader, toLineOf: midParagraph(of: text))
+        let read = try topLine(of: reader).characters
+        dismantle(reader)
+        return read
+    }
+
+    /// SwiftUI makes the scroller and sizes it when it pleases, and the
+    /// restore's hop can land in between. A container with no width
+    /// lays the page out unwrapped, one line to a paragraph, and a
+    /// restore spent on that layout comes out at the start of the
+    /// paragraph once the real width arrives, several lines above the
+    /// one that was being read. So the restore waits for the clip's
+    /// first real frame. The fixture's line is deep inside a paragraph
+    /// for exactly this reason.
+    func testAMountWhoseScrollerHasNoSizeYetRestoresWhenItGetsOne() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let read = try leaveAPlace(on: page, of: model)
+
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let scroll = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: coordinator
+        )
+        let late = Mount(
+            coordinator: coordinator,
+            textView: try XCTUnwrap(scroll.documentView as? InkTextView),
+            scroll: scroll,
+            window: NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 640, height: 160),
+                styleMask: [.titled], backing: .buffered, defer: false
+            )
+        )
+        XCTAssertTrue(scroll.contentView.bounds.isEmpty, "the fixture must start with no size")
+        pump()
+
+        size(late, width: 640)
+        pump()
+
+        let landed = try topLine(of: late)
+        XCTAssertTrue(
+            NSLocationInRange(read.location, landed.characters),
+            "the restore was spent on a clip with no size and the page opened elsewhere")
+        XCTAssertEqual(late.scroll.contentView.bounds.origin.y, landed.minY, accuracy: 0.5)
+    }
+
+    /// And an editor that goes before it was ever given a size has
+    /// shown the page to nobody. It must not replace the place it was
+    /// handed with the top of a view that was never on screen.
+    func testAMountDismantledBeforeItHadASizeLeavesThePlaceAlone() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        _ = try leaveAPlace(on: page, of: model)
+        let kept = try XCTUnwrap(model.viewStates.scrolls[page])
+
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let scroll = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: coordinator
+        )
+        pump()
+        InkEditorView.dismantleNSView(scroll, coordinator: coordinator)
+        pump()
+
+        XCTAssertEqual(model.viewStates.scrolls[page], kept)
+    }
+
+    /// SwiftUI may build a replacement before dismantling what it
+    /// replaces. The building sheds the outgoing editor's layout
+    /// manager, so by the time the outgoing one is dismantled its
+    /// selection and its layout describe nothing, and the place it
+    /// would write over belongs to the live editor.
+    func testAnEditorAlreadyReplacedWritesNothingOverTheLiveOnesPlace() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let outgoing = try mount(page, of: model, width: 420)
+        outgoing.textView.insertText(
+            wrappingText(), replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        outgoing.textView.setSelectedRange(NSRange(location: 9, length: 0))
+
+        let incoming = try mount(page, of: model, width: 420)
+        XCTAssertNil(outgoing.textView.textStorage, "the fixture must have shed the old editor")
+        incoming.textView.setSelectedRange(NSRange(location: 40, length: 0))
+        incoming.coordinator.saveViewState(
+            textView: incoming.textView, scrollView: incoming.scroll
+        )
+        let live = model.viewStates
+
+        dismantle(outgoing)
+
+        XCTAssertEqual(model.viewStates.carets[page], live.carets[page])
+        XCTAssertEqual(model.viewStates.scrolls[page], live.scrolls[page])
+        XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
+    }
+
+    /// The caret crosses between the two kinds of surface as well: the
+    /// roll leaves it on the way out, and the building seats it for
+    /// whichever surface mounts the page next.
+    func testTheRollLeavesTheCaretForThePageSurface() throws {
+        let model = try makeModel()
+        model.showsTimeUnits = true
+        let page = try mintPage(in: model)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let roll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "")
+        let card = NSRect(x: 0, y: 0, width: 420, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.contentView?.addSubview(roll)
+        roll.frame = card
+        roll.layoutSubtreeIfNeeded()
+        let stack = try XCTUnwrap(roll.documentView as? DayStackView)
+        stack.update(projection: model.timeUnits, selectedPage: page, readOnly: false)
+        let editor = try XCTUnwrap(stack.editor)
+        editor.insertText(
+            "a day's page", replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        editor.setSelectedRange(NSRange(location: 5, length: 2))
+
+        DayScrollView.dismantleNSView(roll, coordinator: coordinator)
+        let surface = try mount(page, of: model, width: 420)
+
+        XCTAssertEqual(surface.textView.selectedRange(), NSRange(location: 5, length: 2))
     }
 }
