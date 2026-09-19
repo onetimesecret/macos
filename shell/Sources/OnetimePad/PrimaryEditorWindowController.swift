@@ -119,20 +119,27 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         model.keyStatusChanged(of: .editorWindow, keyed: false)
     }
 
-    /// Into the Dock, out of it, and any other change to whether the
-    /// window can be seen (the app hidden and shown again). Each one
-    /// reads the window afresh and tells the model the one fact it
-    /// keeps; none of them moves ownership, since a miniaturized window
-    /// is still open (`BackdropModel.editorWindowOpen`).
+    /// Into the Dock and out of it. Each one reads the window afresh
+    /// and tells the model the one fact it keeps; neither moves
+    /// ownership, since a miniaturized window is still open
+    /// (`BackdropModel.editorWindowOpen`).
+    ///
+    /// The app being hidden is deliberately no input. ⌘H takes every
+    /// window off the screen, and the only word AppKit sends when they
+    /// come back is the occlusion callback, which arrives some time
+    /// after the activation that brought them. A fact fed from it was
+    /// false at the one moment it was read: ⌘Tab back with Settings
+    /// holding the keys keyed nothing of this window's, the activation
+    /// found no claim, and the card was raised over an editor window in
+    /// plain view. Nobody asks the fact while the app is hidden, since
+    /// both routes that read it run in an active app and activating
+    /// unhides, so a hidden window answers as the window it is about to
+    /// be again.
     func windowDidMiniaturize(_ notification: Notification) {
         reportOnScreen()
     }
 
     func windowDidDeminiaturize(_ notification: Notification) {
-        reportOnScreen()
-    }
-
-    func windowDidChangeOcclusionState(_ notification: Notification) {
         reportOnScreen()
     }
 
@@ -142,21 +149,20 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     }
 
     private static func isOnScreen(_ window: NSWindow) -> Bool {
-        onScreen(
-            visible: window.isVisible, miniaturized: window.isMiniaturized,
-            key: window.isKeyWindow
-        )
+        onScreen(miniaturized: window.isMiniaturized, key: window.isKeyWindow)
     }
 
     /// Whether the window is somewhere the person can see it and type
-    /// into it, pure: visible and not miniaturized. A key window is on
-    /// screen whatever its flags say, which covers the moment a window
-    /// leaving the Dock is handed the keyboard ahead of the flag. One
-    /// predicate, read by the model's fact and by the keyboard's return
-    /// alike, so the rest's hand back and the return cannot disagree
-    /// about the same window.
-    nonisolated static func onScreen(visible: Bool, miniaturized: Bool, key: Bool) -> Bool {
-        key || (visible && !miniaturized)
+    /// into it, pure: out of the Dock. A key window is on screen
+    /// whatever its flag says, which covers the moment a window leaving
+    /// the Dock is handed the keyboard ahead of the flag. Whether the
+    /// window is visible is no part of it, because the one thing that
+    /// makes an open window invisible is the app being hidden, and that
+    /// is over by the time anybody asks. One predicate, read by the
+    /// model's fact and by the keyboard's return alike, so the rest's
+    /// hand back and the return cannot disagree about the same window.
+    nonisolated static func onScreen(miniaturized: Bool, key: Bool) -> Bool {
+        key || !miniaturized
     }
 
     /// The model is told while the window is still whole, and the

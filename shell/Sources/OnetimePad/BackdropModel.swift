@@ -580,11 +580,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     private(set) var editorWindowOpen = false
 
     /// True while the editor window is somewhere the person can see it
-    /// and type into it: visible and not miniaturized. Fed by the
-    /// window's controller from its delegate callbacks
+    /// and type into it, which is out of the Dock. Fed by the window's
+    /// controller from its delegate callbacks
     /// (`PrimaryEditorWindowController.onScreen`). A plain fact like the
     /// one above, unpublished for the same reason, and no input to the
-    /// owner.
+    /// owner. A hidden app does not move it: both readers run in an
+    /// active app, activating unhides, and the word AppKit sends about
+    /// the windows coming back arrives after the activation has been
+    /// judged.
     ///
     /// It is set with `editorWindowOpen` at the open, before the window
     /// exists, because the rest that the open causes is judged inside
@@ -618,8 +621,8 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         appActive && !editorWindowCanTakeKeys
     }
 
-    /// The editor window went into the Dock, came out of it, or had its
-    /// visibility change some other way. Only the fact moves. A report
+    /// The editor window went into the Dock, came out of it, or took
+    /// the keyboard on its way out. Only the fact moves. A report
     /// from a window that has closed is dropped, since its controller
     /// may still hear from AppKit on the way out.
     func editorWindowOnScreenChanged(_ onScreen: Bool) {

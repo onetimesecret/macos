@@ -689,20 +689,37 @@ final class BackdropModelTests: XCTestCase {
 
     // MARK: An editor window the person cannot see
 
-    func testAWindowIsOnScreenWhileItIsVisibleAndNotMiniaturizedOrWhileItIsKey() {
-        func onScreen(visible: Bool, miniaturized: Bool, key: Bool = false) -> Bool {
-            PrimaryEditorWindowController.onScreen(
-                visible: visible, miniaturized: miniaturized, key: key
-            )
+    func testAWindowIsOnScreenWhileItIsOutOfTheDockOrWhileItIsKey() {
+        func onScreen(miniaturized: Bool, key: Bool) -> Bool {
+            PrimaryEditorWindowController.onScreen(miniaturized: miniaturized, key: key)
         }
-        XCTAssertTrue(onScreen(visible: true, miniaturized: false))
-        XCTAssertFalse(onScreen(visible: true, miniaturized: true))
-        XCTAssertFalse(onScreen(visible: false, miniaturized: false))
-        XCTAssertFalse(onScreen(visible: false, miniaturized: true))
+        XCTAssertTrue(onScreen(miniaturized: false, key: false))
+        XCTAssertTrue(onScreen(miniaturized: false, key: true))
+        XCTAssertFalse(onScreen(miniaturized: true, key: false))
         // A window coming out of the Dock can be key before the flag
         // drops, and a key window has the keyboard whatever else it
         // says about itself.
-        XCTAssertTrue(onScreen(visible: true, miniaturized: true, key: true))
+        XCTAssertTrue(onScreen(miniaturized: true, key: true))
+    }
+
+    func testAHiddenAppLeavesTheEditorWindowAbleToClaimTheActivation() {
+        // Settings holds the keys, ⌘H, ⌘Tab back. Hiding sends the
+        // model nothing, and neither does coming back, since the editor
+        // window is keyed by neither. The activation is judged on the
+        // fact as it stood before the hide, which is the window the
+        // unhide is putting back.
+        let model = makeModel(named: "hidden-app")
+        model.editorWindowOpened()
+        model.keyStatusChanged(of: .editorWindow, keyed: true)
+        model.keyStatusChanged(of: .editorWindow, keyed: false)
+
+        XCTAssertTrue(model.editorWindowCanTakeKeys)
+        XCTAssertNil(
+            BackdropAppDelegate.activationRaises(
+                sinceLaunch: 60, claimedByAnotherWindow: model.editorWindowCanTakeKeys
+            ),
+            "the card is not raised over an editor window in plain view"
+        )
     }
 
     func testOnlyAnOpenEditorWindowOnScreenCanTakeTheKeyboard() {
