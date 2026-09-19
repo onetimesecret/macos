@@ -88,6 +88,26 @@ struct ScrollAnchor: Equatable {
     }
 }
 
+/// Where the days roll stood when the page content changed hands: the
+/// page at the top of the clip, and the line of it that was there.
+///
+/// The roll has one clip over every day in it, so its offset belongs to
+/// no single page and is kept apart from the per page scrolls. It is
+/// said in the document's terms for `ScrollAnchor`'s reason and one
+/// more: the two windows wrap every page above the reader differently,
+/// so a distance down the roll is a different day in the other window,
+/// not merely a different sentence. A top edge resting in the header
+/// above a page's ink is a negative fraction of that page's first line,
+/// the same way the top inset is.
+///
+/// There is no value for the top of the roll. A roll at Day 0 leaves no
+/// place at all, and a roll handed no place opens at Day 0, which is
+/// where every roll opens (issue #79).
+struct RollPlace: Equatable {
+    var page: UInt64
+    var anchor: ScrollAnchor
+}
+
 /// Where the person was on each page: the caret, and how far the page
 /// was read to.
 ///
@@ -114,6 +134,27 @@ struct PageViewStates {
     private(set) var carets: [UInt64: NSRange] = [:]
     private(set) var scrolls: [UInt64: ScrollAnchor] = [:]
 
+    /// Where the roll stood at the last hand off, waiting for the roll
+    /// that mounts in the window that owns now (ADR-0033). One, because
+    /// there is one roll. Written only by a transfer of ownership: a
+    /// roll rebuilt within one window (a ledger round trip, the mode
+    /// toggled) opens at Day 0 as it always has.
+    private(set) var rollPlace: RollPlace?
+
+    /// The outgoing roll's answer at a hand off. Nil is a roll standing
+    /// at Day 0, and it replaces whatever was waiting: the place is
+    /// where the person is now.
+    mutating func leaveRollPlace(_ place: RollPlace?) {
+        rollPlace = place
+    }
+
+    /// The incoming roll collecting the place. Once: the roll built
+    /// after it, in the same window, opens at Day 0 like any other.
+    mutating func takeRollPlace() -> RollPlace? {
+        defer { rollPlace = nil }
+        return rollPlace
+    }
+
     mutating func saveCaret(_ caret: NSRange, for id: UInt64) {
         carets[id] = caret
     }
@@ -138,6 +179,7 @@ struct PageViewStates {
     mutating func prune(keeping live: Set<UInt64>) {
         carets = Self.pruned(carets, keeping: live)
         scrolls = Self.pruned(scrolls, keeping: live)
+        if let place = rollPlace, !live.contains(place.page) { rollPlace = nil }
     }
 
     /// Forget one id's caret and scroll outright.

@@ -542,4 +542,162 @@ final class PageViewStateTests: XCTestCase {
 
         XCTAssertEqual(surface.textView.selectedRange(), NSRange(location: 5, length: 2))
     }
+
+    // MARK: The roll's own place
+
+    func testTheRollsPlaceIsTakenOnceAndDiesWithItsPage() {
+        var states = PageViewStates()
+        let place = RollPlace(page: 7, anchor: ScrollAnchor(characterIndex: 40))
+
+        states.leaveRollPlace(place)
+        XCTAssertEqual(states.takeRollPlace(), place)
+        XCTAssertNil(states.takeRollPlace(), "the roll after the next one opens at Day 0")
+
+        states.leaveRollPlace(place)
+        states.prune(keeping: [1])
+        XCTAssertNil(states.rollPlace, "a dead page is nowhere to open the roll on")
+
+        states.leaveRollPlace(place)
+        states.leaveRollPlace(nil)
+        XCTAssertNil(states.rollPlace, "a roll left at Day 0 replaces the place before it")
+    }
+
+    /// One window's roll, mounted as the representable mounts it: made,
+    /// sized, and given its first pass.
+    private struct Roll {
+        let coordinator: InkEditorView.Coordinator
+        let scroll: NSScrollView
+        let stack: DayStackView
+        let window: NSWindow
+    }
+
+    private func mountRoll(
+        of model: PageModel, in surface: PresentationOwner, width: CGFloat, height: CGFloat
+    ) throws -> Roll {
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = surface
+        let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "")
+        let frame = NSRect(x: 0, y: 0, width: width, height: height)
+        let window = NSWindow(
+            contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(scroll)
+        scroll.frame = frame
+        scroll.layoutSubtreeIfNeeded()
+        DayScrollView.updateRoll(scroll, model: model, readOnly: false, coordinator: coordinator)
+        return Roll(
+            coordinator: coordinator, scroll: scroll,
+            stack: try XCTUnwrap(scroll.documentView as? DayStackView), window: window
+        )
+    }
+
+    private func pass(over roll: Roll, of model: PageModel) {
+        DayScrollView.updateRoll(
+            roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator
+        )
+    }
+
+    private func dismantle(_ roll: Roll) {
+        roll.scroll.removeFromSuperview()
+        DayScrollView.dismantleNSView(roll.scroll, coordinator: roll.coordinator)
+    }
+
+    /// Two pages of wrapping text in the panel's roll, scrolled so that
+    /// a line from the middle of the quiet one stands at the top of the
+    /// clip. Answers that page and the first character of that line.
+    private func aRollReadPartWayDown(
+        _ model: PageModel
+    ) throws -> (roll: Roll, page: UInt64, character: Int) {
+        model.showsTimeUnits = true
+        let read = try mintPage(in: model)
+        let roll = try mountRoll(of: model, in: .panel, width: 420, height: 320)
+        let text = wrappingText()
+        try XCTUnwrap(roll.stack.editor).insertText(
+            text, replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        _ = try mintPage(in: model)
+        pass(over: roll, of: model)
+        try XCTUnwrap(roll.stack.editor).insertText(
+            text, replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        pass(over: roll, of: model)
+
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[read])
+        let layoutManager = try XCTUnwrap(quiet.layoutManager)
+        let inside = (quiet.string as NSString).range(of: "paragraph 20 ").location + 200
+        var glyphs = NSRange(location: 0, length: 0)
+        let line = layoutManager.lineFragmentRect(
+            forGlyphAt: layoutManager.glyphIndexForCharacter(at: inside), effectiveRange: &glyphs
+        )
+        let y = quiet.frame.minY + quiet.textContainerOrigin.y + line.minY
+        roll.scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+        roll.scroll.reflectScrolledClipView(roll.scroll.contentView)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, y, "the fixture must scroll")
+        return (roll, read, layoutManager.characterIndexForGlyph(at: glyphs.location))
+    }
+
+    /// The days mode's half of the hand off (issue #198). The roll's
+    /// offset belongs to no page, so the page table cannot carry it,
+    /// and every page above the reader wraps differently in the wider
+    /// window, so a distance could not either.
+    func testAHandOffOpensTheOtherWindowsRollOnTheLineBeingRead() throws {
+        let model = try makeModel()
+        let (panel, page, character) = try aRollReadPartWayDown(model)
+
+        model.transferOwnership(to: .editorWindow)
+        XCTAssertEqual(model.viewStates.rollPlace?.page, page)
+        dismantle(panel)
+        let window = try mountRoll(of: model, in: .editorWindow, width: 640, height: 480)
+        pump()
+
+        let quiet = try XCTUnwrap(window.stack.quietRegions[page])
+        let layoutManager = try XCTUnwrap(quiet.layoutManager)
+        let container = try XCTUnwrap(quiet.textContainer)
+        let top = window.scroll.contentView.bounds.origin.y
+            - quiet.frame.minY - quiet.textContainerOrigin.y
+        var glyphs = NSRange(location: 0, length: 0)
+        let line = layoutManager.lineFragmentRect(
+            forGlyphAt: layoutManager.glyphIndex(for: NSPoint(x: 0, y: top + 0.5), in: container),
+            effectiveRange: &glyphs
+        )
+        let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        XCTAssertTrue(
+            NSLocationInRange(character, characters),
+            "the editor window's roll opened on \(characters), and character \(character) was being read"
+        )
+        XCTAssertEqual(line.minY, top, accuracy: 0.5, "the line stands at the top, as it did")
+        XCTAssertNil(model.viewStates.rollPlace, "the place is taken once")
+    }
+
+    /// A summon is a hand off too when the editor window is open, and
+    /// it presents today (issue #79): the place the editor window's
+    /// roll left is dropped, and the panel's roll opens at Day 0.
+    func testASummonsAnchorOutranksThePlaceAHandOffLeft() throws {
+        let model = try makeModel()
+        let (panel, _, _) = try aRollReadPartWayDown(model)
+
+        model.transferOwnership(to: .editorWindow)
+        model.anchorOnToday()
+        dismantle(panel)
+        let window = try mountRoll(of: model, in: .editorWindow, width: 640, height: 480)
+        pump()
+
+        XCTAssertEqual(window.scroll.contentView.bounds.origin.y, 0)
+    }
+
+    /// Only a hand off carries the roll's place. A roll rebuilt in its
+    /// own window, a ledger round trip or the mode toggled, opens at
+    /// Day 0 as it did before there were two windows.
+    func testARollRebuiltInItsOwnWindowStillOpensAtDayZero() throws {
+        let model = try makeModel()
+        let (first, _, _) = try aRollReadPartWayDown(model)
+
+        dismantle(first)
+        XCTAssertNil(model.viewStates.rollPlace)
+        let second = try mountRoll(of: model, in: .panel, width: 420, height: 320)
+        pump()
+
+        XCTAssertEqual(second.scroll.contentView.bounds.origin.y, 0)
+    }
 }

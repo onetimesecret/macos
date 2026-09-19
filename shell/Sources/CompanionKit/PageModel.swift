@@ -3857,12 +3857,20 @@ public final class PageModel: ObservableObject {
     /// the state ADR-0017 describes for a selected tab whose page
     /// expired. Nothing happens at all in horizontal mode, which has one
     /// page in its clip and no roll to anchor.
+    ///
+    /// A summon beside the open editor window is also a hand off
+    /// (ADR-0033), and the panel's roll is then not built yet, so there
+    /// is no clip to move. What is waiting for that roll instead is the
+    /// place the editor window's roll left, and the summon's answer to
+    /// it is the same: the place is dropped, and a roll handed no place
+    /// opens at Day 0.
     public func anchorOnToday() {
         guard showsTimeUnits else { return }
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
            tab != selection {
             select(tab)
         }
+        viewStates.leaveRollPlace(nil)
         onAnchorToday?()
     }
 
@@ -4782,10 +4790,19 @@ public final class PageModel: ObservableObject {
     /// no page in it, which is the rule the roll's dismantle follows
     /// too.
     ///
+    /// The roll's own place is asked of the roll, and before anything
+    /// else, because the editor leaving its page empties a row and
+    /// every row below it moves. It is kept for the roll that mounts in
+    /// the other window (`PageViewStates.rollPlace`), so a hand off in
+    /// the days mode keeps the scroll as one between two page surfaces
+    /// does. Only a hand off writes it, and what a summon then does to
+    /// it is the summon's business (`anchorOnToday`).
+    ///
     /// Key status is forgotten and not carried, because it described
     /// the other window. The window that owns now reports its own, and
     /// until it does the honest reading is that nobody holds the keys.
     private func relinquishPresentation() {
+        viewStates.leaveRollPlace(rollGeometry.relinquish())
         if let editor = activeEditor as? InkTextView, let coordinator = editor.coordinator {
             let scroll = editor.enclosingScrollView
             coordinator.leavePage(
@@ -4796,7 +4813,6 @@ public final class PageModel: ObservableObject {
         activeEditor = nil
         performSealedPaste = nil
         onAnchorToday = nil
-        rollGeometry.relinquish()
         withdrawPasteboardOffer()
         if holdsKeys { holdsKeys = false }
     }
@@ -4867,10 +4883,11 @@ public final class PageModel: ObservableObject {
         by roll: AnyObject,
         scroller: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
+        place: (() -> RollPlace?)? = nil,
         from surface: PresentationOwner
     ) {
         guard admits(.rollGeometry, from: surface) else { return }
-        rollGeometry.claim(by: roll, scroller: scroller, wheel: wheel)
+        rollGeometry.claim(by: roll, scroller: scroller, wheel: wheel, place: place)
     }
 
     /// A window reporting its key status. Only the owner's counts: the

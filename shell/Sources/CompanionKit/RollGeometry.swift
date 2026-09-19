@@ -186,23 +186,32 @@ public final class RollGeometryModel: ObservableObject {
     /// rail, on the same terms.
     private var wheelRelay: ((NSEvent) -> Void)?
 
+    /// Where the mounted roll stands, on the same terms. Asked by the
+    /// model at a hand off (ADR-0033), since the claim is the one handle
+    /// on the roll that does not depend on an editor being mounted in
+    /// it: a roll showing an empty Today has a place and no editor.
+    private var placeReader: (() -> RollPlace?)?
+
     /// A roll has been mounted. It speaks for the rail from here on, and
     /// it has nothing laid out yet, so the rail stops drawing the shape
     /// of whatever it is replacing. Through the same hop as any other
     /// publication, for the same reason: a mount happens inside
     /// `makeNSView`.
     ///
-    /// The two closures are the roll's answers to the rail's two asks.
-    /// Nil is a roll that answers neither, which is what a test's
-    /// stand-in is; the surface always passes both.
+    /// The first two closures are the roll's answers to the rail's two
+    /// asks, and the third is its answer to the model's one. Nil is a
+    /// roll that answers none, which is what a test's stand-in is; the
+    /// surface always passes all three.
     func claim(
         by roll: AnyObject,
         scroller: ((CGFloat) -> Void)? = nil,
-        wheel: ((NSEvent) -> Void)? = nil
+        wheel: ((NSEvent) -> Void)? = nil,
+        place: (() -> RollPlace?)? = nil
     ) {
         publisher = ObjectIdentifier(roll)
         self.scroller = scroller
         wheelRelay = wheel
+        placeReader = place
         reset(from: roll)
     }
 
@@ -227,12 +236,21 @@ public final class RollGeometryModel: ObservableObject {
     /// SwiftUI takes it down, and what it says in that moment is
     /// answered with silence, as a replaced roll's is. The window that
     /// owns next claims afresh when its roll mounts.
-    func relinquish() {
-        guard publisher != nil else { return }
+    ///
+    /// The roll's last word is where it stood, which the model keeps
+    /// for the roll that mounts next. Nil from a roll at Day 0, and nil
+    /// when no roll holds the claim, which is the ledger or a file
+    /// showing and nothing to carry.
+    @discardableResult
+    func relinquish() -> RollPlace? {
+        guard publisher != nil else { return nil }
+        let place = placeReader?()
         publisher = nil
         scroller = nil
         wheelRelay = nil
+        placeReader = nil
         book(.unmeasured)
+        return place
     }
 
     /// A measurement on its way to the rail, through the hop.
