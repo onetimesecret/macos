@@ -3867,11 +3867,14 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
-    /// Which window the editor landed in, by class (issue #197). The
-    /// build line cannot say, since an editor is built before it has a
-    /// window, and with two surfaces over one model "which one mounted"
-    /// is the question the log is read for. The class and nothing else:
-    /// `BackdropPanel` is the card, `NSWindow` the editor window.
+    /// Which window the editor landed in, by class. The build line
+    /// cannot say, since an editor is built before it has a window, and
+    /// with two windows over one model "which one mounted" is the
+    /// question the log is read for: a hand off (ADR-0033) shows as one
+    /// build and one mount in the window that owns now, and a second
+    /// mount line with no transfer between is the defect ownership
+    /// exists to prevent. The class and nothing else: `BackdropPanel`
+    /// is the card, `NSWindow` the editor window.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window, let model = coordinator?.model else { return }

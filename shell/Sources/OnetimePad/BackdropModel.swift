@@ -433,9 +433,18 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// facts the owner is resolved from, and nothing more than a fact.
     /// It refuses no raise and no view draws by it; the surfaces read
     /// `pages.owner`. Deliberately not published, so that it cannot
-    /// grow a subscriber that reads it halfway through a change. The
-    /// reopen route and the rest's activation hand back still ask it,
-    /// and both of those are B4's to replace.
+    /// grow a subscriber that reads it halfway through a change.
+    ///
+    /// Three routes outside this type still ask it, and all three are
+    /// B4's to replace (issue #200): the reopen
+    /// (`applicationShouldHandleReopen`), the activation, which an open
+    /// editor window claims as About and Settings do
+    /// (`applicationDidBecomeActive`), and the rest's activation hand
+    /// back (`BackdropWindowController.apply`). Open is all any of them
+    /// knows. A window that is open and miniaturized answers as one the
+    /// person can see, so the activation it claims brings nothing
+    /// forward, and whichever rule replaces these has to ask about
+    /// visibility as `takesKeysWithOwnership` already does.
     private(set) var editorWindowOpen = false
 
     /// Whether the Dock icon opens the editor window, where it would
