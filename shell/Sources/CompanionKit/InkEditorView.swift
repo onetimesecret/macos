@@ -125,18 +125,21 @@ public struct InkEditorView: NSViewRepresentable {
     /// unconditionally would then drop the live editor a moment after it
     /// arrived.
     ///
-    /// The page's place is left with the model on the way out, so the
-    /// editor that mounts this page next, here or in another window,
-    /// opens it where this one was reading. That is above the handle's
-    /// guard because it is not about the handle, and it has a guard of
-    /// its own: an editor already replaced over the same page has had
-    /// its layout manager shed, and says nothing (`saveViewState`).
+    /// The editor comes off its page on the way out, as it does at a
+    /// hand off between windows (`Coordinator.leavePage`): the page's
+    /// place is left with the model, so the editor that mounts this
+    /// page next, here or in another window, opens it where this one
+    /// was reading, and the layout manager leaves the storage with it.
+    /// The storage outlives every editor and owns whatever is attached
+    /// to it, so an editor left on would go on laying the page out,
+    /// unseen, until something happened to mount that same page again,
+    /// and a page selected in between would never be that something.
+    /// An editor already replaced over the same page has had its
+    /// layout manager shed, and neither says nor does anything.
     public static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let textView = scroll.documentView as? InkTextView else { return }
-        coordinator.saveViewState(textView: textView, scrollView: scroll)
-        guard coordinator.model.activeEditor === textView else { return }
-        coordinator.parkEditor()
+        coordinator.leavePage(textView, scrollView: scroll)
         coordinator.model.retireEditor(textView)
     }
 
@@ -186,9 +189,12 @@ public struct InkEditorView: NSViewRepresentable {
         let storage = model.storage(for: sheetID)
         // The page's storage outlives any one editor instance, the
         // ledger and the empty state unmount the editor, even though
-        // page↔page switches no longer do (ADR-0006). Detach layout
-        // managers a torn-down editor left behind so exactly one
-        // drives this storage.
+        // page↔page switches no longer do (ADR-0006). A dismantle and
+        // a hand off both take their editor off the page
+        // (`Coordinator.leavePage`), so this usually finds nothing. It
+        // stays for the one order that leaves something: SwiftUI
+        // building this editor before it dismantles the one it
+        // replaces. Exactly one manager drives this storage.
         Coordinator.shedLayoutManagers(from: storage, keeping: nil)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)

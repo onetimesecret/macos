@@ -486,6 +486,33 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(model.storage(for: page).layoutManagers.count, 1)
     }
 
+    /// The storage outlives the editor and owns what is attached to it,
+    /// so a dismantled editor left on the page would go on laying it
+    /// out until that same page happened to be mounted again. A page
+    /// selected in between is never that mount, which is how a
+    /// background page came to keep a dead editor.
+    func testADismantledEditorComesOffItsPage() throws {
+        let model = try makeModel()
+        let first = try mintPage(in: model)
+        let second = try mintPage(in: model)
+        let outgoing = try mount(first, of: model, width: 420)
+        outgoing.textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        dismantle(outgoing)
+        // The next mount is over another page, so its shed never
+        // visits the first one.
+        let incoming = try mount(second, of: model, width: 420)
+
+        XCTAssertEqual(
+            model.storage(for: first).layoutManagers.count, 0,
+            "the torn-down editor is still laying out a page nobody is showing"
+        )
+        XCTAssertNil(model.storage(for: first).delegate)
+        XCTAssertNil(outgoing.coordinator.currentSheet)
+        XCTAssertEqual(model.storage(for: second).layoutManagers.count, 1)
+        XCTAssertTrue(model.activeEditor === incoming.textView)
+    }
+
     /// The caret crosses between the two kinds of surface as well: the
     /// roll leaves it on the way out, and the building seats it for
     /// whichever surface mounts the page next.
