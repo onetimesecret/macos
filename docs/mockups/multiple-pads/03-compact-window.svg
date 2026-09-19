@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">OnetimePad multiple pads — compact window behavior</title>
+  <desc id="desc">Two wireframes compare a wide window with a sidebar to a narrow window where the sidebar is hidden and the active pad remains named in the title bar.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#000" flood-opacity=".46"/>
+    </filter>
+    <style>
+      .ui{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+      .mono{font-family:ui-monospace,"SFMono-Regular",Menlo,monospace}
+      .ink{fill:#e7e7ea}.quiet{fill:#aaaab0}.muted{fill:#77777e}.ember{fill:#ff5a2b}
+      .hair{stroke:#49494e;stroke-width:1}.call{stroke:#88888f;stroke-width:1.4;stroke-dasharray:5 5;fill:none}
+    </style>
+  </defs>
+
+  <rect width="1440" height="960" fill="#111113"/>
+  <text x="68" y="68" class="ui ink" font-size="22" font-weight="700">Responsive rule: collapse navigation, never context</text>
+  <text x="68" y="96" class="ui muted" font-size="14">The pad name survives in the title bar when the sidebar no longer fits.</text>
+
+  <!-- Wide example -->
+  <text x="68" y="148" class="ui quiet" font-size="11" font-weight="700" letter-spacing="1.5">WIDE</text>
+  <g filter="url(#shadow)">
+    <rect x="68" y="166" width="782" height="634" rx="16" fill="#28282b" stroke="#55555a"/>
+  </g>
+  <path d="M84 166h750a16 16 0 0 1 16 16v34H68v-34a16 16 0 0 1 16-16Z" fill="#303033"/>
+  <circle cx="91" cy="191" r="5" fill="#ff5f57"/>
+  <circle cx="108" cy="191" r="5" fill="#febc2e"/>
+  <circle cx="125" cy="191" r="5" fill="#28c840"/>
+  <text x="459" y="196" text-anchor="middle" class="ui quiet" font-size="12" font-weight="600">major-loon — OnetimePad</text>
+  <rect x="68" y="216" width="206" height="584" fill="#1c1c1f"/>
+  <line x1="274" y1="216" x2="274" y2="800" class="hair"/>
+  <text x="87" y="246" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">PAD</text>
+  <rect x="82" y="259" width="178" height="54" rx="9" fill="#303034"/>
+  <text x="100" y="281" class="ui ink" font-size="12" font-weight="650">major-loon</text>
+  <text x="100" y="299" class="mono muted" font-size="8">…/macos/major-loon</text>
+  <path d="M239 280l4 4 4-4" fill="none" stroke="#aaaab0" stroke-width="1.3"/>
+  <text x="87" y="352" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">FILES</text>
+  <text x="106" y="381" class="mono quiet" font-size="11">what.txt</text>
+  <text x="87" y="430" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">TIMELINE</text>
+  <line x1="105" y1="454" x2="105" y2="720" stroke="#414146" stroke-width="2"/>
+  <circle cx="105" cy="480" r="5" fill="#ff5a2b"/>
+  <text x="124" y="477" class="mono quiet" font-size="11">Today</text>
+  <circle cx="105" cy="566" r="4" fill="#66666b"/>
+  <text x="124" y="563" class="mono muted" font-size="10">Yesterday</text>
+  <rect x="275" y="216" width="575" height="584" fill="#28282b"/>
+  <text x="314" y="276" class="mono quiet" font-size="11">what.txt</text>
+  <line x1="307" y1="292" x2="816" y2="292" class="hair"/>
+  <text x="314" y="350" class="mono ink" font-size="16">checkout notes</text>
+  <text x="314" y="388" class="mono quiet" font-size="14">- preserve file semantics</text>
+  <text x="314" y="419" class="mono quiet" font-size="14">- scope the timeline</text>
+
+  <!-- Narrow example -->
+  <text x="928" y="148" class="ui quiet" font-size="11" font-weight="700" letter-spacing="1.5">NARROW</text>
+  <g filter="url(#shadow)">
+    <rect x="928" y="166" width="444" height="634" rx="16" fill="#28282b" stroke="#55555a"/>
+  </g>
+  <path d="M944 166h412a16 16 0 0 1 16 16v34H928v-34a16 16 0 0 1 16-16Z" fill="#303033"/>
+  <circle cx="951" cy="191" r="5" fill="#ff5f57"/>
+  <circle cx="968" cy="191" r="5" fill="#febc2e"/>
+  <circle cx="985" cy="191" r="5" fill="#28c840"/>
+  <rect x="1010" y="178" width="27" height="26" rx="7" fill="#3d3d42"/>
+  <path d="M1017 184h13v14h-13zm4 0v14" fill="none" stroke="#c1c1c6" stroke-width="1.2"/>
+  <text x="1150" y="196" text-anchor="middle" class="ui ink" font-size="12" font-weight="650">major-loon</text>
+  <path d="M1214 188l4 4 4-4" fill="none" stroke="#aaaab0" stroke-width="1.3"/>
+  <text x="1350" y="196" text-anchor="end" class="ui muted" font-size="10">saved</text>
+  <text x="966" y="276" class="mono quiet" font-size="11">what.txt</text>
+  <line x1="960" y1="292" x2="1340" y2="292" class="hair"/>
+  <text x="966" y="350" class="mono ink" font-size="16">checkout notes</text>
+  <text x="966" y="388" class="mono quiet" font-size="14">- preserve file semantics</text>
+  <text x="966" y="419" class="mono quiet" font-size="14">- scope the timeline</text>
+  <line x1="960" y1="746" x2="1340" y2="746" class="hair"/>
+  <text x="966" y="774" class="ui muted" font-size="10">View › Show Sidebar restores navigation</text>
+
+  <!-- Annotations -->
+  <path d="M1150 218v62" class="call"/>
+  <circle cx="1150" cy="300" r="13" fill="#ff5a2b"/>
+  <text x="1150" y="305" text-anchor="middle" class="ui" font-size="12" font-weight="750" fill="#211713">1</text>
+  <text x="1180" y="297" class="ui quiet" font-size="12">Pad identity remains visible.</text>
+  <text x="1180" y="316" class="ui muted" font-size="11">The chevron still opens the switcher.</text>
+
+  <path d="M1024 218v444" class="call"/>
+  <circle cx="1024" cy="681" r="13" fill="#ff5a2b"/>
+  <text x="1024" y="686" text-anchor="middle" class="ui" font-size="12" font-weight="750" fill="#211713">2</text>
+  <text x="1054" y="678" class="ui quiet" font-size="12">Standard toolbar + View menu affordance.</text>
+  <text x="1054" y="697" class="ui muted" font-size="11">No hidden edge-only gesture is required.</text>
+
+  <text x="68" y="864" class="ui ink" font-size="15" font-weight="650">Why this matters</text>
+  <text x="68" y="892" class="ui quiet" font-size="13">A third permanent pane would make the utility feel like an IDE. Collapsing the one sidebar protects the editor,</text>
+  <text x="68" y="915" class="ui quiet" font-size="13">while the persistent title prevents a dangerous context mistake between similar worktrees.</text>
+  <text x="40" y="944" class="ui muted" font-size="11">Proposal · wide: context + navigation + editor · narrow: context + editor</text>
+</svg>
