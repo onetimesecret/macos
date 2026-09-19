@@ -702,6 +702,36 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertTrue(onScreen(miniaturized: true, key: true))
     }
 
+    /// The controller reports at four delegate turns: key gained, key
+    /// lost, into the Dock, out of it. Each report is the predicate
+    /// over the window's two flags as they stand in that turn, which is
+    /// what this plays, in both orders AppKit might tell a key window
+    /// that it went into the Dock.
+    func testAKeyWindowSentToTheDockIsOffScreenWhicheverWordArrivesFirst() {
+        func report(_ model: BackdropModel, miniaturized: Bool, key: Bool) {
+            model.editorWindowOnScreenChanged(
+                PrimaryEditorWindowController.onScreen(miniaturized: miniaturized, key: key)
+            )
+        }
+
+        let lossFirst = makeModel(named: "dock-loss-first")
+        lossFirst.editorWindowOpened()
+        report(lossFirst, miniaturized: false, key: true)
+        report(lossFirst, miniaturized: false, key: false)
+        report(lossFirst, miniaturized: true, key: false)
+        XCTAssertFalse(lossFirst.editorWindowCanTakeKeys)
+
+        // Miniaturized while still key: that report alone says on
+        // screen, and only the word at the loss takes it back.
+        let dockFirst = makeModel(named: "dock-dock-first")
+        dockFirst.editorWindowOpened()
+        report(dockFirst, miniaturized: false, key: true)
+        report(dockFirst, miniaturized: true, key: true)
+        XCTAssertTrue(dockFirst.editorWindowCanTakeKeys, "the latch the loss exists to undo")
+        report(dockFirst, miniaturized: true, key: false)
+        XCTAssertFalse(dockFirst.editorWindowCanTakeKeys)
+    }
+
     func testAHiddenAppLeavesTheEditorWindowAbleToClaimTheActivation() {
         // Settings holds the keys, ⌘H, ⌘Tab back. Hiding sends the
         // model nothing, and neither does coming back, since the editor

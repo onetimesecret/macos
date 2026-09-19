@@ -115,7 +115,21 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         model.keyStatusChanged(of: .editorWindow, keyed: true)
     }
 
+    /// The on screen fact is told here as well, because being key is
+    /// one of its two inputs and an input that is only ever reported
+    /// rising latches. A key window sent to the Dock can hear that it
+    /// is miniaturized while it still holds the keyboard, and the fact
+    /// read then says on screen. Without a word at the loss it would go
+    /// on saying so from inside the Dock, and the next rest would keep
+    /// an activation no window of ours could use.
+    ///
+    /// This can arrive from inside a stance publication, the panel
+    /// taking the keyboard in its own raise. The report reads two flags
+    /// of the window's and writes a plain stored fact behind another
+    /// (`BackdropModel.editorWindowOnScreenChanged`), so nothing
+    /// published is read halfway.
     func windowDidResignKey(_ notification: Notification) {
+        reportOnScreen()
         model.keyStatusChanged(of: .editorWindow, keyed: false)
     }
 
