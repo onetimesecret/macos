@@ -3641,6 +3641,19 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
+    /// Which window the editor landed in, by class (issue #197). The
+    /// build line cannot say, since an editor is built before it has a
+    /// window, and with two surfaces over one model "which one mounted"
+    /// is the question the log is read for. The class and nothing else:
+    /// `BackdropPanel` is the card, `NSWindow` the editor window.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, let model = coordinator?.model else { return }
+        let surface = String(describing: type(of: window))
+        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+            .info("editor=mounted window=\(surface, privacy: .public)")
+    }
+
     #if DEBUG
         /// Deterministic screen-space input for hover-refresh wiring tests.
         /// Production always reads the current window-server state instead.
