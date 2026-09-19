@@ -225,6 +225,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Every caller says why it is raising, because one thing here is
     /// not the same on both routes: see `BackdropRaise`.
     func raise(_ reason: BackdropRaise) {
+        // Spike (issue #197): the editor window owns the pages while it
+        // is open, and the crude form of that is a panel that cannot
+        // come forward at all. Every route lands here, so the refusal
+        // is stated once. B4 replaces it with real routing.
+        guard !editorWindowOpen else { return }
         stance = .raised
         pages.startRedraw(interval: stance.tickInterval)
         // Each raise looks at the board once, never a poll: coming
@@ -265,6 +270,35 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // offers, and one standing from the last raise would be stale
         // by the next.
         pages.withdrawPasteboardOffer()
+    }
+
+    // MARK: The editor window (spike, issue #197)
+
+    /// True while the primary editor window is open. ADR-0033 gives the
+    /// pages one owner at a time; the spike's crude form of that is this
+    /// flag: while it stands the panel rests, mounts no page content
+    /// (`BackdropRootView`) and refuses every raise. B2 replaces it with
+    /// presentation ownership in CompanionKit, and it does not ship.
+    @Published private(set) var editorWindowOpen = false
+
+    /// The editor window is about to come up. The flag goes first, so
+    /// the rest it causes is already judged with the window open: the
+    /// controller must not hand the activation back under a window that
+    /// is about to take the keyboard.
+    func editorWindowOpened() {
+        editorWindowOpen = true
+        rest()
+        // The rest coarsened the redraw to the resting glance's cadence.
+        // The countdowns are on screen in the editor window now, and
+        // they tick by the second there.
+        pages.startRedraw()
+    }
+
+    /// The editor window closed: the panel is the pages' only surface
+    /// again, at whatever stance it holds, which is resting.
+    func editorWindowClosed() {
+        editorWindowOpen = false
+        pages.startRedraw(interval: stance.tickInterval)
     }
 
     // MARK: Geometry
