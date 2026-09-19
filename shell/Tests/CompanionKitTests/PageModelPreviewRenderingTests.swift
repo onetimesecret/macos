@@ -281,22 +281,32 @@ final class PageModelPreviewRenderingTests: XCTestCase {
         let defaults = try makeDefaults()
         let model = isolatedModel(defaults: defaults)
 
-        var count = 0
+        // A reference, because the observer block is a sendable one and
+        // a captured variable may not change under it. With no queue
+        // named the block runs where the post is made, which is the
+        // main actor the model lives on, so the count is kept there.
+        let posts = PostCount()
         let token = NotificationCenter.default.addObserver(
             forName: PageModel.quietRenderingsDidInvalidateNotification,
             object: model,
             queue: nil
-        ) { _ in count += 1 }
+        ) { _ in MainActor.assumeIsolated { posts.seen += 1 } }
         addTeardownBlock { NotificationCenter.default.removeObserver(token) }
 
         model.previewRendering = .focusedOnly
-        XCTAssertEqual(count, 1, "one notification per genuine change")
+        XCTAssertEqual(posts.seen, 1, "one notification per genuine change")
 
         model.previewRendering = .focusedOnly
-        XCTAssertEqual(count, 1, "an assignment to the same value must not post")
+        XCTAssertEqual(posts.seen, 1, "an assignment to the same value must not post")
 
         model.previewRendering = .never
-        XCTAssertEqual(count, 2, "a second distinct change posts once more")
+        XCTAssertEqual(posts.seen, 2, "a second distinct change posts once more")
+    }
+
+    /// How many invalidation notices the observer has seen.
+    @MainActor
+    private final class PostCount {
+        var seen = 0
     }
 
     // MARK: 8. Chip preservation
