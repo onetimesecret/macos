@@ -309,6 +309,12 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         XCTAssertEqual(window.behaviorWrites, 0)
     }
 
+    /// Whether the window holds the keyboard, as the test says it does.
+    @MainActor
+    private final class KeyStatus {
+        var held = true
+    }
+
     func testKeyStatusIsAskedAtEachChange() {
         // A raised card that holds the keyboard floats whatever the
         // preference says, so switching it off writes nothing; once the
@@ -318,13 +324,16 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         let window = makeWindow()
         let keeper = BackdropAltitudeKeeper(window: window)
         raise(keeper, keepsAbove: true)
-        var keyed = true
-        keeper.observe(model, keyed: { keyed })
+        // A reference, because the closure is a sendable one and a
+        // captured variable may not change under it. The keeper asks on
+        // the main actor, which is where the answer is changed.
+        let keys = KeyStatus()
+        keeper.observe(model, keyed: { keys.held })
 
         model.keepsAboveWhenInactive = false
         XCTAssertEqual(window.level, .floating)
 
-        keyed = false
+        keys.held = false
         model.keepsAboveWhenInactive = true
         model.keepsAboveWhenInactive = false
         XCTAssertEqual(window.level, .normal)
