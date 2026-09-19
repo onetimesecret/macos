@@ -5,18 +5,45 @@ import SwiftUI
 import os
 
 /// The background surface's window: a borderless pane covering the
-/// primary screen, resting at desktop level (above the wallpaper, below
-/// the icons and every normal window; the pin lifts a rest to floating
-/// and shrinks the window to the card's own rect, so clicks beside the
-/// card stay someone else's) and raised to floating for a moment of
-/// editing. The mechanics follow Plash's recovered recipe and
-/// the panel's focus law: the stance split lives in `BackdropStance`;
-/// this controller only applies it.
+/// primary screen. Where it sits in the stacking order is
+/// `BackdropAltitude.resolve`'s to decide from four inputs together
+/// (stance, key status, the pin and the keep-above preference,
+/// ADR-0032), so an unpinned rest sits at desktop level (above the
+/// wallpaper, below the icons and every normal window), a pinned rest
+/// floats above other windows and shrinks to the card's own rect so
+/// clicks beside the card stay someone else's, and a raise floats
+/// while it holds the keyboard or the pin or the keep-above preference
+/// asks it to; a raised card that has lost the keyboard, unpinned and
+/// with the preference off, drops to normal so the app the person just
+/// gave the keyboard can cover it. The mechanics follow Plash's
+/// recovered recipe and the panel's focus law: the stance split lives
+/// in `BackdropStance`; this controller only writes what the resolver
+/// returns and reapplies it on each input that decides it.
 @MainActor
 final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let panel: BackdropPanel
     private let model: BackdropModel
     private var observers: [AnyCancellable] = []
+
+    /// What writes the panel's level and collection behavior, and the
+    /// holder of the stance the controller last committed to, which is
+    /// the stance the delegate methods below are judged against. The
+    /// window server calls `windowDidResignKey` synchronously from
+    /// inside `apply(.resting)`, while the surface hands its keys back,
+    /// and reading `model.stance` from there catches the transition
+    /// halfway, when neither the previous stance nor the settling one
+    /// answers the altitude question honestly. The keeper is a type of
+    /// its own so that this decision can be tested against a window
+    /// that never reaches the screen (`BackdropAltitudeKeeper`).
+    private let altitude: BackdropAltitudeKeeper
+
+    /// The reconcile task from the last raise: a single main-actor turn
+    /// later, the controller re-reads key status and drops the panel
+    /// to the keyless altitude if the raise was refused (e.g. by an
+    /// application-modal panel that stole key). Cancelled and replaced
+    /// on every raise so a stale reconcile from an earlier gesture
+    /// cannot fight a later one.
+    private var raiseReconcile: Task<Void, Never>?
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and the observation token isn't
@@ -35,6 +62,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     init(model: BackdropModel) {
         self.model = model
         panel = BackdropPanel()
+        altitude = BackdropAltitudeKeeper(window: panel)
         panel.contentView = NSHostingView(rootView: BackdropRootView(model: model))
         super.init()
         panel.delegate = self
@@ -46,21 +74,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // Space membership, mouse transparency and window extent
         // follow, but none of the stance choreography (key relay,
         // activation hand-back, ordering) runs for a mere altitude
-        // change. The closure's value, not the model's: a @Published
-        // emits on willSet, before the property lands.
-        model.$pinned
-            .dropFirst()
-            .sink { [weak self] pinned in
+        // change. The keeper owns both altitude sinks, the pin's and
+        // the keep above preference's (ADR-0032, #187), so that which
+        // value each reads on willSet is tested there; the hooks are
+        // handed the emitted pin, not the model's, for the same reason.
+        altitude.observe(
+            model,
+            keyed: { [weak self] in self?.panel.isKeyWindow ?? false },
+            willRepin: { [weak self] pinned in
                 guard let self else { return }
                 // In the order `apply(_:)` uses, and for the same
                 // reason. The stance's own ungated rule goes first,
-                // because the altitude and frame below are about to
-                // change what is on screen and the window server's
+                // because the altitude and frame that follow are about
+                // to change what is on screen and the window server's
                 // present reading still describes the posture being
                 // left: a pin judged from that reading is a pin judged
                 // from where the card was a moment ago.
                 panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
-                applyAltitude(stance: model.stance, pinned: pinned)
+            },
+            didRepin: { [weak self] pinned in
+                guard let self else { return }
                 applyFrame(
                     stance: model.stance, pinned: pinned,
                     geometry: model.displayedGeometry
@@ -71,7 +104,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 // occlusion change nor a Space switch need follow it.
                 refreshMouseGateAfterPostureChange()
             }
-            .store(in: &observers)
+        )
         // Wherever the window hugs the card (a pinned rest, and every
         // raise), the card's geometry IS the window's frame, so any
         // change to it must move the window. Settled changes and
@@ -270,7 +303,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // life mouse-transparent for no reason. The settled reading is
         // taken a turn later, once the ordering has happened.
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
-        applyAltitude(stance: stance, pinned: model.pinned)
+        // The raise is about to take the keys, so the altitude is
+        // resolved with `keyed: true`: the summon must not flash at a
+        // lower level for the frame between placing the panel and
+        // AppKit reporting it key. The rest hands the keys away, so it
+        // resolves with `keyed: false`; the outcome collapses to the
+        // keyless answer anyway, but the honest input is worth it. The
+        // key answer for the delegate turns lives in the panel's own
+        // `isKeyWindow` from that point on.
+        //
+        // The keeper commits to the stance before it writes, and both
+        // happen before the ordering below: the resign-key delegate can
+        // arrive synchronously from inside `apply(.resting)` (the
+        // surface hands its keys back mid-rest), and it is judged
+        // against the stance committed here.
+        altitude.commit(
+            stance,
+            keyed: stance == .raised,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        )
         // Extent before ordering: a card-hugging window must already
         // hug when it orders front, or the frame change would be
         // visible as a snap after the fact.
@@ -287,7 +339,8 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // posture claims every desktop, a visible window is already
             // on the desktop the user is looking at and the net does not
             // fire there. It still can from another app's full-screen
-            // Space, which an unpinned rest declines to join, and
+            // Space, which an unpinned rest declines to join and so does
+            // a raised card that dropped to normal (ADR-0034), and
             // transiently mid-transition, where the blink is the card
             // landing here rather than a defect.
             if BackdropStance.requiresSpaceRoundTrip(
@@ -308,6 +361,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // one route that activates first; the raise is then its
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
+            // One-turn reconcile: `makeKeyAndOrderFront` can be
+            // refused (an application-modal panel already holds key,
+            // for instance), and a refused raise leaves the panel at
+            // the raised-keyed altitude with no resign-key event to
+            // drop it. A single main-actor turn later, this reads what
+            // the window server made of the call and, if the raise did
+            // not take, resolves the altitude with the honest keyless
+            // input instead.
+            raiseReconcile?.cancel()
+            raiseReconcile = Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard !Task.isCancelled else { return }
+                if !panel.isKeyWindow {
+                    altitude.reapply(
+                        keyed: false,
+                        pinned: model.pinned,
+                        keepsAbove: model.keepsAboveWhenInactive
+                    )
+                }
+            }
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
@@ -348,52 +421,18 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // Space membership settle after the order, not during it.
         refreshMouseGateAfterPostureChange()
         Self.logger.info(
-            "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
+            "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) window=\(self.panel.windowNumber, privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
     }
 
     // MARK: Altitude and Spaces
 
-    /// Where the surface sits in the stacking order and which Spaces it
-    /// belongs to, both stance-owned and both written only when they
-    /// actually move.
-    ///
-    /// The guards are not thrift. An assignment to `collectionBehavior`
-    /// is a request to the window server, and a request naming different
-    /// membership bits makes it move the window between Spaces; the
-    /// stance sinks fire on every raise, including a raise over an
-    /// already-raised surface, which is what ⌘Tab back does. Writing the
-    /// same value each time asked for that work on every activation
-    /// (issue #74). Level is guarded for company, since a level written
-    /// is a restack even when the number is unchanged.
-    ///
-    /// The guard compares the whole value, so a stance change does still
-    /// rewrite `collectionBehavior`: what a window does once it is on a
-    /// Space differs by posture, and `.stationary`, `.ignoresCycle` and
-    /// full-screen participation are all in there. What no longer
-    /// differs is the membership subset the rewrite names
-    /// (`BackdropStance.spaceMembership(pinned:)`), which is the part a
-    /// reassignment would turn on.
-    private func applyAltitude(stance: BackdropStance, pinned: Bool) {
-        let level = stance.level(pinned: pinned)
-        if panel.level != level {
-            panel.level = level
-        }
-        let behavior = stance.collectionBehavior(pinned: pinned)
-        if panel.collectionBehavior != behavior {
-            // Debug rather than info: a genuine stance change writes
-            // this every time and would crowd out the gate's own lines.
-            // It exists because the guard cannot be tested from here
-            // (reading `collectionBehavior` back gives our own last
-            // assignment, not what the window server did with it), so
-            // the hardware run judges it by counting these against the
-            // raises that should have produced none.
-            Self.logger.debug(
-                "collectionBehavior write=\(behavior.rawValue, privacy: .public) was=\(self.panel.collectionBehavior.rawValue, privacy: .public)"
-            )
-            panel.collectionBehavior = behavior
-        }
-    }
+    // The level and the collection behavior are written by
+    // `BackdropAltitudeKeeper`, from one resolved altitude and only
+    // when they actually move. The rule, the guards and the reason the
+    // key delegate turns now write the full screen bit (ADR-0034) are
+    // stated there. Nothing in this controller writes either property
+    // directly.
 
     // MARK: The mouse gate
 
@@ -626,8 +665,16 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// Key status feeds the model: the ember border shows exactly
     /// while the surface holds the keyboard, and the summon decision
     /// distinguishes raised-and-keyed (summon rests it) from
-    /// raised-but-keyboard-less (summon re-keys it).
+    /// raised-but-keyboard-less (summon re-keys it). The altitude the
+    /// panel sits at is `BackdropAltitude.resolve`'s to decide from
+    /// the four inputs together, and this passes the key answer that
+    /// has just arrived so the resolver reads honest facts.
     func windowDidBecomeKey(_ notification: Notification) {
+        altitude.reapply(
+            keyed: true,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        )
         model.holdsKeys = true
     }
 
@@ -636,7 +683,21 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// take key from a surface that stays raised, and a rest here would
     /// pull the pad away under every one of them. The stance moves only
     /// by the routes that name it.
+    ///
+    /// The keeper's committed stance is what the event is judged
+    /// against, not `model.stance`: the resign fires synchronously from
+    /// inside `apply(.resting)`, and `model.stance` is halfway between
+    /// the previous stance and the settling one at that moment, while
+    /// the keeper committed as the controller began the transition and
+    /// gives the honest answer. The key turns write level and the full
+    /// screen bit that follows it (ADR-0034), and never frame,
+    /// membership or ordering.
     func windowDidResignKey(_ notification: Notification) {
+        altitude.reapply(
+            keyed: false,
+            pinned: model.pinned,
+            keepsAbove: model.keepsAboveWhenInactive
+        )
         model.holdsKeys = false
     }
 
@@ -673,8 +734,15 @@ private final class BackdropKeyRelayPanel: NSPanel {
 /// desktop, and a window bound to one drags the user back to it on
 /// every activation, issue #74) and `.fullScreenNone` (a full-screen
 /// Space is another app's room; the unpinned backdrop does not follow
-/// it there). Key status is stance-gated the way Plash gates
-/// interactivity.
+/// it there). That is the recipe at desktop level only. Full screen
+/// participation follows the altitude (ADR-0034): a floating card
+/// carries `.fullScreenAuxiliary` and follows the person into those
+/// rooms, while a card at normal or desktop level declines them as an
+/// ordinary window would. Key status is stance-gated the way Plash gates
+/// interactivity. Where the panel sits in the stacking order is not
+/// the panel's own concern: `BackdropAltitude.resolve` picks a level
+/// from stance, key status, the pin and the keep-above preference
+/// together (ADR-0032), and the controller writes it.
 final class BackdropPanel: NSPanel {
     /// Set by the controller from the stance, before ordering changes.
     var isInteractive = false
@@ -699,8 +767,9 @@ final class BackdropPanel: NSPanel {
         isMovableByWindowBackground = false
         isExcludedFromWindowsMenu = true
         animationBehavior = .none
-        // Collection behavior is stance-owned (`BackdropStance`) and
-        // applied by the controller on every transition.
+        // Collection behavior is `BackdropStance`'s to state, from the
+        // stance and the resolved altitude together, and the controller
+        // applies it on every transition of either.
         // Capture exclusion (docs/spec/05), doubly load-bearing here:
         // the panel is hidden between uses, but the backdrop is *always
         // on screen* — without this, every screen share and screenshot

@@ -1,5 +1,63 @@
 docs/dogfood/potentially-quirky-behaviour.md
 
+## Switching to another desktop
+
+During #192 / #184 work.
+
+Resolution, 2026-09-18: [ADR-0034](../adr/0034-full-screen-participation-follows-altitude.md).
+The fix was not ordering, as the note below expected. The lowered card was
+still a full screen auxiliary window, and those are shown with the full screen
+window whatever their level. Full screen participation now follows the
+altitude, so a card at normal level stays out of another app's full screen
+Space. Hardware confirmation is owed, by the checks in
+`docs/qa/verification-procedures/spaces-and-cmd-tab.md`.
+
+> What macos API is used when command-tabbing to another application that is in another desktop and/or full screen? Currently, unlike
+> when the applications are on the same desktop screen which alternate "top-ness", switching to the fullscreen application brings the
+> user's screen to that desktop as expected, with the OnetimePad window on top. Is that expected from the implimentation of 192 or is
+> there more to do for that?
+
+The manual test confirms the same-Space half of the spike. The cross-Space case is governed by a different axis—Space membership—so I’m
+checking whether “visible everywhere” is an intentional invariant or whether fullscreen should be treated specially.
+
+• Command-Tab itself is handled by macOS; OnetimePad does not call a “switch Space” API. The relevant pieces are:
+
+- macOS/AppKit changes application activation.
+- OnetimePad observes key-window loss through windowDidResignKey.
+- NSWindow.CollectionBehavior.canJoinAllSpaces
+  (https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/canjoinallspaces) allows the panel to
+  appear across desktops.
+
+- fullScreenAuxiliary (https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/fullscreenauxiliary)
+  allows it alongside a full-screen window.
+
+- NSWindow.Level and window ordering determine which participating window is in front.
+
+The destination-Space appearance is expected. Accepted ADR-0019 says exactly:
+
+> “The pad's Space membership is .canJoinAllSpaces, in every posture and either pin state, and it never changes.”
+
+ADR-0032 explicitly preserves that behavior:
+
+> “Do not change the surface's Space membership or full-screen participation.”
+
+However, remaining above the full-screen application after the transition settles is not expected when Pin is off and the keep-above
+preference is off. ADR-0032 requires the newly active application’s windows to stack in front.
+
+So your result means:
+
+- Following the user to the full-screen Space: correct.
+- Staying visibly above an overlapping full-screen application after the animation settles: the #184 spike fails that route.
+- Appearing only in uncovered screen areas: allowed.
+
+This confirms there is more to do, but the fix belongs to ordering—not Space membership. The next #184 experiment should explicitly
+order the panel below the newly active application’s window when the bare .normal level change is insufficient. That hardware verdict
+must be resolved before proceeding to #185–#190. The relevant implementation is in shell/Sources/OnetimePad/
+---
+
+
+# Potentially resolved (as of Sept 17):
+
 > Why does the main window sometimes disappear when the focus changes to the settings window and sometimes not? WHat would the conventional, idiomatic behaviour be?
 
 ## Why it varies
@@ -105,3 +163,7 @@ The behavior directly responsible here is:
 > **Raised means floating regardless of whether the surface still has focus.**
 
 Familiar macOS behavior would require separating **visibility** from **always-on-top**: after resigning key, an unpinned surface should remain raised/visible but drop to normal window level, allowing the newly focused application’s windows to appear above it. A pinned surface could remain floating.
+
+---
+
+Track A of issue #192 implements that separation as ADR-0032: stance, keyboard ownership and altitude are now three independent facts, an unpinned keyless raised surface drops to normal, Pin and the new **Keep OnetimePad above other apps when switching away** preference each lift it back to floating, and the hardware checks belong in [`docs/qa/verification-procedures/spaces-and-cmd-tab.md`](../qa/verification-procedures/spaces-and-cmd-tab.md) under issue #190.

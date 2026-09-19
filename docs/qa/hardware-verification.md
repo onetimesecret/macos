@@ -291,8 +291,19 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
 - [`spaces-and-cmd-tab.md`](verification-procedures/spaces-and-cmd-tab.md).
   Owner: delano. ⌘Tab back landing where the user is rather than on
   Desktop 1, the shape of any flicker on return, and the edge drag that
-  ADR-0019 decides against rather than fixes (issue #74). Not an
-  ADR-0016 case.
+  ADR-0019 decides against rather than fixes (issue #74). Now also
+  the ADR-0032 checks for normal inactive stacking: ⌘Tab away with the
+  preference off drops the raised card to normal, a hotkey raise then
+  ⌘Tab between two other apps stays normally stacked, the preference
+  on and Pin on each keep it floating, a press on a partly covered
+  card takes keys (issue #190). The full-screen Space checks follow
+  ADR-0034, where full-screen participation follows the altitude: ⌘Tab
+  into a full-screen app leaves the card out of that Space, a hotkey
+  summon inside one still lands, the return by ⌘Tab keys the card, and
+  the `collectionBehavior` writes are counted per key transition. Each
+  is judged by the VERDICT line of `scripts/window-order-probe.swift`
+  (issue #184). About staying in front while Pin and the preference
+  are toggled is checked here too (issue #188). Not an ADR-0016 case.
 - [`grace-snap-and-undo.md`](verification-procedures/grace-snap-and-undo.md).
   Owner: delano. The deadline snap on the real zone database: a
   timezone change, spring forward and fall back, each with the expected

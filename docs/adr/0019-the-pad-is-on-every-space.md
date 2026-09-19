@@ -6,7 +6,9 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-24
-- **Superseded in part by:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically the reach of the all Spaces rule over the whole application. The rule stands for the ambient panel.
+- **Superseded in part by:**
+  - [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically the reach of the all Spaces rule over the whole application. The rule stands for the ambient panel.
+  - [ADR-0034](0034-full-screen-participation-follows-altitude.md), which replaces one descriptive clause of the Decision only: the raise accepts full-screen participation only while it floats. Membership constancy stands.
 
 ## Context
 
@@ -119,6 +121,7 @@ factor is the only one left to have Spaces at all.
 
 ## Decision history
 
+- 2026-08-24: Accepted.
 - 2026-09-18: Superseded in part by
   [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md).
   "The pad" in this record now means the ambient panel, and the decision stands
@@ -126,3 +129,14 @@ factor is the only one left to have Spaces at all.
   membership, so the consequence that activating the app never changes the
   user's desktop holds only while that window is closed. Settings and About
   keep `.moveToActiveSpace`.
+- 2026-09-18: Superseded in part by
+  [ADR-0034](0034-full-screen-participation-follows-altitude.md). The Decision
+  describes full-screen participation as something "the unpinned rest declines
+  and both the pin and the raise accept". ADR-0034 replaces that clause for the
+  raise: full-screen participation follows altitude, so a raise accepts it only
+  while it floats, and a raised card that has dropped to normal declines it as
+  the unpinned rest does. The membership decision stands unchanged:
+  `.canJoinAllSpaces` in every posture, never rewritten. The helper the
+  Decision names as `BackdropStance.spaceMembership(pinned:)` is now
+  `BackdropStance.spaceMembership(altitude:)`, and its invariant is tested
+  across every stance and altitude.
