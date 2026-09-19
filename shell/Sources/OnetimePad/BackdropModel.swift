@@ -1,6 +1,7 @@
 import AppKit
 import CompanionKit
 import Foundation
+import os
 
 /// Why the card is coming forward.
 ///
@@ -542,6 +543,17 @@ final class BackdropModel: ObservableObject, QuitFlushable {
             returningFromAuxiliary: keysReturning
                 || ModalSession.isRunning || ModalSession.isBracketed
         )
+        // The one key event that can move ownership, said with the
+        // facts it was judged on. Whether AppKit picks the successor
+        // inside the closing turn is a hardware question, and this is
+        // the line that answers it: `armed=true` beside a Settings
+        // close is the arm still set when the key gain arrived, and
+        // `turn=rests-panel armed=false` there is the arm outlived.
+        if surface == .editorWindow, keyed, pages.owner == .panel {
+            Self.logger.info(
+                "key gain=editor-window turn=\(Self.logName(of: turn), privacy: .public) armed=\(self.keysReturning, privacy: .public) modal=\(ModalSession.isRunning || ModalSession.isBracketed, privacy: .public)"
+            )
+        }
         // A return explains one key gain, the one it caused. Whichever
         // content window was keyed, the next gain is somebody's own.
         if keyed { keysReturning = false }
@@ -561,6 +573,23 @@ final class BackdropModel: ObservableObject, QuitFlushable {
             Task { @MainActor [weak self] in self?.handKeysBack() }
         }
     }
+
+    /// The word the log uses for a key turn. Mechanics only.
+    nonisolated static func logName(of turn: KeyTurn) -> String {
+        switch turn {
+        case .ignored: "ignored"
+        case .reports: "reports"
+        case .restsPanel: "rests-panel"
+        case .returnsKeysToOwner: "returns-keys"
+        }
+    }
+
+    /// Mechanics only, never content. The category is the one the
+    /// shared model says its hand offs in (`PageModel`), so a key gain
+    /// and the transfer it did or did not cause read in one stream.
+    private static let logger = Logger(
+        subsystem: FormFactor.backdrop.loggerSubsystem, category: "ownership"
+    )
 
     // MARK: The editor window
 
