@@ -275,9 +275,12 @@ final class EditorHandoffTests: XCTestCase {
     // MARK: The page's place across a hand off and back
 
     /// The scroll restore lands one main queue hop after it is asked
-    /// for, so the loop is turned once to let it.
+    /// for, so the test waits behind it on the same queue
+    /// (`drainMainQueue`). By order and never by the clock: a fixed
+    /// stretch of the run loop was spent on other tests' timers about
+    /// one full run in three, and the restore had not landed.
     private func pump() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        drainMainQueue()
     }
 
     /// Paragraphs long enough to wrap, so the two windows lay the page

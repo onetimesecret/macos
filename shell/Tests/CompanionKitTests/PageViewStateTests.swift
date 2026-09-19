@@ -99,10 +99,11 @@ final class PageViewStateTests: XCTestCase {
     }
 
     /// The scroll restore lands one main queue hop after it is asked
-    /// for (ADR-0005's timing discipline), so the loop is turned once
-    /// to let it.
+    /// for (ADR-0005's timing discipline), so the test waits behind it
+    /// on the same queue, by order and never by the clock
+    /// (`drainMainQueue`).
     private func pump() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        drainMainQueue()
     }
 
     // MARK: The table's own laws

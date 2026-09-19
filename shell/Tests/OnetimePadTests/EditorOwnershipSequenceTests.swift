@@ -441,10 +441,19 @@ final class EditorOwnershipSequenceTests: XCTestCase {
 
     // MARK: The keyboard follows the page
 
-    /// Long enough for `focusEditorWhenMounted` to find the editor, and
-    /// no longer than it polls for.
+    /// Wait behind `focusEditorWhenMounted` on the main queue, by order
+    /// and never by the clock. Its task was queued by the key event,
+    /// and both callers mount the editor with no suspension between, so
+    /// the poll's first look finds the editor and it never sleeps. A
+    /// block queued now runs after it. Three rounds, as the other test
+    /// target's `drainMainQueue` takes, against a hop that queues one
+    /// more on its way out.
     private func letTheHandOffLand() async throws {
-        try await Task.sleep(nanoseconds: 120_000_000)
+        for _ in 0..<3 {
+            await withCheckedContinuation { (landed: CheckedContinuation<Void, Never>) in
+                DispatchQueue.main.async { landed.resume() }
+            }
+        }
     }
 
     /// A hotkey summon beside an open editor window makes the panel key
