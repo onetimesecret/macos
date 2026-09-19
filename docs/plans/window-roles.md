@@ -1,6 +1,6 @@
 # Window roles: normal stacking now, primary editor next
 
-**Status:** Active, 2026-09-17. Track B decided 2026-09-18.
+**Status:** Active, 2026-09-17. Decision #191 closed 2026-09-18.
 **Tracking:** [#192](https://github.com/onetimesecret/macos/issues/192)
 **Sources:** [ADR-0032](../adr/0032-inactive-raised-surfaces-follow-normal-app-stacking.md) (accepted), [ADR-0033](../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) (accepted 2026-09-18, narrowed).
 **Source of execution status:** GitHub issues once filed, not this document.
@@ -9,9 +9,9 @@
 
 Track A makes the code match ADR-0032: a raised surface that loses the keyboard drops to normal window level unless Pin or the keep above preference says otherwise.
 
-Track B took ADR-0033 from proposed to accepted, and now takes it to a conventional `NSWindow` editor beside the ambient panel, with one owner of the live page content at a time.
+Track B took ADR-0033 from proposed to accepted under decision issue #191. The ADR decides the roles, ownership rule and activation model. Whether the implementation sequence B1 to B7 is filed and pursued, and in what shape, is a separate call.
 
-Track A is small and ships alone. Track B is epic sized and was gated on decision issue #191, decided 2026-09-18. Track A is not wasted by Track B: the three fact model stays with the panel.
+Track A is small and ships alone. Track A is not wasted by ADR-0033: the three fact model stays with the ambient panel.
 
 ## Current state
 
@@ -70,6 +70,8 @@ One PR, one commit per task. Shell only; no Rust or FFI version change.
 
 ## Track B: ADR-0033
 
+B0 is decided. B1 to B7 below are a draft implementation sequence written while the decision was being made, kept for reference. They are not agreed work; each one is a separate call that a maintainer would take before filing, and the shape may still change.
+
 - **B0. Decision issue (label `decision`). Decided 2026-09-18: accepted, narrowed.** One window owns the live page content at a time and the other shows a glance or nothing. Ownership is explicit and transferable: the panel owns while it is raised or while the editor window is closed, and the editor window owns otherwise. The panel may edit while it owns. Launch is decided by route: login shows the panel only, a person's launch, the Dock, reopen and ⌘Tab select the editor window, and the hotkey, the status item and the resting card's click stay with the panel. ⌘W stays `page::Close` and ⇧⌘W closes the window. The panel is a persistent preference, default on, behind a removable boundary. The editor window keeps frame autosave only. The supersession is recorded in both directions in the ADRs.
 - **B1. Spike (label `prototype`).** `PrimaryEditorWindowController`: titled, resizable, normal level, ordinary Space membership, may become main, frame autosave, `isRestorable = false`, `sharingType = .none` under the same capture opt out as the panel, and a title that names the app and never page content. Root view is a stack over the strip, `PageContentView`, `PageStatusStack` and `PageKeyboardMap`. Exclusive ownership by the crudest means: while the window is open the panel rests and unmounts its content. The crude form stands for the spike only. This is enough to dogfood eject triggers 1 to 3 before B2 is built.
 - **B2. Presentation ownership in CompanionKit.** One explicit, transferable owner for `activeEditor`, `performSealedPaste`, `onAnchorToday`, `rollGeometry`, `holdsKeys`, the redraw cadence, the pasteboard offer and the `PageKeyboardMap` mount. The owner is a pure function of panel stance and whether the editor window is open, with tests over the whole matrix. Key status passing to Settings, About or a modal moves nothing. Mount sites check ownership instead of writing last. Caret and scroll move from the editor coordinator to the model so a hand off keeps the person's place. A read only panel must be one policy switch on this model. Extend `EditorHandoffTests` and `EditorFactoryTests`. This is the expensive task.
@@ -93,7 +95,7 @@ flowchart TD
 
 ## Epic shape
 
-One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B0 was decided as an acceptance on 2026-09-18, so B1 to B7 are filed as sub-issues of the epic and added to this table as they get numbers.
+One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B0 closed with an acceptance on 2026-09-18. Whether B1 to B7 are filed, and in what shape, is a separate call. Numbers land in this table if and when they do.
 
 | Task | Issue |
 | --- | --- |
