@@ -668,9 +668,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// Key status feeds the model: the ember border shows exactly
-    /// while the surface holds the keyboard, and the summon decision
-    /// distinguishes raised-and-keyed (summon rests it) from
+    /// Key status is reported to the model, which keeps it only while
+    /// the panel owns the page content (`BackdropModel.keyStatusChanged`).
+    /// The ember border shows exactly while the panel owns and holds
+    /// the keyboard (`PageModel.holdsKeys(on:)`), and the summon
+    /// decision distinguishes raised-and-keyed (summon rests it) from
     /// raised-but-keyboard-less (summon re-keys it). The altitude the
     /// panel sits at is `BackdropAltitude.resolve`'s to decide from
     /// the four inputs together, and this passes the key answer that

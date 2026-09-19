@@ -597,12 +597,24 @@ public final class PageModel: ObservableObject {
     @Published public private(set) var owner: PresentationOwner = .panel
 
     /// True while the owner's window holds the keyboard, which drives
-    /// the ember border and the editor's focus rules. A plain fact and
-    /// not a claim on anything: the keyboard passing to Settings, About
-    /// or a modal panel makes it false and moves neither `owner` nor
-    /// `activeEditor`. Written through `reportKeys(_:from:)` by the
-    /// owner's window controller from its key status.
+    /// the editor's focus rules and, through `holdsKeys(on:)`, the
+    /// ember border. A plain fact and not a claim on anything: the
+    /// keyboard passing to Settings, About or a modal panel makes it
+    /// false and moves neither `owner` nor `activeEditor`. Written
+    /// through `reportKeys(_:from:)` by the owner's window controller
+    /// from its key status.
+    ///
+    /// It is the owner's fact and says nothing of the other window. The
+    /// focus rules may read it bare, because the editor they focus is
+    /// the owner's. A surface that shows it must ask `holdsKeys(on:)`.
     @Published public private(set) var holdsKeys = false
+
+    /// Whether this surface's own window holds the keyboard: it owns,
+    /// and the owner's window is key. Both inputs are published, so a
+    /// view that reads this redraws when either moves.
+    public func holdsKeys(on surface: PresentationOwner) -> Bool {
+        PresentationOwner.holdsKeyboard(surface, owner: owner, ownerHoldsKeys: holdsKeys)
+    }
 
     /// The tab currently being drag-reordered, if any.
     @Published public var draggingTab: UInt64?

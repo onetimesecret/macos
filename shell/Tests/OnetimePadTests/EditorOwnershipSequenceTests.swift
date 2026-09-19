@@ -394,6 +394,25 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         try assertTheOwnerAloneIsMounted(windows, "after the keyboard went to Settings")
     }
 
+    /// The card's ember border is the panel's own keyboard and nobody
+    /// else's. With the panel resting and the editor window key, the
+    /// shared fact is true, and the card that reads it bare would stay
+    /// lit on the desktop for as long as the person typed elsewhere.
+    func testTheRestingCardIsNotLitByTheEditorWindowsKeyboard() throws {
+        let windows = try makeWindows(named: "sequence-ember")
+        windows.apply(.editorWindowOpens)
+        windows.apply(.editorWindowTakesKeys)
+        windows.render(newMountFirst: true)
+
+        XCTAssertTrue(windows.pages.holdsKeys, "the owner's window is key")
+        XCTAssertFalse(windows.pages.holdsKeys(on: .panel), "the resting card lit its border")
+        XCTAssertTrue(windows.pages.holdsKeys(on: .editorWindow))
+
+        windows.apply(.keysGoToSettings)
+        XCTAssertFalse(windows.pages.holdsKeys(on: .editorWindow))
+        XCTAssertFalse(windows.pages.holdsKeys(on: .panel))
+    }
+
     /// A close is a hand off like any other, and the person's place is
     /// the model's before the window's content has gone anywhere: the
     /// controller tells the model first, so the transfer reads the

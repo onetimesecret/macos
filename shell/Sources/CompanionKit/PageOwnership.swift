@@ -76,6 +76,20 @@ public enum PresentationOwner: Equatable, Sendable {
         surface == owner
     }
 
+    /// Whether a surface's own window holds the keyboard, pure. The
+    /// model keeps one key fact, and it is the owner's
+    /// (`PageModel.holdsKeys`), so a surface that does not own holds no
+    /// keyboard the model knows of, whatever the fact says. A surface
+    /// that lights anything from the keyboard asks through here
+    /// (`PageModel.holdsKeys(on:)`): read bare, the fact lights a
+    /// resting card for as long as the person types in the editor
+    /// window.
+    public nonisolated static func holdsKeyboard(
+        _ surface: PresentationOwner, owner: PresentationOwner, ownerHoldsKeys: Bool
+    ) -> Bool {
+        surface == owner && ownerHoldsKeys
+    }
+
     /// The word the log uses for this surface. Mechanics only.
     var logName: String {
         switch self {

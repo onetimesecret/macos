@@ -221,13 +221,17 @@ struct BackdropRootView: View {
                 .fill(.ultraThinMaterial)
         )
         .overlay(
-            // The ember border shows exactly while the surface holds
-            // the keyboard — raised and keyed are distinct facts (a
-            // card the user ⌘Tabbed away from is raised, unkeyed, and
-            // unlit). Visible state, never colour alone; the caret and
-            // focus ring agree.
+            // The ember border shows exactly while this surface holds
+            // the keyboard. Raised and keyed are distinct facts: a card
+            // the user ⌘Tabbed away from is raised, unkeyed, and unlit.
+            // The model's key fact is the owner's, so the card asks for
+            // its own: a resting card beside a keyed editor window is
+            // unlit too. Visible state, never colour alone; the caret
+            // and focus ring agree.
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(pages.holdsKeys ? Color.ember : Color.clear, lineWidth: 1.5)
+                .strokeBorder(
+                    pages.holdsKeys(on: .panel) ? Color.ember : Color.clear, lineWidth: 1.5
+                )
                 .allowsHitTesting(false)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))

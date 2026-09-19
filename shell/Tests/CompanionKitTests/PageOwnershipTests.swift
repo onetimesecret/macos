@@ -106,6 +106,38 @@ final class PageOwnershipTests: XCTestCase {
         )
     }
 
+    // MARK: Whose keyboard it is
+
+    func testOnlyTheOwnerIsToldItHoldsTheKeyboard() {
+        // `holdsKeys` is one fact about the owner's window, shared by
+        // two surfaces. The resting card beside a keyed editor window is
+        // the row that matters: the fact is true and the card must
+        // still read false, or it lights its border over typing that is
+        // happening in another window.
+        XCTAssertFalse(
+            PresentationOwner.holdsKeyboard(.panel, owner: .editorWindow, ownerHoldsKeys: true)
+        )
+        XCTAssertTrue(
+            PresentationOwner.holdsKeyboard(
+                .editorWindow, owner: .editorWindow, ownerHoldsKeys: true
+            )
+        )
+        XCTAssertTrue(PresentationOwner.holdsKeyboard(.panel, owner: .panel, ownerHoldsKeys: true))
+        XCTAssertFalse(
+            PresentationOwner.holdsKeyboard(.editorWindow, owner: .panel, ownerHoldsKeys: true)
+        )
+    }
+
+    func testNobodyHoldsAKeyboardTheOwnerHasLost() {
+        for surface in [PresentationOwner.panel, .editorWindow] {
+            for owner in [PresentationOwner.panel, .editorWindow] {
+                XCTAssertFalse(
+                    PresentationOwner.holdsKeyboard(surface, owner: owner, ownerHoldsKeys: false)
+                )
+            }
+        }
+    }
+
     // MARK: The default
 
     func testTheDefaultPolicyLetsThePanelOwn() {
