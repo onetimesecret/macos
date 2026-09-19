@@ -128,6 +128,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         geometry = BackdropGeometry.load(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
+        dockOpensEditorWindow = defaults.bool(forKey: Self.dockOpensEditorKey)
         // The pages seam is nil for every shipping construction, where
         // the model builds the form factor's own `PageModel`. A test
         // has to hand one in (built with `PageModel.Seams` that name a
@@ -280,6 +281,28 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// (`BackdropRootView`) and refuses every raise. B2 replaces it with
     /// presentation ownership in CompanionKit, and it does not ship.
     @Published private(set) var editorWindowOpen = false
+
+    /// Whether the Dock icon opens the editor window, where it would
+    /// otherwise raise the card. Off by default, so a build carrying the
+    /// spike behaves as it did before for anyone who has not asked for
+    /// the window. It governs the entrance only: a window already open
+    /// stays open when this goes off, and the next Dock click still
+    /// brings it forward. Persisted beside the pin. This is the spike's
+    /// own switch and not ADR-0033's ambient panel preference, which
+    /// turns the panel off and belongs to B4.
+    @Published var dockOpensEditorWindow: Bool {
+        didSet { defaults.set(dockOpensEditorWindow, forKey: Self.dockOpensEditorKey) }
+    }
+    private static let dockOpensEditorKey = "dockOpensEditorWindow"
+
+    /// What a reopen does, pure: the window when the person asked for
+    /// it, and also when one is already up, since a raise would be
+    /// refused under it and the click would do nothing at all.
+    nonisolated static func reopenOpensEditorWindow(
+        preference: Bool, windowOpen: Bool
+    ) -> Bool {
+        preference || windowOpen
+    }
 
     /// The editor window is about to come up. The flag goes first, so
     /// the rest it causes is already judged with the window open: the

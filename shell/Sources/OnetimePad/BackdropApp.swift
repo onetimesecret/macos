@@ -550,7 +550,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The Dock icon's click, and any other reopen (`open -a` on a
-    /// running app), opens the primary editor window or brings the open
+    /// running app). With the editor window setting off, which is the
+    /// default, it raises the panel as an activation, the same raise
+    /// `applicationDidBecomeActive` gives, so one gesture cannot mean
+    /// two things depending on which of the two it arrived at. With the
+    /// setting on it opens the primary editor window or brings the open
     /// one forward. Spike (issue #197): this is the window's only
     /// entrance, and `activationRaises` is left as it was, so ⌘Tab, the
     /// launch and the summons still raise the panel whenever the window
@@ -570,7 +574,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // coming back through it is owed the same answer about what
         // else wrote their files.
         pages.checkOpenFilesOnActivate()
-        editorWindow.show()
+        if BackdropModel.reopenOpensEditorWindow(
+            preference: model.dockOpensEditorWindow, windowOpen: model.editorWindowOpen
+        ) {
+            editorWindow.show()
+        } else {
+            model.raise(.activation)
+        }
         return false
     }
 
