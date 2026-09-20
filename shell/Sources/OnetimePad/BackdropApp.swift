@@ -87,9 +87,22 @@ struct BackdropApp: App {
                 // the empty placeholder as a blank window. Repoint it so
                 // every ⌘, in the app lands on the one real Settings
                 // window the delegate owns.
+                //
+                // "Customize Keyboard Shortcuts…" sits below Settings…
+                // because it is a preference too, one that carries no
+                // chord of its own on purpose: users rebind it rarely,
+                // and offering a shortcut here would spend the chord
+                // budget on the door to the file rather than on a page
+                // verb. It opens keymap.json as an ordinary document
+                // (creating the configuration directory and seeding the
+                // bundled default the first time), so the file the app
+                // reads is the file the person is editing.
                 CommandGroup(replacing: .appSettings) {
                     Button("Settings…") { appDelegate.openSettings() }
                         .keyboardShortcut(appDelegate.settingsShortcut)
+                    Button("Customize Keyboard Shortcuts…") {
+                        appDelegate.pages.openUserKeymapFile()
+                    }
                 }
                 // Repointed for the same reason and with more at stake.
                 // The synthesized item calls AppKit's own
