@@ -1,10 +1,33 @@
 # Spaces, ⌘Tab and the pad
 
-**Applies to:** OnetimePad, both stances, pinned and not.
+**Applies to:** OnetimePad. Two window roles, since ADR-0033: the
+ambient panel (both stances, pinned and not) and the primary editor
+window (an ordinary activating `NSWindow`). Each check below is scoped
+to one role or the other; nothing here assumes the raised card is the
+all Spaces panel.
 **Raised by:** issue #74, from the dogfood aberrations log of
 2026-08-19.
 **Owner:** delano.
 **Status:** open. Not yet run on hardware.
+
+## Scope after ADR-0033
+
+ADR-0033 separated the primary editor from the ambient panel. What the
+window server sees is now two windows with different roles:
+
+- **The ambient panel** keeps its all Spaces membership, its stance
+  driven level, its outside click rule, and its hotkey and status item
+  summons. Every check below marked *panel* is about that window.
+- **The primary editor window** is a plain activating `NSWindow` with
+  ordinary Space membership, normal window level, AppKit's own full
+  screen, key and main behaviour, and participation in ⌘Tab, the
+  Window menu, Mission Control and Stage Manager. Every check marked
+  *editor* is about that window and the AppKit behaviour it inherits.
+
+A person's launch, a Dock click, a reopen and ⌘Tab select the editor
+window (opening it when closed); the hotkey, the status item and the
+resting card click stay with the panel. A pinned panel floats above
+every ordinary window, editor included; the editor never floats.
 
 ## What was seen, and what the code did about it
 
@@ -58,45 +81,174 @@ log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 
 ## The checks
 
-### The return
+### The return — panel only, editor window closed
 
-- [ ] **Resting, from another desktop.** With the pad resting, go to
-      Desktop 3, work in another app, then ⌘Tab to OnetimePad. **Pass:**
-      the desktop does not change and the card raises where you already
-      were. **Fail:** the screen slides to Desktop 1.
-- [ ] **Raised, from another desktop.** Raise the card on Desktop 3
-      (⌃⌥Space), ⌘Tab away to another app, ⌘Tab back. Same pass
-      condition, and the card must come back keyed: type a character and
-      it lands in the page.
-- [ ] **Pinned, across a switch.** Pin the card, then switch desktops
-      with ⌃→ and ⌃←. The card stays put and readable on each, and the
-      log carries no `mouse gate=closed` line while it is plainly
-      visible.
-- [ ] **The Dock icon.** From Desktop 3, click the Dock tile. The card
-      raises on Desktop 3.
-- [ ] **Summoned from another app's full-screen Space.** Unpinned, put
-      an app full screen, and from inside it press ⌃⌥Space. The card
-      arrives on the full-screen Space, keyed, and takes what you type.
-      A single blink as it arrives is correct here and not the flicker:
-      an unpinned rest declines full-screen Spaces, so the card really
-      was elsewhere and the summon's round trip is what brings it. The
-      log carries `summon=round trip (surface was off-Space)` for it.
-      **Fail:** the card does not appear, or appears and takes no keys.
-- [ ] **Settings does not drag the app back.** Open Settings on Desktop
-      1, close it, go to Desktop 3, press ⌘, again. It opens on Desktop
-      3.
-- [ ] **About does not drag the app back either.** About is a second
-      ordinary window and AppKit reuses one instance of it. Open it from
-      the tray on Desktop 1, leave it open, go to Desktop 3 and ⌘Tab to
-      OnetimePad: the desktop must not change, and the panel comes here
-      rather than staying behind. Then choose About again from the tray
-      on Desktop 3 and confirm it appears on Desktop 3.
-- [ ] **The same, from the app menu.** Repeat the check above, but open
-      About from the menu bar's OnetimePad menu rather than the tray.
-      This is the route that used to bypass the fix entirely, since
-      SwiftUI synthesizes that item against AppKit's own panel call; a
-      pass on the tray route says nothing about it. ⌘Tab to the app
-      first, which is what puts the menu on screen.
+These are the checks issue #74 was filed for. They apply when the
+editor window is **closed**, so ⌘Tab has nothing else of ours to select
+and ADR-0019 is what decides where the return lands. Close the editor
+window (⇧⌘W) before starting each check.
+
+- [ ] **Resting, from another desktop.** *Panel.* With the pad resting
+      and the editor window closed, go to Desktop 3, work in another
+      app, then ⌘Tab to OnetimePad. **Pass:** the desktop does not
+      change and the card raises where you already were. **Fail:** the
+      screen slides to Desktop 1.
+- [ ] **Raised, from another desktop.** *Panel.* Raise the card on
+      Desktop 3 (⌃⌥Space) with the editor window closed, ⌘Tab away to
+      another app, ⌘Tab back. Same pass condition, and the card must
+      come back keyed: type a character and it lands in the page.
+      *ADR-0033 note:* with the editor window **open**, this route
+      instead selects the editor window and rests the panel; that is
+      the editor case below.
+- [ ] **Pinned, across a switch.** *Panel.* Pin the card, then switch
+      desktops with ⌃→ and ⌃←. The card stays put and readable on
+      each, and the log carries no `mouse gate=closed` line while it
+      is plainly visible.
+- [ ] **The Dock icon, editor closed.** *Panel.* From Desktop 3 with
+      the editor window closed, click the Dock tile. The panel raises
+      on Desktop 3.
+- [ ] **Summoned from another app's full-screen Space.** *Panel.*
+      Unpinned, put an app full screen, and from inside it press
+      ⌃⌥Space. The card arrives on the full-screen Space, keyed, and
+      takes what you type. A single blink as it arrives is correct
+      here and not the flicker: an unpinned rest declines full-screen
+      Spaces, so the card really was elsewhere and the summon's round
+      trip is what brings it. The log carries `summon=round trip
+      (surface was off-Space)` for it. **Fail:** the card does not
+      appear, or appears and takes no keys.
+- [ ] **Settings does not drag the app back.** *Panel companion.* Open
+      Settings on Desktop 1, close it, go to Desktop 3, press ⌘, again.
+      It opens on Desktop 3.
+- [ ] **About does not drag the app back either.** *Panel companion.*
+      About is a second ordinary window and AppKit reuses one instance
+      of it. With the editor window closed, open About from the tray on
+      Desktop 1, leave it open, go to Desktop 3 and ⌘Tab to OnetimePad:
+      the desktop must not change, and the panel comes here rather
+      than staying behind. Then choose About again from the tray on
+      Desktop 3 and confirm it appears on Desktop 3.
+- [ ] **The same, from the app menu.** *Panel companion.* Repeat the
+      check above, but open About from the menu bar's OnetimePad menu
+      rather than the tray. This is the route that used to bypass the
+      fix entirely, since SwiftUI synthesizes that item against
+      AppKit's own panel call; a pass on the tray route says nothing
+      about it. ⌘Tab to the app first, which is what puts the menu on
+      screen.
+
+### ⌘Tab and the editor window — ADR-0033
+
+New hand checks the ADR creates. The editor window has ordinary Space
+membership, so ⌘Tab from another desktop can carry the person to the
+editor window's desktop, as it does for any document application.
+Nothing here is issue #74 returning: ADR-0033 records this behaviour
+as expected under its Consequences ("The editor window has a desktop.
+⌘Tab from another desktop can carry the person to the desktop the
+editor window is on, as it does for any document application").
+
+- [ ] **⌘Tab from another desktop selects the editor window and
+      changes desktops.** *Editor.* Open the editor window (menu:
+      File ▸ New, or ⌘Tab from anywhere if it was open recently) and
+      leave it on Desktop 1. Go to Desktop 3, work in another app,
+      then ⌘Tab to OnetimePad. **Pass:** the screen switches to
+      Desktop 1, the editor window comes forward keyed and the panel
+      rests (its `holdsKeys` becomes false). **Fail:** either the
+      screen does not switch (an editor window that behaves as an all
+      Spaces window is not what ADR-0033 asks for) or the panel comes
+      forward instead of the editor window. This is not issue #74
+      returning: the editor is the primary window and its desktop is
+      the person's application desktop.
+- [ ] **Dock icon selects the editor window, not the panel.**
+      *Editor.* With the editor window open on Desktop 1 and the panel
+      resting on Desktop 3, from Desktop 3 click the Dock tile.
+      **Pass:** the screen switches to Desktop 1 and the editor window
+      comes forward keyed. **Fail:** the Dock tile raises the panel on
+      Desktop 3 instead (that route is now reserved for the editor
+      window per ADR-0033's activation routing table).
+- [ ] **Reopen selects the editor window.** *Editor.* Close the editor
+      window (⇧⌘W), then click the Dock tile. **Pass:** the editor
+      window reopens keyed; the panel is not summoned. **Fail:** a
+      reopen with the panel enabled raises the panel instead of
+      opening the editor window.
+- [ ] **The panel's own summons stay with the panel.** *Panel.* With
+      the editor window open on Desktop 1 and the panel resting on
+      Desktop 3, from Desktop 3 press ⌃⌥Space (the hotkey) or click
+      the status item. **Pass:** the panel raises on Desktop 3 without
+      activating the app; the desktop does not switch and the editor
+      window keeps its Space. The click on the resting card, when the
+      resting card is visible, must do the same. **Fail:** any of
+      those three summons activates the app or switches desktops.
+
+### A pinned panel floats above the editor window — ADR-0033
+
+- [ ] **Pin the panel, then raise the editor window keyed.** *Both.*
+      Pin the panel (Settings, or the pin control on the card), open
+      the editor window (⌘N). **Pass:** the panel floats above the
+      editor window; typing goes to the editor window and the panel
+      stays visible on top. **Fail:** the panel drops beneath the
+      editor window when the editor takes keys, or the editor floats
+      above the panel. Pin means the panel is above every ordinary
+      window, editor included; the editor window itself never floats.
+- [ ] **Editor never becomes floating.** *Editor.* With the pin off,
+      raise the editor window and confirm from `log stream --level
+      debug --predicate 'subsystem == "com.onetimesecret.pad"'` that
+      no altitude line names the editor window at `.floating`. The
+      editor's level rule is AppKit's, not the surface's altitude
+      resolver. **Fail:** any writer lifts the editor window off
+      normal level.
+
+### Editor window full screen — ADR-0033
+
+The editor window enters and leaves full screen by AppKit's rules (the
+green traffic light, the Window menu's Enter Full Screen item, F11 if
+bound). A hotkey summon over an editor window in full screen must land
+the panel on that Space, since the panel is all Spaces and its stance
+alone decides where it appears.
+
+- [ ] **Enter and leave full screen.** *Editor.* Open the editor
+      window, click the green traffic light. **Pass:** it enters full
+      screen on its own Space with AppKit's animation and title bar
+      autohide behaviour. Click the green light again (revealed by
+      moving the mouse to the top of the screen) or press Escape.
+      **Pass:** it leaves full screen and returns to the desktop it
+      was on. **Fail:** the enter or leave animation is broken, the
+      title bar does not autohide, or the exit lands on a different
+      desktop.
+- [ ] **Hotkey summon over an editor window in full screen.**
+      *Panel.* Put the editor window in full screen. From inside its
+      Space press ⌃⌥Space. **Pass:** the panel raises on the editor's
+      full screen Space (all Spaces membership plus
+      `.fullScreenAuxiliary` when floating gets it there), the summon
+      is a raise not an activation, and typing goes to the panel. Rest
+      the panel by clicking outside it in the editor's content.
+      **Pass:** the panel rests; the editor keeps the keyboard. The
+      full screen Space does not switch during either step.
+- [ ] **⌘Tab back to an editor window in full screen.** *Editor.*
+      With the editor window full screen, ⌘Tab to another app on a
+      desktop and ⌘Tab back. **Pass:** the screen switches to the
+      editor's full screen Space and the editor window is keyed.
+
+### Stage Manager and Mission Control — ADR-0033
+
+The editor window's title is the application's name and never page
+content (ADR-0033 Restoration). That title is what Mission Control,
+Stage Manager and the system window list publish.
+
+- [ ] **Mission Control shows the editor window with the app's
+      name.** *Editor.* Open the editor window, invoke Mission Control
+      (F3 or the trackpad gesture). **Pass:** the editor window
+      appears with the title *OnetimePad* (or the product name the
+      bundle carries), never a page title, and the panel does not
+      appear as its own tile (the panel is all Spaces and stationary
+      furniture, not a Mission Control participant). **Fail:** the
+      title bar in Mission Control reveals page content, or the panel
+      shows up as its own tile.
+- [ ] **Stage Manager groups the editor window under the app's
+      name.** *Editor.* Enable Stage Manager. **Pass:** the editor
+      window appears in the strip on the left labelled with the app's
+      name and its icon; opening the editor window from the strip
+      keys it and switches to its Space. The panel is not a Stage
+      Manager participant. **Fail:** the strip shows a page title, or
+      the panel shows up as a Stage Manager tile that can be pulled
+      out on its own.
 
 ### The flicker
 
@@ -324,33 +476,45 @@ again.
 ## Results
 
 Not yet run. One row per check when a session runs it, and the rows
-stay: a re-run adds a row rather than replacing one.
+stay: a re-run adds a row rather than replacing one. The *Role* column
+names which window the row is about, in the split ADR-0033 gives.
 
-| Date | Machine and macOS | Check | Pass or fail | Notes |
-|---|---|---|---|---|
-| | | resting ⌘Tab from another desktop | | |
-| | | raised ⌘Tab from another desktop | | |
-| | | pinned across ⌃→ and ⌃← | | |
-| | | Dock icon from another desktop | | |
-| | | Settings opens where the user is | | |
-| | | About opens where the user is, and follows a ⌘Tab | | |
-| | | the same for About opened from the app menu | | |
-| | | summon from a full-screen Space lands and takes keys | | One blink there is the landing, not the flicker. |
-| | | ten ⌘Tab returns, unpinned | | Record the shape of any flicker. |
-| | | ten ⌘Tab returns, pinned | | |
-| | | collectionBehavior writes: one per key transition unpinned with preference off, none pinned or keep above | | Needs `log stream --level debug`. ADR-0034. |
-| | | ⌘Tab away stacks normally, preference off | | ADR-0032, #190. |
-| | | hotkey raise then ⌘Tab A→B, no flash | | ADR-0032, #190. |
-| | | preference on: raised stays above on ⌘Tab | | ADR-0032, #190. |
-| | | Pin outranks preference in both stances | | ADR-0032, #190. |
-| | | press on a partly covered card takes keys | | ADR-0032, issue #73 and #190. |
-| | | ⌘Tab into a full-screen Space: card absent | | Paste the VERDICT line. ADR-0034, #184. |
-| | | hotkey summon inside full-screen A, then ⌘Tab to B on a desktop | | Paste the VERDICT lines for B and for the return to A. ADR-0034. |
-| | | hotkey summon inside full-screen A lands keyed | | Paste the VERDICT line (`--after 8 --expect above`). ADR-0034. |
-| | | hotkey summon inside full-screen A, then click in A | | Paste the VERDICT line (`--after 8 --expect behind`). ADR-0034. |
-| | | hotkey summon inside full-screen A, ⌘O, cancel | | Where the panel opened, whether the card left, and that it returned keyed and floating. Inferred, not yet seen. ADR-0034. |
-| | | return by ⌘Tab from the full-screen Space | | Paste the VERDICT line (`--expect above`) and the Space it settled on. ADR-0034. |
-| | | pinned and keep above still follow into a full-screen Space | | Paste the VERDICT lines (`--expect above`). ADR-0034. |
-| | | refused raise inside A shows one appear and disappear at most | | ADR-0034. |
-| | | About stays in front while Pin and the preference are toggled | | ADR-0032, #188. |
-| | | edge drag stays on this desktop | | The documented decision, ADR-0019. |
+| Date | Machine and macOS | Role | Check | Pass or fail | Notes |
+|---|---|---|---|---|---|
+| | | panel | resting ⌘Tab from another desktop, editor closed | | |
+| | | panel | raised ⌘Tab from another desktop, editor closed | | |
+| | | panel | pinned across ⌃→ and ⌃← | | |
+| | | panel | Dock icon from another desktop, editor closed | | |
+| | | panel companion | Settings opens where the user is | | |
+| | | panel companion | About opens where the user is, and follows a ⌘Tab | | |
+| | | panel companion | the same for About opened from the app menu | | |
+| | | panel | summon from a full-screen Space lands and takes keys | | One blink there is the landing, not the flicker. |
+| | | panel | ten ⌘Tab returns, unpinned (editor closed) | | Record the shape of any flicker. |
+| | | panel | ten ⌘Tab returns, pinned (editor closed) | | |
+| | | panel | collectionBehavior writes: one per key transition unpinned with preference off, none pinned or keep above | | Needs `log stream --level debug`. ADR-0034. |
+| | | editor | ⌘Tab from another desktop selects the editor window | | ADR-0033. |
+| | | editor | Dock icon selects the editor window when open | | ADR-0033. |
+| | | editor | reopen selects the editor window, not the panel | | ADR-0033. |
+| | | panel | hotkey, status item and resting card click stay with the panel | | ADR-0033. |
+| | | both | pinned panel floats above the editor window | | ADR-0033. |
+| | | editor | editor window never resolves to floating | | ADR-0033; needs `log stream --level debug`. |
+| | | editor | editor enters and leaves full screen | | ADR-0033. |
+| | | panel | hotkey summon over the editor window in full screen lands the panel on that Space | | ADR-0033. |
+| | | editor | ⌘Tab back to an editor window in full screen | | ADR-0033. |
+| | | editor | Mission Control shows the editor window titled with the app's name | | ADR-0033 Restoration. |
+| | | editor | Stage Manager groups the editor window under the app's name | | ADR-0033 Restoration. |
+| | | panel | ⌘Tab away stacks normally, preference off, editor closed | | ADR-0032, #190. |
+| | | panel | hotkey raise then ⌘Tab A→B, no flash | | ADR-0032, #190. |
+| | | panel | preference on: raised stays above on ⌘Tab | | ADR-0032, #190. |
+| | | panel | Pin outranks preference in both stances | | ADR-0032, #190. |
+| | | panel | press on a partly covered card takes keys | | ADR-0032, issue #73 and #190. |
+| | | panel | ⌘Tab into a full-screen Space: card absent | | Paste the VERDICT line. ADR-0034, #184. |
+| | | panel | hotkey summon inside full-screen A, then ⌘Tab to B on a desktop | | Paste the VERDICT lines for B and for the return to A. ADR-0034. |
+| | | panel | hotkey summon inside full-screen A lands keyed | | Paste the VERDICT line (`--after 8 --expect above`). ADR-0034. |
+| | | panel | hotkey summon inside full-screen A, then click in A | | Paste the VERDICT line (`--after 8 --expect behind`). ADR-0034. |
+| | | panel | hotkey summon inside full-screen A, ⌘O, cancel | | Where the panel opened, whether the card left, and that it returned keyed and floating. Inferred, not yet seen. ADR-0034. |
+| | | panel | return by ⌘Tab from the full-screen Space | | Paste the VERDICT line (`--expect above`) and the Space it settled on. ADR-0034. |
+| | | panel | pinned and keep above still follow into a full-screen Space | | Paste the VERDICT lines (`--expect above`). ADR-0034. |
+| | | panel | refused raise inside A shows one appear and disappear at most | | ADR-0034. |
+| | | panel companion | About stays in front while Pin and the preference are toggled | | ADR-0032, #188. |
+| | | panel | edge drag stays on this desktop | | The documented decision, ADR-0019. |

@@ -1,6 +1,9 @@
 # Pinned pad over another app's full-screen Space
 
-**Applies to:** OnetimePad, resting stance with the pin on.
+**Applies to:** OnetimePad, the ambient panel only, resting stance with
+the pin on. The primary editor window is a plain activating `NSWindow`
+under ADR-0033 and does not carry the pin, all Spaces membership or the
+mouse gate; nothing here concerns it.
 **Raised by:** issue #73, from the dogfood aberrations log of
 2026-08-19.
 **Owner:** delano.
