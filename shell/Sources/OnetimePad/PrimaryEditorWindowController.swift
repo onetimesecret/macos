@@ -202,6 +202,18 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         window?.contentView = nil
         window = nil
         Self.logger.info("editor window=closed")
+        // ADR-0033: closing the editor window with no other ordinary
+        // window of ours up hands the activation back. Otherwise an
+        // active app with only a resting card (or with the ambient
+        // panel off) would strand the keyboard, the same fault the
+        // rest's `restHandsBackActivation` avoids at a different
+        // moment. A raised, keyed panel keeps the keys.
+        if BackdropModel.editorCloseHandsBackActivation(
+            appActive: NSApp.isActive,
+            panelHoldsKeys: model.pages.owner == .panel && model.holdsKeys
+        ) {
+            NSApp.deactivate()
+        }
     }
 
     // MARK: Ownership coming back

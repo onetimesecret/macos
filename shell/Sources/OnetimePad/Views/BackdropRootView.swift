@@ -269,7 +269,11 @@ struct BackdropRootView: View {
             if !raised {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { model.raise(.summon) }
+                    // Summon rather than raise: this is the same
+                    // deliberate act as the hotkey and the status
+                    // item, and `BackdropModel.summon` reads it that
+                    // way (ADR-0033; `ActivationReason.cardClick`).
+                    .onTapGesture { model.summon() }
                     .help("Click to raise the card")
             }
         }

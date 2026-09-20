@@ -109,4 +109,40 @@ final class LaunchStanceTests: XCTestCase {
             BackdropAppDelegate.raisesAfterModal(stance: .raised, modalSessionRunning: true)
         )
     }
+
+    // MARK: The login launch — no activation, so nothing opens (B4)
+
+    func testALoginLaunchOpensNoEditorWindowByItsAbsence() {
+        // A login launch, or any other launch the system performs, is
+        // filed by the absence of an activation inside `launchWindow`.
+        // ADR-0033 requires it to open no editor window: the routing
+        // table is what opens one, and only the launch activation and
+        // its two later cousins route to the editor window. The launch
+        // itself is not one of the routing table's reasons, so a launch
+        // that never sends an activation is never asked, and no editor
+        // window opens.
+        //
+        // What can be pinned here is the classifier: after the launch
+        // window has passed with no activation, any activation that
+        // does arrive is `.lateActivation` (a ⌘Tab hours later, a Dock
+        // click), not `.launchActivation`, and the earlier moment when
+        // the launch could have been read as itself is over. The rest
+        // is asserted by the ADR text and by the fact that
+        // `applicationDidFinishLaunching` calls `controller.show()`
+        // and no editor window verb.
+        XCTAssertEqual(
+            ActivationRouter.activationReason(
+                sinceLaunch: BackdropAppDelegate.launchWindow + 0.5,
+                launchWindow: BackdropAppDelegate.launchWindow
+            ),
+            .lateActivation
+        )
+        XCTAssertEqual(
+            ActivationRouter.activationReason(
+                sinceLaunch: 3_600,
+                launchWindow: BackdropAppDelegate.launchWindow
+            ),
+            .lateActivation
+        )
+    }
 }

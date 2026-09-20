@@ -386,7 +386,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // ⌃⌥Space, system-wide. Registration can fail (another app
         // holds the combination); the menu-bar item still summons.
         summonKey = BackdropHotKey.controlOptionSpace { [weak self] in
-            Task { @MainActor in self?.model.summon() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.apply(ActivationRouter.decide(.hotkey, in: self.activationContext()))
+            }
         }
 
         // Every modal of ours reports back when it returns
@@ -477,6 +480,41 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return sinceLaunch < launchWindow ? launchRaise : .activation
     }
 
+    /// The routing table's world, read straight off the model. Kept in
+    /// one place so every route builds it the same way and so the two
+    /// activation callbacks that consume the About/Settings claim can
+    /// override that one input.
+    func activationContext(claimed: Bool = false) -> ActivationContext {
+        ActivationContext(
+            editorWindowOpen: model.editorWindowOpen,
+            editorWindowCanTakeKeys: model.editorWindowCanTakeKeys,
+            ambientPanelEnabled: model.ambientPanelEnabled,
+            owner: model.pages.owner,
+            claimedByAnotherWindow: claimed
+        )
+    }
+
+    /// Dispatch a routing decision to the surface it names. The verbs
+    /// stay here: the routing function is pure, and the wiring between
+    /// its answer and the two window controllers is the delegate's.
+    /// `.openEditorWindow` uses `show()` because it deminiaturizes and
+    /// orders front (the reopen expects both). A resting-side raise on
+    /// the editor's route is refused: the raise argument is for the
+    /// panel's routes, and the editor window's own key gain is what
+    /// rests the panel (ADR-0033, the key-turn rule).
+    func apply(_ route: ActivationRoute) {
+        switch route {
+        case .openEditorWindow:
+            editorWindow.show()
+        case .raisePanel(let raise):
+            model.raise(raise)
+        case .summonPanel:
+            model.summon()
+        case .noop:
+            break
+        }
+    }
+
     /// Quit performs one synchronous shell-state flush. A settled flush
     /// terminates, including when the sealed drafts contain unsaved file
     /// buffers. A refused or unsavable flush cancels the first quit and
@@ -489,13 +527,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let reply = QuitPrompt.terminateReply(flushing: model)
         if reply == .terminateCancel {
-            // A cancelled quit goes back to the owner (ADR-0033): the
+            // A cancelled quit goes back to the owner (ADR-0033: the
             // quit anyway line is under the page, and the page is in
-            // the window that owns it.
-            switch model.pages.owner {
-            case .editorWindow: editorWindow.show()
-            case .panel: model.raise(.activation)
-            }
+            // the window that owns it). Routed through the same table
+            // every activation reads, so the "back to owner" rule is
+            // written once.
+            apply(ActivationRouter.decide(.cancelledQuit, in: activationContext()))
         }
         return reply
     }
@@ -515,35 +552,29 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// sentence. What hangs off the distinction is the roll's anchor,
     /// see `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
-        // Ahead of the raise's own exemptions, and ahead of the launch
+        // Ahead of the routing table's answer, and ahead of the launch
         // window: coming back to the app is exactly when a checkout, a
         // formatter or another editor has had its turn at a file, and
-        // that is true whether or not this particular activation
-        // raises the card (decisions.md item 5).
+        // that is true whether or not this particular activation moves
+        // any window (decisions.md item 5).
         pages.checkOpenFilesOnActivate()
         // Both flags are consumed by whichever activation arrives next,
         // launch window or not: each was set only when an activation
         // was certain to follow, so this is that activation, and a flag
         // left standing here would swallow the next real ⌘Tab instead.
         //
-        // An editor window on screen claims the activation as About and
-        // Settings do, and for good rather than once: ⌘Tab names the
-        // app, the app's window is the editor window, and AppKit makes
-        // it key on the way in (ADR-0033). The raise used to refuse
-        // itself while that window was open. It no longer refuses
-        // anything, so the route is decided here, where routes are. A
-        // window in the Dock claims nothing: ⌘Tab does not bring it
-        // out, and an activation it claimed would bring nothing forward
-        // and leave the app active with no key window. B4 owns the
-        // routing's final form.
-        let claimed = aboutActivation || settingsActivation || model.editorWindowCanTakeKeys
+        // Under ADR-0033 an editor window on screen is not a claim: it
+        // is exactly the surface the activation is routed to. Only
+        // About and Settings hold their own claim, and the routing
+        // function sees them through `claimedByAnotherWindow`.
+        let claimed = aboutActivation || settingsActivation
         aboutActivation = false
         settingsActivation = false
-        guard let raise = Self.activationRaises(
+        let reason = ActivationRouter.activationReason(
             sinceLaunch: Date().timeIntervalSince(launchedAt),
-            claimedByAnotherWindow: claimed
-        ) else { return }
-        model.raise(raise)
+            launchWindow: Self.launchWindow
+        )
+        apply(ActivationRouter.decide(reason, in: activationContext(claimed: claimed)))
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.
@@ -571,13 +602,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// runs two modals back to back today; the guard is what keeps
     /// that a fact about the app rather than a requirement on it.
     private func modalSessionEnded() {
+        // The gate on stance is kept: a rest that happened while the
+        // panel was up was somebody's deliberate act and is not ours
+        // to undo. Deferred a turn for the reason
+        // `raisesAfterModal` names, and the same fact is asked again
+        // there (no modal of ours running now). The route itself is
+        // the routing function's, so "back to the owner" is written
+        // in one place.
         guard model.stance == .raised else { return }
         Task { @MainActor [weak self] in
             guard let self,
                 Self.raisesAfterModal(
                     stance: self.model.stance, modalSessionRunning: ModalSession.isRunning)
             else { return }
-            self.model.raise(.activation)
+            self.apply(ActivationRouter.decide(.modalReturn, in: self.activationContext()))
         }
     }
 
@@ -617,13 +655,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // coming back through it is owed the same answer about what
         // else wrote their files.
         pages.checkOpenFilesOnActivate()
-        if BackdropModel.reopenOpensEditorWindow(
-            preference: model.dockOpensEditorWindow, windowOpen: model.editorWindowOpen
-        ) {
-            editorWindow.show()
-        } else {
-            model.raise(.activation)
-        }
+        // ADR-0033 folds the earlier B1 spike switch into the routing
+        // table: reopen selects the editor window unconditionally,
+        // opening it when closed. The route reads `ambientPanelEnabled`
+        // through the context, so a person who turned the panel off
+        // still gets the editor window they asked for.
+        apply(ActivationRouter.decide(.reopen, in: activationContext()))
         return false
     }
 
@@ -678,7 +715,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             // opens Settings; anything else summons.
             openSettings()
         } else {
-            model.summon()
+            apply(ActivationRouter.decide(.statusItem, in: activationContext()))
         }
     }
 

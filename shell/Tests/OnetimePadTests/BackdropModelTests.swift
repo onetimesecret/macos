@@ -106,38 +106,47 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(second.keepsAboveWhenInactive)
     }
 
-    // MARK: The editor window's entrance
+    // MARK: The ambient panel preference (ADR-0033, issue #200)
 
-    func testDockOpensEditorWindowDefaultsOffAndPersists() {
-        // Off is what lets a build carry the spike without changing
-        // what the Dock does for anyone who has not asked.
-        let defaults = makeDefaults(named: "dock-opens-editor")
+    func testAmbientPanelEnabledDefaultsOnAndPersists() {
+        // Default on is the ADR: a fresh install shows the panel, and
+        // the two-window routing keeps it that way until the person
+        // asks otherwise.
+        let defaults = makeDefaults(named: "ambient-panel-enabled")
         let first = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "dock-opens-editor-a")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-a")
         )
-        XCTAssertFalse(first.dockOpensEditorWindow)
-        first.dockOpensEditorWindow = true
+        XCTAssertTrue(first.ambientPanelEnabled)
+        first.ambientPanelEnabled = false
 
         let second = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "dock-opens-editor-b")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-b")
         )
-        XCTAssertTrue(second.dockOpensEditorWindow)
+        XCTAssertFalse(second.ambientPanelEnabled)
     }
 
-    func testReopenRoutingOverTheWholeMatrix() {
-        // Off and closed is the old behaviour, a raise. The case worth
-        // the function is off and open: the setting was turned off
-        // under an open window, and a reopen still names that window.
+    func testEditorCloseHandsBackActivationWhenActiveAndKeyless() {
+        // The two facts (ADR-0033: an active app with no key-able
+        // window strands the keyboard). A panel that just took the
+        // keyboard on the way out keeps them, because a hotkey summon
+        // inside the close deserves the keys it asked for.
+        XCTAssertTrue(
+            BackdropModel.editorCloseHandsBackActivation(
+                appActive: true, panelHoldsKeys: false
+            )
+        )
         XCTAssertFalse(
-            BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: false))
-        XCTAssertTrue(
-            BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: true))
-        XCTAssertTrue(
-            BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: false))
-        XCTAssertTrue(
-            BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: true))
+            BackdropModel.editorCloseHandsBackActivation(
+                appActive: true, panelHoldsKeys: true
+            )
+        )
+        XCTAssertFalse(
+            BackdropModel.editorCloseHandsBackActivation(
+                appActive: false, panelHoldsKeys: false
+            )
+        )
     }
 
     // MARK: Who owns the page content (ADR-0033, issue #198)
