@@ -191,9 +191,9 @@ final class BackdropSettingsWindowController: NSObject {
                         get: { [model] in model.keepsAboveWhenInactive },
                         set: { [model] in model.keepsAboveWhenInactive = $0 }
                     ),
-                    dockOpensEditorWindow: Binding(
-                        get: { [model] in model.dockOpensEditorWindow },
-                        set: { [model] in model.dockOpensEditorWindow = $0 }
+                    ambientPanelEnabled: Binding(
+                        get: { [model] in model.ambientPanelEnabled },
+                        set: { [model] in model.setAmbientPanelEnabled($0) }
                     )
                 ),
                 for: tab

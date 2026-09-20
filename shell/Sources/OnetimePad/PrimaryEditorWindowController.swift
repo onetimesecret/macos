@@ -195,6 +195,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     /// owner held, and if the panel owned they were never this
     /// window's.
     func windowWillClose(_ notification: Notification) {
+        let closingWindowID = window.map(ObjectIdentifier.init)
         captureObserver = nil
         ownerObserver = nil
         window?.delegate = nil
@@ -202,6 +203,37 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         window?.contentView = nil
         window = nil
         Self.logger.info("editor window=closed")
+        // Decide after AppKit has finished transferring key status away
+        // from the closing window. Settings, About, or any other visible
+        // window that can become key keeps the app active; with none, an
+        // active app with only a resting card (or no ambient panel) would
+        // strand the keyboard. A raised, keyed panel keeps it as before.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let anotherVisibleKeyCapableWindow = NSApp.windows.contains { candidate in
+                candidate.isVisible
+                    && candidate.canBecomeKey
+                    && closingWindowID != ObjectIdentifier(candidate)
+            }
+            if Self.closeHandsBackActivation(
+                appActive: NSApp.isActive,
+                panelHoldsKeys: model.pages.owner == .panel && model.holdsKeys,
+                anotherVisibleKeyCapableWindow: anotherVisibleKeyCapableWindow
+            ) {
+                NSApp.deactivate()
+            }
+        }
+    }
+
+    /// The close's deferred activation decision, pure so the window-list
+    /// qualification can be covered without driving AppKit's close cycle.
+    nonisolated static func closeHandsBackActivation(
+        appActive: Bool, panelHoldsKeys: Bool, anotherVisibleKeyCapableWindow: Bool
+    ) -> Bool {
+        !anotherVisibleKeyCapableWindow
+            && BackdropModel.editorCloseHandsBackActivation(
+                appActive: appActive, panelHoldsKeys: panelHoldsKeys
+            )
     }
 
     // MARK: Ownership coming back

@@ -59,16 +59,24 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
     private nonisolated(unsafe) var distributedObservers: [NSObjectProtocol] = []
 
-    init(model: BackdropModel) {
+    init(model: BackdropModel, onCardClick: @escaping () -> Void) {
         self.model = model
         panel = BackdropPanel()
         altitude = BackdropAltitudeKeeper(window: panel)
-        panel.contentView = NSHostingView(rootView: BackdropRootView(model: model))
+        panel.contentView = NSHostingView(
+            rootView: BackdropRootView(model: model, onCardClick: onCardClick)
+        )
         super.init()
         panel.delegate = self
         // The stance is the single source of truth; the window follows.
         model.$stance
             .sink { [weak self] stance in self?.apply(stance) }
+            .store(in: &observers)
+        model.$ambientPanelEnabled
+            .dropFirst()
+            .sink { [weak self] enabled in
+                self?.applyPanelEnabled(enabled, handBackActivation: false)
+            }
             .store(in: &observers)
         // The pin re-altitudes the current stance in place: level,
         // Space membership, mouse transparency and window extent
@@ -219,17 +227,17 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Launch: the backdrop opens its pages, fits the screen, and takes
-    /// its place in whatever stance the model holds, which at launch is
-    /// the resting one. Whether it comes forward from there is the
-    /// delegate's to decide, on the activation a person's launch sends
-    /// and a login item's never does; what this does is the placing, so
-    /// the pane is fitted and the state restored before any raise
-    /// frames the card as a floating editor.
+    /// Launch: restore the pages and fit the primary screen. An enabled
+    /// panel takes its resting place; a disabled panel remains ordered
+    /// out until the preference changes.
     func show() {
         model.start()
         fitToScreen()
-        apply(model.stance)
+        if model.ambientPanelEnabled {
+            apply(model.stance)
+        } else {
+            applyPanelEnabled(false, handBackActivation: false)
+        }
     }
 
     /// The primary screen only, for now — per-display backdrops are an
@@ -291,7 +299,33 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    private func apply(_ stance: BackdropStance) {
+    private func applyPanelEnabled(_ enabled: Bool, handBackActivation: Bool) {
+        guard enabled else {
+            raiseReconcile?.cancel()
+            stopWatchingForOutsideClicks()
+            panel.makeFirstResponder(nil)
+            panel.isInteractive = false
+            panel.ignoresMouseEvents = true
+            panel.orderOut(nil)
+            Self.logger.info("ambient panel=hidden")
+            return
+        }
+        apply(
+            model.stance,
+            panelEnabled: true,
+            handBackActivation: handBackActivation
+        )
+    }
+
+    private func apply(
+        _ stance: BackdropStance,
+        panelEnabled: Bool? = nil,
+        handBackActivation: Bool = true
+    ) {
+        guard panelEnabled ?? model.ambientPanelEnabled else {
+            applyPanelEnabled(false, handBackActivation: false)
+            return
+        }
         // Key-ability first: a window must already refuse `canBecomeKey`
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
@@ -384,7 +418,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
-            if NSApp.isActive {
+            if handBackActivation, NSApp.isActive {
                 // A ⌘Tab or Dock summon made this app active; resting
                 // hands the whole activation back, not just key status
                 // — an active app with no key-able window would strand

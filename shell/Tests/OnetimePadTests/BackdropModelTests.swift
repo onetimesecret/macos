@@ -106,38 +106,110 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(second.keepsAboveWhenInactive)
     }
 
-    // MARK: The editor window's entrance
+    // MARK: The ambient panel preference (ADR-0033, issue #200)
 
-    func testDockOpensEditorWindowDefaultsOffAndPersists() {
-        // Off is what lets a build carry the spike without changing
-        // what the Dock does for anyone who has not asked.
-        let defaults = makeDefaults(named: "dock-opens-editor")
+    func testAmbientPanelEnabledDefaultsOnAndPersists() {
+        // Default on is the ADR: a fresh install shows the panel, and
+        // the two-window routing keeps it that way until the person
+        // asks otherwise.
+        let defaults = makeDefaults(named: "ambient-panel-enabled")
         let first = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "dock-opens-editor-a")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-a")
         )
-        XCTAssertFalse(first.dockOpensEditorWindow)
-        first.dockOpensEditorWindow = true
+        XCTAssertTrue(first.ambientPanelEnabled)
+        first.setAmbientPanelEnabled(false)
 
         let second = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "dock-opens-editor-b")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-b")
         )
-        XCTAssertTrue(second.dockOpensEditorWindow)
+        XCTAssertFalse(second.ambientPanelEnabled)
     }
 
-    func testReopenRoutingOverTheWholeMatrix() {
-        // Off and closed is the old behaviour, a raise. The case worth
-        // the function is off and open: the setting was turned off
-        // under an open window, and a reopen still names that window.
+    func testStoredDisabledPanelCannotOwnAtLaunch() {
+        let defaults = makeDefaults(named: "ambient-panel-disabled-launch")
+        defaults.set(false, forKey: "ambientPanelEnabled")
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-disabled-launch")
+        )
+
+        XCTAssertFalse(model.ambientPanelEnabled)
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    func testDisablingRaisedPanelRestsItAndMovesOwnershipAway() {
+        let model = makeModel(named: "ambient-panel-disable-raised")
+        model.raise(.summon)
+        var ownerAtPreferenceEmission: PresentationOwner?
+        let watch = model.$ambientPanelEnabled.dropFirst().sink { _ in
+            ownerAtPreferenceEmission = model.pages.owner
+        }
+        defer { watch.cancel() }
+
+        model.setAmbientPanelEnabled(false)
+
+        XCTAssertEqual(ownerAtPreferenceEmission, .editorWindow)
+        XCTAssertFalse(model.ambientPanelEnabled)
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    func testEnablingPanelSettlesOwnershipBeforeItCanBeShown() {
+        let defaults = makeDefaults(named: "ambient-panel-enable")
+        defaults.set(false, forKey: "ambientPanelEnabled")
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enable")
+        )
+
+        var ownerAtPreferenceEmission: PresentationOwner?
+        let watch = model.$ambientPanelEnabled.dropFirst().sink { _ in
+            ownerAtPreferenceEmission = model.pages.owner
+        }
+        defer { watch.cancel() }
+
+        model.setAmbientPanelEnabled(true)
+
+        XCTAssertEqual(ownerAtPreferenceEmission, .panel)
+        XCTAssertTrue(model.ambientPanelEnabled)
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .panel)
+    }
+
+    func testDisabledPanelRefusesDirectRaiseAndSummon() {
+        let model = makeModel(named: "ambient-panel-refuses-direct-routes")
+        model.setAmbientPanelEnabled(false)
+
+        model.raise(.summon)
+        model.summon()
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    func testEditorCloseHandsBackActivationWhenActiveAndKeyless() {
+        // The two facts (ADR-0033: an active app with no key-able
+        // window strands the keyboard). A panel that just took the
+        // keyboard on the way out keeps them, because a hotkey summon
+        // inside the close deserves the keys it asked for.
+        XCTAssertTrue(
+            BackdropModel.editorCloseHandsBackActivation(
+                appActive: true, panelHoldsKeys: false
+            )
+        )
         XCTAssertFalse(
-            BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: false))
-        XCTAssertTrue(
-            BackdropModel.reopenOpensEditorWindow(preference: false, windowOpen: true))
-        XCTAssertTrue(
-            BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: false))
-        XCTAssertTrue(
-            BackdropModel.reopenOpensEditorWindow(preference: true, windowOpen: true))
+            BackdropModel.editorCloseHandsBackActivation(
+                appActive: true, panelHoldsKeys: true
+            )
+        )
+        XCTAssertFalse(
+            BackdropModel.editorCloseHandsBackActivation(
+                appActive: false, panelHoldsKeys: false
+            )
+        )
     }
 
     // MARK: Who owns the page content (ADR-0033, issue #198)
@@ -753,23 +825,28 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(dockFirst.editorWindowCanTakeKeys)
     }
 
-    func testAHiddenAppLeavesTheEditorWindowAbleToClaimTheActivation() {
+    func testAHiddenAppRoutesTheActivationToItsEditorWindow() {
         // Settings holds the keys, ⌘H, ⌘Tab back. Hiding sends the
         // model nothing, and neither does coming back, since the editor
-        // window is keyed by neither. The activation is judged on the
-        // fact as it stood before the hide, which is the window the
-        // unhide is putting back.
+        // window is keyed by neither. The window remains on screen and
+        // is the destination of the activation, not a claimant that
+        // suppresses routing.
         let model = makeModel(named: "hidden-app")
         model.editorWindowOpened()
         model.keyStatusChanged(of: .editorWindow, keyed: true)
         model.keyStatusChanged(of: .editorWindow, keyed: false)
 
         XCTAssertTrue(model.editorWindowCanTakeKeys)
-        XCTAssertNil(
-            BackdropAppDelegate.activationRaises(
-                sinceLaunch: 60, claimedByAnotherWindow: model.editorWindowCanTakeKeys
+        XCTAssertEqual(
+            ActivationRouter.decide(
+                .lateActivation,
+                in: ActivationContext(
+                    ambientPanelEnabled: model.ambientPanelEnabled,
+                    owner: model.pages.owner,
+                    claimedByAnotherWindow: false
+                )
             ),
-            "the card is not raised over an editor window in plain view"
+            .openEditorWindow(.activation)
         )
     }
 
