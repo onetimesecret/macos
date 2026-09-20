@@ -137,10 +137,9 @@ struct BackdropApp: App {
                 // are also `isExcludedFromWindowsMenu = true`, so the
                 // menu itself lists the editor window and Settings only.
                 CommandGroup(before: .windowArrangement) {
-                    Button("Close Window") {
+                    WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
                         appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
                     }
-                    .keyboardShortcut(appDelegate.shortcut(for: .windowClose))
                     Divider()
                 }
             }
@@ -321,6 +320,28 @@ private struct SealSelectionMenuItem: View {
         }
         .keyboardShortcut(shortcut)
         .disabled(!availability.canSeal)
+    }
+}
+
+/// The Window menu's Close Window (issue #201). A view of its own
+/// because `.keyboardShortcut(nil)` on a `Button` inside a Window-menu
+/// `CommandGroup` empties the group in place, item and neighbouring
+/// divider both; the surrounding menu closes over the gap and the
+/// item disappears rather than losing only its chord. Splitting the
+/// two arms into distinct expressions keeps the button live when the
+/// keymap has nothing to say, which is the fail-open shape the doc
+/// comment on the group promises.
+private struct WindowCloseMenuItem: View {
+    let shortcut: KeyboardShortcut?
+    let action: () -> Void
+
+    var body: some View {
+        if let shortcut {
+            Button("Close Window", action: action)
+                .keyboardShortcut(shortcut)
+        } else {
+            Button("Close Window", action: action)
+        }
     }
 }
 
