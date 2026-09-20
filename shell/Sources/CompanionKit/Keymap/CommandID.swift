@@ -62,6 +62,14 @@ public enum CommandID: String, CaseIterable, Sendable {
     case stateSaveNow = "state::SaveNow"
     case appSettings = "app::Settings"
 
+    // The window around the surface (ADR-0033, issue #201). Distinct
+    // from `page::Close`, which closes the page or file on the strip:
+    // this one closes the window the keyboard is in, and reaches Settings
+    // and the editor window alike. The Window menu carries its chord;
+    // the surface installer never does, so a raised panel that owns
+    // the keyboard does not fight the menu for it.
+    case windowClose = "window::Close"
+
     /// Which piece of the app listens for this command.
     ///
     /// Not a detail of the file, a fact about the code: the surface
@@ -78,6 +86,12 @@ public enum CommandID: String, CaseIterable, Sendable {
     public enum Dispatch: Sendable {
         case surface
         case editor
+        /// Carried by a main-menu item's key equivalent, live app-wide
+        /// even while Settings or another window without a surface holds
+        /// the keys. The surface installer never installs a `.window`
+        /// chord, so the menu is the one route and there is no fight
+        /// with the surface's own hidden buttons over the same key.
+        case window
     }
 
     public var dispatch: Dispatch {
@@ -85,6 +99,8 @@ public enum CommandID: String, CaseIterable, Sendable {
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
             .editorDetectCodeLanguage, .editorUndo, .editorRedo:
             return .editor
+        case .windowClose:
+            return .window
         default:
             return .surface
         }
