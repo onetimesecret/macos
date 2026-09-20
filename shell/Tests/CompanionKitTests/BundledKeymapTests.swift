@@ -37,6 +37,10 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-alt-left": .pagePrevious,
         "cmd-alt-right": .pageNext,
         "cmd-w": .pageClose,
+        // ⇧⌘W closes the window the keyboard is in (issue #201): the
+        // editor window and Settings alike. Carried by the Window
+        // menu's item app-wide, never by the surface installer.
+        "cmd-shift-w": .windowClose,
         "cmd-shift-v": .clipboardSeal,
         "cmd-enter": .clipboardSealSelection,
         // The one chord that puts plaintext on the board, over a
@@ -159,6 +163,49 @@ final class BundledKeymapTests: XCTestCase {
     /// do so because the section opted into key equivalents.
     func testSettingsOffersItsChordToTheMenu() throws {
         XCTAssertEqual(try bundled().menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
+    }
+
+    /// ⇧⌘W is the Window menu's Close Window (issue #201). It is a
+    /// menu-carried chord, not a surface one: the surface installer
+    /// never installs it, because a raised, keyed panel would otherwise
+    /// have its own hidden button fighting the menu for the same key.
+    func testWindowCloseIsMenuBoundAndNeverSurfaceInstalled() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.menuKeystroke(for: .windowClose)?.canonical, "cmd-shift-w")
+        XCTAssertFalse(
+            resolved.surfaceShortcuts().contains { $0.command == .windowClose },
+            "window::Close must never be installed as a surface shortcut")
+    }
+
+    /// The Window menu carries the chord alone, so an override that
+    /// takes it away leaves the menu item without a shortcut rather
+    /// than falling back to a hardcoded ⇧⌘W (docs/development/about-the-keymap.md).
+    func testUnbindingWindowCloseLeavesTheMenuNothingToAdvertise() throws {
+        let defaultText = try XCTUnwrap(Keymap.bundledDefaultText())
+        let keymap = Keymap.resolve(
+            defaultText: defaultText,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-shift-w": null } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertNil(keymap.menuKeystroke(for: .windowClose))
+        XCTAssertFalse(keymap.bindings.contains { $0.command == .windowClose })
+    }
+
+    /// And an override that rebinds ⇧⌘W to something else wins, exactly
+    /// as it does for every other chord: the Window menu's item then
+    /// loses its shortcut rather than lying (issue #201).
+    func testAnOverrideThatRebindsWindowCloseWinsAndTheMenuLosesTheChord() throws {
+        let defaultText = try XCTUnwrap(Keymap.bundledDefaultText())
+        let keymap = Keymap.resolve(
+            defaultText: defaultText,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-shift-w": "page::New" } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertEqual(
+            keymap.command(for: try parse("cmd-shift-w"), in: .editor), .pageNew)
+        XCTAssertNil(keymap.menuKeystroke(for: .windowClose))
     }
 
     /// And an override that takes ⌘, away leaves nothing for the menu

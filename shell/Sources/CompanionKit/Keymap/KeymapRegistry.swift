@@ -82,6 +82,14 @@ extension PageModel {
             // undo has to place a caret after the core moves the
             // document underneath it.
             return false
+        case .windowClose:
+            // The Window menu's item carries this chord app-wide and
+            // sends `performClose:` to the key window (issue #201). The
+            // model has no window of its own to close, and the surface
+            // installer never installs it, so this arm is only reached
+            // if a future call site asked the model directly; refuse it
+            // the same way the text-view commands do.
+            return false
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
             .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9:
             // Answered above, by number, so the nine cases stay one

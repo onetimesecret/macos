@@ -87,9 +87,22 @@ struct BackdropApp: App {
                 // the empty placeholder as a blank window. Repoint it so
                 // every ⌘, in the app lands on the one real Settings
                 // window the delegate owns.
+                //
+                // "Customize Keyboard Shortcuts…" sits below Settings…
+                // because it is a preference too, one that carries no
+                // chord of its own on purpose: users rebind it rarely,
+                // and offering a shortcut here would spend the chord
+                // budget on the door to the file rather than on a page
+                // verb. It opens keymap.json as an ordinary document
+                // (creating the configuration directory and seeding the
+                // bundled default the first time), so the file the app
+                // reads is the file the person is editing.
                 CommandGroup(replacing: .appSettings) {
                     Button("Settings…") { appDelegate.openSettings() }
                         .keyboardShortcut(appDelegate.settingsShortcut)
+                    Button("Customize Keyboard Shortcuts…") {
+                        appDelegate.pages.openUserKeymapFile()
+                    }
                 }
                 // Repointed for the same reason and with more at stake.
                 // The synthesized item calls AppKit's own
@@ -106,6 +119,28 @@ struct BackdropApp: App {
                     Button("About \(BackdropAppDelegate.productName)") {
                         appDelegate.showAbout()
                     }
+                }
+                // The Window menu's Close Window (issue #201, ADR-0033).
+                // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
+                // window the keyboard is in and reaches Settings too.
+                // The item is placed before AppKit's Minimize/Zoom group
+                // so it heads the menu the way Close does in every other
+                // macOS app. The chord comes from the keymap, so an
+                // override that takes it away leaves the item without a
+                // shortcut rather than lying (see docs/development/about-the-keymap.md).
+                //
+                // `performClose:` down the responder chain: the key
+                // window answers, so Settings closes on Settings, the
+                // editor closes on itself, and the borderless panel
+                // (`.panel` and its key relay) answers with nothing to
+                // do because it carries no close box. Panel and relay
+                // are also `isExcludedFromWindowsMenu = true`, so the
+                // menu itself lists the editor window and Settings only.
+                CommandGroup(before: .windowArrangement) {
+                    WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
+                        appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
+                    }
+                    Divider()
                 }
             }
     }
@@ -288,6 +323,28 @@ private struct SealSelectionMenuItem: View {
     }
 }
 
+/// The Window menu's Close Window (issue #201). A view of its own
+/// because `.keyboardShortcut(nil)` on a `Button` inside a Window-menu
+/// `CommandGroup` empties the group in place, item and neighbouring
+/// divider both; the surrounding menu closes over the gap and the
+/// item disappears rather than losing only its chord. Splitting the
+/// two arms into distinct expressions keeps the button live when the
+/// keymap has nothing to say, which is the fail-open shape the doc
+/// comment on the group promises.
+private struct WindowCloseMenuItem: View {
+    let shortcut: KeyboardShortcut?
+    let action: () -> Void
+
+    var body: some View {
+        if let shortcut {
+            Button("Close Window", action: action)
+                .keyboardShortcut(shortcut)
+        } else {
+            Button("Close Window", action: action)
+        }
+    }
+}
+
 @MainActor
 final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private let model = BackdropModel()
@@ -355,6 +412,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // is the fee; whether it makes the surface too central is the
         // feature spec's open question №7.
         NSApp.setActivationPolicy(.regular)
+
+        // File belongs after the app menu, the way every macOS app
+        // orders its own. SwiftUI's `CommandMenu("File")` appends
+        // instead, because the app has no document scene for the
+        // synthesised File menu to attach to (Settings is the only
+        // scene, and it is the placeholder). Move it into place, so
+        // the menu bar reads: App | File | Edit | View | Window | Help.
+        Self.moveFileMenuAfterAppMenu()
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -977,6 +1042,26 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         return NSImage(contentsOf: url)
+    }
+
+    /// Move the File menu item into standard macOS position: right
+    /// after the app menu, ahead of Edit and View.
+    ///
+    /// SwiftUI has no direct positioning knob for `CommandMenu`, and
+    /// this app has no document scene for the framework to synthesise
+    /// a File menu around, so the runtime order comes out as App | Edit
+    /// | View | File | Window | Help. AppKit's main menu is an ordinary
+    /// `NSMenu` by the time the delegate is called, so a reorder here
+    /// is safe and idempotent. Absence of the File item (a future
+    /// build that dropped the menu) is silent on purpose.
+    private static func moveFileMenuAfterAppMenu() {
+        guard let mainMenu = NSApp.mainMenu,
+              let index = mainMenu.items.firstIndex(where: { $0.title == "File" }),
+              index > 1
+        else { return }
+        let item = mainMenu.items[index]
+        mainMenu.removeItem(at: index)
+        mainMenu.insertItem(item, at: 1)
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the

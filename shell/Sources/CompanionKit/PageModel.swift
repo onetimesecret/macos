@@ -1178,6 +1178,11 @@ public final class PageModel: ObservableObject {
     /// never writes.
     private let draftsFileURL: URL
 
+    /// The user's keymap file, resolved once from the same seam the
+    /// launch-time load consulted. Nil under the test runner unless a
+    /// seam named one, matching `userKeymapURL`'s rule.
+    private let userKeymapFileURL: URL?
+
     /// The interval after a refused write. Longer than the debounce: a
     /// full volume or a denied Keychain prompt does not clear in two
     /// seconds, and retrying at the debounce cadence would spend the
@@ -1351,9 +1356,10 @@ public final class PageModel: ObservableObject {
         // Resolved once, here, so the surface and the page's text view
         // are answering out of one map. A test reads only the override
         // it named, which for most of them is none.
-        keymap = Keymap.load(
-            userOverride: Self.userKeymapURL(formFactor: formFactor, seam: seams.keymapOverride)
-        )
+        let resolvedKeymapURL = Self.userKeymapURL(
+            formFactor: formFactor, seam: seams.keymapOverride)
+        userKeymapFileURL = resolvedKeymapURL
+        keymap = Keymap.load(userOverride: resolvedKeymapURL)
         keymap.report(subsystem: formFactor.loggerSubsystem)
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
@@ -2938,6 +2944,47 @@ public final class PageModel: ObservableObject {
         markFilesDirty()
     }
 
+    /// Open the user's keymap file (`keymap.json` under the form
+    /// factor's configuration directory) as an ordinary document.
+    ///
+    /// The configuration directory is created on demand and the file
+    /// is seeded with the bundled default when it does not yet exist,
+    /// so the item the person is opening is the file the app already
+    /// reads. This is the one place that creates the directory: the
+    /// launch path leaves it alone on purpose (`configurationDirectory`
+    /// on FormFactor), because absence is the ordinary case; a click
+    /// on this menu item is the moment the user chose otherwise.
+    ///
+    /// A test suite that did not name a keymap seam has no file to
+    /// open at all (`userKeymapURL` refuses the installed path under
+    /// the runner), and the call flashes an actionable notice rather
+    /// than doing nothing.
+    public func openUserKeymapFile() {
+        guard let url = userKeymapFileURL else {
+            flash(Self.keymapUnavailableNotice, tone: .actionable)
+            return
+        }
+        let manager = FileManager.default
+        if !manager.fileExists(atPath: url.path) {
+            let directory = url.deletingLastPathComponent()
+            do {
+                try manager.createDirectory(
+                    at: directory, withIntermediateDirectories: true)
+            } catch {
+                flash(Self.keymapSeedFailureNotice, tone: .actionable)
+                return
+            }
+            let seed = Keymap.bundledDefaultText() ?? "[]\n"
+            do {
+                try seed.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                flash(Self.keymapSeedFailureNotice, tone: .actionable)
+                return
+            }
+        }
+        openFile(at: url)
+    }
+
     /// Write the selected file back to its own path. The second reading
     /// of the save chord: on a page it flushes sealed state as it
     /// always has.
@@ -3339,6 +3386,20 @@ public final class PageModel: ObservableObject {
 
     public nonisolated static func missingNotice(name: String) -> String {
         "\(name) is no longer at its path."
+    }
+
+    /// The keymap file cannot be resolved at all, which only happens
+    /// under the test runner without a seam. Named so a suite that
+    /// exercises the menu route can assert against it.
+    public nonisolated static var keymapUnavailableNotice: String {
+        "The keymap file is unavailable in this build."
+    }
+
+    /// The seed write itself failed: the configuration directory or
+    /// the file underneath it could not be created, which is a disk
+    /// or permission problem the app cannot recover from silently.
+    public nonisolated static var keymapSeedFailureNotice: String {
+        "The keymap file could not be created."
     }
 
     /// What a discard of the sealed content file also takes with it.
