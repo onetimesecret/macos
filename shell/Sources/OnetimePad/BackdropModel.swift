@@ -174,14 +174,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // and Keychain — the PageModel init refuses that under a
         // runner and takes the process down.
         self.pages = pages ?? PageModel(formFactor: .backdrop, defaults: defaults)
-        // The shared model starts with the panel owning, which is the
-        // shipped rule's answer at launch and so moves nothing. Under
-        // the never grant policy it is not the answer, and the panel's
-        // root view must not find itself the owner for even one pass.
-        // The owner alone: the redraw is `start()`'s to begin.
+        // The shared model starts with the panel owning only when the
+        // panel is available. A disabled or read-only panel must not
+        // mount the live page even for the first render.
         self.pages.transferOwnership(
             to: PresentationOwner.resolve(
-                panelRaised: false, editorWindowOpen: false, panelMayOwn: panelMayOwn
+                panelRaised: false,
+                editorWindowOpen: false,
+                panelMayOwn: panelMayOwn && ambientPanelEnabled
             )
         )
     }
@@ -241,6 +241,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// keyboard — the user clicked or ⌘Tabbed away to work beside it —
     /// summons the keys back rather than resting.
     func summon() {
+        guard ambientPanelEnabled else { return }
         if Self.stanceAfterSummon(current: stance, holdsKeys: holdsKeys) == .raised {
             raise(.summon)
         } else {
@@ -275,6 +276,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Which gestures reach this with the editor window open is the
     /// routes' question and not the raise's.
     func raise(_ reason: BackdropRaise) {
+        guard ambientPanelEnabled else { return }
         // The owner before the stance. The stance's publication is what
         // the window controller acts on, and its ordering calls bring
         // key delegates of both windows back in here before it returns;
@@ -322,6 +324,15 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// keyboard away from inside the publication, and the window that
     /// receives it has to find itself the owner already.
     func rest() {
+        prepareRest()
+        publish(.resting)
+    }
+
+    /// Settle the non-published half of a rest. The ambient preference
+    /// transition uses this to remove ownership, publish the hide, and
+    /// only then publish the resting stance, avoiding activation handoff
+    /// beneath a Settings window.
+    private func prepareRest(panelEnabled: Bool? = nil) {
         // The offer is a summon-time thing; a resting card makes no
         // offers, and one standing from the last raise would be stale
         // by the next. The panel's own offer only: under the never
@@ -330,8 +341,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // panel's to withdraw.
         if pages.owner == .panel { pages.withdrawPasteboardOffer() }
         panelRaised = false
-        settleOwner()
-        publish(.resting)
+        settleOwner(panelEnabled: panelEnabled)
     }
 
     /// Esc with no ledger to leave, from whichever window the page is
@@ -377,12 +387,12 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// redraw the owner's cadence. Called at every event that moves
     /// either fact. A transfer to the window that already owns is
     /// nothing, so nobody asks first whether the answer changed.
-    private func settleOwner() {
+    private func settleOwner(panelEnabled: Bool? = nil) {
         pages.transferOwnership(
             to: PresentationOwner.resolve(
                 panelRaised: panelRaised,
                 editorWindowOpen: editorWindowOpen,
-                panelMayOwn: panelMayOwn
+                panelMayOwn: panelMayOwn && (panelEnabled ?? ambientPanelEnabled)
             )
         )
         retime()
@@ -704,10 +714,27 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// It supersedes the B1 spike switch `dockOpensEditorWindow`,
     /// which asked the same question backwards (whether the reopen
     /// opens the editor window) and is folded here.
-    @Published var ambientPanelEnabled: Bool {
+    @Published private(set) var ambientPanelEnabled: Bool {
         didSet { defaults.set(ambientPanelEnabled, forKey: Self.ambientPanelEnabledKey) }
     }
     private static let ambientPanelEnabledKey = "ambientPanelEnabled"
+
+    /// Changes whether the ambient panel is available. Disabling first
+    /// settles a raised panel through its normal rest choreography, then
+    /// removes the panel from ownership before observers order it out.
+    /// Enabling grants ownership before observers reveal the resting
+    /// panel, so the first visible frame has the correct presentation.
+    func setAmbientPanelEnabled(_ enabled: Bool) {
+        guard enabled != ambientPanelEnabled else { return }
+        if !enabled, panelRaised {
+            prepareRest(panelEnabled: false)
+            ambientPanelEnabled = false
+            publish(.resting)
+            return
+        }
+        settleOwner(panelEnabled: enabled)
+        ambientPanelEnabled = enabled
+    }
 
     /// The editor window is about to come up and take the keyboard,
     /// and when the editor window takes the keyboard a raised panel

@@ -193,7 +193,7 @@ final class BackdropSettingsWindowController: NSObject {
                     ),
                     ambientPanelEnabled: Binding(
                         get: { [model] in model.ambientPanelEnabled },
-                        set: { [model] in model.ambientPanelEnabled = $0 }
+                        set: { [model] in model.setAmbientPanelEnabled($0) }
                     )
                 ),
                 for: tab

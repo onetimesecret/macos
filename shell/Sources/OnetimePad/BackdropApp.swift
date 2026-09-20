@@ -310,11 +310,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// brings no activation at all. A launch the person performs, from
     /// the Finder, the Dock, Spotlight or `open`, activates the app
     /// within moments of `applicationDidFinishLaunching`, and that
-    /// activation is read as the launch itself and raises as a summon
-    /// (`activationRaises`). A login item, or any other launch the
-    /// system performs in the background, never activates, so nothing
-    /// arrives inside the window and the surface stays where the launch
-    /// placed it, resting.
+    /// activation is read as the launch itself and routed to the editor
+    /// as a summon. A login item, or any other launch the system performs
+    /// in the background, never activates, so nothing arrives inside the
+    /// launch window.
     /// About's activation is flagged by `showAbout`, and Settings' by
     /// `openSettings`, because those windows need the activation for
     /// themselves without dragging the surface up with them. Every
@@ -366,7 +365,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // template below either way.
         NSApp.applicationIconImage = Self.bundledIconImage() ?? Self.maruhiColorImage(side: 256)
 
-        let controller = BackdropWindowController(model: model)
+        let controller = BackdropWindowController(
+            model: model,
+            onCardClick: { [weak self] in
+                guard let self else { return }
+                self.apply(
+                    ActivationRouter.decide(.cardClick, in: self.activationContext())
+                )
+            }
+        )
         self.controller = controller
         // Esc, and every other hand-back route, rests a raised surface:
         // the backdrop's way of giving the keyboard back is to step
@@ -421,10 +428,28 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             // Sendable. AppKit posts this one on the main thread.
             let closing = (notification.object as AnyObject?).map(ObjectIdentifier.init)
             MainActor.assumeIsolated {
-                guard let closing,
-                    NSApp.keyWindow.map(ObjectIdentifier.init) == closing
-                else { return }
-                self?.model.auxiliaryWindowReleasedKeys()
+                guard let self, let closing else { return }
+                if NSApp.keyWindow.map(ObjectIdentifier.init) == closing {
+                    self.model.auxiliaryWindowReleasedKeys()
+                }
+                // Once AppKit has removed the closing window, return an
+                // otherwise stranded activation. This also covers the
+                // last auxiliary window closing after the editor did.
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let anotherVisibleKeyCapableWindow = NSApp.windows.contains { candidate in
+                        ObjectIdentifier(candidate) != closing
+                            && candidate.isVisible
+                            && candidate.canBecomeKey
+                    }
+                    if PrimaryEditorWindowController.closeHandsBackActivation(
+                        appActive: NSApp.isActive,
+                        panelHoldsKeys: self.model.pages.owner == .panel && self.model.holdsKeys,
+                        anotherVisibleKeyCapableWindow: anotherVisibleKeyCapableWindow
+                    ) {
+                        NSApp.deactivate()
+                    }
+                }
             }
         }
 
@@ -445,12 +470,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
     }
 
-    /// How the launch's activation raises: as a summon, because a person
-    /// opening the app is coming to the pad and not back to a sentence
-    /// they left, and a summon is the raise that anchors the roll on
-    /// today (`BackdropRaise`). Named so the test can pin the anchor
-    /// without launching anything.
-    nonisolated static let launchRaise: BackdropRaise = .summon
 
     /// How long after launch an activation is read as the launch's own.
     /// Recency rather than a skip-one counter, since a login item or a
@@ -459,26 +478,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// today under a sentence someone was coming back to.
     nonisolated static let launchWindow: TimeInterval = 2
 
-    /// Whether an activation raises the surface, and as which raise,
-    /// given how long ago the app launched and whether another window
-    /// of ours asked for the activation for itself. Nil is no raise.
-    ///
-    /// The launch places the surface resting and leaves the raise to
-    /// this decision, because the activation is the one fact that
-    /// separates a launch a person performed from one the system did.
-    /// An activation inside the launch window is the person's launch
-    /// arriving, and it raises as the launch raise, a summon anchored on
-    /// today. One outside the window is a ⌘Tab or a Dock click and
-    /// raises as an activation, leaving the roll where it was. No
-    /// activation at all is the login item, and the absence of an answer
-    /// here is what keeps that launch resting. About and Settings keep
-    /// their claim ahead of both, whenever they arrive.
-    nonisolated static func activationRaises(
-        sinceLaunch: TimeInterval, claimedByAnotherWindow: Bool
-    ) -> BackdropRaise? {
-        guard !claimedByAnotherWindow else { return nil }
-        return sinceLaunch < launchWindow ? launchRaise : .activation
-    }
 
     /// The routing table's world, read straight off the model. Kept in
     /// one place so every route builds it the same way and so the two
@@ -486,8 +485,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// override that one input.
     func activationContext(claimed: Bool = false) -> ActivationContext {
         ActivationContext(
-            editorWindowOpen: model.editorWindowOpen,
-            editorWindowCanTakeKeys: model.editorWindowCanTakeKeys,
             ambientPanelEnabled: model.ambientPanelEnabled,
             owner: model.pages.owner,
             claimedByAnotherWindow: claimed
@@ -498,20 +495,37 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// stay here: the routing function is pure, and the wiring between
     /// its answer and the two window controllers is the delegate's.
     /// `.openEditorWindow` uses `show()` because it deminiaturizes and
-    /// orders front (the reopen expects both). A resting-side raise on
-    /// the editor's route is refused: the raise argument is for the
-    /// panel's routes, and the editor window's own key gain is what
-    /// rests the panel (ADR-0033, the key-turn rule).
+    /// orders front (the reopen expects both). Its associated raise
+    /// still carries the launch's anchoring intent even though no panel
+    /// is raised.
     func apply(_ route: ActivationRoute) {
+        Self.dispatch(
+            route,
+            openEditorWindow: { [self] raise in
+                if BackdropModel.anchorsOnToday(raise: raise) {
+                    model.pages.anchorOnToday()
+                }
+                editorWindow.show()
+            },
+            raisePanel: { [model] raise in model.raise(raise) },
+            summonPanel: { [model] in model.summon() }
+        )
+    }
+
+    /// Routes one decision to its verb while preserving associated
+    /// values. Kept pure at this boundary so tests can catch a dispatch
+    /// implementation that drops the launch's summon reason.
+    nonisolated static func dispatch(
+        _ route: ActivationRoute,
+        openEditorWindow: (BackdropRaise) -> Void,
+        raisePanel: (BackdropRaise) -> Void,
+        summonPanel: () -> Void
+    ) {
         switch route {
-        case .openEditorWindow:
-            editorWindow.show()
-        case .raisePanel(let raise):
-            model.raise(raise)
-        case .summonPanel:
-            model.summon()
-        case .noop:
-            break
+        case .openEditorWindow(let raise): openEditorWindow(raise)
+        case .raisePanel(let raise): raisePanel(raise)
+        case .summonPanel: summonPanel()
+        case .noop: break
         }
     }
 
@@ -636,10 +650,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// `applicationDidBecomeActive` gives, so one gesture cannot mean
     /// two things depending on which of the two it arrived at. With the
     /// setting on it opens the primary editor window or brings the open
-    /// one forward. This is the window's only entrance, and
-    /// `activationRaises` is left as it was, so ⌘Tab, the launch and
-    /// the summons still raise the panel whenever the window is closed.
-    /// B4 owns the real routing.
+    /// one forward. The routing table gives reopen the same destination
+    /// as a later activation.
     ///
     /// A Dock click on an inactive app sends an activation as well as
     /// this, in no promised order. Either order ends in the same place:

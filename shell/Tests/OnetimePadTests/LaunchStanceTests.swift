@@ -1,3 +1,4 @@
+import CompanionKit
 import XCTest
 
 @testable import OnetimePad
@@ -5,80 +6,117 @@ import XCTest
 /// The launch's stance and the activation that decides it, tested as
 /// the pure decision it is (dogfood phase 4). Nothing here launches
 /// anything or builds a model: that the surface is on screen after a
-/// real launch is hardware knowledge and stays in the manual matrix,
-/// and a `BackdropModel` reaches for the installed state directory, so
-/// the resting stance a login item is left in is pinned only by its
-/// negative, that no activation means no raise is ever asked for. What
-/// can be pinned is which raise each activation answers with.
+/// real launch is hardware knowledge and stays in the manual matrix.
+/// The resting stance a login item is left in is pinned only by its
+/// negative: no activation means the router is never asked.
 final class LaunchStanceTests: XCTestCase {
-    // MARK: The person's launch raises, as a summon
-
-    func testTheLaunchRaiseIsASummon() {
-        // A person opening the app is coming to the pad, not back to a
-        // sentence they left in an older day, so the launch's activation
-        // takes the raise that anchors the roll on today.
-        XCTAssertEqual(BackdropAppDelegate.launchRaise, .summon)
-        XCTAssertTrue(BackdropModel.anchorsOnToday(raise: BackdropAppDelegate.launchRaise))
+    private func context(claimedByAnotherWindow: Bool = false) -> ActivationContext {
+        ActivationContext(
+            ambientPanelEnabled: true,
+            owner: .panel,
+            claimedByAnotherWindow: claimedByAnotherWindow
+        )
     }
 
-    func testAnActivationInsideTheLaunchWindowRaisesAsTheLaunch() {
+    // MARK: The person's launch selects the editor, as a summon
+
+    func testAnActivationInsideTheLaunchWindowIsTheLaunchActivation() {
         // A person's launch activates the app within moments of
         // `applicationDidFinishLaunching`. The launch itself placed the
-        // surface resting and left the raise to this activation, which
-        // is read as the launch and raises the way the launch would.
+        // surface resting and left the route to this activation.
         XCTAssertEqual(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 0, claimedByAnotherWindow: false),
-            BackdropAppDelegate.launchRaise
+            ActivationRouter.activationReason(
+                sinceLaunch: 0, launchWindow: BackdropAppDelegate.launchWindow
+            ),
+            .launchActivation
         )
         XCTAssertEqual(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 0.3, claimedByAnotherWindow: false),
-            BackdropAppDelegate.launchRaise
+            ActivationRouter.activationReason(
+                sinceLaunch: 0.3, launchWindow: BackdropAppDelegate.launchWindow
+            ),
+            .launchActivation
         )
+    }
+
+    func testTheLaunchActivationOpensTheEditorWindowAsASummon() {
+        // A person opening the app is coming to the pad, not back to a
+        // sentence they left in an older day, so the launch route anchors
+        // the roll on today.
+        XCTAssertEqual(
+            ActivationRouter.decide(.launchActivation, in: context()),
+            .openEditorWindow(.summon)
+        )
+    }
+
+    func testDispatchPreservesTheLaunchSummonReason() {
+        var editorRaise: BackdropRaise?
+        BackdropAppDelegate.dispatch(
+            ActivationRouter.decide(.launchActivation, in: context()),
+            openEditorWindow: { editorRaise = $0 },
+            raisePanel: { _ in XCTFail("launch must not raise the panel") },
+            summonPanel: { XCTFail("launch must not summon the panel") }
+        )
+
+        XCTAssertEqual(editorRaise, .summon)
+        XCTAssertTrue(BackdropModel.anchorsOnToday(raise: editorRaise!))
     }
 
     // MARK: Every later activation is the user choosing the app
 
-    func testAnActivationAfterTheLaunchWindowRaisesAsAnActivation() {
-        // The first real ⌘Tab, hours later or two seconds later, is the
-        // user naming the app and not this surface, and the roll stays
-        // where they left it.
+    func testAnActivationAtOrAfterTheLaunchWindowIsLate() {
+        // The first real ⌘Tab, hours later or exactly at the boundary,
+        // is the user naming the app rather than the launch activation.
         XCTAssertEqual(
-            BackdropAppDelegate.activationRaises(
-                sinceLaunch: BackdropAppDelegate.launchWindow, claimedByAnotherWindow: false
+            ActivationRouter.activationReason(
+                sinceLaunch: BackdropAppDelegate.launchWindow,
+                launchWindow: BackdropAppDelegate.launchWindow
             ),
-            .activation
+            .lateActivation
         )
         XCTAssertEqual(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: false),
-            .activation
+            ActivationRouter.activationReason(
+                sinceLaunch: 3_600, launchWindow: BackdropAppDelegate.launchWindow
+            ),
+            .lateActivation
+        )
+    }
+
+    func testALateActivationOpensTheEditorWindowAsAnActivation() {
+        XCTAssertEqual(
+            ActivationRouter.decide(.lateActivation, in: context()),
+            .openEditorWindow(.activation)
         )
     }
 
     func testTheLaunchWindowIsRecencyNotACounter() {
         // A login item or a background launch never activates at all.
-        // Had the launch's share been a skip-one counter it would have
-        // read the first real ⌘Tab hours later as the launch and moved
-        // the roll under the reader; as recency it has nothing left to
-        // claim once the window has passed.
+        // The first real ⌘Tab after the window is late even though no
+        // earlier activation was classified.
         XCTAssertEqual(
-            BackdropAppDelegate.activationRaises(
-                sinceLaunch: BackdropAppDelegate.launchWindow + 0.01, claimedByAnotherWindow: false
+            ActivationRouter.activationReason(
+                sinceLaunch: BackdropAppDelegate.launchWindow + 0.01,
+                launchWindow: BackdropAppDelegate.launchWindow
             ),
-            .activation
+            .lateActivation
         )
     }
 
     // MARK: About and Settings keep their claim
 
-    func testAnActivationAnotherWindowAskedForDoesNotRaise() {
+    func testAnActivationAnotherWindowAskedForDoesNothing() {
         // About and Settings activate the app for themselves; the
-        // surface must not ride up with them, inside the launch window
-        // or hours after it.
-        XCTAssertNil(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 0.3, claimedByAnotherWindow: true)
+        // editor must not be selected inside or after the launch window.
+        XCTAssertEqual(
+            ActivationRouter.decide(
+                .launchActivation, in: context(claimedByAnotherWindow: true)
+            ),
+            .noop
         )
-        XCTAssertNil(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: true)
+        XCTAssertEqual(
+            ActivationRouter.decide(
+                .lateActivation, in: context(claimedByAnotherWindow: true)
+            ),
+            .noop
         )
     }
 

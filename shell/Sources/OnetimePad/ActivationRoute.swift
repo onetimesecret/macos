@@ -30,8 +30,8 @@ import Foundation
 enum ActivationReason: Equatable, Sendable {
     /// An activation inside `BackdropAppDelegate.launchWindow` of a
     /// launch the person performed from the Finder, the Dock, Spotlight
-    /// or `open`. Selects the editor window with the launch raise, a
-    /// summon anchored on today (`BackdropAppDelegate.launchRaise`).
+    /// or `open`. Selects the editor window with a summon anchored on
+    /// today.
     case launchActivation
 
     /// A later ⌘Tab or a Dock click on an inactive app. Selects the
@@ -91,13 +91,6 @@ enum ActivationRoute: Equatable, Sendable {
 /// The world the routing function reads. All facts, no controllers:
 /// this is the seam the tests table-drive.
 struct ActivationContext: Equatable, Sendable {
-    /// Whether the primary editor window is open right now.
-    var editorWindowOpen: Bool
-    /// Whether the primary editor window can take the keyboard right
-    /// now (open and on screen, so not in the Dock). The rest's
-    /// activation hand back reads the same predicate
-    /// (`BackdropModel.editorWindowCanTakeKeys`).
-    var editorWindowCanTakeKeys: Bool
     /// The ambient panel preference. Off means no panel is shown; the
     /// application-level summon gestures pick the editor window
     /// instead.
@@ -128,13 +121,11 @@ enum ActivationRouter {
         switch reason {
         case .launchActivation:
             // The launch's activation. Claimed by About or Settings
-            // means the surface stays where the launch placed it,
-            // resting, exactly as `activationRaises(claimedByAnotherWindow:)`
-            // used to answer.
+            // means the surface stays where the launch placed it.
             if context.claimedByAnotherWindow { return .noop }
             // ADR-0033: a launch the person performed selects the
-            // editor window, opening it when closed. Under the launch
-            // raise, so the roll anchors on today.
+            // editor window, opening it when closed. The summon anchors
+            // the roll on today.
             return .openEditorWindow(.summon)
 
         case .lateActivation:

@@ -20,59 +20,44 @@ final class ActivationRouteTests: XCTestCase {
     }
 
     private func base(
-        editorWindowOpen: Bool = false,
-        editorWindowCanTakeKeys: Bool = false,
         ambientPanelEnabled: Bool = true,
         owner: PresentationOwner = .panel,
         claimedByAnotherWindow: Bool = false
     ) -> ActivationContext {
         ActivationContext(
-            editorWindowOpen: editorWindowOpen,
-            editorWindowCanTakeKeys: editorWindowCanTakeKeys,
             ambientPanelEnabled: ambientPanelEnabled,
             owner: owner,
             claimedByAnotherWindow: claimedByAnotherWindow
         )
     }
 
-    func testLaunchActivationSelectsEditorWindowWithLaunchRaise() {
+    func testLaunchActivationSelectsEditorWindowWithSummon() {
         // A person's launch is coming to the pad, not back to a
-        // sentence, so the roll anchors on today (`.summon`).
-        // Editor open or closed, panel on or off — the same route.
-        for open in [false, true] {
-            for enabled in [false, true] {
-                XCTAssertEqual(
-                    ActivationRouter.decide(
-                        .launchActivation,
-                        in: base(
-                            editorWindowOpen: open,
-                            editorWindowCanTakeKeys: open,
-                            ambientPanelEnabled: enabled
-                        )
-                    ),
-                    Self.editorRoute(.summon)
-                )
-            }
+        // sentence, so the roll anchors on today (`.summon`). The panel
+        // preference does not change the route.
+        for enabled in [false, true] {
+            XCTAssertEqual(
+                ActivationRouter.decide(
+                    .launchActivation,
+                    in: base(ambientPanelEnabled: enabled)
+                ),
+                Self.editorRoute(.summon)
+            )
         }
     }
 
     func testLateActivationSelectsEditorWindowAsAnActivation() {
         // ⌘Tab or a Dock click on an inactive app; the roll stays
-        // where the person left it.
-        for open in [false, true] {
-            for enabled in [false, true] {
-                XCTAssertEqual(
-                    ActivationRouter.decide(
-                        .lateActivation,
-                        in: base(
-                            editorWindowOpen: open,
-                            editorWindowCanTakeKeys: open,
-                            ambientPanelEnabled: enabled
-                        )
-                    ),
-                    Self.editorRoute(.activation)
-                )
-            }
+        // where the person left it. The panel preference does not
+        // change the route.
+        for enabled in [false, true] {
+            XCTAssertEqual(
+                ActivationRouter.decide(
+                    .lateActivation,
+                    in: base(ambientPanelEnabled: enabled)
+                ),
+                Self.editorRoute(.activation)
+            )
         }
     }
 
@@ -80,21 +65,15 @@ final class ActivationRouteTests: XCTestCase {
         // Reopen (Dock click while frontmost, `open -a`): same as
         // late activation. The distinction is the callback, kept so
         // the delegate can route each one without a synthetic
-        // classifier.
-        for open in [false, true] {
-            for enabled in [false, true] {
-                XCTAssertEqual(
-                    ActivationRouter.decide(
-                        .reopen,
-                        in: base(
-                            editorWindowOpen: open,
-                            editorWindowCanTakeKeys: open,
-                            ambientPanelEnabled: enabled
-                        )
-                    ),
-                    Self.editorRoute(.activation)
-                )
-            }
+        // classifier. The panel preference does not change the route.
+        for enabled in [false, true] {
+            XCTAssertEqual(
+                ActivationRouter.decide(
+                    .reopen,
+                    in: base(ambientPanelEnabled: enabled)
+                ),
+                Self.editorRoute(.activation)
+            )
         }
     }
 
@@ -130,7 +109,7 @@ final class ActivationRouteTests: XCTestCase {
         XCTAssertEqual(
             ActivationRouter.decide(
                 .modalReturn,
-                in: base(editorWindowOpen: true, owner: .editorWindow)
+                in: base(owner: .editorWindow)
             ),
             .openEditorWindow(.activation)
         )
@@ -146,7 +125,7 @@ final class ActivationRouteTests: XCTestCase {
         XCTAssertEqual(
             ActivationRouter.decide(
                 .cancelledQuit,
-                in: base(editorWindowOpen: true, owner: .editorWindow)
+                in: base(owner: .editorWindow)
             ),
             .openEditorWindow(.activation)
         )
@@ -179,38 +158,24 @@ final class ActivationRouteTests: XCTestCase {
 
     func testHotkeySelectsTheEditorWindowWithTheAmbientPanelOff() {
         // ADR-0033: with the panel off, the hotkey and the status
-        // item pick the editor window instead. Editor open or closed
-        // is not the question — the routing table opens it when
-        // closed, the same as ⌘Tab.
-        for open in [false, true] {
-            XCTAssertEqual(
-                ActivationRouter.decide(
-                    .hotkey,
-                    in: base(
-                        editorWindowOpen: open,
-                        editorWindowCanTakeKeys: open,
-                        ambientPanelEnabled: false
-                    )
-                ),
-                .openEditorWindow(.activation)
-            )
-        }
+        // item pick the editor window instead.
+        XCTAssertEqual(
+            ActivationRouter.decide(
+                .hotkey,
+                in: base(ambientPanelEnabled: false)
+            ),
+            .openEditorWindow(.activation)
+        )
     }
 
     func testStatusItemSelectsTheEditorWindowWithTheAmbientPanelOff() {
-        for open in [false, true] {
-            XCTAssertEqual(
-                ActivationRouter.decide(
-                    .statusItem,
-                    in: base(
-                        editorWindowOpen: open,
-                        editorWindowCanTakeKeys: open,
-                        ambientPanelEnabled: false
-                    )
-                ),
-                .openEditorWindow(.activation)
-            )
-        }
+        XCTAssertEqual(
+            ActivationRouter.decide(
+                .statusItem,
+                in: base(ambientPanelEnabled: false)
+            ),
+            .openEditorWindow(.activation)
+        )
     }
 
     // MARK: The launch/late classifier

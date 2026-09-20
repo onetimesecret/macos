@@ -63,6 +63,7 @@ extension View {
 /// where it sits, how it is sized, and how the two stances look.
 struct BackdropRootView: View {
     @ObservedObject var model: BackdropModel
+    let onCardClick: () -> Void
 
     /// The shared model, observed directly: the card's own chrome reads
     /// the selected page and its clock, so this view must redraw when
@@ -75,8 +76,9 @@ struct BackdropRootView: View {
     /// word would otherwise stand at whatever it read first.
     @ObservedObject var sync: SyncController
 
-    init(model: BackdropModel) {
+    init(model: BackdropModel, onCardClick: @escaping () -> Void) {
         self.model = model
+        self.onCardClick = onCardClick
         pages = model.pages
         sync = model.pages.sync
     }
@@ -269,11 +271,9 @@ struct BackdropRootView: View {
             if !raised {
                 Color.clear
                     .contentShape(Rectangle())
-                    // Summon rather than raise: this is the same
-                    // deliberate act as the hotkey and the status
-                    // item, and `BackdropModel.summon` reads it that
-                    // way (ADR-0033; `ActivationReason.cardClick`).
-                    .onTapGesture { model.summon() }
+                    // The app delegate sends this gesture through the
+                    // same routing table as the other summons.
+                    .onTapGesture(perform: onCardClick)
                     .help("Click to raise the card")
             }
         }
