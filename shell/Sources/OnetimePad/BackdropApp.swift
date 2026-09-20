@@ -413,6 +413,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // feature spec's open question №7.
         NSApp.setActivationPolicy(.regular)
 
+        // File belongs after the app menu, the way every macOS app
+        // orders its own. SwiftUI's `CommandMenu("File")` appends
+        // instead, because the app has no document scene for the
+        // synthesised File menu to attach to (Settings is the only
+        // scene, and it is the placeholder). Move it into place, so
+        // the menu bar reads: App | File | Edit | View | Window | Help.
+        Self.moveFileMenuAfterAppMenu()
+
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
         // resolve CFBundleIconFile, because LaunchServices can otherwise
@@ -1034,6 +1042,26 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         return NSImage(contentsOf: url)
+    }
+
+    /// Move the File menu item into standard macOS position: right
+    /// after the app menu, ahead of Edit and View.
+    ///
+    /// SwiftUI has no direct positioning knob for `CommandMenu`, and
+    /// this app has no document scene for the framework to synthesise
+    /// a File menu around, so the runtime order comes out as App | Edit
+    /// | View | File | Window | Help. AppKit's main menu is an ordinary
+    /// `NSMenu` by the time the delegate is called, so a reorder here
+    /// is safe and idempotent. Absence of the File item (a future
+    /// build that dropped the menu) is silent on purpose.
+    private static func moveFileMenuAfterAppMenu() {
+        guard let mainMenu = NSApp.mainMenu,
+              let index = mainMenu.items.firstIndex(where: { $0.title == "File" }),
+              index > 1
+        else { return }
+        let item = mainMenu.items[index]
+        mainMenu.removeItem(at: index)
+        mainMenu.insertItem(item, at: 1)
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the
