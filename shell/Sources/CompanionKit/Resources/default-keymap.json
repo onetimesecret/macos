@@ -79,6 +79,15 @@
       "cmd-alt-right": "page::Next",
       "cmd-w": "page::Close",
 
+      // The window ⇧⌘W closes is the one the keyboard is in: the editor
+      // window and Settings alike (issue #201). Distinct from ⌘W above,
+      // which acts on the strip's page or the file. Carried by the
+      // Window menu's item, which lets the chord fire even in Settings
+      // where the surface installs nothing. The panel is borderless
+      // and answers `performClose:` with nothing to do, so a stray press
+      // over the resting card is harmless.
+      "cmd-shift-w": "window::Close",
+
       // Sealing, which is the one gesture that cannot be undone. Both
       // are answered by the page's text view, where the caret and the
       // selection live.
