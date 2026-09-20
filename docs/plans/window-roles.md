@@ -107,3 +107,10 @@ One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B0 closed w
 | A6 documents | [#189](https://github.com/onetimesecret/macos/issues/189) |
 | A7 hand checks | [#190](https://github.com/onetimesecret/macos/issues/190) |
 | B0 decision | [#191](https://github.com/onetimesecret/macos/issues/191) |
+| B1 primary editor spike | [#197](https://github.com/onetimesecret/macos/issues/197) |
+| B2 presentation ownership | [#198](https://github.com/onetimesecret/macos/issues/198) |
+| B3 glance for the non owning window | [#199](https://github.com/onetimesecret/macos/issues/199) |
+| B4 activation routing | [#200](https://github.com/onetimesecret/macos/issues/200) |
+| B5 menus and commands | [#201](https://github.com/onetimesecret/macos/issues/201) |
+| B6 tests and procedures divided | [#202](https://github.com/onetimesecret/macos/issues/202) |
+| B7 documents | [#203](https://github.com/onetimesecret/macos/issues/203) |
