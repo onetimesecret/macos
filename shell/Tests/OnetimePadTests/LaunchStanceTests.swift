@@ -9,6 +9,12 @@ import XCTest
 /// real launch is hardware knowledge and stays in the manual matrix.
 /// The resting stance a login item is left in is pinned only by its
 /// negative: no activation means the router is never asked.
+///
+/// Scope after ADR-0033: launch routes both windows. The panel rests
+/// on every launch; the editor window opens only for a person's
+/// launch, a Dock click, reopen or ⌘Tab, and never for a login item
+/// or any launch the system performs without activating the app. The
+/// cases in this file are the router's decisions across those routes.
 final class LaunchStanceTests: XCTestCase {
     private func context(claimedByAnotherWindow: Bool = false) -> ActivationContext {
         ActivationContext(

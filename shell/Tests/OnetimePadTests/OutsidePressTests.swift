@@ -9,6 +9,10 @@ import XCTest
 /// from the AppKit fact `ModalSession` reads. That the window server
 /// reports a click in the out of process open panel to a global monitor
 /// at all is hardware knowledge and stays in the manual matrix.
+///
+/// Scope after ADR-0033: this rule governs the ambient panel only. The
+/// primary editor window is an ordinary activating `NSWindow` and lets
+/// AppKit decide when key status resigns; nothing here reads from it.
 final class OutsidePressTests: XCTestCase {
     func testAPlainOutsidePressRestsTheSurface() {
         XCTAssertTrue(OutsidePress.rests(claimedByMenu: false, modalSessionRunning: false))
