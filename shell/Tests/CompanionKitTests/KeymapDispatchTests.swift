@@ -54,6 +54,17 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.perform(.editorRedo))
     }
 
+    /// window::Close is the Window menu's chord (issue #201). It sends
+    /// `performClose:` to the key window through the responder chain,
+    /// which is the app delegate's route and not the model's; the model
+    /// has no window of its own to close and refuses this the same way
+    /// the text-view commands are refused.
+    func testWindowCloseIsNotTheModelsToRun() throws {
+        let model = try makeModel()
+        XCTAssertEqual(CommandID.windowClose.dispatch, .window)
+        XCTAssertFalse(model.perform(.windowClose))
+    }
+
     /// Edit → Seal Selected Content and the chord are one verb (D-30):
     /// the menu item names the same command id the keymap binds, and
     /// the chord it advertises is read from the keymap rather than
