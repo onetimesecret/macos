@@ -301,21 +301,22 @@ private struct PrimaryEditorRootView: View {
         .environment(\.presentationSurface, .editorWindow)
     }
 
-    /// The page while this window owns it, and a placeholder while a
-    /// raised panel does (ADR-0033). The unmount is the point and not a
+    /// The page while this window owns it, and a glance while a raised
+    /// panel does (ADR-0033, B3). The unmount is the point and not a
     /// side effect: a page's storage takes one layout manager, so the
-    /// window that does not own mounts no editor at all. The
-    /// placeholder names no page and shows no ink. B3's glance replaces
-    /// it.
+    /// window that does not own mounts no editor at all. The glance
+    /// renders from `PageModel.quietRendering(for:)` over private
+    /// storage the model never learns of, so ADR-0006's invariant
+    /// holds and the projection parity assertion never sees a glance
+    /// storage. Sealed objects render as chips exactly as on a quiet
+    /// day.
     @ViewBuilder
     private var content: some View {
         if pages.owner == .editorWindow {
             PageContentView(model: pages, emptyHint: "click or ↩ to start one")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Open in the card.")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            GlanceView(model: pages)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
