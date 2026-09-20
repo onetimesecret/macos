@@ -111,6 +111,14 @@ public struct InkEditorView: NSViewRepresentable {
     /// state that the selected tab holding no page puts on screen
     /// (ADR-0017 made that a frequent event rather than a rare one).
     ///
+    /// Since ADR-0033 the app has two window roles over one document
+    /// model, and each window keeps one persistent editor of its own.
+    /// The rule this teardown supports is not "one editor in the app"
+    /// but "one owner per page": the model's mounted editor is the
+    /// owner's editor, and only the owner's teardown clears the
+    /// handle. A hand off between windows takes the same route as a
+    /// ledger round trip here, through the same `retireEditor` call.
+    ///
     /// The model keeps a weak handle on the mounted editor so a summon
     /// or a grant can hand it the keyboard, and weak is not the same as
     /// mounted: a view torn out of the window answers that handle until

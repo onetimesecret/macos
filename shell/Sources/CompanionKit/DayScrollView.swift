@@ -32,6 +32,12 @@ import SwiftUI
 /// which is the whole of the claim that ADR-0006's second eject trigger
 /// ("a future feature needs per-sheet view instances") has not fired.
 ///
+/// Per window since ADR-0033: each window keeps one persistent editor
+/// and swaps storages into it. Across windows the rule is one owner
+/// per page, and the window that does not own mounts no editor on any
+/// live storage. What lives here is the owner's card; the other
+/// window draws a glance built from private storages, or nothing.
+///
 /// Perforations are chrome, and that is a security property rather than
 /// a drawing preference: anything inserted into a text storage to
 /// separate two days would travel across the seam as an insert op and

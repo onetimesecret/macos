@@ -4,7 +4,7 @@ import XCTest
 @testable import OnetimePad
 
 /// The ambient panel's stance split, tested as the pure decision it
-/// is — the shell's pattern for UI-adjacent logic: test the decision
+/// is; the shell's pattern for UI-adjacent logic: test the decision
 /// itself, never mock AppKit. The window plumbing that applies it
 /// (ordering, key status, the mouse pass-through) is hand-tested per
 /// the project's rules (docs/spec/feature/background-surface, hardware

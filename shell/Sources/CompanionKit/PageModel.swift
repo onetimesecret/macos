@@ -2514,6 +2514,9 @@ public final class PageModel: ObservableObject {
 
     /// How a page reads on the roll while the editor is somewhere else
     /// (issue #79), built on first use from the core's own document.
+    /// Under ADR-0033 "somewhere else" also means "in the other
+    /// window": the glance the window that does not own draws over
+    /// its own private storage is a `QuietRendering` of the same page.
     ///
     /// Deliberately **not** `storage(for:)`. The map above is the
     /// editor's, and a quiet region borrowing an entry from it would put
@@ -2523,7 +2526,10 @@ public final class PageModel: ObservableObject {
     /// storage to one core document. A rendering of its own keeps every
     /// storage in the app at exactly one view and exactly one manager,
     /// which is the invariant ADR-0006 rests on stated as a property of
-    /// the object graph rather than as a rule to remember.
+    /// the object graph rather than as a rule to remember. ADR-0033
+    /// depends on this same object graph: two windows over one model
+    /// remain one editor per page because the non owning window mounts
+    /// the glance, never a second live editor.
     ///
     /// It is a rendering and not an editor: the roll copies it into a
     /// storage no delegate is watching, so nothing it holds can emit an
