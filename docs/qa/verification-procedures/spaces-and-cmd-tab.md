@@ -81,7 +81,7 @@ log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 
 ## The checks
 
-### The return — panel only, editor window closed
+### The return: panel only, editor window closed
 
 These are the checks issue #74 was filed for. They apply when the
 editor window is **closed**, so ⌘Tab has nothing else of ours to select
@@ -134,7 +134,7 @@ window (⇧⌘W) before starting each check.
       about it. ⌘Tab to the app first, which is what puts the menu on
       screen.
 
-### ⌘Tab and the editor window — ADR-0033
+### ⌘Tab and the editor window (ADR-0033)
 
 New hand checks the ADR creates. The editor window has ordinary Space
 membership, so ⌘Tab from another desktop can carry the person to the
@@ -177,7 +177,7 @@ editor window is on, as it does for any document application").
       resting card is visible, must do the same. **Fail:** any of
       those three summons activates the app or switches desktops.
 
-### A pinned panel floats above the editor window — ADR-0033
+### A pinned panel floats above the editor window (ADR-0033)
 
 - [ ] **Pin the panel, then raise the editor window keyed.** *Both.*
       Pin the panel (Settings, or the pin control on the card), open
@@ -195,7 +195,7 @@ editor window is on, as it does for any document application").
       resolver. **Fail:** any writer lifts the editor window off
       normal level.
 
-### Editor window full screen — ADR-0033
+### Editor window full screen (ADR-0033)
 
 The editor window enters and leaves full screen by AppKit's rules (the
 green traffic light, the Window menu's Enter Full Screen item, F11 if
@@ -226,7 +226,7 @@ alone decides where it appears.
       desktop and ⌘Tab back. **Pass:** the screen switches to the
       editor's full screen Space and the editor window is keyed.
 
-### Stage Manager and Mission Control — ADR-0033
+### Stage Manager and Mission Control (ADR-0033)
 
 The editor window's title is the application's name and never page
 content (ADR-0033 Restoration). That title is what Mission Control,
