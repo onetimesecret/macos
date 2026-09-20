@@ -31,6 +31,43 @@ survives contact with real desks is the question this exploration
 exists to answer. The goal is not to replace the panel; it is to have
 several form factors and learn from the difference.
 
+## Scope after ADR-0033
+
+Every section below describes the **ambient panel** window role.
+[ADR-0033](../../../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md)
+separates the primary editor from the ambient panel: OnetimePad now
+has two window roles over one in-process document model. The primary
+editor is a plain activating `NSWindow` with normal level, ordinary
+Space membership, AppKit's own key, main and full screen behaviour
+and participation in ⌘Tab, the Window menu, Mission Control and
+Stage Manager; its own feature spec is
+[primary-editor](../primary-editor/README.md).
+
+Under ADR-0033 the routes leaving the panel for the editor window are:
+
+- **A person's launch, the Dock icon click, a reopen and ⌘Tab.** These
+  select the editor window (opening it when closed). The ⌘Tab
+  amendment below documented these as panel summons; they are now the
+  editor window's, and the amendment stands as history rather than as
+  the current rule.
+- **The Window menu and window cycling.** The editor window
+  participates; the panel does not.
+- **Full screen.** The editor window enters and leaves full screen by
+  AppKit's rules. The panel keeps its stance-driven altitude and its
+  all Spaces membership, so a hotkey summon over an editor in full
+  screen still lands the panel on that Space.
+
+Routes staying with the panel:
+
+- **The hotkey (⌃⌥Space), the status item and a click on the resting
+  card.** These raise the panel without activating the app. The panel
+  remains the summoned surface for glances and moments of editing.
+- **The panel's ownership rule.** The panel owns while it is raised or
+  while the editor window is closed; the editor window owns otherwise.
+  ADR-0033 records the ownership handoff.
+- **Pin, `.canJoinAllSpaces` and the outside click rule.** Panel
+  properties; the editor window has none of them.
+
 ## The stance model
 
 The research's central finding is that "typed into" and "behind
