@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **OnetimePad has two window roles over one document model**
-  (ADR-0033, #191, #192, #197, #198, #199, #200, #201, #202, #203).
+  (ADR-0033, #191, #192, #197, #198, #199, #200, #201, #202, #203;
+  app 0.24.0).
   The primary editor is a plain activating `NSWindow` with normal
   level, ordinary Space membership, AppKit's own key, main and full
   screen behaviour and participation in ⌘Tab, the Window menu,
@@ -128,7 +129,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and leaves the existing inline recovery state in place. The core arms
   the Take theirs undo marker only when an undo item exists to carry it,
   and zeroizes read and restored disk bytes (`companion-core` 0.24.1,
-  `companion-ffi` 0.32.1).
+  `companion-ffi` 0.32.1). The Take theirs step then counts as carried
+  only while its generation is the top undo item, and a restored draft
+  is measured against the same normalized text baseline as an opened
+  file, so a restored draft whose text equals the file's normalized
+  text reads clean even when a save would make mixed line endings
+  uniform; that baseline, the core's own save buffer and the
+  restored snapshot bytes are zeroizing (`companion-core` 0.24.2).
 
 - **The header never says "synced" with no peer awake** (D-20). An
   attached channel with no other device awake says "sync waiting", in

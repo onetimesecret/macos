@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.24.1"
+version = "0.24.2"
 dependencies = [
  "betlang",
  "companion-credentials",
