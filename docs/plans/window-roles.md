@@ -9,24 +9,24 @@
 
 Track A makes the code match ADR-0032: a raised surface that loses the keyboard drops to normal window level unless Pin or the keep above preference says otherwise.
 
-Track B took ADR-0033 from proposed to accepted under decision issue #191. The ADR decides the roles, ownership rule and activation model. The implementation sequence B1 to B7 was filed as issues #197 to #203 and pursued in that shape; B1 to B5 are on `main` and B6 and B7 are open pull requests (see Status).
+Track B took ADR-0033 from proposed to accepted under decision issue #191. The ADR decides the roles, ownership rule and activation model. The implementation sequence B1 to B7 was filed as issues #197 to #203, and each landed in its own pull request (see Status).
 
 Track A is small and ships alone. Track A is not wasted by ADR-0033: the three fact model stays with the ambient panel.
 
-## Status, 2026-09-28
+## Status
 
-What has landed, by pull request on `main`:
+What has landed on `main`, by pull request, as of the merge of PR #213, which carries this section:
 
 - Track A (A1 to A6, issues #185 to #189) landed in [PR #194](https://github.com/onetimesecret/macos/pull/194), merged 2026-09-18. The A0 probe under #184 ran on the same branch and produced [ADR-0034](../adr/0034-full-screen-participation-follows-altitude.md), recorded in that PR's last commit (`c2c5649`). ADR-0034 Amendment 1, in [PR #196](https://github.com/onetimesecret/macos/pull/196) the same day, recorded the full screen ⌘Tab route failing on hardware and reopened the ordering for that route.
 - B0 closed with the acceptance of ADR-0033 in PR #196, merged 2026-09-18.
 - B1 (#197) landed in [PR #205](https://github.com/onetimesecret/macos/pull/205), merged 2026-09-18. B2 (#198), B3 (#199), B4 (#200) and B5 (#201) landed in [PR #206](https://github.com/onetimesecret/macos/pull/206), [PR #208](https://github.com/onetimesecret/macos/pull/208), [PR #209](https://github.com/onetimesecret/macos/pull/209) and [PR #211](https://github.com/onetimesecret/macos/pull/211), all merged 2026-09-19.
-- B6 (#202) is [PR #212](https://github.com/onetimesecret/macos/pull/212) and B7 (#203) is [PR #213](https://github.com/onetimesecret/macos/pull/213), stacked on #212. Both are open.
+- B6 (#202) landed in [PR #212](https://github.com/onetimesecret/macos/pull/212) and B7 (#203) in [PR #213](https://github.com/onetimesecret/macos/pull/213).
 
-Hardware. The hand checks for A0 (#184), A7 (#190), B4's probe routes (#210) and B6's four new checks were run on hardware on 2026-09-28 and reported passed by the maintainer. That run includes the full screen ⌘Tab route that ADR-0034 Amendment 1 had recorded as a FAIL. The results are recorded in `docs/qa/verification-procedures/spaces-and-cmd-tab.md`, and ADR-0034 Amendment 2 records the full screen route passing. The three issues close after the branches that carry the results merge.
+Hardware. On 2026-09-28 the maintainer ran these on hardware and reported them passed: the four ADR-0033 sections of `docs/qa/verification-procedures/spaces-and-cmd-tab.md` (⌘Tab and the editor window, a pinned panel above the editor window, editor window full screen, and Stage Manager and Mission Control), the checks of #190, two checks of #184 (the press on a partly covered card, and ⌘Tab into a full screen Space), and the seven B4 routes of #210. ⌘Tab into a full screen Space is the route ADR-0034 Amendment 1 had recorded as a FAIL. The results are rows in that procedure's Results table, and ADR-0034 Amendment 2 records the full screen route passing.
 
 Menu enablement. Since B2, `activeEditor` is one of the guarded presentation fields that only the owner's window writes (`PresentationField`), so enablement, which still reads `activeEditor`, reads the owner's editor as ADR-0033 asks. The bullet below that has enablement and actions naming different editors describes the code before B2.
 
-The next section is the snapshot the plan was written from, on 2026-09-17, before PR #194. It is kept as written, except that B2 corrected the two bullets that mention it in place.
+The next section is the snapshot the plan was written from, on 2026-09-17, before PR #194. B2 changed it in place: it rewrote the two bullets that name B2, and it brought the section's line citations level with the files B2 had moved (commits `cc3378a` and `6f25866`). B7 added the date to the heading. The rest is as written, and the line citations are not kept current after B2.
 
 ## Current state on 2026-09-17, before PR #194
 
@@ -85,7 +85,7 @@ One PR, one commit per task. Shell only; no Rust or FFI version change.
 
 ## Track B: ADR-0033
 
-B0 is decided. B1 to B7 below were written as a draft sequence while the decision was being made and are kept as written. They were filed as issues #197 to #203 and pursued in that shape: B1 to B5 are on `main`, and B6 and B7 are open pull requests (see Status).
+B0 is decided. B1 to B7 below were written as a draft sequence while the decision was being made and are kept as written, except for the note closing B7. They were filed as issues #197 to #203, and each landed in its own pull request (see Status).
 
 - **B0. Decision issue (label `decision`). Decided 2026-09-18: accepted, narrowed.** One window owns the live page content at a time and the other shows a glance or nothing. Ownership is explicit and transferable: the panel owns while it is raised or while the editor window is closed, and the editor window owns otherwise. The panel may edit while it owns. Launch is decided by route: login shows the panel only, a person's launch, the Dock, reopen and ⌘Tab select the editor window, and the hotkey, the status item and the resting card's click stay with the panel. ⌘W stays `page::Close` and ⇧⌘W closes the window. The panel is a persistent preference, default on, behind a removable boundary. The editor window keeps frame autosave only. The supersession is recorded in both directions in the ADRs.
 - **B1. Spike (label `prototype`).** `PrimaryEditorWindowController`: titled, resizable, normal level, ordinary Space membership, may become main, frame autosave, `isRestorable = false`, `sharingType = .none` under the same capture opt out as the panel, and a title that names the app and never page content. Root view is a stack over the strip, `PageContentView`, `PageStatusStack` and `PageKeyboardMap`. Exclusive ownership by the crudest means: while the window is open the panel rests and unmounts its content. The crude form stands for the spike only. This is enough to dogfood eject triggers 1 to 3 before B2 is built.
@@ -94,7 +94,7 @@ B0 is decided. B1 to B7 below were written as a draft sequence while the decisio
 - **B4. Activation routing.** Split `activationRaises`: a person's launch, the Dock, reopen and ⌘Tab select the editor window, opening it when closed; summons go to the panel; a login launch opens nothing. A modal return and the cancelled quit line go back to the owner. `NSApp.deactivate()` on rest does not fire while the editor window is visible; the keyboard returns to the editor window instead. The editor window taking the keyboard rests a raised panel. Closing the editor window with no other window of ours up hands the activation back. The ambient panel preference, default on, with the hotkey and status item selecting the editor window when it is off.
 - **B5. Menus and commands.** A Window menu. ⌘W stays `page::Close`; a new `window::Close` command on `cmd-shift-w`, which the default keymap leaves free. Enablement reads the owner's editor. The panel stays out of the Window menu.
 - **B6. Tests and procedures divided** between primary window and ambient panel (`LaunchStanceTests`, `OutsidePressTests`, `BackdropStanceTests`, the Spaces procedure). New hand checks: ⌘Tab from another desktop goes to the editor window's desktop, and a pinned card floats above the editor window.
-- **B7. Documents.** The ADR supersession is done (ADR-0010 Amendment 1, ADR-0019, ADR-0032, and the note on ADR-0006). Still owed: a new feature spec for the primary editor; the background surface spec; the code comments that state the one editor rule (`DayScrollView.swift`, `InkEditorView.swift`); CHANGELOG; the ADR citation sweep.
+- **B7. Documents.** The ADR supersession is done (ADR-0010 Amendment 1, ADR-0019, ADR-0032, and the note on ADR-0006). Still owed: a new feature spec for the primary editor; the background surface spec; the code comments that state the one editor rule (`DayScrollView.swift`, `InkEditorView.swift`); CHANGELOG; the ADR citation sweep. Note added with PR #213: the sweep was done digits only, as issue #203 asked ("Verify digits only."), over the 60 files B1 to B5 touched and their 396 ADR references, and found no digit to fix. Line citations were outside it.
 
 ## Dependencies
 
@@ -127,5 +127,5 @@ One epic, [#192](https://github.com/onetimesecret/macos/issues/192). B0 closed w
 | B3 glance for the non owning window | [#199](https://github.com/onetimesecret/macos/issues/199) | PR #208 |
 | B4 activation routing | [#200](https://github.com/onetimesecret/macos/issues/200) | PR #209; probe routes under #210, hardware run 2026-09-28 |
 | B5 menus and commands | [#201](https://github.com/onetimesecret/macos/issues/201) | PR #211 |
-| B6 tests and procedures divided | [#202](https://github.com/onetimesecret/macos/issues/202) | PR #212, open |
-| B7 documents | [#203](https://github.com/onetimesecret/macos/issues/203) | PR #213, open |
+| B6 tests and procedures divided | [#202](https://github.com/onetimesecret/macos/issues/202) | PR #212 |
+| B7 documents | [#203](https://github.com/onetimesecret/macos/issues/203) | PR #213 |
