@@ -43,8 +43,8 @@ public struct GlanceView: NSViewRepresentable {
         // The selected page, if any: the shared model (`selectedPageID`)
         // is the same in both windows, so a glance follows selections
         // made in the owner. `activeFile` and `showingLedger` are
-        // deliberately not answered here (B3 scope is the selected
-        // page); the parent branches for those cases separately.
+        // deliberately not answered here (the glance's scope is the
+        // selected page); the parent branches for those cases separately.
         guard let page = model.selectedPageID, !page.isFileID else {
             view.showEmpty()
             return

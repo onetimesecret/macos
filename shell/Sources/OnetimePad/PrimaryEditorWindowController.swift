@@ -6,8 +6,10 @@ import os
 
 /// The primary editor window (ADR-0033): an ordinary titled, resizable
 /// window at normal level over the same pages the panel shows. Its
-/// entrance and its routes are still the dogfood build's, and B4 owns
-/// their final form.
+/// entrances are the routing table's (`ActivationRouter`): a launch the
+/// person performs, ⌘Tab, a Dock click and a reopen select it, a modal
+/// return and a cancelled quit select it while it owns, and the hotkey
+/// and the status item select it only with the ambient panel off.
 ///
 /// One store, one model: the root view is handed the panel's own
 /// `PageModel`, never a second one. Exactly one of the two windows owns

@@ -3,20 +3,26 @@ import CompanionKit
 import Foundation
 import os
 
-/// Why the card is coming forward.
+/// Why a window is coming forward.
 ///
-/// The window cannot tell the difference (both end in a raised, keyed
-/// surface at the front of the active Space) and what the card is
-/// *showing* has to (issue #79).
+/// The window cannot tell the difference (both end in a keyed window
+/// at the front of the active Space) and what the page is *showing*
+/// has to (issue #79). Since ADR-0033 the reason rides whichever
+/// window the routing table selects (`ActivationRoute`), so the rule
+/// below is asked once per route and not once per window.
 ///
 /// A **summon** is the user naming this surface: ⌃⌥Space, the menu-bar
 /// item, or a click on the resting card, which the card's own overlay
-/// calls "the same deliberate act as any other summon". An
-/// **activation** is the user naming the app, with the surface arriving
-/// as a consequence: ⌘Tab, the app switcher, the Dock icon. Only a
-/// summon takes the roll back to today, because somebody who ⌘Tabbed
-/// away from a sentence in an older day came back to that sentence and
-/// not to today (ADR-0020 item 13).
+/// calls "the same deliberate act as any other summon". A launch the
+/// person performs is filed as a summon as well, since somebody
+/// opening the app is owed today. An **activation** is the user
+/// naming the app, with a window arriving as a consequence: ⌘Tab, the
+/// app switcher and the Dock icon, which select the editor window
+/// under ADR-0033, and a modal return or a cancelled quit, which go
+/// back to whichever window owns. Only a summon takes the roll back
+/// to today, because somebody who ⌘Tabbed away from a sentence in an
+/// older day came back to that sentence and not to today (ADR-0020
+/// item 13).
 ///
 /// The Dock icon is filed as an activation, and it is the one judgement
 /// call here. Clicked while the app is inactive it arrives as
@@ -616,12 +622,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// `pages.owner`. Deliberately not published, so that it cannot
     /// grow a subscriber that reads it halfway through a change.
     ///
-    /// One route outside this type still asks it, the reopen
-    /// (`applicationShouldHandleReopen`), for which open is the right
-    /// question: a Dock click on a window in the Dock brings it back
-    /// out. The two routes that need to know whether the window can
-    /// take the keyboard ask `editorWindowCanTakeKeys`. All three are
-    /// B4's to replace (issue #200).
+    /// Nothing outside this type reads it. The reopen
+    /// (`applicationShouldHandleReopen`) goes through the routing table
+    /// (`ActivationRouter`), which selects the editor window open or
+    /// closed and leaves the choice between opening it and bringing it
+    /// out of the Dock to `PrimaryEditorWindowController.show()`. The
+    /// one route that needs to know whether the window can take the
+    /// keyboard, the rest's activation hand back, asks
+    /// `editorWindowCanTakeKeys`.
     ///
     /// A miniaturized window is still open, and still owns while the
     /// panel rests. ADR-0033 resolves the owner from open and closed,
@@ -711,9 +719,10 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// not enter the state file, the core or the sync protocol.
     /// `ActivationRouter` reads it as one input to the routing table.
     ///
-    /// It supersedes the B1 spike switch `dockOpensEditorWindow`,
-    /// which asked the same question backwards (whether the reopen
-    /// opens the editor window) and is folded here.
+    /// The activations and the reopen do not read it: the routing
+    /// table sends them to the editor window whatever it says, since
+    /// with the panel off nothing else can hold the keyboard and with
+    /// it on ADR-0033 gives them to the editor window anyway.
     @Published private(set) var ambientPanelEnabled: Bool {
         didSet { defaults.set(ambientPanelEnabled, forKey: Self.ambientPanelEnabledKey) }
     }

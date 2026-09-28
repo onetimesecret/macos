@@ -4,12 +4,13 @@ import SwiftUI
 
 /// OnetimePad, the background-surface form factor
 /// (docs/spec/feature/background-surface): an ambient pane resting at
-/// desktop level, raised to a floating editor by ⌃⌥Space, ⌘Tab, the
-/// Dock icon, or the menu-bar item. It began as a sibling of the panel
-/// app (ADR-0010), same Rust core through the same seam, different
-/// posture; the panel was archived once this form factor reached
-/// parity (ADR-0014), and its state file and Keychain items remain
-/// untouched by this target.
+/// desktop level, raised to a floating editor by ⌃⌥Space or the
+/// menu-bar item, beside the primary editor window that ⌘Tab, the
+/// Dock icon and a person's launch select (ADR-0033). It began as a
+/// sibling of the panel app (ADR-0010), same Rust core through the
+/// same seam, different posture; the panel was archived once this form
+/// factor reached parity (ADR-0014), and its state file and Keychain
+/// items remain untouched by this target.
 @main
 struct BackdropApp: App {
     @NSApplicationDelegateAdaptor(BackdropAppDelegate.self) private var appDelegate
@@ -520,16 +521,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         // The backdrop exists by being there: it takes its place on
         // screen at launch, resting, opened onto whatever page the last
-        // quit sealed (`BackdropModel.start`). Whether it then comes
-        // forward is not decided here, because the launch cannot tell
-        // who asked for it. A person who opens the app is owed a raised
-        // and keyed card, since a surface that parks itself behind every
-        // other window on first open reads as a broken app (dogfood
-        // phase 4); a login item, or any other launch the system
-        // performs, is owed the resting stance, behind everything,
-        // exactly as before. AppKit already tells the two apart: a
+        // quit sealed (`BackdropModel.start`). Whether anything then
+        // comes forward is not decided here, because the launch cannot
+        // tell who asked for it. A person who opens the app is owed a
+        // window in front, since an app that parks itself behind every
+        // other window on first open reads as broken (dogfood phase 4),
+        // and under ADR-0033 that window is the editor window, opened
+        // as a summon; a login item, or any other launch the system
+        // performs, is owed the resting card, behind everything, and
+        // no editor window. AppKit already tells the two apart: a
         // person's launch activates the app moments after this returns,
-        // and a background launch never does. So the raise waits for
+        // and a background launch never does. So the opening waits for
         // that activation (`applicationDidBecomeActive`), and a launch
         // nobody activates stays resting.
         controller.show()
@@ -616,20 +618,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return reply
     }
 
-    /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
-    /// the user came here, so bring it, pulled to their Space and keyed,
-    /// unconditionally, never a rest, because activation only ever
-    /// means "bring it to me". The activation a person's launch sends
-    /// moments after `applicationDidFinishLaunching` is the raise the
-    /// launch itself withheld, and takes the launch raise; About's and
-    /// Settings' are exempt because those windows asked for the
-    /// activation for themselves.
+    /// ⌘Tab (or the Dock icon) landing on this app selects the editor
+    /// window (ADR-0033): the user came here, so bring it, opening it
+    /// when it is closed, unconditionally, never a rest, because
+    /// activation only ever means "bring it to me". The activation a
+    /// person's launch sends moments after
+    /// `applicationDidFinishLaunching` is the opening the launch itself
+    /// withheld, and takes the launch route; About's and Settings' are
+    /// exempt because those windows asked for the activation for
+    /// themselves.
     ///
-    /// Otherwise raised as an **activation** and not as a summon: the
-    /// user named the app, not this surface, and someone who ⌘Tabbed
-    /// away from a sentence in an older day is coming back to that
-    /// sentence. What hangs off the distinction is the roll's anchor,
-    /// see `BackdropRaise`.
+    /// Otherwise an **activation** and not a summon: the user named the
+    /// app, not a surface, and someone who ⌘Tabbed away from a sentence
+    /// in an older day is coming back to that sentence. What hangs off
+    /// the distinction is the roll's anchor, see `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
         // Ahead of the routing table's answer, and ahead of the launch
         // window: coming back to the app is exactly when a checkout, a
@@ -710,19 +712,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The Dock icon's click, and any other reopen (`open -a` on a
-    /// running app). With the editor window setting off, which is the
-    /// default, it raises the panel as an activation, the same raise
-    /// `applicationDidBecomeActive` gives, so one gesture cannot mean
-    /// two things depending on which of the two it arrived at. With the
-    /// setting on it opens the primary editor window or brings the open
-    /// one forward. The routing table gives reopen the same destination
-    /// as a later activation.
+    /// running app). It selects the editor window, opening it when it
+    /// is closed and bringing the open one forward, the same
+    /// destination `applicationDidBecomeActive` gives a later
+    /// activation (ADR-0033), so one gesture cannot mean two things
+    /// depending on which of the two callbacks it arrived at.
     ///
     /// A Dock click on an inactive app sends an activation as well as
     /// this, in no promised order. Either order ends in the same place:
-    /// the window opening rests a panel the activation raised first,
-    /// and an activation arriving second finds the window open and
-    /// leaves the panel where it is (`applicationDidBecomeActive`).
+    /// whichever arrives first opens the window and rests a raised
+    /// panel, and the second finds the window open and brings it
+    /// forward (`PrimaryEditorWindowController.show()`).
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
@@ -732,11 +732,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // coming back through it is owed the same answer about what
         // else wrote their files.
         pages.checkOpenFilesOnActivate()
-        // ADR-0033 folds the earlier B1 spike switch into the routing
-        // table: reopen selects the editor window unconditionally,
-        // opening it when closed. The route reads `ambientPanelEnabled`
-        // through the context, so a person who turned the panel off
-        // still gets the editor window they asked for.
+        // Through the routing table like every other activation: the
+        // reopen row selects the editor window whatever the ambient
+        // panel preference says, and opens it when it is closed. Only
+        // a claim by About or Settings turns it into a no-op, and this
+        // callback passes none.
         apply(ActivationRouter.decide(.reopen, in: activationContext()))
         return false
     }
