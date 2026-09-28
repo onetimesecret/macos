@@ -164,6 +164,9 @@ Space round trip check and before `makeKeyAndOrderFront`.
 - 2026-09-18, later the same day: Amendment 1 records the second eject
   trigger firing on hardware. The base Decision governs the same-desktop
   route; ordering reopens for the full screen route.
+- 2026-09-28: Amendment 2 records the full screen route passing on
+  hardware in the maintainer's run. Ordering does not reopen, and issue 184
+  closes.
 
 ## Amendment 1: second eject trigger fired, ordering reopens
 
@@ -240,3 +243,42 @@ alone.
   `docs/qa/verification-procedures/spaces-and-cmd-tab.md` is unchanged
   as a probe recipe. Its verdicts are what the reopened ordering must
   satisfy.
+
+## Amendment 2: the full screen route passes on hardware
+
+- **Status:** accepted
+- **Date:** 2026-09-28
+
+Appended, not folded in. The base Decision and Amendment 1 are left as
+written.
+
+### What the run saw
+
+The maintainer ran the full screen route again on hardware on 2026-09-28,
+with the card unpinned and the keep above preference off, as part of a run
+of every window roles check: issues 184, 190 and 210, and the ADR-0033
+checks in `docs/qa/verification-procedures/spaces-and-cmd-tab.md`. Every
+route passed, including ⌘Tab into an application in its own full screen
+Space. The procedure's Results table records the run. This record carries
+the maintainer's report; the probe's verdict lines are not reproduced here.
+
+### What this changes
+
+- Amendment 1's first consequence, that ⌘Tab into an app in its own full
+  screen Space "leaves the card drawn above the full screen app", is not
+  what this run saw.
+- Ordering does not reopen. The base Decision governs the full screen route
+  as well as the same desktop route, and no new spike or ADR sits between
+  this record and the close of issue 184.
+- The alternatives the base Context rejected stay rejected.
+
+### What this does not explain
+
+No change to the collection behavior, the full screen participation bits or
+the level writes landed between Amendment 1 (f8f8bdc) and main at 2d73af4.
+What did land in that interval is ADR-0033's ownership and activation
+routing, B1 to B5. This record does not know which of those changes, if
+any, altered the outcome. The second eject trigger stays armed: if the probe
+again lists the card ahead of the full screen window after ⌘Tab into that
+app's Space, unpinned with the preference off, Amendment 1's reopening
+applies again.
