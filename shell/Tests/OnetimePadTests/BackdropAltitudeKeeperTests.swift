@@ -172,8 +172,14 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
     }
 
     func testAReRaiseOverARaisedKeyedCardWritesNothing() {
-        // What ⌘Tab back does to a card that already holds the
-        // keyboard, and the guard issue 74 was closed with.
+        // A raise committed again over a card that is already raised
+        // and keyed must write nothing: the guard issue 74 was closed
+        // with. A cancelled quit reaches it while the panel owns the
+        // page and holds the keyboard, since `.cancelledQuit` goes back
+        // to the owner as `.raisePanel(.activation)`. A summon does
+        // not: over a keyed card it rests it (`stanceAfterSummon`).
+        // Before ADR-0033 the ⌘Tab return reached it too; the return
+        // now selects the editor window.
         let window = makeWindow()
         let keeper = BackdropAltitudeKeeper(window: window)
         raise(keeper)

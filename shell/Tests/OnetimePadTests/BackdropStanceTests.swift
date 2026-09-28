@@ -3,11 +3,22 @@ import XCTest
 
 @testable import OnetimePad
 
-/// The stance split, tested as the pure decision it is — the shell's
-/// pattern for UI-adjacent logic: test the decision itself, never mock
-/// AppKit. The window plumbing that applies it (ordering, key status,
-/// the mouse pass-through) is hand-tested per the project's rules
-/// (docs/spec/feature/background-surface, hardware checklist).
+/// The ambient panel's stance split, tested as the pure decision it
+/// is. That is the shell's pattern for UI-adjacent logic: test the
+/// decision itself, never mock AppKit. The window plumbing that applies
+/// it (ordering, key status, the mouse pass-through) is hand-tested per
+/// the project's rules (docs/spec/feature/background-surface, hardware
+/// checklist).
+///
+/// Scope after ADR-0033: the stance, altitude, Space and summon rules
+/// here are the ambient panel's. The one rule in this file that is not
+/// is the roll anchor near the end, which is the shared model's and
+/// which both windows read. The primary editor window is an ordinary
+/// activating `NSWindow` with normal level, ordinary Space membership
+/// and AppKit full screen semantics; its window role is not derived
+/// from `BackdropStance`. Its close decision lives in
+/// `PrimaryEditorWindowControllerTests`, and the routes that open it in
+/// `ActivationRouteTests` and `LaunchStanceTests`.
 final class BackdropStanceTests: XCTestCase {
     // MARK: Resting — a passive pane behind everything
 
@@ -399,10 +410,15 @@ final class BackdropStanceTests: XCTestCase {
 
     /// The roll goes back to today when the user names the surface, and
     /// stays where the reader left it when they merely name the app
-    /// (issue #79, ADR-0020 item 13). A ⌘Tab return re-keys the card
-    /// without being a summon, and moving the roll under somebody who
+    /// (issue #79, ADR-0020 item 13). Moving the roll under somebody who
     /// came back to the sentence they were reading is the one thing the
     /// anchor must never do.
+    ///
+    /// Scope after ADR-0033: the rule is the model's and both windows
+    /// read it. A ⌘Tab return or a Dock click is an activation that
+    /// selects the editor window, not a re-key of the card, and
+    /// `BackdropAppDelegate.apply` asks this same function before it
+    /// opens that window; the panel asks it on every raise.
     func testOnlyASummonTakesTheRollBackToToday() {
         XCTAssertTrue(BackdropModel.anchorsOnToday(raise: .summon))
         XCTAssertFalse(
