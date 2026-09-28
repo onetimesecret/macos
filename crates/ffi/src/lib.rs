@@ -95,9 +95,9 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent,
-    RestoreError, Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
-    detect_source_language, local_day,
+    ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
+    LedgerEvent, RestoreError, Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab,
+    TabId, TextSelection, Ttl, detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1114,11 +1114,20 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_with_intent(
     sheet: u64,
     json: *const c_char,
     intent: u32,
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
 ) -> bool {
     if is_file_id(sheet) {
         return false;
     }
     let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    let Some(selection) =
+        edit_selection(before_location, before_length, after_location, after_length)
+    else {
         return false;
     };
     let Some(handle) = (unsafe { handle.as_ref() }) else {
@@ -1133,9 +1142,17 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_with_intent(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard
-        .store
-        .apply_ops_with_intent(SheetId::from_raw(sheet), &ops, intent)
+    match selection {
+        Some(selection) => guard.store.apply_ops_with_intent_and_selection(
+            SheetId::from_raw(sheet),
+            &ops,
+            intent,
+            selection,
+        ),
+        None => guard
+            .store
+            .apply_ops_with_intent(SheetId::from_raw(sheet), &ops, intent),
+    }
 }
 
 /// End a page's current typing/deletion run without creating an undo item.
@@ -1146,6 +1163,8 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_with_intent(
 pub unsafe extern "C" fn companion_sheet_finish_editing_group(
     handle: *mut CompanionHandle,
     sheet: u64,
+    location: u32,
+    length: u32,
 ) -> bool {
     if is_file_id(sheet) {
         return false;
@@ -1156,7 +1175,20 @@ pub unsafe extern "C" fn companion_sheet_finish_editing_group(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.finish_editing_group(SheetId::from_raw(sheet))
+    let id = SheetId::from_raw(sheet);
+    if location == u32::MAX && length == u32::MAX {
+        guard.store.finish_editing_group(id)
+    } else if location == u32::MAX || length == u32::MAX {
+        false
+    } else {
+        guard.store.finish_editing_group_at(
+            id,
+            TextSelection {
+                location_u16: location,
+                length_u16: length,
+            },
+        )
+    }
 }
 
 pub(crate) fn edit_intent(raw: u32) -> Option<EditIntent> {
@@ -1170,6 +1202,31 @@ pub(crate) fn edit_intent(raw: u32) -> Option<EditIntent> {
         6 => Some(EditIntent::Composition),
         _ => None,
     }
+}
+
+pub(crate) fn edit_selection(
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
+) -> Option<Option<EditSelection>> {
+    let values = [before_location, before_length, after_location, after_length];
+    if values.iter().all(|value| *value == u32::MAX) {
+        return Some(None);
+    }
+    if values.iter().any(|value| *value == u32::MAX) {
+        return None;
+    }
+    Some(Some(EditSelection {
+        before: TextSelection {
+            location_u16: before_location,
+            length_u16: before_length,
+        },
+        after: TextSelection {
+            location_u16: after_location,
+            length_u16: after_length,
+        },
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1298,6 +1355,55 @@ pub unsafe extern "C" fn companion_sheet_undo_caret_u16(
         .store
         .restored_caret_u16(SheetId::from_raw(sheet))
         .map_or(-1, i64::from)
+}
+
+/// The location of the selection restored by the last accepted step.
+/// Returns `-1` when that step carried no selection.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_selection_location_u16(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    guard
+        .store
+        .restored_selection_u16(SheetId::from_raw(sheet))
+        .map_or(-1, |selection| i64::from(selection.location_u16))
+}
+
+/// The length paired with [`companion_sheet_undo_selection_location_u16`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_selection_length_u16(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    guard
+        .store
+        .restored_selection_u16(SheetId::from_raw(sheet))
+        .map_or(-1, |selection| i64::from(selection.length_u16))
 }
 
 // ---------------------------------------------------------------------------
@@ -4753,32 +4859,53 @@ mod tests {
                 handle,
                 sheet,
                 a.as_ptr(),
-                0
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
             ));
             assert!(companion_sheet_apply_ops_with_intent(
                 handle,
                 sheet,
                 b.as_ptr(),
-                2
+                2,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
             ));
             assert!(companion_sheet_apply_ops_with_intent(
                 handle,
                 sheet,
                 c.as_ptr(),
-                0
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
             ));
             assert!(!companion_sheet_apply_ops_with_intent(
                 handle,
                 sheet,
                 c.as_ptr(),
-                99
+                99,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
             ));
 
             assert!(companion_sheet_undo(handle, sheet));
             assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("ab"));
             assert!(companion_sheet_undo(handle, sheet));
             assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("a"));
-            assert!(companion_sheet_finish_editing_group(handle, sheet));
+            assert!(companion_sheet_finish_editing_group(
+                handle,
+                sheet,
+                u32::MAX,
+                u32::MAX
+            ));
             companion_free(handle);
         }
     }
@@ -7655,9 +7782,18 @@ mod tests {
                 handle,
                 tagged,
                 ops.as_ptr(),
-                0
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
             ));
-            assert!(!companion_sheet_finish_editing_group(handle, tagged));
+            assert!(!companion_sheet_finish_editing_group(
+                handle,
+                tagged,
+                u32::MAX,
+                u32::MAX
+            ));
 
             let runs = take_json(companion_sheet_document_json(handle, page));
             assert!(runs.contains("hello"));

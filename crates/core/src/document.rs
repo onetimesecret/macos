@@ -83,6 +83,31 @@ pub enum EditIntent {
     Composition,
 }
 
+/// A text selection in UTF-16 code units, the coordinate system used by
+/// TextKit and every editor call across the bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextSelection {
+    /// The selection's lower boundary.
+    pub location_u16: u32,
+    /// The selected length; zero represents a caret.
+    pub length_u16: u32,
+}
+
+/// The selection on both sides of one editor action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditSelection {
+    /// The selection before the operation batch was applied.
+    pub before: TextSelection,
+    /// The selection after the operation batch was applied.
+    pub after: TextSelection,
+}
+
+#[derive(Clone)]
+pub(crate) struct StableSelection {
+    start: Cursor,
+    end: Cursor,
+}
+
 impl EditIntent {
     fn is_discrete(self) -> bool {
         matches!(
@@ -175,6 +200,18 @@ pub(crate) struct SheetDocument {
     /// the document is quiet again, which is the only moment the offset
     /// can be converted to the UTF-16 the wire speaks.
     caret: Arc<Mutex<Option<usize>>>,
+    /// The cursor pair popped by the last step. Resolution waits until the
+    /// document is quiet so remote inserts can move the pair through Loro's
+    /// relative-position machinery.
+    popped_selection: Arc<Mutex<Option<StableSelection>>>,
+    /// The selection captured before an admitted operation batch. The push
+    /// hook consumes it when the commit becomes an undo item.
+    pending_edit_selection: Arc<Mutex<Option<StableSelection>>>,
+    /// The selection in the state currently shown by the editor. Undo and
+    /// Redo copy it into the inverse item before moving the document.
+    current_selection: Arc<Mutex<Option<StableSelection>>>,
+    /// The selection the next inverse item should restore.
+    inverse_selection: Arc<Mutex<Option<StableSelection>>>,
     /// The merge interval standing on the manager right now, held here
     /// because the library offers no way to read it back. Only
     /// [`SheetDocument::commit_edit`], isolated structural commits, and
@@ -245,6 +282,10 @@ impl SheetDocument {
             body,
             undo: binding.undo,
             caret: binding.caret,
+            popped_selection: binding.popped_selection,
+            pending_edit_selection: binding.pending_edit_selection,
+            current_selection: binding.current_selection,
+            inverse_selection: binding.inverse_selection,
             merge_interval: UNDO_MERGE_INTERVAL_MS,
             separate_next_commit: Cell::new(false),
             coalescing_intent: Cell::new(None),
@@ -264,19 +305,27 @@ impl SheetDocument {
     /// (ADR-0021 section 5).
     pub(crate) fn undo(&mut self) -> bool {
         self.set_caret(None);
+        self.clear_popped_selection();
         self.set_popped_take_theirs(None);
+        self.seed_inverse_selection();
         // A refusal from the library is a step that did not happen, and
         // a step that did not happen must read as one: the seam above
         // restates the page only when this says something moved.
-        self.undo.undo().unwrap_or(false)
+        let applied = self.undo.undo().unwrap_or(false);
+        self.clear_inverse_selection();
+        applied
     }
 
     /// Take one step forward again. Returns whether anything was
     /// restored.
     pub(crate) fn redo(&mut self) -> bool {
         self.set_caret(None);
+        self.clear_popped_selection();
         self.set_popped_take_theirs(None);
-        self.undo.redo().unwrap_or(false)
+        self.seed_inverse_selection();
+        let applied = self.undo.redo().unwrap_or(false);
+        self.clear_inverse_selection();
+        applied
     }
 
     /// The file-local generation carried by the last popped Take theirs
@@ -303,6 +352,53 @@ impl SheetDocument {
     /// starts a fresh step. The pending boundary is consumed only here, after
     /// the store has admitted the complete batch.
     pub(crate) fn commit_edit(&mut self, intent: EditIntent, message: Option<&str>) {
+        self.commit_edit_inner(intent, message);
+    }
+
+    /// Capture a selection before the document is edited. The resulting
+    /// cursors remain meaningful if their surrounding content moves.
+    pub(crate) fn snapshot_selection(&self, selection: TextSelection) -> Option<StableSelection> {
+        let start_u16 = selection.location_u16 as usize;
+        let end_u16 = start_u16.checked_add(selection.length_u16 as usize)?;
+        let start = self
+            .body
+            .convert_pos(start_u16, PosType::Utf16, PosType::Unicode)?;
+        let end = self
+            .body
+            .convert_pos(end_u16, PosType::Utf16, PosType::Unicode)?;
+        Some(StableSelection {
+            start: self.body.get_cursor(start, Side::Left)?,
+            end: self.body.get_cursor(end, Side::Right)?,
+        })
+    }
+
+    /// Commit an editor action and attach the selections on either side to
+    /// its undo metadata. A merged typing run preserves the first `before`
+    /// selection and advances only its final `after` selection.
+    pub(crate) fn commit_edit_with_selection(
+        &mut self,
+        intent: EditIntent,
+        message: Option<&str>,
+        before: StableSelection,
+        after: TextSelection,
+    ) {
+        let Some(after) = self.snapshot_selection(after) else {
+            self.commit_edit_inner(intent, message);
+            return;
+        };
+        if let Ok(mut slot) = self.pending_edit_selection.lock() {
+            *slot = Some(before);
+        }
+        self.commit_edit_inner(intent, message);
+        if let Ok(mut slot) = self.pending_edit_selection.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.current_selection.lock() {
+            *slot = Some(after);
+        }
+    }
+
+    fn commit_edit_inner(&mut self, intent: EditIntent, message: Option<&str>) {
         let follows_boundary = self.separate_next_commit.replace(false);
         let changes_coalescing_kind = !intent.is_discrete()
             && self
@@ -329,9 +425,14 @@ impl SheetDocument {
     /// End the current coalescing run without creating an undo item. Caret
     /// movement calls this so typing at a new location cannot merge with the
     /// run authored at the old location.
-    pub(crate) fn finish_editing_group(&self) {
+    pub(crate) fn finish_editing_group(&self, selection: Option<TextSelection>) {
         self.separate_next_commit.set(true);
         self.coalescing_intent.set(None);
+        if let Some(selection) = selection.and_then(|value| self.snapshot_selection(value))
+            && let Ok(mut slot) = self.current_selection.lock()
+        {
+            *slot = Some(selection);
+        }
     }
 
     /// Commit explicit Take theirs as an isolated undo item. The zero
@@ -380,9 +481,35 @@ impl SheetDocument {
     /// carries it through any remote operation that arrives in the
     /// meantime, and the pop hook hands it back.
     pub(crate) fn restored_caret(&self) -> Option<usize> {
+        if let Some(selection) = self.restored_selection() {
+            return Some(selection.location_u16 as usize);
+        }
         let scalar = (*self.caret.lock().ok()?)?;
         self.body
             .convert_pos(scalar, PosType::Unicode, PosType::Utf16)
+    }
+
+    /// The range restored by the last undo or redo, transformed through any
+    /// remote edits that arrived while the step waited on its stack.
+    pub(crate) fn restored_selection(&self) -> Option<TextSelection> {
+        let stable = self.popped_selection.lock().ok()?.clone()?;
+        let start = self.doc.get_cursor_pos(&stable.start).ok()?.current.pos;
+        let end = self.doc.get_cursor_pos(&stable.end).ok()?.current.pos;
+        let start = self
+            .body
+            .convert_pos(start, PosType::Unicode, PosType::Utf16)?;
+        let end = self
+            .body
+            .convert_pos(end, PosType::Unicode, PosType::Utf16)?;
+        let (location, far_edge) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        Some(TextSelection {
+            location_u16: u32::try_from(location).ok()?,
+            length_u16: u32::try_from(far_edge - location).ok()?,
+        })
     }
 
     /// Forget everything on both stacks. Called wherever a step would
@@ -393,10 +520,18 @@ impl SheetDocument {
     pub(crate) fn forget_undo(&self) {
         self.undo.clear();
         self.set_caret(None);
+        self.clear_popped_selection();
         self.separate_next_commit.set(false);
         self.coalescing_intent.set(None);
         self.set_take_theirs_commit(None);
         self.set_popped_take_theirs(None);
+        if let Ok(mut slot) = self.pending_edit_selection.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.current_selection.lock() {
+            *slot = None;
+        }
+        self.clear_inverse_selection();
     }
 
     /// Write the pending caret slot, tolerating a poisoned lock the way
@@ -406,6 +541,39 @@ impl SheetDocument {
         if let Ok(mut slot) = self.caret.lock() {
             *slot = scalar;
         }
+    }
+
+    fn clear_popped_selection(&self) {
+        if let Ok(mut slot) = self.popped_selection.lock() {
+            *slot = None;
+        }
+    }
+
+    fn seed_inverse_selection(&self) {
+        let current = self
+            .current_selection
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone());
+        let refreshed = current.and_then(|selection| self.refresh_selection(&selection));
+        if let Ok(mut slot) = self.inverse_selection.lock() {
+            *slot = refreshed;
+        }
+    }
+
+    fn clear_inverse_selection(&self) {
+        if let Ok(mut slot) = self.inverse_selection.lock() {
+            *slot = None;
+        }
+    }
+
+    fn refresh_selection(&self, selection: &StableSelection) -> Option<StableSelection> {
+        let start = self.doc.get_cursor_pos(&selection.start).ok()?.current.pos;
+        let end = self.doc.get_cursor_pos(&selection.end).ok()?.current.pos;
+        Some(StableSelection {
+            start: self.body.get_cursor(start, Side::Left)?,
+            end: self.body.get_cursor(end, Side::Right)?,
+        })
     }
 
     fn set_take_theirs_commit(&self, value: Option<i64>) {
@@ -935,6 +1103,10 @@ fn chips_of(body: &LoroText) -> Vec<ItemId> {
 struct UndoBinding {
     undo: UndoManager,
     caret: Arc<Mutex<Option<usize>>>,
+    popped_selection: Arc<Mutex<Option<StableSelection>>>,
+    pending_edit_selection: Arc<Mutex<Option<StableSelection>>>,
+    current_selection: Arc<Mutex<Option<StableSelection>>>,
+    inverse_selection: Arc<Mutex<Option<StableSelection>>>,
     take_theirs_commit: Arc<Mutex<Option<i64>>>,
     popped_take_theirs: Arc<Mutex<Option<i64>>>,
 }
@@ -947,6 +1119,11 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let take_theirs_source = Arc::clone(&take_theirs_commit);
     let popped_take_theirs = Arc::new(Mutex::new(None));
     let inverse_take_theirs_source = Arc::clone(&popped_take_theirs);
+    let pending_edit_selection = Arc::new(Mutex::new(None::<StableSelection>));
+    let pending_edit_source = Arc::clone(&pending_edit_selection);
+    let current_selection = Arc::new(Mutex::new(None::<StableSelection>));
+    let inverse_selection = Arc::new(Mutex::new(None::<StableSelection>));
+    let inverse_selection_source = Arc::clone(&inverse_selection);
     let anchor = body.clone();
     undo.set_on_push(Some(Box::new(move |_kind, _span, event| {
         let mut meta = UndoItemMeta::new();
@@ -968,6 +1145,21 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
         if let Some(generation) = explicit_commit.or(inverse_step) {
             meta.set_value(LoroValue::I64(generation));
         }
+        let edit_selection = if event.is_some() {
+            pending_edit_source
+                .lock()
+                .ok()
+                .and_then(|mut slot| slot.take())
+        } else {
+            inverse_selection_source
+                .lock()
+                .ok()
+                .and_then(|mut slot| slot.take())
+        };
+        if let Some(selection) = edit_selection {
+            meta.add_cursor(&selection.start);
+            meta.add_cursor(&selection.end);
+        }
         // A cursor rather than a bare offset, because a cursor is what
         // the library transforms when a peer's operations arrive while
         // the step sits on the stack. A step whose position cannot be
@@ -975,7 +1167,8 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
         // during a step carries no event, so the first redo after an
         // undo has no position of its own and the caret stays where the
         // writer left it.
-        if let Some(pos) = event.as_ref().and_then(change_start)
+        if meta.cursors.is_empty()
+            && let Some(pos) = event.as_ref().and_then(change_start)
             && let Some(cursor) = anchor.get_cursor(pos, Side::Left)
         {
             meta.add_cursor(&cursor);
@@ -985,10 +1178,29 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
 
     let caret = Arc::new(Mutex::new(None));
     let sink = Arc::clone(&caret);
+    let popped_selection = Arc::new(Mutex::new(None::<StableSelection>));
+    let popped_selection_sink = Arc::clone(&popped_selection);
+    let current_selection_sink = Arc::clone(&current_selection);
     let take_theirs_sink = Arc::clone(&popped_take_theirs);
     undo.set_on_pop(Some(Box::new(move |_kind, _span, meta| {
         if let Ok(mut slot) = sink.lock() {
             *slot = meta.cursors.first().map(|cursor| cursor.pos.pos);
+        }
+        if let Ok(mut slot) = popped_selection_sink.lock() {
+            *slot = (meta.cursors.len() >= 2).then(|| StableSelection {
+                start: meta.cursors[0].cursor.clone(),
+                end: meta.cursors[1].cursor.clone(),
+            });
+        }
+        if let Ok(mut slot) = current_selection_sink.lock() {
+            *slot = if meta.cursors.len() >= 2 {
+                Some(StableSelection {
+                    start: meta.cursors[0].cursor.clone(),
+                    end: meta.cursors[1].cursor.clone(),
+                })
+            } else {
+                None
+            };
         }
         if let Ok(mut slot) = take_theirs_sink.lock() {
             *slot = match meta.value {
@@ -1001,6 +1213,10 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     UndoBinding {
         undo,
         caret,
+        popped_selection,
+        pending_edit_selection,
+        current_selection,
+        inverse_selection,
         take_theirs_commit,
         popped_take_theirs,
     }
@@ -1477,6 +1693,57 @@ mod tests {
         // the code units the wire speaks.
         assert_eq!(doc.restored_caret(), Some(5));
         assert_eq!(doc.utf16_len(), 5);
+    }
+
+    #[test]
+    fn undo_and_redo_selections_follow_a_remote_insert() {
+        let mut local = SheetDocument::new();
+        local.insert(0, "base.").unwrap();
+        local.commit(None);
+        let snapshot = local.export_snapshot();
+        let base_version = local.version();
+        local.forget_undo();
+
+        let remote = SheetDocument::new();
+        remote.import_snapshot(&snapshot).unwrap();
+
+        let before = local
+            .snapshot_selection(TextSelection {
+                location_u16: 5,
+                length_u16: 0,
+            })
+            .unwrap();
+        local.insert(5, " mine").unwrap();
+        local.commit_edit_with_selection(
+            EditIntent::Typing,
+            None,
+            before,
+            TextSelection {
+                location_u16: 10,
+                length_u16: 0,
+            },
+        );
+
+        remote.insert(0, "remote ").unwrap();
+        remote.commit(None);
+        let update = remote.export_updates_since(&base_version).unwrap();
+        local.import_update(&update, &[]).unwrap();
+        assert!(local.undo());
+        assert_eq!(
+            local.restored_selection(),
+            Some(TextSelection {
+                location_u16: 12,
+                length_u16: 0,
+            })
+        );
+        assert!(local.redo());
+        assert_eq!(
+            local.restored_selection(),
+            Some(TextSelection {
+                location_u16: 17,
+                length_u16: 0,
+            })
+        );
     }
 
     #[test]

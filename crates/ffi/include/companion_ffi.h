@@ -454,11 +454,16 @@ bool companion_sheet_apply_ops_as_new_step(CompanionHandle *handle,
  */
 bool companion_sheet_apply_ops_with_intent(CompanionHandle *handle,
                                            uint64_t sheet, const char *json,
-                                           uint32_t intent);
+                                           uint32_t intent,
+                                           uint32_t before_location,
+                                           uint32_t before_length,
+                                           uint32_t after_location,
+                                           uint32_t after_length);
 
 /* End the current typing/deletion run without creating an undo item. */
 bool companion_sheet_finish_editing_group(CompanionHandle *handle,
-                                          uint64_t sheet);
+                                          uint64_t sheet, uint32_t location,
+                                          uint32_t length);
 
 /*
  * Undo, which lives here rather than in AppKit (issue #132). One step
@@ -489,6 +494,10 @@ bool companion_sheet_can_redo(CompanionHandle *handle, uint64_t sheet);
  */
 int64_t companion_sheet_undo_caret_u16(CompanionHandle *handle,
                                        uint64_t sheet);
+int64_t companion_sheet_undo_selection_location_u16(CompanionHandle *handle,
+                                                     uint64_t sheet);
+int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
+                                                   uint64_t sheet);
 
 /*
  * Replace a page's document wholesale: a JSON array of runs in document
@@ -1195,10 +1204,10 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *      "detail": string}  present only for "io"
  *
  *   companion_file_undo() and companion_file_redo() return a
- *   StepOutcome: {"applied": bool, "caretUTF16": i64}. The two fields
- *   are the pair companion_sheet_undo() and
- *   companion_sheet_undo_caret_u16() already answer for a page, in one
- *   call rather than two, with -1 for a step that carried no position.
+ *   StepOutcome: {"applied": bool, "caretUTF16": i64,
+ *   "selectionLocationUTF16": i64, "selectionLengthUTF16": i64}.
+ *   Selection fields are -1 when the step carried no range; caretUTF16
+ *   remains for compatibility with callers that restore only a caret.
  *
  *   companion_file_runs_json() reuses the existing runs shape exactly:
  *   the same array companion_sheet_document_json() returns. A file
@@ -1257,11 +1266,16 @@ bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
 bool companion_file_apply_ops_with_intent(CompanionHandle *handle,
                                           uint64_t file,
                                           const char *ops_json,
-                                          uint32_t intent);
+                                          uint32_t intent,
+                                          uint32_t before_location,
+                                          uint32_t before_length,
+                                          uint32_t after_location,
+                                          uint32_t after_length);
 
 /* End the current typing/deletion run without creating an undo item. */
 bool companion_file_finish_editing_group(CompanionHandle *handle,
-                                         uint64_t file);
+                                         uint64_t file, uint32_t location,
+                                         uint32_t length);
 
 /*
  * Whether the file has a step waiting to be taken back, and one waiting

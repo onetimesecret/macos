@@ -245,9 +245,18 @@ public struct StepOutcome: Codable, Hashable, Sendable {
     public let applied: Bool
     /// Caret position in UTF-16 code units, or nil when the step
     /// carried no position and the caret stays where the writer had it.
-    public var caret: Int? { caretUTF16 < 0 ? nil : Int(caretUTF16) }
+    public var selection: NSRange? {
+        guard selectionLocationUTF16 >= 0, selectionLengthUTF16 >= 0 else { return nil }
+        return NSRange(
+            location: Int(selectionLocationUTF16),
+            length: Int(selectionLengthUTF16)
+        )
+    }
+    public var caret: Int? { selection?.location ?? (caretUTF16 < 0 ? nil : Int(caretUTF16)) }
 
     let caretUTF16: Int64
+    let selectionLocationUTF16: Int64
+    let selectionLengthUTF16: Int64
 }
 
 /// The two emptiness answers, taken together in one call because they
@@ -617,6 +626,29 @@ public class CompanionClient: @unchecked Sendable {
     /// handle: its lifetime is this object's.
     var rawHandleForTests: OpaquePointer { handle }
 
+    private func selectionWire(_ selection: NSRange?) -> (UInt32, UInt32)? {
+        guard let selection else { return (UInt32.max, UInt32.max) }
+        guard selection.location != NSNotFound,
+              let location = UInt32(exactly: selection.location),
+              let length = UInt32(exactly: selection.length)
+        else { return nil }
+        return (location, length)
+    }
+
+    private func editSelectionWire(
+        _ selection: EditorEditSelection?
+    ) -> (UInt32, UInt32, UInt32, UInt32)? {
+        guard let selection else {
+            return (UInt32.max, UInt32.max, UInt32.max, UInt32.max)
+        }
+        guard let before = selectionWire(selection.before),
+              let after = selectionWire(selection.after),
+              before.0 != UInt32.max,
+              after.0 != UInt32.max
+        else { return nil }
+        return (before.0, before.1, after.0, after.1)
+    }
+
     deinit {
         companion_free(handle)
     }
@@ -788,17 +820,29 @@ public class CompanionClient: @unchecked Sendable {
     public func applyOps(
         sheet: UInt64,
         json: String,
-        intent: EditorEditIntent = .typing
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
     ) -> Bool {
-        json.withCString {
-            companion_sheet_apply_ops_with_intent(handle, sheet, $0, intent.rawValue)
+        guard let wire = editSelectionWire(selection) else { return false }
+        return json.withCString {
+            companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                $0,
+                intent.rawValue,
+                wire.0,
+                wire.1,
+                wire.2,
+                wire.3
+            )
         }
     }
 
     /// End the current coalescing run without creating an undo item.
     @discardableResult
-    public func finishEditingGroup(sheet: UInt64) -> Bool {
-        companion_sheet_finish_editing_group(handle, sheet)
+    public func finishEditingGroup(sheet: UInt64, selection: NSRange? = nil) -> Bool {
+        guard let wire = selectionWire(selection) else { return false }
+        return companion_sheet_finish_editing_group(handle, sheet, wire.0, wire.1)
     }
 
     /// Push a whole document snapshot (JSON runs) to the core. The
@@ -848,6 +892,14 @@ public class CompanionClient: @unchecked Sendable {
     public func undoCaret(sheet: UInt64) -> Int? {
         let caret = companion_sheet_undo_caret_u16(handle, sheet)
         return caret < 0 ? nil : Int(caret)
+    }
+
+    /// The complete selection restored by the last accepted step.
+    public func undoSelection(sheet: UInt64) -> NSRange? {
+        let location = companion_sheet_undo_selection_location_u16(handle, sheet)
+        let length = companion_sheet_undo_selection_length_u16(handle, sheet)
+        guard location >= 0, length >= 0 else { return nil }
+        return NSRange(location: Int(location), length: Int(length))
     }
 
     // MARK: Chips
@@ -1335,17 +1387,29 @@ public class CompanionClient: @unchecked Sendable {
     public func applyFileOps(
         _ file: UInt64,
         json: String,
-        intent: EditorEditIntent = .typing
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
     ) -> Bool {
-        json.withCString {
-            companion_file_apply_ops_with_intent(handle, file, $0, intent.rawValue)
+        guard let wire = editSelectionWire(selection) else { return false }
+        return json.withCString {
+            companion_file_apply_ops_with_intent(
+                handle,
+                file,
+                $0,
+                intent.rawValue,
+                wire.0,
+                wire.1,
+                wire.2,
+                wire.3
+            )
         }
     }
 
     /// End the current coalescing run without creating an undo item.
     @discardableResult
-    public func finishFileEditingGroup(_ file: UInt64) -> Bool {
-        companion_file_finish_editing_group(handle, file)
+    public func finishFileEditingGroup(_ file: UInt64, selection: NSRange? = nil) -> Bool {
+        guard let wire = selectionWire(selection) else { return false }
+        return companion_file_finish_editing_group(handle, file, wire.0, wire.1)
     }
 
     /// Take back the file's last local edit step.

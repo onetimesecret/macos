@@ -773,8 +773,8 @@ public struct InkEditorView: NSViewRepresentable {
 
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
-            if !selectionChangeIsIncidental, let sheet = currentSheet {
-                model.finishEditingGroup(sheet: sheet)
+            if !selectionChangeIsIncidental, let sheet = currentSheet, let textView {
+                model.finishEditingGroup(sheet: sheet, selection: textView.selectedRange())
             }
             refreshLanguageActionAvailability()
             if refreshBlockMetadataFocus() {
@@ -988,7 +988,7 @@ public struct InkEditorView: NSViewRepresentable {
                   NSMaxRange(range) <= storage.length,
                   textView.shouldChangeText(in: range, replacementString: replacement)
             else { return }
-            withEditIntent(intent) {
+            withEditIntent(intent, afterSelection: caret) {
                 storage.replaceCharacters(in: range, with: replacement)
                 textView.didChangeText()
                 textView.setSelectedRange(Self.clamped(caret, to: storage.length))
@@ -1939,16 +1939,18 @@ public struct InkEditorView: NSViewRepresentable {
             // fences uncoloured until the writer typed one more
             // character.
             restyle()
-            // A step that carried no position leaves the caret alone,
+            // A step that carried no selection leaves the current range alone,
             // clamped, rather than guessing at an offset.
             let length = textView.textStorage?.length ?? 0
-            let landing = outcome.caret ?? textView.selectedRange().location
-            let caret = Self.clamped(NSRange(location: landing, length: 0), to: length)
-            textView.setSelectedRange(caret)
+            let selection = Self.clamped(
+                outcome.selection ?? textView.selectedRange(),
+                to: length
+            )
+            textView.setSelectedRange(selection)
             // Rewriting the whole storage resets the scroller, so a
             // step taken over an edit that was off screen would put the
             // caret somewhere the writer cannot see. Follow it.
-            textView.scrollRangeToVisible(caret)
+            textView.scrollRangeToVisible(selection)
         }
 
         // MARK: Editing (ops across the seam, ADR-0013)
@@ -1963,6 +1965,7 @@ public struct InkEditorView: NSViewRepresentable {
         struct CompositionSpan {
             let location: Int
             let baseline: String
+            let selectionBefore: NSRange
             var spanLength: Int
         }
 
@@ -2035,8 +2038,19 @@ public struct InkEditorView: NSViewRepresentable {
                 finishComposition(in: storage, sheet: sheet)
                 return
             }
-            emit(Self.editOps(storage: storage, editedRange: editedRange, changeInLength: delta),
-                 sheet: sheet)
+            let ops = Self.editOps(
+                storage: storage,
+                editedRange: editedRange,
+                changeInLength: delta
+            )
+            let deletedLength = max(0, editedRange.length - delta)
+            let selection = EditorEditSelection(
+                before: editSelectionBefore
+                    ?? NSRange(location: editedRange.location, length: deletedLength),
+                after: editSelectionAfter
+                    ?? NSRange(location: NSMaxRange(editedRange), length: 0)
+            )
+            emit(ops, sheet: sheet, selection: selection)
         }
 
         /// A composition is starting: remember what the span it will
@@ -2049,6 +2063,7 @@ public struct InkEditorView: NSViewRepresentable {
             imeComposition = CompositionSpan(
                 location: clamped.location,
                 baseline: (storage.string as NSString).substring(with: clamped),
+                selectionBefore: clamped,
                 spanLength: clamped.length
             )
         }
@@ -2070,8 +2085,15 @@ public struct InkEditorView: NSViewRepresentable {
             }
             let final = text.substring(with: span)
             guard final != ime.baseline else { return }
-            emit(Self.minimalReplace(at: ime.location, old: ime.baseline, new: final),
-                 sheet: sheet)
+            let after = textView?.selectedRange() ?? NSRange(
+                location: NSMaxRange(span),
+                length: 0
+            )
+            emit(
+                Self.minimalReplace(at: ime.location, old: ime.baseline, new: final),
+                sheet: sheet,
+                selection: EditorEditSelection(before: ime.selectionBefore, after: after)
+            )
         }
 
         /// If a composition is still tracked once the view unmarks
@@ -2091,6 +2113,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// `insertText`, for example, but remains automation rather than typing.
         private var editIntentInFlight: EditorEditIntent?
         private var editIntentDepth = 0
+        private var editSelectionBefore: NSRange?
+        private var editSelectionAfter: NSRange?
 
         var selectionChangeIsIncidental: Bool {
             editIntentDepth > 0 || model.isApplyingProjection
@@ -2099,17 +2123,25 @@ public struct InkEditorView: NSViewRepresentable {
         @discardableResult
         func withEditIntent<Result>(
             _ intent: EditorEditIntent,
+            afterSelection: NSRange? = nil,
             perform body: () -> Result
         ) -> Result {
             let outermost = editIntentDepth == 0
             if outermost {
                 editIntentInFlight = intent
+                let selected = textView?.selectedRange()
+                editSelectionBefore = selected?.location == NSNotFound ? nil : selected
+                editSelectionAfter = afterSelection
+            } else if editSelectionAfter == nil, let afterSelection {
+                editSelectionAfter = afterSelection
             }
             editIntentDepth += 1
             defer {
                 editIntentDepth -= 1
                 if outermost {
                     editIntentInFlight = nil
+                    editSelectionBefore = nil
+                    editSelectionAfter = nil
                 }
             }
             return body()
@@ -2117,10 +2149,19 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Encode and send one batch. Empty batches never cross: a
         /// no-op is not an operation.
-        private func emit(_ ops: [DocumentEditOp], sheet: UInt64) {
+        private func emit(
+            _ ops: [DocumentEditOp],
+            sheet: UInt64,
+            selection: EditorEditSelection
+        ) {
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
             let intent = editIntentInFlight ?? Self.inferredIntent(for: ops)
-            model.applyOps(sheet: sheet, opsJSON: json, intent: intent)
+            model.applyOps(
+                sheet: sheet,
+                opsJSON: json,
+                intent: intent,
+                selection: selection
+            )
             onEmit?(ops)
         }
 
@@ -3914,10 +3955,15 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     @discardableResult
     private func withEditIntent<Result>(
         _ intent: EditorEditIntent,
+        afterSelection: NSRange? = nil,
         perform body: () -> Result
     ) -> Result {
         guard let coordinator else { return body() }
-        return coordinator.withEditIntent(intent, perform: body)
+        return coordinator.withEditIntent(
+            intent,
+            afterSelection: afterSelection,
+            perform: body
+        )
     }
 
     /// Which window the editor landed in, by class. The build line
@@ -4728,7 +4774,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     ) -> Bool {
         guard let storage = textStorage else { return false }
         guard shouldChangeText(in: range, replacementString: replacement) else { return false }
-        withEditIntent(.automation) {
+        let width = (replacement as NSString).length
+        let landing = caret.location >= NSMaxRange(range)
+            ? caret.location - range.length + width
+            : range.location + width
+        let selection = NSRange(location: landing, length: 0)
+        withEditIntent(.automation, afterSelection: selection) {
             storage.replaceCharacters(in: range, with: replacement)
             didChangeText()
             // Where the caret lands is the whole of whether the gesture
@@ -4737,11 +4788,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             // second press nudges again; an outdent that eats the ground
             // under it leaves it at the line's start, which is inside the
             // region too.
-            let width = (replacement as NSString).length
-            let landing = caret.location >= NSMaxRange(range)
-                ? caret.location - range.length + width
-                : range.location + width
-            setSelectedRange(NSRange(location: landing, length: 0))
+            setSelectedRange(selection)
         }
         return true
     }

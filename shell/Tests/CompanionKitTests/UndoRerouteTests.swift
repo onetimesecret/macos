@@ -89,10 +89,12 @@ final class UndoRerouteTests: XCTestCase {
         try makeEditor()
         type("a whole thought")
         coordinator.step(back: true)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 0))
         coordinator.step(back: false)
 
         XCTAssertEqual(coreText(), "a whole thought")
         XCTAssertEqual(storage.string, "a whole thought")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 15, length: 0))
         XCTAssertFalse(model.canRedoEdit(sheet: sheet))
     }
 
@@ -215,6 +217,11 @@ final class UndoRerouteTests: XCTestCase {
 
         coordinator.step(back: true)
         XCTAssertEqual(coreText(), "before")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 6))
+        coordinator.step(back: false)
+        XCTAssertEqual(coreText(), "after")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
+        coordinator.step(back: true)
         coordinator.step(back: true)
         XCTAssertEqual(coreText(), "")
     }

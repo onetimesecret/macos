@@ -22,6 +22,17 @@ public enum EditorEditIntent: UInt32, Sendable {
     case composition = 6
 }
 
+/// The TextKit selection on both sides of one editor action.
+public struct EditorEditSelection: Equatable, Sendable {
+    public let before: NSRange
+    public let after: NSRange
+
+    public init(before: NSRange, after: NSRange) {
+        self.before = before
+        self.after = after
+    }
+}
+
 /// One edit against a page's body, as the shell sends it to the core
 /// (`companion_sheet_apply_ops`, ADR-0013). Every position and length
 /// is a UTF-16 code unit, which is what `NSRange` already speaks, so
@@ -4356,7 +4367,8 @@ public final class PageModel: ObservableObject {
     public func applyOps(
         sheet: UInt64,
         opsJSON: String,
-        intent: EditorEditIntent = .typing
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
     ) {
         // Files route first, on the tag and nothing else. A file has no
         // quiet rendering on the roll, no chips to reap, and its
@@ -4364,7 +4376,7 @@ public final class PageModel: ObservableObject {
         // so it takes none of the page bookkeeping below.
         if sheet.isFileID {
             let accepted = client.applyFileOps(
-                sheet, json: opsJSON, intent: intent)
+                sheet, json: opsJSON, intent: intent, selection: selection)
             if accepted {
                 markFilesDirty()
                 refreshOpenFiles()
@@ -4375,7 +4387,7 @@ public final class PageModel: ObservableObject {
             return
         }
         let accepted = client.applyOps(
-            sheet: sheet, json: opsJSON, intent: intent)
+            sheet: sheet, json: opsJSON, intent: intent, selection: selection)
         if accepted {
             // The page just changed, so how it reads when it is quiet
             // changed with it (issue #79). Here rather than at the
@@ -4395,11 +4407,11 @@ public final class PageModel: ObservableObject {
     }
 
     /// End the current coalescing run without creating an undo item.
-    public func finishEditingGroup(sheet: UInt64) {
+    public func finishEditingGroup(sheet: UInt64, selection: NSRange? = nil) {
         if sheet.isFileID {
-            _ = client.finishFileEditingGroup(sheet)
+            _ = client.finishFileEditingGroup(sheet, selection: selection)
         } else {
-            _ = client.finishEditingGroup(sheet: sheet)
+            _ = client.finishEditingGroup(sheet: sheet, selection: selection)
         }
     }
 
@@ -4410,12 +4422,13 @@ public final class PageModel: ObservableObject {
     public struct StepOutcome: Equatable, Sendable {
         /// False means nothing moved and the caller changes nothing.
         public let applied: Bool
-        /// The caret in UTF-16 code units, or nil when the step carried
-        /// no position and the caret should stay where the writer left
-        /// it.
-        public let caret: Int?
+        /// The selection restored by the step, or nil when the step carried
+        /// no selection and the editor should leave its range alone.
+        public let selection: NSRange?
 
-        public static let nothing = StepOutcome(applied: false, caret: nil)
+        public var caret: Int? { selection?.location }
+
+        public static let nothing = StepOutcome(applied: false, selection: nil)
     }
 
     /// Take back the page's last local edit through the core's stack,
@@ -4460,7 +4473,7 @@ public final class PageModel: ObservableObject {
         restateStorage(sheet: file)
         markFilesDirty()
         refreshOpenFiles()
-        return StepOutcome(applied: true, caret: outcome.caret)
+        return StepOutcome(applied: true, selection: outcome.selection)
     }
 
     /// Whether the page has a step waiting in either direction: what a
@@ -4533,7 +4546,7 @@ public final class PageModel: ObservableObject {
         #if DEBUG
         assertProjectionParity(sheet: sheet)
         #endif
-        return StepOutcome(applied: true, caret: client.undoCaret(sheet: sheet))
+        return StepOutcome(applied: true, selection: client.undoSelection(sheet: sheet))
     }
 
     /// Rewrite a page's storage in place from the core's document.
