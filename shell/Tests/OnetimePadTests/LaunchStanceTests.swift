@@ -11,10 +11,12 @@ import XCTest
 /// negative: no activation means the router is never asked.
 ///
 /// Scope after ADR-0033: launch routes both windows. The panel rests
-/// on every launch; the editor window opens only for a person's
-/// launch, a Dock click, reopen or ⌘Tab, and never for a login item
-/// or any launch the system performs without activating the app. The
-/// cases in this file are the router's decisions across those routes.
+/// on every launch; the editor window opens for a person's launch, a
+/// Dock click, reopen or ⌘Tab, and, with the ambient panel off, for
+/// the hotkey and the status item as well (ActivationRouteTests holds
+/// those two rows), and never for a login item or any launch the
+/// system performs without activating the app. The cases in this file
+/// are the router's decisions across the launch routes.
 final class LaunchStanceTests: XCTestCase {
     private func context(claimedByAnotherWindow: Bool = false) -> ActivationContext {
         ActivationContext(
