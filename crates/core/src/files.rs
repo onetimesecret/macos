@@ -838,6 +838,16 @@ impl FileStore {
         self.file(id).is_some_and(|file| file.document.can_redo())
     }
 
+    /// Content-free action label for the next Undo menu item.
+    pub fn undo_action_name(&self, id: FileId) -> Option<&'static str> {
+        self.file(id)?.document.undo_action_name()
+    }
+
+    /// Content-free action label for the next Redo menu item.
+    pub fn redo_action_name(&self, id: FileId) -> Option<&'static str> {
+        self.file(id)?.document.redo_action_name()
+    }
+
     /// Take back the file's last local edit step.
     pub fn undo(&mut self, id: FileId) -> Option<StepOutcome> {
         self.step(id, true)
@@ -2057,8 +2067,11 @@ mod tests {
         assert!(store.apply_ops_with_intent(id, &[ins(1, "b")], 2, EditIntent::Paste));
         assert!(store.apply_ops_with_intent(id, &[ins(2, "c")], 3, EditIntent::Typing));
 
+        assert_eq!(store.undo_action_name(id), Some("Typing"));
         assert!(store.undo(id).unwrap().applied);
         assert_eq!(store.text(id).unwrap(), "ab");
+        assert_eq!(store.undo_action_name(id), Some("Paste"));
+        assert_eq!(store.redo_action_name(id), Some("Typing"));
         assert!(store.undo(id).unwrap().applied);
         assert_eq!(store.text(id).unwrap(), "a");
         assert!(store.undo(id).unwrap().applied);

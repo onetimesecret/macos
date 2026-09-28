@@ -115,6 +115,32 @@ impl EditIntent {
             Self::Paste | Self::Cut | Self::Replacement | Self::Automation | Self::Composition
         )
     }
+
+    /// Content-free label used by native Undo and Redo menu titles.
+    pub fn action_name(self) -> &'static str {
+        match self {
+            Self::Typing => "Typing",
+            Self::Deletion => "Delete",
+            Self::Paste => "Paste",
+            Self::Cut => "Cut",
+            Self::Replacement => "Replace",
+            Self::Automation => "Automatic Change",
+            Self::Composition => "Composition",
+        }
+    }
+
+    fn from_action_name(value: &str) -> Option<Self> {
+        match value {
+            "Typing" => Some(Self::Typing),
+            "Delete" => Some(Self::Deletion),
+            "Paste" => Some(Self::Paste),
+            "Cut" => Some(Self::Cut),
+            "Replace" => Some(Self::Replacement),
+            "Automatic Change" => Some(Self::Automation),
+            "Composition" => Some(Self::Composition),
+            _ => None,
+        }
+    }
 }
 
 /// One run of the body, in document order: contiguous ink between
@@ -227,6 +253,10 @@ pub(crate) struct SheetDocument {
     /// typing and deletion may join deletion, but crossing between those
     /// gestures starts a new step even inside the merge interval.
     coalescing_intent: Cell<Option<EditIntent>>,
+    /// Intent stamped onto the undo item created by the next editor commit.
+    pending_edit_intent: Arc<Mutex<Option<EditIntent>>>,
+    /// Intent carried by the item most recently popped from either stack.
+    popped_edit_intent: Arc<Mutex<Option<EditIntent>>>,
     /// Set only across the commit that implements explicit Take theirs.
     /// The undo push hook copies this file-local generation into that
     /// undo item's metadata.
@@ -289,6 +319,8 @@ impl SheetDocument {
             merge_interval: UNDO_MERGE_INTERVAL_MS,
             separate_next_commit: Cell::new(false),
             coalescing_intent: Cell::new(None),
+            pending_edit_intent: binding.pending_edit_intent,
+            popped_edit_intent: binding.popped_edit_intent,
             take_theirs_commit: binding.take_theirs_commit,
             popped_take_theirs: binding.popped_take_theirs,
         }
@@ -343,6 +375,22 @@ impl SheetDocument {
     /// Whether a step that was taken back is waiting to be restored.
     pub(crate) fn can_redo(&self) -> bool {
         self.undo.can_redo()
+    }
+
+    pub(crate) fn undo_action_name(&self) -> Option<&'static str> {
+        self.undo
+            .top_undo_value()
+            .as_ref()
+            .and_then(edit_intent_from_value)
+            .map(EditIntent::action_name)
+    }
+
+    pub(crate) fn redo_action_name(&self) -> Option<&'static str> {
+        self.undo
+            .top_redo_value()
+            .as_ref()
+            .and_then(edit_intent_from_value)
+            .map(EditIntent::action_name)
     }
 
     /// Commit an editor action under the grouping rules for its intent.
@@ -409,7 +457,13 @@ impl SheetDocument {
         if separate {
             self.undo.set_merge_interval(0);
         }
+        if let Ok(mut slot) = self.pending_edit_intent.lock() {
+            *slot = Some(intent);
+        }
         self.commit_now(message);
+        if let Ok(mut slot) = self.pending_edit_intent.lock() {
+            *slot = None;
+        }
         if separate {
             self.undo.set_merge_interval(self.merge_interval);
         }
@@ -428,6 +482,12 @@ impl SheetDocument {
     pub(crate) fn finish_editing_group(&self, selection: Option<TextSelection>) {
         self.separate_next_commit.set(true);
         self.coalescing_intent.set(None);
+        if let Ok(mut slot) = self.pending_edit_intent.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.popped_edit_intent.lock() {
+            *slot = None;
+        }
         if let Some(selection) = selection.and_then(|value| self.snapshot_selection(value))
             && let Ok(mut slot) = self.current_selection.lock()
         {
@@ -1104,6 +1164,8 @@ struct UndoBinding {
     undo: UndoManager,
     caret: Arc<Mutex<Option<usize>>>,
     popped_selection: Arc<Mutex<Option<StableSelection>>>,
+    pending_edit_intent: Arc<Mutex<Option<EditIntent>>>,
+    popped_edit_intent: Arc<Mutex<Option<EditIntent>>>,
     pending_edit_selection: Arc<Mutex<Option<StableSelection>>>,
     current_selection: Arc<Mutex<Option<StableSelection>>>,
     inverse_selection: Arc<Mutex<Option<StableSelection>>>,
@@ -1125,6 +1187,10 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let inverse_selection = Arc::new(Mutex::new(None::<StableSelection>));
     let inverse_selection_source = Arc::clone(&inverse_selection);
     let anchor = body.clone();
+    let pending_edit_intent = Arc::new(Mutex::new(None::<EditIntent>));
+    let pending_edit_intent_source = Arc::clone(&pending_edit_intent);
+    let popped_edit_intent = Arc::new(Mutex::new(None::<EditIntent>));
+    let inverse_edit_intent_source = Arc::clone(&popped_edit_intent);
     undo.set_on_push(Some(Box::new(move |_kind, _span, event| {
         let mut meta = UndoItemMeta::new();
         // Taken rather than read, so the commit that set it can tell
@@ -1144,6 +1210,21 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
             .flatten();
         if let Some(generation) = explicit_commit.or(inverse_step) {
             meta.set_value(LoroValue::I64(generation));
+        } else {
+            let intent = if event.is_some() {
+                pending_edit_intent_source
+                    .lock()
+                    .ok()
+                    .and_then(|mut slot| slot.take())
+            } else {
+                inverse_edit_intent_source
+                    .lock()
+                    .ok()
+                    .and_then(|slot| *slot)
+            };
+            if let Some(intent) = intent {
+                meta.set_value(LoroValue::String(intent.action_name().to_string().into()));
+            }
         }
         let edit_selection = if event.is_some() {
             pending_edit_source
@@ -1181,6 +1262,7 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let popped_selection = Arc::new(Mutex::new(None::<StableSelection>));
     let popped_selection_sink = Arc::clone(&popped_selection);
     let current_selection_sink = Arc::clone(&current_selection);
+    let popped_edit_intent_sink = Arc::clone(&popped_edit_intent);
     let take_theirs_sink = Arc::clone(&popped_take_theirs);
     undo.set_on_pop(Some(Box::new(move |_kind, _span, meta| {
         if let Ok(mut slot) = sink.lock() {
@@ -1202,6 +1284,9 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
                 None
             };
         }
+        if let Ok(mut slot) = popped_edit_intent_sink.lock() {
+            *slot = edit_intent_from_value(&meta.value);
+        }
         if let Ok(mut slot) = take_theirs_sink.lock() {
             *slot = match meta.value {
                 LoroValue::I64(generation) => Some(generation),
@@ -1214,6 +1299,8 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
         undo,
         caret,
         popped_selection,
+        pending_edit_intent,
+        popped_edit_intent,
         pending_edit_selection,
         current_selection,
         inverse_selection,
@@ -1261,6 +1348,13 @@ fn change_start(event: &DiffEvent) -> Option<usize> {
         }
     }
     None
+}
+
+fn edit_intent_from_value(value: &LoroValue) -> Option<EditIntent> {
+    let LoroValue::String(value) = value else {
+        return None;
+    };
+    EditIntent::from_action_name(value)
 }
 
 /// Read a chip identity back out of its mark value. `None` for any

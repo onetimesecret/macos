@@ -1327,6 +1327,50 @@ pub unsafe extern "C" fn companion_sheet_can_redo(
     guard.store.can_redo(SheetId::from_raw(sheet))
 }
 
+/// Content-free label for the next page Undo action. Null when there is no
+/// labelled item. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_action_name(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    unsafe { sheet_action_name(handle, sheet, true) }
+}
+
+/// Content-free label for the next page Redo action.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_redo_action_name(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    unsafe { sheet_action_name(handle, sheet, false) }
+}
+
+unsafe fn sheet_action_name(handle: *mut CompanionHandle, sheet: u64, undo: bool) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let id = SheetId::from_raw(sheet);
+    let name = if undo {
+        guard.store.undo_action_name(id)
+    } else {
+        guard.store.redo_action_name(id)
+    };
+    name.map_or(ptr::null_mut(), |value| into_c_string(value.to_string()))
+}
+
 /// Where the caret belongs after the page's last accepted step, in
 /// UTF-16 code units. `-1` when nothing has been stepped, when the step
 /// carried no position, or for an unknown page; the shell then leaves
@@ -4896,8 +4940,20 @@ mod tests {
                 u32::MAX
             ));
 
+            assert_eq!(
+                take_json(companion_sheet_undo_action_name(handle, sheet)),
+                "Typing"
+            );
             assert!(companion_sheet_undo(handle, sheet));
             assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("ab"));
+            assert_eq!(
+                take_json(companion_sheet_undo_action_name(handle, sheet)),
+                "Paste"
+            );
+            assert_eq!(
+                take_json(companion_sheet_redo_action_name(handle, sheet)),
+                "Typing"
+            );
             assert!(companion_sheet_undo(handle, sheet));
             assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("a"));
             assert!(companion_sheet_finish_editing_group(
@@ -7804,6 +7860,8 @@ mod tests {
             assert!(companion_sheet_can_undo(handle, page));
             assert!(!companion_sheet_can_undo(handle, tagged));
             assert!(!companion_sheet_can_redo(handle, tagged));
+            assert!(companion_sheet_undo_action_name(handle, tagged).is_null());
+            assert!(companion_sheet_redo_action_name(handle, tagged).is_null());
             assert!(!companion_sheet_undo(handle, tagged));
             assert!(!companion_sheet_redo(handle, tagged));
             assert_eq!(companion_sheet_undo_caret_u16(handle, tagged), -1);

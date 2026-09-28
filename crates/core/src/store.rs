@@ -1015,6 +1015,16 @@ impl<C: Clock> SheetStore<C> {
             .is_some_and(|sheet| sheet.document.can_redo())
     }
 
+    /// Content-free action label for the next Undo menu item.
+    pub fn undo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        self.sheet(id)?.document.undo_action_name()
+    }
+
+    /// Content-free action label for the next Redo menu item.
+    pub fn redo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        self.sheet(id)?.document.redo_action_name()
+    }
+
     /// Where the caret belongs after the page's last accepted step, in
     /// UTF-16 code units. `None` for an unknown page, for a step that
     /// carried no position, or when nothing has been stepped at all.
@@ -5252,10 +5262,15 @@ mod tests {
             EditIntent::Typing,
         ));
 
+        assert_eq!(store.undo_action_name(id), Some("Typing"));
         assert!(store.undo(id));
         assert_eq!(body(&store, id), "typed pasted");
+        assert_eq!(store.undo_action_name(id), Some("Paste"));
+        assert_eq!(store.redo_action_name(id), Some("Typing"));
         assert!(store.undo(id));
         assert_eq!(body(&store, id), "typed");
+        assert_eq!(store.undo_action_name(id), Some("Typing"));
+        assert_eq!(store.redo_action_name(id), Some("Paste"));
         assert!(store.undo(id));
         assert_eq!(body(&store, id), "");
     }

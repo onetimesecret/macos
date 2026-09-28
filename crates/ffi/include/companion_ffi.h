@@ -488,6 +488,16 @@ bool companion_sheet_can_undo(CompanionHandle *handle, uint64_t sheet);
 bool companion_sheet_can_redo(CompanionHandle *handle, uint64_t sheet);
 
 /*
+ * Content-free label for the next step in either direction, such as
+ * "Typing" or "Paste". Null when no labelled step is waiting. Free a
+ * non-null result with companion_string_free().
+ */
+char *companion_sheet_undo_action_name(CompanionHandle *handle,
+                                       uint64_t sheet);
+char *companion_sheet_redo_action_name(CompanionHandle *handle,
+                                       uint64_t sheet);
+
+/*
  * Where the caret belongs after the last accepted step, in UTF-16 code
  * units. -1 when nothing was stepped, when the step carried no
  * position, or for an unknown page; leave the caret alone in that case.
@@ -1290,6 +1300,16 @@ bool companion_file_finish_editing_group(CompanionHandle *handle,
  */
 bool companion_file_can_undo(CompanionHandle *handle, uint64_t file);
 bool companion_file_can_redo(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Content-free label for the next file step in either direction. Null
+ * when no labelled step is waiting. Free a non-null result with
+ * companion_string_free().
+ */
+char *companion_file_undo_action_name(CompanionHandle *handle,
+                                      uint64_t file);
+char *companion_file_redo_action_name(CompanionHandle *handle,
+                                      uint64_t file);
 
 /*
  * Take back the file's last local edit step, and put it back. Both

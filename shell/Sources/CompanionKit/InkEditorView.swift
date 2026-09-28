@@ -4334,8 +4334,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
         switch item.action {
         case #selector(undo(_:)):
+            item.title = model.undoActionName(sheet: sheet).map { "Undo \($0)" } ?? "Undo"
             return isEditable && model.canUndoEdit(sheet: sheet)
         case #selector(redo(_:)):
+            item.title = model.redoActionName(sheet: sheet).map { "Redo \($0)" } ?? "Redo"
             return isEditable && model.canRedoEdit(sheet: sheet)
         case #selector(detectCodeLanguage(_:)):
             return canDetectCodeLanguage

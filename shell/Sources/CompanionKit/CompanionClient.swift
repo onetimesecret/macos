@@ -886,6 +886,15 @@ public class CompanionClient: @unchecked Sendable {
         companion_sheet_can_redo(handle, sheet)
     }
 
+    /// Content-free label for the next page step in either direction.
+    public func undoActionName(sheet: UInt64) -> String? {
+        ownedString(from: companion_sheet_undo_action_name(handle, sheet))
+    }
+
+    public func redoActionName(sheet: UInt64) -> String? {
+        ownedString(from: companion_sheet_redo_action_name(handle, sheet))
+    }
+
     /// Where the caret belongs after the last accepted step, in UTF-16
     /// code units. Nil when the step carried no position, which is the
     /// signal to leave the caret where the writer had it.
@@ -1437,6 +1446,15 @@ public class CompanionClient: @unchecked Sendable {
         companion_file_can_redo(handle, file)
     }
 
+    /// Content-free label for the next file step in either direction.
+    public func undoFileActionName(_ file: UInt64) -> String? {
+        ownedString(from: companion_file_undo_action_name(handle, file))
+    }
+
+    public func redoFileActionName(_ file: UInt64) -> String? {
+        ownedString(from: companion_file_redo_action_name(handle, file))
+    }
+
     /// Write the buffer back to the file's own path. False when the
     /// write refused, which includes a file standing in a conflict
     /// nobody has resolved yet.
@@ -1577,6 +1595,13 @@ public class CompanionClient: @unchecked Sendable {
     public static var version: String { ffiVersion }
 
     // MARK: Plumbing
+
+    /// Read and release a string allocated by the C ABI.
+    private func ownedString(from ptr: UnsafeMutablePointer<CChar>?) -> String? {
+        guard let ptr else { return nil }
+        defer { companion_string_free(ptr) }
+        return String(cString: ptr)
+    }
 
     /// Decode an owned JSON C string from the seam, freeing it either way.
     private func decodeJSON<T: Decodable>(_ type: T.Type, from ptr: UnsafeMutablePointer<CChar>?) -> T? {

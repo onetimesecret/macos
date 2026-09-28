@@ -378,14 +378,40 @@ final class UndoRerouteTests: XCTestCase {
             title: "Redo", action: #selector(InkTextView.redo(_:)), keyEquivalent: "")
         XCTAssertFalse(textView.validateMenuItem(undoItem))
         XCTAssertFalse(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(undoItem.title, "Undo")
+        XCTAssertEqual(redoItem.title, "Redo")
 
         type("something to take back")
         XCTAssertTrue(textView.validateMenuItem(undoItem))
         XCTAssertFalse(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(undoItem.title, "Undo Typing")
+        XCTAssertEqual(redoItem.title, "Redo")
 
         textView.undo(nil)
         XCTAssertFalse(textView.validateMenuItem(undoItem))
         XCTAssertTrue(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(undoItem.title, "Undo")
+        XCTAssertEqual(redoItem.title, "Redo Typing")
+    }
+
+    func testTheMenuNamesADiscretePasteWithoutItsContent() throws {
+        try makeEditor()
+        textView.performOrdinaryPaste(nil, bypassingAutomaticFencing: true) { _ in
+            self.type("clipboard words")
+        }
+        let undoItem = NSMenuItem(
+            title: "Undo", action: #selector(InkTextView.undo(_:)), keyEquivalent: "")
+        let redoItem = NSMenuItem(
+            title: "Redo", action: #selector(InkTextView.redo(_:)), keyEquivalent: "")
+
+        XCTAssertTrue(textView.validateMenuItem(undoItem))
+        XCTAssertEqual(undoItem.title, "Undo Paste")
+        XCTAssertFalse(undoItem.title.contains("clipboard words"))
+
+        textView.undo(nil)
+        XCTAssertTrue(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(redoItem.title, "Redo Paste")
+        XCTAssertFalse(redoItem.title.contains("clipboard words"))
     }
 
     /// A page shown read-only is not a page a chord may rewrite. The

@@ -351,18 +351,13 @@ public enum PreviewRenderingScope: String, CaseIterable, Codable, Sendable {
 }
 
 /// Whether the page holding the keyboard has a step waiting in each
-/// direction: the two answers the Edit menu's Undo and Redo grey
-/// themselves out on (issue #132).
-///
-/// It exists because a SwiftUI menu item carries SwiftUI's own target
-/// and never walks the responder chain to be validated, so
-/// `InkTextView.validateMenuItem` cannot reach the items the app
-/// builds. `.disabled` can, and this is what it reads.
+/// direction. Native Edit menu items ask the focused responder directly;
+/// these published values serve any other undo affordance (issue #132).
 ///
 /// An observable of its own rather than a published pair on the model,
-/// for the reason `rollGeometry` is one: the menu is the only reader,
-/// and an answer that moves on every keystroke should not redraw the
-/// page, the header and the status stack behind it.
+/// for the reason `rollGeometry` is one: an answer that moves on every
+/// keystroke should not redraw the page, the header and the status stack
+/// behind it.
 ///
 /// Nothing here is a cache of what a step would do. Both booleans are
 /// the core's own answers, re-asked whenever the page under the editor,
@@ -4490,6 +4485,20 @@ public final class PageModel: ObservableObject {
 
     public func canRedoEdit(sheet: UInt64) -> Bool {
         sheet.isFileID ? client.canRedoFile(sheet) : client.canRedo(sheet: sheet)
+    }
+
+    /// Content-free label for the next step, routed to the page or file
+    /// store by the same tagged id that routes the action itself.
+    public func undoActionName(sheet: UInt64) -> String? {
+        sheet.isFileID
+            ? client.undoFileActionName(sheet)
+            : client.undoActionName(sheet: sheet)
+    }
+
+    public func redoActionName(sheet: UInt64) -> String? {
+        sheet.isFileID
+            ? client.redoFileActionName(sheet)
+            : client.redoActionName(sheet: sheet)
     }
 
     /// Re-ask the core what the Edit menu should read as, and publish
