@@ -59,6 +59,39 @@ const CHIP_SENTINEL: &str = "\u{FFFC}";
 /// number belongs to the protocol. Nothing here reaches it.
 const UNDO_MERGE_INTERVAL_MS: i64 = 2_000;
 
+/// The user-visible action represented by one editor commit.
+///
+/// Loro owns the undo stacks and their transformed positions. This value gives
+/// that owner the piece TextKit knows and Loro cannot infer from operations
+/// alone: whether the commit is part of a typing run or a complete action that
+/// must stand on both sides of its own undo boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditIntent {
+    /// Keyboard input that may join adjacent keyboard input.
+    Typing,
+    /// Repeated backward or forward deletion.
+    Deletion,
+    /// One paste gesture.
+    Paste,
+    /// One cut gesture.
+    Cut,
+    /// One replacement of a selected or matched range.
+    Replacement,
+    /// Text the editor inserted or removed on the writer's behalf.
+    Automation,
+    /// One completed input-method composition.
+    Composition,
+}
+
+impl EditIntent {
+    fn is_discrete(self) -> bool {
+        matches!(
+            self,
+            Self::Paste | Self::Cut | Self::Replacement | Self::Automation | Self::Composition
+        )
+    }
+}
+
 /// One run of the body, in document order: contiguous ink between
 /// chips, or a single chip.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,9 +177,8 @@ pub(crate) struct SheetDocument {
     caret: Arc<Mutex<Option<usize>>>,
     /// The merge interval standing on the manager right now, held here
     /// because the library offers no way to read it back. Only
-    /// [`SheetDocument::commit_as_new_step`], the isolated structural
-    /// commit below, and the test-only retuning write it. Both commit
-    /// helpers restore what they find
+    /// [`SheetDocument::commit_edit`], isolated structural commits, and
+    /// the test-only retuning write it. Commit helpers restore what they find
     /// rather than the constant, so a test that lowered the interval
     /// still has its number after an automation batch has passed
     /// through.
@@ -154,6 +186,10 @@ pub(crate) struct SheetDocument {
     /// Whether the next ordinary commit must begin after an isolated
     /// structural action rather than merge into it.
     separate_next_commit: Cell<bool>,
+    /// The coalescing intent at the top of the undo stack. Typing may join
+    /// typing and deletion may join deletion, but crossing between those
+    /// gestures starts a new step even inside the merge interval.
+    coalescing_intent: Cell<Option<EditIntent>>,
     /// Set only across the commit that implements explicit Take theirs.
     /// The undo push hook copies this file-local generation into that
     /// undo item's metadata.
@@ -211,6 +247,7 @@ impl SheetDocument {
             caret: binding.caret,
             merge_interval: UNDO_MERGE_INTERVAL_MS,
             separate_next_commit: Cell::new(false),
+            coalescing_intent: Cell::new(None),
             take_theirs_commit: binding.take_theirs_commit,
             popped_take_theirs: binding.popped_take_theirs,
         }
@@ -259,32 +296,42 @@ impl SheetDocument {
         self.undo.can_redo()
     }
 
-    /// Close the transaction as a change that begins its own undo step,
-    /// whatever the merge interval would otherwise have said.
+    /// Commit an editor action under the grouping rules for its intent.
     ///
-    /// For the edits the page makes on the writer's behalf rather than
-    /// at their dictation: a list marker the page continued, an indent
-    /// it nudged. Those want to come off in one press, leaving the
-    /// words typed before them standing, and the interval would fold
-    /// them into that preceding burst because they arrive a keystroke
-    /// after it.
-    ///
-    /// The boundary is set by dropping the interval to zero across this
-    /// one commit, which is the only lever the library offers: its own
-    /// test is a comparison against the moment the current step began,
-    /// with no way to reset that moment except by pushing a new step.
-    /// The boundary is in front of this commit only. Type on afterwards
-    /// and the automation joins that next burst, exactly as any two
-    /// edits inside the interval join.
-    /// The interval put back afterwards is whatever was standing, not
-    /// the constant: a test that lowered it to zero to prove a
-    /// grouping would otherwise find its number quietly replaced by
-    /// the first automation batch the case sends.
-    pub(crate) fn commit_as_new_step(&mut self, message: Option<&str>) {
-        self.separate_next_commit.set(false);
-        self.undo.set_merge_interval(0);
+    /// Discrete actions are isolated before and after. Typing and deletion
+    /// each coalesce with their own kind, while a transition between them
+    /// starts a fresh step. The pending boundary is consumed only here, after
+    /// the store has admitted the complete batch.
+    pub(crate) fn commit_edit(&mut self, intent: EditIntent, message: Option<&str>) {
+        let follows_boundary = self.separate_next_commit.replace(false);
+        let changes_coalescing_kind = !intent.is_discrete()
+            && self
+                .coalescing_intent
+                .get()
+                .is_some_and(|previous| previous != intent);
+        let separate = follows_boundary || intent.is_discrete() || changes_coalescing_kind;
+        if separate {
+            self.undo.set_merge_interval(0);
+        }
         self.commit_now(message);
-        self.undo.set_merge_interval(self.merge_interval);
+        if separate {
+            self.undo.set_merge_interval(self.merge_interval);
+        }
+
+        if intent.is_discrete() {
+            self.separate_next_commit.set(true);
+            self.coalescing_intent.set(None);
+        } else {
+            self.coalescing_intent.set(Some(intent));
+        }
+    }
+
+    /// End the current coalescing run without creating an undo item. Caret
+    /// movement calls this so typing at a new location cannot merge with the
+    /// run authored at the old location.
+    pub(crate) fn finish_editing_group(&self) {
+        self.separate_next_commit.set(true);
+        self.coalescing_intent.set(None);
     }
 
     /// Commit explicit Take theirs as an isolated undo item. The zero
@@ -318,6 +365,7 @@ impl SheetDocument {
         );
         self.set_take_theirs_commit(None);
         self.separate_next_commit.set(true);
+        self.coalescing_intent.set(None);
         consumed && expected_top
     }
 
@@ -346,6 +394,7 @@ impl SheetDocument {
         self.undo.clear();
         self.set_caret(None);
         self.separate_next_commit.set(false);
+        self.coalescing_intent.set(None);
         self.set_take_theirs_commit(None);
         self.set_popped_take_theirs(None);
     }
@@ -420,19 +469,6 @@ impl SheetDocument {
     /// persisted message, and immediately open the next.
     pub(crate) fn commit(&self, message: Option<&str>) {
         self.commit_now(message);
-    }
-
-    /// Close an ordinary file edit, applying the trailing boundary left
-    /// by an isolated structural action when one is pending.
-    pub(crate) fn commit_file_edit(&mut self, message: Option<&str>) {
-        let separate = self.separate_next_commit.replace(false);
-        if separate {
-            self.undo.set_merge_interval(0);
-        }
-        self.commit_now(message);
-        if separate {
-            self.undo.set_merge_interval(self.merge_interval);
-        }
     }
 
     fn commit_now(&self, message: Option<&str>) {
@@ -1480,7 +1516,7 @@ mod tests {
         let mut doc = SheetDocument::new();
         doc.set_merge_interval(0);
         doc.insert(0, "- milk").unwrap();
-        doc.commit_as_new_step(None);
+        doc.commit_edit(EditIntent::Automation, None);
         doc.insert(6, "\n- eggs").unwrap();
         doc.commit(None);
 

@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use zeroize::Zeroizing;
 
-use crate::document::{DocRun, SheetDocument};
-use crate::store::EditOp;
+use crate::document::{DocRun, EditIntent, SheetDocument};
+use crate::store::{EditOp, inferred_intent};
 
 /// The high bit, set on every [`FileId`] and on no page id.
 ///
@@ -696,16 +696,33 @@ impl FileStore {
     /// whole. `wall_ms` stamps the file's last edit when the batch is
     /// accepted.
     pub fn apply_ops(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64) -> bool {
-        self.apply_batch(id, ops, wall_ms, false)
+        self.apply_batch(id, ops, wall_ms, inferred_intent(ops))
+    }
+
+    /// Apply one admitted batch with the editing gesture that produced it.
+    pub fn apply_ops_with_intent(
+        &mut self,
+        id: FileId,
+        ops: &[EditOp],
+        wall_ms: u64,
+        intent: EditIntent,
+    ) -> bool {
+        self.apply_batch(id, ops, wall_ms, intent)
     }
 
     /// [`FileStore::apply_ops`] for a batch the app produced on the
     /// writer's behalf, which must begin its own undo step.
     pub fn apply_ops_as_new_step(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64) -> bool {
-        self.apply_batch(id, ops, wall_ms, true)
+        self.apply_batch(id, ops, wall_ms, EditIntent::Automation)
     }
 
-    fn apply_batch(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64, new_step: bool) -> bool {
+    fn apply_batch(
+        &mut self,
+        id: FileId,
+        ops: &[EditOp],
+        wall_ms: u64,
+        intent: EditIntent,
+    ) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
@@ -717,6 +734,9 @@ impl FileStore {
             if !sim_admit(&mut sim, op) {
                 return false;
             }
+        }
+        if ops.is_empty() {
+            return true;
         }
         // Phase two: the document. Every offset was validated against
         // exact post-op state, so these cannot refuse; a refusal anyway
@@ -740,11 +760,7 @@ impl FileStore {
         }
         // The transaction closes either way: whatever did land is a
         // change, and leaving it open would fold it into the next one.
-        if new_step {
-            file.document.commit_as_new_step(None);
-        } else {
-            file.document.commit_file_edit(None);
-        }
+        file.document.commit_edit(intent, None);
         // The stamp is only taken for a batch that applied whole. A
         // caller told its batch was refused must not then find the file
         // claiming an edit at that moment.
@@ -764,6 +780,15 @@ impl FileStore {
         }
         file.resettle_dirty();
         clean
+    }
+
+    /// Finish the current typing/deletion run without adding an undo item.
+    pub fn finish_editing_group(&mut self, id: FileId) -> bool {
+        let Some(file) = self.file_mut(id) else {
+            return false;
+        };
+        file.document.finish_editing_group();
+        true
     }
 
     /// Whether the file has a step waiting to be taken back. False for
@@ -1983,6 +2008,23 @@ mod tests {
         assert!(!store.can_redo(FileId(FILE_ID_TAG | 404)));
         assert!(!store.can_undo(FileId(1)));
         assert!(!store.can_redo(FileId(1)));
+    }
+
+    #[test]
+    fn a_file_paste_stands_between_typing_steps() {
+        let io = MemoryIo::with("/paste.txt", b"");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/paste.txt")).unwrap();
+        assert!(store.apply_ops_with_intent(id, &[ins(0, "a")], 1, EditIntent::Typing));
+        assert!(store.apply_ops_with_intent(id, &[ins(1, "b")], 2, EditIntent::Paste));
+        assert!(store.apply_ops_with_intent(id, &[ins(2, "c")], 3, EditIntent::Typing));
+
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "ab");
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "a");
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "");
     }
 
     #[test]
