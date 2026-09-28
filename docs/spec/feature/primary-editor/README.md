@@ -55,6 +55,16 @@ storages, or nothing (ADR-0006, ADR-0020).
 - **Traffic light buttons.** Standard. The green button enters full
   screen; the yellow minimises to the Dock; the red closes the window
   (⌘W stays `page::Close`, so ⇧⌘W closes the window; see Commands).
+- **Minimize.** A miniaturized editor window is open for ownership and
+  not on screen for the keyboard (`BackdropModel.editorWindowOpen`,
+  `editorWindowOnScreen`). It keeps the page while the panel rests, so
+  the resting card draws a glance of a page nobody can see, and no
+  keys are sent to a window in the Dock: a rest in an active app hands
+  the activation back instead (`restHandsBackActivation`), and the
+  window reports its own keys on its way out of the Dock. The two facts
+  are kept apart because ADR-0033 keeps them apart: the owner is
+  resolved from open and closed, and the rule that the deactivation on
+  rest does not fire is stated for a visible editor window.
 - **Frame autosave.** The window keeps `setFrameAutosaveName`. Nothing
   else about the window's identity is restored.
 - **`isRestorable = false`.** AppKit's Saved Application State writes
@@ -119,8 +129,10 @@ hand off has already run. Concretely:
   key without closing; the panel takes the keys. Typing lands in the
   panel until it rests.
 - **Rest the panel.** The keys go back to the editor window if it is
-  open and the application is active; if the app is not active,
-  nothing takes the keys and the panel is simply down.
+  open, on screen and the application is active; if the app is not
+  active, nothing takes the keys and the panel is simply down. If the
+  window is in the Dock, the rest hands the activation back and the
+  window takes the keys on its way out.
 - **Close the editor window (⇧⌘W).** The panel owns, resting or
   raised, and the activation is handed back to the app the person was
   in if no other window of ours can take keys.
@@ -200,7 +212,13 @@ decision; the runtime carries no last used state.
 - **A login launch, or any launch the system performs without
   activating the app**: opens no editor window and shows the panel
   resting only.
-- **A modal return and a cancelled quit** go back to the owner.
+- **A modal return and a cancelled quit** go back to the owner. The
+  return is judged twice, and both readings agree: `modalSessionEnded`
+  routes `.modalReturn` to the owner a turn after the modal is over,
+  and the key turn itself (`BackdropModel.keyTurn`) reads an editor
+  window keyed on the way back from Settings, About or a modal as a
+  return and not as a claim, so a raised, owning panel is keyed again
+  instead of rested and the page does not move.
 - **`NSApp.deactivate()` on panel rest** does not fire while the
   editor window is visible; the keys return to the editor window
   instead.
