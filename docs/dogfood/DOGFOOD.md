@@ -197,9 +197,10 @@ The General tab of Settings has a toggle backed by
 register, so a dev build never claims the login item by accident. A
 refused registration reverts the toggle to whatever the system actually
 granted. A login item launch comes up resting, behind every other
-window, because the system's launch never activates the app; a launch
-you perform from the Finder, the Dock, Spotlight or `open` comes up
-raised and keyed.
+window, and opens no editor window, because the system's launch never
+activates the app; a launch you perform from the Finder, the Dock,
+Spotlight or `open` opens the editor window in front and keyed, with
+the roll anchored on today (ADR-0033). The card rests behind it.
 
 ## Deadline rounding
 
