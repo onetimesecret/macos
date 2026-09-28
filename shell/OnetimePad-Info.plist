@@ -9,7 +9,7 @@
   and the .app filename all say OnetimePad, the product's name, and are
   free to change with it. The bundle id is not. It is
   com.onetimesecret.pad, and a dev build runs as dev.onetimesecret.pad
-  (scripts/package-app.sh --debug writes that one in). The id keys the
+  (the debug build of scripts/package-app.sh writes that one in). The id keys the
   Keychain service, the state directory, the keychain access group, and
   every TCC grant the app has been given, so changing it costs every
   install all four at once: that was accepted exactly once, to leave the
@@ -58,7 +58,7 @@
 	<string>13.0</string>
 	<!-- No LSUIElement, unlike the panel: the backdrop is a regular
 	     app (Dock icon, ⌘Tab membership) by an argued amendment in the
-	     feature spec — activation is one of its summon routes. -->
+	     feature spec; activation is one of its summon routes. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<!-- Matches the panel: opting in is what makes PageModel's
