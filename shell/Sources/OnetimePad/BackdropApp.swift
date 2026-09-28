@@ -63,15 +63,12 @@ struct BackdropApp: App {
                         closeShortcut: appDelegate.shortcut(for: .pageClose)
                     )
                 }
-                // Undo is the core's stack (issue #132), so the menu
-                // has to send the same action the chord does rather
-                // than SwiftUI's own undo command, which drives the
-                // environment's `UndoManager` and knows nothing about
-                // the document. Both items post `undo:`/`redo:` down
-                // the responder chain, where the page's text view
-                // answers them. With no page holding the keyboard
-                // nothing responds, and the click is a no-op rather
-                // than a second history moving.
+                // These buttons establish the menu placement, labels and
+                // configured shortcuts. Once AppKit has built the menu,
+                // `routeUndoRedoThroughResponder` turns the items into
+                // ordinary nil-targeted `undo:`/`redo:` commands. The
+                // focused editor then answers from Loro, while a native
+                // field editor in Settings keeps AppKit's own undo stack.
                 //
                 // The chords come from the keymap, like every other
                 // chord this app advertises: nil means the file unbound
@@ -148,9 +145,9 @@ struct BackdropApp: App {
 
 /// The File menu: Open, Save, Save As and Close File (ADR-0028).
 ///
-/// A view of its own for `UndoRedoItems`' reason: a `CommandMenu`'s
-/// content is a view, and a view is what can observe the model whose
-/// state greys three of these four out.
+/// A view of its own because a `CommandMenu`'s content is a view, and a
+/// view is what can observe the model whose state greys three of these
+/// four out.
 ///
 /// Every item goes through `perform`, the same route the chord takes,
 /// so each verb has one implementation. Save, Save As and Close File
@@ -196,20 +193,9 @@ private struct FileMenuItems: View {
 
 /// The Edit menu's Undo and Redo.
 ///
-/// A view of its own because a `CommandGroup`'s content is a view, and
-/// a view is what can observe. The greying out has to be driven from
-/// here: a SwiftUI menu item is not the nil-targeted `NSMenuItem` the
-/// responder chain validates, it carries SwiftUI's own target, so
-/// `InkTextView.validateMenuItem` is never asked about these two and
-/// `.disabled` is the only thing that can dim them. What it reads is
-/// still the core's own answer, re-asked by the model whenever the
-/// page, its editability or its history can have moved; the text view
-/// keeps its validation for any other route that arrives nil-targeted.
-///
-/// Enablement is display, never a gate. Both ends fail closed on their
-/// own: the click posts an action nobody answers when no page holds the
-/// keyboard, and the page refuses the step outright when it is shown
-/// read-only.
+/// SwiftUI supplies their placement and shortcuts. At launch the delegate
+/// replaces their targets with the nil-targeted AppKit selectors so menu
+/// validation follows the focused responder.
 enum ManualLanguageChoiceTarget: Equatable {
     case editor
     case file(UInt64)
@@ -299,13 +285,11 @@ private struct UndoRedoItems: View {
     }
 }
 
-/// The Edit menu's Seal Selected Content (D-30), a view of its own for
-/// `UndoRedoItems`' reason: it greys itself out on the model's answer,
-/// which is whether the editor holds an editable page with a
-/// selection. The chord comes from the keymap like every other chord
-/// the menus advertise, and the page's text view claims it first; the
-/// menu carries it to show what the item costs, not to be the thing
-/// that fires.
+/// The Edit menu's Seal Selected Content (D-30). It greys itself out on
+/// the model's answer, which is whether the editor holds an editable page
+/// with a selection. The chord comes from the keymap like every other chord
+/// the menus advertise, and the page's text view claims it first; the menu
+/// carries it to show what the item costs, not to be the thing that fires.
 private struct SealSelectionMenuItem: View {
     @ObservedObject var availability: SealActionAvailability
     let shortcut: KeyboardShortcut?
