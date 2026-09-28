@@ -131,20 +131,31 @@ then SIGKILL; only the graceful first step saves state.
 
 ## The app: OnetimePad
 
-OnetimePad is **the background surface**:
-an ambient pane resting at desktop level behind every window, raised to
-a floating editor with ⌃⌥Space and rested again with Esc. Spec and the
-underlying macOS research: docs/spec/feature/background-surface/.
+OnetimePad has two windows over one set of pages (ADR-0033). **The
+ambient panel** is the background surface: an ambient pane resting at
+desktop level behind every window, raised to a floating editor with
+⌃⌥Space and rested again with Esc. **The editor window** is an ordinary
+macOS window, the one ⌘Tab, the Dock icon and opening the app bring you
+to. One of the two holds the live page at a time, and the other shows
+a glance of it that cannot be edited, or nothing. Specs: the ambient
+panel and the underlying macOS research in
+docs/spec/feature/background-surface/, the editor window in
+docs/spec/feature/primary-editor/.
 
 At rest the card lives *behind* every window: you see it exactly when
 you see the desktop (a bare patch of screen, Show Desktop, Mission
-Control). Summon it with ⌃⌥Space, a left-click on the menu-bar icon,
-⌘Tab, or the Dock icon; the card raises into a floating editor on your
-current Space, over full-screen apps included. A summon focuses before
-it dismisses: if the card is raised but you're working beside it,
-⌃⌥Space brings the keyboard back, and only when it already holds the
-keyboard does the gesture rest it. Esc or a click outside the card also
-rests it. The surface's mechanics log to the unified log:
+Control). Summon it with ⌃⌥Space, a left-click on the menu-bar icon, or
+a click on the card while it is pinned; the card raises into a floating
+editor on your current Space, over full-screen apps included. A summon
+focuses before it dismisses: if the card is raised but you're working
+beside it, ⌃⌥Space brings the keyboard back, and only when it already
+holds the keyboard does the gesture rest it. Esc or a click outside the
+card also rests it. ⌘Tab, the Dock icon and opening the app select the
+editor window instead, opening it if it is closed, and a raised card
+rests as the editor window takes the keyboard. Turning off "Show the
+ambient panel" in Settings leaves the editor window as the app's only
+window, and then ⌃⌥Space and the menu-bar icon select it too. The
+surface's mechanics log to the unified log:
 
 ```sh
 log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}'

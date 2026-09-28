@@ -28,9 +28,17 @@ import SwiftUI
 /// projection-parity assertion entirely, every storage in the app still
 /// carries exactly one layout manager, because each still has exactly
 /// one view. There is still one editor, one `activeEditor`, one
-/// `performSealedPaste` and one first-responder candidate in the card,
+/// `performSealedPaste` and one first-responder candidate in the app,
 /// which is the whole of the claim that ADR-0006's second eject trigger
 /// ("a future feature needs per-sheet view instances") has not fired.
+///
+/// Since ADR-0033 there are two windows, and the roll mounts only in
+/// the one that owns the page content: the panel, resting or raised,
+/// while it owns, and the editor window while that owns. The window
+/// that does not own mounts no editor on any live storage; it draws a
+/// glance built from private storages (`GlanceView`), or nothing. So
+/// the counts above hold for the whole app and not only for one
+/// window, which is what ADR-0033's one owner per page rule keeps.
 ///
 /// Perforations are chrome, and that is a security property rather than
 /// a drawing preference: anything inserted into a text storage to

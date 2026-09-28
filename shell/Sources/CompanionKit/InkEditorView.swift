@@ -111,6 +111,19 @@ public struct InkEditorView: NSViewRepresentable {
     /// state that the selected tab holding no page puts on screen
     /// (ADR-0017 made that a frequent event rather than a rare one).
     ///
+    /// Since ADR-0033 the app has two window roles over one document
+    /// model, and only the window that owns the page content mounts an
+    /// editor. The window that loses ownership unmounts its editor and
+    /// shows the glance (`GlanceView`) in its place, and that unmount
+    /// arrives here too, but the hand off has already done the work:
+    /// `PageModel.transferOwnership(to:)` takes the outgoing editor off
+    /// its page and clears `activeEditor` itself
+    /// (`relinquishPresentation`) before the owner changes. By the time
+    /// SwiftUI dismantles that editor the handle is no longer its own,
+    /// so the `retireEditor` call below, which is guarded by identity
+    /// and not by ownership, leaves the handle alone, and `leavePage`
+    /// finds no page left to leave.
+    ///
     /// The model keeps a weak handle on the mounted editor so a summon
     /// or a grant can hand it the keyboard, and weak is not the same as
     /// mounted: a view torn out of the window answers that handle until

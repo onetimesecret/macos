@@ -67,9 +67,10 @@ public struct TimeRailView: View {
 
     /// Which roll a rail is handed, pure: the owner's own for the
     /// owner's rail, and the stand in for the other window's. This is
-    /// the one place the choice is made, and so the one place B3's
-    /// glance (issue #199) changes when it decides what the rail beside
-    /// a glance draws.
+    /// the one place the choice is made, so it is the one place to
+    /// change if the rail beside a glance (`GlanceView`, ADR-0033) is
+    /// ever to draw more than the unclaimed roll gives it: nodes packed
+    /// from the top, with no band and no slivers.
     static func roll(
         surface: PresentationOwner, owner: PresentationOwner,
         owners: RollGeometryModel, unclaimed: RollGeometryModel

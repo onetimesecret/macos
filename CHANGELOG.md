@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **OnetimePad has two window roles over one document model**
+  (ADR-0033, #191, #192, #197, #198, #199, #200, #201, #202, #203).
+  The primary editor is a plain activating `NSWindow` with normal
+  level, ordinary Space membership, AppKit's own key, main and full
+  screen behaviour and participation in ⌘Tab, the Window menu,
+  Mission Control and Stage Manager. The ambient panel keeps its
+  stance model, its all Spaces membership, its outside click rule
+  and its hotkey and status item summons. Exactly one window owns
+  the live page content at a time: the panel owns while it is raised
+  or while the editor window is closed, and the editor window owns
+  otherwise. The window that does not own shows a glance built from
+  `PageModel.QuietRendering` private storages, or nothing; ADR-0006's
+  one layout manager per storage rule stands. A person's launch, a
+  Dock click, a reopen and ⌘Tab select the editor window (opening
+  it when closed); the hotkey, the status item and the resting card
+  click stay with the panel. ⌘W stays `page::Close`; ⇧⌘W closes the
+  window. The editor window keeps frame autosave only
+  (`isRestorable = false`, `sharingType = .none`), and its title is
+  the application's name and never page content. The ambient panel
+  is a persistent preference, default on, behind a code boundary
+  that allows removal. The feature spec is
+  `docs/spec/feature/primary-editor/README.md`; the hardware
+  procedure that covers ⌘Tab, Spaces, full screen, Stage Manager
+  and Mission Control for both windows is
+  `docs/qa/verification-procedures/spaces-and-cmd-tab.md`.
+
 - A raised OnetimePad that loses the keyboard drops to normal window level, so
   other apps stack over it (ADR-0032, #185, #186, #187, #188). A new Settings
   preference "Keep OnetimePad above other apps when switching away" (default

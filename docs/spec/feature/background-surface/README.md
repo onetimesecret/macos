@@ -31,6 +31,45 @@ survives contact with real desks is the question this exploration
 exists to answer. The goal is not to replace the panel; it is to have
 several form factors and learn from the difference.
 
+## Scope after ADR-0033
+
+Every section below describes the **ambient panel** window role.
+[ADR-0033](../../../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md)
+separates the primary editor from the ambient panel: OnetimePad now
+has two window roles over one in-process document model. The primary
+editor is a plain activating `NSWindow` with normal level, ordinary
+Space membership, AppKit's own key, main and full screen behaviour
+and participation in ⌘Tab, the Window menu, Mission Control and
+Stage Manager; its own feature spec is
+[primary-editor](../primary-editor/README.md).
+
+Under ADR-0033 the routes leaving the panel for the editor window are:
+
+- **A person's launch, the Dock icon click, a reopen and ⌘Tab.** These
+  select the editor window (opening it when closed). The ⌘Tab
+  amendment and the launch amendment below documented these as panel
+  summons; they are now the editor window's, and both amendments stand
+  as history rather than as the current rule. The launch amendment's
+  other half stands: a launch the system performs shows the resting
+  panel only and opens no editor window.
+- **The Window menu and window cycling.** The editor window
+  participates; the panel does not.
+- **Full screen.** The editor window enters and leaves full screen by
+  AppKit's rules. The panel keeps its stance-driven altitude and its
+  all Spaces membership, so a hotkey summon over an editor in full
+  screen still lands the panel on that Space.
+
+Routes staying with the panel:
+
+- **The hotkey (⌃⌥Space), the status item and a click on the resting
+  card.** These raise the panel without activating the app. The panel
+  remains the summoned surface for glances and moments of editing.
+- **The panel's ownership rule.** The panel owns while it is raised or
+  while the editor window is closed; the editor window owns otherwise.
+  ADR-0033 records the ownership handoff.
+- **Pin, `.canJoinAllSpaces` and the outside click rule.** Panel
+  properties; the editor window has none of them.
+
 ## The stance model
 
 The research's central finding is that "typed into" and "behind
@@ -72,30 +111,32 @@ surface carries `.fullScreenAuxiliary` exactly when its altitude is floating
 and `.fullScreenNone` otherwise, which is what an ordinary window at the normal
 level does. A raised card that has dropped to `.normal` therefore stays out of
 another app's full screen Space: ⌘Tab into that app is meant to show the app
-alone. ⌘Tab back raises and keys the card again; which Space that return
-settles on has not yet been confirmed on hardware, and the
-[hardware procedure](../../../qa/verification-procedures/spaces-and-cmd-tab.md)
-records it. A card that floats, because it holds the
+alone. ⌘Tab back selects the editor window and rests the card (ADR-0033), and
+the [hardware procedure](../../../qa/verification-procedures/spaces-and-cmd-tab.md)
+records what the return does. A card that floats, because it holds the
 keyboard, is pinned or keeps above, follows the person into those Spaces.
 `.canJoinAllSpaces` is constant in every state (ADR-0019).
 
 The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
-outright on macOS 15.0–15.1), the menu-bar item, and — per the ⌘Tab
-amendment below — ⌘Tab and the Dock icon. A summon is a summon first
-and a dismissal last: a resting surface raises; a raised surface that
-lost the keyboard (the user clicked or ⌘Tabbed away to work beside the
-card) gets the keys back and is pulled to the active Space; only a
-surface *already holding the keyboard* reads the gesture as "put it
-away". Esc and a click outside the card always rest it.
+outright on macOS 15.0 to 15.1), the menu-bar item and a click on the
+resting card. ⌘Tab and the Dock icon were summons under the ⌘Tab
+amendment below and select the editor window since ADR-0033. A summon
+is a summon first and a dismissal last: a resting surface raises; a
+raised surface that lost the keyboard (the user clicked or ⌘Tabbed away
+to work beside the card) gets the keys back and is pulled to the active
+Space; only a surface *already holding the keyboard* reads the gesture
+as "put it away". Esc and a click outside the card always rest it.
 
 Raising is the deliberate act that entitles the window to the keyboard
 — the panel's focus law, unchanged. The window is a
 `.nonactivatingPanel` (set at init; the style-mask bit is inert if
 toggled later), so the hotkey summon never activates the app or
-deactivates the user's frontmost one; ⌘Tab is the one route where the
-user chose activation itself, and there the raise is activation's
-consequence, not its cause.
+deactivates the user's frontmost one. An activation the person
+performs (⌘Tab, the Dock icon, a reopen) no longer reaches the panel:
+ADR-0033 routes it to the editor window, and the panel is raised as an
+activation only when a modal return or a cancelled quit finds it the
+owner.
 
 A resting surface is exactly as visible as the desktop is: behind every
 window, it shows only when the desktop shows (a bare corner of screen,
@@ -119,6 +160,10 @@ an off-screen window and silently swallow whatever was typed.
 
 ## The ⌘Tab amendment
 
+Superseded for ⌘Tab and the Dock icon by ADR-0033, which gives both to
+the editor window. Kept as written, as the record of why the app is a
+regular app with Dock and switcher membership; that part stands.
+
 The backdrop is a **regular app** — Dock icon, ⌘Tab membership — where
 the panel is an accessory. First hands-on use found the core loop is
 *alternation*: copy in the work window, switch, paste in the surface,
@@ -139,6 +184,9 @@ presence that cannot be switched to is friction. Whether the fee is
 too high is open question №7.
 
 ## The launch amendment
+
+Superseded for a person's launch by ADR-0033, which opens the editor
+window for it; the login half stands. Kept as written.
 
 The backdrop's stance at launch follows who launched it. A launch the
 person performs, from the Finder, the Dock, Spotlight or `open`, comes
@@ -350,7 +398,10 @@ and needs the project's hand-verification pass on real hardware:
    preference off, is absent from another app's full-screen Space
    (ADR-0034); Stage Manager neither relays out nor hides it
    surprisingly.
-5. ⌘Tab, both directions: switching to the backdrop raises and keys it
+5. ⌘Tab, both directions. Superseded by ADR-0033: ⌘Tab selects the
+   editor window and rests the card, and the current checks are in
+   [spaces-and-cmd-tab.md](../../../qa/verification-procedures/spaces-and-cmd-tab.md).
+   As written: switching to the backdrop raises and keys it
    wherever the user is (including from a full-screen app); resting
    from a ⌘Tab summon returns activation to the previous app and its
    window regains the keyboard (`NSApp.deactivate()` is doing that

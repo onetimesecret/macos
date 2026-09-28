@@ -916,6 +916,16 @@ this ground: clicked while the app is inactive it arrives as
 `applicationShouldHandleReopen`, so filing the two differently would
 give one gesture two meanings decided by a state the user cannot see.
 
+Since ADR-0033 the gestures that name the app select the editor window
+rather than re-keying the card: `applicationDidBecomeActive` and
+`applicationShouldHandleReopen` go through `ActivationRouter`, which
+carries the same `BackdropRaise` reason to whichever window it opens.
+`anchorsOnToday(raise:)` is asked on that route too and only a summon
+anchors. One case changed with the ambient panel preference: with the
+panel off there is no surface to name, and ⌃⌥Space and the menu-bar
+item select the editor window as an activation, so they no longer
+anchor.
+
 Two mechanisms the answer named in passing turned out to matter enough
 to have tests of their own. The first is that the anchor moves the
 selection as well as the scroll when today holds a page, and that it

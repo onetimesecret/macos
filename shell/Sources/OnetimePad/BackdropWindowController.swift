@@ -432,7 +432,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 // exception, since it can take nothing, and the same
                 // fact decides the keyboard's return, so the two cannot
                 // disagree and leave an active app with no key window.
-                // B4 owns the rule's final form.
+                // The rule is `BackdropModel.restHandsBackActivation`,
+                // ADR-0033's "does not fire while the editor window is
+                // visible" read through `editorWindowCanTakeKeys`.
                 if BackdropModel.restHandsBackActivation(
                     appActive: true, editorWindowCanTakeKeys: model.editorWindowCanTakeKeys
                 ) {

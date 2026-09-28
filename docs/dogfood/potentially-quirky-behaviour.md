@@ -21,6 +21,12 @@ screen route is back on the table. The alternatives named in the base
 Context (`orderBack`, `order(.below, relativeTo:)`), together with hide
 and reshow across the transition, are the shape of the next spike.
 
+Update, 2026-09-28: the full screen ⌘Tab route passed on hardware in
+the maintainer's run of 2026-09-28. ADR-0034 Amendment 2 and the
+results in
+[spaces-and-cmd-tab.md](../qa/verification-procedures/spaces-and-cmd-tab.md)
+record it.
+
 > What macos API is used when command-tabbing to another application that is in another desktop and/or full screen? Currently, unlike
 > when the applications are on the same desktop screen which alternate "top-ness", switching to the fullscreen application brings the
 > user's screen to that desktop as expected, with the OnetimePad window on top. Is that expected from the implimentation of 192 or is
