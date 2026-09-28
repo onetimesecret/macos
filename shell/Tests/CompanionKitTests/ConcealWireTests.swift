@@ -41,16 +41,6 @@ final class ConcealWireTests: XCTestCase {
         )
     }
 
-    /// Spin the main run loop until `done` holds or `timeout` passes.
-    private func spinRunLoop(
-        until done: () -> Bool, timeout: TimeInterval = 5
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
-    }
-
     /// A client sending nil names no TTL, and the seam fills in the
     /// link's own seven days (ADR-0011 section 5): the shell never
     /// sends nil in practice, so this is the contract's floor rather
@@ -105,7 +95,11 @@ final class ConcealWireTests: XCTestCase {
         model.concealDraft?.passphrase = "swordfish"
         model.confirmConceal()
         XCTAssertEqual(model.concealDraft?.inFlight, true)
-        spinRunLoop { model.concealDraft?.inFlight == false }
+        // The conceal runs off the main actor and comes back to it, so
+        // the wait is on the draft the return publishes (`waitUntil`).
+        waitUntil(model.$concealDraft, description: "the round trip came back") {
+            $0?.inFlight == false
+        }
 
         let draft = try XCTUnwrap(model.concealDraft)
         XCTAssertFalse(draft.inFlight, "the round trip came back")
