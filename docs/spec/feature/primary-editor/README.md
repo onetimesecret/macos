@@ -80,10 +80,10 @@ storages, or nothing (ADR-0006, ADR-0020).
   panel's `.canJoinAllSpaces` membership stands for the panel alone
   (ADR-0033 Consequences).
 - **Full screen.** AppKit's rules govern entering and leaving full
-  screen. The editor window may enter and leave full screen from the
-  green traffic light, the Window menu's Enter Full Screen item, or a
-  hotkey a person binds. The hand check for this lives in
-  [`docs/qa/verification-procedures/spaces-and-cmd-tab.md`](../../../qa/verification-procedures/spaces-and-cmd-tab.md).
+  screen. The editor window enters and leaves full screen from the
+  green traffic light or the View menu's Enter Full Screen item. The
+  app's keymap has no full screen command. The hand check for this
+  lives in [`docs/qa/verification-procedures/spaces-and-cmd-tab.md`](../../../qa/verification-procedures/spaces-and-cmd-tab.md).
 
 ## Ownership as the person sees it
 
@@ -106,8 +106,12 @@ rule the person sees:
 The panel may edit while it owns. A read only panel is a policy
 restriction on the same model (never grant the panel ownership), not a
 different architecture; the ownership model is built transferable
-either way, so switching to a glance-only panel is a preference and
-not a rewrite.
+either way. The model already takes that policy as one input
+(`BackdropModel.panelMayOwn`, which only tests set), but shipping it
+as a setting is more than a switch. The code names three gaps: Esc
+does not reach a panel that never owns, the hotkey would only ever
+raise such a panel and never put it away, and a raised card would stay
+raised beside an editor window the person has gone to type in.
 
 Key status passing to Settings, About, a modal panel or another
 application moves nothing. Ownership follows only the two content
@@ -119,11 +123,14 @@ The person does not name a window as they type. They type into the
 window with the keyboard, and where the keyboard is decides where the
 hand off has already run. Concretely:
 
-- **From panel to editor.** Open the editor window (⌘Tab, the Dock
-  icon, a person's launch, or a menu). The panel rests if it was up;
-  the editor window becomes key and takes the keys. The page the
-  panel had is the page the editor shows, at the caret and scroll the
-  panel left it on, because the model carries both.
+- **From panel to editor.** Bring the editor window forward: ⌘Tab, the
+  Dock icon or a person's launch opens it or brings it forward, and a
+  click on an editor window already on screen keys it. With the
+  ambient panel off, the hotkey and the status item open it too. No
+  menu item opens it. The panel rests if it was up; the editor window
+  becomes key and takes the keys. The page the panel had is the page
+  the editor shows, at the caret and scroll the panel left it on,
+  because the model carries both.
 - **From editor to panel.** Summon the panel (⌃⌥Space, the status
   item, a click on the resting card). The editor window drops out of
   key without closing; the panel takes the keys. Typing lands in the
@@ -153,9 +160,12 @@ ADR-0006.
 
 - **The resting card as a glance while the editor owns.** The card
   keeps its resting stance and its ambient posture; what it draws is
-  the glance of the editor's page. Nothing about the card's
-  interaction changes: mouse transparent, keyboard refused, the same
-  30 s repaint.
+  the glance of the editor's page. The card's interaction does not
+  change: it refuses the keyboard, lets the mouse through while
+  unpinned, and takes a click as a summon while pinned. The redraw
+  cadence does change, because it belongs to the owner: while the
+  editor window is open and owns, the countdowns redraw every second
+  (`BackdropModel.retime`), not on the resting card's 30 s tick.
 - **The editor window as a glance while a summoned panel owns.** The
   editor window keeps its window chrome and its participation, and
   its content area draws the panel's glance. A press on the editor
@@ -175,10 +185,11 @@ model. The preference is local window state beside Pin and geometry,
 as ADR-0032's keep above preference is; it never enters the page
 model, the core, the state file or the sync protocol.
 
-Two panel eject triggers from ADR-0033 (dogfood evidence that the
-panel is not used, or is used only to read) are what the preference
-exists to make measurable. Whether the panel keeps its editing role
-is left to that evidence.
+ADR-0033 leaves whether the panel keeps its editing role to the
+dogfood evidence its first three eject triggers name. That the
+preference helps gather some of that evidence, since a person who
+turns the panel off is one sign that it is not used, is this spec's
+reading and not something the ADR says.
 
 ## Commands, menus and keys
 
@@ -192,8 +203,13 @@ is left to that evidence.
   the owner, which is today's behaviour with one window.
 - **⌘W stays `page::Close`.** The page strip is a tab strip, and
   Safari and Terminal close the tab on ⌘W.
-- **⇧⌘W closes the window** (`window::Close`). The default keymap
-  leaves ⇧⌘W free (ADR-0033).
+- **⇧⌘W closes the window** (`window::Close`). ADR-0033 recorded
+  that the default keymap left ⇧⌘W free; B5 bound it there
+  (`"cmd-shift-w": "window::Close"` in
+  `shell/Sources/CompanionKit/Resources/default-keymap.json`). The
+  Window menu's Close Window item carries the chord, and a keymap
+  override that unbinds it leaves the item in place without a
+  shortcut.
 - **The Window menu.** The editor window participates. The panel does
   not appear in the Window menu.
 
@@ -206,24 +222,30 @@ decision; the runtime carries no last used state.
 - **A person's launch** (the app appears in the Dock and activates
   moments after `applicationDidFinishLaunching`): opens the editor
   window as a summon, anchoring the roll on today.
-- **A late activation** (⌘Tab, the Dock icon, a reopen hours later):
-  opens the editor window as an activation, without anchoring the
-  roll.
+- **A late activation or a reopen** (⌘Tab or a Dock click more than
+  two seconds after launch, and any reopen): opens the editor window
+  as an activation, without anchoring the roll.
 - **A login launch, or any launch the system performs without
   activating the app**: opens no editor window and shows the panel
   resting only.
-- **A modal return and a cancelled quit** go back to the owner. The
-  return is judged twice, and both readings agree: `modalSessionEnded`
-  routes `.modalReturn` to the owner a turn after the modal is over,
-  and the key turn itself (`BackdropModel.keyTurn`) reads an editor
-  window keyed on the way back from Settings, About or a modal as a
-  return and not as a claim, so a raised, owning panel is keyed again
-  instead of rested and the page does not move.
+- **A modal return and a cancelled quit** go back to the owner. A
+  cancelled quit asks the routing table every time. A modal return is
+  judged twice, and both readings agree: `modalSessionEnded` routes
+  `.modalReturn` a turn after the modal is over, but only over a
+  raised panel, which always owns, so what it does is raise that
+  panel again; and the key turn itself (`BackdropModel.keyTurn`)
+  reads an editor window keyed on the way back from Settings, About
+  or a modal as a return and not as a claim, so a raised, owning panel
+  is keyed again instead of rested and the page does not move. Over
+  an owning editor window no route runs, and the keyboard comes back
+  to it by AppKit's own key restoration.
 - **`NSApp.deactivate()` on panel rest** does not fire while the
   editor window is visible; the keys return to the editor window
   instead.
 - **The hotkey, the status item and the resting card click** stay
-  with the panel and do not activate the app.
+  with the panel and do not activate the app while the ambient panel
+  is on. With it off, the hotkey and the status item open the editor
+  window as an activation, without anchoring the roll.
 
 ## Restoration and persistence
 
@@ -243,7 +265,7 @@ document application idiom for a person launched app.
 - **The two live presentations of one page.** Not available under
   ADR-0006 without reopening it. If a supported requirement ever needs
   the same page live in both windows at once, a new ADR reopens
-  ADR-0006 (ADR-0033 eject trigger 5).
+  ADR-0006 (eject trigger 5 below).
 - **Visual chrome and typography of the editor window's content
   area.** This spec fixes the window role, not what the page looks
   like inside it. Chrome, typography and page affordances are the
@@ -257,27 +279,29 @@ document application idiom for a person launched app.
 
 ## Eject triggers
 
-These come from ADR-0033 unchanged; they are the conditions under
-which this spec would be reopened rather than adjusted:
+These are ADR-0033's eject triggers, quoted from its Eject triggers
+section. The ADR lists them as bullets; the numbers are this spec's,
+for reference. They are the conditions under which this spec would be
+reopened rather than adjusted.
 
-1. Dogfood evidence that the ambient surface is not used once a
-   conventional editor exists. Remove the panel and retain the editor
-   window.
-2. Dogfood evidence that the conventional editor is not used. Reject
-   or supersede ADR-0033 in favour of the single panel architecture.
-3. Dogfood evidence that the panel is summoned to read and not to
-   type. Restrict the panel to a glance by policy and keep the
-   ownership model.
-4. Recurring hand off defects that cannot be removed behind the
-   ownership model (a lost caret or scroll, a stale glance, a window
-   left without an owner, a command answered by the wrong window).
-   Restrict the panel to a glance first, and reconsider two windows
-   only if the defects survive that.
-5. A supported requirement that needs the same page live in both
-   windows at once. Reopens ADR-0006 and needs its own ADR.
-6. A future AppKit API that supplies one supported window role that
-   can change between conventional primary window and nonactivating
-   ambient semantics without recreating either behaviour manually.
+1. > Dogfood evidence shows that the ambient surface is not used once a
+   > conventional editor exists; remove the second surface and retain only the
+   > primary window.
+2. > Dogfood evidence shows that the conventional editor is not used and that the
+   > product is understood and preferred as an ambient utility; reject or
+   > supersede this decision in favour of the single-panel architecture.
+3. > Dogfood evidence shows that the panel is summoned to read and not to type;
+   > restrict it to a glance by policy and keep the ownership model.
+4. > Exclusive ownership produces recurring hand off defects (a lost caret or
+   > scroll position, a stale glance, a window left without an owner, a command
+   > answered by the wrong window) that cannot be removed behind the one ownership
+   > model; restrict the panel to a glance first, and reconsider two windows only
+   > if the defects survive that.
+5. > A supported requirement needs the same page live in both windows at once.
+   > That reopens ADR-0006 and needs its own ADR.
+6. > A future AppKit API supplies one supported window role that can change between
+   > conventional primary-window and nonactivating ambient semantics without
+   > recreating either behavior manually; reassess the two-window boundary.
 
 ## References
 
