@@ -111,9 +111,8 @@ surface carries `.fullScreenAuxiliary` exactly when its altitude is floating
 and `.fullScreenNone` otherwise, which is what an ordinary window at the normal
 level does. A raised card that has dropped to `.normal` therefore stays out of
 another app's full screen Space: ⌘Tab into that app is meant to show the app
-alone. ⌘Tab back selects the editor window and rests the card
-(ADR-0033), and the
-[hardware procedure](../../../qa/verification-procedures/spaces-and-cmd-tab.md)
+alone. ⌘Tab back selects the editor window and rests the card (ADR-0033), and
+the [hardware procedure](../../../qa/verification-procedures/spaces-and-cmd-tab.md)
 records what the return does. A card that floats, because it holds the
 keyboard, is pinned or keeps above, follows the person into those Spaces.
 `.canJoinAllSpaces` is constant in every state (ADR-0019).
@@ -123,12 +122,11 @@ belongs to the panel app, and option-only global shortcuts broke
 outright on macOS 15.0 to 15.1), the menu-bar item and a click on the
 resting card. ⌘Tab and the Dock icon were summons under the ⌘Tab
 amendment below and select the editor window since ADR-0033. A summon
-is a summon first
-and a dismissal last: a resting surface raises; a raised surface that
-lost the keyboard (the user clicked or ⌘Tabbed away to work beside the
-card) gets the keys back and is pulled to the active Space; only a
-surface *already holding the keyboard* reads the gesture as "put it
-away". Esc and a click outside the card always rest it.
+is a summon first and a dismissal last: a resting surface raises; a
+raised surface that lost the keyboard (the user clicked or ⌘Tabbed away
+to work beside the card) gets the keys back and is pulled to the active
+Space; only a surface *already holding the keyboard* reads the gesture
+as "put it away". Esc and a click outside the card always rest it.
 
 Raising is the deliberate act that entitles the window to the keyboard
 — the panel's focus law, unchanged. The window is a
