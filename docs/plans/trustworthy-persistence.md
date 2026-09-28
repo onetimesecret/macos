@@ -1,7 +1,7 @@
 # Trustworthy persistence
 
 **GitHub milestone:** [Trustworthy persistence](https://github.com/onetimesecret/macos/milestone/1)  
-**Status:** Active  
+**Status:** Done. Milestone 1 closed 2026-08-24 with 0 open issues.  
 **Source of execution status:** GitHub issues, not this document.
 
 ## Goal

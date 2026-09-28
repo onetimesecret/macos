@@ -1,6 +1,6 @@
 # Window roles: normal stacking and the primary editor
 
-**Status:** Active. Written 2026-09-17; the status section was added 2026-09-28. Decision #191 closed 2026-09-18.
+**Status:** Done. Epic #192 closed 2026-09-28 with every issue it lists closed. Written 2026-09-17; the status section was added 2026-09-28. Decision #191 closed 2026-09-18.
 **Tracking:** [#192](https://github.com/onetimesecret/macos/issues/192)
 **Sources:** [ADR-0032](../adr/0032-inactive-raised-surfaces-follow-normal-app-stacking.md) (accepted), [ADR-0033](../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) (accepted 2026-09-18, narrowed).
 **Source of execution status:** GitHub issues and pull requests, not this document.
