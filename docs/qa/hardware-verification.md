@@ -294,19 +294,25 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   the panel's own raise and re-key are checked on the hotkey route),
   the shape of any flicker on a summon between desktops, and the edge
   drag that ADR-0019 decides against rather than fixes (issue #74).
-  Now also
-  the ADR-0032 checks for normal inactive stacking: ⌘Tab away with the
-  preference off drops the raised card to normal, a hotkey raise then
-  ⌘Tab between two other apps stays normally stacked, the preference
-  on and Pin on each keep it floating, a press on a partly covered
-  card takes keys (issue #190). The full-screen Space checks follow
+  The ADR-0033 checks for the editor window: ⌘Tab and the Dock select
+  it, a pinned panel floats above it, it enters and leaves full screen
+  by AppKit's rules, and Mission Control and Stage Manager show it
+  under the app's name. The ADR-0032 checks for normal inactive
+  stacking (issue #190): ⌘Tab away with the preference off drops the
+  raised card to normal, a hotkey raise then ⌘Tab between two other
+  apps stays normally stacked, the preference on and Pin on each keep
+  it floating, a press on a partly covered card takes keys, and the
+  rest of that issue's list. The full-screen Space checks follow
   ADR-0034, where full-screen participation follows the altitude: ⌘Tab
   into a full-screen app leaves the card out of that Space, a hotkey
-  summon inside one still lands, the return by ⌘Tab opens the editor
-  window and rests the card, and the `collectionBehavior` writes are
-  counted per key transition. Each
-  is judged by the VERDICT line of `scripts/window-order-probe.swift`
-  (issue #184). About staying in front while Pin and the preference
+  summon inside one still lands, and the return by ⌘Tab opens the
+  editor window and rests the card. Those are judged by the VERDICT
+  line of `scripts/window-order-probe.swift` (issue #184), except the
+  return, which ends with OnetimePad frontmost, where the probe skips,
+  and is judged by eye and by the log. The `collectionBehavior` writes
+  are counted per key transition from the log. The B4 activation
+  routes are run under the probe as well (issue #210). About staying
+  in front while Pin and the preference
   are toggled is checked here too (issue #188). Not an ADR-0016 case.
 - [`grace-snap-and-undo.md`](verification-procedures/grace-snap-and-undo.md).
   Owner: delano. The deadline snap on the real zone database: a
