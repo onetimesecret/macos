@@ -11,6 +11,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+# Xcode-beta 26.0 first-launch leaves xcrun without a resolved SDK, and
+# lipo and xcodebuild then hang waiting on one, so the developer dir and
+# SDK path are set explicitly. A caller that already exported either
+# keeps its own value.
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+  DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer"
+  if [[ ! -d "$DEVELOPER_DIR" ]]; then
+    DEVELOPER_DIR="$(xcode-select -p)"
+  fi
+fi
+export DEVELOPER_DIR
+export SDKROOT="${SDKROOT:-$DEVELOPER_DIR/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
+
 XCF=bindings/CompanionCore.xcframework
 # The feature shape the last build baked in. Release is explicit: a missing
 # stamp must never compare equal to the release shape.
