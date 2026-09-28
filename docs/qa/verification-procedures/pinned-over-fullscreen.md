@@ -95,25 +95,35 @@ switch to that Space.
       clicks is a gate stuck shut, which is the one regression this
       change can cause. Switch back and forth half a dozen times: the
       gate must come back open every time, not merely the first.
-- [ ] **The pin, toggled under a cover.** On an ordinary desktop with
-      another app's window covering the card's resting place
-      completely, raise the card with ⌃⌥Space (it comes up over the
-      cover), turn the pin on and off from the header toggle a few
-      times, ending with it on, and rest the card (Esc); then move the
-      covering window aside. The card answers a click. The pin writes
-      the gate from a settled reading taken after the level and frame
-      have moved, so a pin judged from the posture it was leaving would
-      show up here as a card that never comes back.
-- [ ] **The pin, toggled while raised.** Same full cover, but raise the
-      card first with ⌃⌥Space, then toggle the pin from the header
-      toggle (a control inside the card, so the raise survives the
-      click). Roughly a second later the stream carries `mouse
-      gate=closed`. The pin rewrites the gate
-      from the stance's own ungated rule, which for a raise is open, and
-      the settling reading that follows may not close it over a raise;
-      the scheduled reading is the only thing that will. Silence here
-      means an invisible card left holding the mouse for as long as the
-      raise lasts.
+- [ ] **The pin, turned on while raised over a cover, then rested.**
+      On an ordinary desktop with another app's window covering the
+      card's resting place completely, raise the card with ⌃⌥Space (it
+      comes up floating over the cover), turn the pin on from the
+      header toggle (a control inside the card, so the raise survives
+      the click), and watch the stream for two seconds before resting
+      the card (Esc). **Pass:** no `mouse gate=closed` line at any
+      point, since the card is composited and unoccluded throughout
+      and a closed gate here would be a visible card made deaf; the
+      pinned rest stays above the cover; and a click on it raises it.
+      The pin rewrites the gate from the stance's own ungated rule and
+      then takes the pair of readings every posture change takes, the
+      settling one a turn later and the scheduled one about a second
+      in, so a reading that closed the gate would show up here as a
+      card that stops answering.
+
+      The pin cannot be written over a card the window server is not
+      showing: the toggle lives in the card header, which has to be on
+      screen to be clicked, so the covered card that the earlier
+      Settings and tray menu routes described has no route left. The
+      covered case that matters, a pinned rest under another app's
+      full-screen Space, is the first four checks.
+- [ ] **The pin, turned off while raised over a cover, then rested.**
+      Same cover. Raise the card, turn the pin off from the header
+      toggle, and rest it (Esc). **Pass:** the card drops beneath the
+      cover and the stream stays silent, because the unpinned rest
+      ignores the mouse by its stance, ungated, so there is no gate to
+      move; once the covering window is moved aside a click over the
+      card falls through to the desktop, which is the next check.
 - [ ] **The unpinned rest is untouched.** Raise the card, turn the pin
       off from the header toggle and rest it (Esc), then click over
       the card on a bare desktop: the click still passes through to the
@@ -185,8 +195,8 @@ stay: a re-run adds a row rather than replacing one.
 | | | clicks reach the full-screen app | | The acceptance criterion. |
 | | | log shows the gate closing | | |
 | | | gate reopens off the full-screen Space | | Every switch, not only the first. |
-| | | pin toggled under a full cover | | |
-| | | pin toggled while raised under a full cover | | |
+| | | pin turned on while raised over a full cover, then rested | | No `mouse gate=closed` line; the pinned rest answers a click. |
+| | | pin turned off while raised over a full cover, then rested | | Silent stream; the card drops beneath the cover. |
 | | | unpinned rest still passes clicks through | | |
 | | | first click after a raise lands | | |
 | | | the raise's second reading leaves a visible card clickable | | |
