@@ -183,12 +183,13 @@ bounces; a page appears without a gesture asking for one.
 
 **Pass:** a ⌘Tab return selects the editor window and leaves the scroll
 where it was: the roll in the editor window opens at the place the
-card's roll was left, because the hand off carries the reader's place
-through the model (ADR-0033: "A hand off between windows must carry
-them through the model, or every owner change loses the person's
-place."), and a click on the Dock icon does the same; ⌃⌥Space, the
-menu-bar item and a click on the resting card all take it back to
-today.
+card's roll was left, and a click on the Dock icon does the same. Both
+are activations, and ADR-0033 keeps them off today: "an activation
+still never anchors the roll on today". The place itself crosses with
+the page, since a transfer of ownership leaves the roll's place for the
+roll that mounts in the other window (`PageViewStates.rollPlace`).
+⌃⌥Space, the menu-bar item and a click on the resting card all take it
+back to today.
 
 ## Case 4: typing at the bottom of a long Day 0
 
