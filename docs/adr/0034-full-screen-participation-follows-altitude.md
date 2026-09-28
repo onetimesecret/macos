@@ -165,8 +165,9 @@ Space round trip check and before `makeKeyAndOrderFront`.
   trigger firing on hardware. The base Decision governs the same-desktop
   route; ordering reopens for the full screen route.
 - 2026-09-28: Amendment 2 records the full screen route passing on
-  hardware in the maintainer's run. Ordering does not reopen, and issue 184
-  closes.
+  hardware in the maintainer's run, recorded in
+  `docs/qa/verification-procedures/spaces-and-cmd-tab.md` (PR #212).
+  Ordering does not reopen, and issue 184 can close.
 
 ## Amendment 1: second eject trigger fired, ordering reopens
 
@@ -255,12 +256,15 @@ written.
 ### What the run saw
 
 The maintainer ran the full screen route again on hardware on 2026-09-28,
-with the card unpinned and the keep above preference off, as part of a run
-of every window roles check: issues 184, 190 and 210, and the ADR-0033
-checks in `docs/qa/verification-procedures/spaces-and-cmd-tab.md`. Every
-route passed, including ⌘Tab into an application in its own full screen
-Space. The procedure's Results table records the run. This record carries
-the maintainer's report; the probe's verdict lines are not reproduced here.
+with the card unpinned and the keep above preference off, and reported it
+passed: after ⌘Tab into an application in its own full screen Space, the
+card was absent from that Space. The same run covered the press on a
+partly covered card, the other route issue 184 still held open, and the
+checks of issues 190 and 210 and the four ADR-0033 sections of
+`docs/qa/verification-procedures/spaces-and-cmd-tab.md`, all reported
+passed. That procedure's Results table records the run. The procedure's
+other full screen checks were not part of it, and no probe output was
+pasted, so this record rests on the maintainer's report.
 
 ### What this changes
 
