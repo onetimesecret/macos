@@ -8,7 +8,9 @@ all Spaces panel.
 **Raised by:** issue #74, from the dogfood aberrations log of
 2026-08-19.
 **Owner:** delano.
-**Status:** open. Not yet run on hardware.
+**Status:** partly run. On 2026-09-28 the maintainer ran the ADR-0033
+checks and the checks of issues #184, #190 and #210 on hardware and
+reported every one passed. Rows with an empty result have not been run.
 
 ## Scope after ADR-0033
 
@@ -553,9 +555,11 @@ again.
 
 ## Results
 
-Not yet run. One row per check when a session runs it, and the rows
-stay: a re-run adds a row rather than replacing one. The *Role* column
-names which window the row is about, in the split ADR-0033 gives.
+The 2026-09-28 rows record the maintainer's report of that run; the
+machine was not recorded and no probe output was pasted. One row per
+check when a session runs it, and the rows stay: a re-run adds a row
+rather than replacing one. The *Role* column names which window the row
+is about, in the split ADR-0033 gives.
 
 | Date | Machine and macOS | Role | Check | Pass or fail | Notes |
 |---|---|---|---|---|---|
@@ -571,23 +575,23 @@ names which window the row is about, in the split ADR-0033 gives.
 | | | panel | ten hotkey re-keys after a ⌘Tab away | | |
 | | | panel | ten summons between desktops, pinned | | |
 | | | panel | collectionBehavior writes: one per key transition (⌘Tab away, hotkey re-key) unpinned with preference off, none pinned or keep above | | Needs `log stream --level debug`. ADR-0034. |
-| | | editor | ⌘Tab from another desktop selects the editor window | | ADR-0033. |
-| | | editor | Dock icon selects the editor window when open | | ADR-0033. |
-| | | editor | reopen selects the editor window, not the panel | | ADR-0033. |
-| | | panel | hotkey, status item and resting card click stay with the panel | | ADR-0033. |
-| | | both | pinned panel floats above the editor window | | ADR-0033. |
-| | | editor | editor window never resolves to floating | | ADR-0033; needs `log stream --level debug`. |
-| | | editor | editor enters and leaves full screen | | ADR-0033. |
-| | | panel | hotkey summon over the editor window in full screen lands the panel on that Space | | ADR-0033. |
-| | | editor | ⌘Tab back to an editor window in full screen | | ADR-0033. |
-| | | editor | Mission Control shows the editor window titled with the app's name | | ADR-0033 Restoration. |
-| | | editor | Stage Manager groups the editor window under the app's name | | ADR-0033 Restoration. |
-| | | panel | ⌘Tab away stacks normally, preference off; the hotkey re-keys | | ADR-0032, #190. |
-| | | panel | hotkey raise then ⌘Tab A→B, no flash | | ADR-0032, #190. |
-| | | panel | preference on: raised stays above on ⌘Tab | | ADR-0032, #190. |
-| | | panel | Pin outranks preference in both stances | | ADR-0032, #190. |
-| | | panel | press on a partly covered card takes keys | | ADR-0032, issue #73 and #190. |
-| | | panel | ⌘Tab into a full-screen Space: card absent | | Paste the VERDICT line. ADR-0034, #184. |
+| 2026-09-28 | not recorded | editor | ⌘Tab from another desktop selects the editor window | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | Dock icon selects the editor window when open | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | reopen selects the editor window, not the panel | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | hotkey, status item and resting card click stay with the panel | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | editor window never resolves to floating | pass | ADR-0033; needs `log stream --level debug`. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | editor enters and leaves full screen | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | hotkey summon over the editor window in full screen lands the panel on that Space | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | ⌘Tab back to an editor window in full screen | pass | ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | Mission Control shows the editor window titled with the app's name | pass | ADR-0033 Restoration. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | Stage Manager groups the editor window under the app's name | pass | ADR-0033 Restoration. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | ⌘Tab away stacks normally, preference off; the hotkey re-keys | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | hotkey raise then ⌘Tab A→B, no flash | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | preference on: raised stays above on ⌘Tab | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | Pin outranks preference in both stances | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | press on a partly covered card takes keys | pass | ADR-0032, issue #73 and #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | ⌘Tab into a full-screen Space: card absent | pass | Reported passed by the maintainer; the VERDICT line was not pasted. ADR-0034, #184. |
 | | | panel | hotkey summon inside full-screen A, then ⌘Tab to B on a desktop | | Paste the VERDICT lines for B and for the return to A. ADR-0034. |
 | | | panel | hotkey summon inside full-screen A lands keyed | | Paste the VERDICT line (`--after 8 --expect above`). ADR-0034. |
 | | | panel | hotkey summon inside full-screen A, then click in A | | Paste the VERDICT line (`--after 8 --expect behind`). ADR-0034. |
@@ -595,5 +599,18 @@ names which window the row is about, in the split ADR-0033 gives.
 | | | both | return by ⌘Tab from the full-screen Space: the editor window opens on a desktop and the card rests | | Record the desktop it settled on and the stance line; the probe skips with OnetimePad frontmost. ADR-0033, ADR-0034. |
 | | | panel | pinned and keep above still follow into a full-screen Space | | Paste the VERDICT lines (`--expect above`). ADR-0034. |
 | | | panel | refused raise inside A shows one appear and disappear at most | | ADR-0034. |
-| | | companion | About stays in front while Pin and the preference are toggled | | ADR-0032, #188. |
+| 2026-09-28 | not recorded | companion | About stays in front while Pin and the preference are toggled | pass | ADR-0032, #188. Reported passed by the maintainer. |
 | | | panel | edge drag stays on this desktop | | The documented decision, ADR-0019. |
+| 2026-09-28 | not recorded | panel | first mouse press in another app rests the card, preference on or off | pass | ADR-0032, #190. The outside click rule, unchanged. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | companion | Settings by ⌘, the app menu and the status item, Pin on and off: visible and keyed, never beneath the card | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | companion | preference toggled inside Settings over a raised keyless card: Settings stays in front | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | open panel round trip: the card comes back keyed and floating | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | Stage Manager, another app's full screen Space and a second display | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | a summon never flashes at a lower level before coming forward | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | both | ⌘Tab to another app, then back | pass | B4 probe route, #210. ADR-0033, ADR-0034. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | Dock click while the editor window is closed opens it | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | reopen: ⌘H, then click the Dock icon | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | both | modal return: open Settings, close it | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | both | cancelled quit: ⌘Q, cancel the sheet | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | summon over a full-screen Space, Esc, back to the underlying app | pass | B4 probe route, #210. ADR-0034. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | editor | editor window close hands activation back | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
