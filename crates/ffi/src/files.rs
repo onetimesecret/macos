@@ -34,11 +34,15 @@ use std::ptr;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use companion_core::{FileId, FileIo, FileWitness, OpenRefusal, SaveError, file_persist};
+use companion_core::{
+    EditIntent, FileId, FileIo, FileWitness, OpenRefusal, SaveError, file_persist,
+};
 use zeroize::Zeroizing;
 
 use crate::diagnostics::diag_fault;
-use crate::{Companion, CompanionHandle, cstr, into_c_string, parse_ops, persist, wall_now_ms};
+use crate::{
+    Companion, CompanionHandle, cstr, edit_intent, into_c_string, parse_ops, persist, wall_now_ms,
+};
 
 /// Magic and version prefix of the sealed drafts file. Its own byte
 /// string, and its own AEAD associated data, so the three sealed files
@@ -381,7 +385,7 @@ pub unsafe extern "C" fn companion_file_apply_ops(
     file: u64,
     ops_json: *const c_char,
 ) -> bool {
-    unsafe { apply(handle, file, ops_json, false) }
+    unsafe { apply(handle, file, ops_json, None) }
 }
 
 /// The same, for a batch the app produced on the writer's behalf: it
@@ -395,7 +399,24 @@ pub unsafe extern "C" fn companion_file_apply_ops_as_new_step(
     file: u64,
     ops_json: *const c_char,
 ) -> bool {
-    unsafe { apply(handle, file, ops_json, true) }
+    unsafe { apply(handle, file, ops_json, Some(EditIntent::Automation)) }
+}
+
+/// Apply a file edit with the gesture supplied by the TextKit bridge.
+///
+/// # Safety
+/// `handle` must be a valid handle; `ops_json` a valid C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_apply_ops_with_intent(
+    handle: *mut CompanionHandle,
+    file: u64,
+    ops_json: *const c_char,
+    intent: u32,
+) -> bool {
+    let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    unsafe { apply(handle, file, ops_json, Some(intent)) }
 }
 
 /// # Safety
@@ -404,7 +425,7 @@ unsafe fn apply(
     handle: *mut CompanionHandle,
     file: u64,
     ops_json: *const c_char,
-    new_step: bool,
+    intent: Option<EditIntent>,
 ) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
@@ -423,11 +444,28 @@ unsafe fn apply(
         return false;
     };
     let id = FileId(file);
-    if new_step {
-        guard.files.apply_ops_as_new_step(id, &ops, wall_ms)
-    } else {
-        guard.files.apply_ops(id, &ops, wall_ms)
+    match intent {
+        Some(intent) => guard.files.apply_ops_with_intent(id, &ops, wall_ms, intent),
+        None => guard.files.apply_ops(id, &ops, wall_ms),
     }
+}
+
+/// End a file's current typing/deletion run without creating an undo item.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_finish_editing_group(
+    handle: *mut CompanionHandle,
+    file: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.files.finish_editing_group(FileId(file))
 }
 
 /// Whether the file has a step waiting to be taken back. False for an
@@ -2171,6 +2209,13 @@ mod tests {
                 page,
                 ops.as_ptr()
             ));
+            assert!(!companion_file_apply_ops_with_intent(
+                handle,
+                page,
+                ops.as_ptr(),
+                0
+            ));
+            assert!(!companion_file_finish_editing_group(handle, page));
             assert!(companion_file_undo(handle, page).is_null());
             assert!(companion_file_redo(handle, page).is_null());
             assert!(!companion_file_save(handle, page));

@@ -176,6 +176,49 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertFalse(model.canUndoEdit(sheet: sheet))
     }
 
+    func testTypePasteTypeComesBackAsThreeSteps() throws {
+        try makeEditor()
+        type("typed")
+        textView.performOrdinaryPaste(nil, bypassingAutomaticFencing: true) { _ in
+            self.type(" pasted")
+        }
+        type(" again")
+        XCTAssertEqual(coreText(), "typed pasted again")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "typed pasted")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "typed")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "")
+    }
+
+    func testMovingTheCaretFinishesTheTypingGroup() throws {
+        try makeEditor()
+        type("right")
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        type("left ")
+        XCTAssertEqual(coreText(), "left right")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "right")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "")
+    }
+
+    func testTypingOverASelectionIsOneReplacementStep() throws {
+        try makeEditor()
+        type("before")
+        textView.setSelectedRange(NSRange(location: 0, length: 6))
+        type("after")
+        XCTAssertEqual(coreText(), "after")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "before")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "")
+    }
+
     /// A step rewrites the storage from the core's runs, which are
     /// plain text under the base font. Nothing on the step's own path
     /// fires `textDidChange`, and `updateNSView` turns back at the

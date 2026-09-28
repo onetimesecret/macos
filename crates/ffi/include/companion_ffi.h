@@ -448,6 +448,19 @@ bool companion_sheet_apply_ops_as_new_step(CompanionHandle *handle,
                                            uint64_t sheet, const char *json);
 
 /*
+ * Apply a batch with the TextKit editing gesture that produced it. Intent is:
+ * 0 typing, 1 deletion, 2 paste, 3 cut, 4 replacement, 5 automation,
+ * 6 completed input-method composition. Unknown values are rejected.
+ */
+bool companion_sheet_apply_ops_with_intent(CompanionHandle *handle,
+                                           uint64_t sheet, const char *json,
+                                           uint32_t intent);
+
+/* End the current typing/deletion run without creating an undo item. */
+bool companion_sheet_finish_editing_group(CompanionHandle *handle,
+                                          uint64_t sheet);
+
+/*
  * Undo, which lives here rather than in AppKit (issue #132). One step
  * is the page's last local edit, or the couple of seconds of them the
  * merge interval groups together. The stack is bound to this document's
@@ -1241,6 +1254,14 @@ bool companion_file_apply_ops(CompanionHandle *handle, uint64_t file,
 bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
                                           uint64_t file,
                                           const char *ops_json);
+bool companion_file_apply_ops_with_intent(CompanionHandle *handle,
+                                          uint64_t file,
+                                          const char *ops_json,
+                                          uint32_t intent);
+
+/* End the current typing/deletion run without creating an undo item. */
+bool companion_file_finish_editing_group(CompanionHandle *handle,
+                                         uint64_t file);
 
 /*
  * Whether the file has a step waiting to be taken back, and one waiting

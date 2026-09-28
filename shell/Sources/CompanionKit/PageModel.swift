@@ -10,6 +10,18 @@ public enum DocumentRun {
     case chip(UInt64)
 }
 
+/// The editing gesture represented by one operation batch. The raw values are
+/// the C ABI contract in `companion_ffi.h`.
+public enum EditorEditIntent: UInt32, Sendable {
+    case typing = 0
+    case deletion = 1
+    case paste = 2
+    case cut = 3
+    case replacement = 4
+    case automation = 5
+    case composition = 6
+}
+
 /// One edit against a page's body, as the shell sends it to the core
 /// (`companion_sheet_apply_ops`, ADR-0013). Every position and length
 /// is a UTF-16 code unit, which is what `NSRange` already speaks, so
@@ -4339,17 +4351,20 @@ public final class PageModel: ObservableObject {
     /// mirror, in the core and by the core's own rule: after a
     /// wholesale rewrite every offset a step holds describes nothing.
     ///
-    /// `startingNewStep` marks a batch the page produced on the
-    /// writer's behalf (a continued list marker, a nudged indent) so it
-    /// begins its own undo step and comes off in one press.
-    public func applyOps(sheet: UInt64, opsJSON: String, startingNewStep: Bool = false) {
+    /// `intent` tells the core which editing gesture produced the batch. The
+    /// core owns the grouping rules and both undo stacks.
+    public func applyOps(
+        sheet: UInt64,
+        opsJSON: String,
+        intent: EditorEditIntent = .typing
+    ) {
         // Files route first, on the tag and nothing else. A file has no
         // quiet rendering on the roll, no chips to reap, and its
         // dirtiness is the file's own rather than the sealed store's,
         // so it takes none of the page bookkeeping below.
         if sheet.isFileID {
             let accepted = client.applyFileOps(
-                sheet, json: opsJSON, startingNewStep: startingNewStep)
+                sheet, json: opsJSON, intent: intent)
             if accepted {
                 markFilesDirty()
                 refreshOpenFiles()
@@ -4360,7 +4375,7 @@ public final class PageModel: ObservableObject {
             return
         }
         let accepted = client.applyOps(
-            sheet: sheet, json: opsJSON, startingNewStep: startingNewStep)
+            sheet: sheet, json: opsJSON, intent: intent)
         if accepted {
             // The page just changed, so how it reads when it is quiet
             // changed with it (issue #79). Here rather than at the
@@ -4377,6 +4392,15 @@ public final class PageModel: ObservableObject {
         #if DEBUG
         assertProjectionParity(sheet: sheet)
         #endif
+    }
+
+    /// End the current coalescing run without creating an undo item.
+    public func finishEditingGroup(sheet: UInt64) {
+        if sheet.isFileID {
+            _ = client.finishFileEditingGroup(sheet)
+        } else {
+            _ = client.finishEditingGroup(sheet: sheet)
+        }
     }
 
     // MARK: Undo, which is the core's stack now (issue #132)

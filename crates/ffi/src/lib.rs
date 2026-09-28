@@ -95,8 +95,8 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent, RestoreError,
-    Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
+    ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent,
+    RestoreError, Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
     detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
@@ -1100,6 +1100,76 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
     guard
         .store
         .apply_ops_as_new_step(SheetId::from_raw(sheet), &ops)
+}
+
+/// [`companion_sheet_apply_ops`] with the editing gesture supplied by the
+/// TextKit bridge. The core owns grouping and rejects unknown intent values.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_apply_ops_with_intent(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    json: *const c_char,
+    intent: u32,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(ops) = parse_ops(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .apply_ops_with_intent(SheetId::from_raw(sheet), &ops, intent)
+}
+
+/// End a page's current typing/deletion run without creating an undo item.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_finish_editing_group(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.finish_editing_group(SheetId::from_raw(sheet))
+}
+
+pub(crate) fn edit_intent(raw: u32) -> Option<EditIntent> {
+    match raw {
+        0 => Some(EditIntent::Typing),
+        1 => Some(EditIntent::Deletion),
+        2 => Some(EditIntent::Paste),
+        3 => Some(EditIntent::Cut),
+        4 => Some(EditIntent::Replacement),
+        5 => Some(EditIntent::Automation),
+        6 => Some(EditIntent::Composition),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4672,6 +4742,48 @@ mod tests {
     }
 
     #[test]
+    fn explicit_edit_intent_and_group_boundaries_cross_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let a = cstring(r#"[{"ins":{"at":0,"text":"a"}}]"#);
+            let b = cstring(r#"[{"ins":{"at":1,"text":"b"}}]"#);
+            let c = cstring(r#"[{"ins":{"at":2,"text":"c"}}]"#);
+            assert!(companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                a.as_ptr(),
+                0
+            ));
+            assert!(companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                b.as_ptr(),
+                2
+            ));
+            assert!(companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                c.as_ptr(),
+                0
+            ));
+            assert!(!companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                c.as_ptr(),
+                99
+            ));
+
+            assert!(companion_sheet_undo(handle, sheet));
+            assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("ab"));
+            assert!(companion_sheet_undo(handle, sheet));
+            assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("a"));
+            assert!(companion_sheet_finish_editing_group(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
     fn the_new_step_seam_fails_closed_like_every_other_batch_route() {
         let handle = handle();
         unsafe {
@@ -7539,6 +7651,13 @@ mod tests {
                 tagged,
                 ops.as_ptr()
             ));
+            assert!(!companion_sheet_apply_ops_with_intent(
+                handle,
+                tagged,
+                ops.as_ptr(),
+                0
+            ));
+            assert!(!companion_sheet_finish_editing_group(handle, tagged));
 
             let runs = take_json(companion_sheet_document_json(handle, page));
             assert!(runs.contains("hello"));

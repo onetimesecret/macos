@@ -753,7 +753,7 @@ public struct InkEditorView: NSViewRepresentable {
                 length: 0
             )
             applyReplacement(
-                pending.payload, range: selection, caret: caret, startsNewUndoStep: true
+                pending.payload, range: selection, caret: caret, intent: .paste
             )
         }
 
@@ -773,6 +773,9 @@ public struct InkEditorView: NSViewRepresentable {
 
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
+            if !selectionChangeIsIncidental, let sheet = currentSheet {
+                model.finishEditingGroup(sheet: sheet)
+            }
             refreshLanguageActionAvailability()
             if refreshBlockMetadataFocus() {
                 updateBlockLabelViews()
@@ -961,7 +964,7 @@ public struct InkEditorView: NSViewRepresentable {
                     plan.replacementText,
                     range: plan.replacementRange,
                     caret: plan.finalCaretRange,
-                    startsNewUndoStep: true
+                    intent: .paste
                 )
             } else {
                 let caret = NSRange(
@@ -972,30 +975,25 @@ public struct InkEditorView: NSViewRepresentable {
                     pending.payload,
                     range: pending.destination.replacementRange,
                     caret: caret,
-                    startsNewUndoStep: true
+                    intent: .paste
                 )
             }
         }
 
         private func applyReplacement(
-            _ replacement: String, range: NSRange, caret: NSRange, startsNewUndoStep: Bool
+            _ replacement: String, range: NSRange, caret: NSRange, intent: EditorEditIntent
         ) {
             guard let textView, let storage = textView.textStorage,
                   textView.isEditable, !textView.hasMarkedText(),
                   NSMaxRange(range) <= storage.length,
                   textView.shouldChangeText(in: range, replacementString: replacement)
             else { return }
-            nextEditIsAutomation = startsNewUndoStep
-            storage.replaceCharacters(in: range, with: replacement)
-            textView.didChangeText()
-            // The core's explicit boundary is in front of one commit. Leave
-            // another boundary armed so subsequent typing cannot merge into this
-            // complete paste/wrap action and come off in the same undo.
-            if startsNewUndoStep {
-                nextEditIsAutomation = true
+            withEditIntent(intent) {
+                storage.replaceCharacters(in: range, with: replacement)
+                textView.didChangeText()
+                textView.setSelectedRange(Self.clamped(caret, to: storage.length))
+                textView.scrollRangeToVisible(textView.selectedRange())
             }
-            textView.setSelectedRange(Self.clamped(caret, to: storage.length))
-            textView.scrollRangeToVisible(textView.selectedRange())
         }
 
         var manualLanguageTargetAvailable: Bool {
@@ -1261,7 +1259,7 @@ public struct InkEditorView: NSViewRepresentable {
                     plan.replacementText,
                     range: plan.replacementRange,
                     caret: plan.finalCaretRange,
-                    startsNewUndoStep: true
+                    intent: .automation
                 )
             case .bareFence(let opening, _, let insertion):
                 if displayOnly {
@@ -1277,7 +1275,7 @@ public struct InkEditorView: NSViewRepresentable {
                         suggestion.language,
                         range: NSRange(location: insertion, length: 0),
                         caret: NSRange(location: insertion + suggestion.language.utf16.count, length: 0),
-                        startsNewUndoStep: true
+                        intent: .automation
                     )
                 }
             }
@@ -2088,26 +2086,59 @@ public struct InkEditorView: NSViewRepresentable {
             finishComposition(in: storage, sheet: sheet)
         }
 
-        /// Set for the one edit that follows, by the keystroke handlers
-        /// that write on the writer's behalf: a continued list marker,
-        /// a nudged indent. The core gives such a batch its own undo
-        /// step, so one press takes the automation back and leaves the
-        /// words typed before it standing (issue #132).
-        ///
-        /// A one-shot rather than a mode, and consumed in `emit` rather
-        /// than cleared by the caller, because an automation edit that
-        /// somehow produced no batch must not hand its boundary to
-        /// whatever the writer types next.
-        var nextEditIsAutomation = false
+        /// The outermost TextKit action currently producing storage edits.
+        /// Nested calls keep the outer action: list continuation calls
+        /// `insertText`, for example, but remains automation rather than typing.
+        private var editIntentInFlight: EditorEditIntent?
+        private var editIntentDepth = 0
+
+        var selectionChangeIsIncidental: Bool {
+            editIntentDepth > 0 || model.isApplyingProjection
+        }
+
+        @discardableResult
+        func withEditIntent<Result>(
+            _ intent: EditorEditIntent,
+            perform body: () -> Result
+        ) -> Result {
+            let outermost = editIntentDepth == 0
+            if outermost {
+                editIntentInFlight = intent
+            }
+            editIntentDepth += 1
+            defer {
+                editIntentDepth -= 1
+                if outermost {
+                    editIntentInFlight = nil
+                }
+            }
+            return body()
+        }
 
         /// Encode and send one batch. Empty batches never cross: a
         /// no-op is not an operation.
         private func emit(_ ops: [DocumentEditOp], sheet: UInt64) {
-            let automation = nextEditIsAutomation
-            nextEditIsAutomation = false
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
-            model.applyOps(sheet: sheet, opsJSON: json, startingNewStep: automation)
+            let intent = editIntentInFlight ?? Self.inferredIntent(for: ops)
+            model.applyOps(sheet: sheet, opsJSON: json, intent: intent)
             onEmit?(ops)
+        }
+
+        private static func inferredIntent(for ops: [DocumentEditOp]) -> EditorEditIntent {
+            let hasInsert = ops.contains {
+                if case .ins = $0 { return true }
+                if case .chip = $0 { return true }
+                return false
+            }
+            let hasDelete = ops.contains {
+                if case .del = $0 { return true }
+                return false
+            }
+            switch (hasInsert, hasDelete) {
+            case (true, false): return .typing
+            case (false, true): return .deletion
+            default: return .replacement
+            }
         }
 
         /// One storage edit as a replace-shaped batch: the deleted
@@ -3880,6 +3911,15 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
+    @discardableResult
+    private func withEditIntent<Result>(
+        _ intent: EditorEditIntent,
+        perform body: () -> Result
+    ) -> Result {
+        guard let coordinator else { return body() }
+        return coordinator.withEditIntent(intent, perform: body)
+    }
+
     /// Which window the editor landed in, by class. The build line
     /// cannot say, since an editor is built before it has a window, and
     /// with two windows over one model "which one mounted" is the
@@ -4381,6 +4421,24 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
     }
 
+    override func cut(_ sender: Any?) {
+        withEditIntent(.cut) {
+            super.cut(sender)
+        }
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        withEditIntent(.deletion) {
+            super.deleteBackward(sender)
+        }
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        withEditIntent(.deletion) {
+            super.deleteForward(sender)
+        }
+    }
+
     var canDetectCodeLanguage: Bool {
         PageModel.languageDetectionFeaturesAvailable
             && isEditable
@@ -4407,17 +4465,19 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         bypassingAutomaticFencing: Bool = false,
         pasteAsPlainText: (Any?) -> Void
     ) {
-        let payload = coordinator?.ordinaryPastePayloadIfNeeded(
-            bypassingAutomaticFencing: bypassingAutomaticFencing
-        )
-        if !bypassingAutomaticFencing, let payload,
-           coordinator?.beginAutomaticPaste(payload: payload) == true
-        {
-            return
-        }
-        pasteAsPlainText(sender)
-        if let payload, coordinator?.measuresOrdinaryPastes == true {
-            coordinator?.observeOrdinaryPaste(payload: payload)
+        withEditIntent(.paste) {
+            let payload = coordinator?.ordinaryPastePayloadIfNeeded(
+                bypassingAutomaticFencing: bypassingAutomaticFencing
+            )
+            if !bypassingAutomaticFencing, let payload,
+               coordinator?.beginAutomaticPaste(payload: payload) == true
+            {
+                return
+            }
+            pasteAsPlainText(sender)
+            if let payload, coordinator?.measuresOrdinaryPastes == true {
+                coordinator?.observeOrdinaryPaste(payload: payload)
+            }
         }
     }
 
@@ -4525,10 +4585,11 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             }
             // The removal is the page's own doing, so it gets its own
             // undo step for the reason the continuation does.
-            coordinator?.nextEditIsAutomation = true
-            storage.replaceCharacters(in: prefix, with: "")
-            didChangeText()
-            setSelectedRange(NSRange(location: paragraph.location, length: 0))
+            withEditIntent(.automation) {
+                storage.replaceCharacters(in: prefix, with: "")
+                didChangeText()
+                setSelectedRange(NSRange(location: paragraph.location, length: 0))
+            }
             return
         }
         // One keystroke, one undo step, and since issue #132 that is
@@ -4538,8 +4599,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         // none of the words typed before it. The newline and the marker
         // go down as one `insertText`, the ordinary route every other
         // character takes, and the flag rides that one batch across.
-        coordinator?.nextEditIsAutomation = true
-        insertText("\n" + item.successor, replacementRange: caret)
+        withEditIntent(.automation) {
+            insertText("\n" + item.successor, replacementRange: caret)
+        }
     }
 
     /// Tab, on a line the page reads as a list item, with the caret in
@@ -4666,20 +4728,21 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     ) -> Bool {
         guard let storage = textStorage else { return false }
         guard shouldChangeText(in: range, replacementString: replacement) else { return false }
-        coordinator?.nextEditIsAutomation = true
-        storage.replaceCharacters(in: range, with: replacement)
-        didChangeText()
-        // Where the caret lands is the whole of whether the gesture
-        // repeats. It keeps its place relative to the line's content,
-        // so after a nudge it is still in the marker region and a
-        // second press nudges again; an outdent that eats the ground
-        // under it leaves it at the line's start, which is inside the
-        // region too.
-        let width = (replacement as NSString).length
-        let landing = caret.location >= NSMaxRange(range)
-            ? caret.location - range.length + width
-            : range.location + width
-        setSelectedRange(NSRange(location: landing, length: 0))
+        withEditIntent(.automation) {
+            storage.replaceCharacters(in: range, with: replacement)
+            didChangeText()
+            // Where the caret lands is the whole of whether the gesture
+            // repeats. It keeps its place relative to the line's content,
+            // so after a nudge it is still in the marker region and a
+            // second press nudges again; an outdent that eats the ground
+            // under it leaves it at the line's start, which is inside the
+            // region too.
+            let width = (replacement as NSString).length
+            let landing = caret.location >= NSMaxRange(range)
+                ? caret.location - range.length + width
+                : range.location + width
+            setSelectedRange(NSRange(location: landing, length: 0))
+        }
         return true
     }
 
@@ -4743,29 +4806,44 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         // marked-range bookkeeping may land on either side of it;
         // without the bracket, the first marked replacement can read
         // as a resolution and leak a mid-composition op.
-        coordinator?.markedTextInFlight = true
-        super.setMarkedText(
-            string, selectedRange: selectedRange, replacementRange: replacementRange)
-        coordinator?.markedTextInFlight = false
-        // Marking with an empty string IS the cancel: the view is
-        // unmarked again, and the composition must settle to zero ops.
-        coordinator?.finishCompositionIfPending()
+        withEditIntent(.composition) {
+            coordinator?.markedTextInFlight = true
+            super.setMarkedText(
+                string, selectedRange: selectedRange, replacementRange: replacementRange)
+            coordinator?.markedTextInFlight = false
+            // Marking with an empty string IS the cancel: the view is
+            // unmarked again, and the composition must settle to zero ops.
+            coordinator?.finishCompositionIfPending()
+        }
     }
 
     /// The commit path: the input context replaces the marked text
     /// with the final string. The composition settles after the edit,
     /// as one diffed batch against the pre-composition baseline.
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        super.insertText(string, replacementRange: replacementRange)
-        coordinator?.finishCompositionIfPending()
+        let target = replacementRange.location == NSNotFound ? selectedRange() : replacementRange
+        let intent: EditorEditIntent
+        if coordinator?.imeComposition != nil || hasMarkedText() {
+            intent = .composition
+        } else if target.length > 0 {
+            intent = .replacement
+        } else {
+            intent = .typing
+        }
+        withEditIntent(intent) {
+            super.insertText(string, replacementRange: replacementRange)
+            coordinator?.finishCompositionIfPending()
+        }
     }
 
     /// A composition can end without a resolving character edit (a
     /// cancel that removed nothing because nothing was composed); the
     /// unmark is the one signal that always fires, so settle here.
     override func unmarkText() {
-        super.unmarkText()
-        coordinator?.finishCompositionIfPending()
+        withEditIntent(.composition) {
+            super.unmarkText()
+            coordinator?.finishCompositionIfPending()
+        }
     }
 
     /// Esc hands the keyboard back (docs/spec/04, the focus law).

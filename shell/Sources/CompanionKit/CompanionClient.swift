@@ -783,18 +783,22 @@ public class CompanionClient: @unchecked Sendable {
     /// False means the batch was rejected whole and nothing moved;
     /// the caller re-converges through `syncDocument`.
     ///
-    /// `startingNewStep` marks a batch the page produced on the
-    /// writer's behalf rather than at their dictation (a continued list
-    /// marker, a nudged indent). It begins its own undo step, so one
-    /// press takes the automation back and leaves the words typed
-    /// before it standing.
+    /// `intent` supplies the editing gesture; the core owns grouping.
     @discardableResult
-    public func applyOps(sheet: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
+    public func applyOps(
+        sheet: UInt64,
+        json: String,
+        intent: EditorEditIntent = .typing
+    ) -> Bool {
         json.withCString {
-            startingNewStep
-                ? companion_sheet_apply_ops_as_new_step(handle, sheet, $0)
-                : companion_sheet_apply_ops(handle, sheet, $0)
+            companion_sheet_apply_ops_with_intent(handle, sheet, $0, intent.rawValue)
         }
+    }
+
+    /// End the current coalescing run without creating an undo item.
+    @discardableResult
+    public func finishEditingGroup(sheet: UInt64) -> Bool {
+        companion_sheet_finish_editing_group(handle, sheet)
     }
 
     /// Push a whole document snapshot (JSON runs) to the core. The
@@ -1328,12 +1332,20 @@ public class CompanionClient: @unchecked Sendable {
     /// Apply an ordered edit batch to the file's body. False means the
     /// batch was rejected whole and nothing moved.
     @discardableResult
-    public func applyFileOps(_ file: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
+    public func applyFileOps(
+        _ file: UInt64,
+        json: String,
+        intent: EditorEditIntent = .typing
+    ) -> Bool {
         json.withCString {
-            startingNewStep
-                ? companion_file_apply_ops_as_new_step(handle, file, $0)
-                : companion_file_apply_ops(handle, file, $0)
+            companion_file_apply_ops_with_intent(handle, file, $0, intent.rawValue)
         }
+    }
+
+    /// End the current coalescing run without creating an undo item.
+    @discardableResult
+    public func finishFileEditingGroup(_ file: UInt64) -> Bool {
+        companion_file_finish_editing_group(handle, file)
     }
 
     /// Take back the file's last local edit step.
