@@ -100,10 +100,11 @@ window (⇧⌘W) before starting each check.
       *ADR-0033 note:* with the editor window **open**, this route
       instead selects the editor window and rests the panel; that is
       the editor case below.
-- [ ] **Pinned, across a switch.** *Panel.* Pin the card, then switch
-      desktops with ⌃→ and ⌃←. The card stays put and readable on
-      each, and the log carries no `mouse gate=closed` line while it
-      is plainly visible.
+- [ ] **Pinned, across a switch.** *Panel.* Raise the card
+      (⌃⌥Space), turn the pin on from the header toggle and rest it
+      (Esc), then switch desktops with ⌃→ and ⌃←. The card stays put
+      and readable on each, and the log carries no `mouse gate=closed`
+      line while it is plainly visible.
 - [ ] **The Dock icon, editor closed.** *Panel.* From Desktop 3 with
       the editor window closed, click the Dock tile. The panel raises
       on Desktop 3.
@@ -145,10 +146,11 @@ as expected under its Consequences ("The editor window has a desktop.
 editor window is on, as it does for any document application").
 
 - [ ] **⌘Tab from another desktop selects the editor window and
-      changes desktops.** *Editor.* Open the editor window (menu:
-      File ▸ New, or ⌘Tab from anywhere if it was open recently) and
-      leave it on Desktop 1. Go to Desktop 3, work in another app,
-      then ⌘Tab to OnetimePad. **Pass:** the screen switches to
+      changes desktops.** *Editor.* Open the editor window (click the
+      Dock tile, or ⌘Tab to OnetimePad; either route opens it when it
+      is closed, and no menu item does) and leave it on Desktop 1. Go
+      to Desktop 3, work in another app, then ⌘Tab to OnetimePad.
+      **Pass:** the screen switches to
       Desktop 1, the editor window comes forward keyed and the panel
       rests (its `holdsKeys` becomes false). **Fail:** either the
       screen does not switch (an editor window that behaves as an all
@@ -180,10 +182,12 @@ editor window is on, as it does for any document application").
 ### A pinned panel floats above the editor window (ADR-0033)
 
 - [ ] **Pin the panel, then raise the editor window keyed.** *Both.*
-      Pin the panel (Settings, or the pin control on the card), open
-      the editor window (⌘N). **Pass:** the panel floats above the
-      editor window; typing goes to the editor window and the panel
-      stays visible on top. **Fail:** the panel drops beneath the
+      Raise the panel (⌃⌥Space) and turn the pin on from the pin
+      control in the card header, which is the only pin control and
+      is workable only while raised, then open the editor window by
+      clicking the Dock tile or by ⌘Tab. **Pass:** the panel floats
+      above the editor window; typing goes to the editor window and
+      the panel stays visible on top. **Fail:** the panel drops beneath the
       editor window when the editor takes keys, or the editor floats
       above the panel. Pin means the panel is above every ordinary
       window, editor included; the editor window itself never floats.
@@ -328,10 +332,12 @@ turn it on.
       card stays above that app's windows. ⌘Tab back and confirm the
       card is still there, keyed. Turn the preference off again before
       moving on.
-- [ ] **Pin outranks both.** With the preference off, pin the card
-      (raised or resting), ⌘Tab to another app. **Pass:** the card
-      stays above. Repeat with the preference on and confirm the same
-      answer; Pin is the stronger, explicit promise (ADR-0032).
+- [ ] **Pin outranks both.** With the preference off, raise the card
+      and turn the pin on from the header toggle, then ⌘Tab to another
+      app; repeat with the card rested (Esc) after pinning. **Pass:**
+      the card stays above. Repeat with the preference on and confirm
+      the same answer; Pin is the stronger, explicit promise
+      (ADR-0032).
 - [ ] **Press on a partly covered card takes keys and lifts.** With
       the preference off, raise the card, ⌘Tab to another app whose
       window covers most of the card, and click on the visible sliver
@@ -355,10 +361,13 @@ Spaces. The checks below are how that is confirmed on hardware.
 
 They are judged by a probe and not by eye.
 `scripts/window-order-probe.swift` reads the window server's front to
-back list and prints one `VERDICT` line per sample. `scripts/dev.sh`
-builds it into `dist/window-order-probe` alongside the app. On a
-desktop Space, start it in `--watch` mode so it samples 1.5 s after
-every app activation and Space change:
+back list and prints one `VERDICT` line per sample. `scripts/dev.sh
+--with-probe` builds it into `dist/window-order-probe` alongside the
+debug bundle; the flag is off by default. That bundle runs under
+`dev.onetimesecret.pad`, so widen the log predicate for these checks to
+`subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}`; the
+probe itself finds either id. On a desktop Space, start it in `--watch`
+mode so it samples 1.5 s after every app activation and Space change:
 
 ```
 dist/window-order-probe --watch --expect behind
@@ -457,11 +466,13 @@ again.
 
 - [ ] **About stays in front while Pin and the preference move.** With
       the card resting and unpinned, open About and leave it open.
-      Toggle Pin on the card. **Pass:** the card floats and About is
-      still in front of it. Unpin, raise the card, open Settings and
-      turn **Keep OnetimePad above other apps when switching away** on,
-      then off, with About still open. **Pass:** About is never left
-      underneath the card at any step. **Fail:** About is stranded
+      Raise the card (⌃⌥Space), turn the pin on from the header toggle
+      and rest it (Esc). **Pass:** the card floats and About is
+      still in front of it. Raise the card and turn the pin off, open
+      Settings and turn **Keep OnetimePad above other apps when
+      switching away** on, then off, with About still open. **Pass:**
+      About is never left underneath the card at any step. **Fail:**
+      About is stranded
       beneath the card after a toggle, which is what a level read only
       once at open produces.
 

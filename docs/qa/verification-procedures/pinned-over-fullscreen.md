@@ -61,9 +61,11 @@ log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 The line to look for is `mouse gate=closed onActiveSpace=… unoccluded=…`
 or its `open` counterpart. It is printed only when the gate moves.
 
-Then: pin the card (Settings, or the pin control on the card), put Zed
-(or any app) into full screen on its own Space, and switch to that
-Space.
+Then: raise the card (⌃⌥Space) and turn the pin on from the pin control
+in the card header, which is the only pin control and is workable only
+while raised, since a click on a resting card means raise; rest the
+card (Esc), put Zed (or any app) into full screen on its own Space, and
+switch to that Space.
 
 ## The checks
 
@@ -94,22 +96,26 @@ Space.
       change can cause. Switch back and forth half a dozen times: the
       gate must come back open every time, not merely the first.
 - [ ] **The pin, toggled under a cover.** On an ordinary desktop with
-      another app's window covering the card completely, turn the pin on
-      and off from Settings a few times, then move the covering window
-      aside. The card answers a click. The pin writes the gate from a
-      settled reading taken after the level and frame have moved, so a
-      pin judged from the posture it was leaving would show up here as a
-      card that never comes back.
+      another app's window covering the card's resting place
+      completely, raise the card with ⌃⌥Space (it comes up over the
+      cover), turn the pin on and off from the header toggle a few
+      times, ending with it on, and rest the card (Esc); then move the
+      covering window aside. The card answers a click. The pin writes
+      the gate from a settled reading taken after the level and frame
+      have moved, so a pin judged from the posture it was leaving would
+      show up here as a card that never comes back.
 - [ ] **The pin, toggled while raised.** Same full cover, but raise the
-      card first with ⌃⌥Space, then toggle the pin from the tray menu
-      (a menu, so the raise survives the click). Roughly a second later
-      the stream carries `mouse gate=closed`. The pin rewrites the gate
+      card first with ⌃⌥Space, then toggle the pin from the header
+      toggle (a control inside the card, so the raise survives the
+      click). Roughly a second later the stream carries `mouse
+      gate=closed`. The pin rewrites the gate
       from the stance's own ungated rule, which for a raise is open, and
       the settling reading that follows may not close it over a raise;
       the scheduled reading is the only thing that will. Silence here
       means an invisible card left holding the mouse for as long as the
       raise lasts.
-- [ ] **The unpinned rest is untouched.** Turn the pin off, click over
+- [ ] **The unpinned rest is untouched.** Raise the card, turn the pin
+      off from the header toggle and rest it (Esc), then click over
       the card on a bare desktop: the click still passes through to the
       Finder desktop (ADR-0015). Nothing in this change may hand the
       unpinned rest a click.
