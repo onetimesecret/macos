@@ -290,8 +290,11 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   case.
 - [`spaces-and-cmd-tab.md`](verification-procedures/spaces-and-cmd-tab.md).
   Owner: delano. ⌘Tab back landing where the user is rather than on
-  Desktop 1, the shape of any flicker on return, and the edge drag that
-  ADR-0019 decides against rather than fixes (issue #74). Now also
+  Desktop 1 (since ADR-0033 the return selects the editor window, so
+  the panel's own raise and re-key are checked on the hotkey route),
+  the shape of any flicker on a summon between desktops, and the edge
+  drag that ADR-0019 decides against rather than fixes (issue #74).
+  Now also
   the ADR-0032 checks for normal inactive stacking: ⌘Tab away with the
   preference off drops the raised card to normal, a hotkey raise then
   ⌘Tab between two other apps stays normally stacked, the preference
@@ -299,8 +302,9 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   card takes keys (issue #190). The full-screen Space checks follow
   ADR-0034, where full-screen participation follows the altitude: ⌘Tab
   into a full-screen app leaves the card out of that Space, a hotkey
-  summon inside one still lands, the return by ⌘Tab keys the card, and
-  the `collectionBehavior` writes are counted per key transition. Each
+  summon inside one still lands, the return by ⌘Tab opens the editor
+  window and rests the card, and the `collectionBehavior` writes are
+  counted per key transition. Each
   is judged by the VERDICT line of `scripts/window-order-probe.swift`
   (issue #184). About staying in front while Pin and the preference
   are toggled is checked here too (issue #188). Not an ADR-0016 case.
