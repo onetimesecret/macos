@@ -9,9 +9,13 @@ is the all Spaces panel.
 **Raised by:** issue #74, from the dogfood aberrations log of
 2026-08-19.
 **Owner:** delano.
-**Status:** partly run. On 2026-09-28 the maintainer ran the ADR-0033
-checks and the checks of issues #184, #190 and #210 on hardware and
-reported every one passed. Rows with an empty result have not been run.
+**Status:** partly run. On 2026-09-28 the maintainer ran on hardware,
+and reported passed, exactly these: the four sections marked ADR-0033
+(⌘Tab and the editor window; A pinned panel floats above the editor
+window; Editor window full screen; Stage Manager and Mission Control),
+the checks of issue #190, two checks of issue #184 (the press on a
+partly covered card, and ⌘Tab into a full-screen Space), and the seven
+B4 routes of issue #210. Rows with an empty result have not been run.
 
 ## Scope after ADR-0033
 
@@ -411,8 +415,14 @@ machine can judge.
 Two apps beside OnetimePad make the checks cheap: pick two windowed
 apps you can ⌘Tab between (Safari and Terminal, say), and leave both
 open. Confirm the surface preference **Keep OnetimePad above other apps
-when switching away** is off before the first run; the last two checks
-turn it on.
+when switching away** is off before the first run; the checks that need
+it on say so and turn it off again.
+
+Issue #190 lists twelve checks. Eleven are below; the twelfth, About
+with Pin on, is the About check under companion windows further down.
+Its first check predates ADR-0033 and ended with a ⌘Tab back to a keyed
+card; that return now selects the editor window, so the check below
+re-keys the card with the hotkey instead.
 
 - [ ] **⌘Tab away stacks normally, preference off.** *Panel.* Raise the
       card (⌃⌥Space), ⌘Tab to another app, and confirm the other app's
@@ -449,7 +459,80 @@ turn it on.
       floating and types at once. **Fail:** the mouse gate refuses the
       click (a lowered raised surface is a case the exposure gate saw
       rarely before, issue #73) and the press lands in the other app
-      instead.
+      instead. Issue #184 lists the same route as its last one.
+- [ ] **The first press in another app rests the card, preference on or
+      off.** *Panel.* With the preference off, raise the card (⌃⌥Space),
+      ⌘Tab to another app, then click once into that app's window.
+      Repeat with the preference on. **Pass:** the first press rests
+      the card each time (the next `stance=` line reads `resting`),
+      and the press lands in the other app. This is the outside click
+      rule, unchanged by decision (ADR-0032: "Keep the outside-click
+      rule unchanged."). A raised card watches for presses outside it
+      whatever its level, and `OutsidePress.rests` spares only a press
+      a menu or a modal of ours owns. **Fail:** the card stays raised
+      after a press into the other app. A card that rests is not a
+      defect here.
+- [ ] **Settings from `⌘,`, the app menu and the status item, Pin on and
+      off.** *Companion.* Open Settings by each route in turn and close
+      it between them: `⌘,` with the card raised and keyed; the app
+      menu's Settings… item, with the app active (⌘Tab to it, which
+      opens the editor window); and the status item, by ⌥ click or by
+      its right click menu's Settings… item. Run all three with the pin
+      off, then with the pin on (raise the card, use the header toggle,
+      rest it with Esc). **Pass:** every time, Settings opens in front
+      of the card, keyed, and what is typed lands in Settings. ADR-0032:
+      "When Settings or another ordinary window of OnetimePad takes the
+      keyboard, its level must be compatible with the surface's
+      resulting inactive altitude." `CompanionLevelFollower` holds
+      Settings at the card's keyless altitude for as long as it is open.
+      **Fail:** Settings opens beneath the card, or opens without the
+      keyboard.
+- [ ] **The preference toggled inside Settings over a raised keyless
+      card.** *Companion.* With the pin off, raise the card (⌃⌥Space),
+      then open Settings with `⌘,`; Settings takes the keyboard, so the
+      card is raised and keyless. Turn **Keep OnetimePad above other
+      apps when switching away** on, then off, then on, and finish with
+      it off. **Pass:** Settings stays in front of the card at every
+      toggle. Each toggle moves the card between normal and floating,
+      and `CompanionLevelFollower` moves Settings with it. **Fail:**
+      Settings is left beneath the card after a toggle.
+- [ ] **Open panel round trip on a desktop.** *Panel.* On an ordinary
+      desktop, with the pin and the preference off, raise the card
+      (⌃⌥Space), press ⌘O, then Cancel. **Pass:** while the open panel
+      is up the card is keyless at normal level; after Cancel the card
+      is keyed and floating again, and what is typed lands in the page.
+      The modal's end is the `.modalReturn` route, which goes back to
+      the owner (ADR-0033: "A modal return and a cancelled quit go back
+      to the owner."), here the panel, as `.raisePanel(.activation)`.
+      **Fail:** the card does not come back keyed and floating. This
+      differs from "Our own open panel inside A" below, which runs the
+      same round trip inside another app's full-screen Space, where the
+      card is expected to leave that Space while the panel is up.
+- [ ] **Under Stage Manager, into another app's full-screen Space, and
+      on a second display.** *Panel.* Repeat the first two checks of
+      this section, ⌘Tab away and the hotkey raise with ⌘Tab between
+      two other apps, under each of three conditions: Stage Manager on;
+      the other app in its own full-screen Space, judged with the probe
+      as the first full-screen check below describes; and a second
+      display attached, with the other app's window on the display the
+      card is on. **Pass:** under every condition the newly active
+      app's windows cover the card, and no frame shows the card above
+      them. **Fail:** the card stays drawn above the newly active app
+      under any of the three. That is ADR-0032's first eject trigger,
+      which names Stage Manager outright: "including under Stage
+      Manager".
+- [ ] **A summon never flashes at a lower level before coming
+      forward.** *Panel.* Put another app's window over the card's
+      place. Press ⌃⌥Space and watch the card, rest it (Esc), and
+      repeat several times, first unpinned and then pinned. Then raise
+      the card, ⌘Tab to the other app so the card drops to normal
+      beneath it, and press ⌃⌥Space again. **Pass:** each summon brings
+      the card forward above the other window at once; no frame shows
+      it beneath that window first. The raise resolves the altitude as
+      keyed before the panel is ordered front (ADR-0032: "The raise
+      path must apply engaged altitude before ordering the panel
+      front"). **Fail:** any frame of the card under the other window
+      on its way up.
 
 ### Full-screen Spaces (ADR-0034, issue #184)
 
@@ -570,6 +653,143 @@ again.
       a raise that did not take (ADR-0034), and it is correct. A card
       that stays, keyless, over A is a fail.
 
+### B4 activation routes (ADR-0033, issue #210)
+
+B4 sent every activation and every summon through one routing table,
+`ActivationRouter.decide` in `ActivationRoute.swift`, which carries out
+ADR-0033's rule that launch and activation are decided by route. Issue
+#210 owes a probe run of each route B4 added or changed, against a dev
+build. Build and launch with `scripts/dev.sh --with-probe`, and in a
+terminal on a desktop run the command the issue gives:
+
+```
+dist/window-order-probe --pad-pid <dev-pid> --watch --expect behind
+```
+
+`--pad-pid` adds the dev process to the pads the probe knows and
+excludes none, so with the installed copy running as well, pin the dev
+card with `--card-window N`, taking N from the dev build's
+`stance=... window=N` line. Pin it whenever the editor window is open,
+too: without a pin the probe takes the pad's frontmost window of real
+size, which can then be the editor window. The card is unpinned and the
+keep above preference off unless a route says otherwise.
+
+Each route is judged the same way. While another app is frontmost the
+card must be behind its window or absent: `VERDICT PASS
+expect=behind`. While OnetimePad is frontmost the probe prints
+`VERDICT SKIP` with `reason=pad-is-frontmost`, which is expected there
+and judges nothing, so the window outcome is read from the stream. Any
+`VERDICT FAIL` fails the route, and issue #210 treats it as a
+regression. Paste each route's verdict lines into its row. Issue #210
+also asks that ADR-0034 Amendment 1's case, ⌘Tab into a full-screen
+Space unpinned with the preference off, has not regressed; that is the
+first full-screen check above, and its row records it.
+
+- [ ] **⌘Tab to another app, then back.** *Both.* With OnetimePad
+      active and the editor window keyed (⌘Tab to it), raise the card
+      with ⌃⌥Space so it owns the page and holds the keyboard. ⌘Tab to
+      another app on the same desktop and wait for the sample, then
+      ⌘Tab back to OnetimePad and wait for the next. **Pass:** the
+      sample on the way out reads `VERDICT PASS expect=behind`, the card
+      having dropped to normal behind the other app's window. On the
+      way back the editor window comes forward keyed and the raised
+      card rests as it takes the keyboard (the stream carries `key
+      gain=editor-window turn=rests-panel`), and that sample reads
+      `VERDICT SKIP` with `reason=pad-is-frontmost`. The return is a
+      `.lateActivation`, which the routing table answers with the
+      editor window. **Fail:** any `VERDICT FAIL`, or the return keys
+      the card instead of the editor window.
+- [ ] **Dock click while the editor window is closed.** *Editor.* Close
+      the editor window (⇧⌘W), which hands the activation back (the
+      last route below), so another app is frontmost. Click the Dock
+      tile. **Pass:** the editor window opens keyed on this desktop
+      (the stream carries `editor window=open`), the card is not
+      raised, and the sample reads `VERDICT SKIP` with
+      `reason=pad-is-frontmost`, with no `VERDICT FAIL` before it. A
+      Dock click on an inactive app arrives as an activation and may
+      also arrive as a reopen, and the routing table answers both with
+      the editor window, opening it when it is closed. **Fail:** the
+      panel raises, the editor window does not open, or any `VERDICT
+      FAIL`. This differs from "The Dock icon, editor closed" above,
+      which starts on another desktop and is judged by eye on whether
+      the desktop changes; this one stays on one desktop and is judged
+      by the probe and the stream.
+- [ ] **Reopen: ⌘H, then click the Dock icon.** *Editor.* With the
+      editor window open and keyed, press ⌘H. The app hides, another app
+      becomes frontmost, and the sample reads `VERDICT PASS
+      expect=behind`. Click the Dock tile. **Pass:** the app comes back,
+      the editor window comes forward keyed (the reopen and the
+      activation both route to `.openEditorWindow`), the card is back at
+      rest, and the sample reads `VERDICT SKIP` with
+      `reason=pad-is-frontmost`. **Fail:** the panel raises instead of
+      the editor window, the editor window stays hidden, or any `VERDICT
+      FAIL`. This differs from "Reopen selects the editor window" above,
+      which closes the window rather than hiding the app.
+- [ ] **Modal return: open Settings, close it.** *Both.* Settings is
+      not a modal session. Its close is read by the key turn rule
+      (`BackdropModel.auxiliaryWindowReleasedKeys` and `keyTurn`), which
+      sends the keyboard back to the owner as ADR-0033 asks of a modal
+      return ("A modal return and a cancelled quit go back to the
+      owner."). Run it twice. First, with the editor window open and
+      the card raised and keyed (⌃⌥Space), press `⌘,`, then close
+      Settings with its close button. **Pass:** the card is still
+      raised and has the keyboard again. If AppKit keys the editor
+      window on the way out, the stream reads `key gain=editor-window
+      turn=returns-keys armed=true` and the card is keyed a turn later.
+      Second, with the card resting and the editor window keyed, open
+      and close Settings the same way. **Pass:** the editor window has
+      the keyboard again. Both times the samples read `VERDICT SKIP`
+      with `reason=pad-is-frontmost`. **Fail:** the first run rests the
+      card (a `turn=rests-panel` line after the close), the second
+      leaves no window of ours keyed, or any `VERDICT FAIL`.
+- [ ] **Cancelled quit: a first ⌘Q the flush refuses, back to the
+      owner.** *Both.* There is no quit sheet to cancel. The first ⌘Q
+      is cancelled only when the flush is refused or the session holds
+      work it may not write (`QuitPrompt.terminateReply`,
+      `PageModel.quitOutcome`), and the app then puts the quit anyway
+      line under the page. The locked keychain procedure produces such
+      a session: follow steps 1, 3 and 4 of its Case 1
+      ([`locked-keychain.md`](locked-keychain.md)) with the dev build in
+      place of the installed app, then type a line on the page. A
+      second ⌘Q in the same session quits, so each owner takes a
+      session of its own. In the first, with the editor window keyed,
+      press ⌘Q once. In the second, with the app active, press ⌃⌥Space
+      so the card owns and holds the keyboard, then press ⌘Q once.
+      **Pass:** the app keeps running, and the window that owns the
+      page comes forward keyed with the quit anyway line under its
+      page: the editor window in the first session
+      (`.openEditorWindow(.activation)`), the card in the second
+      (`.raisePanel(.activation)`). The samples read `VERDICT SKIP`
+      with `reason=pad-is-frontmost`, and a second ⌘Q quits. **Fail:**
+      the first ⌘Q quits, the window that does not own the page comes
+      forward instead, or any `VERDICT FAIL`.
+- [ ] **Summon over a full-screen Space, Esc, back to the underlying
+      app.** *Panel.* This route activates nothing, so `--watch` stays
+      silent; run it with a delayed sample, as issue #210 says. Put app
+      A full screen. On a desktop start `dist/window-order-probe
+      --pad-pid <dev-pid> --after 8 --expect behind`, with
+      `--card-window N` as above, then go into A, press ⌃⌥Space, then
+      Esc, all before the sample fires. **Pass:** the card arrives over
+      A keyed and then rests, A has the keyboard back (what is typed
+      lands in A), and the verdict read afterwards is `VERDICT PASS
+      expect=behind`. Record whether it says `card=absent` or gives the
+      card an index behind A's window. **Fail:** `VERDICT FAIL`, the
+      card left drawn over A, or the keyboard left with a card that has
+      rested. This differs from "Summoned from another app's
+      full-screen Space" above, which checks that the summon lands and
+      takes keys; this one checks the rest that follows, by the probe.
+- [ ] **Editor window close hands activation back.** *Editor.* With
+      the editor window keyed, the card resting, Settings and About
+      closed, and another app's window on the same desktop, press ⇧⌘W.
+      **Pass:** the editor window closes (the stream carries `editor
+      window=closed`), OnetimePad deactivates and another app takes
+      the keyboard, and the sample that activation triggers reads
+      `VERDICT PASS expect=behind`. The close hands the activation back
+      because no window of ours that can take the keyboard is left
+      (`PrimaryEditorWindowController.closeHandsBackActivation`).
+      **Fail:** OnetimePad stays active with no window that can take
+      the keyboard, so typing goes nowhere, or any `VERDICT FAIL`.
+
 ### Companion windows follow the surface (ADR-0032, issue #188)
 
 - [ ] **About stays in front while Pin and the preference move.**
@@ -581,7 +801,9 @@ again.
       when switching away** on, then off, with About still open.
       **Pass:** About is never left underneath the card at any step.
       **Fail:** About is stranded beneath the card after a toggle, which
-      is what a level read only once at open produces.
+      is what a level read only once at open produces. Its first pass,
+      About in front of the card with the pin on, is also issue #190's
+      check About with Pin on.
 
 ### The drag, which is a decision rather than a fix
 
@@ -628,7 +850,13 @@ is about, in the split ADR-0033 gives.
 | 2026-09-28 | not recorded | panel | hotkey raise then ⌘Tab A→B, no flash | pass | ADR-0032, #190. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | panel | preference on: raised stays above on ⌘Tab | pass | ADR-0032, #190. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | panel | Pin outranks preference in both stances | pass | ADR-0032, #190. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | panel | press on a partly covered card takes keys | pass | ADR-0032, issue #73 and #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | press on a partly covered card takes keys | pass | ADR-0032, issue #73, #184 and #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | first mouse press in another app rests the card, preference on or off | pass | ADR-0032, #190. The outside click rule, unchanged. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | companion | Settings from `⌘,`, the app menu and the status item, Pin on and off: in front and keyed, never beneath the card | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | companion | preference toggled inside Settings over a raised keyless card: Settings stays in front | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | open panel round trip on a desktop: the card comes back keyed and floating | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | Stage Manager, another app's full-screen Space and a second display: the newly active app covers the card | pass | ADR-0032, #190. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | panel | a summon never flashes at a lower level before coming forward | pass | ADR-0032, #190. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | panel | ⌘Tab into a full-screen Space: card absent | pass | Reported passed by the maintainer; the VERDICT line was not pasted. ADR-0034, #184. |
 | | | panel | hotkey summon inside full-screen A, then ⌘Tab to B on a desktop | | Paste the VERDICT lines for B and for the return to A. ADR-0034. |
 | | | panel | hotkey summon inside full-screen A lands keyed | | Paste the VERDICT line (`--after 8 --expect above`). ADR-0034. |
@@ -637,18 +865,12 @@ is about, in the split ADR-0033 gives.
 | | | both | return by ⌘Tab from the full-screen Space: the editor window opens on a desktop and the card rests | | Record the desktop it settled on and the stance line; the probe skips with OnetimePad frontmost. ADR-0033, ADR-0034. |
 | | | panel | pinned and keep above still follow into a full-screen Space | | Paste the VERDICT lines (`--expect above`). ADR-0034. |
 | | | panel | refused raise inside A shows one appear and disappear at most | | ADR-0034. |
-| 2026-09-28 | not recorded | companion | About stays in front while Pin and the preference are toggled | pass | ADR-0032, #188. Reported passed by the maintainer. |
-| | | panel | edge drag stays on this desktop | | The documented decision, ADR-0019. |
-| 2026-09-28 | not recorded | panel | first mouse press in another app rests the card, preference on or off | pass | ADR-0032, #190. The outside click rule, unchanged. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | companion | Settings by ⌘, the app menu and the status item, Pin on and off: visible and keyed, never beneath the card | pass | ADR-0032, #190. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | companion | preference toggled inside Settings over a raised keyless card: Settings stays in front | pass | ADR-0032, #190. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | panel | open panel round trip: the card comes back keyed and floating | pass | ADR-0032, #190. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | panel | Stage Manager, another app's full screen Space and a second display | pass | ADR-0032, #190. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | panel | a summon never flashes at a lower level before coming forward | pass | ADR-0032, #190. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | both | ⌘Tab to another app, then back | pass | B4 probe route, #210. ADR-0033, ADR-0034. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | Dock click while the editor window is closed opens it | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | reopen: ⌘H, then click the Dock icon | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | both | modal return: open Settings, close it | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
-| 2026-09-28 | not recorded | both | cancelled quit: ⌘Q, cancel the sheet | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | both | cancelled quit: a first ⌘Q the flush refuses goes back to the owner | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. Issue #210 words it as cancelling a sheet; the code presents none, see the check. |
 | 2026-09-28 | not recorded | panel | summon over a full-screen Space, Esc, back to the underlying app | pass | B4 probe route, #210. ADR-0034. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | editor window close hands activation back | pass | B4 probe route, #210. ADR-0033. Reported passed by the maintainer. |
+| 2026-09-28 | not recorded | companion | About stays in front while Pin and the preference are toggled | pass | ADR-0032, #188, and #190 (check 9, About with Pin on). Reported passed by the maintainer. |
+| | | panel | edge drag stays on this desktop | | The documented decision, ADR-0019. |
