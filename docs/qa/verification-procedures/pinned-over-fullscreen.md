@@ -120,10 +120,11 @@ switch to that Space.
 - [ ] **The pin, turned off while raised over a cover, then rested.**
       Same cover. Raise the card, turn the pin off from the header
       toggle, and rest it (Esc). **Pass:** the card drops beneath the
-      cover and the stream stays silent, because the unpinned rest
-      ignores the mouse by its stance, ungated, so there is no gate to
-      move; once the covering window is moved aside a click over the
-      card falls through to the desktop, which is the next check.
+      cover and the stream carries no `mouse gate=` line, because the
+      unpinned rest ignores the mouse by its stance, ungated, so there
+      is no gate to move. The rest's own `stance=resting` line is
+      expected. Once the covering window is moved aside a click over
+      the card falls through to the desktop, which is the next check.
 - [ ] **The unpinned rest is untouched.** Raise the card, turn the pin
       off from the header toggle and rest it (Esc), then click over
       the card on a bare desktop: the click still passes through to the
@@ -196,7 +197,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | log shows the gate closing | | |
 | | | gate reopens off the full-screen Space | | Every switch, not only the first. |
 | | | pin turned on while raised over a full cover, then rested | | No `mouse gate=closed` line; the pinned rest answers a click. |
-| | | pin turned off while raised over a full cover, then rested | | Silent stream; the card drops beneath the cover. |
+| | | pin turned off while raised over a full cover, then rested | | No `mouse gate=` line; the card drops beneath the cover. |
 | | | unpinned rest still passes clicks through | | |
 | | | first click after a raise lands | | |
 | | | the raise's second reading leaves a visible card clickable | | |
