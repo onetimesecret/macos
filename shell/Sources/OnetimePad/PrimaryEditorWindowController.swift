@@ -7,18 +7,23 @@ import os
 /// The primary editor window (ADR-0033): an ordinary titled, resizable
 /// window at normal level over the same pages the panel shows. Its
 /// entrances are the routing table's (`ActivationRouter`): a launch the
-/// person performs, ⌘Tab, a Dock click and a reopen select it, a modal
-/// return and a cancelled quit select it while it owns, and the hotkey
-/// and the status item select it only with the ambient panel off.
+/// person performs, ⌘Tab, a Dock click and a reopen select it, a
+/// cancelled quit selects it while it owns, and the hotkey and the
+/// status item select it only with the ambient panel off. The table
+/// would send a modal return here too while this window owns, but the
+/// delegate asks it only over a raised panel
+/// (`BackdropAppDelegate.modalSessionEnded`), and a raised panel always
+/// owns, so the keyboard's return to this window after a modal is
+/// AppKit's own.
 ///
 /// One store, one model: the root view is handed the panel's own
 /// `PageModel`, never a second one. Exactly one of the two windows owns
 /// the live page content at a time (`PageModel.owner`). This one owns
-/// while it is open and the panel rests, and shows a placeholder while
-/// a raised panel has the page. What it reports to the model is three
-/// facts, that it opened or closed, that it gained or lost the keyboard
-/// and whether it is on screen, and `BackdropModel` decides what each
-/// one moves.
+/// while it is open and the panel rests, and shows a glance
+/// (`GlanceView`) while a raised panel has the page. What it reports to
+/// the model is three facts, that it opened or closed, that it gained
+/// or lost the keyboard and whether it is on screen, and
+/// `BackdropModel` decides what each one moves.
 ///
 /// The window is built on each open and dropped on each close. A closed
 /// window keeps its hosting view, and a hosting view keeps its editor
@@ -143,14 +148,16 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     /// The app being hidden is deliberately no input. ⌘H takes every
     /// window off the screen, and the only word AppKit sends when they
     /// come back is the occlusion callback, which arrives some time
-    /// after the activation that brought them. A fact fed from it was
-    /// false at the one moment it was read: ⌘Tab back with Settings
+    /// after the activation that brought them. When the activation
+    /// still read this fact as a claim, a fact fed from that callback
+    /// was false at the one moment it was read: ⌘Tab back with Settings
     /// holding the keys keyed nothing of this window's, the activation
     /// found no claim, and the card was raised over an editor window in
-    /// plain view. Nobody asks the fact while the app is hidden, since
-    /// both routes that read it run in an active app and activating
-    /// unhides, so a hidden window answers as the window it is about to
-    /// be again.
+    /// plain view. The activation no longer reads it
+    /// (`ActivationRouter`). Nobody asks the fact while the app is
+    /// hidden, since the one route that reads it, the rest's activation
+    /// hand back, runs in an active app and activating unhides, so a
+    /// hidden window answers as the window it is about to be again.
     func windowDidMiniaturize(_ notification: Notification) {
         reportOnScreen()
     }

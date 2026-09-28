@@ -24,6 +24,11 @@ import os
 /// older day came back to that sentence and not to today (ADR-0020
 /// item 13).
 ///
+/// With the ambient panel off there is no surface to name. ⌃⌥Space
+/// and the menu-bar item then select the editor window and the
+/// routing table files them as activations (`ActivationRouter`), so
+/// they leave the roll where it was.
+///
 /// The Dock icon is filed as an activation, and it is the one judgement
 /// call here. Clicked while the app is inactive it arrives as
 /// `applicationDidBecomeActive` and while it is active as
@@ -622,11 +627,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// `pages.owner`. Deliberately not published, so that it cannot
     /// grow a subscriber that reads it halfway through a change.
     ///
-    /// Nothing outside this type reads it. The reopen
-    /// (`applicationShouldHandleReopen`) goes through the routing table
-    /// (`ActivationRouter`), which selects the editor window open or
-    /// closed and leaves the choice between opening it and bringing it
-    /// out of the Dock to `PrimaryEditorWindowController.show()`. The
+    /// No shipping code outside this type reads it; the tests do. The
+    /// reopen (`applicationShouldHandleReopen`) goes through the routing
+    /// table (`ActivationRouter`), which selects the editor window open
+    /// or closed and leaves the choice between opening it and bringing
+    /// it out of the Dock to `PrimaryEditorWindowController.show()`. The
     /// one route that needs to know whether the window can take the
     /// keyboard, the rest's activation hand back, asks
     /// `editorWindowCanTakeKeys`.
@@ -645,7 +650,8 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// controller from its delegate callbacks
     /// (`PrimaryEditorWindowController.onScreen`). A plain fact like the
     /// one above, unpublished for the same reason, and no input to the
-    /// owner. A hidden app does not move it: both readers run in an
+    /// owner. A hidden app does not move it: its one reader, the rest's
+    /// activation hand back (`editorWindowCanTakeKeys`), runs in an
     /// active app, activating unhides, and the word AppKit sends about
     /// the windows coming back arrives after the activation has been
     /// judged.
@@ -656,10 +662,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     private(set) var editorWindowOnScreen = false
 
     /// Whether the editor window can take the keyboard right now. The
-    /// rest's activation hand back and the activation's claim both ask
-    /// this, and the keyboard's return with the page asks the same
-    /// question of the window itself (`takesKeysWithOwnership`), so an
-    /// active app is never left waiting on a window in the Dock.
+    /// rest's activation hand back asks this, and the keyboard's return
+    /// with the page asks the same question of the window itself
+    /// (`takesKeysWithOwnership`), so an active app is never left
+    /// waiting on a window in the Dock. The activation no longer asks
+    /// it: the routing table selects the editor window open or closed.
     var editorWindowCanTakeKeys: Bool {
         Self.editorWindowCanTakeKeys(open: editorWindowOpen, onScreen: editorWindowOnScreen)
     }
