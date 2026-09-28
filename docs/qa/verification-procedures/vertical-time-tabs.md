@@ -169,16 +169,26 @@ with its Return grant intact and **no page has been created**.
 bounces; a page appears without a gesture asking for one.
 
 3. Repeat with the card pinned, and repeat with a ⌘Tab away and back
-   rather than a summon. A ⌘Tab return is not a summon: it re-keys the
-   card, and re-anchoring on that path would move the roll under someone
-   who never asked for it. Then do the same with the Dock icon, which is
-   filed the same way for the same reason (the anchor rides the gestures
-   that name this surface (⌃⌥Space, the menu-bar item, a click on the
-   resting card) and never the ones that name the app).
+   rather than a summon. A ⌘Tab return is not a summon: under ADR-0033
+   it selects the primary editor window, opening it when it is closed,
+   and a raised card rests as that window takes the keyboard. The page
+   goes to the editor window with the roll where the reader left it,
+   because re-anchoring on that path would move the roll under someone
+   who never asked for it, so read the roll in the editor window for
+   this step. Then do the same with the Dock icon, which selects the
+   editor window as well and is filed the same way for the same reason
+   (the anchor rides the gestures that name the panel (⌃⌥Space, the
+   menu-bar item, a click on the resting card) and never the ones that
+   name the app).
 
-**Pass:** a ⌘Tab return leaves the scroll where it was, and so does a
-click on the Dock icon; ⌃⌥Space, the menu-bar item and a click on the
-resting card all take it back to today.
+**Pass:** a ⌘Tab return selects the editor window and leaves the scroll
+where it was: the roll in the editor window opens at the place the
+card's roll was left, because the hand off carries the reader's place
+through the model (ADR-0033: "A hand off between windows must carry
+them through the model, or every owner change loses the person's
+place."), and a click on the Dock icon does the same; ⌃⌥Space, the
+menu-bar item and a click on the resting card all take it back to
+today.
 
 ## Case 4: typing at the bottom of a long Day 0
 
@@ -420,8 +430,8 @@ stay: a re-run adds a row rather than replacing one.
 | | | 2 middle day expires | | |
 | | | 2 tabs still standing with the mode off | | |
 | | | 3 summon re-anchors on today | | |
-| | | 3 ⌘Tab return leaves the scroll alone | | |
-| | | 3 Dock icon leaves the scroll alone | | |
+| | | 3 ⌘Tab return selects the editor window and leaves the scroll alone | | ADR-0033. |
+| | | 3 Dock icon selects the editor window and leaves the scroll alone | | ADR-0033. |
 | | | 4 typing at the bottom of a long Day 0 | | Note any stall with three days mounted. |
 | | | 4 resize re-wraps every day | | |
 | | | 5 undo cannot cross a perforation | | |

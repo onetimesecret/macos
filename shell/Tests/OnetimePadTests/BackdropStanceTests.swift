@@ -406,10 +406,15 @@ final class BackdropStanceTests: XCTestCase {
 
     /// The roll goes back to today when the user names the surface, and
     /// stays where the reader left it when they merely name the app
-    /// (issue #79, ADR-0020 item 13). A ⌘Tab return re-keys the card
-    /// without being a summon, and moving the roll under somebody who
+    /// (issue #79, ADR-0020 item 13). Moving the roll under somebody who
     /// came back to the sentence they were reading is the one thing the
     /// anchor must never do.
+    ///
+    /// Scope after ADR-0033: the rule is the model's and both windows
+    /// read it. A ⌘Tab return or a Dock click is an activation that
+    /// selects the editor window, not a re-key of the card, and
+    /// `BackdropAppDelegate.apply` asks this same function before it
+    /// opens that window; the panel asks it on every raise.
     func testOnlyASummonTakesTheRollBackToToday() {
         XCTAssertTrue(BackdropModel.anchorsOnToday(raise: .summon))
         XCTAssertFalse(

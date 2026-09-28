@@ -172,8 +172,10 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
     }
 
     func testAReRaiseOverARaisedKeyedCardWritesNothing() {
-        // What ⌘Tab back does to a card that already holds the
-        // keyboard, and the guard issue 74 was closed with.
+        // What a second summon does to a card that already holds the
+        // keyboard (before ADR-0033 the ⌘Tab return did this too; it
+        // now selects the editor window instead), and the guard issue
+        // 74 was closed with.
         let window = makeWindow()
         let keeper = BackdropAltitudeKeeper(window: window)
         raise(keeper)
