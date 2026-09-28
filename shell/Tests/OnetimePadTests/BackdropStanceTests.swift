@@ -4,17 +4,21 @@ import XCTest
 @testable import OnetimePad
 
 /// The ambient panel's stance split, tested as the pure decision it
-/// is — the shell's pattern for UI-adjacent logic: test the decision
-/// itself, never mock AppKit. The window plumbing that applies it
-/// (ordering, key status, the mouse pass-through) is hand-tested per
+/// is. That is the shell's pattern for UI-adjacent logic: test the
+/// decision itself, never mock AppKit. The window plumbing that applies
+/// it (ordering, key status, the mouse pass-through) is hand-tested per
 /// the project's rules (docs/spec/feature/background-surface, hardware
 /// checklist).
 ///
-/// Scope after ADR-0033: this file governs the ambient panel only.
-/// The primary editor window is an ordinary activating `NSWindow` with
-/// normal level, ordinary Space membership and AppKit full screen
-/// semantics; its window role is not derived from `BackdropStance` and
-/// its behaviour lives in `PrimaryEditorWindowControllerTests`.
+/// Scope after ADR-0033: the stance, altitude, Space and summon rules
+/// here are the ambient panel's. The one rule in this file that is not
+/// is the roll anchor near the end, which is the shared model's and
+/// which both windows read. The primary editor window is an ordinary
+/// activating `NSWindow` with normal level, ordinary Space membership
+/// and AppKit full screen semantics; its window role is not derived
+/// from `BackdropStance`. Its close decision lives in
+/// `PrimaryEditorWindowControllerTests`, and the routes that open it in
+/// `ActivationRouteTests` and `LaunchStanceTests`.
 final class BackdropStanceTests: XCTestCase {
     // MARK: Resting — a passive pane behind everything
 

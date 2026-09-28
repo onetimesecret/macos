@@ -10,13 +10,16 @@ import XCTest
 /// The resting stance a login item is left in is pinned only by its
 /// negative: no activation means the router is never asked.
 ///
-/// Scope after ADR-0033: launch routes both windows. The panel rests
-/// on every launch; the editor window opens for a person's launch, a
-/// Dock click, reopen or ⌘Tab, and, with the ambient panel off, for
-/// the hotkey and the status item as well (ActivationRouteTests holds
-/// those two rows), and never for a login item or any launch the
-/// system performs without activating the app. The cases in this file
-/// are the router's decisions across the launch routes.
+/// Scope after ADR-0033: launch routes both windows. With the ambient
+/// panel on, the panel rests on every launch; with it off, the panel
+/// is not shown at all. The editor window opens for a person's launch,
+/// a Dock click, reopen or ⌘Tab, unless About or Settings claimed the
+/// activation for itself (`testAnActivationAnotherWindowAskedForDoesNothing`),
+/// and, with the ambient panel off, for the hotkey and the status item
+/// as well (ActivationRouteTests holds those two rows). It never opens
+/// for a login item or any launch the system performs without
+/// activating the app. The cases in this file are the router's
+/// decisions across the launch routes.
 final class LaunchStanceTests: XCTestCase {
     private func context(claimedByAnotherWindow: Bool = false) -> ActivationContext {
         ActivationContext(
