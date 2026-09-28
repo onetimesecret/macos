@@ -78,7 +78,6 @@ struct BackdropApp: App {
                 // them, and then the items stay and lose the shortcut.
                 CommandGroup(replacing: .undoRedo) {
                     UndoRedoItems(
-                        steps: appDelegate.editSteps,
                         undoShortcut: appDelegate.undoShortcut,
                         redoShortcut: appDelegate.redoShortcut,
                         send: appDelegate.sendToResponder
@@ -288,7 +287,6 @@ private struct LanguageDetectionMenuItems: View {
 
 @MainActor
 private struct UndoRedoItems: View {
-    @ObservedObject var steps: EditStepAvailability
     let undoShortcut: KeyboardShortcut?
     let redoShortcut: KeyboardShortcut?
     let send: (Selector) -> Void
@@ -296,10 +294,8 @@ private struct UndoRedoItems: View {
     var body: some View {
         Button("Undo") { send(#selector(EditStepResponder.undo(_:))) }
             .keyboardShortcut(undoShortcut)
-            .disabled(!steps.canUndo)
         Button("Redo") { send(#selector(EditStepResponder.redo(_:))) }
             .keyboardShortcut(redoShortcut)
-            .disabled(!steps.canRedo)
     }
 }
 
@@ -421,6 +417,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // scene, and it is the placeholder). Move it into place, so
         // the menu bar reads: App | File | Edit | View | Window | Help.
         Self.moveFileMenuAfterAppMenu()
+        Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -858,10 +855,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// The model the File menu reads its enablement from.
     var pages: PageModel { model.pages }
 
-    /// What the two items grey themselves out on: the core's answer for
-    /// the page under the editor, published by the model.
-    var editSteps: EditStepAvailability { model.pages.editSteps }
-
     /// What Seal Selected Content greys itself out on: whether the
     /// editor holds an editable page with a selection, published by
     /// the model as the selection moves.
@@ -1062,6 +1055,25 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let item = mainMenu.items[index]
         mainMenu.removeItem(at: index)
         mainMenu.insertItem(item, at: 1)
+    }
+
+    /// Turn SwiftUI's two placeholder buttons into ordinary nil-targeted
+    /// AppKit commands. The responder chain then chooses the undo owner: an
+    /// `InkTextView` validates against Loro, while a field editor in Settings
+    /// keeps its native `UndoManager` behavior.
+    static func routeUndoRedoThroughResponder(in mainMenu: NSMenu?) {
+        guard let editMenu = mainMenu?.items.first(where: { $0.title == "Edit" })?.submenu
+        else { return }
+        editMenu.autoenablesItems = true
+        for (title, action) in [
+            ("Undo", #selector(EditStepResponder.undo(_:))),
+            ("Redo", #selector(EditStepResponder.redo(_:))),
+        ] {
+            guard let item = editMenu.items.first(where: { $0.title == title }) else { continue }
+            item.target = nil
+            item.action = action
+            item.isEnabled = true
+        }
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the

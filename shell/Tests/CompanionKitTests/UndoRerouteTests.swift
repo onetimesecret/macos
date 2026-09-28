@@ -333,12 +333,9 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(coreText(), "clicked from the menu")
     }
 
-    /// What actually greys the app's Edit menu out. The items are
-    /// SwiftUI's, so they carry SwiftUI's target and are never offered
-    /// to `validateMenuItem`; `.disabled` reads this pair instead, and
-    /// this pair is the core's own answer for the page under the
-    /// editor.
-    func testTheMenusEnablementFollowsTheCoresAnswer() throws {
+    /// The model's published availability remains the core's answer for any
+    /// affordance outside AppKit's responder-validated menu.
+    func testPublishedAvailabilityFollowsTheCoresAnswer() throws {
         try makeEditor()
         model.mountEditor(textView, from: .panel)
         model.refreshEditSteps()
@@ -372,9 +369,7 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertFalse(model.editSteps.canRedo)
     }
 
-    /// The view still answers for itself, for any route that does
-    /// arrive nil-targeted. This proves the method, not the app's menu,
-    /// which is dimmed from the model above.
+    /// The nil-targeted Edit menu asks the focused view to validate itself.
     func testTheMenuItemsValidateAgainstTheCore() throws {
         try makeEditor()
         let undoItem = NSMenuItem(

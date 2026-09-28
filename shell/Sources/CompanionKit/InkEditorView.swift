@@ -4325,11 +4325,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// stack, and `NSTextView`'s own for everything else the menu asks
     /// about.
     ///
-    /// It is not what greys out the app's own Edit menu. Those two
-    /// items are built in SwiftUI and carry SwiftUI's target rather
-    /// than walking the responder chain to be validated, so they are
-    /// dimmed from `PageModel.editSteps` instead, which asks the core
-    /// the same question this method does.
+    /// The app's Edit menu is nil-targeted, so this is also what greys
+    /// its two items while the editor is first responder. A native field
+    /// editor answers the same selectors through AppKit's own validation.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard let sheet = coordinator?.currentSheet, let model = coordinator?.model else {
             return super.validateMenuItem(item)
