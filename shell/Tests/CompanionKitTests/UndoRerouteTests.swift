@@ -89,10 +89,12 @@ final class UndoRerouteTests: XCTestCase {
         try makeEditor()
         type("a whole thought")
         coordinator.step(back: true)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 0))
         coordinator.step(back: false)
 
         XCTAssertEqual(coreText(), "a whole thought")
         XCTAssertEqual(storage.string, "a whole thought")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 15, length: 0))
         XCTAssertFalse(model.canRedoEdit(sheet: sheet))
     }
 
@@ -174,6 +176,54 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(coreText(), "", "the second burst came back on its own")
         XCTAssertEqual(outcome.caret, 0, "a merged step returns to where it began")
         XCTAssertFalse(model.canUndoEdit(sheet: sheet))
+    }
+
+    func testTypePasteTypeComesBackAsThreeSteps() throws {
+        try makeEditor()
+        type("typed")
+        textView.performOrdinaryPaste(nil, bypassingAutomaticFencing: true) { _ in
+            self.type(" pasted")
+        }
+        type(" again")
+        XCTAssertEqual(coreText(), "typed pasted again")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "typed pasted")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "typed")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "")
+    }
+
+    func testMovingTheCaretFinishesTheTypingGroup() throws {
+        try makeEditor()
+        type("right")
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        type("left ")
+        XCTAssertEqual(coreText(), "left right")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "right")
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "")
+    }
+
+    func testTypingOverASelectionIsOneReplacementStep() throws {
+        try makeEditor()
+        type("before")
+        textView.setSelectedRange(NSRange(location: 0, length: 6))
+        type("after")
+        XCTAssertEqual(coreText(), "after")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "before")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 6))
+        coordinator.step(back: false)
+        XCTAssertEqual(coreText(), "after")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
+        coordinator.step(back: true)
+        coordinator.step(back: true)
+        XCTAssertEqual(coreText(), "")
     }
 
     /// A step rewrites the storage from the core's runs, which are
@@ -283,12 +333,9 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(coreText(), "clicked from the menu")
     }
 
-    /// What actually greys the app's Edit menu out. The items are
-    /// SwiftUI's, so they carry SwiftUI's target and are never offered
-    /// to `validateMenuItem`; `.disabled` reads this pair instead, and
-    /// this pair is the core's own answer for the page under the
-    /// editor.
-    func testTheMenusEnablementFollowsTheCoresAnswer() throws {
+    /// The model's published availability remains the core's answer for any
+    /// affordance outside AppKit's responder-validated menu.
+    func testPublishedAvailabilityFollowsTheCoresAnswer() throws {
         try makeEditor()
         model.mountEditor(textView, from: .panel)
         model.refreshEditSteps()
@@ -322,9 +369,7 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertFalse(model.editSteps.canRedo)
     }
 
-    /// The view still answers for itself, for any route that does
-    /// arrive nil-targeted. This proves the method, not the app's menu,
-    /// which is dimmed from the model above.
+    /// The nil-targeted Edit menu asks the focused view to validate itself.
     func testTheMenuItemsValidateAgainstTheCore() throws {
         try makeEditor()
         let undoItem = NSMenuItem(
@@ -333,14 +378,40 @@ final class UndoRerouteTests: XCTestCase {
             title: "Redo", action: #selector(InkTextView.redo(_:)), keyEquivalent: "")
         XCTAssertFalse(textView.validateMenuItem(undoItem))
         XCTAssertFalse(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(undoItem.title, "Undo")
+        XCTAssertEqual(redoItem.title, "Redo")
 
         type("something to take back")
         XCTAssertTrue(textView.validateMenuItem(undoItem))
         XCTAssertFalse(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(undoItem.title, "Undo Typing")
+        XCTAssertEqual(redoItem.title, "Redo")
 
         textView.undo(nil)
         XCTAssertFalse(textView.validateMenuItem(undoItem))
         XCTAssertTrue(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(undoItem.title, "Undo")
+        XCTAssertEqual(redoItem.title, "Redo Typing")
+    }
+
+    func testTheMenuNamesADiscretePasteWithoutItsContent() throws {
+        try makeEditor()
+        textView.performOrdinaryPaste(nil, bypassingAutomaticFencing: true) { _ in
+            self.type("clipboard words")
+        }
+        let undoItem = NSMenuItem(
+            title: "Undo", action: #selector(InkTextView.undo(_:)), keyEquivalent: "")
+        let redoItem = NSMenuItem(
+            title: "Redo", action: #selector(InkTextView.redo(_:)), keyEquivalent: "")
+
+        XCTAssertTrue(textView.validateMenuItem(undoItem))
+        XCTAssertEqual(undoItem.title, "Undo Paste")
+        XCTAssertFalse(undoItem.title.contains("clipboard words"))
+
+        textView.undo(nil)
+        XCTAssertTrue(textView.validateMenuItem(redoItem))
+        XCTAssertEqual(redoItem.title, "Redo Paste")
+        XCTAssertFalse(redoItem.title.contains("clipboard words"))
     }
 
     /// A page shown read-only is not a page a chord may rewrite. The

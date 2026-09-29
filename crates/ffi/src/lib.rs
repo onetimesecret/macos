@@ -95,9 +95,9 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent, RestoreError,
-    Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
-    detect_source_language, local_day,
+    ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
+    LedgerEvent, RestoreError, Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab,
+    TabId, TextSelection, Ttl, detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1102,6 +1102,133 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
         .apply_ops_as_new_step(SheetId::from_raw(sheet), &ops)
 }
 
+/// [`companion_sheet_apply_ops`] with the editing gesture supplied by the
+/// TextKit bridge. The core owns grouping and rejects unknown intent values.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_apply_ops_with_intent(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    json: *const c_char,
+    intent: u32,
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    let Some(selection) =
+        edit_selection(before_location, before_length, after_location, after_length)
+    else {
+        return false;
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(ops) = parse_ops(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    match selection {
+        Some(selection) => guard.store.apply_ops_with_intent_and_selection(
+            SheetId::from_raw(sheet),
+            &ops,
+            intent,
+            selection,
+        ),
+        None => guard
+            .store
+            .apply_ops_with_intent(SheetId::from_raw(sheet), &ops, intent),
+    }
+}
+
+/// End a page's current typing/deletion run without creating an undo item.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_finish_editing_group(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    location: u32,
+    length: u32,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let id = SheetId::from_raw(sheet);
+    if location == u32::MAX && length == u32::MAX {
+        guard.store.finish_editing_group(id)
+    } else if location == u32::MAX || length == u32::MAX {
+        false
+    } else {
+        guard.store.finish_editing_group_at(
+            id,
+            TextSelection {
+                location_u16: location,
+                length_u16: length,
+            },
+        )
+    }
+}
+
+pub(crate) fn edit_intent(raw: u32) -> Option<EditIntent> {
+    match raw {
+        0 => Some(EditIntent::Typing),
+        1 => Some(EditIntent::Deletion),
+        2 => Some(EditIntent::Paste),
+        3 => Some(EditIntent::Cut),
+        4 => Some(EditIntent::Replacement),
+        5 => Some(EditIntent::Automation),
+        6 => Some(EditIntent::Composition),
+        _ => None,
+    }
+}
+
+pub(crate) fn edit_selection(
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
+) -> Option<Option<EditSelection>> {
+    let values = [before_location, before_length, after_location, after_length];
+    if values.iter().all(|value| *value == u32::MAX) {
+        return Some(None);
+    }
+    if values.iter().any(|value| *value == u32::MAX) {
+        return None;
+    }
+    Some(Some(EditSelection {
+        before: TextSelection {
+            location_u16: before_location,
+            length_u16: before_length,
+        },
+        after: TextSelection {
+            location_u16: after_location,
+            length_u16: after_length,
+        },
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // Undo: the core's stack, not AppKit's (issue #132)
 // ---------------------------------------------------------------------------
@@ -1200,6 +1327,50 @@ pub unsafe extern "C" fn companion_sheet_can_redo(
     guard.store.can_redo(SheetId::from_raw(sheet))
 }
 
+/// Content-free label for the next page Undo action. Null when there is no
+/// labelled item. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_action_name(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    unsafe { sheet_action_name(handle, sheet, true) }
+}
+
+/// Content-free label for the next page Redo action.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_redo_action_name(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    unsafe { sheet_action_name(handle, sheet, false) }
+}
+
+unsafe fn sheet_action_name(handle: *mut CompanionHandle, sheet: u64, undo: bool) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let id = SheetId::from_raw(sheet);
+    let name = if undo {
+        guard.store.undo_action_name(id)
+    } else {
+        guard.store.redo_action_name(id)
+    };
+    name.map_or(ptr::null_mut(), |value| into_c_string(value.to_string()))
+}
+
 /// Where the caret belongs after the page's last accepted step, in
 /// UTF-16 code units. `-1` when nothing has been stepped, when the step
 /// carried no position, or for an unknown page; the shell then leaves
@@ -1228,6 +1399,55 @@ pub unsafe extern "C" fn companion_sheet_undo_caret_u16(
         .store
         .restored_caret_u16(SheetId::from_raw(sheet))
         .map_or(-1, i64::from)
+}
+
+/// The location of the selection restored by the last accepted step.
+/// Returns `-1` when that step carried no selection.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_selection_location_u16(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    guard
+        .store
+        .restored_selection_u16(SheetId::from_raw(sheet))
+        .map_or(-1, |selection| i64::from(selection.location_u16))
+}
+
+/// The length paired with [`companion_sheet_undo_selection_location_u16`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_selection_length_u16(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    guard
+        .store
+        .restored_selection_u16(SheetId::from_raw(sheet))
+        .map_or(-1, |selection| i64::from(selection.length_u16))
 }
 
 // ---------------------------------------------------------------------------
@@ -4672,6 +4892,81 @@ mod tests {
     }
 
     #[test]
+    fn explicit_edit_intent_and_group_boundaries_cross_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let a = cstring(r#"[{"ins":{"at":0,"text":"a"}}]"#);
+            let b = cstring(r#"[{"ins":{"at":1,"text":"b"}}]"#);
+            let c = cstring(r#"[{"ins":{"at":2,"text":"c"}}]"#);
+            assert!(companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                a.as_ptr(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                b.as_ptr(),
+                2,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                c.as_ptr(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(!companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                c.as_ptr(),
+                99,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+
+            assert_eq!(
+                take_json(companion_sheet_undo_action_name(handle, sheet)),
+                "Typing"
+            );
+            assert!(companion_sheet_undo(handle, sheet));
+            assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("ab"));
+            assert_eq!(
+                take_json(companion_sheet_undo_action_name(handle, sheet)),
+                "Paste"
+            );
+            assert_eq!(
+                take_json(companion_sheet_redo_action_name(handle, sheet)),
+                "Typing"
+            );
+            assert!(companion_sheet_undo(handle, sheet));
+            assert!(take_json(companion_sheet_document_json(handle, sheet)).contains("a"));
+            assert!(companion_sheet_finish_editing_group(
+                handle,
+                sheet,
+                u32::MAX,
+                u32::MAX
+            ));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
     fn the_new_step_seam_fails_closed_like_every_other_batch_route() {
         let handle = handle();
         unsafe {
@@ -7539,6 +7834,22 @@ mod tests {
                 tagged,
                 ops.as_ptr()
             ));
+            assert!(!companion_sheet_apply_ops_with_intent(
+                handle,
+                tagged,
+                ops.as_ptr(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(!companion_sheet_finish_editing_group(
+                handle,
+                tagged,
+                u32::MAX,
+                u32::MAX
+            ));
 
             let runs = take_json(companion_sheet_document_json(handle, page));
             assert!(runs.contains("hello"));
@@ -7549,6 +7860,8 @@ mod tests {
             assert!(companion_sheet_can_undo(handle, page));
             assert!(!companion_sheet_can_undo(handle, tagged));
             assert!(!companion_sheet_can_redo(handle, tagged));
+            assert!(companion_sheet_undo_action_name(handle, tagged).is_null());
+            assert!(companion_sheet_redo_action_name(handle, tagged).is_null());
             assert!(!companion_sheet_undo(handle, tagged));
             assert!(!companion_sheet_redo(handle, tagged));
             assert_eq!(companion_sheet_undo_caret_u16(handle, tagged), -1);

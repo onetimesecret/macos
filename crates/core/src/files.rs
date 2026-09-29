@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use zeroize::Zeroizing;
 
-use crate::document::{DocRun, SheetDocument};
-use crate::store::EditOp;
+use crate::document::{DocRun, EditIntent, EditSelection, SheetDocument, TextSelection};
+use crate::store::{EditOp, inferred_intent};
 
 /// The high bit, set on every [`FileId`] and on no page id.
 ///
@@ -350,6 +350,8 @@ pub struct StepOutcome {
     /// Where the caret belongs, or `None` for a step that carried no
     /// position.
     pub caret_u16: Option<u32>,
+    /// The complete selection restored by the step.
+    pub selection_u16: Option<TextSelection>,
 }
 
 /// One open file.
@@ -696,16 +698,46 @@ impl FileStore {
     /// whole. `wall_ms` stamps the file's last edit when the batch is
     /// accepted.
     pub fn apply_ops(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64) -> bool {
-        self.apply_batch(id, ops, wall_ms, false)
+        self.apply_batch(id, ops, wall_ms, inferred_intent(ops), None)
+    }
+
+    /// Apply one admitted batch with the editing gesture that produced it.
+    pub fn apply_ops_with_intent(
+        &mut self,
+        id: FileId,
+        ops: &[EditOp],
+        wall_ms: u64,
+        intent: EditIntent,
+    ) -> bool {
+        self.apply_batch(id, ops, wall_ms, intent, None)
+    }
+
+    /// Apply a batch with both the editing gesture and its selections.
+    pub fn apply_ops_with_intent_and_selection(
+        &mut self,
+        id: FileId,
+        ops: &[EditOp],
+        wall_ms: u64,
+        intent: EditIntent,
+        selection: EditSelection,
+    ) -> bool {
+        self.apply_batch(id, ops, wall_ms, intent, Some(selection))
     }
 
     /// [`FileStore::apply_ops`] for a batch the app produced on the
     /// writer's behalf, which must begin its own undo step.
     pub fn apply_ops_as_new_step(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64) -> bool {
-        self.apply_batch(id, ops, wall_ms, true)
+        self.apply_batch(id, ops, wall_ms, EditIntent::Automation, None)
     }
 
-    fn apply_batch(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64, new_step: bool) -> bool {
+    fn apply_batch(
+        &mut self,
+        id: FileId,
+        ops: &[EditOp],
+        wall_ms: u64,
+        intent: EditIntent,
+        selection: Option<EditSelection>,
+    ) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
@@ -718,6 +750,11 @@ impl FileStore {
                 return false;
             }
         }
+        if ops.is_empty() {
+            return true;
+        }
+        let before_selection =
+            selection.and_then(|selection| file.document.snapshot_selection(selection.before));
         // Phase two: the document. Every offset was validated against
         // exact post-op state, so these cannot refuse; a refusal anyway
         // stops the walk and returns false, which tells the shell to
@@ -740,10 +777,11 @@ impl FileStore {
         }
         // The transaction closes either way: whatever did land is a
         // change, and leaving it open would fold it into the next one.
-        if new_step {
-            file.document.commit_as_new_step(None);
+        if let (Some(before), Some(selection)) = (before_selection, selection) {
+            file.document
+                .commit_edit_with_selection(intent, None, before, selection.after);
         } else {
-            file.document.commit_file_edit(None);
+            file.document.commit_edit(intent, None);
         }
         // The stamp is only taken for a batch that applied whole. A
         // caller told its batch was refused must not then find the file
@@ -766,6 +804,24 @@ impl FileStore {
         clean
     }
 
+    /// Finish the current typing/deletion run without adding an undo item.
+    pub fn finish_editing_group(&mut self, id: FileId) -> bool {
+        let Some(file) = self.file_mut(id) else {
+            return false;
+        };
+        file.document.finish_editing_group(None);
+        true
+    }
+
+    /// Finish a group and record the selection now shown by the editor.
+    pub fn finish_editing_group_at(&mut self, id: FileId, selection: TextSelection) -> bool {
+        let Some(file) = self.file_mut(id) else {
+            return false;
+        };
+        file.document.finish_editing_group(Some(selection));
+        true
+    }
+
     /// Whether the file has a step waiting to be taken back. False for
     /// an unknown file, the same answer
     /// [`crate::store::SheetStore::can_undo`] gives for an unknown
@@ -780,6 +836,16 @@ impl FileStore {
     #[must_use]
     pub fn can_redo(&self, id: FileId) -> bool {
         self.file(id).is_some_and(|file| file.document.can_redo())
+    }
+
+    /// Content-free action label for the next Undo menu item.
+    pub fn undo_action_name(&self, id: FileId) -> Option<&'static str> {
+        self.file(id)?.document.undo_action_name()
+    }
+
+    /// Content-free action label for the next Redo menu item.
+    pub fn redo_action_name(&self, id: FileId) -> Option<&'static str> {
+        self.file(id)?.document.redo_action_name()
     }
 
     /// Take back the file's last local edit step.
@@ -806,6 +872,9 @@ impl FileStore {
         } else {
             None
         };
+        let selection_u16 = applied
+            .then(|| file.document.restored_selection())
+            .flatten();
         if applied {
             if let Some(generation) = file.document.popped_take_theirs()
                 && file.active_take_theirs_generation == Some(generation)
@@ -817,7 +886,11 @@ impl FileStore {
             }
             file.resettle_dirty();
         }
-        Some(StepOutcome { applied, caret_u16 })
+        Some(StepOutcome {
+            applied,
+            caret_u16,
+            selection_u16,
+        })
     }
 
     /// Write the buffer back to its own path, preserving the BOM and
@@ -1983,6 +2056,66 @@ mod tests {
         assert!(!store.can_redo(FileId(FILE_ID_TAG | 404)));
         assert!(!store.can_undo(FileId(1)));
         assert!(!store.can_redo(FileId(1)));
+    }
+
+    #[test]
+    fn a_file_paste_stands_between_typing_steps() {
+        let io = MemoryIo::with("/paste.txt", b"");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/paste.txt")).unwrap();
+        assert!(store.apply_ops_with_intent(id, &[ins(0, "a")], 1, EditIntent::Typing));
+        assert!(store.apply_ops_with_intent(id, &[ins(1, "b")], 2, EditIntent::Paste));
+        assert!(store.apply_ops_with_intent(id, &[ins(2, "c")], 3, EditIntent::Typing));
+
+        assert_eq!(store.undo_action_name(id), Some("Typing"));
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "ab");
+        assert_eq!(store.undo_action_name(id), Some("Paste"));
+        assert_eq!(store.redo_action_name(id), Some("Typing"));
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "a");
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "");
+    }
+
+    #[test]
+    fn a_file_step_restores_its_selection_in_both_directions() {
+        let io = MemoryIo::with("/selection.txt", b"");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/selection.txt")).unwrap();
+        assert!(store.apply_ops_with_intent_and_selection(
+            id,
+            &[ins(0, "word")],
+            1,
+            EditIntent::Typing,
+            EditSelection {
+                before: TextSelection {
+                    location_u16: 0,
+                    length_u16: 0,
+                },
+                after: TextSelection {
+                    location_u16: 4,
+                    length_u16: 0,
+                },
+            },
+        ));
+
+        let undone = store.undo(id).unwrap();
+        assert_eq!(
+            undone.selection_u16,
+            Some(TextSelection {
+                location_u16: 0,
+                length_u16: 0,
+            })
+        );
+        let redone = store.redo(id).unwrap();
+        assert_eq!(
+            redone.selection_u16,
+            Some(TextSelection {
+                location_u16: 4,
+                length_u16: 0,
+            })
+        );
     }
 
     #[test]

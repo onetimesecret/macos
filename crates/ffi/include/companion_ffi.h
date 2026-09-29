@@ -448,6 +448,24 @@ bool companion_sheet_apply_ops_as_new_step(CompanionHandle *handle,
                                            uint64_t sheet, const char *json);
 
 /*
+ * Apply a batch with the TextKit editing gesture that produced it. Intent is:
+ * 0 typing, 1 deletion, 2 paste, 3 cut, 4 replacement, 5 automation,
+ * 6 completed input-method composition. Unknown values are rejected.
+ */
+bool companion_sheet_apply_ops_with_intent(CompanionHandle *handle,
+                                           uint64_t sheet, const char *json,
+                                           uint32_t intent,
+                                           uint32_t before_location,
+                                           uint32_t before_length,
+                                           uint32_t after_location,
+                                           uint32_t after_length);
+
+/* End the current typing/deletion run without creating an undo item. */
+bool companion_sheet_finish_editing_group(CompanionHandle *handle,
+                                          uint64_t sheet, uint32_t location,
+                                          uint32_t length);
+
+/*
  * Undo, which lives here rather than in AppKit (issue #132). One step
  * is the page's last local edit, or the couple of seconds of them the
  * merge interval groups together. The stack is bound to this document's
@@ -470,12 +488,26 @@ bool companion_sheet_can_undo(CompanionHandle *handle, uint64_t sheet);
 bool companion_sheet_can_redo(CompanionHandle *handle, uint64_t sheet);
 
 /*
+ * Content-free label for the next step in either direction, such as
+ * "Typing" or "Paste". Null when no labelled step is waiting. Free a
+ * non-null result with companion_string_free().
+ */
+char *companion_sheet_undo_action_name(CompanionHandle *handle,
+                                       uint64_t sheet);
+char *companion_sheet_redo_action_name(CompanionHandle *handle,
+                                       uint64_t sheet);
+
+/*
  * Where the caret belongs after the last accepted step, in UTF-16 code
  * units. -1 when nothing was stepped, when the step carried no
  * position, or for an unknown page; leave the caret alone in that case.
  */
 int64_t companion_sheet_undo_caret_u16(CompanionHandle *handle,
                                        uint64_t sheet);
+int64_t companion_sheet_undo_selection_location_u16(CompanionHandle *handle,
+                                                     uint64_t sheet);
+int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
+                                                   uint64_t sheet);
 
 /*
  * Replace a page's document wholesale: a JSON array of runs in document
@@ -1182,10 +1214,10 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *      "detail": string}  present only for "io"
  *
  *   companion_file_undo() and companion_file_redo() return a
- *   StepOutcome: {"applied": bool, "caretUTF16": i64}. The two fields
- *   are the pair companion_sheet_undo() and
- *   companion_sheet_undo_caret_u16() already answer for a page, in one
- *   call rather than two, with -1 for a step that carried no position.
+ *   StepOutcome: {"applied": bool, "caretUTF16": i64,
+ *   "selectionLocationUTF16": i64, "selectionLengthUTF16": i64}.
+ *   Selection fields are -1 when the step carried no range; caretUTF16
+ *   remains for compatibility with callers that restore only a caret.
  *
  *   companion_file_runs_json() reuses the existing runs shape exactly:
  *   the same array companion_sheet_document_json() returns. A file
@@ -1241,6 +1273,19 @@ bool companion_file_apply_ops(CompanionHandle *handle, uint64_t file,
 bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
                                           uint64_t file,
                                           const char *ops_json);
+bool companion_file_apply_ops_with_intent(CompanionHandle *handle,
+                                          uint64_t file,
+                                          const char *ops_json,
+                                          uint32_t intent,
+                                          uint32_t before_location,
+                                          uint32_t before_length,
+                                          uint32_t after_location,
+                                          uint32_t after_length);
+
+/* End the current typing/deletion run without creating an undo item. */
+bool companion_file_finish_editing_group(CompanionHandle *handle,
+                                         uint64_t file, uint32_t location,
+                                         uint32_t length);
 
 /*
  * Whether the file has a step waiting to be taken back, and one waiting
@@ -1255,6 +1300,16 @@ bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
  */
 bool companion_file_can_undo(CompanionHandle *handle, uint64_t file);
 bool companion_file_can_redo(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Content-free label for the next file step in either direction. Null
+ * when no labelled step is waiting. Free a non-null result with
+ * companion_string_free().
+ */
+char *companion_file_undo_action_name(CompanionHandle *handle,
+                                      uint64_t file);
+char *companion_file_redo_action_name(CompanionHandle *handle,
+                                      uint64_t file);
 
 /*
  * Take back the file's last local edit step, and put it back. Both

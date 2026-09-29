@@ -16,7 +16,7 @@ use zeroize::Zeroizing;
 
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
-use crate::document::{SheetDocument, UpdateRefusal};
+use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
@@ -175,6 +175,21 @@ pub enum EditOp {
         /// The chip whose sentinel goes here.
         chip: ChipId,
     },
+}
+
+/// Best-effort intent for callers that predate the explicit editing-intent
+/// seam. The TextKit bridge supplies the exact gesture; other callers still
+/// get safe grouping from the shape of their operation batch.
+pub(crate) fn inferred_intent(ops: &[EditOp]) -> EditIntent {
+    let has_insert = ops
+        .iter()
+        .any(|op| matches!(op, EditOp::Insert { .. } | EditOp::InsertChip { .. }));
+    let has_delete = ops.iter().any(|op| matches!(op, EditOp::Delete { .. }));
+    match (has_insert, has_delete) {
+        (true, false) => EditIntent::Typing,
+        (false, true) => EditIntent::Deletion,
+        _ => EditIntent::Replacement,
+    }
 }
 
 /// The in-memory sheet store. Everything in it — sheets, chips, and
@@ -795,7 +810,28 @@ impl<C: Clock> SheetStore<C> {
     /// body is zeroized with the same `Discarded` record the snapshot
     /// path writes. Returns whether the batch applied.
     pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
-        self.apply_batch(id, ops, false)
+        self.apply_batch(id, ops, inferred_intent(ops), None)
+    }
+
+    /// Apply one admitted batch with the editing gesture that produced it.
+    pub fn apply_ops_with_intent(
+        &mut self,
+        id: SheetId,
+        ops: &[EditOp],
+        intent: EditIntent,
+    ) -> bool {
+        self.apply_batch(id, ops, intent, None)
+    }
+
+    /// Apply a batch with both the editing gesture and its selections.
+    pub fn apply_ops_with_intent_and_selection(
+        &mut self,
+        id: SheetId,
+        ops: &[EditOp],
+        intent: EditIntent,
+        selection: EditSelection,
+    ) -> bool {
+        self.apply_batch(id, ops, intent, Some(selection))
     }
 
     /// [`SheetStore::apply_ops`] for a batch that must begin its own
@@ -806,10 +842,16 @@ impl<C: Clock> SheetStore<C> {
     /// interval would otherwise refuse, the automation arriving a
     /// keystroke after the burst it should not join.
     pub fn apply_ops_as_new_step(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
-        self.apply_batch(id, ops, true)
+        self.apply_batch(id, ops, EditIntent::Automation, None)
     }
 
-    fn apply_batch(&mut self, id: SheetId, ops: &[EditOp], new_step: bool) -> bool {
+    fn apply_batch(
+        &mut self,
+        id: SheetId,
+        ops: &[EditOp],
+        intent: EditIntent,
+        selection: Option<EditSelection>,
+    ) -> bool {
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -823,6 +865,11 @@ impl<C: Clock> SheetStore<C> {
                 return false;
             }
         }
+        if ops.is_empty() {
+            return true;
+        }
+        let before_selection =
+            selection.and_then(|selection| sheet.document.snapshot_selection(selection.before));
         // Phase two: the document. The simulation validated every
         // offset against exact post-op state, so these calls cannot
         // refuse; should one somehow refuse anyway, applying stops and
@@ -866,10 +913,12 @@ impl<C: Clock> SheetStore<C> {
                 }
             }
         }
-        if new_step {
-            sheet.document.commit_as_new_step(None);
+        if let (Some(before), Some(selection)) = (before_selection, selection) {
+            sheet
+                .document
+                .commit_edit_with_selection(intent, None, before, selection.after);
         } else {
-            sheet.document.commit(None);
+            sheet.document.commit_edit(intent, None);
         }
         // A batch that stood a sentinel moved the chip roster, and the
         // roster is the one thing no step may walk backwards over. A
@@ -888,6 +937,24 @@ impl<C: Clock> SheetStore<C> {
         }
         self.settle_document(id);
         clean
+    }
+
+    /// Finish the current typing/deletion run without adding an undo item.
+    pub fn finish_editing_group(&mut self, id: SheetId) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        sheet.document.finish_editing_group(None);
+        true
+    }
+
+    /// Finish a group and record the selection now shown by the editor.
+    pub fn finish_editing_group_at(&mut self, id: SheetId, selection: TextSelection) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        sheet.document.finish_editing_group(Some(selection));
+        true
     }
 
     // -----------------------------------------------------------------
@@ -948,6 +1015,16 @@ impl<C: Clock> SheetStore<C> {
             .is_some_and(|sheet| sheet.document.can_redo())
     }
 
+    /// Content-free action label for the next Undo menu item.
+    pub fn undo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        self.sheet(id)?.document.undo_action_name()
+    }
+
+    /// Content-free action label for the next Redo menu item.
+    pub fn redo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        self.sheet(id)?.document.redo_action_name()
+    }
+
     /// Where the caret belongs after the page's last accepted step, in
     /// UTF-16 code units. `None` for an unknown page, for a step that
     /// carried no position, or when nothing has been stepped at all.
@@ -957,6 +1034,11 @@ impl<C: Clock> SheetStore<C> {
     pub fn restored_caret_u16(&self, id: SheetId) -> Option<u32> {
         let caret = self.sheet(id)?.document.restored_caret()?;
         u32::try_from(caret).ok()
+    }
+
+    /// The selection restored by the last accepted step.
+    pub fn restored_selection_u16(&self, id: SheetId) -> Option<TextSelection> {
+        self.sheet(id)?.document.restored_selection()
     }
 
     /// Replace a page's body wholesale from a shell snapshot. A
@@ -5149,6 +5231,253 @@ mod tests {
         ));
         assert!(merged.undo(other));
         assert_eq!(body(&merged, other), "");
+    }
+
+    #[test]
+    fn type_paste_type_is_three_undo_steps() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "typed".into(),
+            }],
+            EditIntent::Typing,
+        ));
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 5,
+                text: " pasted".into(),
+            }],
+            EditIntent::Paste,
+        ));
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 12,
+                text: " typed".into(),
+            }],
+            EditIntent::Typing,
+        ));
+
+        assert_eq!(store.undo_action_name(id), Some("Typing"));
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "typed pasted");
+        assert_eq!(store.undo_action_name(id), Some("Paste"));
+        assert_eq!(store.redo_action_name(id), Some("Typing"));
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "typed");
+        assert_eq!(store.undo_action_name(id), Some("Typing"));
+        assert_eq!(store.redo_action_name(id), Some("Paste"));
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "");
+    }
+
+    #[test]
+    fn moving_the_caret_finishes_the_typing_group_without_adding_a_step() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "right".into(),
+            }],
+            EditIntent::Typing,
+        ));
+        assert!(store.finish_editing_group(id));
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "left ".into(),
+            }],
+            EditIntent::Typing,
+        ));
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "right");
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "");
+    }
+
+    #[test]
+    fn replacement_is_one_isolated_step() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "before".into(),
+            }],
+            EditIntent::Typing,
+        ));
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 6,
+                },
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "after".into(),
+                },
+            ],
+            EditIntent::Replacement,
+        ));
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "before");
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "");
+    }
+
+    #[test]
+    fn undo_and_redo_restore_the_selections_on_each_side_of_a_replacement() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops_with_intent_and_selection(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "before".into(),
+            }],
+            EditIntent::Typing,
+            EditSelection {
+                before: TextSelection {
+                    location_u16: 0,
+                    length_u16: 0,
+                },
+                after: TextSelection {
+                    location_u16: 6,
+                    length_u16: 0,
+                },
+            },
+        ));
+        assert!(store.apply_ops_with_intent_and_selection(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 6,
+                },
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "after".into(),
+                },
+            ],
+            EditIntent::Replacement,
+            EditSelection {
+                before: TextSelection {
+                    location_u16: 0,
+                    length_u16: 6,
+                },
+                after: TextSelection {
+                    location_u16: 5,
+                    length_u16: 0,
+                },
+            },
+        ));
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "before");
+        assert_eq!(
+            store.restored_selection_u16(id),
+            Some(TextSelection {
+                location_u16: 0,
+                length_u16: 6,
+            })
+        );
+        assert!(store.redo(id));
+        assert_eq!(body(&store, id), "after");
+        assert_eq!(
+            store.restored_selection_u16(id),
+            Some(TextSelection {
+                location_u16: 5,
+                length_u16: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn a_merged_typing_run_restores_its_first_and_last_carets() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        for (at, text) in [(0, "a"), (1, "b")] {
+            assert!(store.apply_ops_with_intent_and_selection(
+                id,
+                &[EditOp::Insert {
+                    pos_u16: at,
+                    text: text.into(),
+                }],
+                EditIntent::Typing,
+                EditSelection {
+                    before: TextSelection {
+                        location_u16: at,
+                        length_u16: 0,
+                    },
+                    after: TextSelection {
+                        location_u16: at + 1,
+                        length_u16: 0,
+                    },
+                },
+            ));
+        }
+
+        assert!(store.undo(id));
+        assert_eq!(
+            store.restored_selection_u16(id),
+            Some(TextSelection {
+                location_u16: 0,
+                length_u16: 0,
+            })
+        );
+        assert!(store.redo(id));
+        assert_eq!(
+            store.restored_selection_u16(id),
+            Some(TextSelection {
+                location_u16: 2,
+                length_u16: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn a_refused_discrete_action_does_not_leak_an_undo_boundary() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "a".into(),
+            }],
+            EditIntent::Typing,
+        ));
+        assert!(!store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 99,
+                text: "refused".into(),
+            }],
+            EditIntent::Paste,
+        ));
+        assert!(store.apply_ops_with_intent(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "b".into(),
+            }],
+            EditIntent::Typing,
+        ));
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "");
+        assert!(!store.can_undo(id));
     }
 
     #[test]

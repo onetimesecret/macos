@@ -34,11 +34,16 @@ use std::ptr;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use companion_core::{FileId, FileIo, FileWitness, OpenRefusal, SaveError, file_persist};
+use companion_core::{
+    EditIntent, FileId, FileIo, FileWitness, OpenRefusal, SaveError, file_persist,
+};
 use zeroize::Zeroizing;
 
 use crate::diagnostics::diag_fault;
-use crate::{Companion, CompanionHandle, cstr, into_c_string, parse_ops, persist, wall_now_ms};
+use crate::{
+    Companion, CompanionHandle, cstr, edit_intent, edit_selection, into_c_string, parse_ops,
+    persist, wall_now_ms,
+};
 
 /// Magic and version prefix of the sealed drafts file. Its own byte
 /// string, and its own AEAD associated data, so the three sealed files
@@ -381,7 +386,7 @@ pub unsafe extern "C" fn companion_file_apply_ops(
     file: u64,
     ops_json: *const c_char,
 ) -> bool {
-    unsafe { apply(handle, file, ops_json, false) }
+    unsafe { apply(handle, file, ops_json, None) }
 }
 
 /// The same, for a batch the app produced on the writer's behalf: it
@@ -395,7 +400,33 @@ pub unsafe extern "C" fn companion_file_apply_ops_as_new_step(
     file: u64,
     ops_json: *const c_char,
 ) -> bool {
-    unsafe { apply(handle, file, ops_json, true) }
+    unsafe { apply(handle, file, ops_json, Some((EditIntent::Automation, None))) }
+}
+
+/// Apply a file edit with the gesture supplied by the TextKit bridge.
+///
+/// # Safety
+/// `handle` must be a valid handle; `ops_json` a valid C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_apply_ops_with_intent(
+    handle: *mut CompanionHandle,
+    file: u64,
+    ops_json: *const c_char,
+    intent: u32,
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
+) -> bool {
+    let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    let Some(selection) =
+        edit_selection(before_location, before_length, after_location, after_length)
+    else {
+        return false;
+    };
+    unsafe { apply(handle, file, ops_json, Some((intent, selection))) }
 }
 
 /// # Safety
@@ -404,7 +435,7 @@ unsafe fn apply(
     handle: *mut CompanionHandle,
     file: u64,
     ops_json: *const c_char,
-    new_step: bool,
+    intent: Option<(EditIntent, Option<companion_core::EditSelection>)>,
 ) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
@@ -423,10 +454,45 @@ unsafe fn apply(
         return false;
     };
     let id = FileId(file);
-    if new_step {
-        guard.files.apply_ops_as_new_step(id, &ops, wall_ms)
+    match intent {
+        Some((intent, Some(selection))) => guard
+            .files
+            .apply_ops_with_intent_and_selection(id, &ops, wall_ms, intent, selection),
+        Some((intent, None)) => guard.files.apply_ops_with_intent(id, &ops, wall_ms, intent),
+        None => guard.files.apply_ops(id, &ops, wall_ms),
+    }
+}
+
+/// End a file's current typing/deletion run without creating an undo item.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_finish_editing_group(
+    handle: *mut CompanionHandle,
+    file: u64,
+    location: u32,
+    length: u32,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let id = FileId(file);
+    if location == u32::MAX && length == u32::MAX {
+        guard.files.finish_editing_group(id)
+    } else if location == u32::MAX || length == u32::MAX {
+        false
     } else {
-        guard.files.apply_ops(id, &ops, wall_ms)
+        guard.files.finish_editing_group_at(
+            id,
+            companion_core::TextSelection {
+                location_u16: location,
+                length_u16: length,
+            },
+        )
     }
 }
 
@@ -466,6 +532,46 @@ pub unsafe extern "C" fn companion_file_can_redo(handle: *mut CompanionHandle, f
         return false;
     };
     guard.files.can_redo(FileId(file))
+}
+
+/// Content-free label for the next file Undo action.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_undo_action_name(
+    handle: *mut CompanionHandle,
+    file: u64,
+) -> *mut c_char {
+    unsafe { action_name(handle, file, true) }
+}
+
+/// Content-free label for the next file Redo action.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_redo_action_name(
+    handle: *mut CompanionHandle,
+    file: u64,
+) -> *mut c_char {
+    unsafe { action_name(handle, file, false) }
+}
+
+unsafe fn action_name(handle: *mut CompanionHandle, file: u64, undo: bool) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let id = FileId(file);
+    let name = if undo {
+        guard.files.undo_action_name(id)
+    } else {
+        guard.files.redo_action_name(id)
+    };
+    name.map_or(ptr::null_mut(), |value| into_c_string(value.to_string()))
 }
 
 /// Take back the file's last local edit step. Returns the `StepOutcome`
@@ -515,6 +621,8 @@ unsafe fn step(handle: *mut CompanionHandle, file: u64, back: bool) -> *mut c_ch
     let value = serde_json::json!({
         "applied": outcome.applied,
         "caretUTF16": outcome.caret_u16.map_or(-1, i64::from),
+        "selectionLocationUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.location_u16)),
+        "selectionLengthUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.length_u16)),
     });
     match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
@@ -2171,6 +2279,24 @@ mod tests {
                 page,
                 ops.as_ptr()
             ));
+            assert!(!companion_file_apply_ops_with_intent(
+                handle,
+                page,
+                ops.as_ptr(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(!companion_file_finish_editing_group(
+                handle,
+                page,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(companion_file_undo_action_name(handle, page).is_null());
+            assert!(companion_file_redo_action_name(handle, page).is_null());
             assert!(companion_file_undo(handle, page).is_null());
             assert!(companion_file_redo(handle, page).is_null());
             assert!(!companion_file_save(handle, page));
@@ -2194,6 +2320,39 @@ mod tests {
     }
 
     #[test]
+    fn file_action_names_cross_the_seam() {
+        let (handle, dir) = scratch("action-name");
+        let file = dir.join("f.txt");
+        std::fs::write(&file, b"").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":0,"text":"pasted"}}]"#);
+            assert!(companion_file_apply_ops_with_intent(
+                handle,
+                id,
+                ops.as_ptr(),
+                EditIntent::Paste as u32,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert_eq!(
+                take_json(companion_file_undo_action_name(handle, id)),
+                "Paste"
+            );
+            assert!(!companion_file_can_redo(handle, id));
+
+            assert!(take_json(companion_file_undo(handle, id)).contains(r#""applied":true"#));
+            assert_eq!(
+                take_json(companion_file_redo_action_name(handle, id)),
+                "Paste"
+            );
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
     fn null_handles_and_null_strings_answer_rather_than_crash() {
         let null = ptr::null_mut();
         unsafe {
@@ -2205,6 +2364,8 @@ mod tests {
             assert!(!companion_file_apply_ops_as_new_step(null, 1, ptr::null()));
             assert!(!companion_file_can_undo(null, 1));
             assert!(!companion_file_can_redo(null, 1));
+            assert!(companion_file_undo_action_name(null, 1).is_null());
+            assert!(companion_file_redo_action_name(null, 1).is_null());
             assert!(companion_file_undo(null, 1).is_null());
             assert!(companion_file_redo(null, 1).is_null());
             assert!(!companion_file_save(null, 1));

@@ -10,6 +10,29 @@ public enum DocumentRun {
     case chip(UInt64)
 }
 
+/// The editing gesture represented by one operation batch. The raw values are
+/// the C ABI contract in `companion_ffi.h`.
+public enum EditorEditIntent: UInt32, Sendable {
+    case typing = 0
+    case deletion = 1
+    case paste = 2
+    case cut = 3
+    case replacement = 4
+    case automation = 5
+    case composition = 6
+}
+
+/// The TextKit selection on both sides of one editor action.
+public struct EditorEditSelection: Equatable, Sendable {
+    public let before: NSRange
+    public let after: NSRange
+
+    public init(before: NSRange, after: NSRange) {
+        self.before = before
+        self.after = after
+    }
+}
+
 /// One edit against a page's body, as the shell sends it to the core
 /// (`companion_sheet_apply_ops`, ADR-0013). Every position and length
 /// is a UTF-16 code unit, which is what `NSRange` already speaks, so
@@ -328,18 +351,13 @@ public enum PreviewRenderingScope: String, CaseIterable, Codable, Sendable {
 }
 
 /// Whether the page holding the keyboard has a step waiting in each
-/// direction: the two answers the Edit menu's Undo and Redo grey
-/// themselves out on (issue #132).
-///
-/// It exists because a SwiftUI menu item carries SwiftUI's own target
-/// and never walks the responder chain to be validated, so
-/// `InkTextView.validateMenuItem` cannot reach the items the app
-/// builds. `.disabled` can, and this is what it reads.
+/// direction. Native Edit menu items ask the focused responder directly;
+/// these published values serve any other undo affordance (issue #132).
 ///
 /// An observable of its own rather than a published pair on the model,
-/// for the reason `rollGeometry` is one: the menu is the only reader,
-/// and an answer that moves on every keystroke should not redraw the
-/// page, the header and the status stack behind it.
+/// for the reason `rollGeometry` is one: an answer that moves on every
+/// keystroke should not redraw the page, the header and the status stack
+/// behind it.
 ///
 /// Nothing here is a cache of what a step would do. Both booleans are
 /// the core's own answers, re-asked whenever the page under the editor,
@@ -4339,17 +4357,21 @@ public final class PageModel: ObservableObject {
     /// mirror, in the core and by the core's own rule: after a
     /// wholesale rewrite every offset a step holds describes nothing.
     ///
-    /// `startingNewStep` marks a batch the page produced on the
-    /// writer's behalf (a continued list marker, a nudged indent) so it
-    /// begins its own undo step and comes off in one press.
-    public func applyOps(sheet: UInt64, opsJSON: String, startingNewStep: Bool = false) {
+    /// `intent` tells the core which editing gesture produced the batch. The
+    /// core owns the grouping rules and both undo stacks.
+    public func applyOps(
+        sheet: UInt64,
+        opsJSON: String,
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
+    ) {
         // Files route first, on the tag and nothing else. A file has no
         // quiet rendering on the roll, no chips to reap, and its
         // dirtiness is the file's own rather than the sealed store's,
         // so it takes none of the page bookkeeping below.
         if sheet.isFileID {
             let accepted = client.applyFileOps(
-                sheet, json: opsJSON, startingNewStep: startingNewStep)
+                sheet, json: opsJSON, intent: intent, selection: selection)
             if accepted {
                 markFilesDirty()
                 refreshOpenFiles()
@@ -4360,7 +4382,7 @@ public final class PageModel: ObservableObject {
             return
         }
         let accepted = client.applyOps(
-            sheet: sheet, json: opsJSON, startingNewStep: startingNewStep)
+            sheet: sheet, json: opsJSON, intent: intent, selection: selection)
         if accepted {
             // The page just changed, so how it reads when it is quiet
             // changed with it (issue #79). Here rather than at the
@@ -4379,6 +4401,15 @@ public final class PageModel: ObservableObject {
         #endif
     }
 
+    /// End the current coalescing run without creating an undo item.
+    public func finishEditingGroup(sheet: UInt64, selection: NSRange? = nil) {
+        if sheet.isFileID {
+            _ = client.finishFileEditingGroup(sheet, selection: selection)
+        } else {
+            _ = client.finishEditingGroup(sheet: sheet, selection: selection)
+        }
+    }
+
     // MARK: Undo, which is the core's stack now (issue #132)
 
     /// What one ⌘Z or ⇧⌘Z did: whether the core moved the page, and
@@ -4386,12 +4417,13 @@ public final class PageModel: ObservableObject {
     public struct StepOutcome: Equatable, Sendable {
         /// False means nothing moved and the caller changes nothing.
         public let applied: Bool
-        /// The caret in UTF-16 code units, or nil when the step carried
-        /// no position and the caret should stay where the writer left
-        /// it.
-        public let caret: Int?
+        /// The selection restored by the step, or nil when the step carried
+        /// no selection and the editor should leave its range alone.
+        public let selection: NSRange?
 
-        public static let nothing = StepOutcome(applied: false, caret: nil)
+        public var caret: Int? { selection?.location }
+
+        public static let nothing = StepOutcome(applied: false, selection: nil)
     }
 
     /// Take back the page's last local edit through the core's stack,
@@ -4436,7 +4468,7 @@ public final class PageModel: ObservableObject {
         restateStorage(sheet: file)
         markFilesDirty()
         refreshOpenFiles()
-        return StepOutcome(applied: true, caret: outcome.caret)
+        return StepOutcome(applied: true, selection: outcome.selection)
     }
 
     /// Whether the page has a step waiting in either direction: what a
@@ -4453,6 +4485,20 @@ public final class PageModel: ObservableObject {
 
     public func canRedoEdit(sheet: UInt64) -> Bool {
         sheet.isFileID ? client.canRedoFile(sheet) : client.canRedo(sheet: sheet)
+    }
+
+    /// Content-free label for the next step, routed to the page or file
+    /// store by the same tagged id that routes the action itself.
+    public func undoActionName(sheet: UInt64) -> String? {
+        sheet.isFileID
+            ? client.undoFileActionName(sheet)
+            : client.undoActionName(sheet: sheet)
+    }
+
+    public func redoActionName(sheet: UInt64) -> String? {
+        sheet.isFileID
+            ? client.redoFileActionName(sheet)
+            : client.redoActionName(sheet: sheet)
     }
 
     /// Re-ask the core what the Edit menu should read as, and publish
@@ -4509,7 +4555,7 @@ public final class PageModel: ObservableObject {
         #if DEBUG
         assertProjectionParity(sheet: sheet)
         #endif
-        return StepOutcome(applied: true, caret: client.undoCaret(sheet: sheet))
+        return StepOutcome(applied: true, selection: client.undoSelection(sheet: sheet))
     }
 
     /// Rewrite a page's storage in place from the core's document.

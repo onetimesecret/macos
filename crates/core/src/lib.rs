@@ -52,6 +52,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use blocks::BlockMeta;
 pub use clock::{Clock, ManualClock, SystemClock};
+pub use document::{EditIntent, EditSelection, TextSelection};
 pub use files::{
     DRAFT_SNAPSHOT_LIMIT, DroppedReason, ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict,
     FileId, FileIo, FileNotice, FileStore, FileWitness, LineEnding, OpenFile, OpenRefusal,

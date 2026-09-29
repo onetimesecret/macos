@@ -245,9 +245,18 @@ public struct StepOutcome: Codable, Hashable, Sendable {
     public let applied: Bool
     /// Caret position in UTF-16 code units, or nil when the step
     /// carried no position and the caret stays where the writer had it.
-    public var caret: Int? { caretUTF16 < 0 ? nil : Int(caretUTF16) }
+    public var selection: NSRange? {
+        guard selectionLocationUTF16 >= 0, selectionLengthUTF16 >= 0 else { return nil }
+        return NSRange(
+            location: Int(selectionLocationUTF16),
+            length: Int(selectionLengthUTF16)
+        )
+    }
+    public var caret: Int? { selection?.location ?? (caretUTF16 < 0 ? nil : Int(caretUTF16)) }
 
     let caretUTF16: Int64
+    let selectionLocationUTF16: Int64
+    let selectionLengthUTF16: Int64
 }
 
 /// The two emptiness answers, taken together in one call because they
@@ -617,6 +626,29 @@ public class CompanionClient: @unchecked Sendable {
     /// handle: its lifetime is this object's.
     var rawHandleForTests: OpaquePointer { handle }
 
+    private func selectionWire(_ selection: NSRange?) -> (UInt32, UInt32)? {
+        guard let selection else { return (UInt32.max, UInt32.max) }
+        guard selection.location != NSNotFound,
+              let location = UInt32(exactly: selection.location),
+              let length = UInt32(exactly: selection.length)
+        else { return nil }
+        return (location, length)
+    }
+
+    private func editSelectionWire(
+        _ selection: EditorEditSelection?
+    ) -> (UInt32, UInt32, UInt32, UInt32)? {
+        guard let selection else {
+            return (UInt32.max, UInt32.max, UInt32.max, UInt32.max)
+        }
+        guard let before = selectionWire(selection.before),
+              let after = selectionWire(selection.after),
+              before.0 != UInt32.max,
+              after.0 != UInt32.max
+        else { return nil }
+        return (before.0, before.1, after.0, after.1)
+    }
+
     deinit {
         companion_free(handle)
     }
@@ -783,18 +815,34 @@ public class CompanionClient: @unchecked Sendable {
     /// False means the batch was rejected whole and nothing moved;
     /// the caller re-converges through `syncDocument`.
     ///
-    /// `startingNewStep` marks a batch the page produced on the
-    /// writer's behalf rather than at their dictation (a continued list
-    /// marker, a nudged indent). It begins its own undo step, so one
-    /// press takes the automation back and leaves the words typed
-    /// before it standing.
+    /// `intent` supplies the editing gesture; the core owns grouping.
     @discardableResult
-    public func applyOps(sheet: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
-        json.withCString {
-            startingNewStep
-                ? companion_sheet_apply_ops_as_new_step(handle, sheet, $0)
-                : companion_sheet_apply_ops(handle, sheet, $0)
+    public func applyOps(
+        sheet: UInt64,
+        json: String,
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
+    ) -> Bool {
+        guard let wire = editSelectionWire(selection) else { return false }
+        return json.withCString {
+            companion_sheet_apply_ops_with_intent(
+                handle,
+                sheet,
+                $0,
+                intent.rawValue,
+                wire.0,
+                wire.1,
+                wire.2,
+                wire.3
+            )
         }
+    }
+
+    /// End the current coalescing run without creating an undo item.
+    @discardableResult
+    public func finishEditingGroup(sheet: UInt64, selection: NSRange? = nil) -> Bool {
+        guard let wire = selectionWire(selection) else { return false }
+        return companion_sheet_finish_editing_group(handle, sheet, wire.0, wire.1)
     }
 
     /// Push a whole document snapshot (JSON runs) to the core. The
@@ -838,12 +886,29 @@ public class CompanionClient: @unchecked Sendable {
         companion_sheet_can_redo(handle, sheet)
     }
 
+    /// Content-free label for the next page step in either direction.
+    public func undoActionName(sheet: UInt64) -> String? {
+        ownedString(from: companion_sheet_undo_action_name(handle, sheet))
+    }
+
+    public func redoActionName(sheet: UInt64) -> String? {
+        ownedString(from: companion_sheet_redo_action_name(handle, sheet))
+    }
+
     /// Where the caret belongs after the last accepted step, in UTF-16
     /// code units. Nil when the step carried no position, which is the
     /// signal to leave the caret where the writer had it.
     public func undoCaret(sheet: UInt64) -> Int? {
         let caret = companion_sheet_undo_caret_u16(handle, sheet)
         return caret < 0 ? nil : Int(caret)
+    }
+
+    /// The complete selection restored by the last accepted step.
+    public func undoSelection(sheet: UInt64) -> NSRange? {
+        let location = companion_sheet_undo_selection_location_u16(handle, sheet)
+        let length = companion_sheet_undo_selection_length_u16(handle, sheet)
+        guard location >= 0, length >= 0 else { return nil }
+        return NSRange(location: Int(location), length: Int(length))
     }
 
     // MARK: Chips
@@ -1328,12 +1393,32 @@ public class CompanionClient: @unchecked Sendable {
     /// Apply an ordered edit batch to the file's body. False means the
     /// batch was rejected whole and nothing moved.
     @discardableResult
-    public func applyFileOps(_ file: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
-        json.withCString {
-            startingNewStep
-                ? companion_file_apply_ops_as_new_step(handle, file, $0)
-                : companion_file_apply_ops(handle, file, $0)
+    public func applyFileOps(
+        _ file: UInt64,
+        json: String,
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
+    ) -> Bool {
+        guard let wire = editSelectionWire(selection) else { return false }
+        return json.withCString {
+            companion_file_apply_ops_with_intent(
+                handle,
+                file,
+                $0,
+                intent.rawValue,
+                wire.0,
+                wire.1,
+                wire.2,
+                wire.3
+            )
         }
+    }
+
+    /// End the current coalescing run without creating an undo item.
+    @discardableResult
+    public func finishFileEditingGroup(_ file: UInt64, selection: NSRange? = nil) -> Bool {
+        guard let wire = selectionWire(selection) else { return false }
+        return companion_file_finish_editing_group(handle, file, wire.0, wire.1)
     }
 
     /// Take back the file's last local edit step.
@@ -1359,6 +1444,15 @@ public class CompanionClient: @unchecked Sendable {
 
     public func canRedoFile(_ file: UInt64) -> Bool {
         companion_file_can_redo(handle, file)
+    }
+
+    /// Content-free label for the next file step in either direction.
+    public func undoFileActionName(_ file: UInt64) -> String? {
+        ownedString(from: companion_file_undo_action_name(handle, file))
+    }
+
+    public func redoFileActionName(_ file: UInt64) -> String? {
+        ownedString(from: companion_file_redo_action_name(handle, file))
     }
 
     /// Write the buffer back to the file's own path. False when the
@@ -1501,6 +1595,13 @@ public class CompanionClient: @unchecked Sendable {
     public static var version: String { ffiVersion }
 
     // MARK: Plumbing
+
+    /// Read and release a string allocated by the C ABI.
+    private func ownedString(from ptr: UnsafeMutablePointer<CChar>?) -> String? {
+        guard let ptr else { return nil }
+        defer { companion_string_free(ptr) }
+        return String(cString: ptr)
+    }
 
     /// Decode an owned JSON C string from the seam, freeing it either way.
     private func decodeJSON<T: Decodable>(_ type: T.Type, from ptr: UnsafeMutablePointer<CChar>?) -> T? {
