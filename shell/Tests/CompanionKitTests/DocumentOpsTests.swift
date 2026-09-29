@@ -194,7 +194,7 @@ final class OpEmitterTests: XCTestCase {
         let us = Locale(identifier: "en_US")
         let french = Locale(identifier: "fr_FR")
         let frenchResourceURL = try XCTUnwrap(
-            Bundle.module.url(forResource: "fr", withExtension: "lproj")
+            CompanionLocalization.bundle.url(forResource: "fr", withExtension: "lproj")
         )
         let frenchBundle = try XCTUnwrap(Bundle(path: frenchResourceURL.path))
 
