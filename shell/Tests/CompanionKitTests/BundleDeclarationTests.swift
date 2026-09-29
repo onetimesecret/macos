@@ -51,8 +51,12 @@ final class BundleDeclarationTests: XCTestCase {
         XCTAssertEqual(
             keys["CFBundleIdentifier"] as? String, FormFactor.backdropBundleIdentifier)
         XCTAssertEqual(
-            keys["ITSAppUsesNonExemptEncryption"] as? Bool, true,
-            "ring and rustls provide cryptography outside Apple's operating system"
+            keys["ITSAppUsesNonExemptEncryption"] as? Bool, false,
+            "the initial release follows the no-documentation questionnaire outcome; see encryption-export-compliance.md"
+        )
+        XCTAssertNil(
+            keys["ITSEncryptionExportComplianceCode"],
+            "the no-documentation path has no Apple-issued compliance code"
         )
     }
 

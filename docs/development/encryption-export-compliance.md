@@ -4,9 +4,82 @@
 
 # App encryption and export compliance
 
+OnetimePad is a macOS app for writing notes and sharing sensitive text through one-time links. It uses encryption for locally stored content, device synchronization and pairing, and HTTPS communication with the Onetime Secret service.
+
 ## Current release decision
 
-The initial TestFlight rollout excludes France from the app's intended distribution. Keep `ITSAppUsesNonExemptEncryption` set to `true`; excluding France does not change the app's use of encryption.
+The initial TestFlight rollout excludes France from the app's intended distribution.
+The release declaration in [OnetimePad-Info.plist](../../shell/OnetimePad-Info.plist)
+is `ITSAppUsesNonExemptEncryption = false`, with
+`ITSEncryptionExportComplianceCode` absent. This is the interpretation adopted
+for the questionnaire outcome below, not a claim that OnetimePad uses no
+cryptography or a determination of exemption from all export laws.
+
+### Questionnaire answers and result
+
+The publishing operator's App Store Connect screenshots supplied on 2026-09-29
+show these selections:
+
+- **Algorithms:** select “Standard encryption algorithms instead of, or in addition to, using or accessing the encryption within Apple's operating system”.
+- **Proprietary or non-standard algorithms:** leave unchecked.
+- **Distribution in France:** select **No** for this rollout.
+
+Apple's resulting dialog states:
+
+> Based on your answers, you don't need to upload any documents.
+
+The operator observed that clicking **OK** closed the dialog without adding an
+entry to **App Encryption Documentation**, and that **Upload** reopened the
+questionnaire. That is consistent with a no-documentation outcome: there is no
+document to upload or approved-document code to copy on this path. An empty
+section alone does not indicate a failed upload.
+
+These screenshots establish the questionnaire's response to those answers,
+not Apple's acceptance of a binary or the account's actual geographic
+availability. Confirm that the answers match the shipped app and intended
+distribution before each submission. Reassess if the algorithms or distribution
+change, including adding France.
+
+### What the plist boolean means
+
+Apple's [`ITSAppUsesNonExemptEncryption` reference](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption)
+defines the `NO` value as follows:
+
+> Set the value for this key to `NO` in your app’s `Information Property List` file to indicate that your app—including any third-party libraries you link against—either uses no encryption, or only uses encryption that’s exempt from export compliance requirements, as described in Overview of export compliance.
+
+The key concerns **non-exempt encryption**, not the mere presence of encryption.
+Using `ring` or `rustls` outside Apple's operating system does not, by itself,
+establish that the value must be `true`. Excluding France does not remove
+cryptography from the app; the current `false` declaration follows the
+interpretation of the completed questionnaire above.
+
+For this rollout, use:
+
+```xml
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+```
+
+Leave `ITSEncryptionExportComplianceCode` absent. Do not add an empty string,
+`[]`, or a placeholder code. Apple's code is relevant when documentation is
+required and approved, as described in the France workflow below.
+
+### Rebuilding after error 90592
+
+The reported submission had `ITSAppUsesNonExemptEncryption = true` with no
+`ITSEncryptionExportComplianceCode`, and Transporter reported **Invalid Export
+Compliance Code (90592)**. Its displayed `[]` was not an array in the plist;
+the key was absent.
+
+After correcting the source plist, rebuild using the
+[TestFlight packaging procedure](testflight-distribution.md#6-build-and-inspect-the-package)
+with an unused build number. Inspect the rebuilt app's plist, then verify and
+deliver the new package through Transporter. Do not edit an already signed
+bundle. A successful new validation is still needed to establish that 90592 is
+resolved; if it persists, investigate the app's export-compliance record with
+Apple rather than inventing a code or toggling the boolean to suppress it.
+
+### France requirement
 
 Apple's [export-compliance reference](https://developer.apple.com/help/app-store-connect/reference/export-compliance-documentation-for-encryption/) states:
 
@@ -120,4 +193,7 @@ After Apple approves it, copy the compliance code Apple provides and add:
 <string>APPLE_PROVIDED_CODE</string>
 ```
 
-to `shell/OnetimePad-Info.plist`, then rebuild the App Store package.
+to `shell/OnetimePad-Info.plist`. Reassess `ITSAppUsesNonExemptEncryption` for
+that submission under Apple's key definition above; do not carry forward the
+initial no-France declaration without checking the new requirements. Then
+rebuild the App Store package.

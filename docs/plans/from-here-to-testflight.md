@@ -38,7 +38,7 @@ The steps, in order:
 
    You already parameterized `CODESIGN_IDENTITY`, so this is a small change plus the two new flags.
 
-7. **Add the App Store Info.plist keys.** Set `ITSAppUsesNonExemptEncryption` to `true`. The app implements standard cryptography outside Apple's operating system through `ring` and `rustls`: ChaCha20-Poly1305, HKDF-SHA256, SHA-256, X25519, Ed25519, and TLS. Apple's export-compliance reference describes this case as “Your app uses an industry standard algorithm, not provided within the Apple operating system” and requires a French encryption declaration only when the app is distributed in France. Submit that declaration through App Store Connect; after approval, add the value Apple provides as `ITSEncryptionExportComplianceCode`. Do not invent or prefill that code. See [Export compliance documentation for encryption](https://developer.apple.com/help/app-store-connect/reference/export-compliance-documentation-for-encryption/) and [`ITSAppUsesNonExemptEncryption`](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption).
+7. **Add the App Store Info.plist keys.** The earlier instruction to set `ITSAppUsesNonExemptEncryption` to `true` solely because the app uses `ring` and `rustls` was incorrect. Follow [App encryption and export compliance](../development/encryption-export-compliance.md) for the current questionnaire-based declaration and the separate documentation process for adding France. Do not invent or prefill a compliance code.
 
    Ensure `CFBundleVersion` increments on every upload; it's stamped from `CFBundleShortVersionString` plus the short commit, so a resubmit from the same commit without a version bump will be rejected as a duplicate build number.
 

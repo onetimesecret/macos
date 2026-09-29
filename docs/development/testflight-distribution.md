@@ -159,13 +159,16 @@ Apple's upload instructions explain:
 
 > The build string is used to uniquely identify the build throughout the system.
 
-The current plist sets `ITSAppUsesNonExemptEncryption` to `true`. Consult
-[App encryption and export compliance](encryption-export-compliance.md) before
-answering the encryption questions. That document records the intended initial
-rollout without France and the documentation process for adding France. It is
-not evidence of the account's actual configuration or Apple's approval.
-Resolve any compliance request in App Store Connect rather than changing the
-boolean merely to dismiss a prompt.
+The current plist sets `ITSAppUsesNonExemptEncryption` to `false` and omits
+`ITSEncryptionExportComplianceCode`. This implements the interpretation of the
+initial rollout's no-documentation questionnaire outcome, not a claim that the
+app uses no encryption. Consult
+[App encryption and export compliance](encryption-export-compliance.md) for the
+selected answers, Apple's key definition, and the process for adding France.
+Confirm that the answers still match the shipped app and intended distribution;
+the guide does not establish the account's actual availability settings or
+Apple's acceptance of a build. Resolve any compliance request rather than
+changing the boolean merely to dismiss a prompt.
 
 ## 6. Build and inspect the package
 
