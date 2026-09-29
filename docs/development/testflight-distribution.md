@@ -209,13 +209,28 @@ and upload the old package.
 
 ## 7. Upload with Transporter
 
-1. Sign in to Transporter with an account that can upload to the intended app.
-2. Add `dist/OnetimePad.pkg` and confirm the selected provider/team.
-3. Use Transporter's verification and delivery workflow. Resolve reported
+Transporter is Apple's separate macOS application for uploading builds to
+App Store Connect. It is not a page in App Store Connect or a command in this
+repository.
+
+1. Install [Transporter from the Mac App Store](https://apps.apple.com/app/transporter/id1450874784).
+2. Open **Transporter** from Applications.
+3. Sign in with the Apple Account that has access to OnetimePad in App Store
+   Connect and one of the upload roles listed in step 1 of this guide. This
+   may differ from the account used to download Transporter from the Mac App
+   Store. Complete any authentication prompts.
+4. If Transporter offers a provider selection, choose the organization
+   publishing OnetimePad.
+5. Add `dist/OnetimePad.pkg` and confirm the selected provider/team.
+6. Use Transporter's verification and delivery workflow. Resolve reported
    errors and retain the delivery result.
-4. In **App Store Connect → OnetimePad → TestFlight**, wait for processing.
-5. Check that the expected version and build number appear. Complete any
+7. In **App Store Connect → OnetimePad → TestFlight**, wait for processing.
+8. Check that the expected version and build number appear. Complete any
    encryption-compliance questions or other processing actions shown there.
+
+Signing in authorizes the upload; it does not replace code signing. The
+packaging script has already signed the app and installer using the configured
+identities and their private keys in the Mac's Keychain.
 
 Apple's upload instructions state:
 
