@@ -403,6 +403,12 @@ else
       sed -e "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" \
           -e "s/@BUNDLE_IDENTIFIER@/${SIGNED_BUNDLE_ID}/g" \
           scripts/Companion.entitlements > "$SIGN_ENTITLEMENTS"
+      if ((APP_STORE_MODE)); then
+        # Embedding the profile does not copy its identity into the signature.
+        # TestFlight checks the signed application identifier against the profile.
+        /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $PROFILE_APP_ID" "$SIGN_ENTITLEMENTS"
+        /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM_ID" "$SIGN_ENTITLEMENTS"
+      fi
       # codesign's AMFI XML parser rejects some otherwise valid plist
       # serialization styles, including `<true />`. Round-trip the rendered
       # template through binary form to produce Apple's canonical XML.
@@ -470,7 +476,13 @@ if ((APP_STORE_MODE)); then
   SIGNED_SANDBOX="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   SIGNED_NETWORK="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   SIGNED_ACCESS_GROUP="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_TEAM_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.team-identifier' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   rm -f "$SIGNED_ENTITLEMENTS"
+  if [[ "$SIGNED_APP_ID" != "$PROFILE_APP_ID" || "$SIGNED_TEAM_ID" != "$TEAM_ID" ]]; then
+    echo "signed app application/team identifiers do not match the provisioning profile and signing team" >&2
+    exit 1
+  fi
   if [[ "$SIGNED_SANDBOX" != "true" || "$SIGNED_NETWORK" != "true" || "$SIGNED_ACCESS_GROUP" != "$ACCESS_GROUP" ]]; then
     echo "signed app entitlements do not match the App Store distribution requirements" >&2
     exit 1
