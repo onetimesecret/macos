@@ -254,6 +254,9 @@ cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Re
 # app looks first, and a bundle without this file has no shortcuts at
 # all.
 cp shell/Sources/CompanionKit/Resources/default-keymap.json "$APP/Contents/Resources/"
+# CompanionLocalization reads the shipped translations through Bundle.main,
+# not SwiftPM's generated accessor (which traps if its bundle is absent).
+cp -R shell/Sources/CompanionKit/Resources/*.lproj "$APP/Contents/Resources/"
 cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
   echo "app third-party notices do not match the canonical notice" >&2
