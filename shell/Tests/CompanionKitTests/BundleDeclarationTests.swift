@@ -51,8 +51,8 @@ final class BundleDeclarationTests: XCTestCase {
         XCTAssertEqual(
             keys["CFBundleIdentifier"] as? String, FormFactor.backdropBundleIdentifier)
         XCTAssertEqual(
-            keys["ITSAppUsesNonExemptEncryption"] as? Bool, false,
-            "the shipped plist must declare its App Store encryption-export answer"
+            keys["ITSAppUsesNonExemptEncryption"] as? Bool, true,
+            "ring and rustls provide cryptography outside Apple's operating system"
         )
     }
 
