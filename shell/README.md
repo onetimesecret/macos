@@ -63,7 +63,7 @@ the seam.
   drag-to-reorder, ✕ to close; the keyboard map
   (⌃⌥Space, ⌘1 to 9, ⌘N or ⌘T, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
   the keymap file's business and not this file's, so read
-  `docs/development/about-the-keymap.md` for the list that is actually
+  `docs/development/keymap-format-and-dispatch.md` for the list that is actually
   installed. Markdown headings render styled with their markup kept
   visible; the bytes of the page never change.
 - The ledger still records every event and is still readable by an

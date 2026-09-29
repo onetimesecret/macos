@@ -273,7 +273,7 @@ and redundant.
   regular file and symlink rules, the keep mine consent and the Save As
   refusal were added. The decision remains proposed. Implementation
   notes are in
-  [about file backed documents](../development/about-file-backed-documents.md).
+  [file-backed document implementation](../development/file-backed-documents.md).
 - **2026-09-05:** The initial implementation warned on quit with dirty
   files, using Quit Anyway and Cancel rather than a save or discard
   sheet (`QuitPrompt`).

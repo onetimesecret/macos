@@ -424,7 +424,7 @@ final class KeymapValidationTests: XCTestCase {
 
     /// With nothing to fall back to, no chord fires. Almost every
     /// gesture still has a button or a menu item, and the two that do
-    /// not are named in `docs/development/about-the-keymap.md`, so the
+    /// not are named in `docs/development/keymap-format-and-dispatch.md`, so the
     /// app stays usable and nothing is pointed anywhere unintended.
     func testAMissingDefaultAndNoHistoryBindsNothing() {
         let keymap = Keymap.resolve(defaultText: nil, overrideText: nil)

@@ -1,5 +1,8 @@
-# docs/development/about-the-keymap.md
 ---
+# docs/development/keymap-format-and-dispatch.md
+---
+
+# Keymap format and command dispatch
 
 The keyboard map is a file, not code (issue #76). What each chord does
 is decided by `shell/Sources/CompanionKit/Resources/default-keymap.json`,

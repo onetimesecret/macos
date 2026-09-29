@@ -44,10 +44,14 @@ bundle, and screenshots. Documents move here when they are replaced.
 ## development/
 
 Implementation and operator notes on specific parts, written for whoever
-next touches one: the keymap, the status item, the text area, and
-[signing material](development/about-the-signing-material.md). One file per
-subject, named `about-the-<thing>.md`. The how of a shipped part goes here;
-the why goes in an ADR.
+next touches one: [file-backed documents](development/file-backed-documents.md),
+[encryption export compliance](development/encryption-export-compliance.md),
+the [keymap](development/keymap-format-and-dispatch.md), the
+[menu bar status item](development/menu-bar-status-item.md), the
+[text editor](development/text-editor-capabilities.md), and
+[signing assets and credentials](development/handling-signing-assets-and-credentials.md).
+One file per subject, named for its purpose. The how of a shipped part goes
+here; the why goes in an ADR.
 
 ## dogfood/
 

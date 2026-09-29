@@ -1,3 +1,7 @@
+---
+# docs/development/encryption-export-compliance.md
+---
+
 # App encryption and export compliance
 
 ## Current release decision

@@ -1,7 +1,8 @@
-# docs/development/about-the-signing-material.md
+---
+# docs/development/handling-signing-assets-and-credentials.md
 ---
 
-# Signing material and private information
+# Handling Apple signing assets and credentials
 
 This guide classifies the files and identifiers used to sign and submit
 OnetimePad. It distinguishes cryptographic secrets from operational material

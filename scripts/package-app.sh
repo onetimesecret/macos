@@ -220,7 +220,7 @@ cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
 # carries the asset in Contents/Resources where Bundle.main finds it.
 cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Resources/"
 # The bundled default keymap, which is the authoritative list of what
-# the keyboard does (issue #76, docs/development/about-the-keymap.md).
+# the keyboard does (issue #76, docs/development/keymap-format-and-dispatch.md).
 # Here for the same reason as the logo mark: Bundle.main is where the
 # app looks first, and a bundle without this file has no shortcuts at
 # all.

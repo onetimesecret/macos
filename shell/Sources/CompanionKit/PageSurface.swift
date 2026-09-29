@@ -349,7 +349,7 @@ public struct PageStatusStack: View {
 ///
 /// Which chord runs which command is no longer written here. It is
 /// read out of the keymap (issue #76,
-/// `docs/development/about-the-keymap.md`): the bundled default file
+/// `docs/development/keymap-format-and-dispatch.md`): the bundled default file
 /// says ⌘1 through ⌘9 jump by visible tab order, ⌘W closes, ⌘S forces
 /// the debounced write to happen now, ⌘, opens Settings and Esc hands
 /// the keyboard back, and a user's own keymap may say otherwise. What

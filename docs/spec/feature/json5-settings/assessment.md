@@ -216,7 +216,7 @@ The existing keymap parser supports JSON with two JSON5 conveniences:
 It does not implement full JSON5. This limitation is explicit in:
 
 - `shell/Sources/CompanionKit/Keymap/KeymapFile.swift:3-15`
-- `docs/development/about-the-keymap.md:9-13`
+- `docs/development/keymap-format-and-dispatch.md:12-16`
 
 The settings format therefore requires one explicit choice:
 
@@ -249,7 +249,7 @@ The keymap provides a precedent but does not decide the settings policy. Its beh
 - invalid individual bindings are dropped while valid siblings remain active;
 - an invalid user override leaves the bundled default active.
 
-See `docs/development/about-the-keymap.md:103-123` and `shell/Sources/CompanionKit/Keymap/Keymap.swift:312-354`.
+See `docs/development/keymap-format-and-dispatch.md:106-126` and `shell/Sources/CompanionKit/Keymap/Keymap.swift:312-354`.
 
 ## Typed settings model
 

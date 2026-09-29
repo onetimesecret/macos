@@ -179,7 +179,7 @@ final class BundledKeymapTests: XCTestCase {
 
     /// The Window menu carries the chord alone, so an override that
     /// takes it away leaves the menu item without a shortcut rather
-    /// than falling back to a hardcoded ⇧⌘W (docs/development/about-the-keymap.md).
+    /// than falling back to a hardcoded ⇧⌘W (docs/development/keymap-format-and-dispatch.md).
     func testUnbindingWindowCloseLeavesTheMenuNothingToAdvertise() throws {
         let defaultText = try XCTUnwrap(Keymap.bundledDefaultText())
         let keymap = Keymap.resolve(

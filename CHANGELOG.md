@@ -846,7 +846,7 @@ deadline that lands where the clock does.
   -3d says it by itself.
 
 - **The keyboard is a file now** (issue #76,
-  `docs/development/about-the-keymap.md`). What each chord does used to
+  `docs/development/keymap-format-and-dispatch.md`). What each chord does used to
   be spelled in Swift, in two places, and moving one was a code change
   nobody could review as a list. It is now a bundled keymap in the Zed
   editor's format, read with the two JSON5 tolerances a hand written

@@ -124,7 +124,7 @@ struct BackdropApp: App {
                 // so it heads the menu the way Close does in every other
                 // macOS app. The chord comes from the keymap, so an
                 // override that takes it away leaves the item without a
-                // shortcut rather than lying (see docs/development/about-the-keymap.md).
+                // shortcut rather than lying (see docs/development/keymap-format-and-dispatch.md).
                 //
                 // `performClose:` down the responder chain: the key
                 // window answers, so Settings closes on Settings, the

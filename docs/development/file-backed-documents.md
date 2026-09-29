@@ -1,5 +1,8 @@
-# docs/development/about-file-backed-documents.md
 ---
+# docs/development/file-backed-documents.md
+---
+
+# File-backed document implementation
 
 A file backed document is a file on disk that the pad edits. It is a
 peer to a page, not a page: both are first class content, and a file
