@@ -43,10 +43,11 @@ bundle, and screenshots. Documents move here when they are replaced.
 
 ## development/
 
-Implementation notes on specific components, written for whoever next
-touches one: the keymap, the status item, the text area. One file per
-component, named `about-the-<thing>.md`. The how of a shipped part goes
-here; the why goes in an ADR.
+Implementation and operator notes on specific parts, written for whoever
+next touches one: the keymap, the status item, the text area, and
+[signing material](development/about-the-signing-material.md). One file per
+subject, named `about-the-<thing>.md`. The how of a shipped part goes here;
+the why goes in an ADR.
 
 ## dogfood/
 
