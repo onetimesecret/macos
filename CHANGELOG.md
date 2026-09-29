@@ -171,6 +171,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **App Store upload packaging is available.**
+  `scripts/package-app.sh --app-store BUILD_NUMBER` builds a sandboxed release,
+  signs it with the configured application and installer identities, and writes
+  `dist/OnetimePad.pkg`. Local signing values are documented in
+  `scripts/local.env.example`.
+
 - **Source-language detection is available for evaluation** (ADR-0029;
   `companion-core` 0.20.0, `companion-ffi` 0.26.0). The core accepts
   explicitly submitted bytes and either returns a canonical language slug or

@@ -90,8 +90,12 @@ Two entry points, both in `scripts/`:
 - `scripts/install.sh` builds the release bundle, signs it, and
   installs it to `/Applications`. This is the daily dogfood channel;
   see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
+- `scripts/package-app.sh --app-store BUILD_NUMBER` builds the App Store
+  release and signed `dist/OnetimePad.pkg`. Configure the application
+  identity, installer identity, and provisioning profile in the gitignored
+  `scripts/local.env`; `scripts/local.env.example` documents the fields.
 
-Both rebuild the Rust core only when it is stale and package through
+All lanes rebuild the Rust core only when it is stale and package through
 `scripts/package-app.sh`.
 
 The core builds in two shapes (ADR-0018): the release shape, whose

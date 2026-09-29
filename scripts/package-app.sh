@@ -7,7 +7,8 @@
 #
 # This is the packaging engine; the entry points are scripts/dev.sh
 # (debug, launched from dist/) and scripts/install.sh (release,
-# installed to /Applications).
+# installed to /Applications). `--app-store BUILD_NUMBER` builds the
+# release bundle for App Store Connect and creates dist/OnetimePad.pkg.
 #
 # This script owns the required core shape: release packaging rebuilds without
 # test-util, while --debug requests the development seams.
@@ -28,7 +29,8 @@
 # for the menu bar, defaults, keychain items, and state (ADR-0012).
 #
 # Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
-# certificate for an identity that survives rebuilds. (The Settings
+# certificate for an identity that survives rebuilds. The App Store lane
+# additionally requires INSTALLER_IDENTITY and PROVISIONING_PROFILE. (The Settings
 # window saves an API token to the Keychain, so ad-hoc identity churn
 # means TCC grants reset and the Keychain re-confirms access to the
 # stored items on every rebuild.) Carrying
@@ -42,7 +44,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
+# If scripts/local.env exists it is the source of truth for local signing values.
 # Sourcing sits inside an if so a local.env whose final statement returns
 # non zero fails here with a message instead of killing the script silently.
 if [[ -f scripts/local.env ]]; then
@@ -61,14 +63,53 @@ CONFIG=release
 # must agree, and BundleDeclarationTests reads this file to hold them
 # together.
 DEV_BUNDLE_ID="dev.onetimesecret.pad"
-if [[ $# -gt 1 ]]; then
-  echo "too many arguments (the only flag is --debug)" >&2
-  exit 1
-elif [[ "${1:-}" == "--debug" ]]; then
+APP_STORE_MODE=0
+APP_STORE_BUILD_NUMBER=""
+if [[ $# -eq 0 ]]; then
+  :
+elif [[ "${1:-}" == "--debug" && $# -eq 1 ]]; then
   CONFIG=debug
-elif [[ -n "${1:-}" ]]; then
-  echo "unknown argument: $1 (the only flag is --debug)" >&2
+elif [[ "${1:-}" == "--app-store" ]]; then
+  if [[ $# -ne 2 ]]; then
+    echo "usage: scripts/package-app.sh --app-store BUILD_NUMBER" >&2
+    exit 1
+  fi
+  if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+    echo "App Store BUILD_NUMBER must contain decimal digits only (got: $2)" >&2
+    exit 1
+  fi
+  APP_STORE_MODE=1
+  APP_STORE_BUILD_NUMBER="$2"
+else
+  echo "usage: scripts/package-app.sh [--debug | --app-store BUILD_NUMBER]" >&2
   exit 1
+fi
+
+if ((APP_STORE_MODE)); then
+  if [[ -z "${CODESIGN_IDENTITY:-}" || "$CODESIGN_IDENTITY" == "-" ]]; then
+    echo "CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store." >&2
+    exit 1
+  fi
+  if [[ -z "${INSTALLER_IDENTITY:-}" ]]; then
+    echo "INSTALLER_IDENTITY must name a Mac Installer Distribution identity for --app-store." >&2
+    exit 1
+  fi
+  if [[ -z "${PROVISIONING_PROFILE:-}" ]]; then
+    echo "PROVISIONING_PROFILE must name a Mac App Store distribution profile for --app-store." >&2
+    exit 1
+  fi
+  if [[ ! -f "$PROVISIONING_PROFILE" ]]; then
+    echo "PROVISIONING_PROFILE does not exist: $PROVISIONING_PROFILE" >&2
+    exit 1
+  fi
+  if ! security find-identity -v -p codesigning | grep -Fq "\"$CODESIGN_IDENTITY\""; then
+    echo "CODESIGN_IDENTITY is not available in the keychain: $CODESIGN_IDENTITY" >&2
+    exit 1
+  fi
+  if ! security find-identity -v -p basic | grep -Fq "\"$INSTALLER_IDENTITY\""; then
+    echo "INSTALLER_IDENTITY is not available in the keychain: $INSTALLER_IDENTITY" >&2
+    exit 1
+  fi
 fi
 
 if [[ "$CONFIG" == "debug" ]]; then
@@ -228,15 +269,22 @@ ICON_BASENAME="AppIcon-$ICON_DIGEST"
 echo "==> App icon: $ICON ($ICON_BASENAME)"
 cp "$ICON" "$APP/Contents/Resources/$ICON_BASENAME.icns"
 plutil -replace CFBundleIconFile -string "$ICON_BASENAME" "$APP/Contents/Info.plist"
-plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
-# Dogfood builds carry the commit in CFBundleVersion so "which build am
-# I on" has a one-glance answer. An uncommitted tree is part of the
-# answer: the SHA alone would claim a build the repo cannot reproduce.
-# Outside a git checkout the plain version stands.
-if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
-  git diff --quiet HEAD 2>/dev/null || SHA="$SHA.dirty"
-  plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+if ((APP_STORE_MODE)); then
+  # Keep the App Store build number separate from the marketing version and
+  # require the caller to choose it explicitly so rebuilding a commit cannot
+  # silently reuse one.
+  plutil -replace CFBundleVersion -string "$APP_STORE_BUILD_NUMBER" "$APP/Contents/Info.plist"
+else
+  plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+  # Dogfood builds carry the commit in CFBundleVersion so "which build am
+  # I on" has a one-glance answer. An uncommitted tree is part of the
+  # answer: the SHA alone would claim a build the repo cannot reproduce.
+  # Outside a git checkout the plain version stands.
+  if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
+    git diff --quiet HEAD 2>/dev/null || SHA="$SHA.dirty"
+    plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+  fi
 fi
 
 if [[ "$CONFIG" == "debug" ]]; then
@@ -295,6 +343,10 @@ else
     | openssl x509 -noout -subject 2>/dev/null \
     | sed -n 's/.*OU *= *\([A-Za-z0-9]\{6,\}\).*/\1/p' | head -n1)"
   if [[ -z "$TEAM_ID" ]]; then
+    if ((APP_STORE_MODE)); then
+      echo "could not read a Team ID from CODESIGN_IDENTITY: $IDENTITY" >&2
+      exit 1
+    fi
     echo "    warning: could not read a Team ID from the signing certificate, so" >&2
     echo "    warning: scripts/Companion.entitlements is not applied and the data" >&2
     echo "    warning: protection keychain stays unavailable (login keychain fallback)." >&2
@@ -326,12 +378,42 @@ else
       # ADR-0012 says the two lanes must not read one another's items.
       SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
       ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
+
+      if ((APP_STORE_MODE)); then
+        PROFILE_PLIST="$(mktemp -t onetimepad-profile)"
+        if ! security cms -D -i "$PROVISIONING_PROFILE" > "$PROFILE_PLIST"; then
+          rm -f "$PROFILE_PLIST"
+          echo "could not decode PROVISIONING_PROFILE: $PROVISIONING_PROFILE" >&2
+          exit 1
+        fi
+        PROFILE_TEAM_ID="$(plutil -extract TeamIdentifier.0 raw "$PROFILE_PLIST" 2>/dev/null || true)"
+        PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST" 2>/dev/null || true)"
+        rm -f "$PROFILE_PLIST"
+        if [[ "$PROFILE_TEAM_ID" != "$TEAM_ID" ]]; then
+          echo "provisioning profile team $PROFILE_TEAM_ID does not match signing team $TEAM_ID" >&2
+          exit 1
+        fi
+        if [[ "$PROFILE_APP_ID" != "$ACCESS_GROUP" ]]; then
+          echo "provisioning profile App ID $PROFILE_APP_ID does not match $ACCESS_GROUP" >&2
+          exit 1
+        fi
+      fi
+
       SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
       sed -e "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" \
           -e "s/@BUNDLE_IDENTIFIER@/${SIGNED_BUNDLE_ID}/g" \
           scripts/Companion.entitlements > "$SIGN_ENTITLEMENTS"
-      echo "==> entitlements: keychain-access-group $ACCESS_GROUP"
-      codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+      # codesign's AMFI XML parser rejects some otherwise valid plist
+      # serialization styles, including `<true />`. Round-trip the rendered
+      # template through binary form to produce Apple's canonical XML.
+      plutil -convert binary1 "$SIGN_ENTITLEMENTS"
+      plutil -convert xml1 "$SIGN_ENTITLEMENTS"
+      echo "==> entitlements: app sandbox, outgoing network, keychain-access-group $ACCESS_GROUP"
+      if ((APP_STORE_MODE)); then
+        codesign --force --options runtime --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+      else
+        codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+      fi
       rm -f "$SIGN_ENTITLEMENTS"
     else
       echo "    warning: PROVISIONING_PROFILE is unset, so scripts/Companion.entitlements" >&2
@@ -346,9 +428,9 @@ else
   fi
 fi
 
-echo "==> Verifying"
+echo "==> Verifying $APP"
 plutil -lint "$APP/Contents/Info.plist"
-codesign --verify --strict "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
   echo "signed app third-party notices do not match the canonical notice" >&2
   exit 1
@@ -358,4 +440,57 @@ cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOT
   exit 1
 }
 
-echo "Built $APP. Launch with: open $APP"
+if ((APP_STORE_MODE)); then
+  ACTUAL_BUILD_NUMBER="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")"
+  if [[ "$ACTUAL_BUILD_NUMBER" != "$APP_STORE_BUILD_NUMBER" ]]; then
+    echo "signed app build number $ACTUAL_BUILD_NUMBER does not match $APP_STORE_BUILD_NUMBER" >&2
+    exit 1
+  fi
+  if ! cmp -s "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"; then
+    echo "signed app does not contain the requested provisioning profile" >&2
+    exit 1
+  fi
+
+  SIGNATURE_DETAILS="$(codesign -dvvv "$APP" 2>&1)"
+  if ! grep -Fq "Authority=$CODESIGN_IDENTITY" <<<"$SIGNATURE_DETAILS"; then
+    echo "signed app does not report the requested application identity" >&2
+    exit 1
+  fi
+  if ! grep -Eq 'flags=.*\(runtime\)' <<<"$SIGNATURE_DETAILS"; then
+    echo "signed app does not have the hardened runtime flag" >&2
+    exit 1
+  fi
+
+  SIGNED_ENTITLEMENTS="$(mktemp -t onetimepad-signed-entitlements)"
+  if ! codesign -d --entitlements - --xml "$APP" > "$SIGNED_ENTITLEMENTS" 2>/dev/null; then
+    rm -f "$SIGNED_ENTITLEMENTS"
+    echo "could not read entitlements from the signed app" >&2
+    exit 1
+  fi
+  SIGNED_SANDBOX="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_NETWORK="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_ACCESS_GROUP="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  rm -f "$SIGNED_ENTITLEMENTS"
+  if [[ "$SIGNED_SANDBOX" != "true" || "$SIGNED_NETWORK" != "true" || "$SIGNED_ACCESS_GROUP" != "$ACCESS_GROUP" ]]; then
+    echo "signed app entitlements do not match the App Store distribution requirements" >&2
+    exit 1
+  fi
+
+  PKG=dist/OnetimePad.pkg
+  rm -f "$PKG"
+  echo "==> productbuild $PKG"
+  productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
+  echo "==> Verifying $PKG"
+  if ! PKG_SIGNATURE="$(pkgutil --check-signature "$PKG" 2>&1)"; then
+    printf '%s\n' "$PKG_SIGNATURE" >&2
+    exit 1
+  fi
+  printf '%s\n' "$PKG_SIGNATURE"
+  if ! grep -Fq "$INSTALLER_IDENTITY" <<<"$PKG_SIGNATURE"; then
+    echo "installer package does not report the requested installer identity" >&2
+    exit 1
+  fi
+  echo "Built $APP and $PKG (App Store build $APP_STORE_BUILD_NUMBER)."
+else
+  echo "Built $APP. Launch with: open $APP"
+fi

@@ -50,6 +50,23 @@ final class BundleDeclarationTests: XCTestCase {
         // a shipped build reading the store it wrote yesterday.
         XCTAssertEqual(
             keys["CFBundleIdentifier"] as? String, FormFactor.backdropBundleIdentifier)
+        XCTAssertEqual(
+            keys["ITSAppUsesNonExemptEncryption"] as? Bool, false,
+            "the shipped plist must declare its App Store encryption-export answer"
+        )
+    }
+
+    func testDistributionEntitlementsDeclareSandboxAndOutgoingNetworkAccess() throws {
+        let entitlements = Self.shellDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent("scripts/Companion.entitlements")
+        let data = try Data(contentsOf: entitlements)
+        let parsed = try PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil)
+        let keys = try XCTUnwrap(parsed as? [String: Any])
+
+        XCTAssertEqual(keys["com.apple.security.app-sandbox"] as? Bool, true)
+        XCTAssertEqual(keys["com.apple.security.network.client"] as? Bool, true)
     }
 
     /// The dev lane's identity is written by the packaging script and
