@@ -94,6 +94,8 @@ Two entry points, both in `scripts/`:
   release and signed `dist/OnetimePad.pkg`. Configure the application
   identity, installer identity, and provisioning profile in the gitignored
   `scripts/local.env`; `scripts/local.env.example` documents the fields.
+  Follow [Distributing OnetimePad through TestFlight](docs/development/testflight-distribution.md)
+  for account setup, upload, and tester qualification.
 
 All lanes rebuild the Rust core only when it is stale and package through
 `scripts/package-app.sh`.

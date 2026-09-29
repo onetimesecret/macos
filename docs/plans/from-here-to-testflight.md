@@ -1,5 +1,11 @@
 # From Here to TestFlight
 
+> Historical implementation plan, not the current submission procedure.
+> For the implemented packaging command and account-to-tester workflow, use
+> [Distributing OnetimePad through TestFlight](../development/testflight-distribution.md).
+> The steps below predate the App Store packaging lane; their signing examples,
+> version-stamping instructions, and runtime assumptions are not current guidance.
+
 Two current Apple requirements shape everything below: Mac TestFlight requires a provisioning profile, which macOS only issues when a restricted entitlement demands one, and without an Xcode project the upload path is a signed `.pkg` delivered via Transporter.
 
 The starting point is further along than it might appear: `package-app.sh` already produces `dist/OnetimePad.app` with the bundle id `com.onetimesecret.pad` and version stamping, and the Rust core is a static `.a` linked into one Mach-O (no embedded dylib to sign separately, which simplifies everything). What's missing for TestFlight is the App Store distribution chain: sandbox, entitlements, a real Distribution identity, a provisioning profile, a signed `.pkg`, and an App Store Connect record.
