@@ -172,9 +172,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **App Store upload packaging is available.**
-  `scripts/package-app.sh --app-store BUILD_NUMBER` builds a sandboxed release,
+  `scripts/package-app.sh --app-store` builds a sandboxed release,
   signs it with the configured application and installer identities, and writes
-  `dist/OnetimePad.pkg`. Local signing values are documented in
+  `dist/OnetimePad.pkg`. The build number comes from a counter in the git
+  common directory, incremented under a lock and replaced by rename, so
+  worktrees of one clone never share a number; `--build-number N` uses N and
+  raises the counter to it. Local signing values are documented in
   `scripts/local.env.example`.
 
 - **Source-language detection is available for evaluation** (ADR-0029;

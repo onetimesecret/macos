@@ -40,7 +40,7 @@ The steps, in order:
 
 7. **Add the App Store Info.plist keys.** The earlier instruction to set `ITSAppUsesNonExemptEncryption` to `true` solely because the app uses `ring` and `rustls` was incorrect. Follow [App encryption and export compliance](../development/encryption-export-compliance.md) for the current questionnaire-based declaration and the separate documentation process for adding France. Do not invent or prefill a compliance code.
 
-   Ensure `CFBundleVersion` increments on every upload; it's stamped from `CFBundleShortVersionString` plus the short commit, so a resubmit from the same commit without a version bump will be rejected as a duplicate build number.
+   Ensure `CFBundleVersion` increments on every upload. The `--app-store` lane takes it from a counter in the git common directory, not from the version and commit; see [the TestFlight guide](../development/testflight-distribution.md#5-confirm-version-and-encryption-information).
 
    **Where the version lives.** `CFBundleShortVersionString` in `shell/OnetimePad-Info.plist` is the app's marketing version and its own source of truth (issue #89). Bump it there, by hand, when work a user can touch lands, the same way `crates/ffi/Cargo.toml` gets bumped when the seam changes. The two numbers are separate facts about separate artifacts: the app's says what the product does now, the core's says what the FFI seam offers, and `package-app.sh` prints both when it assembles the bundle. The packaging script refuses the `0.0.0` placeholder, so a bundle that ships has a real number in it.
 

@@ -7,8 +7,10 @@
 #
 # This is the packaging engine; the entry points are scripts/dev.sh
 # (debug, launched from dist/) and scripts/install.sh (release,
-# installed to /Applications). `--app-store BUILD_NUMBER` builds the
-# release bundle for App Store Connect and creates dist/OnetimePad.pkg.
+# installed to /Applications). `--app-store` builds the release bundle
+# for App Store Connect and creates dist/OnetimePad.pkg. Its build number
+# comes from a counter in the git common directory, shared by every
+# worktree of the clone; `--build-number N` uses N instead.
 #
 # This script owns the required core shape: release packaging rebuilds without
 # test-util, while --debug requests the development seams.
@@ -65,27 +67,54 @@ CONFIG=release
 DEV_BUNDLE_ID="dev.onetimesecret.pad"
 APP_STORE_MODE=0
 APP_STORE_BUILD_NUMBER=""
-if [[ $# -eq 0 ]]; then
-  :
-elif [[ "${1:-}" == "--debug" && $# -eq 1 ]]; then
-  CONFIG=debug
-elif [[ "${1:-}" == "--app-store" ]]; then
-  if [[ $# -ne 2 ]]; then
-    echo "usage: scripts/package-app.sh --app-store BUILD_NUMBER" >&2
-    exit 1
-  fi
-  if [[ ! "$2" =~ ^[0-9]+$ ]]; then
-    echo "App Store BUILD_NUMBER must contain decimal digits only (got: $2)" >&2
-    exit 1
-  fi
-  APP_STORE_MODE=1
-  APP_STORE_BUILD_NUMBER="$2"
-else
-  echo "usage: scripts/package-app.sh [--debug | --app-store BUILD_NUMBER]" >&2
+REQUESTED_BUILD_NUMBER=""
+USAGE="usage: scripts/package-app.sh [--debug | --app-store [--build-number N]]"
+while (($#)); do
+  case "$1" in
+    --debug)
+      CONFIG=debug
+      ;;
+    --app-store)
+      APP_STORE_MODE=1
+      ;;
+    --build-number)
+      if (($# < 2)); then
+        echo "$USAGE" >&2
+        exit 1
+      fi
+      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+        echo "--build-number must contain decimal digits only (got: $2)" >&2
+        exit 1
+      fi
+      REQUESTED_BUILD_NUMBER="$2"
+      shift
+      ;;
+    *)
+      echo "$USAGE" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+if [[ "$CONFIG" == "debug" ]] && ((APP_STORE_MODE)); then
+  echo "$USAGE" >&2
+  exit 1
+fi
+if [[ -n "$REQUESTED_BUILD_NUMBER" ]] && ((!APP_STORE_MODE)); then
+  echo "--build-number applies only to --app-store" >&2
   exit 1
 fi
 
 if ((APP_STORE_MODE)); then
+  # Resolved before the build so a missing counter fails in seconds, not
+  # after the compile. Every worktree shares the git common directory.
+  if [[ -z "${APP_STORE_BUILD_NUMBER_FILE:-}" ]]; then
+    if ! GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+      echo "APP_STORE_BUILD_NUMBER_FILE must name the build number counter outside a git checkout." >&2
+      exit 1
+    fi
+    APP_STORE_BUILD_NUMBER_FILE="$GIT_COMMON_DIR/onetimepad-app-store-build-number"
+  fi
   if [[ -z "${CODESIGN_IDENTITY:-}" || "$CODESIGN_IDENTITY" == "-" ]]; then
     echo "CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store." >&2
     exit 1
@@ -270,10 +299,53 @@ echo "==> App icon: $ICON ($ICON_BASENAME)"
 cp "$ICON" "$APP/Contents/Resources/$ICON_BASENAME.icns"
 plutil -replace CFBundleIconFile -string "$ICON_BASENAME" "$APP/Contents/Info.plist"
 
+# App Store Connect identifies a build by its build number, so no two
+# packaging runs may share one. The counter is read and replaced under an
+# exclusive lock held on fd 9, and the new value is written to a file
+# beside it and renamed into place, so a reader sees the old number or the
+# new one and never a partial write. The lock goes with the process, so a
+# killed run cannot leave it held. A number is spent when it is reserved:
+# a later failure leaves a gap rather than a number two runs share. An
+# explicit number is used as given and raises the counter when it is
+# higher, so the next reservation continues above it.
+reserve_app_store_build_number() { # <counter file> [explicit number]
+  local counter=$1 requested=${2:-} last=0 next staged
+  exec 9>>"$counter.lock"
+  if ! lockf -s -t 30 9; then
+    echo "could not lock the App Store build number counter: $counter.lock" >&2
+    exit 1
+  fi
+  if [[ -e "$counter" ]]; then
+    last="$(<"$counter")"
+    if [[ ! "$last" =~ ^[0-9]+$ ]]; then
+      echo "App Store build number counter does not hold a decimal number: $counter" >&2
+      exit 1
+    fi
+    last=$((10#$last))
+  fi
+  if [[ -n "$requested" ]]; then
+    next=$((10#$requested))
+    if ((next <= last)); then
+      echo "warning: build number $next is not above the last reserved number $last ($counter)" >&2
+    fi
+  else
+    next=$((last + 1))
+  fi
+  if ((next > last)); then
+    staged="$(mktemp "$counter.XXXXXX")"
+    printf '%s\n' "$next" > "$staged"
+    mv -f "$staged" "$counter"
+  fi
+  exec 9>&-
+  APP_STORE_BUILD_NUMBER=$next
+}
+
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
-  # require the caller to choose it explicitly so rebuilding a commit cannot
-  # silently reuse one.
+  # reserve it only now, after the compile, so a broken build does not
+  # spend one.
+  reserve_app_store_build_number "$APP_STORE_BUILD_NUMBER_FILE" "$REQUESTED_BUILD_NUMBER"
+  echo "==> App Store build number: $APP_STORE_BUILD_NUMBER (counter: $APP_STORE_BUILD_NUMBER_FILE)"
   plutil -replace CFBundleVersion -string "$APP_STORE_BUILD_NUMBER" "$APP/Contents/Info.plist"
 else
   plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"

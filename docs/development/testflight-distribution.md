@@ -11,9 +11,9 @@ artifact is `dist/OnetimePad.pkg`, containing `OnetimePad.app`.
 ## Scope and readiness
 
 The [packaging script](../../scripts/package-app.sh) implements
-`--app-store BUILD_NUMBER`: it builds the release app, embeds a profile, signs
-the app, checks the result, and creates a signed installer package. It does not
-upload the package or configure App Store Connect.
+`--app-store`: it builds the release app, reserves a build number, embeds a
+profile, signs the app, checks the result, and creates a signed installer
+package. It does not upload the package or configure App Store Connect.
 
 These instructions describe the source inspected on 2026-09-29, not a completed
 submission. Apple account setup, acceptance of a package, and runtime behavior
@@ -150,14 +150,37 @@ debug app's profile.
 ## 5. Confirm version and encryption information
 
 Check `CFBundleShortVersionString` in `shell/OnetimePad-Info.plist` for the
-marketing version. Select a new, increasing decimal build number for the
-upload; the App Store lane writes that argument to `CFBundleVersion` instead
-of using the local build's version-plus-commit string. The script checks the
-number's syntax, not whether App Store Connect has already seen it.
+marketing version. The App Store lane writes a decimal build number to
+`CFBundleVersion` instead of the local build's version and commit string.
 
 Apple's upload instructions explain:
 
 > The build string is used to uniquely identify the build throughout the system.
+
+The script takes the build number from a counter file, so each run gets a new
+one without being told:
+
+- **Location.** By default the counter is
+  `onetimepad-app-store-build-number` in the git common directory
+  (`git rev-parse --git-common-dir`), so every worktree of one clone reads and
+  advances the same file. It is not tracked by git. Set
+  `APP_STORE_BUILD_NUMBER_FILE` in `scripts/local.env` to use another path;
+  outside a git checkout that variable is required.
+- **Reservation.** After the Swift build succeeds, the script takes an
+  exclusive lock, reads the last number, writes its successor to a temporary
+  file beside the counter, and renames that file over the counter. Concurrent
+  runs from different worktrees therefore get different numbers. A number is
+  spent once reserved: if signing or packaging fails later, the next run takes
+  the next number, so the sequence can skip values.
+- **Explicit number.** `--build-number N` uses `N` instead of the counter's
+  successor. If `N` is higher than the counter, the counter is raised to `N`
+  and the next run continues above it. If it is not higher, the script warns
+  and leaves the counter unchanged.
+- **Limits.** The counter records only reservations made through it. It does
+  not know what App Store Connect has received from another clone or Mac, or
+  from builds numbered before the counter existed. A missing counter starts
+  at 1. The script checks the number's syntax, not whether App Store Connect
+  has already seen it.
 
 The current plist sets `ITSAppUsesNonExemptEncryption` to `false` and omits
 `ITSEncryptionExportComplianceCode`. This implements the interpretation of the
@@ -172,17 +195,30 @@ changing the boolean merely to dismiss a prompt.
 
 ## 6. Build and inspect the package
 
-For a first build numbered `1`, run:
+Run:
 
 ```sh
-scripts/package-app.sh --app-store 1
+scripts/package-app.sh --app-store
 ```
 
-Replace `1` with the selected unused build number. This is not a dry run: the
-script builds the Rust and Swift artifacts, replaces `dist/OnetimePad.app`,
-and replaces `dist/OnetimePad.pkg` when it reaches package creation. It neither
-installs the app nor uploads it. Use only the output of a successful run; an
-older package may remain after an earlier failure.
+The script prints the reserved number and the counter path in its
+`==> App Store build number` line and repeats the number in its final line.
+
+When App Store Connect already has builds the counter has not seen, such as
+the first run in a new clone, pass the next unused number once. For example,
+if the highest build App Store Connect has is `2`:
+
+```sh
+scripts/package-app.sh --app-store --build-number 3
+```
+
+Later runs continue from `4` without the option.
+
+This is not a dry run: the script builds the Rust and Swift artifacts, reserves
+a build number, replaces `dist/OnetimePad.app`, and replaces
+`dist/OnetimePad.pkg` when it reaches package creation. It neither installs the
+app nor uploads it. Use only the output of a successful run; an older package
+may remain after an earlier failure.
 
 The script checks identity availability, the profile's team and explicit App ID,
 the app signature, build number, embedded profile, hardened-runtime flag,
@@ -241,7 +277,8 @@ Apple's upload instructions state:
 
 A successful Transporter delivery is therefore not yet a build available to
 testers. If processing fails, inspect the App Store Connect message or email,
-fix the reported issue, and rebuild with a new build number as needed.
+fix the reported issue, and run packaging again; the rerun reserves a new
+build number.
 
 ## 8. Start with internal testers
 
