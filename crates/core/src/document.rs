@@ -62,9 +62,9 @@ const UNDO_MERGE_INTERVAL_MS: i64 = 2_000;
 /// The user-visible action represented by one editor commit.
 ///
 /// Loro owns the undo stacks and their transformed positions. This value gives
-/// that owner the piece TextKit knows and Loro cannot infer from operations
-/// alone: whether the commit is part of a typing run or a complete action that
-/// must stand on both sides of its own undo boundary.
+/// that owner the piece `TextKit` knows and Loro cannot infer from
+/// operations alone: whether the commit is part of a typing run or a complete
+/// action that must stand on both sides of its own undo boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditIntent {
     /// Keyboard input that may join adjacent keyboard input.
@@ -84,7 +84,7 @@ pub enum EditIntent {
 }
 
 /// A text selection in UTF-16 code units, the coordinate system used by
-/// TextKit and every editor call across the bridge.
+/// `TextKit` and every editor call across the bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextSelection {
     /// The selection's lower boundary.
