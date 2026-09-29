@@ -3,9 +3,18 @@ import XCTest
 
 @testable import CompanionKit
 
+/// Stands in for the guarded clear, counting the calls and, when a test
+/// hands it one, fulfilling an expectation on each so the test can wait
+/// for the clear timer's firing by the event itself and never by the
+/// clock.
 private final class ClipboardClearProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
+    private let cleared: XCTestExpectation?
+
+    init(cleared: XCTestExpectation? = nil) {
+        self.cleared = cleared
+    }
 
     var callCount: Int {
         lock.withLock { count }
@@ -14,6 +23,7 @@ private final class ClipboardClearProbe: @unchecked Sendable {
     @discardableResult
     func clear() -> Bool {
         lock.withLock { count += 1 }
+        cleared?.fulfill()
         return true
     }
 }
@@ -45,17 +55,9 @@ final class ClipboardClearLifecycleTests: XCTestCase {
         )
     }
 
-    private func spinRunLoop(
-        until done: () -> Bool, timeout: TimeInterval = 1
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-    }
-
     func testSuccessfulConcealClearsClipboardAfterItsDraftWasDismissed() throws {
-        let probe = ClipboardClearProbe()
+        let cleared = expectation(description: "the guarded clear fired")
+        let probe = ClipboardClearProbe(cleared: cleared)
         let model = try makeModel(probe: probe)
         let target = ConcealDraft.Target.page(41)
         model.beginConceal(target)
@@ -67,12 +69,13 @@ final class ClipboardClearLifecycleTests: XCTestCase {
         )
 
         XCTAssertNil(model.concealDraft, "a stale result must not restore a dismissed draft")
-        spinRunLoop { probe.callCount == 1 }
+        wait(for: [cleared], timeout: 10)
         XCTAssertEqual(probe.callCount, 1, "the successful egress still arms its guarded clear")
     }
 
     func testSuccessfulConcealDoesNotMutateAReplacementDraft() throws {
-        let probe = ClipboardClearProbe()
+        let cleared = expectation(description: "the guarded clear fired")
+        let probe = ClipboardClearProbe(cleared: cleared)
         let model = try makeModel(probe: probe)
         let staleTarget = ConcealDraft.Target.page(41)
         let replacementTarget = ConcealDraft.Target.chip(73)
@@ -89,7 +92,7 @@ final class ClipboardClearLifecycleTests: XCTestCase {
         XCTAssertNil(replacement.receiptId)
         XCTAssertNil(replacement.error)
         XCTAssertFalse(replacement.inFlight)
-        spinRunLoop { probe.callCount == 1 }
+        wait(for: [cleared], timeout: 10)
         XCTAssertEqual(probe.callCount, 1, "the stale success still arms its guarded clear")
     }
 

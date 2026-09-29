@@ -42,13 +42,15 @@ final class RestoreFailureTests: XCTestCase {
         )
     }
 
-    private func spinRunLoop(
-        until condition: () -> Bool, timeout: TimeInterval = 5
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
+    /// Wait for the debounced write to land, on the status the write
+    /// publishes when it does (`waitUntil`). The status moves last of
+    /// all in `saveState`, after both files are written, so a test
+    /// reading the files after this reads what the write left; and a
+    /// discard re-arms the status through `markDirty` before its reseal,
+    /// so the wait after a discard is for that reseal and not for a
+    /// write that landed earlier.
+    private func waitForSave(on model: PageModel) {
+        waitUntil(model.$saveStatus, description: "the debounced write landed") { $0 == .saved }
     }
 
     /// Seal real files into the fixture directory under one credential
@@ -63,7 +65,7 @@ final class RestoreFailureTests: XCTestCase {
         let sheet = try XCTUnwrap(sealer.selectedPageID)
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
         sealer.applyOps(sheet: sheet, opsJSON: ops)
-        spinRunLoop { FileManager.default.fileExists(atPath: stateFile.path) }
+        waitForSave(on: sealer)
         XCTAssertTrue(FileManager.default.fileExists(atPath: stateFile.path))
     }
 
@@ -110,10 +112,7 @@ final class RestoreFailureTests: XCTestCase {
         // session's own sealed generation inside one debounce.
         stranger.clearUnreadableStateFile()
         XCTAssertFalse(stranger.contentRestoreRefused)
-        spinRunLoop {
-            FileManager.default.fileExists(atPath: stateFile.path)
-                && (try? Data(contentsOf: stateFile)) != refusedBytes
-        }
+        waitForSave(on: stranger)
         XCTAssertNotEqual(
             try Data(contentsOf: stateFile), refusedBytes,
             "the discard must end with this session's seal in place of the unreadable file"
@@ -193,7 +192,7 @@ final class RestoreFailureTests: XCTestCase {
         // the status is honest about it from launch: saving, then saved
         // when the debounced write lands.
         XCTAssertEqual(model.saveStatus, .saving)
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
         XCTAssertEqual(model.saveStatus, .saved)
 
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -204,7 +203,7 @@ final class RestoreFailureTests: XCTestCase {
             "the buffer differs from the file from the mark, not from the timer's far end"
         )
 
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
         XCTAssertEqual(model.saveStatus, .saved)
     }
 
@@ -290,7 +289,7 @@ final class RestoreFailureTests: XCTestCase {
 
         stranger.clearUnreadableStateFile()
         XCTAssertNil(stranger.quitRefusal, "the discard grants the licence, so the quit line comes down")
-        spinRunLoop { stranger.saveStatus == .saved }
+        waitForSave(on: stranger)
         XCTAssertEqual(QuitPrompt.terminateReply(flushing: stranger), .terminateNow)
     }
 
@@ -369,7 +368,7 @@ final class RestoreFailureTests: XCTestCase {
         let ink = "the consolation page"
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
         model.applyOps(sheet: sheet, opsJSON: ops)
-        spinRunLoop(until: { false }, timeout: 0.3)
+        letElapse(0.3)
         XCTAssertEqual(
             try Data(contentsOf: stateFile), damaged,
             "a session that could not read the file wrote over it anyway"
@@ -380,10 +379,7 @@ final class RestoreFailureTests: XCTestCase {
         // saving from there.
         model.clearUnreadableStateFile()
         XCTAssertFalse(model.contentRestoreRefused)
-        spinRunLoop {
-            FileManager.default.fileExists(atPath: stateFile.path)
-                && (try? Data(contentsOf: stateFile)) != damaged
-        }
+        waitForSave(on: model)
         XCTAssertNotEqual(try Data(contentsOf: stateFile), damaged)
 
         let relaunch = makeModel(in: tempDir, defaults: defaults, tag: tag)
@@ -424,7 +420,7 @@ final class RestoreFailureTests: XCTestCase {
 
         let model = makeModel(in: tempDir, defaults: defaults, tag: tag, saveRetryDebounce: 1.0)
         model.loadStateIfNeeded()
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
         XCTAssertEqual(model.saveStatus, .saved)
         let settledBytes = try Data(contentsOf: stateFile)
 
@@ -436,7 +432,7 @@ final class RestoreFailureTests: XCTestCase {
         let ink = "typed onto a full disk"
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
         model.applyOps(sheet: sheet, opsJSON: ops)
-        spinRunLoop { model.saveStatus == .failed }
+        waitUntil(model.$saveStatus, description: "the refused write said so") { $0 == .failed }
         XCTAssertEqual(
             model.saveStatus, .failed,
             "a refused write must say so; silence here reads as saved"
@@ -458,7 +454,7 @@ final class RestoreFailureTests: XCTestCase {
         // above was absorbed by the window the refusal opened, so
         // nothing has been written even though the volume now takes
         // writes again.
-        spinRunLoop(until: { false }, timeout: 0.4)
+        letElapse(0.4)
         XCTAssertEqual(model.saveStatus, .failed)
         XCTAssertEqual(
             try Data(contentsOf: stateFile), settledBytes,
@@ -468,7 +464,7 @@ final class RestoreFailureTests: XCTestCase {
         // And the far end of the window, which no gesture reaches: the
         // retry comes back on its own and writes what the session has
         // been holding since the refusal.
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
         XCTAssertEqual(
             model.saveStatus, .saved,
             "the retry never fired, so a session that fails one write keeps its pages in memory"
@@ -491,7 +487,7 @@ final class RestoreFailureTests: XCTestCase {
 
         let model = makeModel(in: tempDir, defaults: defaults, tag: tag, saveRetryDebounce: 1.0)
         model.loadStateIfNeeded()
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
 
         try setWritable(false, tempDir)
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -511,7 +507,7 @@ final class RestoreFailureTests: XCTestCase {
 
         let model = makeModel(in: tempDir, defaults: defaults, tag: tag, saveRetryDebounce: 1.0)
         model.loadStateIfNeeded()
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
 
         try setWritable(false, tempDir)
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -522,7 +518,7 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertEqual(model.quitRefusal, .refused)
 
         try setWritable(true, tempDir)
-        spinRunLoop { model.saveStatus == .saved }
+        waitForSave(on: model)
         XCTAssertEqual(model.saveStatus, .saved, "the armed retry lands once the volume is writable")
         XCTAssertNil(model.quitRefusal, "a settled write takes the quit line down")
         XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)

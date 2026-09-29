@@ -104,11 +104,26 @@ final class FileDocumentTests: XCTestCase {
         model.applyOps(sheet: id, opsJSON: ops)
     }
 
-    private func spinRunLoop(until condition: () -> Bool, timeout: TimeInterval = 5) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
+    /// Wait for a detection round trip to finish, by order and never by
+    /// the clock. The detector runs on `worker`, and its return hands
+    /// the completion to the main queue from that same thread, so a
+    /// block run on the worker after it is behind the hand over, and a
+    /// main queue drain after that is behind the completion itself.
+    /// The request is then gone from the service one way or the other,
+    /// delivered or discarded, and the assertion says so rather than
+    /// letting a wait that ran out pass for one that ended.
+    private func waitForDetection(_ service: LanguageDetectionService, on worker: DispatchQueue) {
+        worker.sync {}
+        drainMainQueue()
+        XCTAssertNil(service.currentRequest, "the detection round trip did not finish")
+    }
+
+    /// Wait for the debounced write to land, on the status the write
+    /// publishes when it does (`waitUntil`). The status moves last of
+    /// all in `saveState`, after the drafts file is written, so a test
+    /// reading it after this reads what the write left.
+    private func waitForSave(on model: PageModel) {
+        waitUntil(model.$saveStatus, description: "the debounced write landed") { $0 == .saved }
     }
 
     // MARK: Open, edit, save
@@ -241,11 +256,15 @@ final class FileDocumentTests: XCTestCase {
         let fixture = try makeFixture()
         let started = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
-        let service = LanguageDetectionService(detector: { _ in
-            started.signal()
-            _ = release.wait(timeout: .now() + 2)
-            return "swift"
-        })
+        let worker = DispatchQueue(label: "file-document-tests.detection-worker")
+        let service = LanguageDetectionService(
+            detector: { _ in
+                started.signal()
+                _ = release.wait(timeout: .now() + 2)
+                return "swift"
+            },
+            workerQueue: worker
+        )
         let model = makeModel(
             fixture, panels: ScriptedFilePanels(), fileLanguageDetection: service
         )
@@ -257,7 +276,7 @@ final class FileDocumentTests: XCTestCase {
 
         try type("changed ", at: 0, into: id, on: model)
         release.signal()
-        spinRunLoop(until: { service.currentRequest == nil })
+        waitForDetection(service, on: worker)
 
         XCTAssertNil(model.renderSuggestion(for: id))
         XCTAssertNil(model.fileContentRenderHint(for: id))
@@ -269,11 +288,15 @@ final class FileDocumentTests: XCTestCase {
         let panels = ScriptedFilePanels()
         let started = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
-        let service = LanguageDetectionService(detector: { _ in
-            started.signal()
-            _ = release.wait(timeout: .now() + 2)
-            return "swift"
-        })
+        let worker = DispatchQueue(label: "file-document-tests.detection-worker")
+        let service = LanguageDetectionService(
+            detector: { _ in
+                started.signal()
+                _ = release.wait(timeout: .now() + 2)
+                return "swift"
+            },
+            workerQueue: worker
+        )
         let model = makeModel(
             fixture, panels: panels, fileLanguageDetection: service
         )
@@ -286,7 +309,7 @@ final class FileDocumentTests: XCTestCase {
 
         model.saveActiveFileAs()
         release.signal()
-        spinRunLoop(until: { service.currentRequest == nil })
+        waitForDetection(service, on: worker)
 
         XCTAssertEqual(model.fileRenderMode(for: id), .markdown)
         XCTAssertNil(model.renderSuggestion(for: id))
@@ -310,7 +333,9 @@ final class FileDocumentTests: XCTestCase {
         model.openFile(at: try write("print('hello')\n", named: "second", in: fixture))
         let second = try XCTUnwrap(model.activeFile?.id)
 
-        spinRunLoop(until: { model.fileRenderSuggestions.count == 2 })
+        waitUntil(model.$fileRenderSuggestions, description: "both files were classified") {
+            $0.count == 2
+        }
 
         XCTAssertEqual(model.renderSuggestion(for: first)?.mode, .source("swift"))
         XCTAssertEqual(model.renderSuggestion(for: second)?.mode, .source("python"))
@@ -862,7 +887,7 @@ final class FileDocumentTests: XCTestCase {
         try type("unsaved ", at: 0, into: id, on: first)
         // The drafts write rides the state debounce, so this is the
         // real timer firing rather than a hand-driven write.
-        spinRunLoop(until: { FileManager.default.fileExists(atPath: draftsFile.path) })
+        waitForSave(on: first)
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: draftsFile.path),
             "the drafts file is written on the same debounce as the sealed state")

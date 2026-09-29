@@ -57,7 +57,8 @@ final class StanceFadeTests: XCTestCase {
     }
 
     /// Hosts the harness at rest, then raises it and lets the update
-    /// land. Only the transactions of the raise are kept.
+    /// land, by order and never by the clock (`drainMainQueue`). Only
+    /// the transactions of the raise are kept.
     private func raise(_ transactions: Transactions) {
         let host = NSHostingView(rootView: Harness(
             raised: false, transactions: transactions
@@ -78,7 +79,7 @@ final class StanceFadeTests: XCTestCase {
         #endif
         host.rootView = Harness(raised: true, transactions: transactions)
         host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        drainMainQueue()
     }
 
     func testStanceFadeDoesNotAnimateEmbeddedNativeContent() {

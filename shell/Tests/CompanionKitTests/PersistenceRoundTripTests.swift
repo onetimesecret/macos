@@ -47,17 +47,14 @@ final class PersistenceRoundTripTests: XCTestCase {
         )
     }
 
-    /// Spin the main run loop until `condition` answers true or the
-    /// deadline passes. The debounce timer and the main-actor hop its
-    /// body makes both ride this run loop, so spinning it is what lets
-    /// the deferred write actually happen mid-test.
-    private func spinRunLoop(
-        until condition: () -> Bool, timeout: TimeInterval = 5
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
+    /// Wait for the debounced write to land, on the status the write
+    /// publishes when it does (`waitUntil`). The debounce timer and the
+    /// main-actor hop its body makes both ride the run loop XCTest turns
+    /// while it waits, and the status moves last of all in `saveState`,
+    /// after both files are written, so a test reading the files after
+    /// this reads what the write left.
+    private func waitForSave(on model: PageModel) {
+        waitUntil(model.$saveStatus, description: "the debounced write landed") { $0 == .saved }
     }
 
     func testAMutationRoundTripsThroughTheSealedFileOnTheRealDebounce() throws {
@@ -84,7 +81,7 @@ final class PersistenceRoundTripTests: XCTestCase {
         )
 
         // Let the real timer fire and the deferred write land.
-        spinRunLoop { FileManager.default.fileExists(atPath: stateFile.path) }
+        waitForSave(on: first)
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: stateFile.path),
             "the debounced write never reached the state file"
@@ -167,7 +164,7 @@ final class PersistenceRoundTripTests: XCTestCase {
         // Past the far end of the window the mutation armed. Nothing
         // may write in here: the timer was invalidated by the flush,
         // and had it fired first it would find its generation overtaken.
-        spinRunLoop(until: { false }, timeout: 1.2)
+        letElapse(1.2)
         XCTAssertEqual(
             try Data(contentsOf: stateFile), flushedBytes,
             "the deferred body ran after the quit write and sealed a duplicate generation"
@@ -195,7 +192,7 @@ final class PersistenceRoundTripTests: XCTestCase {
         let sheet = try XCTUnwrap(first.selectedPageID)
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "sealed elsewhere")]))
         first.applyOps(sheet: sheet, opsJSON: ops)
-        spinRunLoop { FileManager.default.fileExists(atPath: stateFile.path) }
+        waitForSave(on: first)
         let sealedBytes = try Data(contentsOf: stateFile)
 
         let stranger = makeModel(in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
@@ -209,7 +206,7 @@ final class PersistenceRoundTripTests: XCTestCase {
         let strangerOps = try XCTUnwrap(
             DocumentEditOp.wireJSON([.ins(at: 0, text: "the consolation page")]))
         stranger.applyOps(sheet: strangerSheet, opsJSON: strangerOps)
-        spinRunLoop(until: { false }, timeout: 0.3)
+        letElapse(0.3)
         XCTAssertEqual(
             try Data(contentsOf: stateFile), sealedBytes,
             "an unlicensed session rewrote a file it could not read"

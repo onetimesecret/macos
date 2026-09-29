@@ -32,13 +32,6 @@ final class EditorPersistenceTests: XCTestCase {
         return try XCTUnwrap(model.selectedPageID)
     }
 
-    /// The scroll restore lands one main queue hop after the swap
-    /// (ADR-0005's timing discipline), so the loop is turned once to
-    /// let it.
-    private func pump() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-    }
-
     func testACaretAndUndoSurviveATabChange() throws {
         let model = try makeModel()
         let first = try mintPage(in: model)
@@ -82,12 +75,15 @@ final class EditorPersistenceTests: XCTestCase {
         scroll.contentView.scroll(to: offset)
         scroll.reflectScrolledClipView(scroll.contentView)
 
-        // Away to the second page and back again.
+        // Away to the second page and back again. The scroll restore
+        // lands one main queue hop after each swap (ADR-0005's timing
+        // discipline), so the test waits behind it on the same queue,
+        // by order and never by the clock (`drainMainQueue`).
         model.select(second)
         coordinator.moveEditor(
             textView, to: second, storage: model.storage(for: second), restoringScrollIn: scroll
         )
-        pump()
+        drainMainQueue()
         XCTAssertEqual(coordinator.currentSheet, second)
         XCTAssertEqual(
             textView.selectedRange(), NSRange(location: 0, length: 0),
@@ -97,7 +93,7 @@ final class EditorPersistenceTests: XCTestCase {
         coordinator.moveEditor(
             textView, to: first, storage: model.storage(for: first), restoringScrollIn: scroll
         )
-        pump()
+        drainMainQueue()
 
         XCTAssertEqual(coordinator.currentSheet, first)
         XCTAssertEqual(textView.selectedRange(), caret, "the caret did not survive the trip")

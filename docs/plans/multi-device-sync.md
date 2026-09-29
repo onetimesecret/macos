@@ -1,7 +1,7 @@
 # Multi device sync
 
 **GitHub milestone:** [Multi device sync](https://github.com/onetimesecret/macos/milestone/3)  
-**Status:** Active  
+**Status:** Done. Milestone 3 closed 2026-09-02 with 0 open issues.  
 **Source of execution status:** GitHub issues, not this document.
 
 ## Goal
