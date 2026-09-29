@@ -72,6 +72,9 @@ and what covers each one,
 [hardware-verification.md](qa/hardware-verification.md) is the session
 runbook, and `verification-procedures/` holds one procedure per
 scenario, each written to be run by hand and reported against.
+`audits/` holds dated code-audit reports, named `YYYY-MMDD-slug.md`.
+Each is agent or reviewer output kept as written: a lead to confirm
+against the code, not a source of project claims.
 
 ## research/
 
