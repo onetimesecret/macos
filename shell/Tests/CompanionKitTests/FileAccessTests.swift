@@ -2602,6 +2602,21 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(launched.journal.events, ["start notes.txt", "check", "stop notes.txt"])
     }
 
+    func testAnActualActivationClearsTheCheckOwedByANonFileModal() throws {
+        let fixture = try makeFixture()
+        let (launched, _, _) = try openedFile(in: fixture)
+        ModalSession.run(center: NotificationCenter()) {
+            launched.model.checkOpenFilesOnActivate()
+        }
+
+        XCTAssertFalse(launched.journal.events.contains("check"))
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertEqual(launched.journal.events.filter { $0 == "check" }.count, 1)
+        launched.journal.clear()
+        launched.model.openFile() // cancelled panel
+        XCTAssertTrue(launched.journal.events.isEmpty)
+    }
+
     func testARefusedOpenAfterHydrationDropsTheRecordedRow() throws {
         let fixture = try makeFixture()
         let (held, url, _) = try heldFile(in: fixture)

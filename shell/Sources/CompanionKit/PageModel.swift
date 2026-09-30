@@ -3956,6 +3956,7 @@ public final class PageModel: ObservableObject {
             activationCheckOwed = true
             return
         }
+        activationCheckOwed = false
         var outcomes: [CheckOutcome] = []
         for file in openFiles {
             // A held file has nothing to check: nothing of it was ever
