@@ -3748,7 +3748,12 @@ public final class PageModel: ObservableObject {
             // its own deliberate gesture and has its own chord.
             // Bracketed because the core looks at the file on disk to
             // record what the consent was given against.
-            withFileAccess(file.id) { _ in _ = client.resolveFileKeepMine(file.id) }
+            if !withFileAccess(file.id, { _ in client.resolveFileKeepMine(file.id) }) {
+                refreshOpenFiles()
+                let current = openFiles.first(where: { $0.id == file.id }) ?? file
+                flash("Keep mine could not be applied. " + Self.unresolvedConflictNotice(for: current),
+                      tone: .actionable)
+            }
         case .takeTheirs:
             // The core's read is what needs the bracket; the restating
             // below reads only what the core already holds.

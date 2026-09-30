@@ -2628,6 +2628,24 @@ final class FileAccessTests: XCTestCase {
         XCTAssertFalse(launched.model.draftsDirty)
     }
 
+    func testKeepMineRefusalReportsTheNewConflict() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        try type("mine ", at: 0, into: id, on: launched.model)
+        try FileManager.default.removeItem(at: url)
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertEqual(launched.model.openFiles.first?.conflict, .missing)
+        try Data("replacement, longer\n".utf8).write(to: url)
+        launched.model.resolveConflict(.keepMine)
+        let row = try XCTUnwrap(launched.model.openFiles.first)
+        XCTAssertEqual(row.conflict, .changed)
+        XCTAssertEqual(launched.model.notice,
+                       "Keep mine could not be applied. " + PageModel.unresolvedConflictNotice(for: row))
+        XCTAssertEqual(launched.model.noticeTone, .actionable)
+        XCTAssertEqual(launched.model.storage(for: id).string, "mine body\n")
+        XCTAssertEqual(try read(url), "replacement, longer\n")
+    }
+
     // MARK: Locating onto a path a held file holds
 
     func testLocatingOntoAHeldFilesPathSettlesThatFileInsideThePanelsGrant() throws {
