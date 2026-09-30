@@ -7,7 +7,10 @@
 #
 # This is the packaging engine; the entry points are scripts/dev.sh
 # (debug, launched from dist/) and scripts/install.sh (release,
-# installed to /Applications).
+# installed to /Applications). `--app-store` builds the release bundle
+# for App Store Connect and creates dist/OnetimePad.pkg. Its build number
+# comes from a counter in the git common directory, shared by every
+# worktree of the clone; `--build-number N` uses N instead.
 #
 # This script owns the required core shape: release packaging rebuilds without
 # test-util, while --debug requests the development seams.
@@ -23,18 +26,21 @@
 # Both entry points take --allow-capture, which is the same launch
 # without the incantation: scripts/dev.sh --allow-capture and
 # scripts/install.sh --allow-capture.
-# Debug builds run under their own bundle id, dev.onetimesecret.pad,
-# so a dev instance and the installed copy coexist without contending
-# for the menu bar, defaults, keychain items, and state (ADR-0012).
+# Each lane runs under its own bundle id: dev.onetimesecret.pad.debug for
+# debug builds, dev.onetimesecret.pad for the local install, and
+# com.onetimesecret.pad for App Store builds, so a dev instance and the
+# installed copy coexist without contending for the menu bar, defaults,
+# keychain items, and state (ADR-0012).
 #
-# Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
-# certificate for an identity that survives rebuilds. (The Settings
-# window saves an API token to the Keychain, so ad-hoc identity churn
-# means TCC grants reset and the Keychain re-confirms access to the
-# stored items on every rebuild.) Carrying
-# scripts/Companion.entitlements takes a real identity AND an embedded
-# provisioning profile (PROVISIONING_PROFILE); every other build omits
-# it and runs the documented login keychain fallback.
+# Signing is configured independently per lane, each in its own environment
+# file outside the checkout (scripts/build-lanes.sh), under the same names in
+# every file: CODESIGN_IDENTITY, PROVISIONING_PROFILE, and for the App Store
+# lane INSTALLER_IDENTITY. Dev and local builds remain ad-hoc when
+# their lane has no identity. The App Store lane requires its application
+# identity, installer identity, and profile. Carrying
+# scripts/Companion.entitlements takes a real identity and the matching
+# lane-specific provisioning profile; every other build omits it and runs
+# the documented login keychain fallback.
 #
 # Before signing, the assembled bundle is hashed into
 # dist/OnetimePad.presig.sha256, the reproducible pre-signature
@@ -42,12 +48,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
-# Sourcing sits inside an if so a local.env whose final statement returns
-# non zero fails here with a message instead of killing the script silently.
-if [[ -f scripts/local.env ]]; then
-  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
-fi
+source scripts/build-lanes.sh
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "package-app.sh must run on macOS (needs swift + codesign)." >&2
@@ -55,21 +56,167 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 CONFIG=release
-# The dev lane's identity, a whole other name rather than a suffix on
-# the release id. The shell recognises the dev lane by this exact
-# string (FormFactor.devBundleIdentifier in CompanionKit), so the two
-# must agree, and BundleDeclarationTests reads this file to hold them
-# together.
-DEV_BUNDLE_ID="dev.onetimesecret.pad"
-if [[ $# -gt 1 ]]; then
-  echo "too many arguments (the only flag is --debug)" >&2
-  exit 1
-elif [[ "${1:-}" == "--debug" ]]; then
-  CONFIG=debug
-elif [[ -n "${1:-}" ]]; then
-  echo "unknown argument: $1 (the only flag is --debug)" >&2
+APP_STORE_MODE=0
+APP_STORE_BUILD_NUMBER=""
+REQUESTED_BUILD_NUMBER=""
+USAGE="usage: scripts/package-app.sh [--debug | --app-store [--build-number N]]"
+while (($#)); do
+  case "$1" in
+    --debug)
+      CONFIG=debug
+      ;;
+    --app-store)
+      APP_STORE_MODE=1
+      ;;
+    --build-number)
+      if (($# < 2)); then
+        echo "$USAGE" >&2
+        exit 1
+      fi
+      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+        echo "--build-number must contain decimal digits only (got: $2)" >&2
+        exit 1
+      fi
+      REQUESTED_BUILD_NUMBER="$2"
+      shift
+      ;;
+    *)
+      echo "$USAGE" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+if [[ "$CONFIG" == "debug" ]] && ((APP_STORE_MODE)); then
+  echo "$USAGE" >&2
   exit 1
 fi
+if [[ -n "$REQUESTED_BUILD_NUMBER" ]] && ((!APP_STORE_MODE)); then
+  echo "--build-number applies only to --app-store" >&2
+  exit 1
+fi
+
+if [[ "$CONFIG" == "debug" ]]; then
+  select_build_lane dev
+elif ((APP_STORE_MODE)); then
+  select_build_lane app-store
+else
+  select_build_lane local
+fi
+
+DECLARED_PRODUCTION_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw shell/OnetimePad-Info.plist 2>/dev/null || true)"
+if [[ "$DECLARED_PRODUCTION_BUNDLE_ID" != "$PRODUCTION_BUNDLE_ID" ]]; then
+  echo "shell/OnetimePad-Info.plist declares $DECLARED_PRODUCTION_BUNDLE_ID; expected $PRODUCTION_BUNDLE_ID from scripts/build-lanes.sh" >&2
+  exit 1
+fi
+
+echo "==> Build lane: $BUILD_LANE ($CONFIG, $BUILD_BUNDLE_ID)"
+if [[ -f "$BUILD_ENVIRONMENT_FILE" ]]; then
+  echo "==> Signing environment: $BUILD_ENVIRONMENT_FILE"
+else
+  echo "==> Signing environment: none ($BUILD_ENVIRONMENT_FILE is absent)"
+fi
+
+TEAM_ID=""
+PROFILE_APP_ID=""
+validate_signing_configuration() {
+  if [[ -z "$CODESIGN_IDENTITY" || "$CODESIGN_IDENTITY" == "-" ]]; then
+    if [[ -n "$PROVISIONING_PROFILE" ]]; then
+      echo "$BUILD_LANE provisioning profile is set without a signing identity." >&2
+      exit 1
+    fi
+    if ((APP_STORE_MODE)); then
+      echo "CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
+      exit 1
+    fi
+    return
+  fi
+
+  if ! security find-identity -v -p codesigning | grep -Fq "\"$CODESIGN_IDENTITY\""; then
+    echo "$BUILD_LANE signing identity is not available in the keychain: $CODESIGN_IDENTITY" >&2
+    exit 1
+  fi
+  TEAM_ID="$(security find-certificate -c "$CODESIGN_IDENTITY" -p 2>/dev/null \
+    | openssl x509 -noout -subject 2>/dev/null \
+    | sed -n 's/.*OU *= *\([A-Za-z0-9]\{6,\}\).*/\1/p' | head -n1)"
+
+  if [[ -z "$PROVISIONING_PROFILE" ]]; then
+    if ((APP_STORE_MODE)); then
+      echo "PROVISIONING_PROFILE must name a Mac App Store distribution profile for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
+      exit 1
+    fi
+    return
+  fi
+  if [[ ! -f "$PROVISIONING_PROFILE" ]]; then
+    echo "$BUILD_LANE provisioning profile does not exist: $PROVISIONING_PROFILE" >&2
+    exit 1
+  fi
+  if [[ -z "$TEAM_ID" ]]; then
+    echo "could not read a Team ID from $BUILD_LANE signing identity: $CODESIGN_IDENTITY" >&2
+    exit 1
+  fi
+
+  local profile_plist certificate_pem certificate_der device_udid
+  profile_plist="$(mktemp -t onetimepad-profile)"
+  certificate_pem="$(mktemp -t onetimepad-certificate-pem)"
+  certificate_der="$(mktemp -t onetimepad-certificate-der)"
+  if ! security cms -D -i "$PROVISIONING_PROFILE" > "$profile_plist"; then
+    rm -f "$profile_plist" "$certificate_pem" "$certificate_der"
+    echo "could not decode $BUILD_LANE provisioning profile: $PROVISIONING_PROFILE" >&2
+    exit 1
+  fi
+  if ! security find-certificate -c "$CODESIGN_IDENTITY" -p > "$certificate_pem" \
+      || ! openssl x509 -in "$certificate_pem" -outform DER -out "$certificate_der"; then
+    rm -f "$profile_plist" "$certificate_pem" "$certificate_der"
+    echo "could not read the certificate for $BUILD_LANE signing identity: $CODESIGN_IDENTITY" >&2
+    exit 1
+  fi
+
+  device_udid=""
+  if [[ "$PROFILE_CLASS" == "development" ]]; then
+    device_udid="$(system_profiler SPHardwareDataType 2>/dev/null \
+      | sed -n 's/^[[:space:]]*Provisioning UDID: //p' | head -n1)"
+  fi
+  local profile_arguments
+  profile_arguments=(
+    --profile-plist "$profile_plist"
+    --certificate-der "$certificate_der"
+    --team-id "$TEAM_ID"
+    --bundle-id "$BUILD_BUNDLE_ID"
+    --profile-class "$PROFILE_CLASS"
+  )
+  if [[ -n "$device_udid" ]]; then
+    profile_arguments+=(--device-udid "$device_udid")
+  fi
+  if ! python3 scripts/validate-provisioning-profile.py "${profile_arguments[@]}"; then
+    rm -f "$profile_plist" "$certificate_pem" "$certificate_der"
+    exit 1
+  fi
+
+  PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist")"
+  rm -f "$profile_plist" "$certificate_pem" "$certificate_der"
+}
+
+if ((APP_STORE_MODE)); then
+  # Resolved before the build so a missing counter fails in seconds, not
+  # after the compile. Every worktree shares the git common directory.
+  if [[ -z "${APP_STORE_BUILD_NUMBER_FILE:-}" ]]; then
+    if ! GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+      echo "APP_STORE_BUILD_NUMBER_FILE must name the build number counter outside a git checkout." >&2
+      exit 1
+    fi
+    APP_STORE_BUILD_NUMBER_FILE="$GIT_COMMON_DIR/onetimepad-app-store-build-number"
+  fi
+  if [[ -z "$INSTALLER_IDENTITY" ]]; then
+    echo "INSTALLER_IDENTITY must name a Mac Installer Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
+    exit 1
+  fi
+  if ! security find-identity -v -p basic | grep -Fq "\"$INSTALLER_IDENTITY\""; then
+    echo "App Store installer identity is not available in the keychain: $INSTALLER_IDENTITY" >&2
+    exit 1
+  fi
+fi
+validate_signing_configuration
 
 if [[ "$CONFIG" == "debug" ]]; then
   scripts/build-core.sh --if-stale --test-util
@@ -179,11 +326,14 @@ cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
 # carries the asset in Contents/Resources where Bundle.main finds it.
 cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Resources/"
 # The bundled default keymap, which is the authoritative list of what
-# the keyboard does (issue #76, docs/development/about-the-keymap.md).
+# the keyboard does (issue #76, docs/development/keymap-format-and-dispatch.md).
 # Here for the same reason as the logo mark: Bundle.main is where the
 # app looks first, and a bundle without this file has no shortcuts at
 # all.
 cp shell/Sources/CompanionKit/Resources/default-keymap.json "$APP/Contents/Resources/"
+# CompanionLocalization reads the shipped translations through Bundle.main,
+# not SwiftPM's generated accessor (which traps if its bundle is absent).
+cp -R shell/Sources/CompanionKit/Resources/*.lproj "$APP/Contents/Resources/"
 cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
   echo "app third-party notices do not match the canonical notice" >&2
@@ -228,24 +378,79 @@ ICON_BASENAME="AppIcon-$ICON_DIGEST"
 echo "==> App icon: $ICON ($ICON_BASENAME)"
 cp "$ICON" "$APP/Contents/Resources/$ICON_BASENAME.icns"
 plutil -replace CFBundleIconFile -string "$ICON_BASENAME" "$APP/Contents/Info.plist"
-plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
-# Dogfood builds carry the commit in CFBundleVersion so "which build am
-# I on" has a one-glance answer. An uncommitted tree is part of the
-# answer: the SHA alone would claim a build the repo cannot reproduce.
-# Outside a git checkout the plain version stands.
-if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
-  git diff --quiet HEAD 2>/dev/null || SHA="$SHA.dirty"
-  plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+# App Store Connect identifies a build by its build number, so no two
+# packaging runs may share one. The counter is read and replaced under an
+# exclusive lock held on fd 9, and the new value is written to a file
+# beside it and renamed into place, so a reader sees the old number or the
+# new one and never a partial write. The lock goes with the process, so a
+# killed run cannot leave it held. A number is spent when it is reserved:
+# a later failure leaves a gap rather than a number two runs share. An
+# explicit number is used as given and raises the counter when it is
+# higher, so the next reservation continues above it.
+reserve_app_store_build_number() { # <counter file> [explicit number]
+  local counter=$1 requested=${2:-} last=0 next staged
+  exec 9>>"$counter.lock"
+  if ! lockf -s -t 30 9; then
+    echo "could not lock the App Store build number counter: $counter.lock" >&2
+    exit 1
+  fi
+  if [[ -e "$counter" ]]; then
+    last="$(<"$counter")"
+    if [[ ! "$last" =~ ^[0-9]+$ ]]; then
+      echo "App Store build number counter does not hold a decimal number: $counter" >&2
+      exit 1
+    fi
+    last=$((10#$last))
+  fi
+  if [[ -n "$requested" ]]; then
+    next=$((10#$requested))
+    if ((next <= last)); then
+      echo "warning: build number $next is not above the last reserved number $last ($counter)" >&2
+    fi
+  else
+    next=$((last + 1))
+  fi
+  if ((next > last)); then
+    staged="$(mktemp "$counter.XXXXXX")"
+    printf '%s\n' "$next" > "$staged"
+    mv -f "$staged" "$counter"
+  fi
+  exec 9>&-
+  APP_STORE_BUILD_NUMBER=$next
+}
+
+if ((APP_STORE_MODE)); then
+  # Keep the App Store build number separate from the marketing version and
+  # reserve it only now, after the compile, so a broken build does not
+  # spend one.
+  reserve_app_store_build_number "$APP_STORE_BUILD_NUMBER_FILE" "$REQUESTED_BUILD_NUMBER"
+  echo "==> App Store build number: $APP_STORE_BUILD_NUMBER (counter: $APP_STORE_BUILD_NUMBER_FILE)"
+  plutil -replace CFBundleVersion -string "$APP_STORE_BUILD_NUMBER" "$APP/Contents/Info.plist"
+else
+  plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+  # Dogfood builds carry the commit in CFBundleVersion so "which build am
+  # I on" has a one-glance answer. An uncommitted tree is part of the
+  # answer: the SHA alone would claim a build the repo cannot reproduce.
+  # Outside a git checkout the plain version stands.
+  if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
+    git diff --quiet HEAD 2>/dev/null || SHA="$SHA.dirty"
+    plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+  fi
+fi
+
+# Each lane writes its own id from the manifest: the source plist declares
+# the production id, which only the App Store lane keeps. Written outright
+# rather than derived from the release id: the development ids share no
+# prefix with it, on purpose, so nothing keyed off the id can take one lane
+# for a configuration of another.
+if [[ "$BUILD_BUNDLE_ID" != "$PRODUCTION_BUNDLE_ID" ]]; then
+  plutil -replace CFBundleIdentifier -string "$BUILD_BUNDLE_ID" "$APP/Contents/Info.plist"
 fi
 
 if [[ "$CONFIG" == "debug" ]]; then
-  # A distinct identity for the dev instance, so it and the installed
-  # copy read as separate apps to macOS and to the eye. Written
-  # outright rather than derived from the release id: the dev id
-  # shares no prefix with it, on purpose, so nothing keyed off the id
-  # can take one lane for a configuration of the other.
-  plutil -replace CFBundleIdentifier -string "$DEV_BUNDLE_ID" "$APP/Contents/Info.plist"
+  # The dev instance also reads as a separate app to the eye, beside the
+  # local install.
   BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
   plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
   # Both name keys, or the rename reaches the File menu and nothing
@@ -275,80 +480,64 @@ printf '%s  %s\n' "$DIGEST" "${APP##*/}" > "$DIGEST_FILE"
 echo "$DIGEST  ${APP##*/} (pre-signature, $DIGEST_FILE)"
 
 IDENTITY="${CODESIGN_IDENTITY:--}"
-echo "==> codesign (${CODESIGN_IDENTITY:-ad-hoc})"
+echo "==> codesign ($BUILD_LANE: ${CODESIGN_IDENTITY:-ad-hoc})"
 if [[ "$IDENTITY" == "-" ]]; then
   # An ad-hoc signature has no Team ID, so it cannot carry
-  # keychain-access-groups. Expected for local builds, not a failure:
+  # keychain-access-groups. Expected for unconfigured dev/local builds:
   # the credentials layer sees errSecMissingEntitlement and falls back
   # (ADR-0012).
   echo "    warning: ad-hoc signature, so scripts/Companion.entitlements is not applied." >&2
   echo "    warning: the data protection keychain is unavailable in this build; the" >&2
   echo "    warning: credentials layer falls back to the file based login keychain." >&2
-  echo "    warning: set CODESIGN_IDENTITY to a real certificate for the modern store." >&2
+  echo "    warning: configure this lane's CODESIGN identity in $BUILD_ENVIRONMENT_FILE for stable signing." >&2
   codesign --force --sign "$IDENTITY" "$APP"
-else
-  # $(AppIdentifierPrefix) is an Xcode build setting, and codesign does
-  # not expand it. Left literal it signs in an access group that cannot
-  # exist. Substitute the signing certificate's Team ID (the OU field)
-  # at sign time, trailing dot included, matching Xcode.
-  TEAM_ID="$(security find-certificate -c "$IDENTITY" -p 2>/dev/null \
-    | openssl x509 -noout -subject 2>/dev/null \
-    | sed -n 's/.*OU *= *\([A-Za-z0-9]\{6,\}\).*/\1/p' | head -n1)"
-  if [[ -z "$TEAM_ID" ]]; then
-    echo "    warning: could not read a Team ID from the signing certificate, so" >&2
-    echo "    warning: scripts/Companion.entitlements is not applied and the data" >&2
-    echo "    warning: protection keychain stays unavailable (login keychain fallback)." >&2
-    codesign --force --sign "$IDENTITY" "$APP"
-  else
-    # A Team ID is still not enough. keychain-access-groups sits on
-    # AMFI's restricted list: the bundle must also embed a provisioning
-    # profile that authorizes the group, or launchd refuses to spawn
-    # the app entirely (amfid -413, "No matching profile found"). So
-    # the entitlement is applied only when PROVISIONING_PROFILE points
-    # at a profile; see scripts/local.env.example for how to mint one.
-    if [[ -n "${PROVISIONING_PROFILE:-}" && ! -f "$PROVISIONING_PROFILE" ]]; then
-      echo "PROVISIONING_PROFILE is set but no file exists at: $PROVISIONING_PROFILE" >&2
-      exit 1
-    fi
-    if [[ -n "${PROVISIONING_PROFILE:-}" ]]; then
-      # The profile is machine-bound signing material, embedded after
-      # the pre-signature digest on purpose: hashing it would make the
-      # digest differ per machine.
-      cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
-      echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
-      # The group follows the bundle's own identifier, read back out of
-      # the assembled Info.plist so it is already the dev lane's own id
-      # when this is a debug build. Hardcoding one id would drop the
-      # installed release copy and the dev instance into a single
-      # group, and a shared
-      # group is a shared keychain: CompanionKit/FormFactor.swift scopes
-      # credentialService to the running build's bundle id, and
-      # ADR-0012 says the two lanes must not read one another's items.
-      SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
-      ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
-      SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
-      sed -e "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" \
-          -e "s/@BUNDLE_IDENTIFIER@/${SIGNED_BUNDLE_ID}/g" \
-          scripts/Companion.entitlements > "$SIGN_ENTITLEMENTS"
-      echo "==> entitlements: keychain-access-group $ACCESS_GROUP"
-      codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
-      rm -f "$SIGN_ENTITLEMENTS"
-    else
-      echo "    warning: PROVISIONING_PROFILE is unset, so scripts/Companion.entitlements" >&2
-      echo "    warning: is not applied: the keychain-access-groups entitlement needs an" >&2
-      echo "    warning: embedded provisioning profile, and claiming it without one" >&2
-      echo "    warning: produces an app AMFI refuses to launch. The data protection" >&2
-      echo "    warning: keychain is unavailable in this build; the credentials layer" >&2
-      echo "    warning: falls back to the file based login keychain. See" >&2
-      echo "    warning: scripts/local.env.example for how to mint a profile." >&2
-      codesign --force --sign "$IDENTITY" "$APP"
-    fi
+elif [[ -z "$TEAM_ID" ]]; then
+  echo "    warning: could not read a Team ID from the signing certificate, so" >&2
+  echo "    warning: scripts/Companion.entitlements is not applied and the data" >&2
+  echo "    warning: protection keychain stays unavailable (login keychain fallback)." >&2
+  codesign --force --sign "$IDENTITY" "$APP"
+elif [[ -n "$PROVISIONING_PROFILE" ]]; then
+  # The profile is machine-bound signing material, embedded after the
+  # pre-signature digest on purpose: hashing it would make the digest
+  # differ per machine. Profile/team/app/certificate/device compatibility
+  # was checked before any build or bundle replacement began.
+  cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
+  SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
+  ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
+
+  SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
+  sed -e "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" \
+      -e "s/@BUNDLE_IDENTIFIER@/${SIGNED_BUNDLE_ID}/g" \
+      scripts/Companion.entitlements > "$SIGN_ENTITLEMENTS"
+  if ((APP_STORE_MODE)); then
+    # Embedding the profile does not copy its identity into the signature.
+    # TestFlight checks the signed application identifier against the profile.
+    /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $PROFILE_APP_ID" "$SIGN_ENTITLEMENTS"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM_ID" "$SIGN_ENTITLEMENTS"
   fi
+  # codesign's AMFI XML parser rejects some otherwise valid plist
+  # serialization styles, including `<true />`. Round-trip the rendered
+  # template through binary form to produce Apple's canonical XML.
+  plutil -convert binary1 "$SIGN_ENTITLEMENTS"
+  plutil -convert xml1 "$SIGN_ENTITLEMENTS"
+  echo "==> entitlements: app sandbox, outgoing network, keychain-access-group $ACCESS_GROUP"
+  if ((APP_STORE_MODE)); then
+    codesign --force --options runtime --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+  else
+    codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+  fi
+  rm -f "$SIGN_ENTITLEMENTS"
+else
+  echo "    warning: the $BUILD_LANE provisioning profile is unset, so" >&2
+  echo "    warning: scripts/Companion.entitlements is not applied. See" >&2
+  echo "    warning: environments/example/.env.example for development-profile setup." >&2
+  codesign --force --sign "$IDENTITY" "$APP"
 fi
 
-echo "==> Verifying"
+echo "==> Verifying $APP"
 plutil -lint "$APP/Contents/Info.plist"
-codesign --verify --strict "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
   echo "signed app third-party notices do not match the canonical notice" >&2
   exit 1
@@ -358,4 +547,63 @@ cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOT
   exit 1
 }
 
-echo "Built $APP. Launch with: open $APP"
+if ((APP_STORE_MODE)); then
+  ACTUAL_BUILD_NUMBER="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")"
+  if [[ "$ACTUAL_BUILD_NUMBER" != "$APP_STORE_BUILD_NUMBER" ]]; then
+    echo "signed app build number $ACTUAL_BUILD_NUMBER does not match $APP_STORE_BUILD_NUMBER" >&2
+    exit 1
+  fi
+  if ! cmp -s "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"; then
+    echo "signed app does not contain the requested provisioning profile" >&2
+    exit 1
+  fi
+
+  SIGNATURE_DETAILS="$(codesign -dvvv "$APP" 2>&1)"
+  if ! grep -Fq "Authority=$CODESIGN_IDENTITY" <<<"$SIGNATURE_DETAILS"; then
+    echo "signed app does not report the requested application identity" >&2
+    exit 1
+  fi
+  if ! grep -Eq 'flags=.*\(runtime\)' <<<"$SIGNATURE_DETAILS"; then
+    echo "signed app does not have the hardened runtime flag" >&2
+    exit 1
+  fi
+
+  SIGNED_ENTITLEMENTS="$(mktemp -t onetimepad-signed-entitlements)"
+  if ! codesign -d --entitlements - --xml "$APP" > "$SIGNED_ENTITLEMENTS" 2>/dev/null; then
+    rm -f "$SIGNED_ENTITLEMENTS"
+    echo "could not read entitlements from the signed app" >&2
+    exit 1
+  fi
+  SIGNED_SANDBOX="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_NETWORK="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_ACCESS_GROUP="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_TEAM_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.team-identifier' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  rm -f "$SIGNED_ENTITLEMENTS"
+  if [[ "$SIGNED_APP_ID" != "$PROFILE_APP_ID" || "$SIGNED_TEAM_ID" != "$TEAM_ID" ]]; then
+    echo "signed app application/team identifiers do not match the provisioning profile and signing team" >&2
+    exit 1
+  fi
+  if [[ "$SIGNED_SANDBOX" != "true" || "$SIGNED_NETWORK" != "true" || "$SIGNED_ACCESS_GROUP" != "$ACCESS_GROUP" ]]; then
+    echo "signed app entitlements do not match the App Store distribution requirements" >&2
+    exit 1
+  fi
+
+  PKG=dist/OnetimePad.pkg
+  rm -f "$PKG"
+  echo "==> productbuild $PKG"
+  productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
+  echo "==> Verifying $PKG"
+  if ! PKG_SIGNATURE="$(pkgutil --check-signature "$PKG" 2>&1)"; then
+    printf '%s\n' "$PKG_SIGNATURE" >&2
+    exit 1
+  fi
+  printf '%s\n' "$PKG_SIGNATURE"
+  if ! grep -Fq "$INSTALLER_IDENTITY" <<<"$PKG_SIGNATURE"; then
+    echo "installer package does not report the requested installer identity" >&2
+    exit 1
+  fi
+  echo "Built $APP and $PKG (App Store build $APP_STORE_BUILD_NUMBER)."
+else
+  echo "Built $APP. Launch with: open $APP"
+fi

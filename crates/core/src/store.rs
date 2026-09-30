@@ -178,7 +178,7 @@ pub enum EditOp {
 }
 
 /// Best-effort intent for callers that predate the explicit editing-intent
-/// seam. The TextKit bridge supplies the exact gesture; other callers still
+/// seam. The `TextKit` bridge supplies the exact gesture; other callers still
 /// get safe grouping from the shape of their operation batch.
 pub(crate) fn inferred_intent(ops: &[EditOp]) -> EditIntent {
     let has_insert = ops

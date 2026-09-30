@@ -50,25 +50,45 @@ final class BundleDeclarationTests: XCTestCase {
         // a shipped build reading the store it wrote yesterday.
         XCTAssertEqual(
             keys["CFBundleIdentifier"] as? String, FormFactor.backdropBundleIdentifier)
+        XCTAssertEqual(
+            keys["ITSAppUsesNonExemptEncryption"] as? Bool, false,
+            "the initial release follows the no-documentation questionnaire outcome; see encryption-export-compliance.md"
+        )
+        XCTAssertNil(
+            keys["ITSEncryptionExportComplianceCode"],
+            "the no-documentation path has no Apple-issued compliance code"
+        )
     }
 
-    /// The dev lane's identity is written by the packaging script and
-    /// recognised by the shell, two files with no compile time tie
-    /// between them. The script writes the id outright rather than
-    /// deriving it from the release one, so a drift here would not be
-    /// a suffix gone missing: it would be a dev build the tray calls a
-    /// release build, and one `resolvedBundleIdentifier` does not know,
-    /// so it takes the fallback and lands on the installed copy's
-    /// state directory and Keychain service. The script is read and
-    /// the one assignment looked for.
-    func testThePackagingScriptWritesTheDevIdentifierTheShellRecognises() throws {
-        let script = Self.shellDirectory
+    func testDistributionEntitlementsDeclareSandboxAndOutgoingNetworkAccess() throws {
+        let entitlements = Self.shellDirectory
             .deletingLastPathComponent()
-            .appendingPathComponent("scripts/package-app.sh")
-        let text = try String(contentsOf: script, encoding: .utf8)
+            .appendingPathComponent("scripts/Companion.entitlements")
+        let data = try Data(contentsOf: entitlements)
+        let parsed = try PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil)
+        let keys = try XCTUnwrap(parsed as? [String: Any])
+
+        XCTAssertEqual(keys["com.apple.security.app-sandbox"] as? Bool, true)
+        XCTAssertEqual(keys["com.apple.security.network.client"] as? Bool, true)
+    }
+
+    /// The local and dev lanes' identities are checked into the build-lane
+    /// manifest and recognised by the shell, two files with no compile-time
+    /// tie between them. A drift here would make a development build fall
+    /// back to the shipping id's state directory and Keychain service.
+    func testTheBuildLaneManifestNamesTheIdentifiersTheShellRecognises() throws {
+        let manifest = Self.shellDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent("scripts/build-lanes.sh")
+        let text = try String(contentsOf: manifest, encoding: .utf8)
+        XCTAssertTrue(
+            text.contains("LOCAL_BUNDLE_ID=\"\(FormFactor.localBundleIdentifier)\""),
+            "scripts/build-lanes.sh does not assign LOCAL_BUNDLE_ID the id FormFactor names as the local lane"
+        )
         XCTAssertTrue(
             text.contains("DEV_BUNDLE_ID=\"\(FormFactor.devBundleIdentifier)\""),
-            "scripts/package-app.sh does not assign DEV_BUNDLE_ID the id FormFactor names as the dev lane"
+            "scripts/build-lanes.sh does not assign DEV_BUNDLE_ID the id FormFactor names as the dev lane"
         )
     }
 

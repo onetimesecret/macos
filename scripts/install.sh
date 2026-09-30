@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# The local production lane: build the release bundle, sign it, and
-# install it to APP_DEST (default /Applications). The installed copy
+# The local lane: build the release bundle as dev.onetimesecret.pad, sign
+# it, and install it to APP_DEST (default /Applications). The installed copy
 # runs from /Applications rather than from .build/ or dist/, so
-# rebuilds in the repo never kill it. See scripts/local.env.example for
-# pinning a signing identity that lets TCC grants and Keychain access
-# survive updates.
+# rebuilds in the repo never kill it. See
+# environments/example/.env.example for pinning a signing identity
+# that lets TCC grants and Keychain access survive updates.
 #
 # The dev counterpart is scripts/dev.sh, which packages a debug bundle
-# under its own bundle id, dev.onetimesecret.pad, and launches it from
+# under its own bundle id, dev.onetimesecret.pad.debug, and launches it from
 # dist/.
 #
 # --no-launch installs without opening the app afterwards.
@@ -23,12 +23,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
-# Sourcing sits inside an if so a local.env whose final statement returns
-# non zero fails here with a message instead of killing the script silently.
-if [[ -f scripts/local.env ]]; then
-  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
-fi
+source scripts/build-lanes.sh
+select_build_lane local
 
 NO_LAUNCH=0
 ALLOW_CAPTURE=0
@@ -59,15 +55,14 @@ if [[ -z "$APP_DEST" || "$APP_DEST" != /* ]]; then
   exit 1
 fi
 
-if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
+if [[ -z "$CODESIGN_IDENTITY" ]]; then
   echo "WARNING: CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
   echo "signed. TCC grants and Keychain confirmations will reset on every" >&2
-  echo "update. See scripts/local.env.example for a stable identity." >&2
+  echo "update. Set it in $BUILD_ENVIRONMENT_FILE; see" >&2
+  echo "environments/example/.env.example." >&2
 fi
 
-scripts/build-core.sh --if-stale
-
-echo "==> scripts/package-app.sh"
+echo "==> scripts/package-app.sh (local lane)"
 scripts/package-app.sh
 
 # Ask a running installed copy to quit before replacing it. Only the

@@ -35,11 +35,11 @@ to the bundle id and account `state-key`
 and `kSecAttrAccount` alone, `crates/credentials/src/lib.rs`).
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
+STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
 LOGIN=~/Library/Keychains/login.keychain-db
-security find-generic-password -s com.onetimesecret.pad -a state-key
+security find-generic-password -s dev.onetimesecret.pad -a state-key
 log stream --style compact --predicate \
-  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
+  'subsystem == "dev.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 ## What the code must do in both cases
@@ -140,7 +140,7 @@ failure with the same required outcome.
    starting state is known good. Quit.
 2. Record the sha256 values again as in case 1 step 2.
 3. Open Keychain Access, select the login keychain, find the generic
-   password whose Name is `com.onetimesecret.pad` and
+   password whose Name is `dev.onetimesecret.pad` and
    whose Account is `state-key`. On the Access Control tab, select
    "Confirm before allowing access" and remove OnetimePad from the list
    of applications that always have access. Save the change.

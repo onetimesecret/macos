@@ -51,7 +51,7 @@ scripts/install.sh
 ## Where to look
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
+STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
 ls -la "$STATE"
 ```
 
@@ -79,7 +79,7 @@ The log predicate, for the launches this procedure makes:
 
 ```sh
 log show --last 30m --style compact --predicate \
-  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
+  'subsystem == "dev.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 ## Case 1: a day backwards across a quit and relaunch

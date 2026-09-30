@@ -24,17 +24,18 @@ scripts/install.sh
 
 `scripts/install.sh` builds the core, packages the release bundle, asks
 a running installed copy to quit gracefully, and installs to
-`/Applications/OnetimePad.app`. Pin `CODESIGN_IDENTITY` in
-`scripts/local.env` first, or every reinstall resets the Keychain
+`/Applications/OnetimePad.app`. Pin `CODESIGN_IDENTITY` in the
+local environment file (template: `environments/example/.env.example`) first,
+or every reinstall resets the Keychain
 confirmations this procedure depends on.
 
 ## Where to look
 
 The state directory is the form factor's bundle id plus `.noindex`
-under Application Support (`shell/Sources/CompanionKit/FormFactor.swift`; the release id is):
+under Application Support (`shell/Sources/CompanionKit/FormFactor.swift`; the installed copy's id is):
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
+STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
 ls -la "$STATE"
 ```
 
@@ -53,7 +54,7 @@ Watch both:
 
 ```sh
 log stream --style compact --predicate \
-  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
+  'subsystem == "dev.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 After the fact, the same predicate under
@@ -98,7 +99,7 @@ erases (`crates/ffi/src/lib.rs`, `crates/ffi/src/persist.rs`,
 
    ```sh
    ls "$STATE"/ots-companion-key-half-*
-   security find-generic-password -s com.onetimesecret.pad -a state-key -w
+   security find-generic-password -s dev.onetimesecret.pad -a state-key -w
    ```
 
    The second command may prompt for keychain access. Allow it once;

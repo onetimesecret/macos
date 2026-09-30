@@ -28,11 +28,12 @@ stick, and per-app screen-capture pickers can't list it. When the app
 needs to be a citizen of the permission system, use the entry points:
 
 ```sh
-../scripts/dev.sh       # debug bundle as dev.onetimesecret.pad, launched from dist/
+../scripts/dev.sh       # debug bundle as dev.onetimesecret.pad.debug, launched from dist/
 ../scripts/install.sh   # release bundle, signed, installed to /Applications
 ```
 
-The bundle id is `com.onetimesecret.pad`; the version
+The bundle id is `com.onetimesecret.pad` for App Store builds and
+`dev.onetimesecret.pad` for the `install.sh` copy; the version
 users see is `CFBundleShortVersionString` in `OnetimePad-Info.plist`,
 which is the product's own number, edited there by hand when work a
 user can touch lands. The packaging script reads it and stamps
@@ -44,8 +45,10 @@ versions for diagnostics. `companion_ffi_version()` and
 `companion_core_version()` report the two Rust versions. Ad-hoc
 signing changes the code identity on every rebuild, so
 TCC grants reset and the Keychain re-confirms access to stored items
-(the API token, the state key); set `CODESIGN_IDENTITY` to a real
-certificate for an identity that persists.
+(the API token, the state key). Set `CODESIGN_IDENTITY` in the dev or
+local lane's environment file
+(`scripts/build-lanes.sh`) for an identity that persists;
+App Store signing reads its own staging file.
 
 The rev C surfaces make dev scaffolding unnecessary: type a line and
 ⌘↩ seals it. The old dev-seed shim is gone from the packaged core, so
@@ -63,7 +66,7 @@ the seam.
   drag-to-reorder, ✕ to close; the keyboard map
   (⌃⌥Space, ⌘1 to 9, ⌘N or ⌘T, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
   the keymap file's business and not this file's, so read
-  `docs/development/about-the-keymap.md` for the list that is actually
+  `docs/development/keymap-format-and-dispatch.md` for the list that is actually
   installed. Markdown headings render styled with their markup kept
   visible; the bytes of the page never change.
 - The ledger still records every event and is still readable by an

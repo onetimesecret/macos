@@ -19,7 +19,7 @@
 //     ~/Library/Application Support/com.onetimesecret.pad/keymap.json
 //
 // Sections there are applied after these, so a chord you name wins, and
-// a chord you set to null is taken away. See docs/development/about-the-keymap.md.
+// a chord you set to null is taken away. See docs/development/keymap-format-and-dispatch.md.
 [
   {
     // Version 1 of the schema. An entry that carries only this is

@@ -21,7 +21,7 @@ import CompanionCore
 /// the fact:
 ///
 /// ```bash
-/// log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}' --last 1h --style compact
+/// log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}' --last 1h --style compact
 /// ```
 ///
 /// What crosses is metadata: which step refused and the backend's own

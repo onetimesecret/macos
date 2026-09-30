@@ -36,7 +36,7 @@ This describes what the branch implements. ADR-0028 is still proposed,
 so the decision behind it is not accepted, and no statement here is a
 guarantee the project has made. How the pieces fit together in the code
 is
-[`../../../development/about-file-backed-documents.md`](../../../development/about-file-backed-documents.md).
+[`../../../development/file-backed-documents.md`](../../../development/file-backed-documents.md).
 
 ## The problem
 
@@ -453,7 +453,7 @@ The keyboard map is a file, not code:
 `shell/Sources/CompanionKit/Resources/default-keymap.json`, read with
 two JSON5 tolerances, is the source of shortcuts, and the menu shows
 whatever that file binds. See
-[`../../../development/about-the-keymap.md`](../../../development/about-the-keymap.md).
+[`../../../development/keymap-format-and-dispatch.md`](../../../development/keymap-format-and-dispatch.md).
 
 **Nothing here rebinds an existing chord, and no new context is
 added.** All four bindings live in the `Editor` context, which is the

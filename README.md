@@ -84,14 +84,42 @@ Two entry points, both in `scripts/`:
 
 - `scripts/dev.sh` builds the debug bundle and launches it from
   `dist/`. The debug build takes its own bundle id
-  (`dev.onetimesecret.pad`) and a "Dev" display name, so it runs beside
+  (`dev.onetimesecret.pad.debug`) and a "Dev" display name, so it runs beside
   the installed copy without sharing its defaults, keychain items, or
   state.
-- `scripts/install.sh` builds the release bundle, signs it, and
-  installs it to `/Applications`. This is the daily dogfood channel;
-  see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
+- `scripts/install.sh` builds the release bundle, signs it with the local
+  environment's values, and installs it to `/Applications`. This is the daily dogfood
+  channel; see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
+- `scripts/package-app.sh --app-store` builds the App Store release and
+  signed `dist/OnetimePad.pkg`, taking the next build number from a counter
+  shared by the clone's worktrees (`--build-number N` sets it). Its application
+  identity, installer identity, and provisioning profile come from the staging
+  environment file, separate from the dev and local lanes' files.
+  Follow [Distributing OnetimePad through TestFlight](docs/development/testflight-distribution.md)
+  for account setup, upload, and tester qualification.
 
-Both rebuild the Rust core only when it is stale and package through
+Signing values stay outside the checkout, one environment directory per lane,
+so every worktree reads the same ones: `dev/.env` for the dev lane,
+`local/.env` for the local lane, and `staging/.env` for the App Store lane,
+under `~/.local/appledev/CompanionApp/environments/` or
+`$ONETIMEPAD_ENVIRONMENTS_DIR`. `environments/example/` is the checked in
+template for one environment directory. Copy it out of the checkout once per
+environment and rename `.env.example` to `.env` in each copy. Neither command
+overwrites an existing file:
+
+```sh
+for environment in dev local staging; do
+  target=~/.local/appledev/CompanionApp/environments/$environment
+  mkdir -p "$target"
+  cp -Rn environments/example/ "$target/"
+  mv -n "$target/.env.example" "$target/.env"
+done
+```
+
+Then uncomment and fill in that environment's section of each `.env`, and run
+`direnv allow` in each directory if you use direnv.
+
+All lanes rebuild the Rust core only when it is stale and package through
 `scripts/package-app.sh`.
 
 The core builds in two shapes (ADR-0018): the release shape, whose
@@ -158,7 +186,7 @@ window, and then ⌃⌥Space and the menu-bar icon select it too. The
 surface's mechanics log to the unified log:
 
 ```sh
-log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}'
+log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}'
 ```
 
 It began as the second form factor (ADR-0010) beside a menu-bar panel,
@@ -171,7 +199,8 @@ future form factor would share.
 ## Naming note
 
 **OnetimePad** is the current working name. The bundle id is
-`com.onetimesecret.pad`, with `dev.onetimesecret.pad` for the dev lane.
+`com.onetimesecret.pad` for App Store builds, with `dev.onetimesecret.pad`
+for the local lane and `dev.onetimesecret.pad.debug` for the dev lane.
 Until 0.19.0 it was `com.onetimesecret.companion.backdrop`, the older
 "Companion" working-title lineage kept on purpose because macOS keys
 state, Keychain items, and TCC grants off the id; leaving it behind cost

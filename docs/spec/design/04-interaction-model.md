@@ -348,7 +348,7 @@ going in, and token color stays inside it coming out.
 | ⌘1 – ⌘9 | jump to page 1–9, in visible tab order |
 | ⌘0 | the ledger — expired & closed pages, dimmed |
 | ⌥⌘← / ⌥⌘→ | previous / next page |
-| ⌘N or ⌘T | new page, default rung (⌥⌘N until issue #77; ⌘T joined in dogfood phase 4 because a tab is what the pad opens; the bindings live in the keymap now, docs/development/about-the-keymap.md) |
+| ⌘N or ⌘T | new page, default rung (⌥⌘N until issue #77; ⌘T joined in dogfood phase 4 because a tab is what the pad opens; the bindings live in the keymap now, docs/development/keymap-format-and-dispatch.md) |
 | ⌘F / ⌘G / ⇧⌘G | find in the page, next match, previous — the docked find bar, not the floating panel |
 | ⌥⌘F | find and replace in the page |
 | ⌘E | use the selection for find; refuses a selection holding a chip, which has no text to search for |

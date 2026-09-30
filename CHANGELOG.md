@@ -171,6 +171,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **App Store upload packaging is available.**
+  `scripts/package-app.sh --app-store` builds a sandboxed release,
+  signs it with the configured application and installer identities, and writes
+  `dist/OnetimePad.pkg`. The build number comes from a counter in the git
+  common directory, incremented under a lock and replaced by rename, so
+  worktrees of one clone never share a number; `--build-number N` uses N and
+  raises the counter to it. Local signing values are documented in
+  `scripts/local.env.example`.
+
 - **Source-language detection is available for evaluation** (ADR-0029;
   `companion-core` 0.20.0, `companion-ffi` 0.26.0). The core accepts
   explicitly submitted bytes and either returns a canonical language slug or
@@ -253,6 +262,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app.
 
 ### Changed
+
+- **The local install runs as `dev.onetimesecret.pad`, and debug builds as
+  `dev.onetimesecret.pad.debug`.** `com.onetimesecret.pad` now belongs to App
+  Store builds only: staging (TestFlight) and production. `scripts/install.sh`
+  builds the release configuration as `dev.onetimesecret.pad`, so its
+  development profile covers the App ID `TEAMID.dev.onetimesecret.pad`;
+  `scripts/dev.sh` and `package-app.sh --debug` build as
+  `dev.onetimesecret.pad.debug`. Nothing migrates. The installed copy stops
+  reading the state, drafts, ledger, and Keychain items it kept under
+  `com.onetimesecret.pad` and finds the store debug builds used until now;
+  debug builds start empty.
+
+- **Signing settings live outside the checkout, one environment per lane.**
+  The dev lane reads `dev/.env`, the local lane `local/.env`, and the App
+  Store lane `staging/.env`, under
+  `~/.local/appledev/CompanionApp/environments/` or
+  `$ONETIMEPAD_ENVIRONMENTS_DIR`, so every worktree on a Mac signs the same
+  way. Every file uses the same names, `CODESIGN_IDENTITY`,
+  `PROVISIONING_PROFILE`, and for the App Store lane `INSTALLER_IDENTITY`; a
+  lane takes them from its own file alone and discards values of those names
+  inherited from the shell. `scripts/local.env` is no longer read, and the packaging scripts
+  refuse to run while one is present; move its values into the three files.
+  `environments/example/` is the checked in template for one environment
+  directory, to be copied out of the checkout once per environment.
+
+- **Development, local-install, and App Store signing settings are isolated.**
+  Each lane signs only with the values in its own environment file; a file
+  that still uses a `DEV_*`, `LOCAL_*`, or `APP_STORE_*` signing name is
+  refused with the name to rename. The packaging preflight rejects profiles
+  that do not match the selected lane.
 
 - **Code rendering can be chosen automatically or by hand, and file admission
   now refuses binary-like content** (app 0.22.0; `companion-core` 0.22.0,
@@ -840,7 +879,7 @@ deadline that lands where the clock does.
   -3d says it by itself.
 
 - **The keyboard is a file now** (issue #76,
-  `docs/development/about-the-keymap.md`). What each chord does used to
+  `docs/development/keymap-format-and-dispatch.md`). What each chord does used to
   be spelled in Swift, in two places, and moving one was a code change
   nobody could review as a list. It is now a bundled keymap in the Zed
   editor's format, read with the two JSON5 tolerances a hand written

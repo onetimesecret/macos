@@ -3396,7 +3396,7 @@ public struct InkEditorView: NSViewRepresentable {
             createdS: Int64, modifiedS: Int64,
             locale: Locale = .autoupdatingCurrent,
             timeZone: TimeZone = .autoupdatingCurrent,
-            bundle: Bundle = .module
+            bundle: Bundle = CompanionLocalization.bundle
         ) -> String? {
             guard modifiedS > createdS else { return nil }
             let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
@@ -3423,7 +3423,7 @@ public struct InkEditorView: NSViewRepresentable {
             createdS: Int64, modifiedS: Int64,
             locale: Locale = .autoupdatingCurrent,
             timeZone: TimeZone = .autoupdatingCurrent,
-            bundle: Bundle = .module
+            bundle: Bundle = CompanionLocalization.bundle
         ) -> String {
             let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
             let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
@@ -3449,7 +3449,7 @@ public struct InkEditorView: NSViewRepresentable {
                 range: NSRange(location: 0, length: 0),
                 logicalRange: NSRange(location: 0, length: 0),
                 compactText: NSLocalizedString(
-                    "edited", bundle: .module,
+                    "edited", bundle: CompanionLocalization.bundle,
                     comment: "The compact metadata label for an edited block."
                 ),
                 detailText: detail,

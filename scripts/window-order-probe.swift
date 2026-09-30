@@ -10,7 +10,8 @@
 // no screen recording grant, because it never reads a window's name or
 // its owner's name. On macOS 26 `kCGWindowOwnerName` is nil without that
 // grant, so the card is found by the PID of the running app whose bundle
-// id is com.onetimesecret.pad or dev.onetimesecret.pad, and app names
+// id is com.onetimesecret.pad, dev.onetimesecret.pad or
+// dev.onetimesecret.pad.debug, and app names
 // come from NSRunningApplication.
 //
 // scripts/dev.sh builds dist/window-order-probe alongside the app. Run
@@ -133,7 +134,9 @@ struct WindowRecord {
     let app: String
 }
 
-let padBundleIDs: Set<String> = ["com.onetimesecret.pad", "dev.onetimesecret.pad"]
+let padBundleIDs: Set<String> = [
+    "com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug",
+]
 
 /// A window smaller than this is a status item, a tooltip or a helper
 /// speck, never the thing a person is looking at.

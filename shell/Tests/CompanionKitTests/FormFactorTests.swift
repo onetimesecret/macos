@@ -85,14 +85,21 @@ final class FormFactorTests: XCTestCase {
     func testOnlyTheNamedIdentifiersAreAdopted() {
         let panel = FormFactor.panelBundleIdentifier
         let backdrop = FormFactor.backdropBundleIdentifier
+        let local = FormFactor.localBundleIdentifier
         let dev = FormFactor.devBundleIdentifier
 
         let cases: [(running: String?, fallback: String, resolved: String, why: String)] = [
             (nil, panel, panel, "a bare binary has no identifier at all"),
             (panel, panel, panel, "the app's own identifier is itself"),
             (backdrop, backdrop, backdrop, "and so is the other form factor's"),
-            (dev, backdrop, dev, "the dev lane's own name is adopted over the backdrop"),
-            (dev, panel, panel, "but not over the panel, which has no dev lane"),
+            (local, backdrop, local, "the local lane's own name is adopted over the backdrop"),
+            (dev, backdrop, dev, "and so is the dev lane's"),
+            (local, panel, panel, "but neither over the panel, which has no such lanes"),
+            (dev, panel, panel, "in either case"),
+            (
+                local + ".release", backdrop, backdrop,
+                "a suffix on the local id is not a lane, whatever it spells"
+            ),
             (
                 backdrop + ".debug", backdrop, backdrop,
                 "a suffix on the shipping id is not the dev lane, whatever it spells"
@@ -236,6 +243,13 @@ final class FormFactorTests: XCTestCase {
             FormFactor.refusesProductionStateUnderTests(
                 environment: [:],
                 bundleIdentifier: Self.shippingApp,
+                seamsInjected: false
+            )
+        )
+        XCTAssertFalse(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: [:],
+                bundleIdentifier: FormFactor.localBundleIdentifier,
                 seamsInjected: false
             )
         )

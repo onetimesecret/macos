@@ -1,5 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   OnetimePad's identity sheet, consumed by scripts/package-app.sh. The
   panel sibling and its shell/Info.plist were archived (ADR-0014), so
@@ -8,8 +9,10 @@
   CFBundleName / CFBundleDisplayName, CFBundleExecutable, the target,
   and the .app filename all say OnetimePad, the product's name, and are
   free to change with it. The bundle id is not. It is
-  com.onetimesecret.pad, and a dev build runs as dev.onetimesecret.pad
-  (the debug build of scripts/package-app.sh writes that one in). The id keys the
+  com.onetimesecret.pad, for App Store builds (staging and production).
+  scripts/package-app.sh writes dev.onetimesecret.pad into the local
+  lane's build and dev.onetimesecret.pad.debug into the dev lane's
+  debug build. The id keys the
   Keychain service, the state directory, the keychain access group, and
   every TCC grant the app has been given, so changing it costs every
   install all four at once: that was accepted exactly once, to leave the
@@ -52,6 +55,8 @@
 	<string>0.24.0</string>
 	<key>CFBundleVersion</key>
 	<string>0.0.0</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false />
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -60,13 +65,13 @@
 	     app (Dock icon, ⌘Tab membership) by an argued amendment in the
 	     feature spec; activation is one of its summon routes. -->
 	<key>NSHighResolutionCapable</key>
-	<true/>
+	<true />
 	<!-- Matches the panel: opting in is what makes PageModel's
 	     SuddenTerminationLatch the real gate on the logout kill, rather
 	     than leaving the ADR-0012 clause satisfied by the accident of
 	     never having opted in. -->
 	<key>NSSupportsSuddenTermination</key>
-	<true/>
+	<true />
 	<key>NSHumanReadableCopyright</key>
 	<string>© Onetime Secret</string>
 </dict>

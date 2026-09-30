@@ -1,5 +1,8 @@
-# docs/development/about-the-status-item.md
 ---
+# docs/development/menu-bar-status-item.md
+---
+
+# Menu bar status item
 
 The status item is the OnetimePad icon in the system menu bar — the NSStatusItem created in BackdropApp.swift:
 

@@ -1,6 +1,8 @@
-# docs/development/about-the-textarea.md
+---
+# docs/development/text-editor-capabilities.md
 ---
 
+# Text editor capabilities and extension points
 
 > QUESTION: Based on the current implementation, what kind of common text editing functionality is available that we are not utilizing yet? For example like word wrap toggle, find and replace, etc. Or is it a clean slate that we need to implement ourselves? Please answer with the aide of an ascii visual showing where that code lives in SwiftUI and/or Rust.
 

@@ -403,7 +403,7 @@ pub unsafe extern "C" fn companion_file_apply_ops_as_new_step(
     unsafe { apply(handle, file, ops_json, Some((EditIntent::Automation, None))) }
 }
 
-/// Apply a file edit with the gesture supplied by the TextKit bridge.
+/// Apply a file edit with the gesture supplied by the `TextKit` bridge.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `ops_json` a valid C string.

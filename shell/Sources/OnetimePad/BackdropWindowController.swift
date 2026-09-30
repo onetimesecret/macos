@@ -703,9 +703,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// The surface's mechanics in the unified log — stance, level,
     /// visibility, frame; never content. The subsystem is the resolved
     /// bundle id rather than the release constant, so a dev copy running
-    /// beside the installed one writes under `dev.onetimesecret.pad`
-    /// and the two can be told apart. Watch both lanes with:
-    /// `log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}'`
+    /// beside the installed one writes under `dev.onetimesecret.pad.debug`
+    /// and the two can be told apart. Watch every lane with:
+    /// `log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}'`
     private static let logger = Logger(
         subsystem: FormFactor.backdrop.loggerSubsystem, category: "surface"
     )

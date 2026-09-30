@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # The dev lane: rebuild whatever is stale, package the debug bundle,
 # and launch it from dist/. The debug build takes its own bundle id
-# (dev.onetimesecret.pad), a "Dev" display name and the black app icon
+# (dev.onetimesecret.pad.debug), a "Dev" display name and the black app icon
 # (ADR-0012), so it runs
 # beside the installed copy without contending for the menu bar,
 # defaults, keychain items, or state, and without being mistaken for it.
 #
-# The production counterpart is scripts/install.sh, which builds the
-# release configuration and installs it to /Applications.
+# The local counterpart is scripts/install.sh, which builds the release
+# configuration as dev.onetimesecret.pad and installs it to /Applications.
 #
 # --no-launch builds without opening the app afterwards.
 #

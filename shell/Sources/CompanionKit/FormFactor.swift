@@ -17,10 +17,11 @@ import Foundation
 public struct FormFactor: Sendable {
     /// Scopes this form factor's Keychain items, always the running
     /// build's own identifier (ADR-0012: services derive from the bundle
-    /// id, and the dev lane's own identifier splits dev from release
-    /// structurally). Keychain ACLs are granted to the code identity
-    /// that created an item, so two signed binaries sharing one state
-    /// key would each meet a confirmation prompt for the other's.
+    /// id, and the local and dev lanes' own identifiers split them from
+    /// each other and from release structurally). Keychain ACLs are
+    /// granted to the code identity that created an item, so two signed
+    /// binaries sharing one state key would each meet a confirmation
+    /// prompt for the other's.
     ///
     /// Never nil now, so `companion_new_scoped` is the only constructor
     /// path: the core's own unscoped default would put a dev build and
@@ -166,23 +167,34 @@ public struct FormFactor: Sendable {
     /// default credential scope is this same string.
     public static let panelBundleIdentifier = "com.onetimesecret.companion"
 
-    /// The identifier the app ships under. It moved once, off the
-    /// legacy `com.onetimesecret.companion.backdrop`, and the move cost
-    /// every install its state directory, its Keychain items, its
+    /// The identifier the app ships under: App Store builds, first to
+    /// TestFlight (staging) and then to production. It moved once, off
+    /// the legacy `com.onetimesecret.companion.backdrop`, and the move
+    /// cost every install its state directory, its Keychain items, its
     /// keychain access group and its TCC grants, because macOS keys all
     /// four off the id (ADR-0014). Names are paint and move freely;
     /// this is infrastructure, and it does not move again casually.
     public static let backdropBundleIdentifier = "com.onetimesecret.pad"
 
+    /// The identifier the local lane runs under (`scripts/install.sh`,
+    /// `package-app.sh` with no lane flag): the release configuration,
+    /// development signed and installed to /Applications. A different
+    /// prefix from the shipping id, so nothing keyed off the id can
+    /// mistake the two: the local install and a TestFlight or App Store
+    /// copy are two apps to LaunchServices, two defaults domains, two
+    /// Keychain services and two state directories. The packaging
+    /// script writes this exact string, and `BundleDeclarationTests`
+    /// holds the two together.
+    public static let localBundleIdentifier = "dev.onetimesecret.pad"
+
     /// The identifier the dev lane runs under (`package-app.sh
-    /// --debug`). A different prefix rather than a suffix on the
-    /// shipping id, so nothing keyed off the id can mistake the two:
-    /// the dev copy and the installed copy are two apps to
-    /// LaunchServices, two defaults domains, two Keychain services and
-    /// two state directories (ADR-0012). The packaging script writes
-    /// this exact string, and `BundleDeclarationTests` holds the two
-    /// together.
-    public static let devBundleIdentifier = "dev.onetimesecret.pad"
+    /// --debug`, `scripts/dev.sh`), so the debug copy and the local
+    /// install are two apps with two stores as well (ADR-0012). It
+    /// extends the local id, which is safe only because every check on
+    /// it matches whole names and none counts dots. The packaging
+    /// script writes this exact string, and `BundleDeclarationTests`
+    /// holds the two together.
+    public static let devBundleIdentifier = "dev.onetimesecret.pad.debug"
 
     /// The identifier this build actually runs under, or `fallback` when
     /// the running process is not one of ours.
@@ -193,8 +205,8 @@ public struct FormFactor: Sendable {
     /// `Bundle.main.bundleIdentifier` would point the panel's state
     /// directory and Keychain items at another process's name.
     ///
-    /// Accepted: `fallback` itself, and for the backdrop the named dev
-    /// identifier, which is what `package-app.sh --debug` writes. The
+    /// Accepted: `fallback` itself, and for the backdrop the local and
+    /// dev lane identifiers, which is what `package-app.sh` writes. The
     /// rule names its identifiers rather than counting dots, so a
     /// sibling form factor's id can never read as a configuration of
     /// this one; a new lane is a new name here, and nowhere else.
@@ -207,13 +219,15 @@ public struct FormFactor: Sendable {
     /// suite that drives it and no wider: under xctest `Bundle.main` is
     /// the test runner, which takes the early return above, so every
     /// guard that follows it is unreachable through the shipping entry
-    /// point. Those guards are what keeps a dev rebuild off the
-    /// installed release copy's `state.sealed` and Keychain items, so
-    /// they are worth reaching (`FormFactorTests`).
+    /// point. Those guards are what keeps a dev rebuild off the local
+    /// install's `state.sealed` and Keychain items, so they are worth
+    /// reaching (`FormFactorTests`).
     static func resolvedBundleIdentifier(running: String?, fallback: String) -> String {
         guard let running else { return fallback }
         if running == fallback { return running }
-        if fallback == backdropBundleIdentifier, running == devBundleIdentifier {
+        if fallback == backdropBundleIdentifier,
+            running == localBundleIdentifier || running == devBundleIdentifier
+        {
             return running
         }
         return fallback

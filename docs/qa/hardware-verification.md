@@ -269,7 +269,7 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   them. ADR-0016 section 1 and section 10.
 - [`re-signed-bundle.md`](verification-procedures/re-signed-bundle.md).
   Owner: delano. Re-signing with a different identity refuses without
-  erasing, and the `dev.onetimesecret.pad` bundle id keeps its state
+  erasing, and the `dev.onetimesecret.pad.debug` bundle id keeps its state
   directory separate from the release one. ADR-0016 section 10, case 4.
 - [`locked-keychain.md`](verification-procedures/locked-keychain.md).
   Owner: delano. A locked keychain at load, and a denied ACL prompt,

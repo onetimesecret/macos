@@ -22,13 +22,54 @@ copy matters for two reasons:
   changes gets SIGKILLed by the kernel. `/Applications` is outside that
   blast radius.
 - Keychain and TCC grants are tied to code identity. Set
-  `CODESIGN_IDENTITY` in `scripts/local.env` (see
-  `scripts/local.env.example`) to a stable certificate so those grants
-  survive an update instead of resetting every time.
+  `CODESIGN_IDENTITY` in the local environment file (see
+  `environments/example/.env.example`) to a stable development
+  certificate. Set
+  `PROVISIONING_PROFILE` there when the local build must carry the restricted
+  entitlements; the packaging preflight checks that the profile authorizes the
+  certificate, the local lane's bundle identifier (`dev.onetimesecret.pad`),
+  and this Mac.
 
 Re-run `scripts/install.sh` to update. `--no-launch` installs without
 opening the app afterward. For a debug build that runs beside the
 installed copy, use `scripts/dev.sh`.
+
+## One-time reset when the installed copy moves to dev.onetimesecret.pad
+
+The local lane's bundle identifier changed. `scripts/install.sh` now
+installs `dev.onetimesecret.pad`, the id the dev build ran under until
+now, and the dev build is `dev.onetimesecret.pad.debug`.
+`com.onetimesecret.pad` is for App Store builds only: TestFlight and
+production. Nothing migrates. Send or copy out anything you still need
+from the installed copy **before** you install.
+
+Where things are now:
+
+- State: the installed copy reads
+  `~/Library/Application Support/dev.onetimesecret.pad.noindex`, which
+  holds whatever the dev build left there, so its first launch opens
+  the dev build's pages rather than your dogfood ones. The dogfood state
+  in `com.onetimesecret.pad.noindex` is neither read nor deleted. The
+  dev build starts empty in `dev.onetimesecret.pad.debug.noindex`. For
+  an installed copy that starts empty, remove both
+  `dev.onetimesecret.pad.noindex` and the Keychain items under the
+  service `dev.onetimesecret.pad` before its first launch.
+- Keychain: the `state-key`, `ledger-key` and `api-token` items under
+  `dev.onetimesecret.pad` now belong to the installed copy; the dev
+  build creates fresh ones under `dev.onetimesecret.pad.debug`. The
+  items under `com.onetimesecret.pad` stay in Keychain Access.
+- The user keymap override is read from
+  `~/Library/Application Support/dev.onetimesecret.pad/keymap.json`
+  (dev: `dev.onetimesecret.pad.debug/keymap.json`).
+- Defaults, the launch at login registration and any screen recording
+  or accessibility grant follow the id: the installed copy picks up
+  what the dev build set, and the dev build starts unset.
+- The unified log subsystem is the id too:
+  `subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}`
+  finds every lane.
+
+The paths and ids in the older reset sections below were right for
+their builds and are left as written; read them with this one in mind.
 
 ## One-time reset when you update to the 0.19.0 build
 
@@ -41,7 +82,7 @@ every TCC grant off the id, so the new build starts from nothing.
 Nothing migrates, deliberately. Send or copy out anything you still
 need **before** you install.
 
-Where things are now, and where the old ones were left:
+Where things went in 0.19.0, and where the old ones were left:
 
 - State: `~/Library/Application Support/com.onetimesecret.pad.noindex`
   (dev: `dev.onetimesecret.pad.noindex`). The old
@@ -264,7 +305,7 @@ When a page does not come back, the whole story is in the unified log,
 however the app was launched:
 
 ```bash
-log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}' --last 1h --style compact
+log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}' --last 1h --style compact
 ```
 
 Two categories answer two different questions. `persistence` is the

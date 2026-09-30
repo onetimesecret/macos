@@ -1,5 +1,11 @@
 # From Here to TestFlight
 
+> Historical implementation plan, not the current submission procedure.
+> For the implemented packaging command and account-to-tester workflow, use
+> [Distributing OnetimePad through TestFlight](../development/testflight-distribution.md).
+> The steps below predate the App Store packaging lane; their signing examples,
+> version-stamping instructions, and runtime assumptions are not current guidance.
+
 Two current Apple requirements shape everything below: Mac TestFlight requires a provisioning profile, which macOS only issues when a restricted entitlement demands one, and without an Xcode project the upload path is a signed `.pkg` delivered via Transporter.
 
 The starting point is further along than it might appear: `package-app.sh` already produces `dist/OnetimePad.app` with the bundle id `com.onetimesecret.pad` and version stamping, and the Rust core is a static `.a` linked into one Mach-O (no embedded dylib to sign separately, which simplifies everything). What's missing for TestFlight is the App Store distribution chain: sandbox, entitlements, a real Distribution identity, a provisioning profile, a signed `.pkg`, and an App Store Connect record.
@@ -32,7 +38,9 @@ The steps, in order:
 
    You already parameterized `CODESIGN_IDENTITY`, so this is a small change plus the two new flags.
 
-7. **Add the App Store Info.plist keys.** Set `ITSAppUsesNonExemptEncryption` (false if you use only standard crypto and HTTPS, which you do; declaring it skips the per-build prompt). Ensure `CFBundleVersion` increments on every upload; it's stamped from `CFBundleShortVersionString` plus the short commit, so a resubmit from the same commit without a version bump will be rejected as a duplicate build number.
+7. **Add the App Store Info.plist keys.** The earlier instruction to set `ITSAppUsesNonExemptEncryption` to `true` solely because the app uses `ring` and `rustls` was incorrect. Follow [App encryption and export compliance](../development/encryption-export-compliance.md) for the current questionnaire-based declaration and the separate documentation process for adding France. Do not invent or prefill a compliance code.
+
+   Ensure `CFBundleVersion` increments on every upload. The `--app-store` lane takes it from a counter in the git common directory, not from the version and commit; see [the TestFlight guide](../development/testflight-distribution.md#5-confirm-version-and-encryption-information).
 
    **Where the version lives.** `CFBundleShortVersionString` in `shell/OnetimePad-Info.plist` is the app's marketing version and its own source of truth (issue #89). Bump it there, by hand, when work a user can touch lands, the same way `crates/ffi/Cargo.toml` gets bumped when the seam changes. The two numbers are separate facts about separate artifacts: the app's says what the product does now, the core's says what the FFI seam offers, and `package-app.sh` prints both when it assembles the bundle. The packaging script refuses the `0.0.0` placeholder, so a bundle that ships has a real number in it.
 

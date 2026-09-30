@@ -1103,7 +1103,7 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
 }
 
 /// [`companion_sheet_apply_ops`] with the editing gesture supplied by the
-/// TextKit bridge. The core owns grouping and rejects unknown intent values.
+/// `TextKit` bridge. The core owns grouping and rejects unknown intent values.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `json` must be a valid,
@@ -1214,7 +1214,7 @@ pub(crate) fn edit_selection(
     if values.iter().all(|value| *value == u32::MAX) {
         return Some(None);
     }
-    if values.iter().any(|value| *value == u32::MAX) {
+    if values.contains(&u32::MAX) {
         return None;
     }
     Some(Some(EditSelection {
