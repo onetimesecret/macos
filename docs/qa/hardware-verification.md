@@ -339,6 +339,22 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   (ADR-0028, D-14, D-19). Not an ADR-0016 case: a file is not staged
   content.
 
+- [`sandbox-file-access.md`](verification-procedures/sandbox-file-access.md).
+  Owner: delano. A sandboxed build and a person's own files: the signed
+  entitlements, open by panel and by drop, save, Save As to a new name
+  and over an existing file, a relaunch with clean and dirty files, a
+  file moved or renamed while the app was closed, a change by another
+  program then an activation, the conflict resolved three ways, a
+  deleted file, a file on another volume and that volume ejected, the
+  keymap file, repeated saves and activations, sandbox denials in the
+  log, a reboot, a file the app cannot read held at launch and located,
+  Locate from a conflict, a file moved while the app is running, a save
+  refused where the file is gone, files that traded names, and whether
+  a sandboxed build sees the state of an earlier unsandboxed one
+  (ADR-0035). Nothing in the repository's suites runs
+  under a sandbox, so this is the only place any of it is checked. Not
+  an ADR-0016 case.
+
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally
 kept here as well would only be a second copy to go stale.

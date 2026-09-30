@@ -6,6 +6,7 @@ documentation_status: draft # needs-review | reviewed | stale
 
 - **Status:** proposed
 - **Date:** 2026-09-04
+- **Superseded in part by:** [ADR-0035](0035-sandboxed-file-access-holds-a-scope-around-core-io.md), which replaces the plain bookmarks clause and the same directory sentence of the explicit save clause.
 - **Depends on:** [ADR-0001](0001-rust-core-thin-shell.md), [ADR-0010](0010-form-factors-as-sibling-targets.md), [ADR-0016](0016-content-persists-across-restart.md), [ADR-0017](0017-durable-tabs-expiring-pages.md), [ADR-0020](0020-a-day-is-a-projection-of-live-pages.md), and [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md).
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -58,7 +59,9 @@ The clauses that fix the boundary:
 - **Explicit save only.** The pad writes a file when the person asks,
   through Save or Save As, and at no other time. The write is atomic:
   a temporary file in the same directory, flushed, then renamed over the
-  target.
+  target. (Where the temporary file is made is replaced by
+  [ADR-0035](0035-sandboxed-file-access-holds-a-scope-around-core-io.md);
+  the rest of this clause stands.)
 - **Staged drafts for crash safety, for exactly as long as the tab.**
   Unsaved edits are sealed into the app's own state, keyed by the file's
   bookmark, and restored at the next launch. A draft is never written to
@@ -124,6 +127,9 @@ The clauses that fix the boundary:
   sandbox arrives, the scope must be started and stopped in that one
   function around a write performed in the core, and a write attempted
   outside it must fail loudly rather than truncate a person's file.
+  (This clause is replaced by
+  [ADR-0035](0035-sandboxed-file-access-holds-a-scope-around-core-io.md).
+  Its wording is kept as written.)
 
 - **A restore reads the files, and settles each tab on its own.** The
   drafts file records a clean file's identity and not its text, so
@@ -291,3 +297,16 @@ and redundant.
   accepted D-14 and D-19 record for issue #172. Dirty close is inline,
   Take theirs is immediate and undoable, and quit asks nothing. The ADR
   remains proposed.
+- **2026-09-30:** Superseded in part by
+  [ADR-0035](0035-sandboxed-file-access-holds-a-scope-around-core-io.md),
+  itself proposed. It replaces the clause headed "Plain bookmarks now,
+  security scoped later" and, in the clause headed "Explicit save
+  only", the sentence placing the temporary file in the same directory.
+  Every other clause stands, including that the write is atomic and
+  that a restore settles each tab on its own; ADR-0035 moves the
+  restore's read of each file to a second step without changing its six
+  outcomes, and decides one case they do not name: a clean file whose
+  read the platform refused is kept for the person to locate and is not
+  dropped. The consequence and the eject trigger above that speak of a
+  single shell function keep their original wording; ADR-0035 records
+  where the scope is held now. The ADR remains proposed.
