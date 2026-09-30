@@ -407,33 +407,41 @@ public struct FileConflictBanner: View {
                 .foregroundStyle(Color.emberText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if file.offersLocate {
-                FileLocateButton { resolve(.locate) }
+            ForEach(Array(Self.actions(for: file).enumerated()), id: \.offset) { _, action in
+                actionButton(for: action)
             }
-            // The two competing copies are named by the one each action keeps.
-            Button("Keep mine") { resolve(.keepMine) }
-                .font(.system(.caption, design: .monospaced))
-                .controlSize(.small)
-                .help("Write this copy over the file on disk on the next save")
-                .accessibilityLabel(Text("Keep my copy and overwrite the file"))
-            if file.offersTakeTheirs {
-                Button("Take theirs") { resolve(.takeTheirs) }
-                    .font(.system(.caption, design: .monospaced))
-                    .controlSize(.small)
-                    .help("Replace this copy with the file on disk. Undo restores this copy.")
-                    .accessibilityLabel(Text("Take the copy on disk; Undo restores my copy"))
-            }
-            Button("Save As") { resolve(.saveAs) }
-                .font(.system(.caption, design: .monospaced))
-                .controlSize(.small)
-                .help("Write this copy somewhere else and leave the file on disk alone")
-                .accessibilityLabel(Text("Save my copy somewhere else and leave both"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(Self.sentence(for: file)))
+    }
+
+    @ViewBuilder
+    private func actionButton(for action: FileConflictResolution) -> some View {
+        switch action {
+        case .locate:
+            FileLocateButton { resolve(.locate) }
+        case .keepMine:
+            Button("Keep mine") { resolve(.keepMine) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+                .help("Write this copy over the file on disk on the next save")
+                .accessibilityLabel(Text("Keep my copy and overwrite the file"))
+        case .takeTheirs:
+            Button("Take theirs") { resolve(.takeTheirs) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+                .help("Replace this copy with the file on disk. Undo restores this copy.")
+                .accessibilityLabel(Text("Take the copy on disk; Undo restores my copy"))
+        case .saveAs:
+            Button("Save As") { resolve(.saveAs) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+                .help("Write this copy somewhere else and leave the file on disk alone")
+                .accessibilityLabel(Text("Save my copy somewhere else and leave both"))
+        }
     }
 }
 
