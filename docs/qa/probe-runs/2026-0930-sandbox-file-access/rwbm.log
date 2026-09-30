@@ -1,0 +1,108 @@
+Wed 30 Sep 2026 02:00:19 PDT
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+swift-driver version: 1.127.8 Apple Swift version 6.2 (swiftlang-6.2.0.13.10 clang-1700.3.13.4)
+Target: arm64-apple-macosx28.0
+command: bash scripts/sandbox-file-access-probe.sh rwbm
+==> swiftc -target arm64-apple-macosx13.0 scripts/sandbox-file-access-probe.swift
+==> codesign (ad hoc) /Users/d/Projects/dev/onetimesecret/macos/dist/sandbox-file-access-probe/Probe-rwbm.app
+/Users/d/Projects/dev/onetimesecret/macos/dist/sandbox-file-access-probe/Probe-rwbm.app: replacing existing signature
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/><key>com.apple.security.files.bookmarks.app-scope</key><true/><key>com.apple.security.files.user-selected.read-write</key><true/></dict></plist>
+
+==> run 1: doc.txt handed over with a grant
+==> run 2: relaunch with no grant on doc.txt
+==> run 3: doc.txt moved to sub/renamed.txt, relaunch again
+==> /tmp/sandbox-file-access-probe.SMTrXr/log.txt
+home: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.rwbm/Data
+sandbox container env: dev.onetimesecret.sandboxprobe.rwbm
+== phase 1: opened /private/tmp/sandbox-file-access-probe.SMTrXr/doc.txt
+[granted] stat: ok ino=567247195 size=18 gid=0
+[granted] realpath: ok /private/tmp/sandbox-file-access-probe.SMTrXr/doc.txt
+[granted] read: ok 18 bytes
+[granted] append in place: ok
+[granted] control read sibling other.txt: FAIL errno=1 Operation not permitted
+[granted] control stat sibling other.txt: ok ino=567247196 size=6 gid=0
+[granted] stat missing sibling: FAIL errno=2 No such file or directory
+[granted] stat parent dir: ok ino=567247194 size=160 gid=0
+[granted] open parent dir: FAIL errno=1 Operation not permitted
+[granted] sibling temp create: FAIL errno=1 Operation not permitted
+[granted] itemReplacementDirectory: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.rwbm/Data/tmp/TemporaryItems/NSIRD_Probe-rwbm_31mIE6
+[granted] staged create: ok
+[granted] staged rename onto target: ok
+[granted] stat after: ok ino=567247207 size=41 gid=20
+[granted] read after: ok 41 bytes
+[granted] create ungranted new sibling: FAIL errno=1 Operation not permitted
+scoped bookmark create: ok 732 bytes
+plain bookmark create: ok 960 bytes
+home: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.rwbm/Data
+sandbox container env: dev.onetimesecret.sandboxprobe.rwbm
+== phase 2: relaunch, no target url
+[bare old path] stat: ok ino=567247207 size=41 gid=20
+[bare old path] read: FAIL errno=1 Operation not permitted
+[plain/[]] resolved /private/tmp/sandbox-file-access-probe.SMTrXr/doc.txt stale=false
+[plain/[]] before start: read ok 41 bytes
+[plain/[]] startAccessing=true
+[plain/[]] read ok 41 bytes
+[plain/[]] after stop: read ok 41 bytes
+[plain/scope] resolve FAIL Error Domain=NSCocoaErrorDomain Code=259 "The file couldn’t be opened because it isn’t in the correct format."
+[scoped/[]] resolved /private/tmp/sandbox-file-access-probe.SMTrXr/doc.txt stale=false
+[scoped/[]] before start: read ok 41 bytes
+[scoped/[]] startAccessing=true
+[scoped/[]] read ok 41 bytes
+[scoped/[]] after stop: read ok 41 bytes
+[scoped/scope] resolved /private/tmp/sandbox-file-access-probe.SMTrXr/doc.txt stale=false
+[scoped/scope] before start: read ok 41 bytes
+[scoped/scope] startAccessing=true
+[scoped/scope] stat: ok ino=567247207 size=41 gid=20
+[scoped/scope] realpath: ok /private/tmp/sandbox-file-access-probe.SMTrXr/doc.txt
+[scoped/scope] read: ok 41 bytes
+[scoped/scope] append in place: ok
+[scoped/scope] control read sibling other.txt: FAIL errno=1 Operation not permitted
+[scoped/scope] control stat sibling other.txt: ok ino=567247196 size=6 gid=0
+[scoped/scope] stat missing sibling: FAIL errno=2 No such file or directory
+[scoped/scope] stat parent dir: ok ino=567247194 size=160 gid=0
+[scoped/scope] open parent dir: FAIL errno=1 Operation not permitted
+[scoped/scope] sibling temp create: FAIL errno=1 Operation not permitted
+[scoped/scope] itemReplacementDirectory: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.rwbm/Data/tmp/TemporaryItems/NSIRD_Probe-rwbm_mztfpP
+[scoped/scope] staged create: ok
+[scoped/scope] staged rename onto target: ok
+[scoped/scope] stat after: ok ino=567247214 size=46 gid=20
+[scoped/scope] read after: ok 46 bytes
+[scoped/scope] create ungranted new sibling: FAIL errno=1 Operation not permitted
+[scoped/scope] re-bookmark inside scope: ok 732, stored
+[scoped/scope] after stop: read ok 46 bytes
+home: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.rwbm/Data
+sandbox container env: dev.onetimesecret.sandboxprobe.rwbm
+== phase 2: relaunch, no target url
+[bare old path] stat: FAIL errno=2 No such file or directory
+[bare old path] read: FAIL errno=2 No such file or directory
+[plain/[]] resolve FAIL Error Domain=NSCocoaErrorDomain Code=4 "The file doesn’t exist."
+[plain/scope] resolve FAIL Error Domain=NSCocoaErrorDomain Code=259 "The file couldn’t be opened because it isn’t in the correct format."
+[scoped/[]] resolved /private/tmp/sandbox-file-access-probe.SMTrXr/sub/renamed.txt stale=true
+[scoped/[]] before start: read FAIL errno=1 Operation not permitted
+[scoped/[]] startAccessing=false
+[scoped/[]] read FAIL errno=1 Operation not permitted
+[scoped/[]] after stop: read FAIL errno=1 Operation not permitted
+[scoped/scope] resolved /private/tmp/sandbox-file-access-probe.SMTrXr/sub/renamed.txt stale=true
+[scoped/scope] before start: read FAIL errno=1 Operation not permitted
+[scoped/scope] startAccessing=true
+[scoped/scope] stat: ok ino=567247214 size=46 gid=20
+[scoped/scope] realpath: ok /private/tmp/sandbox-file-access-probe.SMTrXr/sub/renamed.txt
+[scoped/scope] read: ok 46 bytes
+[scoped/scope] append in place: ok
+[scoped/scope] control read sibling other.txt: FAIL errno=2 No such file or directory
+[scoped/scope] control stat sibling other.txt: FAIL errno=2 No such file or directory
+[scoped/scope] stat missing sibling: FAIL errno=2 No such file or directory
+[scoped/scope] stat parent dir: ok ino=567247217 size=96 gid=0
+[scoped/scope] open parent dir: FAIL errno=1 Operation not permitted
+[scoped/scope] sibling temp create: FAIL errno=1 Operation not permitted
+[scoped/scope] itemReplacementDirectory: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.rwbm/Data/tmp/TemporaryItems/NSIRD_Probe-rwbm_SxSeYl
+[scoped/scope] staged create: ok
+[scoped/scope] staged rename onto target: ok
+[scoped/scope] stat after: ok ino=567247222 size=46 gid=20
+[scoped/scope] read after: ok 46 bytes
+[scoped/scope] create ungranted new sibling: FAIL errno=1 Operation not permitted
+[scoped/scope] re-bookmark inside scope: ok 772, stored
+[scoped/scope] after stop: read FAIL errno=1 Operation not permitted
+rwbm exit=0

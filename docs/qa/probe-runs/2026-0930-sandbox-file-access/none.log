@@ -1,0 +1,64 @@
+Wed 30 Sep 2026 02:00:17 PDT
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+swift-driver version: 1.127.8 Apple Swift version 6.2 (swiftlang-6.2.0.13.10 clang-1700.3.13.4)
+Target: arm64-apple-macosx28.0
+command: bash scripts/sandbox-file-access-probe.sh none
+==> swiftc -target arm64-apple-macosx13.0 scripts/sandbox-file-access-probe.swift
+==> codesign (ad hoc) /Users/d/Projects/dev/onetimesecret/macos/dist/sandbox-file-access-probe/Probe-none.app
+/Users/d/Projects/dev/onetimesecret/macos/dist/sandbox-file-access-probe/Probe-none.app: replacing existing signature
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/></dict></plist>
+
+==> run 1: doc.txt handed over with a grant
+==> run 2: relaunch with no grant on doc.txt
+==> run 3: doc.txt moved to sub/renamed.txt, relaunch again
+==> /tmp/sandbox-file-access-probe.WAhVn9/log.txt
+home: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.none/Data
+sandbox container env: dev.onetimesecret.sandboxprobe.none
+== phase 1: opened /private/tmp/sandbox-file-access-probe.WAhVn9/doc.txt
+[granted] stat: ok ino=567247106 size=18 gid=0
+[granted] realpath: ok /private/tmp/sandbox-file-access-probe.WAhVn9/doc.txt
+[granted] read: ok 18 bytes
+[granted] append in place: ok
+[granted] control read sibling other.txt: FAIL errno=1 Operation not permitted
+[granted] control stat sibling other.txt: ok ino=567247107 size=6 gid=0
+[granted] stat missing sibling: FAIL errno=2 No such file or directory
+[granted] stat parent dir: ok ino=567247105 size=160 gid=0
+[granted] open parent dir: FAIL errno=1 Operation not permitted
+[granted] sibling temp create: FAIL errno=1 Operation not permitted
+[granted] itemReplacementDirectory: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.none/Data/tmp/TemporaryItems/NSIRD_Probe-none_sitMHh
+[granted] staged create: ok
+[granted] staged rename onto target: ok
+[granted] stat after: ok ino=567247115 size=41 gid=20
+[granted] read after: ok 41 bytes
+[granted] create ungranted new sibling: FAIL errno=1 Operation not permitted
+scoped bookmark create: FAIL Error Domain=NSCocoaErrorDomain Code=256 "ScopedBookmarksAgent did not return error domain during creation" UserInfo={NSURL=file:///private/tmp/sandbox-file-access-probe.WAhVn9/doc.txt, NSDebugDescription=ScopedBookmarksAgent did not return error domain during creation}
+plain bookmark create: ok 960 bytes
+home: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.none/Data
+sandbox container env: dev.onetimesecret.sandboxprobe.none
+== phase 2: relaunch, no target url
+[bare old path] stat: ok ino=567247115 size=41 gid=20
+[bare old path] read: FAIL errno=1 Operation not permitted
+[plain/[]] resolved /private/tmp/sandbox-file-access-probe.WAhVn9/doc.txt stale=false
+[plain/[]] before start: read ok 41 bytes
+[plain/[]] startAccessing=true
+[plain/[]] read ok 41 bytes
+[plain/[]] after stop: read ok 41 bytes
+[plain/scope] resolve FAIL Error Domain=NSCocoaErrorDomain Code=256 "ScopedBookmarksAgent did not return error domain during resolution" UserInfo={NSDebugDescription=ScopedBookmarksAgent did not return error domain during resolution}
+[scoped/[]] no bookmark data
+[scoped/scope] no bookmark data
+home: /Users/d/Library/Containers/dev.onetimesecret.sandboxprobe.none/Data
+sandbox container env: dev.onetimesecret.sandboxprobe.none
+== phase 2: relaunch, no target url
+[bare old path] stat: FAIL errno=2 No such file or directory
+[bare old path] read: FAIL errno=2 No such file or directory
+[plain/[]] resolved /private/tmp/sandbox-file-access-probe.WAhVn9/sub/renamed.txt stale=true
+[plain/[]] before start: read FAIL errno=1 Operation not permitted
+[plain/[]] startAccessing=true
+[plain/[]] read FAIL errno=1 Operation not permitted
+[plain/[]] after stop: read FAIL errno=1 Operation not permitted
+[plain/scope] resolve FAIL Error Domain=NSCocoaErrorDomain Code=256 "ScopedBookmarksAgent did not return error domain during resolution" UserInfo={NSDebugDescription=ScopedBookmarksAgent did not return error domain during resolution}
+[scoped/[]] no bookmark data
+[scoped/scope] no bookmark data
+none exit=0
