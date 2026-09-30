@@ -230,7 +230,9 @@ What the amendment grants, and what it holds back:
 - **Its own storage, both halves.** A separate state file
   (`~/Library/Application Support/com.onetimesecret.pad.noindex/state.sealed`)
   and a separate Keychain service (`com.onetimesecret.pad`, reached
-  through `companion_new_scoped`; both were
+  through `companion_new_scoped`; the local install and debug builds use
+  their own ids, `dev.onetimesecret.pad` and
+  `dev.onetimesecret.pad.debug`, in the same places; both were
   `com.onetimesecret.companion.backdrop` before 0.19.0). Two form factors remain two
   stores, per ADR-0010. Sharing the panel's key would put two signed
   binaries on one Keychain item, where each one's first read is a
@@ -423,7 +425,8 @@ Added by the parity amendment:
    affordance to reveal anything.
 9. Conceal: a link created from the backdrop reaches the server and
    lands on the clipboard, and a token saved in the backdrop's Settings
-   goes under `com.onetimesecret.pad` in the Keychain.
+   goes under the running build's id in the Keychain
+   (`dev.onetimesecret.pad` for the `install.sh` copy).
    The panel's own token is untouched and neither app prompts for the
    other's item.
 10. Tabs: ⌘1 through ⌘9, ⌘N, ⌥⌘←/→,

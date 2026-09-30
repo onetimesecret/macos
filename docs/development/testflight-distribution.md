@@ -68,7 +68,8 @@ Apple's provisioning-profile instructions state:
 
 The production identifier is the value in
 [OnetimePad-Info.plist](../../shell/OnetimePad-Info.plist). The packaging script
-uses `dev.onetimesecret.pad` for `--debug`; do not use that lane for this upload.
+uses `dev.onetimesecret.pad.debug` for `--debug` and `dev.onetimesecret.pad` when
+no lane flag is given; do not use either lane for this upload.
 
 Create or locate the app under **App Store Connect → Apps**:
 

@@ -135,7 +135,8 @@ the decision gets revisited. Two ADRs exist at init:
   any time before first notarized release, painful after). It was
   changed: that id stayed with the archived panel (ADR-0014), and the
   app ships as `com.onetimesecret.pad` since 0.19.0, with
-  `dev.onetimesecret.pad` for the dev lane.
+  `dev.onetimesecret.pad` for the local lane and
+  `dev.onetimesecret.pad.debug` for the dev lane.
 - Crate names: `companion-core`, `companion-pasteboard`, `ots-client`.
 - No trademark-sensitive strings ("Airlock" or successors) anywhere but
   `README.md`'s naming note.

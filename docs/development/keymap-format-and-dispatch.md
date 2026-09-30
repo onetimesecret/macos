@@ -90,7 +90,7 @@ visible tab order, and the rest name themselves.
 | | |
 | --- | --- |
 | bundled default | inside the app, `Contents/Resources/default-keymap.json` |
-| your override | `~/Library/Application Support/com.onetimesecret.pad/keymap.json` (a dev build reads `dev.onetimesecret.pad/keymap.json`) |
+| your override | `~/Library/Application Support/dev.onetimesecret.pad/keymap.json` for the installed copy (a dev build reads `dev.onetimesecret.pad.debug/keymap.json`, and an App Store build `com.onetimesecret.pad/keymap.json`) |
 
 The override is optional and its absence is not an error. Note the
 directory: it is the plain bundle id, beside the `.noindex` state
@@ -144,7 +144,7 @@ guessing at bindings the file did not give.
 To read the complaints:
 
 ```bash
-log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}' --last 1h --style compact
+log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}' --last 1h --style compact
 ```
 
 ## How it is put together

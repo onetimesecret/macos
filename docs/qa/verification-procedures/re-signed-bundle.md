@@ -30,10 +30,10 @@ install that was ad hoc signed to begin with has nothing to change from
 ## Where to look
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
-DEBUG_STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
+STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
+DEBUG_STATE=~/Library/Application\ Support/dev.onetimesecret.pad.debug.noindex
 log stream --style compact --predicate \
-  'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"} && (category == "core" || category == "persistence")'
+  'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"} && (category == "core" || category == "persistence")'
 ```
 
 The state directory name is the running build's bundle id plus
@@ -134,10 +134,11 @@ than erasing.
 
 ## Case 2: dev and release keep separate state
 
-`package-app.sh --debug` writes the bundle id `dev.onetimesecret.pad`
+`package-app.sh --debug` writes the bundle id `dev.onetimesecret.pad.debug`
 (`scripts/package-app.sh`), and `resolvedBundleIdentifier` accepts
-that one named identifier beside the release id and nothing else
-(`FormFactor.devBundleIdentifier` in
+that identifier and the local lane's `dev.onetimesecret.pad` beside the
+App Store id `com.onetimesecret.pad` and nothing else
+(`FormFactor.devBundleIdentifier` and `FormFactor.localBundleIdentifier` in
 `shell/Sources/CompanionKit/FormFactor.swift`), so the debug copy
 resolves its own state directory, its own Keychain service and its own
 log subsystem. Two copies that shared them would clobber one another's
@@ -151,15 +152,15 @@ log subsystem. Two copies that shared them would clobber one another's
    scripts/dev.sh
    ```
 
-   It packages the debug bundle as `dev.onetimesecret.pad` and launches it
+   It packages the debug bundle as `dev.onetimesecret.pad.debug` and launches it
    from `dist/` (`scripts/dev.sh`).
 3. In the debug copy, create a page reading `DEBUG ONE`. Quit it.
 4. Inspect both directories:
 
    ```sh
    ls -la "$STATE" "$DEBUG_STATE"
-   security find-generic-password -s com.onetimesecret.pad -a state-key -g 2>&1 | head -3
    security find-generic-password -s dev.onetimesecret.pad -a state-key -g 2>&1 | head -3
+   security find-generic-password -s dev.onetimesecret.pad.debug -a state-key -g 2>&1 | head -3
    ```
 
 **Pass:** two directories exist, each with its own `state.sealed`, its

@@ -153,10 +153,11 @@ SettingsStore and runtime consumers
 
 The user path derives from `FormFactor.configurationDirectory`. This preserves the existing release/development split:
 
-- release: `com.onetimesecret.pad`;
-- development: `dev.onetimesecret.pad`.
+- App Store release: `com.onetimesecret.pad`;
+- local release: `dev.onetimesecret.pad`;
+- development: `dev.onetimesecret.pad.debug`.
 
-The identifiers and configuration directory are defined at `shell/Sources/CompanionKit/FormFactor.swift:169-219` and `shell/Sources/CompanionKit/FormFactor.swift:351-385`.
+The identifiers and configuration directory are defined at `shell/Sources/CompanionKit/FormFactor.swift:170-233` and `shell/Sources/CompanionKit/FormFactor.swift:365-399`.
 
 A representative shape is:
 
@@ -404,8 +405,9 @@ The migration imports an explicitly stored relay URL without inventing one. Auth
 | --- | --- |
 | Bundled default in the source tree | `shell/Sources/CompanionKit/Resources/default-settings.json` |
 | Bundled default in the assembled application | `Contents/Resources/default-settings.json` |
-| Release user override | `~/Library/Application Support/com.onetimesecret.pad/settings.json` |
-| Development user override | `~/Library/Application Support/dev.onetimesecret.pad/settings.json` |
+| App Store release user override | `~/Library/Application Support/com.onetimesecret.pad/settings.json` |
+| Local release user override | `~/Library/Application Support/dev.onetimesecret.pad/settings.json` |
+| Development user override | `~/Library/Application Support/dev.onetimesecret.pad.debug/settings.json` |
 
 The bundled file is processed as a SwiftPM resource and copied explicitly by `scripts/package-app.sh`. The assembled application does not rely on SwiftPM's generated resource bundle. The existing keymap packaging behavior is visible at:
 

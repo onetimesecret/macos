@@ -84,7 +84,7 @@ Two entry points, both in `scripts/`:
 
 - `scripts/dev.sh` builds the debug bundle and launches it from
   `dist/`. The debug build takes its own bundle id
-  (`dev.onetimesecret.pad`) and a "Dev" display name, so it runs beside
+  (`dev.onetimesecret.pad.debug`) and a "Dev" display name, so it runs beside
   the installed copy without sharing its defaults, keychain items, or
   state.
 - `scripts/install.sh` builds the release bundle, signs it with the `LOCAL_*`
@@ -186,7 +186,7 @@ window, and then ⌃⌥Space and the menu-bar icon select it too. The
 surface's mechanics log to the unified log:
 
 ```sh
-log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}'
+log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}'
 ```
 
 It began as the second form factor (ADR-0010) beside a menu-bar panel,
@@ -199,7 +199,8 @@ future form factor would share.
 ## Naming note
 
 **OnetimePad** is the current working name. The bundle id is
-`com.onetimesecret.pad`, with `dev.onetimesecret.pad` for the dev lane.
+`com.onetimesecret.pad` for App Store builds, with `dev.onetimesecret.pad`
+for the local lane and `dev.onetimesecret.pad.debug` for the dev lane.
 Until 0.19.0 it was `com.onetimesecret.companion.backdrop`, the older
 "Companion" working-title lineage kept on purpose because macOS keys
 state, Keychain items, and TCC grants off the id; leaving it behind cost

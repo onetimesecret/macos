@@ -48,15 +48,15 @@ in the settings defaults. The relay has no default and the app will
 not invent one:
 
 ```sh
-defaults write com.onetimesecret.pad sync.relayURL "https://<relay host>"
-defaults read  com.onetimesecret.pad sync.enabled     # expect absent, or 0
+defaults write dev.onetimesecret.pad sync.relayURL "https://<relay host>"
+defaults read  dev.onetimesecret.pad sync.enabled     # expect absent, or 0
 ```
 
 A log stream on each machine is worth a second terminal:
 
 ```sh
 log stream --style compact --predicate \
-  'subsystem == "com.onetimesecret.pad"'
+  'subsystem == "dev.onetimesecret.pad"'
 ```
 
 Name the machines A and B for the rows below. A signs in first and
@@ -94,7 +94,7 @@ out; the header should say `sync signed out`.
       that runs on for minutes is the defect this check exists for.
 
   ```sh
-  security find-generic-password -s com.onetimesecret.pad \
+  security find-generic-password -s dev.onetimesecret.pad \
     -a sync-oauth-refresh   # expect: not found
   ```
 
@@ -114,7 +114,7 @@ out; the header should say `sync signed out`.
       attaches after saying it, is the defect.
 
   ```sh
-  security find-generic-password -s com.onetimesecret.pad \
+  security find-generic-password -s dev.onetimesecret.pad \
     -a sync-oauth-refresh
   ```
 
@@ -126,7 +126,7 @@ out; the header should say `sync signed out`.
       arrives for a session nobody is in is not a sign in.
 
   ```sh
-  security find-generic-password -s com.onetimesecret.pad \
+  security find-generic-password -s dev.onetimesecret.pad \
     -a sync-oauth-refresh   # expect: not found
   ```
 
@@ -225,9 +225,9 @@ across to the other machine's records.
       as it was.
 
   ```sh
-  security find-generic-password -s com.onetimesecret.pad \
+  security find-generic-password -s dev.onetimesecret.pad \
     -a sync-oauth-refresh   # expect: not found
-  security find-generic-password -s com.onetimesecret.pad \
+  security find-generic-password -s dev.onetimesecret.pad \
     -a api-token            # expect: still there
   ```
 

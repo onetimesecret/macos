@@ -94,7 +94,7 @@ other thing that can pull an activation across desktops and those two
 are the app's only ones. The surface's log is worth a second terminal:
 
 ```
-log stream --predicate 'subsystem == "com.onetimesecret.pad"'
+log stream --predicate 'subsystem == "dev.onetimesecret.pad"'
 ```
 
 ## The checks
@@ -551,10 +551,12 @@ They are judged by a probe and not by eye.
 back list and prints one `VERDICT` line per sample. `scripts/dev.sh
 --with-probe` builds it into `dist/window-order-probe` alongside the
 debug bundle; the flag is off by default. That bundle runs under
-`dev.onetimesecret.pad`, so widen the log predicate for these checks to
-`subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}`; the
-probe itself finds either id. On a desktop Space, start it in `--watch`
-mode so it samples 1.5 s after every app activation and Space change:
+`dev.onetimesecret.pad.debug`, so widen the log predicate for these
+checks to
+`subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"}`;
+the probe itself finds any of the three ids. On a desktop Space, start
+it in `--watch` mode so it samples 1.5 s after every app activation and
+Space change:
 
 ```
 dist/window-order-probe --watch --expect behind

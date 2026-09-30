@@ -28,11 +28,12 @@ stick, and per-app screen-capture pickers can't list it. When the app
 needs to be a citizen of the permission system, use the entry points:
 
 ```sh
-../scripts/dev.sh       # debug bundle as dev.onetimesecret.pad, launched from dist/
+../scripts/dev.sh       # debug bundle as dev.onetimesecret.pad.debug, launched from dist/
 ../scripts/install.sh   # release bundle, signed, installed to /Applications
 ```
 
-The bundle id is `com.onetimesecret.pad`; the version
+The bundle id is `com.onetimesecret.pad` for App Store builds and
+`dev.onetimesecret.pad` for the `install.sh` copy; the version
 users see is `CFBundleShortVersionString` in `OnetimePad-Info.plist`,
 which is the product's own number, edited there by hand when work a
 user can touch lands. The packaging script reads it and stamps
