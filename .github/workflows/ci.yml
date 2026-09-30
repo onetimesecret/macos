@@ -30,7 +30,7 @@ jobs:
         run: |
           cargo fetch --locked
           ./scripts/verify-betlang.py
-          python3 -m unittest scripts/tests/test_verify_betlang.py
+          python3 -m unittest discover -s scripts/tests -v
       - name: Reproduce language threshold selection
         run: |
           python3 tools/language-eval/select-thresholds.py \
