@@ -37,17 +37,27 @@ A person's launch, a Dock click, a reopen and ⌘Tab select the editor
 window (opening it when closed); with the ambient panel preference on,
 which is the default, the hotkey, the status item and the resting card
 click stay with the panel. With the preference off, ADR-0033 sends the
-hotkey and the status item to the editor window as well; every check
-here assumes it is on. A ⌘Tab that finds the editor
-window closed opens it on the desktop the person is on, and a raised
-panel rests as the window takes the keyboard; one that finds it open
-on another desktop switches there, as it does for any document
+hotkey and the status item to the editor window as well; except for the
+panel-off check below, every check here assumes it is on. A ⌘Tab that
+finds the editor window closed opens it on the desktop the person is on,
+and a raised panel rests as the window takes the keyboard; one that finds
+it open on another desktop switches there, as it does for any document
 application. A pinned panel floats above every ordinary window, editor
 included; the editor never floats. *Companion* marks Settings and
 About, the ordinary windows ADR-0033 leaves under ADR-0032's companion
 window rule.
 
 ## What was seen, and what the code did about it
+
+- [ ] **Panel off: hotkey and status item focus the editor (#215).**
+      Turn the ambient panel off, close the editor window, and activate
+      another app with a text field. Press ⌃⌥Space. **Pass:** OnetimePad
+      becomes active, its editor window opens in front, and typing goes
+      into the editor without a second click. Repeat with the editor
+      window already open behind the other app and again with it
+      miniaturized, then repeat all three cases using a left click on
+      the status item. Verify the panel-on hotkey still raises the panel
+      without activating OnetimePad.
 
 Three symptoms were filed together. Two of them share a cause and one
 does not.
