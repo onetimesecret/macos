@@ -278,6 +278,22 @@ editor window is on, as it does for any document application").
       another desktop can carry the person to the desktop the editor
       window is on, as it does for any document application." It does
       not explicitly specify Space switching for panel-off summons.
+- [ ] **Content clicks focus at the existing caret (#215).** *Both.*
+      In a scratch page, type two short lines and leave the caret in
+      the middle of the first. Focus another app, then click in the
+      blank content below the lines and type a character. Repeat on
+      the horizontal checkpoint and its day label. **Pass:** the first
+      click focuses the editor and typing resumes at the saved caret;
+      neither the selected page nor the caret changes on that click.
+      Repeat in the panel, the editor window, an empty buffer, and an
+      unsaved file. Then fill a buffer with several lines and click a
+      specific line: the caret must move there and typing must follow.
+      Check a checkpoint's right-click menu and inline rename as well.
+      **Fail:** a content click needs a second click, typing goes to
+      the other app, blank space moves the caret, a line click fails
+      to place it, or rename/context-menu input is intercepted.
+      This check records the click behavior requested for #215; it
+      remains unrun on hardware.
 
 ### A pinned panel floats above the editor window (ADR-0033)
 
@@ -880,6 +896,7 @@ is about, in the split ADR-0033 gives.
 | 2026-09-28 | not recorded | panel | hotkey, status item and resting card click stay with the panel | pass | ADR-0033. Reported passed by the maintainer. |
 | | | both | panel off: hotkey and status item focus the editor, closed, open and miniaturized | | #215. Record active app, typing and conditional stream evidence; rerun panel-on summons. |
 | | | both | panel off: hotkey and status item with the editor on another desktop | | #215. Unverified implementation interpretation; record actual desktop and keyboard result against the proposed expectation. |
+| | | both | blank content and checkpoint clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. |
 | 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | editor window never resolves to floating | pass | ADR-0033. Reported passed by the maintainer under the earlier wording, which read the log; no log line names the editor window's level, so judge a rerun by the probe's `layer=` (0 is normal). |
 | 2026-09-28 | not recorded | editor | editor enters and leaves full screen | pass | ADR-0033. Reported passed by the maintainer. |

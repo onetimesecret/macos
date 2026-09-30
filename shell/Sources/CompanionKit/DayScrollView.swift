@@ -393,6 +393,21 @@ final class DayStackView: NSView {
 
     override var isFlipped: Bool { true }
 
+    override var needsPanelToBecomeKey: Bool { editor?.isEditable == true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// The unused viewport below the pages is part of the editing area.
+    /// Focusing it preserves the selected page and its insertion point.
+    override func mouseDown(with event: NSEvent) {
+        focusEditor()
+    }
+
+    func focusEditor() {
+        guard model.owner == coordinator.surface,
+              let editor, editor.isEditable, editor.window === window else { return }
+        window?.makeFirstResponder(editor)
+    }
+
     // MARK: What the roll is watching
 
     /// The two things that change a region's height without anybody
@@ -1381,6 +1396,31 @@ final class DayHeaderView: NSView {
     override var isFlipped: Bool { true }
 
     // MARK: What a header says
+
+    /// The checkpoint belongs to the content area. Its passive labels
+    /// share the focus click; an inline rename keeps its own text input.
+    override var needsPanelToBecomeKey: Bool {
+        (superview as? DayStackView)?.needsPanelToBecomeKey ?? false
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        if hit === dayField || hit === remainingField
+            || (hit === titleField && !titleField.isEditable) {
+            return self
+        }
+        return hit
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            super.mouseDown(with: event)
+            return
+        }
+        (superview as? DayStackView)?.focusEditor()
+    }
 
     /// Which mark a header draws, as a decision rather than as a
     /// drawing: the roll's first header tears from nothing, a day's

@@ -318,6 +318,7 @@ public struct InkEditorView: NSViewRepresentable {
     /// gets (`makePage`).
     static func bareScroller() -> NSScrollView {
         let scroll = NSScrollView()
+        scroll.contentView = EditorFocusClipView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         return scroll
@@ -3946,6 +3947,24 @@ final class InkTextContainer: NSTextContainer {
     }
 }
 
+/// A short page or unsaved file leaves some of its viewport outside the
+/// text view. That space accepts the same focus click as the page itself.
+final class EditorFocusClipView: NSClipView {
+    override var needsPanelToBecomeKey: Bool {
+        (documentView as? InkTextView)?.isEditable == true
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let editor = documentView as? InkTextView, editor.isEditable else {
+            super.mouseDown(with: event)
+            return
+        }
+        window?.makeFirstResponder(editor)
+    }
+}
+
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
     SealResponder
 {
@@ -4141,6 +4160,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// delegate selects the object without opening anything.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if !event.modifierFlags.contains(.control), !containsTextLine(at: point) {
+            window?.makeFirstResponder(self)
+            return
+        }
         if Self.shouldOpenChipContextMenu(
             clickCount: event.clickCount, modifierFlags: event.modifierFlags),
            let coordinator,
@@ -4166,6 +4189,26 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return
         }
         super.mouseDown(with: event)
+    }
+
+    /// A line's full horizontal band uses native text selection, including
+    /// the empty tail of a line. Space above or below the laid-out lines
+    /// only restores focus, leaving the insertion point where it was.
+    func containsTextLine(at point: NSPoint) -> Bool {
+        guard let layoutManager, let textContainer else { return false }
+        layoutManager.ensureLayout(for: textContainer)
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyphs = layoutManager.glyphRange(for: textContainer)
+        var onLine = false
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, _, stop in
+            if local.y >= rect.minY && local.y < rect.maxY {
+                onLine = true
+                stop.pointee = true
+            }
+        }
+        let extra = layoutManager.extraLineFragmentRect
+        return onLine || (layoutManager.extraLineFragmentTextContainer === textContainer
+            && local.y >= extra.minY && local.y < extra.maxY)
     }
 
     /// The frame the block at `index` is drawn with, in this view's

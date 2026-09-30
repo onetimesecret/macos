@@ -45,6 +45,62 @@ final class PageScrollTests: XCTestCase {
         (0..<lines).map { "line \($0) of the page\n" }.joined()
     }
 
+    func testBlankEditorClicksFocusAndPreserveInsertionPoint() throws {
+        for ink in ["", "first line\nsecond line"] {
+            let (scroll, editor, storage, layoutManager, container) = makeStack(cardHeight: 320)
+            let window = try XCTUnwrap(scroll.window)
+            storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: ink)
+            layoutManager.ensureLayout(for: container)
+            scroll.layoutSubtreeIfNeeded()
+            let caret = NSRange(location: min(3, storage.length), length: 0)
+            editor.setSelectedRange(caret)
+            _ = window.makeFirstResponder(nil)
+            let point = NSPoint(x: 200, y: 250)
+            let hit = try XCTUnwrap(scroll.hitTest(point))
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: scroll.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+            ))
+            hit.mouseDown(with: event)
+            XCTAssertTrue(window.firstResponder === editor)
+            XCTAssertEqual(editor.selectedRange(), caret)
+        }
+    }
+
+    func testTextLineBandsKeepNativeCaretPlacement() {
+        let (_, editor, storage, layoutManager, container) = makeStack(cardHeight: 320)
+        storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "first line\nsecond line\n")
+        layoutManager.ensureLayout(for: container)
+        let glyphs = layoutManager.glyphRange(for: container)
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, _, _ in
+            XCTAssertTrue(editor.containsTextLine(at: NSPoint(
+                x: 200, y: editor.textContainerOrigin.y + rect.midY
+            )), "clicking anywhere along an existing line must use native selection")
+        }
+        XCTAssertTrue(editor.containsTextLine(at: NSPoint(
+            x: 200, y: editor.textContainerOrigin.y + layoutManager.extraLineFragmentRect.midY
+        )), "the empty final line is still a line")
+        XCTAssertFalse(editor.containsTextLine(at: NSPoint(x: 200, y: 250)))
+        XCTAssertFalse(editor.containsTextLine(at: NSPoint(x: 200, y: 2)))
+    }
+
+    func testBlankClipAcceptsTheFirstClickAndFocusesItsEditor() throws {
+        let (scroll, editor, _, _, _) = makeStack(cardHeight: 320)
+        let window = try XCTUnwrap(scroll.window)
+        let clip = scroll.contentView
+        _ = window.makeFirstResponder(nil)
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: NSPoint(x: 200, y: 250),
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+        ))
+        XCTAssertTrue(clip.needsPanelToBecomeKey)
+        XCTAssertTrue(clip.acceptsFirstMouse(for: event))
+        clip.mouseDown(with: event)
+        XCTAssertTrue(window.firstResponder === editor)
+    }
+
     func testAPageTallerThanTheCardCanScroll() {
         let (scroll, textView, storage, layoutManager, container) = makeStack(cardHeight: 320)
         storage.replaceCharacters(

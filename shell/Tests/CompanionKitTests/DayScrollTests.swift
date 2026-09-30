@@ -133,6 +133,38 @@ final class DayScrollTests: XCTestCase {
 
     // MARK: The shape of the stack
 
+    func testBlankRollAndCheckpointClicksFocusWithoutMovingTheCaret() async throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "first line\nsecond line")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let caret = NSRange(location: 3, length: 0)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let points = [
+            NSPoint(x: 200, y: roll.stack.bounds.maxY - 20),
+            NSPoint(x: 200, y: header.frame.maxY - 1),
+            NSPoint(x: 20, y: header.frame.minY + 8),
+        ]
+        for point in points {
+            editor.setSelectedRange(caret)
+            _ = roll.window.makeFirstResponder(nil)
+            let hit = try XCTUnwrap(roll.stack.hitTest(point))
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: roll.stack.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: roll.window.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+            ))
+            hit.mouseDown(with: event)
+            await settle()
+            XCTAssertTrue(roll.window.firstResponder === editor, "content click at \(point) did not focus")
+            XCTAssertEqual(editor.selectedRange(), caret)
+            XCTAssertEqual(model.selectedPageID, selected)
+            XCTAssertTrue(hit.needsPanelToBecomeKey)
+            XCTAssertTrue(hit.acceptsFirstMouse(for: event))
+        }
+    }
+
     /// Every row is its header and then its region, and the document is
     /// exactly as tall as the rows it holds, or as tall as the clip,
     /// when there is less writing than card.
