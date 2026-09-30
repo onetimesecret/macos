@@ -23,6 +23,14 @@ build of each new major macOS.
 
 Use disposable files. Several cases overwrite, move and delete them.
 
+## Implementation note: crossed-file scope bound
+
+`PageModel.settleCrossedFiles` uses `withAccessToBookmarks` to nest the
+crossed files' access brackets. At most one bracket per file in that
+roster subset is open simultaneously; the bound is the open-file roster
+size, not a fixed limit enforced by the helper. This describes the code,
+not hardware validation that the roster fits macOS's scoped-resource limit.
+
 ## Prerequisite: the files
 
 ```sh
@@ -305,6 +313,33 @@ the grant by itself: the probe saw files stay readable after a relaunch
 within one boot with no scope started, so only a reboot rules that out.
 
 **Fail:** as case 4.
+
+## Case 13a: Save As staging failure on a network share or exFAT volume
+
+Run separately with a writable network share and a writable exFAT removable
+volume, using disposable destinations. Record macOS and app versions, the
+volume format and mount type, and the exact destination and visible notice.
+
+1. Confirm case 0, then leave unsaved edits in an open disposable file.
+2. Choose Save As and select a new destination on the test volume. Repeat
+   with an existing disposable destination whose contents were recorded.
+3. Record whether an item replacement directory can be created for the
+   target or its parent. If both attempts fail, record the target-adjacent
+   staging fallback and any sandbox denial from the running log stream.
+4. Compare both destinations and the original file with their recorded
+   contents. Check the tab's edits and any leftover staging files.
+
+**Record either outcome:** a successful save with the requested text and
+no leftover staging file, or an explicit "NAME could not be written."
+refusal with the original file and existing destination unchanged and the
+unsaved edits still available. Record that the bare refusal provides no
+staging-specific guidance; do not count it as a successful Save As.
+
+**Fail:** a saved header despite a failed write, lost edits, an original or
+existing destination modified on refusal, or leftover staging files.
+If neither volume triggers both directory-creation failures, mark that
+failure path **not exercised**, not validated. Do not alter real data or
+production share permissions to force it.
 
 ## Case 14: state from an unsandboxed build
 
