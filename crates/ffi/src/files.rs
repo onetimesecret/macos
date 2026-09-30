@@ -306,6 +306,8 @@ fn write_atomic_preserving_mode(
 
 /// Give the temp file the mode and the group of the file it is about to
 /// replace, through the open descriptor so no name is consulted twice.
+/// On POSIX, write permission is checked when opening the descriptor, so
+/// carrying a read-only mode before `write_all` does not revoke its write access.
 ///
 /// The mode asked for at open is cut down by the process umask, so a
 /// file the user had made group writable would come back from a save
