@@ -29,7 +29,7 @@ class ProvisioningProfileValidationTests(unittest.TestCase):
             "Entitlements": entitlements,
         }
         if profile_class == "development":
-            entitlements["get-task-allow"] = True
+            # As the portal issues it: a device list and no get-task-allow.
             profile["ProvisionedDevices"] = [DEVICE]
         return profile
 

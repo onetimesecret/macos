@@ -81,10 +81,13 @@ def main() -> int:
     provisioned_devices = profile.get("ProvisionedDevices", [])
     get_task_allow = entitlements.get("get-task-allow")
     if args.profile_class == "development":
-        if get_task_allow is not True:
-            errors.append("profile is not a macOS development profile")
+        # The device list is what marks a macOS development profile. The
+        # portal's macOS App Development profiles carry no get-task-allow
+        # entitlement, so its absence says nothing here.
         if not isinstance(provisioned_devices, list) or not provisioned_devices:
-            errors.append("development profile contains no provisioned devices")
+            errors.append(
+                "profile is not a macOS development profile: it contains no provisioned devices"
+            )
         elif not args.device_udid:
             errors.append(
                 "this Mac's Provisioning UDID could not be determined"
