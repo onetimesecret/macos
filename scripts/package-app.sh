@@ -33,8 +33,9 @@
 # keychain items, and state (ADR-0012).
 #
 # Signing is configured independently per lane, each in its own environment
-# file outside the checkout (scripts/build-lanes.sh): DEV_* in dev, LOCAL_* in
-# local, and APP_STORE_* in staging. Dev and local builds remain ad-hoc when
+# file outside the checkout (scripts/build-lanes.sh), under the same names in
+# every file: CODESIGN_IDENTITY, PROVISIONING_PROFILE, and for the App Store
+# lane INSTALLER_IDENTITY. Dev and local builds remain ad-hoc when
 # their lane has no identity. The App Store lane requires its application
 # identity, installer identity, and profile. Carrying
 # scripts/Companion.entitlements takes a real identity and the matching
@@ -125,7 +126,7 @@ validate_signing_configuration() {
       exit 1
     fi
     if ((APP_STORE_MODE)); then
-      echo "APP_STORE_CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
+      echo "CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
       exit 1
     fi
     return
@@ -141,7 +142,7 @@ validate_signing_configuration() {
 
   if [[ -z "$PROVISIONING_PROFILE" ]]; then
     if ((APP_STORE_MODE)); then
-      echo "APP_STORE_PROVISIONING_PROFILE must name a Mac App Store distribution profile for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
+      echo "PROVISIONING_PROFILE must name a Mac App Store distribution profile for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
       exit 1
     fi
     return
@@ -207,7 +208,7 @@ if ((APP_STORE_MODE)); then
     APP_STORE_BUILD_NUMBER_FILE="$GIT_COMMON_DIR/onetimepad-app-store-build-number"
   fi
   if [[ -z "$INSTALLER_IDENTITY" ]]; then
-    echo "APP_STORE_INSTALLER_IDENTITY must name a Mac Installer Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
+    echo "INSTALLER_IDENTITY must name a Mac Installer Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
     exit 1
   fi
   if ! security find-identity -v -p basic | grep -Fq "\"$INSTALLER_IDENTITY\""; then

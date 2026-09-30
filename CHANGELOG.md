@@ -279,17 +279,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Store lane `staging/.env`, under
   `~/.local/appledev/CompanionApp/environments/` or
   `$ONETIMEPAD_ENVIRONMENTS_DIR`, so every worktree on a Mac signs the same
-  way. Each file keeps its lane's `DEV_*`, `LOCAL_*`, or `APP_STORE_*`
-  prefix. `scripts/local.env` is no longer read, and the packaging scripts
+  way. Every file uses the same names, `CODESIGN_IDENTITY`,
+  `PROVISIONING_PROFILE`, and for the App Store lane `INSTALLER_IDENTITY`; a
+  lane takes them from its own file alone and discards values of those names
+  inherited from the shell. `scripts/local.env` is no longer read, and the packaging scripts
   refuse to run while one is present; move its values into the three files.
   `environments/example/` is the checked in template for one environment
   directory, to be copied out of the checkout once per environment.
 
 - **Development, local-install, and App Store signing settings are isolated.**
-  Existing `scripts/local.env` files must replace the former unprefixed signing
-  variables with the matching `DEV_*`, `LOCAL_*`, or `APP_STORE_*` names. The
-  packaging preflight rejects profiles that do not match the selected lane;
-  `scripts/local.env.example` documents the configuration.
+  Each lane signs only with the values in its own environment file; a file
+  that still uses a `DEV_*`, `LOCAL_*`, or `APP_STORE_*` signing name is
+  refused with the name to rename. The packaging preflight rejects profiles
+  that do not match the selected lane.
 
 - **Code rendering can be chosen automatically or by hand, and file admission
   now refuses binary-like content** (app 0.22.0; `companion-core` 0.22.0,

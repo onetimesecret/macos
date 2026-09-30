@@ -22,10 +22,10 @@ copy matters for two reasons:
   changes gets SIGKILLed by the kernel. `/Applications` is outside that
   blast radius.
 - Keychain and TCC grants are tied to code identity. Set
-  `LOCAL_CODESIGN_IDENTITY` in the local environment file (see
+  `CODESIGN_IDENTITY` in the local environment file (see
   `environments/example/.env.example`) to a stable development
   certificate. Set
-  `LOCAL_PROVISIONING_PROFILE` when the local build must carry the restricted
+  `PROVISIONING_PROFILE` there when the local build must carry the restricted
   entitlements; the packaging preflight checks that the profile authorizes the
   certificate, the local lane's bundle identifier (`dev.onetimesecret.pad`),
   and this Mac.
@@ -203,7 +203,7 @@ What changes:
   is what the data protection keychain requires, and only a real
   signing identity can carry it. Ad-hoc builds skip it and log a single
   fallback line to the login keychain. The item names did not change,
-  so on a stable `LOCAL_CODESIGN_IDENTITY` your Keychain items are still
+  so on a stable `CODESIGN_IDENTITY` your Keychain items are still
   reachable; on a changed identity expect confirmation prompts, and
   answering them once is the whole fix.
 - **Debug builds live under a `.debug` bundle id**, moved from `.dev`.

@@ -21,7 +21,7 @@ pgrep -fl "\.build/.*OnetimePad"
 scripts/install.sh
 ```
 
-Pin `LOCAL_CODESIGN_IDENTITY` in the local environment file
+Pin `CODESIGN_IDENTITY` in the local environment file
 (template: `environments/example/.env.example`) before this run, because
 this procedure is about what happens when that identity changes, and an
 install that was ad hoc signed to begin with has nothing to change from
@@ -125,7 +125,7 @@ superseded arm (`crates/ffi/src/lib.rs`), an app-owned quit surface, or
    scripts/install.sh
    ```
 
-   With `LOCAL_CODESIGN_IDENTITY` back to the pinned value, allow the
+   With the local lane's `CODESIGN_IDENTITY` back to the pinned value, allow the
    Keychain prompt if one appears.
 
 **Pass:** the two pages from step 1 come back, with their chips, drained

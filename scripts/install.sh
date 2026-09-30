@@ -56,7 +56,7 @@ if [[ -z "$APP_DEST" || "$APP_DEST" != /* ]]; then
 fi
 
 if [[ -z "$CODESIGN_IDENTITY" ]]; then
-  echo "WARNING: LOCAL_CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
+  echo "WARNING: CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
   echo "signed. TCC grants and Keychain confirmations will reset on every" >&2
   echo "update. Set it in $BUILD_ENVIRONMENT_FILE; see" >&2
   echo "environments/example/.env.example." >&2

@@ -97,8 +97,8 @@ The App Store signing lane has two distinct identities:
 
 | Configuration | Purpose | Installed identity name used by this workflow |
 | --- | --- | --- |
-| `APP_STORE_CODESIGN_IDENTITY` | Sign the app | `3rd Party Mac Developer Application: …` |
-| `APP_STORE_INSTALLER_IDENTITY` | Sign the installer package | `3rd Party Mac Developer Installer: …` |
+| `CODESIGN_IDENTITY` | Sign the app | `3rd Party Mac Developer Application: …` |
+| `INSTALLER_IDENTITY` | Sign the installer package | `3rd Party Mac Developer Installer: …` |
 
 In the developer portal these certificate types are named **Mac App
 Distribution** and **Mac Installer Distribution**. If they are not already
@@ -136,20 +136,20 @@ TestFlight builds read the staging environment,
 `~/.local/appledev/CompanionApp/environments/staging/.env` by default
 (`$ONETIMEPAD_ENVIRONMENTS_DIR/staging/.env` when that variable is set). Use
 [environments/example/.env.example](../../environments/example/.env.example)
-as the template and fill in its staging section. Create the file if absent; if it already exists, edit it
+as the template and fill in its staging values. Create the file if absent; if it already exists, edit it
 rather than copying over it. Set these three values:
 
-- `APP_STORE_CODESIGN_IDENTITY`: exact application distribution identity.
-- `APP_STORE_INSTALLER_IDENTITY`: exact installer distribution identity.
-- `APP_STORE_PROVISIONING_PROFILE`: absolute path to the downloaded distribution
+- `CODESIGN_IDENTITY`: exact application distribution identity.
+- `INSTALLER_IDENTITY`: exact installer distribution identity.
+- `PROVISIONING_PROFILE`: absolute path to the downloaded distribution
   profile outside the checkout.
 
-The script sources the staging file itself, and values assigned there take
-precedence over inherited environment values. It reads no other environment's
-file for this lane and takes only `APP_STORE_*` values, so `DEV_*` or
-`LOCAL_*` values exported into the shell cannot reach an App Store build. The
-script rejects the former unprefixed signing variables and refuses to run while
-a `scripts/local.env` is present.
+The script sources the staging file itself and takes the three values from it
+alone. Values of the same names inherited from the shell are discarded before
+the file is read, and no other environment's file is read for this lane, so
+the dev or local lane's identity cannot reach an App Store build. The script
+rejects the former `DEV_*`, `LOCAL_*`, and `APP_STORE_*` names in an
+environment file and refuses to run while a `scripts/local.env` is present.
 
 ## 5. Confirm version and encryption information
 

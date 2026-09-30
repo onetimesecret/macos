@@ -57,39 +57,34 @@ class BuildLaneTests(unittest.TestCase):
         directory.mkdir()
         (directory / ".env").write_text(text)
 
-    def test_each_lane_selects_only_its_own_signing_values(self):
-        env = {
-            "DEV_CODESIGN_IDENTITY": "dev-sign",
-            "DEV_PROVISIONING_PROFILE": "dev-profile",
-            "LOCAL_CODESIGN_IDENTITY": "local-sign",
-            "LOCAL_PROVISIONING_PROFILE": "local-profile",
-            "APP_STORE_CODESIGN_IDENTITY": "store-sign",
-            "APP_STORE_INSTALLER_IDENTITY": "installer-sign",
-            "APP_STORE_PROVISIONING_PROFILE": "store-profile",
-        }
-        expected = {
-            "dev": "debug|dev.onetimesecret.pad.debug|dev-sign||dev-profile|development",
-            "local": "release|dev.onetimesecret.pad|local-sign||local-profile|development",
-            "app-store": "release|com.onetimesecret.pad|store-sign|installer-sign|store-profile|app-store",
-        }
-        for lane, values in expected.items():
-            with self.subTest(lane=lane):
-                result = self.run_shell(f"select_build_lane {lane}\n{SELECTION}", env)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.strip(), values)
-
-    def test_each_lane_reads_only_its_own_environment_file(self):
-        # Every file assigns every lane's prefix, so a lane that read another
+    def write_every_environment(self):
+        # Every file assigns all three names, so a lane that read another
         # lane's file would print that file's values.
         for name in ("dev", "local", "staging"):
             self.write_environment(
                 name,
                 "".join(
-                    f'{prefix}{variable}="{name}-file"\n'
-                    for prefix in PREFIXES
-                    for variable in SIGNING_VARIABLES
+                    f'{variable}="{name}-file"\n' for variable in SIGNING_VARIABLES
                 ),
             )
+
+    def test_each_lane_selects_its_metadata_and_its_own_signing_values(self):
+        # The dev and local files name an installer identity too; only the
+        # App Store lane keeps one.
+        self.write_every_environment()
+        expected = {
+            "dev": "debug|dev.onetimesecret.pad.debug|dev-file||dev-file|development",
+            "local": "release|dev.onetimesecret.pad|local-file||local-file|development",
+            "app-store": "release|com.onetimesecret.pad|staging-file|staging-file|staging-file|app-store",
+        }
+        for lane, values in expected.items():
+            with self.subTest(lane=lane):
+                result = self.run_shell(f"select_build_lane {lane}\n{SELECTION}")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), values)
+
+    def test_each_lane_reads_only_its_own_environment_file(self):
+        self.write_every_environment()
         expected = {
             "dev": f"{self.environments}/dev/.env|dev-file||dev-file",
             "local": f"{self.environments}/local/.env|local-file||local-file",
@@ -107,17 +102,37 @@ class BuildLaneTests(unittest.TestCase):
                 self.assertEqual(result.stdout.strip(), values)
 
     def test_environment_file_values_override_inherited_ones(self):
-        self.write_environment("local", 'LOCAL_CODESIGN_IDENTITY="from-file"\n')
+        self.write_environment("local", 'CODESIGN_IDENTITY="from-file"\n')
         result = self.run_shell(
             'select_build_lane local\necho "$CODESIGN_IDENTITY"',
-            {"LOCAL_CODESIGN_IDENTITY": "inherited"},
+            {"CODESIGN_IDENTITY": "inherited"},
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "from-file")
 
+    def test_inherited_signing_values_are_discarded(self):
+        # What another environment's .envrc exported into the shell must not
+        # sign this lane, whether its file is absent or leaves a name out.
+        inherited = {variable: "inherited" for variable in SIGNING_VARIABLES}
+        selection = (
+            'printf "%s|%s|%s\\n" "$CODESIGN_IDENTITY" '
+            '"$INSTALLER_IDENTITY" "$PROVISIONING_PROFILE"'
+        )
+        for lane in ("dev", "local", "app-store"):
+            with self.subTest(lane=lane, file="absent"):
+                result = self.run_shell(
+                    f"select_build_lane {lane}\n{selection}", inherited
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "||")
+        self.write_environment("local", 'CODESIGN_IDENTITY="from-file"\n')
+        result = self.run_shell(f"select_build_lane local\n{selection}", inherited)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "from-file||")
+
     def test_environment_file_expands_home(self):
         self.write_environment(
-            "staging", 'APP_STORE_PROVISIONING_PROFILE="$HOME/profile"\n'
+            "staging", 'PROVISIONING_PROFILE="$HOME/profile"\n'
         )
         result = self.run_shell(
             'select_build_lane app-store\necho "$PROVISIONING_PROFILE"',
@@ -162,21 +177,30 @@ class BuildLaneTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unknown build lane", result.stderr)
 
-    def test_legacy_global_values_are_rejected(self):
-        for variable in SIGNING_VARIABLES:
-            with self.subTest(variable=variable):
-                result = self.run_shell(
-                    "reject_legacy_signing_configuration",
-                    {variable: "unsafe-shared-value"},
-                )
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("no longer accepted", result.stderr)
+    def test_lane_prefixed_names_in_an_environment_file_are_rejected(self):
+        for prefix in PREFIXES:
+            for variable in SIGNING_VARIABLES:
+                name = f"{prefix}{variable}"
+                with self.subTest(name=name):
+                    (self.environments / "local").mkdir(exist_ok=True)
+                    (self.environments / "local/.env").write_text(
+                        f'{name}="stale"\n'
+                    )
+                    result = self.run_shell("select_build_lane local")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f"{name} is no longer read", result.stderr)
+                    self.assertIn(f"Rename it to {variable}", result.stderr)
 
-    def test_legacy_global_values_in_an_environment_file_are_rejected(self):
-        self.write_environment("local", 'CODESIGN_IDENTITY="unsafe-shared-value"\n')
-        result = self.run_shell("select_build_lane local")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no longer accepted", result.stderr)
+    def test_inherited_lane_prefixed_names_are_ignored(self):
+        # A shell that loaded an environment before the rename still exports
+        # the old names; only a file that uses them is refused.
+        self.write_environment("local", 'CODESIGN_IDENTITY="from-file"\n')
+        result = self.run_shell(
+            'select_build_lane local\necho "$CODESIGN_IDENTITY"',
+            {"LOCAL_CODESIGN_IDENTITY": "stale"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "from-file")
 
     def test_legacy_checkout_file_is_rejected(self):
         (self.checkout / "scripts").mkdir()
