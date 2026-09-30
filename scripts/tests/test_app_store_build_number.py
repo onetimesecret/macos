@@ -28,7 +28,9 @@ RESOLVE = section(
     'onetimepad-app-store-build-number"\n  fi\n',
     include_end=True,
 )
-RESERVE = section("reserve_app_store_build_number() {", "\n}\n", include_end=True)
+RESERVE = section(
+    "reserve_app_store_build_number() {", "\n}\n", include_end=True
+)
 
 
 @unittest.skipUnless(sys.platform == "darwin", "requires macOS lockf")
@@ -107,14 +109,25 @@ class AppStoreBuildNumberTests(unittest.TestCase):
             ]
             subprocess.run(["git", "init", "-q", str(main)], check=True)
             subprocess.run(
-                [*git, "-C", str(main), "commit", "-q", "--allow-empty", "-m", "t"],
+                [
+                    *git,
+                    "-C",
+                    str(main),
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    "t",
+                ],
                 check=True,
             )
             subprocess.run(
                 ["git", "-C", str(main), "worktree", "add", "-q", str(linked)],
                 check=True,
             )
-            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            env = {
+                k: v for k, v in os.environ.items() if not k.startswith("GIT_")
+            }
             env.pop("APP_STORE_BUILD_NUMBER_FILE", None)
             paths = []
             for checkout in (main, linked):
@@ -169,7 +182,9 @@ class AppStoreBuildNumberTests(unittest.TestCase):
                     result = self.reserve(counter, requested)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), requested)
-                    self.assertIn("not above the last reserved number 10", result.stderr)
+                    self.assertIn(
+                        "not above the last reserved number 10", result.stderr
+                    )
                     self.assertEqual(counter.read_text(), "10\n")
 
     def test_unreadable_counter_is_rejected_and_left_alone(self):
