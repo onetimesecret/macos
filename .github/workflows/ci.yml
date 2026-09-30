@@ -164,6 +164,18 @@ jobs:
       - name: Install pinned toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+      # The packaging scripts' own tests. Several of them skip
+      # themselves anywhere but macOS (Apple's plist tools, lockf,
+      # swiftc), and the one step that ran a script test sits in the
+      # ubuntu lane and names a single file, so the entitlement, build
+      # number, lane and profile checks ran on nobody's machine but a
+      # developer's. They go first because they need no build and fail
+      # in seconds. Discovery is used, not a list of files, so the next
+      # test added beside these is run without anyone remembering to
+      # name it here; -v prints each skip, so a test that quietly stops
+      # running on this runner shows in the log.
+      - name: Test the packaging scripts
+        run: python3 -m unittest discover -s scripts/tests -v
       - name: Build CompanionCore.xcframework (release shape, no seams)
         run: ./scripts/build-core.sh
       # The seam check lives inside this script and fails it, so the
