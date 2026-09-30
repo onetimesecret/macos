@@ -22,7 +22,10 @@ def section(start_marker, end_marker, include_end=False):
     return SCRIPT[start:end]
 
 
-PARSE = section("APP_STORE_MODE=0\n", "\nreject_legacy_signing_configuration\n")
+PARSE = section(
+    "APP_STORE_MODE=0\n",
+    '\nif [[ "$CONFIG" == "debug" ]]; then\n  select_build_lane dev\n',
+)
 RESOLVE = section(
     '  if [[ -z "${APP_STORE_BUILD_NUMBER_FILE:-}" ]]; then',
     'onetimepad-app-store-build-number"\n  fi\n',

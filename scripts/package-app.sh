@@ -30,8 +30,9 @@
 # so a dev instance and the installed copy coexist without contending
 # for the menu bar, defaults, keychain items, and state (ADR-0012).
 #
-# Signing is configured independently per lane in scripts/local.env:
-# DEV_*, LOCAL_*, and APP_STORE_*. Dev and local builds remain ad-hoc when
+# Signing is configured independently per lane, each in its own environment
+# file outside the checkout (scripts/build-lanes.sh): DEV_* in dev, LOCAL_* in
+# local, and APP_STORE_* in staging. Dev and local builds remain ad-hoc when
 # their lane has no identity. The App Store lane requires its application
 # identity, installer identity, and profile. Carrying
 # scripts/Companion.entitlements takes a real identity and the matching
@@ -44,12 +45,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# If scripts/local.env exists it is the source of truth for local signing values.
-# Sourcing sits inside an if so a local.env whose final statement returns
-# non zero fails here with a message instead of killing the script silently.
-if [[ -f scripts/local.env ]]; then
-  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
-fi
 source scripts/build-lanes.sh
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -98,7 +93,6 @@ if [[ -n "$REQUESTED_BUILD_NUMBER" ]] && ((!APP_STORE_MODE)); then
   exit 1
 fi
 
-reject_legacy_signing_configuration
 if [[ "$CONFIG" == "debug" ]]; then
   select_build_lane dev
 elif ((APP_STORE_MODE)); then
@@ -114,6 +108,11 @@ if [[ "$DECLARED_PRODUCTION_BUNDLE_ID" != "$PRODUCTION_BUNDLE_ID" ]]; then
 fi
 
 echo "==> Build lane: $BUILD_LANE ($CONFIG, $BUILD_BUNDLE_ID)"
+if [[ -f "$BUILD_ENVIRONMENT_FILE" ]]; then
+  echo "==> Signing environment: $BUILD_ENVIRONMENT_FILE"
+else
+  echo "==> Signing environment: none ($BUILD_ENVIRONMENT_FILE is absent)"
+fi
 
 TEAM_ID=""
 PROFILE_APP_ID=""
@@ -124,7 +123,7 @@ validate_signing_configuration() {
       exit 1
     fi
     if ((APP_STORE_MODE)); then
-      echo "APP_STORE_CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store." >&2
+      echo "APP_STORE_CODESIGN_IDENTITY must name a Mac App Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
       exit 1
     fi
     return
@@ -140,7 +139,7 @@ validate_signing_configuration() {
 
   if [[ -z "$PROVISIONING_PROFILE" ]]; then
     if ((APP_STORE_MODE)); then
-      echo "APP_STORE_PROVISIONING_PROFILE must name a Mac App Store distribution profile for --app-store." >&2
+      echo "APP_STORE_PROVISIONING_PROFILE must name a Mac App Store distribution profile for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
       exit 1
     fi
     return
@@ -206,7 +205,7 @@ if ((APP_STORE_MODE)); then
     APP_STORE_BUILD_NUMBER_FILE="$GIT_COMMON_DIR/onetimepad-app-store-build-number"
   fi
   if [[ -z "$INSTALLER_IDENTITY" ]]; then
-    echo "APP_STORE_INSTALLER_IDENTITY must name a Mac Installer Distribution identity for --app-store." >&2
+    echo "APP_STORE_INSTALLER_IDENTITY must name a Mac Installer Distribution identity for --app-store ($BUILD_ENVIRONMENT_FILE)." >&2
     exit 1
   fi
   if ! security find-identity -v -p basic | grep -Fq "\"$INSTALLER_IDENTITY\""; then
@@ -482,7 +481,7 @@ if [[ "$IDENTITY" == "-" ]]; then
   echo "    warning: ad-hoc signature, so scripts/Companion.entitlements is not applied." >&2
   echo "    warning: the data protection keychain is unavailable in this build; the" >&2
   echo "    warning: credentials layer falls back to the file based login keychain." >&2
-  echo "    warning: configure this lane's CODESIGN identity in scripts/local.env for stable signing." >&2
+  echo "    warning: configure this lane's CODESIGN identity in $BUILD_ENVIRONMENT_FILE for stable signing." >&2
   codesign --force --sign "$IDENTITY" "$APP"
 elif [[ -z "$TEAM_ID" ]]; then
   echo "    warning: could not read a Team ID from the signing certificate, so" >&2
@@ -524,7 +523,7 @@ elif [[ -n "$PROVISIONING_PROFILE" ]]; then
 else
   echo "    warning: the $BUILD_LANE provisioning profile is unset, so" >&2
   echo "    warning: scripts/Companion.entitlements is not applied. See" >&2
-  echo "    warning: scripts/local.env.example for development-profile setup." >&2
+  echo "    warning: environments/example/.env.example for development-profile setup." >&2
   codesign --force --sign "$IDENTITY" "$APP"
 fi
 

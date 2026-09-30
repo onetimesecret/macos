@@ -263,6 +263,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Signing settings live outside the checkout, one environment per lane.**
+  The dev lane reads `dev/.env`, the local lane `local/.env`, and the App
+  Store lane `staging/.env`, under
+  `~/.local/appledev/CompanionApp/environments/` or
+  `$ONETIMEPAD_ENVIRONMENTS_DIR`, so every worktree on a Mac signs the same
+  way. Each file keeps its lane's `DEV_*`, `LOCAL_*`, or `APP_STORE_*`
+  prefix. `scripts/local.env` is no longer read, and the packaging scripts
+  refuse to run while one is present; move its values into the three files.
+  `environments/example/` is the checked in template for one environment
+  directory, to be copied out of the checkout once per environment.
+
 - **Development, local-install, and App Store signing settings are isolated.**
   Existing `scripts/local.env` files must replace the former unprefixed signing
   variables with the matching `DEV_*`, `LOCAL_*`, or `APP_STORE_*` names. The

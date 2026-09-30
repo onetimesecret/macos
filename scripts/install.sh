@@ -2,9 +2,9 @@
 # The local production lane: build the release bundle, sign it, and
 # install it to APP_DEST (default /Applications). The installed copy
 # runs from /Applications rather than from .build/ or dist/, so
-# rebuilds in the repo never kill it. See scripts/local.env.example for
-# pinning a signing identity that lets TCC grants and Keychain access
-# survive updates.
+# rebuilds in the repo never kill it. See
+# environments/example/.env.example for pinning a signing identity
+# that lets TCC grants and Keychain access survive updates.
 #
 # The dev counterpart is scripts/dev.sh, which packages a debug bundle
 # under its own bundle id, dev.onetimesecret.pad, and launches it from
@@ -23,15 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# If scripts/local.env exists it is the source of truth for this machine's
-# lane-specific signing values. Sourcing sits inside an if so a local.env whose
-# final statement returns non zero fails here with a message instead of killing
-# the script silently.
-if [[ -f scripts/local.env ]]; then
-  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
-fi
 source scripts/build-lanes.sh
-reject_legacy_signing_configuration
 select_build_lane local
 
 NO_LAUNCH=0
@@ -66,7 +58,8 @@ fi
 if [[ -z "$CODESIGN_IDENTITY" ]]; then
   echo "WARNING: LOCAL_CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
   echo "signed. TCC grants and Keychain confirmations will reset on every" >&2
-  echo "update. See scripts/local.env.example for a stable identity." >&2
+  echo "update. Set it in $BUILD_ENVIRONMENT_FILE; see" >&2
+  echo "environments/example/.env.example." >&2
 fi
 
 echo "==> scripts/package-app.sh (local lane)"
