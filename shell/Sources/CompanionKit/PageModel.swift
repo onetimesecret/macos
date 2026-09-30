@@ -3893,11 +3893,17 @@ public final class PageModel: ObservableObject {
     /// The caller has emptied the core's notice list already.
     private func settleHeldHolder(_ holder: FileSummary, at url: URL) -> [CheckOutcome] {
         _ = client.hydrateFile(holder.id, resolvedPath: nil)
+        var bookmarkFailure: String?
         if let row = client.fileRoster().first(where: { $0.id == holder.id }),
            !row.pendingHydration {
-            renewBookmark(for: holder.id, from: url, orphansHeld: true)
+            if !renewBookmark(for: holder.id, from: url, orphansHeld: true),
+               owesBookmark(path: url.path) {
+                bookmarkFailure = row.name
+            }
         }
-        return concludeHeldRetry(of: holder, recordMoved: false)
+        var outcomes = concludeHeldRetry(of: holder, recordMoved: false)
+        if let bookmarkFailure { outcomes.append(.bookmarkFailed(bookmarkFailure)) }
+        return outcomes
     }
 
     /// Bind an open file to `url` through the core and restate the
@@ -4034,6 +4040,7 @@ public final class PageModel: ObservableObject {
     /// What one file's check had to say, gathered rather than posted.
     enum CheckOutcome: Equatable {
         case reloaded(String)
+        case bookmarkFailed(String)
         /// A read that was tried and did not give the file's text,
         /// whatever the reason. It is the sentence "could not be
         /// read", and is named apart from both the roster's
@@ -4053,9 +4060,11 @@ public final class PageModel: ObservableObject {
         var notRead: [String] = []
         var missing: [String] = []
         var tooLarge: [String] = []
+        var bookmarkFailures: [String] = []
         for outcome in outcomes {
             switch outcome {
             case .reloaded(let name): reloaded.append(name)
+            case .bookmarkFailed(let name): bookmarkFailures.append(name)
             case .couldNotBeRead(let name): notRead.append(name)
             case .missing(let name): missing.append(name)
             case .draftTooLarge(let name): tooLarge.append(name)
@@ -4063,7 +4072,7 @@ public final class PageModel: ObservableObject {
         }
         // One file keeps the wording it had, so the single file case,
         // which is nearly every case, reads exactly as before.
-        if tooLarge.isEmpty {
+        if tooLarge.isEmpty, bookmarkFailures.isEmpty {
             if reloaded.count == 1, notRead.isEmpty, missing.isEmpty {
                 return reloadedNotice(name: reloaded[0])
             }
@@ -4087,8 +4096,9 @@ public final class PageModel: ObservableObject {
         if !tooLarge.isEmpty {
             clauses.append("unsaved changes to \(englishList(tooLarge)) were too large to keep")
         }
-        guard !clauses.isEmpty else { return nil }
-        return englishList(clauses) + "."
+        var sentences = clauses.isEmpty ? [] : [englishList(clauses) + "."]
+        sentences += bookmarkFailures.map { bookmarkFailureNotice(name: $0) }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
 
     /// One file's check, and what follows from the answer.

@@ -2646,6 +2646,39 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(try read(url), "replacement, longer\n")
     }
 
+    func testHolderNewsAndBookmarkFailureAreBothReported() {
+        XCTAssertEqual(PageModel.activationNotice([.reloaded("b.txt"), .bookmarkFailed("b.txt")]),
+                       PageModel.reloadedNotice(name: "b.txt") + " "
+                       + PageModel.bookmarkFailureNotice(name: "b.txt"))
+    }
+
+    func testLocateReportsAHoldersBookmarkFailureBesideTheRefusal() throws {
+        try XCTSkipIf(getuid() == 0, "root reads mode 000 files")
+        let fixture = try makeFixture()
+        let a = try write("a\n", named: "a.txt", in: fixture)
+        let b = try write("b\n", named: "b.txt", in: fixture)
+        let first = launch(fixture)
+        first.model.openFile(at: a)
+        first.model.openFile(at: b)
+        XCTAssertTrue(first.model.saveState())
+        try lock(a)
+        try lock(b)
+        let second = launch(fixture)
+        let ids = second.model.openFiles.map(\.id)
+        try unlock(b)
+        second.panels.locateURL = b
+        second.model.fileCoordinator.makeBookmark = { _ in throw CocoaError(.fileReadUnknown) }
+        second.model.locateFile(ids[0])
+        XCTAssertEqual(second.model.notice,
+                       PageModel.locateHeldNotice(name: "a.txt", holder: "b.txt") + " "
+                       + PageModel.bookmarkFailureNotice(name: "b.txt"))
+        XCTAssertEqual(second.client.fileBookmarkBase64(ids[1]), "")
+        XCTAssertFalse(second.model.openFiles[1].pendingHydration)
+        XCTAssertTrue(second.model.draftsDirty)
+        XCTAssertTrue(second.model.saveState())
+        assertBalanced(second.scope)
+    }
+
     // MARK: Locating onto a path a held file holds
 
     func testLocatingOntoAHeldFilesPathSettlesThatFileInsideThePanelsGrant() throws {
