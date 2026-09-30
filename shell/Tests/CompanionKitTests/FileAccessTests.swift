@@ -692,7 +692,7 @@ final class FileAccessTests: XCTestCase {
         launched.model.checkOpenFilesOnActivate()
 
         XCTAssertEqual(
-            launched.journal.events, ["start notes.txt", "check", "reload", "stop notes.txt"])
+            launched.journal.events, ["start notes.txt", "check", "reload", "bookmark", "stop notes.txt"])
         assertBalanced(launched.scope)
         XCTAssertEqual(launched.model.storage(for: id).string, "theirs, and longer\n")
     }
@@ -2661,10 +2661,105 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(try read(url), "replacement, longer\n")
     }
 
+    func testSuccessfulReloadRenewsANonStaleBookmarkAndPersistsIt() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        XCTAssertTrue(launched.model.saveState())
+        var renewals = 0
+        let bookmark = launched.model.fileCoordinator.makeBookmark
+        launched.model.fileCoordinator.makeBookmark = { url in
+            renewals += 1
+            XCTAssertEqual(launched.scope.depth, 1)
+            return try bookmark(url)
+        }
+        try Data("new contents, longer\n".utf8).write(to: url)
+        let data = try XCTUnwrap(launched.client.fileBookmarkBase64(id).flatMap { Data(base64Encoded: $0) })
+        let stale = launched.model.fileCoordinator.withAccess(toBookmark: data) { $0.isStale }
+        XCTAssertEqual(stale, false)
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertEqual(renewals, 1)
+        XCTAssertFalse(try XCTUnwrap(launched.model.openFiles.first).externallyReloaded)
+        XCTAssertTrue(launched.model.draftsDirty)
+        XCTAssertTrue(launched.model.saveState())
+        let next = launch(fixture)
+        XCTAssertEqual(next.model.storage(for: id).string, "new contents, longer\n")
+        assertBalanced(launched.scope)
+    }
+
+    func testAtomicReplacementReloadRenewsBeforeTheBracketCloses() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        XCTAssertTrue(launched.model.saveState())
+        try Data("atomic replacement, longer\n".utf8).write(to: url, options: .atomic)
+        launched.model.checkOpenFilesOnActivate()
+        let events = launched.journal.events
+        let reload = try XCTUnwrap(events.firstIndex(of: "reload"))
+        let renewed = try XCTUnwrap(events.lastIndex(of: "bookmark"))
+        XCTAssertGreaterThan(renewed, reload)
+        XCTAssertEqual(events.last, "stop notes.txt")
+        XCTAssertEqual(launched.model.storage(for: id).string, "atomic replacement, longer\n")
+        XCTAssertTrue(launched.model.draftsDirty)
+        assertBalanced(launched.scope)
+    }
+
+    func testReloadBeforeSaveRenewsForBothTheReadAndTheWrite() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        try Data("external contents, longer\n".utf8).write(to: url)
+        XCTAssertTrue(launched.model.saveFile(id))
+        XCTAssertEqual(launched.journal.events,
+                       ["start notes.txt", "check", "reload", "bookmark", "save", "bookmark", "stop notes.txt"])
+        XCTAssertEqual(try read(url), "external contents, longer\n")
+        assertBalanced(launched.scope)
+    }
+
+    func testUnchangedAndDirtyChangedChecksDoNotRenewAFreshBookmark() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertFalse(launched.journal.events.contains("bookmark"))
+        try type("mine ", at: 0, into: id, on: launched.model)
+        try Data("external contents, longer\n".utf8).write(to: url)
+        launched.journal.clear()
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertFalse(launched.journal.events.contains("reload"))
+        XCTAssertFalse(launched.journal.events.contains("bookmark"))
+        XCTAssertEqual(launched.model.openFiles.first?.conflict, .changed)
+    }
+
+    func testFailedBookmarkRenewalAfterReloadKeepsThePreviousBookmark() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        XCTAssertTrue(launched.model.saveState())
+        let before = launched.client.fileBookmarkBase64(id)
+        launched.model.fileCoordinator.makeBookmark = { _ in throw CocoaError(.fileReadUnknown) }
+        try Data("external contents, longer\n".utf8).write(to: url)
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertEqual(launched.client.fileBookmarkBase64(id), before)
+        XCTAssertFalse(launched.model.draftsDirty)
+        XCTAssertEqual(launched.model.storage(for: id).string, "external contents, longer\n")
+        XCTAssertEqual(launched.model.notice, PageModel.reloadedNotice(name: "notes.txt"))
+        assertBalanced(launched.scope)
+    }
+
     func testHolderNewsAndBookmarkFailureAreBothReported() {
         XCTAssertEqual(PageModel.activationNotice([.reloaded("b.txt"), .bookmarkFailed("b.txt")]),
                        PageModel.reloadedNotice(name: "b.txt") + " "
                        + PageModel.bookmarkFailureNotice(name: "b.txt"))
+    }
+
+    func testFailedReloadDoesNotRenewTheBookmark() throws {
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile(in: fixture)
+        XCTAssertTrue(launched.model.saveState())
+        let before = launched.client.fileBookmarkBase64(id)
+        try Data([0, 1, 2]).write(to: url)
+        launched.model.checkOpenFilesOnActivate()
+        XCTAssertTrue(launched.journal.events.contains("reload"))
+        XCTAssertFalse(launched.journal.events.contains("bookmark"))
+        XCTAssertEqual(launched.client.fileBookmarkBase64(id), before)
+        XCTAssertFalse(launched.model.draftsDirty)
+        XCTAssertEqual(launched.model.storage(for: id).string, "body\n")
     }
 
     func testLocateReportsAHoldersBookmarkFailureBesideTheRefusal() throws {

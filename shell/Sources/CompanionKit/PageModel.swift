@@ -4158,6 +4158,12 @@ public final class PageModel: ObservableObject {
                 return nil
             }
             if client.reloadFile(id) {
+                // reload clears externallyReloaded; its successful answer,
+                // not that sticky notice flag, identifies the new disk copy.
+                let source = resolved.flatMap {
+                    Self.samePath($0.path, file.path) ? $0 : nil
+                } ?? URL(fileURLWithPath: file.path)
+                if renewBookmark(for: id, from: source) { markDraftsRecordMoved() }
                 restateStorage(sheet: id)
                 refreshOpenFiles()
                 reconsiderFileRenderMode(for: id, resetDismissal: true)
