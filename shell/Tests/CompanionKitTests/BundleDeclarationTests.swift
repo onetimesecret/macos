@@ -73,23 +73,18 @@ final class BundleDeclarationTests: XCTestCase {
         XCTAssertEqual(keys["com.apple.security.network.client"] as? Bool, true)
     }
 
-    /// The dev lane's identity is written by the packaging script and
-    /// recognised by the shell, two files with no compile time tie
-    /// between them. The script writes the id outright rather than
-    /// deriving it from the release one, so a drift here would not be
-    /// a suffix gone missing: it would be a dev build the tray calls a
-    /// release build, and one `resolvedBundleIdentifier` does not know,
-    /// so it takes the fallback and lands on the installed copy's
-    /// state directory and Keychain service. The script is read and
-    /// the one assignment looked for.
-    func testThePackagingScriptWritesTheDevIdentifierTheShellRecognises() throws {
-        let script = Self.shellDirectory
+    /// The dev lane's identity is checked into the build-lane manifest and
+    /// recognised by the shell, two files with no compile-time tie between
+    /// them. A drift here would make a dev build fall back to the installed
+    /// copy's state directory and Keychain service.
+    func testTheBuildLaneManifestNamesTheDevIdentifierTheShellRecognises() throws {
+        let manifest = Self.shellDirectory
             .deletingLastPathComponent()
-            .appendingPathComponent("scripts/package-app.sh")
-        let text = try String(contentsOf: script, encoding: .utf8)
+            .appendingPathComponent("scripts/build-lanes.sh")
+        let text = try String(contentsOf: manifest, encoding: .utf8)
         XCTAssertTrue(
             text.contains("DEV_BUNDLE_ID=\"\(FormFactor.devBundleIdentifier)\""),
-            "scripts/package-app.sh does not assign DEV_BUNDLE_ID the id FormFactor names as the dev lane"
+            "scripts/build-lanes.sh does not assign DEV_BUNDLE_ID the id FormFactor names as the dev lane"
         )
     }
 

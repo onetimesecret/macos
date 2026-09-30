@@ -18,8 +18,8 @@ SCRIPT = (ROOT / "scripts/package-app.sh").read_text()
 @unittest.skipUnless(sys.platform == "darwin", "requires Apple's plist tools")
 class AppStoreEntitlementsTests(unittest.TestCase):
     def render(self, directory, app_store):
-        start = SCRIPT.index('      SIGN_ENTITLEMENTS="$(mktemp')
-        end = SCRIPT.index('      echo "==> entitlements:', start)
+        start = SCRIPT.index('  SIGN_ENTITLEMENTS="$(mktemp')
+        end = SCRIPT.index('  echo "==> entitlements:', start)
         output = Path(directory) / "entitlements.plist"
         subprocess.run(
             [

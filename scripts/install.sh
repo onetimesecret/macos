@@ -23,12 +23,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
-# Sourcing sits inside an if so a local.env whose final statement returns
-# non zero fails here with a message instead of killing the script silently.
+# If scripts/local.env exists it is the source of truth for this machine's
+# lane-specific signing values. Sourcing sits inside an if so a local.env whose
+# final statement returns non zero fails here with a message instead of killing
+# the script silently.
 if [[ -f scripts/local.env ]]; then
   source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
 fi
+source scripts/build-lanes.sh
+reject_legacy_signing_configuration
+select_build_lane local
 
 NO_LAUNCH=0
 ALLOW_CAPTURE=0
@@ -59,15 +63,13 @@ if [[ -z "$APP_DEST" || "$APP_DEST" != /* ]]; then
   exit 1
 fi
 
-if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
-  echo "WARNING: CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
+if [[ -z "$CODESIGN_IDENTITY" ]]; then
+  echo "WARNING: LOCAL_CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
   echo "signed. TCC grants and Keychain confirmations will reset on every" >&2
   echo "update. See scripts/local.env.example for a stable identity." >&2
 fi
 
-scripts/build-core.sh --if-stale
-
-echo "==> scripts/package-app.sh"
+echo "==> scripts/package-app.sh (local lane)"
 scripts/package-app.sh
 
 # Ask a running installed copy to quit before replacing it. Only the

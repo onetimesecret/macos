@@ -263,6 +263,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Development, local-install, and App Store signing settings are isolated.**
+  Existing `scripts/local.env` files must replace the former unprefixed signing
+  variables with the matching `DEV_*`, `LOCAL_*`, or `APP_STORE_*` names. The
+  packaging preflight rejects profiles that do not match the selected lane;
+  `scripts/local.env.example` documents the configuration.
+
 - **Code rendering can be chosen automatically or by hand, and file admission
   now refuses binary-like content** (app 0.22.0; `companion-core` 0.22.0,
   `companion-ffi` 0.28.0). The editor can render a session as plain text or
