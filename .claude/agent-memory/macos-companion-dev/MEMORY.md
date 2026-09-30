@@ -27,7 +27,7 @@
 - [Dogfood 4 time indicators](project_dogfood4_time_indicators.md): page edge gauge gone, per tab gauge restored by maintainer call (#156); header CountdownButton deleted in both modes; login item launch rests, a person's launch raises via the window activation; lanes share one scratchpad
 - [Settings toolbar tabs](project_settings_toolbar_tabs.md): NSTabViewController toolbar tabs landed 2026-09-05; the per tab heights and resize on switch were reasoned, not seen on hardware
 - [NSApp is nil in a bare xctest](project_nsapp_nil_in_bare_xctest.md): a filtered run has no NSApplication, unwrapping NSApp traps and hangs silently; read `NSApp?.` and fail closed
-- [Bundle id move 0.19.0](project_bundle_id_move_0_19_0.md): com.onetimesecret.pad and dev.onetimesecret.pad since 2026-09-05; three unlinked places name the dev id, and the .debug leftovers in ADR text are historical on purpose
+- [Bundle ids per lane](project_bundle_id_move_0_19_0.md): since 2026-09-29 com.onetimesecret.pad is App Store only, dev.onetimesecret.pad the local install, dev.onetimesecret.pad.debug debug builds; seven unlinked places name them, and the retired .debug leftovers in ADR text are historical on purpose
 - [Parallel lane integration](project_parallel_lane_integration.md): cherry-pick lanes in order; MEMORY.md conflicts once per lane and both lines are kept; one lane's plist bump covers the phase
 - [Contrast measurements](project_contrast_measurements.md): system secondary label is 3.95:1 in light, so never assert `.secondary` at 4.5; ThemeContrastTests measures under both appearances
 - [Client fakes need a subclass](project_client_fakes_need_subclass.md): CompanionClient is no longer final; a refused or counted core call has no other seam
