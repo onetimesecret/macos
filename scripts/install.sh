@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# The local production lane: build the release bundle, sign it, and
-# install it to APP_DEST (default /Applications). The installed copy
+# The local lane: build the release bundle as dev.onetimesecret.pad, sign
+# it, and install it to APP_DEST (default /Applications). The installed copy
 # runs from /Applications rather than from .build/ or dist/, so
 # rebuilds in the repo never kill it. See
 # environments/example/.env.example for pinning a signing identity
 # that lets TCC grants and Keychain access survive updates.
 #
 # The dev counterpart is scripts/dev.sh, which packages a debug bundle
-# under its own bundle id, dev.onetimesecret.pad, and launches it from
+# under its own bundle id, dev.onetimesecret.pad.debug, and launches it from
 # dist/.
 #
 # --no-launch installs without opening the app afterwards.

@@ -66,10 +66,15 @@ final class VersionTitleTests: XCTestCase {
         // dev build, and neither may the retired legacy dev id or a
         // .debug suffix on the shipping id, both of which the old
         // suffix check would have waved through.
-        XCTAssertEqual(FormFactor.devBundleIdentifier, "dev.onetimesecret.pad")
+        XCTAssertEqual(FormFactor.devBundleIdentifier, "dev.onetimesecret.pad.debug")
         XCTAssertTrue(BuildVersion.isDevLane(bundleIdentifier: FormFactor.devBundleIdentifier))
         XCTAssertFalse(
             BuildVersion.isDevLane(bundleIdentifier: FormFactor.backdropBundleIdentifier))
+        // The local install is a development build but not the dev lane:
+        // it is the release configuration, installed and dogfooded.
+        XCTAssertEqual(FormFactor.localBundleIdentifier, "dev.onetimesecret.pad")
+        XCTAssertFalse(
+            BuildVersion.isDevLane(bundleIdentifier: FormFactor.localBundleIdentifier))
         XCTAssertFalse(
             BuildVersion.isDevLane(bundleIdentifier: "com.onetimesecret.companion.backdrop.debug"))
         XCTAssertFalse(BuildVersion.isDevLane(bundleIdentifier: "com.onetimesecret.pad.debug"))

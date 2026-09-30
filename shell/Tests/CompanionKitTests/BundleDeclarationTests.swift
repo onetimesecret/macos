@@ -73,15 +73,19 @@ final class BundleDeclarationTests: XCTestCase {
         XCTAssertEqual(keys["com.apple.security.network.client"] as? Bool, true)
     }
 
-    /// The dev lane's identity is checked into the build-lane manifest and
-    /// recognised by the shell, two files with no compile-time tie between
-    /// them. A drift here would make a dev build fall back to the installed
-    /// copy's state directory and Keychain service.
-    func testTheBuildLaneManifestNamesTheDevIdentifierTheShellRecognises() throws {
+    /// The local and dev lanes' identities are checked into the build-lane
+    /// manifest and recognised by the shell, two files with no compile-time
+    /// tie between them. A drift here would make a development build fall
+    /// back to the shipping id's state directory and Keychain service.
+    func testTheBuildLaneManifestNamesTheIdentifiersTheShellRecognises() throws {
         let manifest = Self.shellDirectory
             .deletingLastPathComponent()
             .appendingPathComponent("scripts/build-lanes.sh")
         let text = try String(contentsOf: manifest, encoding: .utf8)
+        XCTAssertTrue(
+            text.contains("LOCAL_BUNDLE_ID=\"\(FormFactor.localBundleIdentifier)\""),
+            "scripts/build-lanes.sh does not assign LOCAL_BUNDLE_ID the id FormFactor names as the local lane"
+        )
         XCTAssertTrue(
             text.contains("DEV_BUNDLE_ID=\"\(FormFactor.devBundleIdentifier)\""),
             "scripts/build-lanes.sh does not assign DEV_BUNDLE_ID the id FormFactor names as the dev lane"

@@ -116,8 +116,8 @@ jobs:
           # resolve to the release fallback.
           id="$(plutil -extract CFBundleIdentifier raw dist/OnetimePad.app/Contents/Info.plist)"
           case "$id" in
-            dev.onetimesecret.pad) echo "bundle id: $id" ;;
-            *) echo "expected the dev bundle id dev.onetimesecret.pad, got: $id" >&2; exit 1 ;;
+            dev.onetimesecret.pad.debug) echo "bundle id: $id" ;;
+            *) echo "expected the dev bundle id dev.onetimesecret.pad.debug, got: $id" >&2; exit 1 ;;
           esac
           # ADR-0016 case 2: the assembled plist must declare
           # NSSupportsSuddenTermination. Opting in is what makes
@@ -172,15 +172,16 @@ jobs:
         run: ./scripts/package-app.sh
       - name: Check the shipped bundle
         run: |
-          # The mirror of the debug job's assertion: the release bundle
-          # carries the shipping identifier and nothing else, so the two
-          # lanes cannot collide on defaults, keychain items, or the
-          # state directory they derive from it (ADR-0012, and ADR-0016
-          # case 4).
+          # The mirror of the debug job's assertion: the local lane's
+          # release bundle carries its own identifier (the shell's
+          # FormFactor.localBundleIdentifier) and nothing else, so it
+          # cannot collide with the dev lane or an App Store build on
+          # defaults, keychain items, or the state directory they
+          # derive from it (ADR-0012, and ADR-0016 case 4).
           id="$(plutil -extract CFBundleIdentifier raw dist/OnetimePad.app/Contents/Info.plist)"
           case "$id" in
-            com.onetimesecret.pad) echo "bundle id: $id" ;;
-            *) echo "expected the release bundle id com.onetimesecret.pad, got: $id" >&2; exit 1 ;;
+            dev.onetimesecret.pad) echo "bundle id: $id" ;;
+            *) echo "expected the local bundle id dev.onetimesecret.pad, got: $id" >&2; exit 1 ;;
           esac
           # ADR-0016 case 2, on the plist that actually ships. The
           # debug job carries the note on why the packaged bundle, and

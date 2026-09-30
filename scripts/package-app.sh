@@ -26,9 +26,11 @@
 # Both entry points take --allow-capture, which is the same launch
 # without the incantation: scripts/dev.sh --allow-capture and
 # scripts/install.sh --allow-capture.
-# Debug builds run under their own bundle id, dev.onetimesecret.pad,
-# so a dev instance and the installed copy coexist without contending
-# for the menu bar, defaults, keychain items, and state (ADR-0012).
+# Each lane runs under its own bundle id: dev.onetimesecret.pad.debug for
+# debug builds, dev.onetimesecret.pad for the local install, and
+# com.onetimesecret.pad for App Store builds, so a dev instance and the
+# installed copy coexist without contending for the menu bar, defaults,
+# keychain items, and state (ADR-0012).
 #
 # Signing is configured independently per lane, each in its own environment
 # file outside the checkout (scripts/build-lanes.sh): DEV_* in dev, LOCAL_* in
@@ -436,13 +438,18 @@ else
   fi
 fi
 
-if [[ "$CONFIG" == "debug" ]]; then
-  # A distinct identity for the dev instance, so it and the installed
-  # copy read as separate apps to macOS and to the eye. Written
-  # outright rather than derived from the release id: the dev id
-  # shares no prefix with it, on purpose, so nothing keyed off the id
-  # can take one lane for a configuration of the other.
+# Each lane writes its own id from the manifest: the source plist declares
+# the production id, which only the App Store lane keeps. Written outright
+# rather than derived from the release id: the development ids share no
+# prefix with it, on purpose, so nothing keyed off the id can take one lane
+# for a configuration of another.
+if [[ "$BUILD_BUNDLE_ID" != "$PRODUCTION_BUNDLE_ID" ]]; then
   plutil -replace CFBundleIdentifier -string "$BUILD_BUNDLE_ID" "$APP/Contents/Info.plist"
+fi
+
+if [[ "$CONFIG" == "debug" ]]; then
+  # The dev instance also reads as a separate app to the eye, beside the
+  # local install.
   BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
   plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
   # Both name keys, or the rename reaches the File menu and nothing

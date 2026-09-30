@@ -68,8 +68,8 @@ class BuildLaneTests(unittest.TestCase):
             "APP_STORE_PROVISIONING_PROFILE": "store-profile",
         }
         expected = {
-            "dev": "debug|dev.onetimesecret.pad|dev-sign||dev-profile|development",
-            "local": "release|com.onetimesecret.pad|local-sign||local-profile|development",
+            "dev": "debug|dev.onetimesecret.pad.debug|dev-sign||dev-profile|development",
+            "local": "release|dev.onetimesecret.pad|local-sign||local-profile|development",
             "app-store": "release|com.onetimesecret.pad|store-sign|installer-sign|store-profile|app-store",
         }
         for lane, values in expected.items():

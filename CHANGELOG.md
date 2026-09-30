@@ -263,6 +263,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The local install runs as `dev.onetimesecret.pad`, and debug builds as
+  `dev.onetimesecret.pad.debug`.** `com.onetimesecret.pad` now belongs to App
+  Store builds only: staging (TestFlight) and production. `scripts/install.sh`
+  builds the release configuration as `dev.onetimesecret.pad`, so its
+  development profile covers the App ID `TEAMID.dev.onetimesecret.pad`;
+  `scripts/dev.sh` and `package-app.sh --debug` build as
+  `dev.onetimesecret.pad.debug`. Nothing migrates. The installed copy stops
+  reading the state, drafts, ledger, and Keychain items it kept under
+  `com.onetimesecret.pad` and finds the store debug builds used until now;
+  debug builds start empty.
+
 - **Signing settings live outside the checkout, one environment per lane.**
   The dev lane reads `dev/.env`, the local lane `local/.env`, and the App
   Store lane `staging/.env`, under

@@ -12,8 +12,13 @@
 # checked in template for one environment directory: copy it out of the
 # checkout once per environment and rename .env.example to .env in each copy.
 
+# App Store builds, staging (TestFlight) and production, ship under the
+# production id. The local and dev lanes are development builds and share the
+# dev.onetimesecret.pad family, each under its own id so neither reads the
+# other's state or Keychain items.
 PRODUCTION_BUNDLE_ID="com.onetimesecret.pad"
-DEV_BUNDLE_ID="dev.onetimesecret.pad"
+LOCAL_BUNDLE_ID="dev.onetimesecret.pad"
+DEV_BUNDLE_ID="dev.onetimesecret.pad.debug"
 ENVIRONMENTS_DIR="${ONETIMEPAD_ENVIRONMENTS_DIR:-$HOME/.local/appledev/CompanionApp/environments}"
 
 reject_legacy_signing_configuration() {
@@ -70,7 +75,7 @@ select_build_lane() { # <dev|local|app-store>
       ;;
     local)
       CONFIG="release"
-      BUILD_BUNDLE_ID="$PRODUCTION_BUNDLE_ID"
+      BUILD_BUNDLE_ID="$LOCAL_BUNDLE_ID"
       CODESIGN_IDENTITY="${LOCAL_CODESIGN_IDENTITY:-}"
       PROVISIONING_PROFILE="${LOCAL_PROVISIONING_PROFILE:-}"
       PROFILE_CLASS="development"
