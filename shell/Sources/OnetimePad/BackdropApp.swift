@@ -565,13 +565,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    /// A panel-off summon needs an application activation before the
-    /// ordinary editor window can take keyboard focus. Show it from
+    /// Accepted ADR-0033 says: "With the panel off, the hotkey and the
+    /// status item select the editor window." Activating the app for
+    /// this case is an implementation interpretation of that selection,
+    /// so the ordinary editor window can take keyboard focus. Show it from
     /// that activation callback, which must not route this same gesture
     /// a second time as a launch or ⌘Tab (and possibly anchor on today).
     private func applySummon(_ reason: ActivationReason) {
         let route = ActivationRouter.decide(reason, in: activationContext())
-        if case .openEditorWindow = route, !NSApp.isActive {
+        if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
+            // Activation is a request and may never deliver its callback.
+            // A stranded route is harmless with the current panel-off rows:
+            // both return .openEditorWindow(.activation), exactly the late
+            // activation route. This relies on their raise staying .activation;
+            // changing it to .summon would require expiring pending intent.
             pendingEditorSummon = route
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -651,19 +658,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let claimed = aboutActivation || settingsActivation
         aboutActivation = false
         settingsActivation = false
-        // The hotkey/status-item activation has its own destination.
-        // Showing it here makes the editor key in the now-active app and
-        // keeps the launch recency classifier from changing its raise.
-        if let pendingEditorSummon {
-            self.pendingEditorSummon = nil
-            apply(pendingEditorSummon)
-            return
-        }
-        let reason = ActivationRouter.activationReason(
+        // Consume pending intent even when About/Settings claim this
+        // activation, so it cannot leak into the next real ⌘Tab. Otherwise
+        // it takes precedence over recency and keeps the gesture's raise.
+        let pending = pendingEditorSummon
+        pendingEditorSummon = nil
+        apply(ActivationRouter.routeForActivation(
+            pendingSummon: pending,
             sinceLaunch: Date().timeIntervalSince(launchedAt),
-            launchWindow: Self.launchWindow
-        )
-        apply(ActivationRouter.decide(reason, in: activationContext(claimed: claimed)))
+            launchWindow: Self.launchWindow,
+            context: activationContext(claimed: claimed)
+        ))
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.

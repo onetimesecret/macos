@@ -15,7 +15,9 @@ and reported passed, exactly these: the four sections marked ADR-0033
 window; Editor window full screen; Stage Manager and Mission Control),
 the checks of issue #190, two checks of issue #184 (the press on a
 partly covered card, and ⌘Tab into a full-screen Space), and the seven
-B4 routes of issue #210. Rows with an empty result have not been run.
+B4 routes of issue #210. The panel-off checks for #215 were added
+after that run and remain unverified. Rows with an empty result have
+not been run.
 
 ## Scope after ADR-0033
 
@@ -38,7 +40,7 @@ window (opening it when closed); with the ambient panel preference on,
 which is the default, the hotkey, the status item and the resting card
 click stay with the panel. With the preference off, ADR-0033 sends the
 hotkey and the status item to the editor window as well; except for the
-panel-off check below, every check here assumes it is on. A ⌘Tab that
+panel-off checks below, every check here assumes it is on. A ⌘Tab that
 finds the editor window closed opens it on the desktop the person is on,
 and a raised panel rests as the window takes the keyboard; one that finds
 it open on another desktop switches there, as it does for any document
@@ -48,16 +50,6 @@ About, the ordinary windows ADR-0033 leaves under ADR-0032's companion
 window rule.
 
 ## What was seen, and what the code did about it
-
-- [ ] **Panel off: hotkey and status item focus the editor (#215).**
-      Turn the ambient panel off, close the editor window, and activate
-      another app with a text field. Press ⌃⌥Space. **Pass:** OnetimePad
-      becomes active, its editor window opens in front, and typing goes
-      into the editor without a second click. Repeat with the editor
-      window already open behind the other app and again with it
-      miniaturized, then repeat all three cases using a left click on
-      the status item. Verify the panel-on hotkey still raises the panel
-      without activating OnetimePad.
 
 Three symptoms were filed together. Two of them share a cause and one
 does not.
@@ -251,6 +243,41 @@ editor window is on, as it does for any document application").
       only, since an unpinned rest lets every click through to the
       desktop (ADR-0015). **Fail:** any of those three summons
       activates the app or switches desktops.
+- [ ] **Panel off: hotkey and status item focus the editor (#215).**
+      *Both.* Turn the ambient panel off, close the editor window, and
+      activate another app with a text field on the same desktop.
+      Press ⌃⌥Space. **Pass:** OnetimePad becomes active, its editor
+      window opens in front, and typing goes into the editor without a
+      second click; the panel stays absent. Repeat with the editor
+      already open behind the other app and again with it miniaturized,
+      then repeat all three cases using a left click on the status item.
+      **Fail:** the window stays miniaturized, typing stays with the
+      other app, a second click is needed, or the panel appears.
+      Paste the relevant stream lines: `editor window=open` is emitted
+      only when the window is created (`PrimaryEditorWindowController.show`);
+      `key gain=editor-window` is emitted only when the panel still owns
+      the page (`BackdropModel.keyStatusChanged`). Neither line is
+      required for an already open or miniaturized editor that owns the
+      page; confirm the active app and typing in every case. Accepted
+      ADR-0033 states: "With the panel off, the hotkey and the status item
+      select the editor window." Turn the panel back on and rerun
+      **The panel's own summons stay with the panel** above.
+- [ ] **Panel off: summons with the editor on another desktop (#215).**
+      *Both.* With the panel off and the editor open on Desktop 1,
+      activate another app on Desktop 3. Press ⌃⌥Space, then repeat from
+      Desktop 3 using a left click on the status item. **Proposed pass:**
+      OnetimePad becomes active, the screen switches to Desktop 1, the
+      existing editor comes forward keyed, typing enters it without a
+      second click, and the panel stays absent. **Fail against this
+      proposed expectation:** the screen stays on Desktop 3, the editor
+      does not receive typing, or the panel appears. Record the actual
+      desktop and keyboard result, including the conditional stream
+      evidence described in the preceding check. Switching desktops for
+      these gestures is an implementation interpretation, unverified on
+      hardware. Accepted ADR-0033 explicitly names ⌘Tab: "⌘Tab from
+      another desktop can carry the person to the desktop the editor
+      window is on, as it does for any document application." It does
+      not explicitly specify Space switching for panel-off summons.
 
 ### A pinned panel floats above the editor window (ADR-0033)
 
@@ -851,6 +878,8 @@ is about, in the split ADR-0033 gives.
 | 2026-09-28 | not recorded | editor | Dock icon selects the editor window when open | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | reopen selects the editor window, not the panel | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | panel | hotkey, status item and resting card click stay with the panel | pass | ADR-0033. Reported passed by the maintainer. |
+| | | both | panel off: hotkey and status item focus the editor, closed, open and miniaturized | | #215. Record active app, typing and conditional stream evidence; rerun panel-on summons. |
+| | | both | panel off: hotkey and status item with the editor on another desktop | | #215. Unverified implementation interpretation; record actual desktop and keyboard result against the proposed expectation. |
 | 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | editor window never resolves to floating | pass | ADR-0033. Reported passed by the maintainer under the earlier wording, which read the log; no log line names the editor window's level, so judge a rerun by the probe's `layer=` (0 is normal). |
 | 2026-09-28 | not recorded | editor | editor enters and leaves full screen | pass | ADR-0033. Reported passed by the maintainer. |

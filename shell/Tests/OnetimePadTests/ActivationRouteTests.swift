@@ -178,6 +178,73 @@ final class ActivationRouteTests: XCTestCase {
         )
     }
 
+    // MARK: App activation for editor summons
+
+    func testInactiveEditorRoutesDeferUntilActivation() {
+        for raise in [BackdropRaise.activation, .summon] {
+            XCTAssertTrue(ActivationRouter.defersForActivation(
+                route: .openEditorWindow(raise), appActive: false
+            ))
+            XCTAssertFalse(ActivationRouter.defersForActivation(
+                route: .openEditorWindow(raise), appActive: true
+            ))
+        }
+    }
+
+    func testPanelRoutesAndNoopNeverDeferForActivation() {
+        for route in [ActivationRoute.summonPanel, .raisePanel(.activation), .raisePanel(.summon), .noop] {
+            for active in [false, true] {
+                XCTAssertFalse(ActivationRouter.defersForActivation(route: route, appActive: active))
+            }
+        }
+    }
+
+    func testPendingEditorSummonPreservesRaiseRegardlessOfLaunchRecency() {
+        for elapsed in [0.0, 1.99, 2, 3_600] {
+            XCTAssertEqual(ActivationRouter.routeForActivation(
+                pendingSummon: .openEditorWindow(.activation),
+                sinceLaunch: elapsed, launchWindow: 2,
+                context: base(ambientPanelEnabled: false)
+            ), .openEditorWindow(.activation))
+        }
+    }
+
+    func testAnotherWindowClaimOverridesPendingSummon() {
+        for elapsed in [0.0, 3_600] {
+            XCTAssertEqual(ActivationRouter.routeForActivation(
+                pendingSummon: .openEditorWindow(.activation),
+                sinceLaunch: elapsed, launchWindow: 2,
+                context: base(claimedByAnotherWindow: true)
+            ), .noop)
+        }
+    }
+
+    func testActivationWithoutPendingSummonUsesRecency() {
+        XCTAssertEqual(ActivationRouter.routeForActivation(
+            pendingSummon: nil, sinceLaunch: 0, launchWindow: 2,
+            context: base()
+        ), .openEditorWindow(.summon))
+        XCTAssertEqual(ActivationRouter.routeForActivation(
+            pendingSummon: nil, sinceLaunch: 3_600, launchWindow: 2,
+            context: base()
+        ), .openEditorWindow(.activation))
+    }
+
+    func testStrandedPanelOffSummonEqualsLaterActivationRoute() {
+        let context = base(ambientPanelEnabled: false)
+        for reason in [ActivationReason.hotkey, .statusItem] {
+            let pending = ActivationRouter.decide(reason, in: context)
+            XCTAssertEqual(pending, .openEditorWindow(.activation))
+            XCTAssertEqual(ActivationRouter.routeForActivation(
+                pendingSummon: pending, sinceLaunch: 3_600,
+                launchWindow: 2, context: context
+            ), ActivationRouter.routeForActivation(
+                pendingSummon: nil, sinceLaunch: 3_600,
+                launchWindow: 2, context: context
+            ))
+        }
+    }
+
     // MARK: The launch/late classifier
 
     func testActivationReasonClassifiesByRecency() {
