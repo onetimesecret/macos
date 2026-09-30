@@ -89,8 +89,11 @@ pub enum DroppedReason {
     /// in a [`FileConflict::Missing`] conflict instead.
     Missing,
     /// Something is at the path, but this build will not open it: not
-    /// UTF-8, binary-like, past [`FILE_SIZE_LIMIT`], or a read the platform
-    /// refused.
+    /// UTF-8, binary-like or past [`FILE_SIZE_LIMIT`]. A read the
+    /// platform refused outright does not drop a file; see
+    /// [`HydrationFate::Held`]. That state is the file's access refused
+    /// mark ([`OpenFile::access_refused`]), and this word is never used
+    /// for it.
     Unreadable,
     /// The file's draft was larger than [`DRAFT_SNAPSHOT_LIMIT`] when
     /// the drafts file was written, so it was left out. The file itself
@@ -313,8 +316,103 @@ pub enum SaveError {
     /// [`FileStore::open`] deduplicates by path, and a save as that
     /// adopted an open path would arrange exactly that.
     PathInUse,
+    /// The file came back from a drafts record and nothing has looked
+    /// at the disk for it yet. Its saved text and its conflict are
+    /// unknown until [`FileStore::hydrate_one`] settles them, and a
+    /// write before that could put an empty buffer over a person's
+    /// file, so the save waits.
+    PendingHydration,
+    /// Nothing is at the file's path, and no keep mine stands. A save
+    /// writes a file back and never makes one where a person deleted or
+    /// moved theirs, so nothing was written. The file is left marked
+    /// not found, and in [`FileConflict::Missing`] when it holds a
+    /// draft. The ways out are [`FileStore::relocate`],
+    /// [`FileStore::save_as`] and, for a draft,
+    /// [`FileStore::resolve_keep_mine`].
+    NotFound,
     /// The write itself failed. The file on disk is untouched.
     Io(io::ErrorKind),
+}
+
+/// Where a hydrated file ended up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HydrationFate {
+    /// No file is open under that id.
+    UnknownFile,
+    /// The file is open and was not waiting on a hydration, so nothing
+    /// was read and nothing moved. Asking twice is harmless.
+    NotPending,
+    /// The file stands in the roster, ready to draw.
+    Kept,
+    /// Nothing was read and the file is still pending. The resolved
+    /// path is the recorded path of another file that has not been
+    /// hydrated yet, and that file may be about to move off it, so the
+    /// question is put again once the other one has settled.
+    Deferred,
+    /// The file could not be reopened and held no draft worth keeping,
+    /// so it left the roster. The outcome's notice names it.
+    Dropped,
+    /// Something is at the path and the platform would not let it be
+    /// read, and the record held no draft. The file stays in the
+    /// roster, still pending and marked access refused, with nothing in its
+    /// buffer: it is not dropped, because the person may know where
+    /// the file is and [`FileStore::relocate`] is how they say so, and
+    /// it is not filled, because nothing was read. Asking again later
+    /// is allowed and is how a grant that came back is noticed.
+    Held,
+}
+
+/// Why a relocation refused. The file is left exactly as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelocateRefusal {
+    /// No file with that id is open.
+    UnknownFile,
+    /// The chosen path is already open under another id. Two buffers
+    /// over one file race each other on save, which is the reason
+    /// [`FileStore::open`] deduplicates and [`FileStore::save_as`]
+    /// refuses the same thing.
+    PathInUse,
+    /// The file at the chosen path would not open, for any of the
+    /// reasons an ordinary open refuses.
+    Open(OpenRefusal),
+}
+
+/// What became of the resolved path a hydration was handed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathRebind {
+    /// No path was given, or the one given is the path already held.
+    Unmoved,
+    /// The file now answers to the resolved path.
+    Rebound,
+    /// Another open file, itself settled, already holds the resolved
+    /// path, so the recorded path was kept. Two buffers over one file
+    /// race each other on save, which is the reason
+    /// [`FileStore::open`] deduplicates and [`FileStore::save_as`]
+    /// refuses the same thing.
+    Refused,
+}
+
+/// Everything one [`FileStore::hydrate_one`] call settled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HydrationOutcome {
+    /// Where the file ended up.
+    pub fate: HydrationFate,
+    /// What became of the resolved path, when one was given.
+    pub rebind: PathRebind,
+    /// What the shell owes the person about this file, if anything: the
+    /// reason it was dropped, or a draft that was too large to stage
+    /// behind a file that did come back.
+    pub notice: Option<FileNotice>,
+}
+
+impl HydrationOutcome {
+    fn untouched(fate: HydrationFate) -> Self {
+        Self {
+            fate,
+            rebind: PathRebind::Unmoved,
+            notice: None,
+        }
+    }
 }
 
 /// What a fresh stat says about the file behind an open buffer.
@@ -363,7 +461,9 @@ pub struct OpenFile {
     /// The text last read from or written to disk, normalised the way
     /// the buffer holds it. `None` only while this store has not seen
     /// the disk copy: a draft restored beside a file that changed under
-    /// it, where the persisted dirty flag is the only answer there is.
+    /// it, where the persisted dirty flag is the only answer there is,
+    /// and a draft kept over a copy that changed, from the keep mine
+    /// until the save it licenses.
     ///
     /// This is the one baseline for opened, restored, and Take theirs
     /// buffers. Mixed line endings are normalised at read time, so their
@@ -388,8 +488,21 @@ pub struct OpenFile {
     /// Whether a keep mine is standing: the person has looked at a
     /// divergence and said their buffer wins. Set by
     /// [`FileStore::resolve_keep_mine`] and cleared by the save it
-    /// licenses, so one choice buys one save.
+    /// licenses, so one choice buys one save. It is also withdrawn when
+    /// the buffer settles clean, since a buffer with nothing unsaved
+    /// has nothing to win with, and when the path stops being in the
+    /// state the choice was made over, which the next field records.
     overwrite_next_save: bool,
+    /// What the standing keep mine was given over: true when nothing
+    /// was at the path, false when a copy was there, or when the
+    /// platform would not say. The consent answers that question and
+    /// no other. One given over a copy that changed does not license
+    /// making a file again after somebody deleted it, and one given
+    /// over an empty path does not license overwriting a file that has
+    /// since appeared there and that nobody was shown. Written by every
+    /// [`FileStore::resolve_keep_mine`] and read only while the consent
+    /// stands, so it is never reset on its own.
+    keep_mine_over_absence: bool,
     /// The Take theirs generation whose undo marker may currently govern
     /// dirty state. Cleared whenever a save establishes a newer baseline.
     active_take_theirs_generation: Option<i64>,
@@ -405,6 +518,41 @@ pub struct OpenFile {
     /// [`DRAFT_SNAPSHOT_LIMIT`] at the save. Set at restore and read
     /// once by the hydration, which turns it into a notice.
     draft_dropped: bool,
+    /// Whether this buffer is a drafts record nothing has reconciled
+    /// against the disk yet. Set at restore and cleared by the
+    /// [`FileStore::hydrate_one`] or the [`FileStore::relocate`] that
+    /// settles it. While it stands the buffer is not a
+    /// truthful picture of the file: a clean record's buffer is empty
+    /// and a dirty one has no saved text to measure against. So every
+    /// route that edits, writes or re-reads refuses a pending file, and
+    /// the only things it accepts are a hydration, a relocation, a
+    /// bookmark and a close.
+    pending_hydration: bool,
+    /// Whether the platform refused the last attempt to reach the disk
+    /// copy for a reason other than its absence: a read or a stat that
+    /// was denied, which is what a sandbox answers for a file whose
+    /// grant is gone. Absence is the other state and has its own
+    /// conflict. Cleared by the next read that succeeds, and by a save,
+    /// after which the disk copy is the one this buffer wrote. Never
+    /// persisted: the next launch finds out for itself.
+    ///
+    /// This is not [`DroppedReason::Unreadable`], and the two words
+    /// never stand for each other. Access refused is a standing mark on
+    /// an open file the platform would not let this process reach.
+    /// Unreadable is the reason on a notice for a record that was
+    /// dropped because its bytes were reached and will not open as
+    /// text.
+    access_refused: bool,
+    /// Whether the last look at the path found nothing there. A dirty
+    /// buffer in that state also stands in [`FileConflict::Missing`],
+    /// unless a keep mine has answered it. A clean buffer never enters
+    /// a conflict, so for a clean file this is the only thing that says
+    /// its disk copy is gone, and it is what lets the shell offer to
+    /// locate the file rather than only mention it. Set by a check or a
+    /// read that answered not found, cleared by the next stat or read
+    /// that finds something and by a save. Never persisted, for the
+    /// reason `access_refused` is not.
+    not_found: bool,
     /// The shell's bookmark for this file, opaque here. Empty until the
     /// shell attaches one.
     bookmark: Vec<u8>,
@@ -480,6 +628,33 @@ impl OpenFile {
         self.externally_reloaded
     }
 
+    /// Whether this file came back from a drafts record and is still
+    /// waiting on [`FileStore::hydrate_one`]. A pending file is in the
+    /// roster so the shell can find it and resolve its bookmark, and it
+    /// is not yet fit to draw, edit or save.
+    #[must_use]
+    pub fn pending_hydration(&self) -> bool {
+        self.pending_hydration
+    }
+
+    /// Whether the platform refused the last attempt to reach the disk
+    /// copy for a reason other than its absence. While it stands the
+    /// shell offers to locate the file and does not offer to take the
+    /// disk copy, which nothing here can read.
+    #[must_use]
+    pub fn access_refused(&self) -> bool {
+        self.access_refused
+    }
+
+    /// Whether the last look at the path found nothing there. For a
+    /// clean file, which never enters a conflict, this is the whole of
+    /// what says the file is gone, and while it stands the shell offers
+    /// to locate it.
+    #[must_use]
+    pub fn not_found(&self) -> bool {
+        self.not_found
+    }
+
     /// The shell's bookmark for this file, opaque to this crate.
     #[must_use]
     pub fn bookmark(&self) -> &[u8] {
@@ -532,6 +707,37 @@ impl OpenFile {
         } else if let Some(saved) = &self.saved_text {
             self.dirty = !document_matches_text(&self.document, saved);
         }
+        // A keep mine says an unsaved buffer wins. Once the buffer is
+        // back at its saved text there is nothing unsaved to win with,
+        // and a consent left standing would let a later save of this
+        // clean file make it again at a path it has been deleted from.
+        if !self.dirty {
+            self.overwrite_next_save = false;
+        }
+    }
+
+    /// Withdraw a standing keep mine that was given over a different
+    /// question from the one the path now poses, and say whether one
+    /// was withdrawn.
+    ///
+    /// A consent given while a copy was at the path is withdrawn when
+    /// nothing is there, and one given over an empty path is withdrawn
+    /// when something is. A stat the platform refused is no answer
+    /// about either, so the consent stands through it.
+    fn withdraw_stale_consent(&mut self, stat: &io::Result<FileWitness>) -> bool {
+        if !self.overwrite_next_save {
+            return false;
+        }
+        let absent = match stat {
+            Ok(_) => false,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+            Err(_) => return false,
+        };
+        if absent == self.keep_mine_over_absence {
+            return false;
+        }
+        self.overwrite_next_save = false;
+        true
     }
 
     /// Adopt the text now on disk as both the buffer and the saved
@@ -549,9 +755,109 @@ impl OpenFile {
         self.has_bom = read.has_bom;
         self.dirty = false;
         self.conflict = FileConflict::None;
+        self.access_refused = false;
+        self.not_found = false;
         self.active_take_theirs_generation = None;
         self.next_take_theirs_generation = 0;
         self.take_theirs_undone = false;
+    }
+
+    /// Settle this file around a read of its disk copy that succeeded:
+    /// the one table a hydration and a relocation share, so a file the
+    /// person pointed at is judged exactly as a file the launch found.
+    ///
+    /// A buffer holding no draft adopts the disk copy, and owes a
+    /// reload notice when that copy is not the one it was last measured
+    /// against. The one exception is a live file, already read in this
+    /// process, whose disk copy holds the very text it holds: that
+    /// buffer is kept as it is, because adopting builds a fresh
+    /// document, and a file that was merely moved would lose its undo
+    /// history to a rebind that changed no word of it. After a take
+    /// theirs that history is the only road back to the draft that was
+    /// set aside. A draft stands. It stands with no conflict when the
+    /// disk copy is the generation it was measured against, told by the
+    /// witness or, where the saved text is known, by the text itself:
+    /// a file that was copied somewhere new has a new witness and the
+    /// same words. Otherwise there are two texts and no way to
+    /// reconcile them, so the draft stands in a
+    /// [`FileConflict::Changed`] and the person chooses, with the disk
+    /// copy now one that can be taken.
+    ///
+    /// Returns the notice owed for a draft that was too large to stage,
+    /// which waits for this moment so a file that is also gone gets one
+    /// notice about that and not two about one thing.
+    fn settle_over(&mut self, read: ReadFile) -> Option<FileNotice> {
+        // A draft that was left out of the drafts file is not a draft
+        // any more.
+        let dropped_draft = self.draft_dropped;
+        if dropped_draft {
+            self.dirty = false;
+            self.take_theirs_undone = false;
+            self.draft_dropped = false;
+        }
+        let notice = dropped_draft.then(|| self.notice(DroppedReason::DraftTooLarge));
+        let unchanged = self.witness == Some(read.witness)
+            || self
+                .saved_text
+                .as_ref()
+                .is_some_and(|saved| **saved == *read.text);
+        // A live clean buffer over the very text the disk copy holds.
+        // Asked of the text and not of the witness, because what is
+        // being kept is the document, and the document is only the
+        // file's if the words agree. A pending record has no history to
+        // keep and an empty buffer, so it never takes this arm.
+        let same_text_live = !self.dirty
+            && !self.pending_hydration
+            && self
+                .saved_text
+                .as_ref()
+                .is_some_and(|saved| **saved == *read.text);
+        if same_text_live {
+            // The document stands, with its undo history and the take
+            // theirs markers that history may hold. What is refreshed
+            // is everything that describes the disk copy.
+            self.line_ending = read.line_ending;
+            self.has_bom = read.has_bom;
+            self.witness = Some(read.witness);
+            self.saved_text = Some(read.text);
+            self.conflict = FileConflict::None;
+        } else if !self.dirty {
+            self.adopt(read);
+            self.externally_reloaded = !unchanged;
+        } else if unchanged {
+            // The draft stands. What it gains is the same
+            // normalized-text baseline every live file uses.
+            self.line_ending = read.line_ending;
+            self.has_bom = read.has_bom;
+            self.witness = Some(read.witness);
+            self.saved_text = Some(read.text);
+            self.conflict = FileConflict::None;
+            self.resettle_dirty();
+        } else {
+            // Two texts and no way to reconcile them. The draft stands
+            // and the person chooses. The witness and the saved text
+            // are left describing the generation the draft was measured
+            // against, so the next check still reads this copy as
+            // changed.
+            self.conflict = FileConflict::Changed;
+        }
+        self.pending_hydration = false;
+        self.access_refused = false;
+        self.not_found = false;
+        // A keep mine was consent to overwrite one particular
+        // divergence, and this settlement has just asked the question
+        // afresh.
+        self.overwrite_next_save = false;
+        notice
+    }
+
+    /// Record what a refused read says about reaching the disk copy:
+    /// that the platform would not let it be reached, that nothing is
+    /// there, or neither, for bytes that were reached and will not
+    /// open.
+    fn note_refused_read(&mut self, refusal: OpenRefusal) {
+        self.access_refused = refusal_is_unreachable(refusal);
+        self.not_found = refusal == OpenRefusal::Io(io::ErrorKind::NotFound);
     }
 
     /// Mint a marker that cannot alias another Take theirs item still in
@@ -619,6 +925,14 @@ impl FileStore {
             .canonicalize(path)
             .map_err(|e| OpenRefusal::Io(e.kind()))?;
         if let Some(open) = self.files.iter().find(|file| file.path == *path) {
+            // A pending row is not a buffer over this file yet, so it
+            // is not one to hand back: the shell would raise a tab
+            // whose text nobody has read. The shell hydrates the row
+            // first and asks again, and one that forgot is told the
+            // file is busy rather than given an id it would then draw.
+            if open.pending_hydration {
+                return Err(OpenRefusal::Io(io::ErrorKind::ResourceBusy));
+            }
             return Ok(open.id);
         }
         let read = read_file(io, path)?;
@@ -638,10 +952,14 @@ impl FileStore {
             restored_from_draft: false,
             externally_reloaded: false,
             overwrite_next_save: false,
+            keep_mine_over_absence: false,
             active_take_theirs_generation: None,
             next_take_theirs_generation: 0,
             take_theirs_undone: false,
             draft_dropped: false,
+            pending_hydration: false,
+            access_refused: false,
+            not_found: false,
             bookmark: Vec::new(),
         });
         Ok(id)
@@ -741,6 +1059,13 @@ impl FileStore {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
+        // A pending buffer is not the file's text yet. Typing into a
+        // clean record's empty buffer would make an edit against
+        // nothing, and the hydration that followed would either throw
+        // it away or mistake it for a draft.
+        if file.pending_hydration {
+            return false;
+        }
         // Phase one: the whole batch against a simulation in exact code
         // units, so a refusal is atomic and a boundary inside a
         // surrogate pair is policed as strictly as the document would.
@@ -860,7 +1185,12 @@ impl FileStore {
 
     fn step(&mut self, id: FileId, back: bool) -> Option<StepOutcome> {
         let file = self.file_mut(id)?;
-        let applied = if back {
+        // A restored buffer carries no undo history, so there is no
+        // step to take either way. Said outright rather than left to
+        // that coincidence, since a pending buffer must not move.
+        let applied = if file.pending_hydration {
+            false
+        } else if back {
             file.document.undo()
         } else {
             file.document.redo()
@@ -899,15 +1229,59 @@ impl FileStore {
     /// # Errors
     ///
     /// [`SaveError::Conflict`] while a conflict is unresolved,
-    /// [`SaveError::UnknownFile`] for an id nothing is open under, and
+    /// [`SaveError::UnknownFile`] for an id nothing is open under,
+    /// [`SaveError::PendingHydration`] for a restored file nothing has
+    /// reconciled against the disk yet, [`SaveError::NotFound`] when
+    /// nothing is at the file's path and no keep mine stands, and
     /// [`SaveError::Io`] for a write the platform refused, which leaves
     /// the file on disk untouched.
     pub fn save(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), SaveError> {
         let file = self.file_mut(id).ok_or(SaveError::UnknownFile)?;
+        if file.pending_hydration {
+            return Err(SaveError::PendingHydration);
+        }
         if file.conflict != FileConflict::None {
             return Err(SaveError::Conflict);
         }
         let path = file.path.clone();
+        // A save writes a file back. It does not make one where there
+        // is none: a path with nothing at it is a file somebody deleted
+        // or moved, and putting a new one there would undo that for
+        // them. The path is looked at here, and not only the mark a
+        // check left, so a caller that skipped the check is refused the
+        // same way. A keep mine given over the empty path is the one
+        // thing that licenses it, because the person was shown that the
+        // file is gone and said their buffer wins. A keep mine given
+        // while a copy was there answered a different question, and is
+        // withdrawn here rather than spent on a deletion nobody was
+        // shown. A stat the platform refused is not an answer about
+        // absence, so the write goes ahead and reports for itself.
+        let stat = io.stat(&path);
+        let withdrawn = file.withdraw_stale_consent(&stat);
+        match &stat {
+            Err(error) if error.kind() == io::ErrorKind::NotFound && !file.overwrite_next_save => {
+                file.access_refused = false;
+                file.not_found = true;
+                // A draft over a missing file is the missing conflict,
+                // as a check would have set it, so the banner offers
+                // the ways out and the next save is refused for the
+                // standing reason.
+                if file.dirty {
+                    file.conflict = FileConflict::Missing;
+                }
+                return Err(SaveError::NotFound);
+            }
+            // The other direction: the consent was to write where
+            // nothing was, and a file is there now that nobody has been
+            // shown. That is a changed disk copy under a draft, and it
+            // is asked about as one.
+            Ok(_) if withdrawn && file.dirty => {
+                file.not_found = false;
+                file.conflict = FileConflict::Changed;
+                return Err(SaveError::Conflict);
+            }
+            _ => {}
+        }
         write_and_settle(io, file, &path)
     }
 
@@ -926,9 +1300,18 @@ impl FileStore {
     /// # Errors
     ///
     /// [`SaveError::PathInUse`] for a target another open file holds,
-    /// [`SaveError::UnknownFile`] for an id nothing is open under, and
-    /// [`SaveError::Io`] for a write the platform refused.
+    /// [`SaveError::UnknownFile`] for an id nothing is open under,
+    /// [`SaveError::PendingHydration`] for a restored file nothing has
+    /// reconciled against the disk yet, and [`SaveError::Io`] for a
+    /// write the platform refused.
     pub fn save_as(&mut self, io: &dyn FileIo, id: FileId, path: &Path) -> Result<(), SaveError> {
+        // Asked before the path is looked at, so a pending file is told
+        // the true reason. A clean record's buffer is empty until it is
+        // hydrated, and writing that anywhere would be writing nothing
+        // under the file's name.
+        if self.file(id).is_some_and(|file| file.pending_hydration) {
+            return Err(SaveError::PendingHydration);
+        }
         // Resolved the way an open resolves, so the comparison below
         // and the path adopted afterwards are in the same terms as
         // every other path in the store. The target need not exist yet,
@@ -958,17 +1341,7 @@ impl FileStore {
         let Some(file) = self.file(id) else {
             return ExternalState::Missing;
         };
-        match io.stat(&file.path) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => ExternalState::Missing,
-            Err(_) => ExternalState::Changed,
-            Ok(fresh) => {
-                if Some(fresh) == file.witness {
-                    ExternalState::Unchanged
-                } else {
-                    ExternalState::Changed
-                }
-            }
-        }
+        external_state(&io.stat(&file.path), file.witness)
     }
 
     /// [`FileStore::check`], and then set the file's conflict from the
@@ -979,11 +1352,62 @@ impl FileStore {
     /// Returns the state it found, which is the true answer either way:
     /// a caller that wants to know whether the file moved is told, even
     /// while a keep mine stands.
+    ///
+    /// The check is also where the access refused mark is kept honest. A
+    /// stat the platform refused sets it. A path with nothing at it
+    /// clears it, since absence is the other state. And while it
+    /// stands, a stat that answers is followed by one read whose only
+    /// purpose is to learn whether the disk copy can be reached again:
+    /// a sandbox lets an ungranted path be statted and not read, so the
+    /// stat alone proves nothing, and without the read a grant that
+    /// came back would never be noticed for a file holding a draft.
+    ///
+    /// A draft over a disk copy that still cannot be read stays in, or
+    /// enters, [`FileConflict::Changed`], whatever the stat said. The
+    /// hydration puts such a file in that conflict, and a stat that
+    /// matches the witness must not quietly take it out again: the stat
+    /// says the path holds what it held, and says nothing about whether
+    /// this process has ever seen it. Only a read that succeeds, a keep
+    /// mine, a save as or a relocation ends it, so a launch and the
+    /// activation after it agree about the same disk.
+    ///
+    /// The check keeps the not found mark honest the same way: a path
+    /// with nothing at it sets it, for a clean file as for a dirty one,
+    /// and any other answer clears it.
     pub fn refresh_conflict(&mut self, io: &dyn FileIo, id: FileId) -> ExternalState {
-        let state = self.check(io, id);
-        if let Some(file) = self.file_mut(id) {
+        let Some(file) = self.file_mut(id) else {
+            return ExternalState::Missing;
+        };
+        let stat = io.stat(&file.path);
+        let state = external_state(&stat, file.witness);
+        // A pending file's conflict is the hydration's to decide, from
+        // a read rather than a stat. The state found is still answered.
+        if !file.pending_hydration {
+            match &stat {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    file.access_refused = false;
+                    file.not_found = true;
+                }
+                Err(_) => {
+                    file.access_refused = true;
+                    file.not_found = false;
+                }
+                Ok(_) => {
+                    file.not_found = false;
+                    // The bytes are wanted for nothing but the answer,
+                    // and they are a person's text, so they are wiped.
+                    if file.access_refused && io.read(&file.path).map(Zeroizing::new).is_ok() {
+                        file.access_refused = false;
+                    }
+                }
+            }
+            // A keep mine answers the question it was given over. When
+            // the path has since gone from holding a copy to holding
+            // nothing, or the other way, the question is a new one and
+            // is asked below like any other.
+            file.withdraw_stale_consent(&stat);
             file.conflict = match (state, file.dirty) {
-                (ExternalState::Unchanged, _) | (_, false) => FileConflict::None,
+                (_, false) => FileConflict::None,
                 // A person who chose keep mine has answered this
                 // question already. Without this arm the shell's own
                 // documented flow defeats the choice: it checks before
@@ -991,6 +1415,12 @@ impl FileStore {
                 // save it was checking for is refused. Keep mine would
                 // be a button that does nothing.
                 _ if file.overwrite_next_save => FileConflict::None,
+                // The stat matches and the read is still refused. The
+                // draft may not be saved over a copy nothing here can
+                // read, so the conflict stands until a read succeeds
+                // or the person answers it.
+                (ExternalState::Unchanged, true) if file.access_refused => FileConflict::Changed,
+                (ExternalState::Unchanged, true) => FileConflict::None,
                 (ExternalState::Changed, true) => FileConflict::Changed,
                 (ExternalState::Missing, true) => FileConflict::Missing,
             };
@@ -1009,15 +1439,72 @@ impl FileStore {
     /// that is gone. And a consent flag is set that survives until the
     /// save it was given for, because a file that is missing has no
     /// witness to take and because the disk copy may change again
-    /// between the choice and the keystroke. Only the save clears it,
-    /// so exactly one save is licensed by exactly one choice.
+    /// between the choice and the keystroke. The save it licenses
+    /// spends it, so exactly one save is licensed by exactly one
+    /// choice.
+    ///
+    /// The consent is bound to what it answered. It records whether the
+    /// path held a copy or nothing when it was given, and it is
+    /// withdrawn, and the question asked again, when a check or a save
+    /// finds the path in the other state: a copy that changed and was
+    /// then deleted, or an empty path a file has since appeared at. It
+    /// is withdrawn too when the buffer settles clean.
+    ///
+    /// A keep mine over a copy that changed also gives up the saved
+    /// text. That text is the generation the disk no longer holds, and
+    /// a buffer undone back to it is not what is on disk, so measuring
+    /// against it would call the file saved while the disk held the
+    /// other copy and the refreshed witness answered unchanged. With no
+    /// saved text the file stays dirty, whatever the buffer is edited
+    /// or undone to, until the save the consent was given for. A keep
+    /// mine over a missing file keeps its saved text: nothing is on
+    /// disk to disagree with it, and a buffer back at that text has no
+    /// edit left to put anywhere.
+    ///
+    /// A keep mine chosen on a missing conflict whose file is back at
+    /// its path is refused for the same reason. The person answered a
+    /// banner that said the file was gone, and it is not, so the file
+    /// is put in the state a check would find and false is returned
+    /// when that state is a conflict they have not yet been shown.
     pub fn resolve_keep_mine(&mut self, io: &dyn FileIo, id: FileId) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
+        // Nobody has been shown a divergence on a pending file, so
+        // there is no choice here to record.
+        if file.pending_hydration {
+            return false;
+        }
+        let stat = io.stat(&file.path);
+        if file.conflict == FileConflict::Missing && stat.is_ok() {
+            file.not_found = false;
+            let changed = external_state(&stat, file.witness) == ExternalState::Changed;
+            file.conflict = if changed {
+                FileConflict::Changed
+            } else {
+                FileConflict::None
+            };
+            return !changed;
+        }
+        // Asked before the witness is refreshed, while it still
+        // describes the generation the buffer was measured against.
+        let diverged = external_state(&stat, file.witness) == ExternalState::Changed;
         file.conflict = FileConflict::None;
         file.overwrite_next_save = true;
-        file.witness = io.stat(&file.path).ok();
+        file.keep_mine_over_absence =
+            matches!(&stat, Err(error) if error.kind() == io::ErrorKind::NotFound);
+        file.witness = stat.ok();
+        if diverged {
+            // The saved text is the generation that is gone from the
+            // disk, and the witness no longer vouches for it. Nothing
+            // here has read the copy that replaced it, so the baseline
+            // is unknown, exactly as it is for a draft restored beside
+            // a file that changed under it, and the file is dirty on
+            // the person's own word until the save writes a baseline
+            // this buffer made.
+            file.saved_text = None;
+            file.dirty = true;
+        }
         true
     }
 
@@ -1030,14 +1517,12 @@ impl FileStore {
     /// # Errors
     ///
     /// The same refusals [`FileStore::open`] gives. A refused reload
-    /// leaves the buffer exactly as it was.
+    /// leaves the buffer exactly as it was. A file still waiting on its
+    /// hydration is refused as busy: a reload would discard a restored
+    /// draft that nobody has been asked about.
     pub fn reload(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), OpenRefusal> {
-        let path = self
-            .file(id)
-            .ok_or(OpenRefusal::Io(io::ErrorKind::NotFound))?
-            .path
-            .clone();
-        let read = read_file(io, &path)?;
+        let path = self.path_for_reread(id)?;
+        let read = self.read_for(io, id, &path)?;
         if let Some(file) = self.file_mut(id) {
             file.adopt(read);
             // The buffer is the file's own text now, not a draft's, and
@@ -1061,14 +1546,11 @@ impl FileStore {
     ///
     /// # Errors
     ///
-    /// The same refusals [`FileStore::open`] gives.
+    /// The same refusals [`FileStore::open`] gives, and the busy
+    /// refusal [`FileStore::reload`] gives a pending file.
     pub fn take_theirs(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), OpenRefusal> {
-        let path = self
-            .file(id)
-            .ok_or(OpenRefusal::Io(io::ErrorKind::NotFound))?
-            .path
-            .clone();
-        let read = read_file(io, &path)?;
+        let path = self.path_for_reread(id)?;
+        let read = self.read_for(io, id, &path)?;
         if let Some(file) = self.file_mut(id) {
             let generation = file.mint_take_theirs_generation();
             let len = file.document.utf16_len();
@@ -1091,6 +1573,8 @@ impl FileStore {
             file.has_bom = read.has_bom;
             file.dirty = false;
             file.conflict = FileConflict::None;
+            file.access_refused = false;
+            file.not_found = false;
             // Armed only behind an undo item: a generation no Undo can
             // reach is the orphaned marker ADR-0031 refuses elsewhere.
             file.active_take_theirs_generation = stepped.then_some(generation);
@@ -1100,6 +1584,35 @@ impl FileStore {
             file.overwrite_next_save = false;
         }
         Ok(())
+    }
+
+    /// Read the disk copy on behalf of an open file, and leave the file
+    /// knowing whether the read could reach it. A refusal changes
+    /// nothing else about the file.
+    fn read_for(
+        &mut self,
+        io: &dyn FileIo,
+        id: FileId,
+        path: &Path,
+    ) -> Result<ReadFile, OpenRefusal> {
+        let outcome = read_file(io, path);
+        if let (Err(refusal), Some(file)) = (&outcome, self.file_mut(id)) {
+            file.note_refused_read(*refusal);
+        }
+        outcome
+    }
+
+    /// The path a reload or a take theirs is about to read, or the
+    /// reason neither may run: nothing open under the id, or a file
+    /// that is still waiting on its hydration.
+    fn path_for_reread(&self, id: FileId) -> Result<PathBuf, OpenRefusal> {
+        let file = self
+            .file(id)
+            .ok_or(OpenRefusal::Io(io::ErrorKind::NotFound))?;
+        if file.pending_hydration {
+            return Err(OpenRefusal::Io(io::ErrorKind::ResourceBusy));
+        }
+        Ok(file.path.clone())
     }
 
     /// Say that the shell has posted the reload notice for this file,
@@ -1143,11 +1656,12 @@ impl FileStore {
     /// dirty and carries no snapshot is the one case that is neither:
     /// the draft was over [`DRAFT_SNAPSHOT_LIMIT`] when the file was
     /// written, so it was left out. That is remembered here and turned
-    /// into a notice by [`FileStore::hydrate_restored`].
+    /// into a notice by [`FileStore::hydrate_one`].
     ///
     /// The buffer this leaves is not yet ready to draw: nothing has
-    /// looked at the disk. [`FileStore::hydrate_restored`] is the
-    /// second half of a restore and every caller owes it.
+    /// looked at the disk. It is marked pending, and
+    /// [`FileStore::hydrate_one`] is the second half of a restore that
+    /// every caller owes each file.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn adopt_restored(
         &mut self,
@@ -1184,6 +1698,7 @@ impl FileStore {
             restored_from_draft: true,
             externally_reloaded: false,
             overwrite_next_save: false,
+            keep_mine_over_absence: false,
             active_take_theirs_generation: None,
             next_take_theirs_generation: 0,
             // Undo history does not cross launch, so no restored boolean
@@ -1191,32 +1706,85 @@ impl FileStore {
             // Hydration derives dirtiness from the draft and disk texts.
             take_theirs_undone: false,
             draft_dropped: dirty && snapshot.is_none(),
+            pending_hydration: true,
+            access_refused: false,
+            not_found: false,
             bookmark,
         });
         Ok(id)
     }
 
-    /// The second half of a drafts restore: look at the disk, and leave
-    /// every restored file in a state the shell can draw without asking
-    /// anything further.
+    /// The second half of a drafts restore, for every file at once:
+    /// [`FileStore::hydrate_one`] over each pending file at the path
+    /// its record carried, with the notices gathered.
+    ///
+    /// This is the whole restore for a caller that has no bookmarks to
+    /// resolve, which is every headless one. A shell that holds
+    /// bookmarks asks per file instead, because under a sandbox each
+    /// file can only be read while its own grant is open.
+    pub fn hydrate_restored(&mut self, io: &dyn FileIo) -> Vec<FileNotice> {
+        let pending: Vec<FileId> = self
+            .files
+            .iter()
+            .filter(|file| file.pending_hydration)
+            .map(|file| file.id)
+            .collect();
+        pending
+            .into_iter()
+            .filter_map(|id| self.hydrate_one(io, id, None).notice)
+            .collect()
+    }
+
+    /// The second half of a drafts restore, for one file: look at the
+    /// disk, and leave the file in a state the shell can draw without
+    /// asking anything further.
     ///
     /// One record at a time, and never a whole-restore failure. A file
     /// that cannot be reopened is dropped from the roster or left
-    /// standing in a conflict, and either way it leaves a
-    /// [`FileNotice`]; the files beside it come back regardless. A
-    /// launch that loses every open tab because one of them was on an
-    /// unmounted volume would be the worse answer by a distance.
+    /// standing in a conflict, and the files beside it are not touched
+    /// at all. A launch that loses every open tab because one of them
+    /// was on an unmounted volume would be the worse answer by a
+    /// distance.
     ///
-    /// The six cases, which are the whole of this function:
+    /// `resolved_path` is where the shell's bookmark says the file is
+    /// now, when it has one and it resolved. A file that was moved
+    /// while the app was closed is rebound to that path, in the same
+    /// resolved terms every other path in the store is held in, before
+    /// anything is read. `None` reads the recorded path.
+    ///
+    /// The resolved path may be one another open file holds, and what
+    /// happens then turns on whether that file has been hydrated:
+    ///
+    ///  - A settled holder is where it says it is. The rebind is
+    ///    refused and the recorded path kept: the hydration runs
+    ///    against the recorded path and the table below decides what
+    ///    that means.
+    ///  - A pending holder has only the path its record carried, which
+    ///    nothing has checked. If it was itself moved away, the path is
+    ///    free and only looks taken. So nothing is decided: the answer
+    ///    is [`HydrationFate::Deferred`], the file stays pending, and
+    ///    the caller asks again after the holder has been hydrated. A
+    ///    refusal here instead would make the outcome turn on roster
+    ///    order, and would drop a clean file its bookmark had found.
+    ///
+    /// A caller that defers owes every file an answer in the end. Two
+    /// files that were swapped each wait on the other, so a pass that
+    /// settles nothing is ended by hydrating one of them with `None`,
+    /// which never defers. No settled file ever holds a pending file's
+    /// path, so no two buffers come to share one.
+    ///
+    /// The cases, which are the whole of this function:
     ///
     /// | record | on disk | outcome |
     /// | --- | --- | --- |
     /// | clean | unchanged | filled from disk, clean |
     /// | clean | changed | filled from disk, clean, reload notice set |
-    /// | clean | missing or unreadable | dropped, notice |
+    /// | clean | missing, or will not open | dropped, notice |
+    /// | clean | the platform refused the read | held: still pending, marked access refused |
     /// | dirty | unchanged | draft kept, saved text learned from disk |
     /// | dirty | changed | draft kept, [`FileConflict::Changed`] |
     /// | dirty | missing | draft kept, [`FileConflict::Missing`] |
+    /// | dirty | the platform refused the read | draft kept, [`FileConflict::Changed`], marked access refused |
     ///
     /// A dirty record whose draft was over
     /// [`DRAFT_SNAPSHOT_LIMIT`] has no draft to keep, so it takes the
@@ -1229,79 +1797,183 @@ impl FileStore {
     /// The persisted last edit stamp survives, because the header of a
     /// restored dirty file states the draft's age and re-stamping it at
     /// launch would make every draft look new.
-    pub fn hydrate_restored(&mut self, io: &dyn FileIo) -> Vec<FileNotice> {
-        let mut notices = Vec::new();
-        let mut kept = Vec::with_capacity(self.files.len());
-        for mut file in std::mem::take(&mut self.files) {
-            if !file.restored_from_draft {
-                kept.push(file);
-                continue;
-            }
-            let staged = file.dirty && !file.draft_dropped;
-            // A draft that was left out of the drafts file is not a
-            // draft any more. The notice for it waits until the file is
-            // known to be coming back: a file that is also gone from
-            // disk gets one notice about that and not two about one
-            // thing, since "your draft was too large" is no use to
-            // somebody whose file is not there either.
-            let dropped_draft = file.draft_dropped;
-            if dropped_draft {
-                file.dirty = false;
-                file.take_theirs_undone = false;
-                file.draft_dropped = false;
-            }
-            match read_file(io, &file.path) {
-                Ok(read) => {
-                    if dropped_draft {
-                        notices.push(file.notice(DroppedReason::DraftTooLarge));
-                    }
-                    let unchanged = file.witness == Some(read.witness);
-                    if !staged {
-                        file.adopt(read);
-                        file.externally_reloaded = !unchanged;
-                    } else if unchanged {
-                        // The draft stands. What it gains is the same
-                        // normalized-text baseline every live file uses.
-                        file.line_ending = read.line_ending;
-                        file.has_bom = read.has_bom;
-                        file.witness = Some(read.witness);
-                        file.saved_text = Some(read.text);
-                        file.conflict = FileConflict::None;
-                        file.resettle_dirty();
-                    } else {
-                        // Two texts and no way to reconcile them. The
-                        // draft stands and the person chooses.
-                        file.conflict = FileConflict::Changed;
-                        file.saved_text = None;
-                    }
-                    kept.push(file);
-                }
-                Err(OpenRefusal::Io(io::ErrorKind::NotFound)) => {
-                    if staged {
-                        file.conflict = FileConflict::Missing;
-                        file.witness = None;
-                        kept.push(file);
-                    } else {
-                        notices.push(file.notice(DroppedReason::Missing));
-                    }
-                }
-                Err(_) => {
-                    if staged {
-                        // Something is there and this build will not
-                        // read it, so take theirs is not on offer. The
-                        // conflict is what refuses the save until the
-                        // person picks keep mine or save as.
-                        file.conflict = FileConflict::Changed;
-                        file.saved_text = None;
-                        kept.push(file);
-                    } else {
-                        notices.push(file.notice(DroppedReason::Unreadable));
-                    }
-                }
-            }
+    ///
+    /// Two different things stop a file being read, and they are kept
+    /// apart. Bytes this build will not open, which is text that is not
+    /// UTF-8, content that looks binary or a file past the size limit,
+    /// were reached and refused: a clean record is dropped and named as
+    /// unreadable. A read the platform refused, which is what a sandbox
+    /// answers for a file whose grant is gone, reached nothing: the
+    /// person may well know where the file is, so a clean record is
+    /// held in the roster for [`FileStore::relocate`] rather than
+    /// dropped, with an empty buffer that every editing and writing
+    /// route refuses. A held file may be hydrated again, which is how a
+    /// grant that came back is noticed. Either way a dirty record
+    /// stands in a conflict with its draft intact, so nothing unsaved
+    /// is lost to a permission.
+    pub fn hydrate_one(
+        &mut self,
+        io: &dyn FileIo,
+        id: FileId,
+        resolved_path: Option<&Path>,
+    ) -> HydrationOutcome {
+        let Some(at) = self.files.iter().position(|file| file.id == id) else {
+            return HydrationOutcome::untouched(HydrationFate::UnknownFile);
+        };
+        if !self.files[at].pending_hydration {
+            return HydrationOutcome::untouched(HydrationFate::NotPending);
         }
-        self.files = kept;
-        notices
+
+        let rebind = match resolved_path {
+            None => PathRebind::Unmoved,
+            Some(resolved) => {
+                // Resolved the way a save as resolves its target, so a
+                // path the platform will not resolve is still adopted
+                // as given and the read below is what reports on it.
+                let target = resolve_target(io, resolved);
+                if target == self.files[at].path {
+                    PathRebind::Unmoved
+                } else if let Some(holder) =
+                    self.files.iter().find(|f| f.id != id && f.path == target)
+                {
+                    // A held file has been asked and is staying where
+                    // it is, so it is a holder like any settled one.
+                    // Waiting on it would be waiting on nothing.
+                    if holder.pending_hydration && !holder.access_refused {
+                        return HydrationOutcome::untouched(HydrationFate::Deferred);
+                    }
+                    PathRebind::Refused
+                } else {
+                    self.files[at].path = target;
+                    PathRebind::Rebound
+                }
+            }
+        };
+
+        let file = &mut self.files[at];
+        // A draft that was left out of the drafts file is not a draft
+        // any more, so such a record takes the clean path. The notice
+        // for it waits until the file is known to be coming back: a
+        // file that is also gone from disk gets one notice about that
+        // and not two about one thing, since "your draft was too large"
+        // is no use to somebody whose file is not there either.
+        let staged = file.dirty && !file.draft_dropped;
+        let mut notice = None;
+        let fate = match read_file(io, &file.path) {
+            Ok(read) => {
+                notice = file.settle_over(read);
+                HydrationFate::Kept
+            }
+            Err(refusal) if staged => {
+                file.pending_hydration = false;
+                if refusal == OpenRefusal::Io(io::ErrorKind::NotFound) {
+                    // The witness is kept. It still describes the
+                    // generation the draft was measured against, which
+                    // is what lets a relocation recognise that same
+                    // file where the person says it now is.
+                    file.conflict = FileConflict::Missing;
+                } else {
+                    // Something is there and this build cannot take it,
+                    // so take theirs has nothing to take. The conflict
+                    // is what refuses the save until the person picks
+                    // keep mine or save as, or says where the file is.
+                    file.conflict = FileConflict::Changed;
+                    file.saved_text = None;
+                }
+                file.note_refused_read(refusal);
+                HydrationFate::Kept
+            }
+            Err(refusal) if refusal_is_unreachable(refusal) => {
+                // Nothing to keep and nothing read, and yet something
+                // is there. The record stays as it came, still pending,
+                // so every route that would edit or write its empty
+                // buffer goes on refusing.
+                file.access_refused = true;
+                HydrationFate::Held
+            }
+            Err(refusal) => {
+                // Only a read the platform refused holds a clean
+                // record, and this arm is every other refusal. A hold
+                // exists so a person can say where a file is or let it
+                // be read again, and neither would change these: bytes
+                // that were read in full and are not UTF-8, look binary
+                // or are past the size limit would be refused again
+                // wherever the file was pointed at, and a path with
+                // nothing at it has no file to hold a tab for. The
+                // record held no draft, so dropping it loses nothing
+                // but the tab, and the notice names it.
+                let reason = if refusal == OpenRefusal::Io(io::ErrorKind::NotFound) {
+                    DroppedReason::Missing
+                } else {
+                    DroppedReason::Unreadable
+                };
+                notice = Some(file.notice(reason));
+                self.files.remove(at);
+                HydrationFate::Dropped
+            }
+        };
+        HydrationOutcome {
+            fate,
+            rebind,
+            notice,
+        }
+    }
+
+    /// Bind an open file to the path a person says it is at now, read
+    /// the disk copy there, and settle the file around it.
+    ///
+    /// This is the way back for a file whose disk copy cannot be
+    /// reached: one that is no longer at its path, or one the platform
+    /// will not let this process read. The person knows where the file
+    /// is, the shell asks them, and the path they choose arrives here
+    /// inside the access their choice granted. It is also what the
+    /// shell calls, with no panel, when a check finds the file gone and
+    /// its bookmark has followed it somewhere else.
+    ///
+    /// The read settles exactly as a hydration's does. A file holding
+    /// no draft adopts the disk copy, except that a live file whose
+    /// disk copy holds the text it already holds keeps its buffer and
+    /// with it its undo history: a file that was only moved is the same
+    /// document somewhere else. A draft stands, with no conflict
+    /// when the disk copy is the generation it was measured against and
+    /// in a [`FileConflict::Changed`] when it is not, and in that
+    /// conflict the disk copy is now one that can be taken. A file that
+    /// was held pending is settled by this and is pending no longer.
+    ///
+    /// The answer is the notice owed for a draft that was too large to
+    /// stage, which only a record that was still pending can carry.
+    ///
+    /// # Errors
+    ///
+    /// [`RelocateRefusal::UnknownFile`] for an id nothing is open
+    /// under, [`RelocateRefusal::PathInUse`] for a path another open
+    /// file holds, and [`RelocateRefusal::Open`] for a file that will
+    /// not open. Every refusal leaves the file exactly as it was: its
+    /// path, its buffer, its conflict and its access refused mark.
+    pub fn relocate(
+        &mut self,
+        io: &dyn FileIo,
+        id: FileId,
+        path: &Path,
+    ) -> Result<Option<FileNotice>, RelocateRefusal> {
+        let at = self
+            .files
+            .iter()
+            .position(|file| file.id == id)
+            .ok_or(RelocateRefusal::UnknownFile)?;
+        // Resolved the way an open resolves, so the comparison below
+        // and the path adopted afterwards are in the same terms as
+        // every other path in the store.
+        let target = resolve_target(io, path);
+        if self.files.iter().any(|f| f.id != id && f.path == target) {
+            return Err(RelocateRefusal::PathInUse);
+        }
+        // Read before anything moves, so a file that will not open
+        // costs the record nothing.
+        let read = read_file(io, &target).map_err(RelocateRefusal::Open)?;
+        let file = &mut self.files[at];
+        file.path = target;
+        Ok(file.settle_over(read))
     }
 
     /// What the drafts record for this file carries in its snapshot
@@ -1313,6 +1985,14 @@ impl FileStore {
         };
         if !file.dirty {
             return DraftBody::None;
+        }
+        // A record that arrived dirty and without its snapshot, and
+        // that nothing has hydrated yet. Its buffer is empty, and
+        // exporting that would turn "the draft was too large to stage"
+        // into "the draft is an empty file" at the next launch. The
+        // record goes back out exactly as it came in.
+        if file.draft_dropped {
+            return DraftBody::AlreadyDropped;
         }
         let snapshot = file.document.export_snapshot();
         if snapshot.len() > DRAFT_SNAPSHOT_LIMIT {
@@ -1336,6 +2016,11 @@ pub(crate) enum DraftBody {
     /// A dirty file whose buffer is over [`DRAFT_SNAPSHOT_LIMIT`]. The
     /// record is written without it, and the restore says so.
     Oversized,
+    /// A dirty record whose draft an earlier save already left out, in
+    /// a file still waiting on its hydration. Written without a
+    /// snapshot like an oversized one, and with no second notice: the
+    /// hydration owes the one there is.
+    AlreadyDropped,
 }
 
 /// The persisted view of one open file, read by `file_persist`.
@@ -1470,6 +2155,37 @@ fn looks_binary(text: &str) -> bool {
     disallowed_controls >= 2 && disallowed_controls * 10 > scalar_count
 }
 
+/// What a fresh stat says against the witness a buffer holds.
+///
+/// A stat that fails for any reason other than absence reads as
+/// changed, beside a witness that no longer matches. That is the
+/// conservative direction: a path that cannot be looked at must not
+/// license a save over whatever is actually there.
+fn external_state(stat: &io::Result<FileWitness>, witness: Option<FileWitness>) -> ExternalState {
+    match stat {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => ExternalState::Missing,
+        Ok(fresh) if Some(*fresh) == witness => ExternalState::Unchanged,
+        Err(_) | Ok(_) => ExternalState::Changed,
+    }
+}
+
+/// Whether a refused read means the disk copy could not be reached at
+/// all, as against one that was reached and will not open, or one that
+/// is not there.
+///
+/// Absence has its own state. A file rewritten faster than it reads was
+/// reached every time. Bytes this build will not open were read in
+/// full. What is left is the platform saying no: a denied read, which
+/// is what a sandbox answers for a file whose grant is gone, and a path
+/// that holds something other than a regular file.
+fn refusal_is_unreachable(refusal: OpenRefusal) -> bool {
+    matches!(
+        refusal,
+        OpenRefusal::Io(kind)
+            if kind != io::ErrorKind::NotFound && kind != io::ErrorKind::Interrupted
+    )
+}
+
 /// A save target, in the same terms as every path the store holds.
 ///
 /// A file that does not exist yet cannot be resolved, so its directory
@@ -1556,6 +2272,10 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
     file.saved_text = Some(Zeroizing::new(text_of(&file.document)));
     file.dirty = false;
     file.conflict = FileConflict::None;
+    // What is on disk now is what this buffer just put there, so there
+    // is no copy left that it has not seen, and the path is not empty.
+    file.access_refused = false;
+    file.not_found = false;
     file.restored_from_draft = false;
     file.active_take_theirs_generation = None;
     file.take_theirs_undone = false;
@@ -2682,6 +3402,281 @@ mod tests {
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Changed);
         assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+    }
+
+    fn is_at(io: &MemoryIo, path: &str) -> bool {
+        io.files.lock().unwrap().contains_key(Path::new(path))
+    }
+
+    #[test]
+    fn keep_mine_over_a_changed_copy_does_not_license_recreating_a_file_deleted_afterwards() {
+        let io = MemoryIo::with("/k5.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k5.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k5.txt", b"theirs");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        assert!(store.resolve_keep_mine(&io, id));
+
+        // The consent was to overwrite a copy. Nobody was asked about a
+        // deletion, and the save finds it with no check before it.
+        io.remove("/k5.txt");
+        assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
+        assert!(!is_at(&io, "/k5.txt"), "nothing was recreated");
+        let file = store.file(id).unwrap();
+        assert!(file.not_found());
+        assert!(file.is_dirty(), "the draft stands");
+        assert_eq!(file.conflict(), FileConflict::Missing);
+        assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+        assert!(!is_at(&io, "/k5.txt"));
+
+        // Asked now, over the empty path, keep mine does license it.
+        assert!(store.resolve_keep_mine(&io, id));
+        store
+            .save(&io, id)
+            .expect("this consent was for the deletion");
+        assert_eq!(io.bytes("/k5.txt"), b"one mine");
+    }
+
+    #[test]
+    fn a_check_withdraws_a_keep_mine_given_before_the_file_was_deleted() {
+        // The shell's route: it checks before it saves, and the check
+        // has to raise the missing conflict rather than let the old
+        // consent hide it.
+        let io = MemoryIo::with("/k6.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k6.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k6.txt", b"theirs");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+
+        io.remove("/k6.txt");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Missing);
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
+        assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+        assert!(!is_at(&io, "/k6.txt"));
+    }
+
+    #[test]
+    fn keep_mine_over_a_changed_copy_stays_dirty_when_undone_to_the_old_text() {
+        // The text the buffer goes back to is the generation the disk
+        // no longer holds. Calling that saved would be untrue, and the
+        // refreshed witness would keep every check from saying so.
+        let io = MemoryIo::with("/k7.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k7.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k7.txt", b"theirs");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+
+        assert!(store.undo(id).unwrap().applied);
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "one");
+        assert!(file.is_dirty(), "the disk holds the other copy");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Unchanged);
+        assert!(store.file(id).unwrap().is_dirty());
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
+        assert_eq!(io.bytes("/k7.txt"), b"theirs");
+
+        // Typed back to the old text rather than undone, the answer is
+        // the same one.
+        assert!(store.redo(id).unwrap().applied);
+        assert!(store.apply_ops(id, &[del(3, 5)], 2));
+        assert_eq!(store.file(id).unwrap().text(), "one");
+        assert!(store.file(id).unwrap().is_dirty());
+    }
+
+    #[test]
+    fn the_save_after_a_keep_mine_undone_to_the_old_text_writes_and_reads_clean() {
+        let io = MemoryIo::with("/k13.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k13.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k13.txt", b"theirs");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+        assert!(store.undo(id).unwrap().applied);
+
+        // The consent stands, because the buffer never settled clean,
+        // and the save it was given for puts the old text back.
+        store.refresh_conflict(&io, id);
+        store.save(&io, id).expect("the consent was for this save");
+        assert_eq!(io.bytes("/k13.txt"), b"one");
+        let file = store.file(id).unwrap();
+        assert!(!file.is_dirty(), "the disk holds what the buffer holds");
+        assert_eq!(file.conflict(), FileConflict::None);
+
+        // The baseline is the written text from here on: an edit
+        // dirties and its undo is clean again.
+        assert!(store.apply_ops(id, &[ins(3, "!")], 3));
+        assert!(store.file(id).unwrap().is_dirty());
+        assert!(store.undo(id).unwrap().applied);
+        assert!(!store.file(id).unwrap().is_dirty());
+    }
+
+    #[test]
+    fn a_keep_mine_undone_to_the_old_text_still_does_not_recreate_a_deleted_file() {
+        let io = MemoryIo::with("/k14.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k14.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k14.txt", b"theirs");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+        assert!(store.undo(id).unwrap().applied);
+
+        // The consent was to overwrite a copy, and the copy is gone.
+        // The buffer is still a draft, so the refusal leaves it in the
+        // missing conflict for the person to answer.
+        io.remove("/k14.txt");
+        assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
+        assert!(!is_at(&io, "/k14.txt"), "nothing was recreated");
+        let file = store.file(id).unwrap();
+        assert!(file.not_found());
+        assert!(file.is_dirty());
+        assert_eq!(file.conflict(), FileConflict::Missing);
+        assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+        assert!(!is_at(&io, "/k14.txt"));
+    }
+
+    #[test]
+    fn keep_mine_over_a_changed_copy_stays_dirty_across_a_take_theirs_marker() {
+        // Take theirs, undo it, and the disk moves again. Redo lands on
+        // the text that was taken, which is no longer what the disk
+        // holds, so the marker's clean side must not be believed.
+        let io = MemoryIo::with("/k15.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k15.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k15.txt", b"theirs");
+        store.refresh_conflict(&io, id);
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert!(store.file(id).unwrap().is_dirty());
+
+        io.put("/k15.txt", b"a third copy");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        assert!(store.resolve_keep_mine(&io, id));
+        assert!(store.redo(id).unwrap().applied);
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "theirs");
+        assert!(file.is_dirty(), "the disk holds a third copy");
+
+        store.save(&io, id).unwrap();
+        assert_eq!(io.bytes("/k15.txt"), b"theirs");
+        assert!(!store.file(id).unwrap().is_dirty());
+    }
+
+    #[test]
+    fn keep_mine_with_the_witness_still_matching_keeps_the_saved_text() {
+        // No divergence was found, so the saved text is still what the
+        // disk holds and the buffer is measured against it as ever.
+        let io = MemoryIo::with("/k16.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k16.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        assert!(store.resolve_keep_mine(&io, id));
+        assert!(store.undo(id).unwrap().applied);
+        assert!(!store.file(id).unwrap().is_dirty());
+    }
+
+    #[test]
+    fn a_keep_mine_over_a_missing_file_is_withdrawn_when_the_buffer_is_undone_back_to_clean() {
+        // The consent here was given over the empty path, so nothing
+        // about the path withdraws it. The buffer settling clean does:
+        // a file with no unsaved edits is never made again.
+        let io = MemoryIo::with("/k11.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k11.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.remove("/k11.txt");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+
+        assert!(store.undo(id).unwrap().applied);
+        assert!(!store.file(id).unwrap().is_dirty());
+        assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
+        assert!(!is_at(&io, "/k11.txt"), "nothing was recreated");
+
+        // Typed back to clean rather than undone, the answer is the
+        // same one.
+        let io = MemoryIo::with("/k12.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k12.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, "!")], 1));
+        io.remove("/k12.txt");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+        assert!(store.apply_ops(id, &[del(3, 1)], 2));
+        assert!(!store.file(id).unwrap().is_dirty());
+        assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
+        assert!(!is_at(&io, "/k12.txt"));
+    }
+
+    #[test]
+    fn keep_mine_over_a_missing_file_does_not_license_overwriting_one_that_appears() {
+        let io = MemoryIo::with("/k8.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k8.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.remove("/k8.txt");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+
+        // A file nobody was shown is at the path when the save comes.
+        io.put("/k8.txt", b"somebody else's");
+        assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+        assert_eq!(io.bytes("/k8.txt"), b"somebody else's");
+        let file = store.file(id).unwrap();
+        assert!(!file.not_found());
+        assert_eq!(file.conflict(), FileConflict::Changed);
+
+        // Shown it, the person may still say their buffer wins.
+        assert!(store.resolve_keep_mine(&io, id));
+        store.save(&io, id).unwrap();
+        assert_eq!(io.bytes("/k8.txt"), b"one mine");
+    }
+
+    #[test]
+    fn keep_mine_on_a_missing_conflict_whose_file_is_back_asks_the_true_question() {
+        let io = MemoryIo::with("/k9.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k9.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.remove("/k9.txt");
+        store.refresh_conflict(&io, id);
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
+
+        // Rewritten by another tool while the banner still says gone.
+        io.put("/k9.txt", b"rewritten");
+        assert!(
+            !store.resolve_keep_mine(&io, id),
+            "the banner answered was not the state of the disk"
+        );
+        let file = store.file(id).unwrap();
+        assert_eq!(file.conflict(), FileConflict::Changed);
+        assert!(!file.not_found());
+        assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+        assert_eq!(io.bytes("/k9.txt"), b"rewritten");
+
+        // The same file put back exactly as it left is no conflict at
+        // all, and the save is an ordinary one.
+        let io = MemoryIo::with("/k10.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k10.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.remove("/k10.txt");
+        store.refresh_conflict(&io, id);
+        io.files
+            .lock()
+            .unwrap()
+            .insert(PathBuf::from("/k10.txt"), b"one".to_vec());
+        assert!(store.resolve_keep_mine(&io, id));
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
+        store.save(&io, id).unwrap();
+        assert_eq!(io.bytes("/k10.txt"), b"one mine");
     }
 
     #[test]

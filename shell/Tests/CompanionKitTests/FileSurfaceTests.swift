@@ -29,7 +29,10 @@ final class FileSurfaceTests: XCTestCase {
         conflict: FileConflict = .none,
         lineEnding: FileLineEnding = .lf,
         lastEditedAt: UInt64 = 0,
-        restoredFromDraft: Bool = false
+        restoredFromDraft: Bool = false,
+        pendingHydration: Bool = false,
+        accessRefused: Bool = false,
+        notFound: Bool = false
     ) -> FileSummary {
         FileSummary(
             id: id,
@@ -40,7 +43,10 @@ final class FileSurfaceTests: XCTestCase {
             lineEnding: lineEnding,
             hasBOM: false,
             lastEditedAt: lastEditedAt,
-            restoredFromDraft: restoredFromDraft
+            restoredFromDraft: restoredFromDraft,
+            pendingHydration: pendingHydration,
+            accessRefused: accessRefused,
+            notFound: notFound
         )
     }
 
@@ -180,6 +186,218 @@ final class FileSurfaceTests: XCTestCase {
             XCTAssertFalse(words.contains("your"), sentence)
             XCTAssertFalse(sentence.contains("!"), sentence)
         }
+    }
+
+    // MARK: Locate, and the file that cannot be read
+
+    func testTheConflictBannerOffersLocateOnlyWhenTheOtherCopyCannotBeReached() {
+        XCTAssertEqual(
+            FileConflictBanner.actions(for: file(dirty: true, conflict: .changed)),
+            [.keepMine, .takeTheirs, .saveAs],
+            "a file that merely changed keeps its three actions")
+        XCTAssertEqual(
+            FileConflictBanner.actions(for: file(dirty: true, conflict: .missing, notFound: true)),
+            [.locate, .keepMine, .saveAs],
+            "nothing is at the path, so there is no copy to take and no button that could only fail")
+        XCTAssertEqual(
+            FileConflictBanner.actions(for: file(dirty: true, conflict: .missing)),
+            [.locate, .keepMine, .saveAs],
+            "and the conflict alone says so, for a row from a core that sends no mark")
+        XCTAssertEqual(
+            FileConflictBanner.actions(for: file(dirty: true, conflict: .changed, accessRefused: true)),
+            [.locate, .keepMine, .saveAs],
+            "take theirs is not offered while there is no copy that can be read")
+        for row in [
+            file(dirty: true, conflict: .changed),
+            file(dirty: true, conflict: .missing),
+            file(dirty: true, conflict: .changed, accessRefused: true),
+        ] {
+            XCTAssertEqual(
+                FileConflictBanner.actions(for: row).last, .saveAs,
+                "the action that destroys nothing keeps the last place (D-17)")
+        }
+    }
+
+    func testAnAccessRefusedConflictSaysTheFileCannotBeReadRatherThanThatItChanged() {
+        let row = file(name: "notes.txt", dirty: true, conflict: .changed, accessRefused: true)
+        XCTAssertEqual(
+            FileConflictBanner.sentence(for: row),
+            "notes.txt cannot be read at its path and this copy has unsaved edits · "
+                + "saving is refused until one copy is chosen")
+        // The two conflicts that can be read keep the words they had.
+        XCTAssertEqual(
+            FileConflictBanner.sentence(for: file(dirty: true, conflict: .changed)),
+            FileConflictBanner.sentence(for: .changed, name: "README.md"))
+        XCTAssertEqual(
+            FileConflictBanner.sentence(for: file(dirty: true, conflict: .missing)),
+            FileConflictBanner.sentence(for: .missing, name: "README.md"))
+    }
+
+    func testTheUnavailableBannerStandsForAFileThatCannotBeReadAndIsInNoConflict() {
+        let held = file(
+            name: "notes.txt", path: "/Users/someone/notes.txt",
+            restoredFromDraft: true, pendingHydration: true, accessRefused: true)
+        XCTAssertTrue(held.isHeld)
+        XCTAssertTrue(FileUnavailableBanner.stands(for: held))
+        XCTAssertTrue(
+            FileUnavailableBanner.stands(for: file(accessRefused: true)),
+            "a clean open file whose reload was refused gets the same two actions")
+        XCTAssertFalse(FileUnavailableBanner.stands(for: file()))
+        XCTAssertFalse(
+            FileUnavailableBanner.stands(for: file(dirty: true, conflict: .changed, accessRefused: true)),
+            "a conflict has its own banner, and only one of the two ever stands")
+        XCTAssertFalse(file(pendingHydration: true).isHeld, "pending alone is a wait, not a hold")
+
+        let sentence = FileUnavailableBanner.sentence(name: held.name, path: held.path)
+        XCTAssertEqual(
+            sentence, "notes.txt cannot be read at /Users/someone/notes.txt",
+            "it names the file and the last known path")
+        let words = sentence.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+        XCTAssertFalse(words.contains("you"))
+        XCTAssertFalse(sentence.contains("!"))
+    }
+
+    func testTheUnavailableBannerStandsForACleanFileThatIsNoLongerAtItsPath() {
+        // A clean file never enters a conflict, so without this banner
+        // nothing standing would say the file is gone, and nothing
+        // would offer Locate.
+        let gone = file(name: "notes.txt", path: "/Users/someone/notes.txt", notFound: true)
+        XCTAssertTrue(gone.offersLocate)
+        XCTAssertTrue(gone.isUnavailable)
+        XCTAssertTrue(FileUnavailableBanner.stands(for: gone))
+        XCTAssertEqual(
+            FileUnavailableBanner.sentence(for: gone),
+            "notes.txt is no longer at /Users/someone/notes.txt")
+        XCTAssertEqual(
+            FileUnavailableBanner.sentence(for: file(name: "notes.txt", path: "/p/notes.txt", accessRefused: true)),
+            "notes.txt cannot be read at /p/notes.txt",
+            "a file that is there and cannot be read keeps its own sentence")
+
+        // A draft in the missing conflict has the conflict banner, and
+        // only one of the two ever stands.
+        XCTAssertFalse(
+            FileUnavailableBanner.stands(for: file(dirty: true, conflict: .missing, notFound: true)))
+        // After keep mine the conflict is answered and the file is
+        // still gone, so what is left to offer is the way to find it.
+        let kept = file(dirty: true, conflict: .none, notFound: true)
+        XCTAssertTrue(FileUnavailableBanner.stands(for: kept))
+
+        XCTAssertEqual(
+            FileHeaderState.derive(from: gone).spoken,
+            "notes.txt, saved, this file is no longer at its path")
+        XCTAssertEqual(
+            FileRowLabel.spoken(for: gone), "file, notes.txt, saved, no longer at its path")
+        XCTAssertEqual(
+            FileRowLabel.spoken(for: file(name: "notes.txt", dirty: true, conflict: .missing, notFound: true)),
+            "file, notes.txt, unsaved, no longer at its path",
+            "said once, not once for the conflict and again for the mark")
+    }
+
+    func testAFileThatCannotBeReadSaysSoInTheHeaderAndOnItsRow() {
+        let held = file(name: "notes.txt", pendingHydration: true, accessRefused: true)
+        XCTAssertEqual(
+            FileHeaderState.derive(from: held).spoken,
+            "notes.txt, not read, this file cannot be read at its path")
+        XCTAssertEqual(
+            FileRowLabel.spoken(for: held), "file, notes.txt, not read, cannot be read at its path")
+        // Access refused is said in place of the conflict it stands in.
+        let draft = file(name: "notes.txt", dirty: true, conflict: .changed, accessRefused: true)
+        XCTAssertEqual(
+            FileRowLabel.spoken(for: draft), "file, notes.txt, unsaved, cannot be read at its path")
+        XCTAssertFalse(FileHeaderState.derive(from: draft).spoken.contains("changed on disk"))
+    }
+
+    func testARefusedSaveNamesTheActionsTheBannerActuallyOffers() {
+        XCTAssertEqual(
+            PageModel.unresolvedConflictNotice(for: file(name: "a.txt", dirty: true, conflict: .changed)),
+            PageModel.unresolvedConflictNotice(name: "a.txt"))
+        let missing = PageModel.unresolvedConflictNotice(
+            for: file(name: "a.txt", dirty: true, conflict: .missing))
+        XCTAssertEqual(
+            missing,
+            "a.txt is no longer at its path. Choose Locate, keep mine, or Save As before saving.")
+        let refused = PageModel.unresolvedConflictNotice(
+            for: file(name: "a.txt", dirty: true, conflict: .changed, accessRefused: true))
+        XCTAssertEqual(
+            refused,
+            "a.txt cannot be read at its path. Choose Locate, keep mine, or Save As before saving.")
+        XCTAssertFalse(refused.contains("take theirs"))
+    }
+
+    /// A held file is neither saved nor unsaved: nothing of it was
+    /// read. The header must not say "saved" of text nobody has seen,
+    /// and must not say "unsaved" of a record whose draft was dropped
+    /// for its size, which is dirty in name only.
+    func testAHeldFileReadsAsNotReadAndNeverAsSavedOrUnsaved() {
+        let clean = file(name: "notes.txt", pendingHydration: true, accessRefused: true)
+        let droppedDraft = file(
+            name: "notes.txt", dirty: true, lastEditedAt: 1_756_900_000,
+            restoredFromDraft: true, pendingHydration: true, accessRefused: true)
+        for held in [clean, droppedDraft] {
+            XCTAssertTrue(held.isHeld)
+            XCTAssertFalse(held.holdsUnsavedEdits)
+            let state = FileHeaderState.derive(from: held, renderMode: .markdown)
+            XCTAssertEqual(state.saveWord, "not read")
+            XCTAssertEqual(state.saveWord, FileHeaderState.notReadWord)
+            XCTAssertFalse(state.showsUnsavedDot)
+            XCTAssertNil(state.lastEditStamp, "there is no draft whose age could be stated")
+            XCTAssertEqual(state.encodingAndFormat, "", "no text is shown, so none is described")
+            XCTAssertEqual(
+                state.spoken, "notes.txt, not read, this file cannot be read at its path")
+            let words = state.spoken.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            XCTAssertFalse(words.contains("saved"))
+            XCTAssertFalse(words.contains("unsaved"))
+            XCTAssertEqual(
+                FileRowLabel.spoken(for: held),
+                "file, notes.txt, not read, cannot be read at its path")
+        }
+        // A settled file the system will not let be read is not held,
+        // and keeps the save word its buffer earns.
+        let settled = file(name: "notes.txt", accessRefused: true)
+        XCTAssertFalse(settled.isHeld)
+        XCTAssertEqual(FileHeaderState.derive(from: settled).saveWord, "saved")
+        XCTAssertTrue(file(dirty: true).holdsUnsavedEdits)
+        XCTAssertFalse(file().holdsUnsavedEdits)
+    }
+
+    /// The refused save of a file with no unsaved edits and nothing at
+    /// its path: one sentence, naming Locate and Save As and nothing
+    /// the file is not offered.
+    func testASaveOfAFileThatIsGoneNamesLocateAndSaveAs() {
+        let sentence = PageModel.saveNotFoundNotice(name: "a.txt")
+        XCTAssertEqual(
+            sentence,
+            "a.txt is no longer at its path, so it was not saved. "
+                + "Choose Locate to find it, or Save As to write it somewhere.")
+        XCTAssertFalse(sentence.lowercased().contains("keep mine"))
+        let words = sentence.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+        XCTAssertFalse(words.contains("you"))
+        XCTAssertFalse(sentence.contains("!"))
+    }
+
+    /// The two words are different things on the wire: the roster's
+    /// mark is `accessRefused`, and `unreadable` is only ever the
+    /// reason on a notice for a file that was dropped.
+    func testAccessRefusedAndUnreadableAreDifferentWordsOnTheWire() throws {
+        let row = """
+            {"id": 1, "name": "a.txt", "path": "/p/a.txt", "isDirty": false,
+             "conflict": "none", "lineEnding": "lf", "hasBOM": false,
+             "lastEditedAt": 0, "restoredFromDraft": true,
+             "pendingHydration": true, "accessRefused": true, "notFound": false}
+            """
+        let decoded = try JSONDecoder().decode(FileSummary.self, from: Data(row.utf8))
+        XCTAssertTrue(decoded.accessRefused)
+        XCTAssertTrue(decoded.isHeld)
+        // The old spelling of the mark is not read as the mark.
+        let old = row.replacingOccurrences(of: "accessRefused", with: "unreadable")
+        let stale = try JSONDecoder().decode(FileSummary.self, from: Data(old.utf8))
+        XCTAssertFalse(stale.accessRefused)
+        XCTAssertFalse(stale.isHeld)
+        XCTAssertEqual(DraftNoticeReason.unreadable.rawValue, "unreadable")
+        let notice = try JSONDecoder().decode(
+            DraftNotice.self,
+            from: Data(#"{"name": "a.txt", "path": "/p/a.txt", "reason": "unreadable"}"#.utf8))
+        XCTAssertEqual(notice.reason, .unreadable)
     }
 
 

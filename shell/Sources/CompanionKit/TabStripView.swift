@@ -685,7 +685,7 @@ struct FileTab: View {
             // the same height beside each other. What sits in it is the
             // unsaved dot or nothing, and never a bar.
             ZStack {
-                if file.isDirty { UnsavedDot() }
+                if file.holdsUnsavedEdits { UnsavedDot() }
             }
             .frame(height: 3)
             .padding(.horizontal, 3)

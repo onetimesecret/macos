@@ -1192,10 +1192,35 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *       "hasBOM":            bool,     a UTF-8 BOM, preserved on save
  *       "lastEditedAt":      u64,      Unix seconds, 0 when never
  *       "restoredFromDraft": bool,     came back from drafts.sealed
- *       "externallyReloaded": bool     filled from a disk copy that had
+ *       "externallyReloaded": bool,    filled from a disk copy that had
  *                                      changed, so the shell owes one
  *                                      notice; sticky until
  *                                      companion_file_clear_reload_notice()
+ *       "pendingHydration":  bool,     put back by companion_drafts_restore()
+ *                                      and not yet reconciled against the
+ *                                      disk; not fit to draw, edit or save
+ *                                      until companion_file_hydrate() or
+ *                                      companion_file_relocate() settles it
+ *       "accessRefused":     bool,     the platform refused the last attempt
+ *                                      to reach the disk copy, for a reason
+ *                                      other than its absence; cleared by
+ *                                      the next read that succeeds and by a
+ *                                      save. The shell offers to locate the
+ *                                      file and does not offer take theirs.
+ *                                      A dirty row stays in the "changed"
+ *                                      conflict for as long as this stands,
+ *                                      unless a keep mine has answered it.
+ *                                      Never the notice reason "unreadable"
+ *                                      below, which is a different thing
+ *       "notFound":          bool      the last look at the path found
+ *                                      nothing there; cleared by the next
+ *                                      stat or read that finds something
+ *                                      and by a save. A clean row never
+ *                                      enters a conflict, so this is what
+ *                                      says its file is gone, and the shell
+ *                                      offers to locate it. A save of a row
+ *                                      in this state is refused unless a
+ *                                      keep mine stands
  *     }
  *
  *   companion_drafts_notices_json(), an array of:
@@ -1204,6 +1229,11 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *       "path":   string,
  *       "reason": "missing" | "unreadable" | "draftTooLarge"
  *     }
+ *   "unreadable" there is a clean record that was dropped because its
+ *   bytes were read and will not open as text: not UTF-8, binary-like
+ *   or past the size limit. A file the platform would not let the core
+ *   read is "accessRefused" on its roster row and is never dropped for
+ *   it, so the two words never stand for each other.
  *
  *   companion_file_check():
  *     {"state": "unchanged" | "changed" | "missing", "path": string}
@@ -1212,6 +1242,17 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *     {"error": "notUtf8" | "binary" | "tooLarge" | "io",
  *      "limit": u64,      present only for "tooLarge", in bytes
  *      "detail": string}  present only for "io"
+ *
+ *   companion_file_save_error_json():
+ *     {"error": "pendingHydration" | "conflict" | "notFound" |
+ *               "pathInUse" | "unknownFile" | "write",
+ *      "detail": string}  present only for "write": the kind of I/O
+ *                         failure, a fixed English label that carries
+ *                         no part of the path
+ *   "notFound" is a save refused because nothing is at the file's path
+ *   and no keep mine stands. "write" is a save that was allowed and
+ *   whose write the platform refused, which leaves the file on disk
+ *   untouched. "pathInUse" is answered only by a save as.
  *
  *   companion_file_undo() and companion_file_redo() return a
  *   StepOutcome: {"applied": bool, "caretUTF16": i64,
@@ -1237,13 +1278,18 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  * so opening a dotfile that links into a repository changes the file in
  * the repository and leaves the link a link. Two paths that resolve to
  * one file are one open file: the existing id comes back rather than a
- * second buffer.
+ * second buffer. The exception is a path held by a row that is still
+ * "pendingHydration": its buffer is not the file's text yet, so the
+ * open refuses with an "io" error rather than hand back an id the shell
+ * would then draw. The shell hydrates that row first and asks again.
  */
 uint64_t companion_file_open(CompanionHandle *handle, const char *path);
 
 /*
- * Why the last companion_file_open() on this handle refused. Null when
- * nothing has refused. Free with companion_string_free().
+ * Why the last companion_file_open() on this handle refused, or the
+ * last companion_file_relocate() when that was the later call and it
+ * refused because the file would not open. Null when nothing has
+ * refused. Free with companion_string_free().
  */
 char *companion_file_open_error_json(CompanionHandle *handle);
 
@@ -1323,29 +1369,137 @@ char *companion_file_redo(CompanionHandle *handle, uint64_t file);
  * Write the buffer back to the file's own path. A UTF-8 BOM and the
  * line ending style the file arrived with are preserved. False when the
  * write refused, which includes a file standing in a conflict nobody
- * has resolved yet.
+ * has resolved yet and a restored file companion_file_hydrate() has not
+ * settled yet. Ask companion_file_save_error_json() which refusal it
+ * was.
+ *
+ * A save never makes a file where there is none. When nothing is at the
+ * file's path the answer is false and nothing is written, whether or
+ * not companion_file_check() was asked first: the person deleted or
+ * moved that file, and a save that put a new one there would undo it
+ * for them. The row is left with "notFound" set, and a row holding
+ * unsaved edits also enters the "missing" conflict. The ways out are
+ * companion_file_relocate() and companion_file_save_as(). The one save
+ * that does write to an empty path is the one a
+ * companion_file_resolve_keep_mine() licensed while the path was
+ * already empty. A keep mine given while a copy was there does not
+ * license it: that consent is withdrawn and the save refused as above.
+ * Nor does one survive the buffer settling back to clean.
+ *
+ * The write is atomic: a temp file is written and synced in full, then
+ * renamed onto the target, so either the whole new text is at the path
+ * or the old one still is. The new file keeps the mode and, where the
+ * user is able to give it, the group of the file it replaces.
+ *
+ * staging_dir says where the temp file is made. Null makes it beside
+ * the target, which needs nothing from the caller and is the one place
+ * a sandboxed process may not create a file: a grant on a document
+ * covers the document and not its directory. Otherwise it names a
+ * directory on the target's volume that this process may create files
+ * in, and the temp file is made there instead, so the rename is the one
+ * step that needs the grant. The caller makes the directory and removes
+ * it afterwards. A staging directory that is missing, not writable or
+ * on another volume fails the save with nothing written and no temp
+ * file left behind; the core never falls back to the sibling on its
+ * own. A staging_dir that is given and is empty or not UTF-8 is refused
+ * rather than read as null.
  */
-bool companion_file_save(CompanionHandle *handle, uint64_t file);
+bool companion_file_save(CompanionHandle *handle, uint64_t file,
+                         const char *staging_dir);
 
 /*
- * Write the buffer to path and adopt it as the file's path.
+ * Write the buffer to path and adopt it as the file's path. staging_dir
+ * is as companion_file_save() describes it, for the new target's
+ * volume.
  *
  * Refused, with nothing written, when another open file already holds
  * that path: two buffers over one file race each other on save, which
  * is why companion_file_open() hands back the existing id for a path
  * that is already open. The shell's answer is to tell the person the
- * file is open in another tab, not to close it for them.
+ * file is open in another tab, not to close it for them. Refused too
+ * for a restored file that has not been hydrated yet.
  */
 bool companion_file_save_as(CompanionHandle *handle, uint64_t file,
-                            const char *path);
+                            const char *path, const char *staging_dir);
+
+/*
+ * Why the last companion_file_save() or companion_file_save_as() on
+ * this handle refused, in the shape given above. Null when that save
+ * wrote, when no save has been asked for, and when it was refused for
+ * an argument that could not be read and so never reached the file.
+ * Free with companion_string_free().
+ *
+ * The bool a save answers cannot say which refusal it was, and the
+ * roster row afterwards does not say either: a row marked "notFound"
+ * whose write the platform then refused looks exactly like one refused
+ * for being not found. The shell chooses its sentence from this answer
+ * and not from the row. Asking is a plain read and clears nothing; the
+ * next save replaces the answer.
+ */
+char *companion_file_save_error_json(CompanionHandle *handle);
 
 /*
  * Whether anything else has written the file since the core last read
  * or wrote it. Returns {state, path} as above; null for an unknown
  * file. Free with companion_string_free(). Ask on activate and before
  * every save.
+ *
+ * The check also keeps the row's "accessRefused" honest. A stat the
+ * platform refused sets it, and a path with nothing at it clears it,
+ * since absence is the other state. While it stands, a stat that
+ * answers is followed by one read made only to learn whether the disk
+ * copy can be reached again: a sandbox lets an ungranted path be
+ * statted and not read, so the stat alone proves nothing. A dirty row
+ * whose disk copy still cannot be read stays in, or enters, the
+ * "changed" conflict even when the state answered is "unchanged", so a
+ * launch and the check after it agree; a read that succeeds, a keep
+ * mine, a save as or a relocation ends it.
+ *
+ * It keeps "notFound" honest as well: a path with nothing at it sets
+ * it, on a clean row as on a dirty one, and any other answer clears it.
  */
 char *companion_file_check(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Bind an open file to path, which is where a person has said the file
+ * is now, read the disk copy there and settle the file around it. True
+ * when the file now answers to that path, resolved through symlinks as
+ * companion_file_open() resolves.
+ *
+ * This is the way back for a file whose row reads "missing",
+ * "notFound" or "accessRefused". The shell also calls it with no panel
+ * when a check finds a file gone and its bookmark has followed it
+ * somewhere else. The read settles as companion_file_hydrate() settles
+ * one:
+ *
+ *   - A file holding no draft adopts the disk copy. When that copy is
+ *     not the one the file was last measured against, its row carries
+ *     "externallyReloaded" until companion_file_clear_reload_notice()
+ *     answers it. A live file whose disk copy holds the text it already
+ *     holds keeps its buffer, and with it its undo history: a file that
+ *     was only moved is the same document somewhere else.
+ *   - A draft stands. When the disk copy is the generation the draft
+ *     was measured against, told by the file's identity and stamp or by
+ *     its text, there is no conflict and "isDirty" is truthful from
+ *     then on. Otherwise the file stands in a "changed" conflict, and
+ *     the disk copy is now one companion_file_resolve_take_theirs() can
+ *     take. A keep mine that was standing is spent either way.
+ *   - A row that was still "pendingHydration" is settled and is pending
+ *     no longer. If its draft had been too large to stage, that is a
+ *     "draftTooLarge" entry in companion_drafts_notices_json().
+ *
+ * False leaves the file exactly as it was: its path, its buffer, its
+ * conflict and its "accessRefused". It is false for an id nothing is open
+ * under, for a path another open file already holds, and for a file
+ * that will not open, which is anything companion_file_open() refuses.
+ * The last of those is explained by companion_file_open_error_json();
+ * after the other two that call answers null.
+ *
+ * The shell calls this inside the access the person's choice granted,
+ * and attaches a fresh bookmark before that access closes.
+ */
+bool companion_file_relocate(CompanionHandle *handle, uint64_t file,
+                             const char *path);
 
 /* Re-read the file, discarding whatever the buffer held and its undo
  * history. This is the non-interactive reload primitive. */
@@ -1390,6 +1544,21 @@ bool companion_file_clear_reload_notice(CompanionHandle *handle,
  * is spent by that one save. Without that, checking before saving would
  * put the conflict straight back and keep mine would be a button that
  * does nothing.
+ *
+ * The consent answers the state the path was in when it was given: a
+ * copy there, or nothing there. A check or a save that finds the path
+ * in the other state withdraws it and raises the conflict for what is
+ * true now, and the buffer settling clean withdraws it too. Asked on a
+ * "missing" conflict whose file is back at its path, nothing is
+ * consented to: the row is put in the state a check would find, and the
+ * answer is false when that is a "changed" conflict the person has not
+ * been shown.
+ *
+ * Given over a copy that changed, the row reads "isDirty" from then
+ * until the save the consent was given for, whatever the buffer is
+ * edited or undone to. The text it was last saved as is the copy the
+ * disk no longer holds, so a buffer back at that text is not what is on
+ * disk and is not called saved.
  */
 bool companion_file_resolve_keep_mine(CompanionHandle *handle,
                                       uint64_t file);
@@ -1409,7 +1578,8 @@ bool companion_file_set_bookmark(CompanionHandle *handle, uint64_t file,
  * The bookmark last attached to a file, as standard base64, or an empty
  * string when none was. Null for an unknown file. Free with
  * companion_string_free(). The shell reads this after a drafts restore
- * to resolve the file it should reopen.
+ * to resolve the file it should reopen, and hands the resolved path to
+ * companion_file_hydrate().
  */
 char *companion_file_bookmark_b64(CompanionHandle *handle, uint64_t file);
 
@@ -1448,32 +1618,102 @@ char *companion_file_bookmark_b64(CompanionHandle *handle, uint64_t file);
  * succeeds: one oversized draft must not cost a person every other open
  * file. It shows up as a "draftTooLarge" entry in the notices below.
  *
- * companion_drafts_restore() returns a roster that is ready to draw.
- * Every restored record is reconciled against the file on disk before
- * it returns, so the shell owes nothing afterwards but the notices:
+ * A restore is two steps, and the roster is not ready to draw until the
+ * second has run for every row.
  *
- *   - A clean file is filled from disk. If the disk copy had changed it
- *     is filled anyway, without asking, and its row carries
- *     "externallyReloaded" until the call above answers it.
- *   - A dirty file keeps its draft. Against an unchanged disk copy the
- *     draft is measured against it, so "isDirty" is truthful from then
- *     on and stepping back to the file's text reads as clean, and the
- *     persisted "lastEditedAt" survives. Against a changed one the file
- *     stands in a "changed" conflict; against a missing one, "missing".
- *   - A clean file that is gone or unreadable is dropped from the
- *     roster and named in the notices.
+ * companion_drafts_restore() opens the drafts file and puts its records
+ * back. It reads no file of the person's. Every row it leaves carries
+ * "pendingHydration", and until that clears the core refuses an edit, a
+ * save, a save as, a reload, and both conflict resolutions on the file;
+ * undo and redo answer "applied": false. A bookmark may be read and
+ * attached, the file may be relocated with companion_file_relocate(),
+ * and it may be closed. False means the drafts file
+ * itself did not open, which covers a fresh start with no file at all.
  *
- * One unreadable file never fails the restore whole: the files beside
- * it come back regardless. False means the drafts file itself did not
- * open, which covers a fresh start with no file at all.
+ * companion_file_hydrate() is the second step, once per pending file.
+ * The two are separate because under a sandbox a file can only be read
+ * while its own grant is open, and only the shell can open one: the
+ * shell resolves the file's bookmark, starts access, calls this, and
+ * stops access.
  */
 bool companion_drafts_save(CompanionHandle *handle, const char *path);
 bool companion_drafts_restore(CompanionHandle *handle, const char *path);
 bool companion_drafts_erase(CompanionHandle *handle, const char *path);
 
 /*
- * Everything the last drafts save or drafts restore has to tell the
- * user about, as an array of the notice shape above. An empty array is
+ * Reconcile one restored file against the disk and clear its
+ * "pendingHydration", unless the hydration has to wait (below). True
+ * when the file stands in the roster afterwards. False when it was
+ * dropped from the roster, when nothing
+ * is open under the id, and when resolved_path is given and is empty or
+ * not UTF-8, in which case nothing was done and the file is still
+ * pending.
+ *
+ * resolved_path is where the file's bookmark resolved to, or null when
+ * the file has no bookmark or it would not resolve. Null reads the path
+ * the record carried. A path that differs from the recorded one rebinds
+ * the file to it, resolved through symlinks as companion_file_open()
+ * resolves, before anything is read, and the roster reports the new
+ * path from then on. The rebind is refused when another open file that
+ * has itself been hydrated already holds that path, for the reason
+ * companion_file_save_as() refuses the same thing: the file is then
+ * hydrated at its recorded path, and its roster row still shows that
+ * path afterwards, which is how the shell can tell.
+ *
+ * A hydration can wait. When resolved_path is the recorded path of
+ * another file that is still pending, nothing is read and nothing is
+ * decided, because that file may have been moved off the path and its
+ * own hydration is what says so. The answer is true and the row still
+ * reads "pendingHydration": true, which is how the shell tells a wait
+ * from a settlement. The shell hydrates the other files and asks again.
+ * Two files that wait on each other are ended by hydrating one of them
+ * with null, which never waits. A file left waiting refuses every save
+ * and every edit.
+ *
+ * What the read decides:
+ *
+ *   - A clean file is filled from disk. If the disk copy had changed it
+ *     is filled anyway, without asking, and its row carries
+ *     "externallyReloaded" until companion_file_clear_reload_notice()
+ *     answers it. A file moved within one volume has not changed. One
+ *     moved to another volume reads as changed, since the device and
+ *     inode are part of what is compared.
+ *   - A dirty file keeps its draft. Against an unchanged disk copy the
+ *     draft is measured against it, so "isDirty" is truthful from then
+ *     on and stepping back to the file's text reads as clean, and the
+ *     persisted "lastEditedAt" survives. Against a changed one, or one
+ *     that will not read, the file stands in a "changed" conflict;
+ *     against a missing one, "missing". Where the read was one the
+ *     platform refused, the row also carries "accessRefused".
+ *   - A clean file that is gone, or that is there and will not open as
+ *     text, is dropped from the roster and named in the notices as
+ *     "missing" or "unreadable".
+ *   - A file whose draft was too large to stage comes back clean from
+ *     disk with a "draftTooLarge" notice.
+ *
+ * A hydration can hold. A clean file whose read the platform refused,
+ * which is what a sandbox answers for a file whose grant is gone, is
+ * neither filled nor dropped: something is there, and the person may
+ * know where the file is. The answer is true, the row keeps
+ * "pendingHydration" and gains "accessRefused", and its buffer is empty
+ * and refuses every edit and every save. The two flags together are how
+ * the shell tells a hold from a wait. The way out is
+ * companion_file_relocate(), this call again once the file can be read,
+ * or a close. A held file holds its path as a settled one does, so
+ * another file's hydration never waits on it.
+ *
+ * One file never costs another: nothing here touches any file but the
+ * one named. A file that is not pending is left exactly as it is and
+ * answered true, so asking twice is harmless and never rebinds.
+ */
+bool companion_file_hydrate(CompanionHandle *handle, uint64_t file,
+                            const char *resolved_path);
+
+/*
+ * Everything the last drafts save and the hydrations after a drafts
+ * restore have to tell the user about, as an array of the notice shape
+ * above. The shell reads it after it has hydrated every pending file,
+ * not straight after companion_drafts_restore(). An empty array is
  * the ordinary answer. Null when the answer cannot be had. Free with
  * companion_string_free().
  *
