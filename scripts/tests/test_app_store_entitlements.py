@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = (ROOT / "scripts/package-app.sh").read_text()
+USER_SELECTED_FILES = "com.apple.security.files.user-selected.read-write"
 
 
 @unittest.skipUnless(sys.platform == "darwin", "requires Apple's plist tools")
@@ -93,6 +94,51 @@ class AppStoreEntitlementsTests(unittest.TestCase):
                         self.verify(directory, entitlements).returncode, 0
                     )
 
+    def test_user_selected_file_access_is_rendered_and_verified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            entitlements = self.render(directory, 1)
+            self.assertIs(entitlements.get(USER_SELECTED_FILES), True)
+            result = self.verify(directory, entitlements)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_or_false_user_selected_file_access_is_rejected(self):
+        # A sandboxed build without the entitlement signs and launches; it
+        # fails only when a person opens a file, so the read back must name it.
+        for value in (None, False):
+            with (
+                self.subTest(value=value),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                entitlements = self.render(directory, 1)
+                if value is None:
+                    entitlements.pop(USER_SELECTED_FILES)
+                else:
+                    entitlements[USER_SELECTED_FILES] = value
+                result = self.verify(directory, entitlements)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(USER_SELECTED_FILES, result.stderr)
+
+    def test_a_missing_sandbox_or_network_entitlement_is_rejected(self):
+        for key in (
+            "com.apple.security.app-sandbox",
+            "com.apple.security.network.client",
+        ):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                entitlements = self.render(directory, 1)
+                entitlements.pop(key)
+                self.assertNotEqual(
+                    self.verify(directory, entitlements).returncode, 0
+                )
+
+    def test_the_bookmark_app_scope_entitlement_is_not_declared(self):
+        # Security scoped bookmarks were measured to work without it
+        # (2026-09-30), so the signature asks for nothing it does not need.
+        with tempfile.TemporaryDirectory() as directory:
+            entitlements = self.render(directory, 1)
+            self.assertNotIn(
+                "com.apple.security.files.bookmarks.app-scope", entitlements
+            )
+
     def test_local_lane_keeps_existing_entitlements(self):
         with tempfile.TemporaryDirectory() as directory:
             entitlements = self.render(directory, 0)
@@ -101,6 +147,7 @@ class AppStoreEntitlementsTests(unittest.TestCase):
                 {
                     "com.apple.security.app-sandbox": True,
                     "com.apple.security.network.client": True,
+                    USER_SELECTED_FILES: True,
                     "keychain-access-groups": ["TESTTEAM01.com.example.test"],
                 },
             )
