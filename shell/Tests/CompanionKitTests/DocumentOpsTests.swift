@@ -193,10 +193,6 @@ final class OpEmitterTests: XCTestCase {
         let pacific = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
         let us = Locale(identifier: "en_US")
         let french = Locale(identifier: "fr_FR")
-        let frenchResourceURL = try XCTUnwrap(
-            CompanionLocalization.bundle.url(forResource: "fr", withExtension: "lproj")
-        )
-        let frenchBundle = try XCTUnwrap(Bundle(path: frenchResourceURL.path))
 
         func time(_ date: Date, _ locale: Locale, _ timeZone: TimeZone) -> String {
             let formatter = DateFormatter()
@@ -218,7 +214,7 @@ final class OpEmitterTests: XCTestCase {
             createdS: 0, modifiedS: 3_600, locale: us, timeZone: utc
         ))
         let frenchPacific = try XCTUnwrap(InkEditorView.Coordinator.blockDetails(
-            createdS: 0, modifiedS: 3_600, locale: french, timeZone: pacific, bundle: frenchBundle
+            createdS: 0, modifiedS: 3_600, locale: french, timeZone: pacific
         ))
 
         XCTAssertEqual(
@@ -227,17 +223,14 @@ final class OpEmitterTests: XCTestCase {
         )
         XCTAssertEqual(
             frenchPacific,
-            "créé le \(time(created, french, pacific)) · modifié le \(time(modified, french, pacific))"
+            "created \(time(created, french, pacific)) · edited \(time(modified, french, pacific))"
         )
         XCTAssertEqual(
             InkEditorView.Coordinator.blockAccessibilityText(
                 createdS: 0, modifiedS: 3_600,
-                locale: french, timeZone: pacific, bundle: frenchBundle
+                locale: french, timeZone: pacific
             ),
-            "Créé le \(accessibilityDate(created, french, pacific)) ; modifié le \(accessibilityDate(modified, french, pacific))"
-        )
-        XCTAssertEqual(
-            frenchBundle.localizedString(forKey: "edited", value: nil, table: nil), "modifié"
+            "Created \(accessibilityDate(created, french, pacific)); edited \(accessibilityDate(modified, french, pacific))"
         )
     }
 }

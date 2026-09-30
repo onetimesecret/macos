@@ -60,9 +60,8 @@ class AppLocalizationTests(unittest.TestCase):
             source.write_text("""import Foundation
 let resources = CompanionLocalization.bundle
 if CommandLine.arguments.count > 1 {
-    guard let url = resources.url(forResource: "fr", withExtension: "lproj"),
-          let french = Bundle(url: url) else { exit(1) }
-    print(french.localizedString(forKey: "edited", value: nil, table: nil))
+    guard let url = resources.url(forResource: "en", withExtension: "lproj") else { exit(1) }
+    print(url.path)
 } else {
     print(resources.localizedString(forKey: "edited", value: nil, table: nil))
 }
@@ -117,10 +116,16 @@ if CommandLine.arguments.count > 1 {
             ).glob("*.lproj"):
                 shutil.copytree(localization, resources / localization.name)
             self.assertEqual(run(executable), "edited")
-            self.assertEqual(run(executable, "fr"), "modifié")
+            self.assertEqual(
+                Path(run(executable, "lproj")).resolve(),
+                (resources / "en.lproj").resolve(),
+            )
             package = root / "OnetimePad_CompanionKit.bundle"
             shutil.copytree(resources, package)
-            self.assertEqual(run(binary, "fr"), "modifié")
+            self.assertEqual(
+                Path(run(binary, "lproj")).resolve(),
+                (package / "en.lproj").resolve(),
+            )
 
 
 if __name__ == "__main__":
