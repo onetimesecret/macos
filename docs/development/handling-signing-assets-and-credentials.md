@@ -89,7 +89,8 @@ It still ignores `scripts/local.env`, which the packaging scripts no longer
 read and refuse to run beside. Keep CSRs and `.cer` files in the same external signing-material
 directory even though those two extensions are not ignored globally.
 
-For the local manual-signing workflow:
+For the local manual-signing workflow (creating the profiles themselves is in
+[Creating development profiles for the local and dev lanes](development-profiles.md)):
 
 1. Keep the signing-material directory outside the checkout and readable only
    by its owner.
