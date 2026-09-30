@@ -55,7 +55,7 @@ Apple's certificate-handling guidance.
 | Apple-issued `.cer` certificate | Public key, team identity, certificate subject, validity dates, and issuer; Apple says not to share certificates outside the organization |
 | `.certSigningRequest` CSR | Public key and identifying fields such as the requester name or email; no private key |
 | `.provisionprofile` profile | Team ID, application identifier, authorized entitlements, certificate references, UUID, and expiry; no private key |
-| `scripts/local.env` | Local identity names and filesystem paths today; reserved for machine-local signing configuration and ignored by Git |
+| Lane environment files (`<environment>/.env`) | Local identity names and filesystem paths today; reserved for machine-local signing configuration and kept outside the checkout |
 | Absolute local paths | May expose usernames and workstation layout, but confer no signing authority |
 | App Store Connect SKU | Internal catalog metadata, not an authentication credential |
 
@@ -84,8 +84,9 @@ when the audience does not need them.
 ## Repository handling
 
 The repository's [`.gitignore`](../../.gitignore) excludes
-`*.provisionprofile`, `*.p12`, `*.pem`, `*.token`, `scripts/local.env`, and
-`secrets/`. Keep CSRs and `.cer` files in the same external signing-material
+`*.provisionprofile`, `*.p12`, `*.pem`, `*.token`, `.env`, and `secrets/`.
+It still ignores `scripts/local.env`, which the packaging scripts no longer
+read and refuse to run beside. Keep CSRs and `.cer` files in the same external signing-material
 directory even though those two extensions are not ignored globally.
 
 For the local manual-signing workflow:
@@ -95,8 +96,8 @@ For the local manual-signing workflow:
 2. Leave private keys in the login Keychain.
 3. Point the lane-specific `DEV_PROVISIONING_PROFILE`,
    `LOCAL_PROVISIONING_PROFILE`, or `APP_STORE_PROVISIONING_PROFILE` at the
-   external profile from `scripts/local.env`; do not copy the source profile
-   into the repository.
+   external profile from the lane's environment file; do not copy the source
+   profile into the repository.
 4. Let the packaging script copy only the selected lane's profile into the
    assembled `.app`.
 5. Store any `.p12` backup encrypted, with its password stored separately.

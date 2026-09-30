@@ -24,8 +24,9 @@ scripts/install.sh
 
 `scripts/install.sh` builds the core, packages the release bundle, asks
 a running installed copy to quit gracefully, and installs to
-`/Applications/OnetimePad.app`. Pin `LOCAL_CODESIGN_IDENTITY` in
-`scripts/local.env` first, or every reinstall resets the Keychain
+`/Applications/OnetimePad.app`. Pin `LOCAL_CODESIGN_IDENTITY` in the
+local environment file (template: `environments/example/.env.example`) first,
+or every reinstall resets the Keychain
 confirmations this procedure depends on.
 
 ## Where to look

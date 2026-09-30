@@ -45,7 +45,8 @@ versions for diagnostics. `companion_ffi_version()` and
 signing changes the code identity on every rebuild, so
 TCC grants reset and the Keychain re-confirms access to stored items
 (the API token, the state key). Configure the matching `DEV_*` or
-`LOCAL_*` identity in `scripts/local.env` for an identity that persists;
+`LOCAL_*` identity in that lane's environment file
+(`scripts/build-lanes.sh`) for an identity that persists;
 App Store signing uses its separate `APP_STORE_*` values.
 
 The rev C surfaces make dev scaffolding unnecessary: type a line and

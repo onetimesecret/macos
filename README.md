@@ -94,10 +94,30 @@ Two entry points, both in `scripts/`:
   signed `dist/OnetimePad.pkg`, taking the next build number from a counter
   shared by the clone's worktrees (`--build-number N` sets it). Configure its
   `APP_STORE_*` application identity, installer identity, and provisioning
-  profile separately from the `DEV_*` and `LOCAL_*` lanes in the gitignored
-  `scripts/local.env`; `scripts/local.env.example` documents the fields.
+  profile separately from the `DEV_*` and `LOCAL_*` lanes.
   Follow [Distributing OnetimePad through TestFlight](docs/development/testflight-distribution.md)
   for account setup, upload, and tester qualification.
+
+Signing values stay outside the checkout, one environment directory per lane,
+so every worktree reads the same ones: `dev/.env` for the dev lane,
+`local/.env` for the local lane, and `staging/.env` for the App Store lane,
+under `~/.local/appledev/CompanionApp/environments/` or
+`$ONETIMEPAD_ENVIRONMENTS_DIR`. `environments/example/` is the checked in
+template for one environment directory. Copy it out of the checkout once per
+environment and rename `.env.example` to `.env` in each copy. Neither command
+overwrites an existing file:
+
+```sh
+for environment in dev local staging; do
+  target=~/.local/appledev/CompanionApp/environments/$environment
+  mkdir -p "$target"
+  cp -Rn environments/example/ "$target/"
+  mv -n "$target/.env.example" "$target/.env"
+done
+```
+
+Then uncomment and fill in that environment's section of each `.env`, and run
+`direnv allow` in each directory if you use direnv.
 
 All lanes rebuild the Rust core only when it is stale and package through
 `scripts/package-app.sh`.

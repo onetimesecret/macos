@@ -22,8 +22,9 @@ copy matters for two reasons:
   changes gets SIGKILLed by the kernel. `/Applications` is outside that
   blast radius.
 - Keychain and TCC grants are tied to code identity. Set
-  `LOCAL_CODESIGN_IDENTITY` in `scripts/local.env` (see
-  `scripts/local.env.example`) to a stable development certificate. Set
+  `LOCAL_CODESIGN_IDENTITY` in the local environment file (see
+  `environments/example/.env.example`) to a stable development
+  certificate. Set
   `LOCAL_PROVISIONING_PROFILE` when the local build must carry the restricted
   entitlements; the packaging preflight checks that the profile authorizes the
   certificate, production bundle identifier, and this Mac.

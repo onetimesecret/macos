@@ -21,7 +21,8 @@ pgrep -fl "\.build/.*OnetimePad"
 scripts/install.sh
 ```
 
-Pin `LOCAL_CODESIGN_IDENTITY` in `scripts/local.env` before this run, because
+Pin `LOCAL_CODESIGN_IDENTITY` in the local environment file
+(template: `environments/example/.env.example`) before this run, because
 this procedure is about what happens when that identity changes, and an
 install that was ad hoc signed to begin with has nothing to change from
 (`scripts/install.sh`).

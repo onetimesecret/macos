@@ -131,21 +131,24 @@ Do not add certificate exports or account-specific paths to this guide.
 
 ## 4. Configure local signing
 
-Use the App Store section of
-[scripts/local.env.example](../../scripts/local.env.example) as the template.
-Create `scripts/local.env` if absent; if it already exists, edit it rather than
-copying over it. Set these three values:
+TestFlight builds read the staging environment,
+`~/.local/appledev/CompanionApp/environments/staging/.env` by default
+(`$ONETIMEPAD_ENVIRONMENTS_DIR/staging/.env` when that variable is set). Use
+[environments/example/.env.example](../../environments/example/.env.example)
+as the template and fill in its staging section. Create the file if absent; if it already exists, edit it
+rather than copying over it. Set these three values:
 
 - `APP_STORE_CODESIGN_IDENTITY`: exact application distribution identity.
 - `APP_STORE_INSTALLER_IDENTITY`: exact installer distribution identity.
 - `APP_STORE_PROVISIONING_PROFILE`: absolute path to the downloaded distribution
   profile outside the checkout.
 
-The script sources `scripts/local.env` itself, and values assigned there take
-precedence over inherited environment values. `DEV_*`, `LOCAL_*`, and
-`APP_STORE_*` values coexist in that file; packaging selects only the requested
-lane. The script rejects the former unprefixed signing variables rather than
-risk applying one lane's identity or profile to another.
+The script sources the staging file itself, and values assigned there take
+precedence over inherited environment values. It reads no other environment's
+file for this lane and takes only `APP_STORE_*` values, so `DEV_*` or
+`LOCAL_*` values exported into the shell cannot reach an App Store build. The
+script rejects the former unprefixed signing variables and refuses to run while
+a `scripts/local.env` is present.
 
 ## 5. Confirm version and encryption information
 
@@ -164,8 +167,10 @@ one without being told:
   `onetimepad-app-store-build-number` in the git common directory
   (`git rev-parse --git-common-dir`), so every worktree of one clone reads and
   advances the same file. It is not tracked by git. Set
-  `APP_STORE_BUILD_NUMBER_FILE` in `scripts/local.env` to use another path;
-  outside a git checkout that variable is required.
+  `APP_STORE_BUILD_NUMBER_FILE` in the staging file to use another path;
+  outside a git checkout that variable is required. A path in the staging
+  directory is shared by every clone on the Mac, not only by one clone's
+  worktrees.
 - **Reservation.** After the Swift build succeeds, the script takes an
   exclusive lock, reads the last number, writes its successor to a temporary
   file beside the counter, and renames that file over the counter. Concurrent
