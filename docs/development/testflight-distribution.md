@@ -92,12 +92,12 @@ additional portal capabilities only for a feature that actually needs them.
 
 ## 3. Prepare certificates and a distribution profile
 
-The local signing configuration has two distinct identities:
+The App Store signing lane has two distinct identities:
 
 | Configuration | Purpose | Installed identity name used by this workflow |
 | --- | --- | --- |
-| `CODESIGN_IDENTITY` | Sign the app | `3rd Party Mac Developer Application: …` |
-| `INSTALLER_IDENTITY` | Sign the installer package | `3rd Party Mac Developer Installer: …` |
+| `APP_STORE_CODESIGN_IDENTITY` | Sign the app | `3rd Party Mac Developer Application: …` |
+| `APP_STORE_INSTALLER_IDENTITY` | Sign the installer package | `3rd Party Mac Developer Installer: …` |
 
 In the developer portal these certificate types are named **Mac App
 Distribution** and **Mac Installer Distribution**. If they are not already
@@ -136,16 +136,16 @@ Use the App Store section of
 Create `scripts/local.env` if absent; if it already exists, edit it rather than
 copying over it. Set these three values:
 
-- `CODESIGN_IDENTITY`: exact application distribution identity.
-- `INSTALLER_IDENTITY`: exact installer distribution identity.
-- `PROVISIONING_PROFILE`: absolute path to the downloaded distribution profile
-  outside the checkout.
+- `APP_STORE_CODESIGN_IDENTITY`: exact application distribution identity.
+- `APP_STORE_INSTALLER_IDENTITY`: exact installer distribution identity.
+- `APP_STORE_PROVISIONING_PROFILE`: absolute path to the downloaded distribution
+  profile outside the checkout.
 
 The script sources `scripts/local.env` itself, and values assigned there take
-precedence over inherited environment values. The same file is also used for
-local builds: restore the appropriate local signing configuration before
-returning to a development lane. The explicit production profile is not the
-debug app's profile.
+precedence over inherited environment values. `DEV_*`, `LOCAL_*`, and
+`APP_STORE_*` values coexist in that file; packaging selects only the requested
+lane. The script rejects the former unprefixed signing variables rather than
+risk applying one lane's identity or profile to another.
 
 ## 5. Confirm version and encryption information
 
@@ -220,9 +220,11 @@ a build number, replaces `dist/OnetimePad.app`, and replaces
 app nor uploads it. Use only the output of a successful run; an older package
 may remain after an earlier failure.
 
-The script checks identity availability, the profile's team and explicit App ID,
-the app signature, build number, embedded profile, hardened-runtime flag,
-sandbox/network/Keychain entitlements, and the package signature. These are
+Before compiling, the script checks identity availability and the profile's
+team, explicit App ID, Keychain group, selected certificate, expiry, and profile
+class. After signing, it checks the app signature, build number, embedded
+profile, hardened-runtime flag, sandbox/network/Keychain entitlements, and the
+package signature. These are
 local checks, not a substitute for Apple's validation. In particular, inspect
 profile validity and certificate suitability rather than assuming the script
 checks every distribution requirement.

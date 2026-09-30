@@ -93,10 +93,12 @@ For the local manual-signing workflow:
 1. Keep the signing-material directory outside the checkout and readable only
    by its owner.
 2. Leave private keys in the login Keychain.
-3. Point `PROVISIONING_PROFILE` at the external profile from
-   `scripts/local.env`; do not copy the source profile into the repository.
-4. Let the packaging script copy the profile into the assembled `.app` only
-   for the distribution build.
+3. Point the lane-specific `DEV_PROVISIONING_PROFILE`,
+   `LOCAL_PROVISIONING_PROFILE`, or `APP_STORE_PROVISIONING_PROFILE` at the
+   external profile from `scripts/local.env`; do not copy the source profile
+   into the repository.
+4. Let the packaging script copy only the selected lane's profile into the
+   assembled `.app`.
 5. Store any `.p12` backup encrypted, with its password stored separately.
 6. Before publishing logs or screenshots, remove personal names, email
    addresses, absolute paths, tokens, and account screens that reveal more

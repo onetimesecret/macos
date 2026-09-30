@@ -22,9 +22,11 @@ copy matters for two reasons:
   changes gets SIGKILLed by the kernel. `/Applications` is outside that
   blast radius.
 - Keychain and TCC grants are tied to code identity. Set
-  `CODESIGN_IDENTITY` in `scripts/local.env` (see
-  `scripts/local.env.example`) to a stable certificate so those grants
-  survive an update instead of resetting every time.
+  `LOCAL_CODESIGN_IDENTITY` in `scripts/local.env` (see
+  `scripts/local.env.example`) to a stable development certificate. Set
+  `LOCAL_PROVISIONING_PROFILE` when the local build must carry the restricted
+  entitlements; the packaging preflight checks that the profile authorizes the
+  certificate, production bundle identifier, and this Mac.
 
 Re-run `scripts/install.sh` to update. `--no-launch` installs without
 opening the app afterward. For a debug build that runs beside the
@@ -162,7 +164,7 @@ What changes:
   is what the data protection keychain requires, and only a real
   signing identity can carry it. Ad-hoc builds skip it and log a single
   fallback line to the login keychain. The item names did not change,
-  so on a stable `CODESIGN_IDENTITY` your Keychain items are still
+  so on a stable `LOCAL_CODESIGN_IDENTITY` your Keychain items are still
   reachable; on a changed identity expect confirmation prompts, and
   answering them once is the whole fix.
 - **Debug builds live under a `.debug` bundle id**, moved from `.dev`.

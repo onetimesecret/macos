@@ -44,8 +44,9 @@ versions for diagnostics. `companion_ffi_version()` and
 `companion_core_version()` report the two Rust versions. Ad-hoc
 signing changes the code identity on every rebuild, so
 TCC grants reset and the Keychain re-confirms access to stored items
-(the API token, the state key); set `CODESIGN_IDENTITY` to a real
-certificate for an identity that persists.
+(the API token, the state key). Configure the matching `DEV_*` or
+`LOCAL_*` identity in `scripts/local.env` for an identity that persists;
+App Store signing uses its separate `APP_STORE_*` values.
 
 The rev C surfaces make dev scaffolding unnecessary: type a line and
 ⌘↩ seals it. The old dev-seed shim is gone from the packaged core, so

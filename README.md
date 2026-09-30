@@ -87,15 +87,15 @@ Two entry points, both in `scripts/`:
   (`dev.onetimesecret.pad`) and a "Dev" display name, so it runs beside
   the installed copy without sharing its defaults, keychain items, or
   state.
-- `scripts/install.sh` builds the release bundle, signs it, and
-  installs it to `/Applications`. This is the daily dogfood channel;
-  see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
+- `scripts/install.sh` builds the release bundle, signs it with the `LOCAL_*`
+  configuration, and installs it to `/Applications`. This is the daily dogfood
+  channel; see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
 - `scripts/package-app.sh --app-store` builds the App Store release and
   signed `dist/OnetimePad.pkg`, taking the next build number from a counter
-  shared by the clone's worktrees (`--build-number N` sets it). Configure
-  the application identity, installer identity, and provisioning profile in
-  the gitignored `scripts/local.env`; `scripts/local.env.example` documents
-  the fields.
+  shared by the clone's worktrees (`--build-number N` sets it). Configure its
+  `APP_STORE_*` application identity, installer identity, and provisioning
+  profile separately from the `DEV_*` and `LOCAL_*` lanes in the gitignored
+  `scripts/local.env`; `scripts/local.env.example` documents the fields.
   Follow [Distributing OnetimePad through TestFlight](docs/development/testflight-distribution.md)
   for account setup, upload, and tester qualification.
 
