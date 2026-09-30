@@ -2602,6 +2602,32 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(launched.journal.events, ["start notes.txt", "check", "stop notes.txt"])
     }
 
+    func testARefusedOpenAfterHydrationDropsTheRecordedRow() throws {
+        let fixture = try makeFixture()
+        let (held, url, _) = try heldFile(in: fixture)
+        XCTAssertTrue(held.model.saveState())
+        XCTAssertFalse(held.model.draftsDirty)
+        try unlock(url)
+        try Data([0, 1, 2]).write(to: url)
+        held.model.openFile(at: url)
+        XCTAssertTrue(held.model.openFiles.isEmpty)
+        XCTAssertTrue(held.model.draftsDirty)
+        XCTAssertTrue(held.model.saveState())
+        let next = launch(fixture)
+        XCTAssertTrue(next.model.openFiles.isEmpty)
+        XCTAssertNil(next.model.notice)
+        assertBalanced(held.scope)
+    }
+
+    func testARefusedOrdinaryOpenDoesNotDirtyTheRoster() throws {
+        let fixture = try makeFixture()
+        let launched = launch(fixture)
+        let url = fixture.workspace.appendingPathComponent("binary.dat")
+        try Data([0, 1, 2]).write(to: url)
+        launched.model.openFile(at: url)
+        XCTAssertFalse(launched.model.draftsDirty)
+    }
+
     // MARK: Locating onto a path a held file holds
 
     func testLocatingOntoAHeldFilesPathSettlesThatFileInsideThePanelsGrant() throws {

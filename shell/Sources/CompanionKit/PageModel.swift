@@ -3320,6 +3320,7 @@ public final class PageModel: ObservableObject {
         // guards is the core's read and the bookmark, and nothing
         // after them touches the file.
         var owed: [DraftNotice] = []
+        var droppedPendingRow = false
         let opened: (id: UInt64, bookmarked: Bool)? = fileCoordinator.withAccess(to: url) {
             // Asked of the core rather than of the published roster,
             // so the rule holds for any pending row and not only for
@@ -3328,6 +3329,9 @@ public final class PageModel: ObservableObject {
             where row.pendingHydration && Self.samePath(row.path, url.path) {
                 discardStaleDraftNotices()
                 _ = client.hydrateFile(row.id, resolvedPath: nil)
+                if !client.fileRoster().contains(where: { $0.id == row.id }) {
+                    droppedPendingRow = true
+                }
                 // A dropped row's notice is moot, since the open below
                 // reads the file on its own account. A draft that was
                 // too large to keep is still owed its sentence.
@@ -3348,6 +3352,7 @@ public final class PageModel: ObservableObject {
             // way to this refusal, and the surface must not go on
             // showing it.
             refreshOpenFiles()
+            if droppedPendingRow { markFilesDirty() }
             return
         }
         let id = opened.id
