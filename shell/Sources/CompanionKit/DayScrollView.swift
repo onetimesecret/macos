@@ -35,8 +35,8 @@ import SwiftUI
 /// Since ADR-0033 there are two windows, and the roll mounts only in
 /// the one that owns the page content: the panel, resting or raised,
 /// while it owns, and the editor window while that owns. The window
-/// that does not own mounts no editor on any live storage; it draws a
-/// glance built from private storages (`GlanceView`), or nothing. So
+/// that does not own mounts no editor on any live storage and is hidden
+/// during ordinary presentation switches (ADR-0036). So
 /// the counts above hold for the whole app and not only for one
 /// window, which is what ADR-0033's one owner per page rule keeps.
 ///

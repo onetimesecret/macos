@@ -278,6 +278,10 @@ struct BackdropRootView: View {
     private var pageContent: some View {
         if pages.owner == .panel {
             PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+        } else if !model.editorWindowOpen {
+            // Reserved never-grant policy: a visible read-only panel still
+            // renders its page. Ordinary switches hide the entire non-owner.
+            GlanceView(model: pages)
         } else {
             Color.clear
         }
@@ -414,14 +418,16 @@ struct BackdropRootView: View {
     /// with the navigation rail's headings.
     private var headerIndicators: some View {
         HStack(spacing: 8) {
-            Button {
-                model.onOpenEditorWindow?()
-            } label: {
-                Image(systemName: "macwindow")
+            if raised {
+                Button {
+                    model.onOpenEditorWindow?()
+                } label: {
+                    Image(systemName: "macwindow")
+                }
+                .buttonStyle(.plain)
+                .help("Open in Window")
+                .accessibilityLabel("Open in Window")
             }
-            .buttonStyle(.plain)
-            .help("Open in Window")
-            .accessibilityLabel("Open in Window")
 
             // Standing indicator while the capture opt-out is on.
             // Doubly load-bearing here: the backdrop is on screen for

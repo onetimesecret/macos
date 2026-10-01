@@ -435,7 +435,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // behind everything again. From the editor window, beside a
         // card already resting, it moves nothing.
         model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
-        model.onWillShowAmbientPanel = { [weak self] in self?.editorWindow.closeForAmbientPanel() }
         model.onOpenEditorWindow = { [weak self] in self?.openEditorPresentation() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
@@ -566,7 +565,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 editorWindow.show()
             },
             raisePanel: { [model] raise in model.raise(raise) },
-            summonPanel: { [model] in model.summon() }
+            summonPanel: { [model] in model.summon() },
+            closeEditorForPanel: { [self] in editorWindow.closeForAmbientPanel() }
         )
     }
 
@@ -577,15 +577,22 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// that activation callback, which must not route this same gesture
     /// a second time as a launch or ⌘Tab (and possibly anchor on today).
     private func applySummon(_ reason: ActivationReason) {
+        // A deliberate selection supersedes an outstanding companion request;
+        // only automatic activation callbacks defer to that earlier claim.
+        if reason == .openEditorPresentation {
+            aboutActivation = false
+            settingsActivation = false
+        }
         let route = ActivationRouter.decide(reason, in: activationContext())
         if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
             // Activation is a request and may never deliver its callback.
-            // A stranded route is harmless with the current panel-off rows:
-            // both return .openEditorWindow(.activation), exactly the late
-            // activation route. This relies on their raise staying .activation;
+            // Panel-off summons and explicit Open in Window all select
+            // .openEditorWindow(.activation), matching late activation, so a
+            // stranded route cannot change the next activation's meaning.
+            // This relies on their raise staying .activation;
             // changing it to .summon would require expiring pending intent.
             assert(route == .openEditorWindow(.activation),
-                   "Deferred panel-off summons must match the late activation route")
+                   "Deferred editor selections must match the late activation route")
             pendingEditorSummon = route
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -594,18 +601,25 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Routes one decision to its verb while preserving associated
-    /// values. Kept pure at this boundary so tests can catch a dispatch
-    /// implementation that drops the launch's summon reason.
+    /// values. Deliberate panel routes close the editor before raising;
+    /// recovery raises only restore the existing panel. Kept pure so tests
+    /// pin both that ordering and the launch's summon reason.
     nonisolated static func dispatch(
         _ route: ActivationRoute,
         openEditorWindow: (BackdropRaise) -> Void,
         raisePanel: (BackdropRaise) -> Void,
-        summonPanel: () -> Void
+        summonPanel: () -> Void,
+        closeEditorForPanel: () -> Void
     ) {
         switch route {
         case .openEditorWindow(let raise): openEditorWindow(raise)
         case .raisePanel(let raise): raisePanel(raise)
-        case .summonPanel: summonPanel()
+        case .summonPanel:
+            closeEditorForPanel()
+            summonPanel()
+        case .showAmbientPanel:
+            closeEditorForPanel()
+            raisePanel(.activation)
         case .noop: break
         }
     }
@@ -776,9 +790,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             let menu = NSMenu()
             menu.autoenablesItems = false
             // Technical identity is optional here; About always carries it.
-            // No action, so the line is disabled when the preference exposes it.
+            // With menu auto-enabling off, disable the identity line explicitly.
             if pages.showsVersionsInMenu {
-                menu.addItem(
+                let versionItem = menu.addItem(
                     withTitle: BuildVersion.menuTitle(
                         ffiVersion: CompanionClient.ffiVersion,
                         coreVersion: CompanionClient.coreVersion,
@@ -789,6 +803,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                     action: nil,
                     keyEquivalent: ""
                 )
+                versionItem.isEnabled = false
                 menu.addItem(.separator())
             }
             menu.addItem(
@@ -826,21 +841,25 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Observed Window-menu switches, updated when the ambient preference changes.
     var presentationCommands: some View {
         PresentationSwitchMenuItems(model: model,
                                     openWindow: openEditorPresentation,
                                     showPanel: showAmbientPresentation)
     }
 
+    /// Explicit selection ignores companion activation claims, unlike reopen.
     @objc func openEditorPresentation() {
-        applySummon(.reopen)
+        applySummon(.openEditorPresentation)
     }
 
+    /// Switch presentations without toggling rest or anchoring on today. This
+    /// preserves the page the person is viewing, unlike a hotkey/status summon.
     @objc func showAmbientPresentation() {
-        guard model.ambientPanelEnabled else { return }
-        model.raise(.activation)
+        applySummon(.showAmbientPresentation)
     }
 
+    /// Shared context-menu commands with explicit enablement for the ambient feature.
     private func addPresentationItems(to menu: NSMenu) {
         let open = menu.addItem(withTitle: "Open in Window",
                                action: #selector(openEditorPresentation), keyEquivalent: "")
@@ -851,6 +870,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         ambient.isEnabled = model.ambientPanelEnabled
     }
 
+    /// The Dock context menu uses the same explicit switches as the status item.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -1193,6 +1213,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// Keep SwiftUI menu enablement current without rebuilding the app delegate.
 private struct PresentationSwitchMenuItems: View {
     @ObservedObject var model: BackdropModel
     let openWindow: () -> Void

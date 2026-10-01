@@ -282,14 +282,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Every caller says why it is raising, because one thing here is
     /// not the same on both routes: see `BackdropRaise`.
     ///
-    /// With the ambient feature enabled, every raise closes an open
-    /// editor window through `onWillShowAmbientPanel` before granting
-    /// the panel content ownership and publishing the raised stance
-    /// (ADR-0036). Routes choose which presentation to request; they
-    /// do not keep the editor window open alongside a raised panel.
+    /// Raise changes ownership and stance only. Deliberate presentation
+    /// switches close the editor window in the activation dispatch before
+    /// calling this primitive; modal and focus recovery never close it.
     func raise(_ reason: BackdropRaise) {
         guard ambientPanelEnabled else { return }
-        if editorWindowOpen { onWillShowAmbientPanel?() }
         // The owner before the stance. The stance's publication is what
         // the window controller acts on, and its ordering calls bring
         // key delegates of both windows back in here before it returns;
@@ -331,9 +328,9 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Esc, a click outside the card, or a summon from a keyed
     /// surface: back behind everything.
     ///
-    /// With the editor window open this is also where the page content
-    /// goes back to it (ADR-0033), and the owner settles before the
-    /// stance is published for `raise(_:)`'s reason: the rest hands the
+    /// Opening the editor window settles this rest during the handoff.
+    /// Ordinary panel rests leave the editor window closed (ADR-0036).
+    /// The owner settles before the stance is published: the rest hands the
     /// keyboard away from inside the publication, and the window that
     /// receives it has to find itself the owner already.
     func rest() {
@@ -624,13 +621,23 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     // MARK: The editor window
 
     /// True while the regular window is open, including when minimized.
-    /// The panel controller uses the emitted value to hide its entire window
-    /// before the editor takes focus. A panel raise closes the regular window
-    /// through onWillShowAmbientPanel before transferring ownership.
-    @Published private(set) var editorWindowOpen = false
+    /// Deliberately unpublished: observers must not order windows during
+    /// the partial ownership transition in `editorWindowOpened()`.
+    private(set) var editorWindowOpen = false
 
+    /// The panel header requests the explicit Open in Window route.
     var onOpenEditorWindow: (() -> Void)?
-    var onWillShowAmbientPanel: (() -> Void)?
+
+    /// Orders the alternate presentation only after the editor window is
+    /// shown, or after its close has settled ownership. This callback is
+    /// separate from the unpublished open fact to avoid willSet ordering.
+    var onEditorWindowPresentationChanged: ((Bool) -> Void)?
+
+    /// Called after the successor window has been ordered front. The panel
+    /// can now disappear without leaving AppKit to choose an interim key window.
+    func editorWindowShown() {
+        onEditorWindowPresentationChanged?(true)
+    }
 
     /// True while the editor window is somewhere the person can see it
     /// and type into it, which is out of the Dock. Fed by the window's
@@ -763,6 +770,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         editorWindowOnScreen = false
         editorWindowIsKey = false
         settleOwner()
+        onEditorWindowPresentationChanged?(false)
     }
 
     // MARK: Geometry

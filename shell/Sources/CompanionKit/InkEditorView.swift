@@ -114,8 +114,8 @@ public struct InkEditorView: NSViewRepresentable {
     /// Since ADR-0033 the app has two window roles over one document
     /// model, and only the window that owns the page content mounts an
     /// editor. The window that loses ownership unmounts its editor and
-    /// shows the glance (`GlanceView`) in its place, and that unmount
-    /// arrives here too, but the hand off has already done the work:
+    /// is hidden or closed during a presentation switch (ADR-0036). That
+    /// unmount arrives here too, but the hand off has already done the work:
     /// `PageModel.transferOwnership(to:)` takes the outgoing editor off
     /// its page and clears `activeEditor` itself
     /// (`relinquishPresentation`) before the owner changes. By the time

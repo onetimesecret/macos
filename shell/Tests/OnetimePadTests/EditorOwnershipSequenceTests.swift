@@ -39,7 +39,6 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         let model = BackdropModel(defaults: defaults, pages: pages)
         let panel = BackdropWindowController(model: model, onCardClick: {})
         let editor = PrimaryEditorWindowController(model: model)
-        model.onWillShowAmbientPanel = { [weak editor] in editor?.closeForAmbientPanel() }
         pages.newPage()
         panel.show()
         XCTAssertTrue(panel.isVisible)
@@ -51,7 +50,13 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         model.setAmbientPanelEnabled(false)
         model.setAmbientPanelEnabled(true)
         XCTAssertFalse(panel.isVisible, "enabling the feature must not show a duplicate")
-        model.raise(.activation)
+        BackdropAppDelegate.dispatch(
+            .showAmbientPanel,
+            openEditorWindow: { _ in XCTFail("must select the panel") },
+            raisePanel: { model.raise($0) },
+            summonPanel: { model.summon() },
+            closeEditorForPanel: { editor.closeForAmbientPanel() }
+        )
         for _ in 0..<5 { await Task.yield() }
         XCTAssertFalse(editor.isVisible)
         XCTAssertTrue(panel.isVisible)
@@ -66,6 +71,61 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         XCTAssertFalse(panel.isVisible)
         editor.closeForAmbientPanel()
         model.setAmbientPanelEnabled(false)
+    }
+
+    func testPanelIsHiddenOnlyAfterEditorIsOrderedFrontAndOwnsContent() throws {
+        let defaults = makeDefaults(named: "ordered-presentation")
+        let pages = ephemeralPages(defaults: defaults, tag: "ordered-presentation")
+        let model = BackdropModel(defaults: defaults, pages: pages)
+        let panel = BackdropWindowController(model: model, onCardClick: {})
+        let editor = PrimaryEditorWindowController(model: model)
+        pages.newPage()
+        model.raise(.summon)
+        let hide = model.onEditorWindowPresentationChanged
+        var didShow = false
+        model.onEditorWindowPresentationChanged = { open in
+            if open {
+                XCTAssertTrue(editor.isVisible, "successor must already be ordered front")
+                XCTAssertTrue(panel.isVisible, "outgoing panel must survive the ownership transition")
+                XCTAssertEqual(pages.owner, .editorWindow)
+                didShow = true
+            }
+            hide?(open)
+        }
+        editor.show()
+        XCTAssertTrue(didShow)
+        XCTAssertFalse(panel.isVisible)
+        model.onEditorWindowPresentationChanged = hide
+        editor.closeForAmbientPanel()
+        model.setAmbientPanelEnabled(false)
+    }
+
+    func testHotkeyAndStatusSwitchFromOpenEditorWithoutReopeningOnRest() async throws {
+        for reason in [ActivationReason.hotkey, .statusItem, .cardClick] {
+            let defaults = makeDefaults(named: "summon-switch")
+            let pages = ephemeralPages(defaults: defaults, tag: "summon-switch")
+            let model = BackdropModel(defaults: defaults, pages: pages)
+            let panel = BackdropWindowController(model: model, onCardClick: {})
+            let editor = PrimaryEditorWindowController(model: model)
+            pages.newPage()
+            editor.show()
+            BackdropAppDelegate.dispatch(
+                ActivationRouter.decide(reason, in: ActivationContext(
+                    ambientPanelEnabled: true, owner: pages.owner,
+                    claimedByAnotherWindow: false)),
+                openEditorWindow: { _ in XCTFail("must summon the panel") },
+                raisePanel: { model.raise($0) },
+                summonPanel: { model.summon() },
+                closeEditorForPanel: { editor.closeForAmbientPanel() }
+            )
+            XCTAssertFalse(editor.isVisible)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertEqual(pages.owner, .panel)
+            model.rest()
+            for _ in 0..<3 { await Task.yield() }
+            XCTAssertFalse(editor.isVisible)
+            model.setAmbientPanelEnabled(false)
+        }
     }
 
     // MARK: The harness

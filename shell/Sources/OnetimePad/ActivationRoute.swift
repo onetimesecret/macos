@@ -9,7 +9,7 @@ import Foundation
 /// function (`ActivationRoute.decide`) turns each one into the surface
 /// to raise.
 ///
-/// Three families sit under this:
+/// Four families sit under this:
 ///
 /// - `.launchActivation`, `.lateActivation` and `.reopen` select the
 ///   editor window. They arrive through `applicationDidBecomeActive` and
@@ -23,6 +23,10 @@ import Foundation
 ///   application-level gestures (hotkey and status item) select the
 ///   editor window instead, and the card click cannot arrive because no
 ///   resting card is on screen.
+///
+/// - `.openEditorPresentation` and `.showAmbientPresentation` are explicit
+///   presentation selections. They ignore companion activation claims and
+///   preserve the current roll position.
 ///
 /// A login launch never appears here. It arrives with no activation at
 /// all, so the routing function is never asked, and nothing is opened.
@@ -67,6 +71,11 @@ enum ActivationReason: Equatable, Sendable {
     /// Never arrives with the panel off, since no resting card is on
     /// screen to receive the click.
     case cardClick
+
+    /// An explicit menu or header command, independent of companion claims.
+    /// Preserve the current roll position when changing presentation.
+    case openEditorPresentation
+    case showAmbientPresentation
 }
 
 /// The routing function's answer: which surface to bring forward, and
@@ -79,12 +88,18 @@ enum ActivationReason: Equatable, Sendable {
 /// no summon toggles by surprise. `.summonPanel` is the deliberate
 /// user gesture — hotkey, status item, resting card — that lets the
 /// panel's re-summon/rest decision (`BackdropModel.summon`) run.
+/// `.showAmbientPanel` explicitly selects the panel without toggling rest or
+/// anchoring on today; dispatch closes the editor before that raise. Dispatch
+/// also closes the editor before `.summonPanel`, while `.raisePanel` recovery
+/// leaves window lifetime alone.
 /// `.noop` is what the routing function says when the current callback
 /// should do nothing: an activation another window claimed for itself.
 enum ActivationRoute: Equatable, Sendable {
     case openEditorWindow(BackdropRaise)
     case raisePanel(BackdropRaise)
     case summonPanel
+    /// Explicit ambient selection: close the editor, then raise without toggling.
+    case showAmbientPanel
     case noop
 }
 
@@ -142,6 +157,10 @@ enum ActivationRouter {
         _ reason: ActivationReason, in context: ActivationContext
     ) -> ActivationRoute {
         switch reason {
+        case .openEditorPresentation:
+            return .openEditorWindow(.activation)
+        case .showAmbientPresentation:
+            return context.ambientPanelEnabled ? .showAmbientPanel : .noop
         case .launchActivation:
             // The launch's activation. Claimed by About or Settings
             // means the surface stays where the launch placed it.

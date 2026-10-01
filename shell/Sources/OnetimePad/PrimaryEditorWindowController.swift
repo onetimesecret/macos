@@ -19,8 +19,8 @@ import os
 /// One store, one model: the root view is handed the panel's own
 /// `PageModel`, never a second one. Exactly one of the two windows owns
 /// the live page content at a time (`PageModel.owner`). This one owns
-/// while it is open and the panel rests, and shows a glance
-/// (`GlanceView`) while a raised panel has the page. What it reports to
+/// while it is open. Selecting the ambient presentation closes this
+/// window (ADR-0036). What it reports to
 /// the model is three facts, that it opened or closed, that it gained
 /// or lost the keyboard and whether it is on screen, and
 /// `BackdropModel` decides what each one moves.
@@ -33,14 +33,9 @@ import os
 final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     private let model: BackdropModel
     private var window: NSWindow?
-    var isVisible: Bool { window?.isVisible == true }
+    /// Suppresses the ordinary close's deferred activation handback while
+    /// the deliberate switch is about to give the panel the keyboard.
     private var switchingToAmbientPanel = false
-
-    func closeForAmbientPanel() {
-        switchingToAmbientPanel = true
-        window?.close()
-        switchingToAmbientPanel = false
-    }
     private var captureObserver: AnyCancellable?
     private var ownerObserver: AnyCancellable?
 
@@ -54,6 +49,17 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    /// Actual visibility, used by presentation handoff checks.
+    var isVisible: Bool { window?.isVisible == true }
+
+    /// Close and release the editor for a deliberate ambient switch. The
+    /// switch supplies the next key window, so close must not deactivate later.
+    func closeForAmbientPanel() {
+        switchingToAmbientPanel = true
+        defer { switchingToAmbientPanel = false }
+        window?.close()
+    }
+
     /// Open the window, or bring the open one forward.
     func show() {
         if let window {
@@ -62,6 +68,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
             // window, so bringing it forward is wholly this call's.
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
+            model.editorWindowShown()
             // Ordering the window does not replace a field editor or
             // another responder left by its previous interaction. Wait
             // for this window's editor if key status transfers ownership
@@ -113,6 +120,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         observeOwner()
 
         window.makeKeyAndOrderFront(nil)
+        model.editorWindowShown()
         model.pages.focusEditorWhenMounted(in: window)
         Self.logger.info("editor window=open")
     }

@@ -964,6 +964,14 @@ which supersedes ADR-0033's simultaneous glance behavior.
 - Disable the ambient feature: Show Ambient Panel is disabled in the menus.
   Hotkey and menu-bar summons continue to select the regular window. Opening
   Settings, About, and modal dialogs must not reveal a second content surface.
+- With the regular window open, switch to another app and press the hotkey or
+  left-click the status item. Each summons the panel and closes the regular
+  window; resting the panel does not reopen it. Summons anchor on today, while
+  Show Ambient Panel preserves the current roll position.
+- Choose Open in Window with Settings or About frontmost. The editor takes
+  focus. In the status context menu, enable the version preference and confirm
+  the version line remains disabled. The resting card shows no window-switch
+  button; the raised card does.
 
 ## Results
 

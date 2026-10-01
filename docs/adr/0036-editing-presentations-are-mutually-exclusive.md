@@ -31,17 +31,26 @@ presentations, and may coexist with the selected presentation.
 
 - Opening the primary editor window hides the entire ambient panel. Pin and
   ambient preference changes must not reveal it while the editor window is open.
-- Every raise of the enabled ambient panel closes an open primary editor window
-  before the raise grants panel ownership and publishes the raised stance.
-  Resting the panel afterward does not reopen the editor window.
-- A non-owner content window shows no glance. Existing exclusive ownership and
-  the single mounted editor boundary remain in force.
+- Deliberate selection of the enabled ambient panel closes an open primary
+  editor window before granting panel ownership and publishing the raised
+  stance. This includes hotkey, status-item and card-click summons and the
+  explicit Show Ambient Panel command. Resting afterward does not reopen the
+  editor window. Internal modal and focus recovery cannot close it.
+- Hide the panel after the primary editor has been ordered front, with its
+  ownership settled. Do not order windows from a partially published open fact.
+- Ordinary switches show no non-owner glance. The reserved never-grant panel
+  policy may render a read-only glance when the editor window is closed.
+  Existing exclusive ownership and the single mounted editor boundary remain
+  in force.
 - Dock activation, reopen and Command-Tab select the primary editor window.
   The global hotkey and status item retain the ambient route when enabled;
   when disabled they select the primary editor window.
 - Provide explicit Open in Window and Show Ambient Panel commands in the Window
   menu and the Dock and status item context menus. The panel header also offers
-  Open in Window. The ambient command is disabled when the feature is disabled.
+  Open in Window, while raised. Explicit switches preserve the current roll
+  position; hotkey, status-item and card-click summons anchor on today. Explicit
+  selection supersedes companion activation claims. The ambient command is
+  disabled when the feature is disabled.
 - The ambient feature remains a persistent preference, default on. Enabling it
   makes the panel available; it does not display a second presentation beside
   an open primary editor window.

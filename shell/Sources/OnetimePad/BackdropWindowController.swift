@@ -22,7 +22,6 @@ import os
 @MainActor
 final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let panel: BackdropPanel
-    var isVisible: Bool { panel.isVisible }
     private let model: BackdropModel
     private var observers: [AnyCancellable] = []
 
@@ -60,6 +59,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
     private nonisolated(unsafe) var distributedObservers: [NSObjectProtocol] = []
 
+    /// Actual window visibility, including the resting desktop presentation.
+    var isVisible: Bool { panel.isVisible }
+
     init(model: BackdropModel, onCardClick: @escaping () -> Void) {
         self.model = model
         panel = BackdropPanel()
@@ -79,13 +81,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 self?.applyPanelEnabled(enabled && !model.editorWindowOpen, handBackActivation: false)
             }
             .store(in: &observers)
-        model.$editorWindowOpen
-            .dropFirst()
-            .sink { [weak self] open in
-                self?.applyPanelEnabled(model.ambientPanelEnabled && !open,
-                                       handBackActivation: false)
-            }
-            .store(in: &observers)
+        model.onEditorWindowPresentationChanged = { [weak self] open in
+            guard let self else { return }
+            applyPanelEnabled(self.model.ambientPanelEnabled && !open,
+                              handBackActivation: false)
+        }
         // The pin re-altitudes the current stance in place: level,
         // Space membership, mouse transparency and window extent
         // follow, but none of the stance choreography (key relay,
@@ -330,7 +330,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         panelEnabled: Bool? = nil,
         handBackActivation: Bool = true
     ) {
-        guard panelEnabled ?? (model.ambientPanelEnabled && !model.editorWindowOpen) else {
+        // Opening settles ownership before the successor is built. Leave
+        // the outgoing panel ordered until editorWindowShown explicitly hides
+        // it after makeKeyAndOrderFront; stance publications cannot do it early.
+        guard !model.editorWindowOpen else { return }
+        guard panelEnabled ?? model.ambientPanelEnabled else {
             applyPanelEnabled(false, handBackActivation: false)
             return
         }
