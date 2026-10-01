@@ -172,10 +172,130 @@ public struct FileSummary: Identifiable, Codable, Hashable, Sendable {
     /// strip redraws, so a flag that vanished on the first read would
     /// be a notice nobody ever saw.
     ///
-    /// Defaulted rather than required, because a roster written by a
-    /// core that predates the key still decodes: the file was not
-    /// reloaded behind anyone's back, which is what false says.
+    /// Defaulted so a roster row built by hand need not name it, and
+    /// read as false when the key is absent (see `init(from:)`): the
+    /// file was not reloaded behind anyone's back, which is what false
+    /// says.
     public var externallyReloaded: Bool = false
+    /// The row came out of the drafts file and has not been reconciled
+    /// against the disk yet, so it is not fit to edit or save.
+    ///
+    /// True for every row between `draftsRestore(from:)` and the
+    /// `hydrateFile(_:resolvedPath:)` that settles it. The model asks
+    /// every row before it publishes a roster, and the one kind of row
+    /// that reaches the surface still pending is a held one, which is
+    /// also `accessRefused`: see `isHeld`. The core refuses an edit or a
+    /// save on a pending file regardless, which is the rule that holds
+    /// if the shell ever gets that wrong.
+    ///
+    /// Defaulted and tolerant of an absent key, as above.
+    public var pendingHydration: Bool = false
+    /// The system refused the core's last attempt to reach the file on
+    /// disk, for a reason other than the file being gone: a read or a
+    /// stat that was denied, which is what the sandbox answers for a
+    /// file whose access was not kept. Cleared by the next read that
+    /// succeeds and by a save.
+    ///
+    /// While it stands the surface offers to locate the file and does
+    /// not offer to take the copy on disk, which nothing can read.
+    ///
+    /// While it stands over unsaved edits the file also stays in the
+    /// changed conflict, whatever a later check's stat says, until a
+    /// read succeeds or the person answers it with keep mine, Save As
+    /// or Locate.
+    ///
+    /// Not `DraftNoticeReason.unreadable`, and the two words never
+    /// stand for each other. This is a standing mark on an open file
+    /// the system would not let the core reach. That is the reason on
+    /// a notice for a file that was dropped at launch because its
+    /// bytes were read and will not open as text.
+    ///
+    /// Defaulted and tolerant of an absent key, as above.
+    public var accessRefused: Bool = false
+    /// The core's last look at the path found nothing there. Cleared
+    /// by the next look that finds something and by a save.
+    ///
+    /// A file with unsaved edits in this state is also in the missing
+    /// conflict, unless keep mine has answered it. A clean file never
+    /// enters a conflict, so for a clean file this is all that says
+    /// its file is gone, and it is what puts Locate in front of the
+    /// person rather than only a passing sentence.
+    ///
+    /// Defaulted and tolerant of an absent key, as above.
+    public var notFound: Bool = false
+}
+
+extension FileSummary {
+    /// Decoding, written out so the four flags above really are
+    /// optional on the wire.
+    ///
+    /// A default value on a stored property does not do that on its
+    /// own. The synthesized decoder asks for every key and throws on a
+    /// missing one whatever the property's default is, and the roster
+    /// is decoded as one array, so a single absent key would cost the
+    /// whole roster rather than one field. The flags were each added
+    /// after the first roster shape, and a test fixture or an older
+    /// core that leaves one out must still decode.
+    ///
+    /// In an extension so the memberwise initializer survives for the
+    /// rows a test builds by hand.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try values.decode(UInt64.self, forKey: .id),
+            name: try values.decode(String.self, forKey: .name),
+            path: try values.decode(String.self, forKey: .path),
+            isDirty: try values.decode(Bool.self, forKey: .isDirty),
+            conflict: try values.decode(FileConflict.self, forKey: .conflict),
+            lineEnding: try values.decode(FileLineEnding.self, forKey: .lineEnding),
+            hasBOM: try values.decode(Bool.self, forKey: .hasBOM),
+            lastEditedAt: try values.decode(UInt64.self, forKey: .lastEditedAt),
+            restoredFromDraft: try values.decode(Bool.self, forKey: .restoredFromDraft),
+            externallyReloaded:
+                try values.decodeIfPresent(Bool.self, forKey: .externallyReloaded) ?? false,
+            pendingHydration:
+                try values.decodeIfPresent(Bool.self, forKey: .pendingHydration) ?? false,
+            accessRefused:
+                try values.decodeIfPresent(Bool.self, forKey: .accessRefused) ?? false,
+            notFound: try values.decodeIfPresent(Bool.self, forKey: .notFound) ?? false
+        )
+    }
+
+    /// The row is a restored record the core could not read and did
+    /// not drop: still pending, with an empty buffer that is not the
+    /// file's text. It stays on the surface so a person who knows
+    /// where the file is can say so, and until they do it can be
+    /// located or closed and nothing else.
+    /// Core `FileStore::hydrate_one` (`crates/core/src/files.rs`) leaves
+    /// held records pending with `conflict == .none`; a staged draft's
+    /// refused read settles into a conflict instead and is not held.
+    public var isHeld: Bool { pendingHydration && accessRefused }
+
+    /// Whether the row holds edits of the person's that the file on
+    /// disk does not, which is what the header's save word, the
+    /// unsaved dot and the dirty close decision all ask.
+    ///
+    /// A held row never does, whatever `isDirty` says. Its record can
+    /// come back marked dirty with no draft behind it, when the draft
+    /// was too large to seal, and the buffer of a held row is empty
+    /// either way because nothing was read. There is nothing in it to
+    /// save, nothing to discard and nothing to keep editing.
+    public var holdsUnsavedEdits: Bool { isDirty && !isHeld }
+
+    /// Whether the surface offers to locate the file: it is no longer
+    /// at its path, with or without unsaved edits over it, or it is
+    /// there and cannot be read.
+    public var offersLocate: Bool { conflict == .missing || notFound || accessRefused }
+
+    /// Whether the conflict banner offers the copy on disk. Not while
+    /// that copy cannot be read, and not while it is gone: either way
+    /// there is nothing to take, and the button could only fail.
+    public var offersTakeTheirs: Bool { !accessRefused && conflict != .missing }
+
+    /// Whether the file's copy on disk cannot be reached while no
+    /// conflict stands: it cannot be read, or nothing is at its path.
+    /// The state the unavailable banner is drawn for.
+    public var isUnavailable: Bool { conflict == .none && (accessRefused || notFound) }
 }
 
 /// Something a drafts save or restore has to tell the person about,
@@ -191,7 +311,10 @@ public struct DraftNotice: Codable, Hashable, Sendable {
 public enum DraftNoticeReason: String, Codable, Hashable, Sendable {
     /// The file is no longer at its path.
     case missing
-    /// The file is there and would not be read.
+    /// The file is there and will not open as text: it is not UTF-8,
+    /// looks binary or is past the size limit. Never
+    /// `FileSummary.accessRefused`, which is a file the system would
+    /// not let the core read, and which is held rather than dropped.
     case unreadable
     /// The unsaved edits were too large to seal, so the file came back
     /// as itself and the edits did not.
@@ -229,6 +352,55 @@ public enum FileCheckState: String, Codable, Hashable, Sendable {
 public struct FileCheck: Codable, Hashable, Sendable {
     public let state: FileCheckState
     public let path: String
+}
+
+/// Why a save was refused, as `companion_file_save_error_json` states
+/// it. The bool a save answers cannot say, and the roster row
+/// afterwards does not say either: a row marked not found whose write
+/// the platform then refused looks exactly like one refused for being
+/// not found. The shell chooses its sentence from this.
+public enum FileSaveRefusal: Equatable, Sendable {
+    /// The file came back from the last session and nothing has
+    /// reconciled it against the disk yet.
+    case pendingHydration
+    /// The file stands in a conflict nobody has answered, which the
+    /// save itself may have been the one to find.
+    case conflict
+    /// Nothing is at the file's path and no keep mine stands, so
+    /// nothing was written.
+    case notFound
+    /// A save as onto a path another open file already holds.
+    case pathInUse
+    /// No file is open under that id.
+    case unknownFile
+    /// The save was allowed and the write itself failed. `detail` is
+    /// the kind of failure, a fixed English label that carries no part
+    /// of the path.
+    case write(detail: String)
+
+    private struct Wire: Decodable {
+        let error: String
+        let detail: String?
+    }
+
+    /// Read the core's answer. Nil for no answer, for JSON that will
+    /// not parse and for a reason this build does not know, all of
+    /// which the caller words as a write that did not land: the one
+    /// sentence that is true of every refused save.
+    public init?(json: String?) {
+        guard let json,
+              let wire = try? JSONDecoder().decode(Wire.self, from: Data(json.utf8))
+        else { return nil }
+        switch wire.error {
+        case "pendingHydration": self = .pendingHydration
+        case "conflict": self = .conflict
+        case "notFound": self = .notFound
+        case "pathInUse": self = .pathInUse
+        case "unknownFile": self = .unknownFile
+        case "write": self = .write(detail: wire.detail ?? "")
+        default: return nil
+        }
+    }
 }
 
 extension UInt64 {
@@ -1363,7 +1535,12 @@ public class CompanionClient: @unchecked Sendable {
     public static let fileIDTag: UInt64 = 1 << 63
 
     /// Open the file at `path`, returning its tagged id, or nil when
-    /// the open refused. Ask `openFileError()` why.
+    /// the open refused. Ask `openFileErrorJSON()` why.
+    ///
+    /// A path that is already open hands back the id it is open under,
+    /// except when that row is still `pendingHydration`: the core
+    /// refuses then, because the row's buffer is not the file's text
+    /// yet. The caller hydrates the row first and asks again.
     public func openFile(path: String) -> UInt64? {
         let id = path.withCString { companion_file_open(handle, $0) }
         return id == 0 ? nil : id
@@ -1457,16 +1634,64 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Write the buffer back to the file's own path. False when the
     /// write refused, which includes a file standing in a conflict
-    /// nobody has resolved yet.
+    /// nobody has resolved yet and a restored file that has not been
+    /// hydrated.
+    ///
+    /// A save never makes a file where there is none. When nothing is
+    /// at the file's path the core refuses, whether or not it was
+    /// asked to check first, and leaves the row `notFound`, and in the
+    /// `missing` conflict when it holds unsaved edits. The one save
+    /// that writes to an empty path is the one a keep mine licensed.
+    /// `saveFile(_:as:stagingDirectory:)` is not refused this way: a
+    /// destination a person chose is theirs to make a file at.
+    ///
+    /// `stagingDirectory` is where the core makes its temp file before
+    /// renaming it onto the target. Nil makes it beside the target,
+    /// which a sandboxed process may not do. Otherwise it is a
+    /// directory on the target's volume that the caller made and will
+    /// remove. The core never falls back from one to the other: a
+    /// staging directory it cannot use fails the save with nothing
+    /// written.
+    ///
+    /// No default, deliberately. Every caller has to say where the
+    /// temp file goes, because the answer that is easiest to leave out
+    /// is the one that cannot save under the sandbox.
     @discardableResult
-    public func saveFile(_ file: UInt64) -> Bool {
-        companion_file_save(handle, file)
+    public func saveFile(_ file: UInt64, stagingDirectory: String?) -> Bool {
+        guard let stagingDirectory else { return companion_file_save(handle, file, nil) }
+        return stagingDirectory.withCString { companion_file_save(handle, file, $0) }
     }
 
     /// Write the buffer to `path` and adopt it as the file's path.
+    /// `stagingDirectory` is as `saveFile(_:stagingDirectory:)` has
+    /// it, for the new target's volume.
     @discardableResult
-    public func saveFile(_ file: UInt64, as path: String) -> Bool {
-        path.withCString { companion_file_save_as(handle, file, $0) }
+    public func saveFile(_ file: UInt64, as path: String, stagingDirectory: String?) -> Bool {
+        path.withCString { target in
+            guard let stagingDirectory else {
+                return companion_file_save_as(handle, file, target, nil)
+            }
+            return stagingDirectory.withCString {
+                companion_file_save_as(handle, file, target, $0)
+            }
+        }
+    }
+
+    /// Why the last `saveFile(_:stagingDirectory:)` or
+    /// `saveFile(_:as:stagingDirectory:)` refused, as the raw JSON the
+    /// header describes. Nil when that save wrote, when none has been
+    /// asked for, and when it was refused for an argument the core
+    /// could not read. A plain read: the next save replaces the answer.
+    public func saveFileErrorJSON() -> String? {
+        guard let ptr = companion_file_save_error_json(handle) else { return nil }
+        defer { companion_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// `saveFileErrorJSON()`, read. Asked straight after a save that
+    /// answered false, before anything else is asked of the core.
+    public func saveFileRefusal() -> FileSaveRefusal? {
+        FileSaveRefusal(json: saveFileErrorJSON())
     }
 
     /// Whether anything else wrote the file since the core last read or
@@ -1499,6 +1724,13 @@ public class CompanionClient: @unchecked Sendable {
     /// `saveFile(_:as:)`. It clears
     /// the conflict and lets the next save write over whatever is on
     /// disk, so it is called only after the person has chosen.
+    ///
+    /// The core binds the consent to what the path held when it was
+    /// given, a copy or nothing, and withdraws it when the path is
+    /// later found the other way or the buffer settles clean. False
+    /// also means the choice was made on a missing conflict whose file
+    /// is back and changed: the row is then in the changed conflict,
+    /// and restating the roster shows it.
     @discardableResult
     public func resolveFileKeepMine(_ file: UInt64) -> Bool {
         companion_file_resolve_keep_mine(handle, file)
@@ -1531,9 +1763,10 @@ public class CompanionClient: @unchecked Sendable {
         companion_file_clear_reload_notice(handle, file)
     }
 
-    /// Everything the last drafts save or restore has to tell the
-    /// person about. Reading drains the list, so this is asked once
-    /// after a restore rather than polled.
+    /// Everything the last drafts save, and the hydrations after the
+    /// last restore, have to tell the person about. Reading drains the
+    /// list, so this is asked once, after every restored file has been
+    /// hydrated, rather than polled.
     public func draftNotices() -> [DraftNotice] {
         decodeJSON([DraftNotice].self, from: companion_drafts_notices_json(handle)) ?? []
     }
@@ -1547,9 +1780,72 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Restore the roster and the drafts at launch. False covers a
     /// fresh start with no file as much as a refused one.
+    ///
+    /// The first of two steps. It reads the drafts file and no other:
+    /// every row it brings back is `pendingHydration` until
+    /// `hydrateFile(_:resolvedPath:)` has settled it.
     @discardableResult
     public func draftsRestore(from path: String) -> Bool {
         path.withCString { companion_drafts_restore(handle, $0) }
+    }
+
+    /// Reconcile one restored file against the disk: the second step
+    /// of a restore, made once per pending row, inside that file's own
+    /// access bracket.
+    ///
+    /// The two steps are separate because under the sandbox a file can
+    /// be read only while its own scope is open, and only the shell
+    /// can open one.
+    ///
+    /// `resolvedPath` is where the file's bookmark resolved to, or nil
+    /// when it has none or it would not resolve, in which case the
+    /// path on record is read. A path that differs from the record
+    /// rebinds the file to it first, unless another open file already
+    /// holds that path; the roster row's path says which happened.
+    ///
+    /// The core puts the question off when the resolved path is the
+    /// recorded path of another file that is still pending, since that
+    /// file may have moved off it. The answer is then true and the row
+    /// is still `pendingHydration`: the caller hydrates the others and
+    /// asks again, and ends a wait that will not end by passing nil,
+    /// which never waits.
+    ///
+    /// The core holds a clean file whose read the system refused: it
+    /// is neither filled nor dropped, the answer is true, and the row
+    /// is still `pendingHydration` and now `accessRefused` as well, which
+    /// is `FileSummary.isHeld` and is how a hold is told from a wait.
+    /// A held file may be asked again, and settles once it can be
+    /// read.
+    ///
+    /// True when the file stands in the roster afterwards. False when
+    /// it was dropped, with a notice queued for `draftNotices()`, and
+    /// when nothing is open under the id.
+    @discardableResult
+    public func hydrateFile(_ file: UInt64, resolvedPath: String?) -> Bool {
+        guard let resolvedPath else { return companion_file_hydrate(handle, file, nil) }
+        return resolvedPath.withCString { companion_file_hydrate(handle, file, $0) }
+    }
+
+    /// Bind an open file to `path`, which is where a person has said
+    /// the file is now, read the copy there and settle the file around
+    /// it. Called inside the access that choice granted.
+    ///
+    /// The read settles the way a hydration's does. A file with no
+    /// draft adopts the copy on disk. A draft stands: with no conflict
+    /// when the copy is the one the draft was measured against, by the
+    /// file's identity or by its text, and in a `changed` conflict
+    /// otherwise, in which the copy on disk can now be taken. A held
+    /// row is settled and is pending no longer.
+    ///
+    /// False leaves the file exactly as it was. It is false for a file
+    /// the core does not hold, for a path another open file already
+    /// holds, and for a file that will not open, which
+    /// `openFileErrorJSON()` then explains in an open's own words. The
+    /// middle one cannot be told from the others afterwards, so a
+    /// caller that wants to name it asks the roster first.
+    @discardableResult
+    public func relocateFile(_ file: UInt64, to path: String) -> Bool {
+        path.withCString { companion_file_relocate(handle, file, $0) }
     }
 
     /// Drop the drafts file at `path`. True when the path is confirmed

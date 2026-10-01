@@ -19,17 +19,30 @@ These instructions describe the source inspected on 2026-09-29, not a completed
 submission. Apple account setup, acceptance of a package, and runtime behavior
 must be checked on the publishing account and test Macs.
 
-**File-access readiness is still an open check.** In the inspected source,
-[FileCoordinator](../../shell/Sources/CompanionKit/FileCoordinator.swift) creates
-and resolves bookmarks with `options: []`, and `withAccess` calls the body
-without a security-scoped access bracket. The
-[entitlements template](../../scripts/Companion.entitlements) contains sandbox,
-outgoing network, and Keychain access-group entries, but no user-selected-file
-or security-scoped bookmark entries. This is an implementation observation,
-not a verified sandbox compatibility result. Treat file editing and reopening
-files after relaunch as release gates; investigate the entitlement and bookmark
-implementation if those tests fail. Packaging success does not establish that
-they work.
+**File access is implemented for the sandbox and not yet verified on a signed
+build.** In the source inspected on 2026-09-30, the
+[entitlements template](../../scripts/Companion.entitlements) declares
+`com.apple.security.files.user-selected.read-write` beside the sandbox,
+outgoing network, and Keychain access-group entries, and the packaging script
+refuses an App Store build whose signature lacks it.
+[FileCoordinator](../../shell/Sources/CompanionKit/FileCoordinator.swift)
+creates and resolves security-scoped bookmarks and brackets each file
+operation in a started scope, saves stage their temporary file outside the
+document's directory, and files are reread at launch one at a time inside
+their own scope. A file the system will not let the app read, or one that is
+no longer at its path, keeps its tab and offers **Locate…**, which raises an
+open panel so the person can point the app at the file; a file from an earlier
+build's state that carries a plain bookmark is expected to need this once.
+Locate depends on a grant from an open panel, which no measurement has
+covered. The design and the measurements behind it are in
+[ADR-0035](../adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md),
+which is proposed. Those measurements used an ad hoc signed probe, not this
+app and not a distribution signature, and did not cover open or save panels.
+Treat file editing and reopening files after relaunch as release gates, and
+run the
+[sandbox file access procedure](../qa/verification-procedures/sandbox-file-access.md)
+on the TestFlight build; its cases 14, 16 and 17 are the ones that exercise
+Locate. Packaging success does not establish that they work.
 
 ## 1. Prepare the build Mac and account
 
@@ -229,8 +242,8 @@ may remain after an earlier failure.
 Before compiling, the script checks identity availability and the profile's
 team, explicit App ID, Keychain group, selected certificate, expiry, and profile
 class. After signing, it checks the app signature, build number, embedded
-profile, hardened-runtime flag, sandbox/network/Keychain entitlements, and the
-package signature. These are
+profile, hardened-runtime flag, sandbox/network/user-selected-file/Keychain
+entitlements, and the package signature. These are
 local checks, not a substitute for Apple's validation. In particular, inspect
 profile validity and certificate suitability rather than assuming the script
 checks every distribution requirement.
@@ -318,9 +331,11 @@ current implementation passes:
 - Run a conceal operation with test content and check the resulting link.
   This step sends the test content to the configured service.
 - Test the global summon shortcut, menu bar item, Settings, and editor window.
-- Open a disposable file, edit, Save, and Save As. Relaunch and reopen it;
-  repeat after a rename or move. Investigate the file-access gap noted above
-  before treating file editing as ready.
+- Open a disposable file, edit, Save, and Save As. Relaunch and confirm it
+  reopens; repeat after a rename or move. The full list, with pass criteria,
+  is the
+  [sandbox file access procedure](../qa/verification-procedures/sandbox-file-access.md).
+  Do not treat file editing as ready until it has passed on this build.
 - If device sync is included in the beta, test pairing and synchronization
   between test installations.
 - Test an update from one TestFlight build to the next, including token use and

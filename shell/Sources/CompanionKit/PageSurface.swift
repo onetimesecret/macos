@@ -76,12 +76,25 @@ public struct PageContentView: View {
                 if file.conflict != .none {
                     FileConflictBanner(file: file) { model.resolveConflict($0) }
                     Divider()
+                } else if FileUnavailableBanner.stands(for: file) {
+                    FileUnavailableBanner(
+                        file: file,
+                        locate: { model.locateFile(file.id) },
+                        close: { model.closeFile(file.id) }
+                    )
+                    Divider()
                 }
                 if let suggestion = model.fileRenderSuggestion, suggestion.fileID == file.id {
                     FileRenderSuggestionBanner(model: model, suggestion: suggestion)
                     Divider()
                 }
-                InkEditorView(model: model, sheetID: file.id, readOnly: readOnly)
+                // A held file has an empty buffer that is not the
+                // file's text, and the core refuses every edit to it.
+                // The editor is mounted all the same, since one editor
+                // persists across every surface (ADR-0006), and it
+                // takes no typing until the file is located.
+                InkEditorView(
+                    model: model, sheetID: file.id, readOnly: readOnly || file.isHeld)
             }
         } else if model.showsTimeUnits {
             // The days, as one roll (issue #79). It answers for all

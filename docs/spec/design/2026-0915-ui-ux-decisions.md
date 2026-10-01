@@ -659,6 +659,13 @@ blocked while they stand (status lines stay 12 × 4).
   *Acceptance:* the sentence is a pure function of conflict and
   filename; the two conflict kinds are testable as words rather than as
   a drawn banner.
+  *Amendment proposed 2026-09-30, not ratified:* a draft record would
+  add a Locate action where the other copy cannot be reached, a third
+  input to the sentence, a second file banner and a header word for a
+  file that was not read. Until that record is accepted, the text above
+  stands
+  ([2026-0930-file-conflict-locate.md](2026-0930-file-conflict-locate.md),
+  D-49 to D-53).
 - **D-18 (fixed)** Two "saved" words never show at once: a file's word
   replaces the session's. Render mode is session state and never
   encoded with the file or its draft.

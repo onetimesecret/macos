@@ -26,6 +26,12 @@
 # scripts/window-order-probe.swift, the evidence standard for issue 184
 # and ADR-0034. Off by default because most dev cycles don't need it.
 # When on, the script prints the exact command to run afterwards.
+#
+# The other probe, scripts/sandbox-file-access-probe.swift (ADR-0035),
+# is not built here. It is a bundle of its own, signed with the
+# entitlements under test and launched through LaunchServices, none of
+# which this script's debug bundle takes part in, so it has its own
+# runner: scripts/sandbox-file-access-probe.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

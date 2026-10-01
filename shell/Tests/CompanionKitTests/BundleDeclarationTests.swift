@@ -73,6 +73,37 @@ final class BundleDeclarationTests: XCTestCase {
         XCTAssertEqual(keys["com.apple.security.network.client"] as? Bool, true)
     }
 
+    /// File backed documents under the sandbox rest on this one key
+    /// (ADR-0035). The probe signed with the sandbox alone could not
+    /// make a security scoped bookmark at all, so without the key a
+    /// file opens once, from the panel's own grant, and is out of reach
+    /// at the next launch. Nothing in the shell fails to compile when
+    /// the key goes, and the dev and local lanes are not sandboxed, so
+    /// they would go on working; the loss would first be seen in an App
+    /// Store build. The packaging script reads the key back out of the
+    /// final signature, and this pins the source it signs from.
+    ///
+    /// The second assertion holds the other half of the same decision:
+    /// the app scope bookmark entitlement made no difference to the
+    /// probe, so the record decides against declaring it, and a key
+    /// arriving here later should arrive with a reason.
+    func testDistributionEntitlementsDeclareUserSelectedFileAccess() throws {
+        let entitlements = Self.shellDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent("scripts/Companion.entitlements")
+        let data = try Data(contentsOf: entitlements)
+        let parsed = try PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil)
+        let keys = try XCTUnwrap(parsed as? [String: Any])
+
+        XCTAssertEqual(
+            keys["com.apple.security.files.user-selected.read-write"] as? Bool, true,
+            "without it a sandboxed build cannot make the bookmark a file is reopened by")
+        XCTAssertNil(
+            keys["com.apple.security.files.bookmarks.app-scope"],
+            "ADR-0035 declares no app scope bookmark entitlement; the probe showed it changes nothing")
+    }
+
     /// The local and dev lanes' identities are checked into the build-lane
     /// manifest and recognised by the shell, two files with no compile-time
     /// tie between them. A drift here would make a development build fall

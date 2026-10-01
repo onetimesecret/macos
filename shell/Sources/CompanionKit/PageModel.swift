@@ -311,6 +311,11 @@ public enum FileConflictResolution: Equatable, Sendable {
     case takeTheirs
     /// Write the buffer somewhere else and leave the file alone.
     case saveAs
+    /// Say where the file is now. Offered beside the three when the
+    /// file is no longer at its path or cannot be read there. It is
+    /// not a choice between the two copies: it finds the other copy,
+    /// and the three are what choose afterwards if they still differ.
+    case locate
 }
 
 /// The outcomes offered by the inline dirty-close banner, in visual order.
@@ -1420,12 +1425,10 @@ public final class PageModel: ObservableObject {
         // asked for a second way of looking at it (issue #79).
         let showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
         self.showsTimeUnits = showsTimeUnits
-        // An existing user who explicitly enabled the old combined
-        // prototype keeps the layout they chose. A new install has
-        // neither key and therefore opens at Slots + bottom, the
-        // shipping default in D-13.
+        // Default to vertical tabs when no placement has been chosen.
+        // An explicit placement preference still wins.
         showsPagesDownSide = defaults.object(forKey: Self.pagesDownSideKey) as? Bool
-            ?? showsTimeUnits
+            ?? true
         // Unset → the standard patterns, "HH:mm" and "HH:mm:ss".
         stampFormat = StreamNavigator.StampFormat(
             short: defaults.string(forKey: Self.stampShortKey)
@@ -1465,9 +1468,18 @@ public final class PageModel: ObservableObject {
             self?.markDirty()
             self?.refresh()
         }
+        modalEndObserver = NotificationCenter.default.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            // ModalSession posts synchronously on the main actor. A file
+            // panel's answer is not processed yet; its gesture drains the
+            // owed check instead, after it has finished with that answer.
+            MainActor.assumeIsolated { self?.consumeOwedActivationCheck() }
+        }
     }
 
-    /// The one route to a system file panel or a bookmark.
+    /// The one route to a system file panel, a bookmark, a security
+    /// scope or a save's staging directory.
     ///
     /// `lazy` so no panel object is built at init, and `var` so a test
     /// can put scripted panels in its place. It is not in `Seams`
@@ -1476,6 +1488,20 @@ public final class PageModel: ObservableObject {
     /// model is standing, so a plain settable property is the whole of
     /// what the injection needs.
     public lazy var fileCoordinator = FileCoordinator()
+
+    /// How many gestures that raise a file panel are under way: an
+    /// open, a Save As or a locate, from the panel going up until the
+    /// gesture has finished with its answer. A count and not a flag
+    /// because a locate can be reached from inside another gesture.
+    private var filePanelGestures = 0
+
+    /// Whether an activation asked for the file check during a modal
+    /// bracket or file-panel gesture. Consumed when both are over.
+    private var activationCheckOwed = false
+
+    // removeObserver is thread-safe; every other access is main-actor
+    // isolated, but Swift 6 deinit is nonisolated.
+    private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
 
     /// Whether the drafts file owes a write.
     ///
@@ -2121,18 +2147,63 @@ public final class PageModel: ObservableObject {
     /// files come back as tabs; which surface is showing is a separate
     /// question and this does not answer it.
     ///
-    /// The restore hands back a roster that is ready to draw: a clean
-    /// file is already filled from disk, a dirty one already holds its
-    /// draft, and a file that is gone is already off the roster. So
-    /// nothing here reads a file. What is owed is the talking: the
-    /// files that were dropped, the drafts that were too large to
-    /// seal, and each clean file that came back from a disk copy that
-    /// had changed while the app was away.
+    /// Two steps. The restore itself reads the drafts file and nothing
+    /// else, and every row it brings back is pending. Each row is then
+    /// hydrated on its own, which is the step that reads the file: a
+    /// clean file is filled from disk, a dirty one keeps its draft and
+    /// is measured against the disk, and a clean file that is gone or
+    /// will not be read leaves the roster. The steps are separate
+    /// because under the sandbox a file can be read only while its own
+    /// security scope is open, and the scope comes from the file's
+    /// bookmark, which only the shell can resolve.
+    ///
+    /// Every pending row is asked here, before the roster is published
+    /// and before anything else can run. One kind of row is still
+    /// pending afterwards: a clean file the system would not let the
+    /// core read, which the core holds rather than drops
+    /// (`FileSummary.isHeld`). It is published with the rest, with no
+    /// text shown as the file's and a banner offering to locate it,
+    /// and the core refuses every edit and save on it until it is
+    /// settled. An open that would land on such a row hydrates it
+    /// first (`openFile(at:)`).
+    ///
+    /// What is owed afterwards is the talking: the files that were
+    /// dropped, the drafts that were too large to seal, and each clean
+    /// file that came back from a disk copy that had changed while the
+    /// app was away.
     private func restoreDrafts() {
         guard client.draftsRestore(from: draftsFileURL.path) else { return }
+        // Whether the roster in memory came to differ from the one the
+        // drafts file holds, which decides at the end whether a write
+        // is owed.
+        var recordMoved = false
+        // Asked of the core directly, not through `refreshOpenFiles`:
+        // that would publish rows that are not fit to draw yet.
+        var waiting = client.fileRoster().filter(\.pendingHydration)
+        // In passes, because a hydration can wait. A file whose
+        // bookmark resolves to the recorded path of a file not yet
+        // hydrated is put off by the core until that one has settled,
+        // since it may be about to move off the path. Each pass asks
+        // the files still waiting, and a pass that settles none of
+        // them, which is files that traded places, is ended by
+        // hydrating every one of them at the path on record
+        // (`settleCrossedFiles`).
+        while !waiting.isEmpty {
+            var deferred: [FileSummary] = []
+            for file in waiting {
+                switch hydrateRestoredFile(file) {
+                case .deferred: deferred.append(file)
+                case .settled(let moved): recordMoved = recordMoved || moved
+                }
+            }
+            if deferred.count == waiting.count {
+                if settleCrossedFiles(deferred) { recordMoved = true }
+                deferred = []
+            }
+            waiting = deferred
+        }
         refreshOpenFiles()
         for file in openFiles {
-            refreshBookmark(for: file)
             // The core restored either the draft or the current disk copy;
             // classify that buffer directly, without creating editor storage.
             reconsiderFileRenderMode(for: file.id, resetDismissal: true)
@@ -2148,9 +2219,21 @@ public final class PageModel: ObservableObject {
         if let sentence = Self.launchNotice(reloaded: reloaded, notices: notices) {
             flash(sentence)
         }
-        // The roster on disk and the roster in memory now agree, so
-        // nothing is owed until the person touches a file again.
-        draftsDirty = false
+        // The roster on disk and the roster in memory agree only when
+        // the hydration changed nothing. A file that was dropped, found
+        // at a new path, given a fresh bookmark, read again from a
+        // changed disk copy or told its draft was too large now differs
+        // from its record, and a record left as it was would make the
+        // next launch do all of it again and say all of it again. It
+        // would also keep a bookmark that is known to be going bad, and
+        // the one launch that held a good one would have thrown it
+        // away. So the write is owed now, without waiting for the
+        // person to touch a file.
+        if recordMoved || !reloaded.isEmpty || !notices.isEmpty {
+            markDraftsRecordMoved()
+        } else {
+            draftsDirty = false
+        }
     }
 
     /// The one line a launch says about the files it brought back.
@@ -2183,21 +2266,283 @@ public final class PageModel: ObservableObject {
         return englishList(clauses) + "."
     }
 
-    /// Resolve a restored file's bookmark and make a fresh one if the
-    /// old one came back stale, which is what a rename or a move
-    /// leaves behind.
+    /// Hydrate one restored file inside its own access bracket.
     ///
-    /// Everything it does happens inside the coordinator's access
-    /// bracket, which is the arrangement that makes the sandbox a
-    /// one-line change rather than an audit.
-    private func refreshBookmark(for file: FileSummary) {
-        guard let base64 = client.fileBookmarkBase64(file.id), !base64.isEmpty,
-              let data = Data(base64Encoded: base64)
-        else { return }
-        _ = FileCoordinator.withAccess(toBookmark: data) { url, isStale in
-            guard isStale, let fresh = FileCoordinator.refreshedBookmark(after: url) else { return }
-            client.setFileBookmark(file.id, base64: fresh.base64EncodedString())
+    /// The bookmark is resolved first, and where it resolves is handed
+    /// to the core, which is how a file moved while the app was away
+    /// is found where it is now rather than missed where it was. A
+    /// file with no bookmark, or one that resolves to nothing, is
+    /// hydrated at the path on record with no scope open: outside a
+    /// sandbox that reads it, and inside one the read is refused and
+    /// the core says so for that file alone.
+    ///
+    /// Nothing here can fail for more than the one file. Each has its
+    /// own bracket and its own call, and the core's hydration touches
+    /// no file but the one named.
+    ///
+    /// The bookmark is made again, inside the scope, when the old one
+    /// is no longer the right one to keep: it came back stale, or it
+    /// is a plain one from before the scoped bookmarks, or the file
+    /// moved. Only for a file that still stands, and only when the
+    /// core is now bound to the path the bookmark resolved to. A
+    /// rebind the core refused leaves the file at its recorded path,
+    /// and a bookmark for some other file's path is not one to keep.
+    /// A refresh that fails keeps the old bookmark and says nothing:
+    /// the file is open and the launch has its own line to say.
+    ///
+    /// A bookmark that resolves into a Trash is treated as one that
+    /// resolves to nothing, and the file is hydrated at the path on
+    /// record. A thrown away file keeps its identity, so following it
+    /// would bring it back as an ordinary tab, and a draft over it
+    /// would be saved into the Trash. Read at the recorded path it is
+    /// simply gone, which is what the person made it.
+    ///
+    /// The answer says whether the core put the question off, and if
+    /// it settled, whether the file now differs from its record in the
+    /// drafts file: dropped, bound to a new path, or carrying a new
+    /// bookmark. A file the core holds counts as settled here. It was
+    /// asked and nothing about it is waiting on another file, and it
+    /// is asked again on each activation (`retryHeldFile`).
+    private func hydrateRestoredFile(_ file: FileSummary) -> RestoredHydration {
+        // Nil from the bracket means the bookmark resolved to nothing
+        // and the body never ran, which is a different thing from a
+        // hydration that ran and dropped the file.
+        let bracketed: RestoredHydration? = fileBookmark(file.id).flatMap { data in
+            fileCoordinator.withAccess(toBookmark: data) { access in
+                if fileCoordinator.isInTrash(access.url) {
+                    // Inside the bracket all the same: a file that was
+                    // opened from the Trash on purpose has that path
+                    // on record, and the scope is what reads it.
+                    let kept = client.hydrateFile(file.id, resolvedPath: nil)
+                    return .settled(recordMoved: !kept)
+                }
+                let resolved = access.url.path
+                guard client.hydrateFile(file.id, resolvedPath: resolved) else {
+                    return .settled(recordMoved: true)
+                }
+                guard let row = client.fileRoster().first(where: { $0.id == file.id }) else {
+                    return .settled(recordMoved: true)
+                }
+                let rebound = row.path != file.path
+                // Held: asked and answered, with nothing read. There
+                // is no bookmark worth making for a file the scope
+                // could not read.
+                if row.isHeld { return .settled(recordMoved: rebound) }
+                if row.pendingHydration { return .deferred }
+                guard Self.samePath(row.path, resolved) else {
+                    return .settled(recordMoved: rebound)
+                }
+                guard access.isStale || !access.isScoped || rebound else {
+                    return .settled(recordMoved: false)
+                }
+                let renewed = renewBookmark(for: file.id, from: access.url)
+                return .settled(recordMoved: rebound || renewed)
+            }
         }
+        if let bracketed { return bracketed }
+        let kept = client.hydrateFile(file.id, resolvedPath: nil)
+        return .settled(recordMoved: !kept)
+    }
+
+    /// End a wait that cannot end on its own: every file in `files`
+    /// was put off, each because its bookmark leads to the recorded
+    /// path of another that is also waiting. That is files that traded
+    /// names while the app was away. Each is hydrated at the path its
+    /// record carries, which never waits, and that is where all of
+    /// them would come to rest if only one were forced: once one stays
+    /// put, the file waiting for its path is refused it and stays put
+    /// as well, and so on round the ring.
+    ///
+    /// The reads happen with every one of their bookmarks' scopes
+    /// open at once. A file here is read at its recorded path, and
+    /// the grant on that path is not its own bookmark's, which leads
+    /// to where the file went: it is the bookmark of the file that
+    /// now sits there. Read with no scope, or each inside its own,
+    /// every one of them would be refused under the sandbox and left
+    /// held, with Locate the only way back.
+    ///
+    /// Each file that settles is then given a bookmark for the path
+    /// it came to rest at, made from the URL whose scope is on that
+    /// path. The one it carried names another tab's file, and every
+    /// later bracket for this file would open its scope on that one.
+    /// A bookmark that cannot be made leaves the old one in place, so
+    /// the next launch meets the same crossing and ends it the same
+    /// way rather than finding no bookmark at all.
+    ///
+    /// Answers whether any file now differs from its record.
+    private func settleCrossedFiles(_ files: [FileSummary]) -> Bool {
+        var recordMoved = false
+        withAccessToBookmarks(of: files[...], opened: []) { opened in
+            for file in files {
+                guard client.hydrateFile(file.id, resolvedPath: nil),
+                      let row = client.fileRoster().first(where: { $0.id == file.id })
+                else {
+                    recordMoved = true
+                    continue
+                }
+                guard !row.pendingHydration else { continue }
+                let source = opened.first(where: { Self.samePath($0.path, row.path) })
+                    ?? URL(fileURLWithPath: row.path)
+                if renewBookmark(for: file.id, from: source) { recordMoved = true }
+            }
+        }
+        return recordMoved
+    }
+
+    /// Run `body` inside the access bracket of every file's bookmark
+    /// at once, nested, and hand it the URLs those brackets are open
+    /// on. A file with no bookmark, or one that resolves to nothing,
+    /// contributes no bracket, and the body runs all the same. Each
+    /// bracket closes what it opened, innermost first. For N roster rows,
+    /// this can hold N concurrent security scopes and uses O(N) stack
+    /// depth; both are bounded by the restored roster size.
+    private func withAccessToBookmarks(
+        of files: ArraySlice<FileSummary>, opened: [URL], _ body: ([URL]) -> Void
+    ) {
+        guard let first = files.first else {
+            body(opened)
+            return
+        }
+        let rest = files.dropFirst()
+        let ran: Void? = fileBookmark(first.id).flatMap { data in
+            fileCoordinator.withAccess(toBookmark: data) { access in
+                withAccessToBookmarks(of: rest, opened: opened + [access.url], body)
+            }
+        }
+        if ran == nil { withAccessToBookmarks(of: rest, opened: opened, body) }
+    }
+
+    /// What one attempt to hydrate a restored file came to.
+    private enum RestoredHydration {
+        /// The core put the question off: the file is still pending
+        /// and is asked again after the others.
+        case deferred
+        /// The file is settled, kept or dropped. `recordMoved` says
+        /// whether it now differs from its record in the drafts file.
+        case settled(recordMoved: Bool)
+    }
+
+    // MARK: Files: access
+
+    /// The bookmark the core carries for a file, or nil when it holds
+    /// none.
+    private func fileBookmark(_ id: UInt64) -> Data? {
+        guard let base64 = client.fileBookmarkBase64(id), !base64.isEmpty else { return nil }
+        return Data(base64Encoded: base64)
+    }
+
+    /// Whether two paths name one place once symlinks are resolved.
+    /// The core's paths are resolved at open and a bookmark or a panel
+    /// hands back whatever it likes, so a plain string comparison
+    /// would call /tmp and /private/tmp two directories.
+    nonisolated static func samePath(_ a: String, _ b: String) -> Bool {
+        URL(fileURLWithPath: a).resolvingSymlinksInPath().path
+            == URL(fileURLWithPath: b).resolvingSymlinksInPath().path
+    }
+
+    /// Run `body` with access open on an open file, and hand back what
+    /// it returned.
+    ///
+    /// Every call that makes the core read, stat or write a file the
+    /// person chose goes through here or through the coordinator's
+    /// panel bracket: the check, the reload, the save, keep mine and
+    /// take theirs. Under the sandbox the core's call is refused
+    /// outside a bracket, and the bracket is the file's own bookmark,
+    /// resolved and scoped for exactly as long as the body runs.
+    ///
+    /// The body is handed the URL the bookmark resolved to, or nil
+    /// when it runs with none. It runs unbracketed for a file with no
+    /// bookmark, or one whose bookmark resolves to nothing: a file
+    /// inside the app's own container, such as the keymap, needs no
+    /// grant, and any other file then hears the refusal from the core
+    /// in the ordinary way. The body always runs exactly once.
+    ///
+    /// A bookmark that resolved stale is made again here, before the
+    /// body, so every bracket mends it rather than only the launch.
+    /// The mended one is owed to the drafts file as well: a stale
+    /// bookmark is one the system says may stop resolving, and a fresh
+    /// one that lived only in memory would be gone at the next quit.
+    ///
+    /// Brackets nest. A save reached from the save panel runs inside
+    /// the panel's bracket and opens this one within it, and each
+    /// closes what it opened.
+    private func withFileAccess<T>(_ id: UInt64, _ body: (URL?) -> T) -> T {
+        guard let data = fileBookmark(id) else { return body(nil) }
+        // Nil from the bracket means the bookmark resolved to nothing
+        // and the body has not run yet, so it runs below instead.
+        let bracketed: T? = fileCoordinator.withAccess(toBookmark: data) { access in
+            if access.isStale, renewBookmark(for: id, from: access.url) {
+                markDraftsRecordMoved()
+            }
+            return body(access.url)
+        }
+        if let bracketed { return bracketed }
+        return body(nil)
+    }
+
+    /// Make a fresh bookmark from `url` and hand it to the core.
+    /// Called inside an open bracket. False when none could be made.
+    ///
+    /// What the file is left holding after a failure is the caller's
+    /// to say, because it turns on what the old bookmark names. When
+    /// it names the file at the core's path, it is kept: an older
+    /// bookmark for the right file is better than none. When the
+    /// core's path has moved on, as it has after a Save As, the old
+    /// bookmark names a file the person left, and the next launch
+    /// would follow it and bind the tab back to that file. A draft
+    /// made since would then be one save away from overwriting the
+    /// very file Save As was used to spare. So `orphansHeld` drops the
+    /// old bookmark when the new one cannot be made, and the next
+    /// launch reads the recorded path with nothing to mislead it.
+    @discardableResult
+    private func renewBookmark(for id: UInt64, from url: URL, orphansHeld: Bool = false) -> Bool {
+        do {
+            let data = try fileCoordinator.bookmark(for: url)
+            client.setFileBookmark(id, base64: data.base64EncodedString())
+            return true
+        } catch {
+            // The error names no path and no content: a Cocoa domain
+            // and a code, which is what a sandbox refusal looks like.
+            let reason = error as NSError
+            logger.error(
+                "a file bookmark could not be made: \(reason.domain, privacy: .public) \(reason.code, privacy: .public)")
+            if orphansHeld { client.setFileBookmark(id, base64: "") }
+            return false
+        }
+    }
+
+    /// The drafts file now differs from the roster in memory, through
+    /// no act of the person's: a restore found a file somewhere new or
+    /// dropped one, or a bookmark was made again.
+    ///
+    /// The write is armed as `markFilesDirty` arms it. What is left
+    /// out is everything that treats the change as work. It is not
+    /// counted as a mutation since the load, so it cannot hold up a
+    /// quit, and it does not take the sudden termination hold or show
+    /// as saving: a record that misses this write is mended again at
+    /// the next launch, and nothing a person typed rides on it.
+    private func markDraftsRecordMoved() {
+        draftsDirty = true
+        scheduleSave(after: saveDebounce)
+    }
+
+    /// Whether a missing bookmark for the file at `path` is worth a
+    /// sentence. The keymap file lives in the app's own configuration
+    /// directory, which it may read with no grant at all, so a
+    /// bookmark that could not be made for it costs nothing and a
+    /// warning about it would be a false one.
+    private func owesBookmark(path: String) -> Bool {
+        guard let keymap = userKeymapFileURL else { return true }
+        return !Self.samePath(keymap.path, path)
+    }
+
+    /// What a person is told when a file's bookmark could not be made.
+    ///
+    /// The file is open and the save landed, so this is about later:
+    /// without a bookmark the next launch has only the recorded path
+    /// to go on, which a sandboxed build may not read.
+    public nonisolated static func bookmarkFailureNotice(name: String) -> String {
+        "\(name) may not reopen after a relaunch, because access to it could not be kept."
     }
 
     /// The quit policy's outcome table. A refused write cancels the first
@@ -2304,12 +2649,13 @@ public final class PageModel: ObservableObject {
     private nonisolated static func lostAtQuit(
         files: [FileSummary], draftsUnwritten: Bool
     ) -> String {
-        let dirty = draftsUnwritten ? files.filter(\.isDirty).map(\.name) : []
+        let dirty = draftsUnwritten ? files.filter(\.holdsUnsavedEdits).map(\.name) : []
         guard !dirty.isEmpty else { return "pages" }
         return "pages and the unsaved changes to \(englishList(dirty))"
     }
 
     deinit {
+        if let modalEndObserver { NotificationCenter.default.removeObserver(modalEndObserver) }
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
         if clipboardClearTimer != nil {
@@ -2771,7 +3117,7 @@ public final class PageModel: ObservableObject {
                 // and redo history intact. Closing is the one step on
                 // this surface that cannot be undone, which is why only
                 // an explicit answer may take it.
-                if !file.isDirty {
+                if !file.holdsUnsavedEdits {
                     clearPendingFileClose()
                 }
             } else {
@@ -2926,8 +3272,40 @@ public final class PageModel: ObservableObject {
     /// Ask for a file and open it. The panel lives in the file
     /// coordinator, never here.
     public func openFile() {
-        guard let url = fileCoordinator.chooseFileToOpen() else { return }
-        openFile(at: url)
+        duringFilePanel {
+            guard let url = fileCoordinator.chooseFileToOpen() else { return }
+            openFile(at: url)
+        }
+    }
+
+    /// Run a gesture that raises a file panel, from the panel going up
+    /// to the last thing done with its answer, and then make the
+    /// activation check that was put off while it ran, if one was.
+    ///
+    /// A panel is modal and the main queue drains while it is up, so
+    /// the app can be activated underneath it: a person who goes to
+    /// the Finder to look for the file they are about to choose, and
+    /// comes back, has done exactly that. The check that activation
+    /// asks for can drop a held row, follow a moved file to a new
+    /// path or reload a buffer, and the gesture in progress is about
+    /// one of those rows and is holding what it read of it before the
+    /// panel went up. So the check waits (`checkOpenFilesOnActivate`)
+    /// and is made here, once, when the gesture is over and the
+    /// roster is whatever the gesture left.
+    private func duringFilePanel(_ gesture: () -> Void) {
+        filePanelGestures += 1
+        defer {
+            filePanelGestures -= 1
+            consumeOwedActivationCheck()
+        }
+        gesture()
+    }
+
+    private func consumeOwedActivationCheck() {
+        guard activationCheckOwed, filePanelGestures == 0, !ModalSession.isBracketed else { return }
+        // Clear before checking so synchronous observers cannot consume it twice.
+        activationCheckOwed = false
+        checkOpenFilesOnActivate()
     }
 
     /// Open the file at `url`, the path a panel or a drop produced.
@@ -2936,20 +3314,72 @@ public final class PageModel: ObservableObject {
     /// file that is not UTF-8, or is past the size limit, or will not
     /// be read at all comes back as a refusal naming itself, and the
     /// panel's own type filter is a convenience rather than the rule.
+    ///
+    /// The read and the bookmark both happen inside the access bracket
+    /// on that URL. A panel's URL usually arrives with its grant
+    /// already open; a URL from elsewhere may not, and the bracket
+    /// covers both.
+    ///
+    /// An open never lands on a pending row. The core hands back the
+    /// id a path is already open under, and a row still waiting on its
+    /// hydration has a buffer that is not the file's text, so raising
+    /// it as the answer to an open would draw an empty file under the
+    /// person's filename. The rule is to hydrate first: a pending row
+    /// at this path is asked inside this bracket, where the panel's
+    /// grant is what lets the read through, and the open is made
+    /// afterwards. A row that settles is the file the open then hands
+    /// back. One that was dropped leaves the path free and the open
+    /// reads the file afresh. One that is still held is refused by the
+    /// core, and the refusal is said like any other.
     public func openFile(at url: URL) {
-        guard let id = client.openFile(path: url.path) else {
+        // The bracket closes before anything is said or drawn: what it
+        // guards is the core's read and the bookmark, and nothing
+        // after them touches the file.
+        var owed: [DraftNotice] = []
+        var droppedPendingRow = false
+        let opened: (id: UInt64, bookmarked: Bool)? = fileCoordinator.withAccess(to: url) {
+            // Asked of the core rather than of the published roster,
+            // so the rule holds for any pending row and not only for
+            // the ones the surface happens to be showing.
+            for row in client.fileRoster()
+            where row.pendingHydration && Self.samePath(row.path, url.path) {
+                discardStaleDraftNotices()
+                _ = client.hydrateFile(row.id, resolvedPath: nil)
+                if !client.fileRoster().contains(where: { $0.id == row.id }) {
+                    droppedPendingRow = true
+                }
+                // A dropped row's notice is moot, since the open below
+                // reads the file on its own account. A draft that was
+                // too large to keep is still owed its sentence.
+                owed += client.draftNotices().filter { $0.reason == .draftTooLarge }
+            }
+            guard let id = client.openFile(path: url.path) else { return nil }
+            // The bookmark is taken here, while access is open, and
+            // again after every save. It is handed straight to the
+            // core, which carries it into the drafts file and gives it
+            // back at the next launch.
+            return (id, renewBookmark(for: id, from: url))
+        }
+        guard let opened else {
             flash(Self.openRefusalNotice(
                 name: url.lastPathComponent, json: client.openFileErrorJSON()
             ))
+            // A pending row at the path may have been dropped on the
+            // way to this refusal, and the surface must not go on
+            // showing it.
+            refreshOpenFiles()
+            if droppedPendingRow { markFilesDirty() }
             return
         }
-        // The bookmark is taken at the open and at every Save As, and
-        // never later: those are the two moments the shell holds a URL
-        // the person just named. It is handed straight to the core,
-        // which carries it into the drafts file and gives it back at
-        // the next launch.
-        if let data = FileCoordinator.bookmark(for: url) {
-            client.setFileBookmark(id, base64: data.base64EncodedString())
+        let id = opened.id
+        // A held row this open settled was filled from a copy nobody
+        // had read, and the person has just asked for exactly that, so
+        // the reload flag it may carry is answered without a sentence.
+        client.clearFileReloadNotice(id)
+        if !opened.bookmarked, owesBookmark(path: url.path) {
+            flash(Self.bookmarkFailureNotice(name: url.lastPathComponent))
+        } else if let sentence = Self.launchNotice(reloaded: [], notices: owed) {
+            flash(sentence)
         }
         // A reopen of a file that is already open hands back the same
         // id core-side, so the editor may be mounted over this exact
@@ -3024,90 +3454,207 @@ public final class PageModel: ObservableObject {
     /// conflict, which is the point: a save that discovered the change
     /// only by overwriting it would be the one outcome nobody wants.
     /// A file already standing in an unresolved conflict is refused
-    /// out loud, since the banner's three actions are the way out and
-    /// silently writing would make the banner a lie.
+    /// out loud, since the banner's actions are the way out and
+    /// silently writing would make the banner a lie. A conflict the
+    /// save's own check raises is refused out loud the same way, and a
+    /// standing missing conflict is checked again first, so a file
+    /// that has come back is judged as the file it now is.
+    ///
+    /// The check, the write and the fresh bookmark are one access
+    /// bracket, opened once. They are one act as far as the person is
+    /// concerned, and a scope closed between the check and the write
+    /// would leave a moment in which the file the check approved is
+    /// not the file the write can reach.
+    ///
+    /// A save never makes a file where there is none. The core refuses
+    /// a save whose path holds nothing, and the sentence then names
+    /// Locate and Save As, which are the two ways to say where the text
+    /// should go. The exception is a draft the person has chosen keep
+    /// mine for, which is written, as it was before.
     @discardableResult
     public func saveFile(_ id: UInt64) -> Bool {
         guard let before = openFiles.first(where: { $0.id == id }) else { return false }
-        guard before.conflict == .none else {
-            flash(Self.unresolvedConflictNotice(name: before.name), tone: .actionable)
+        // A held file's buffer is empty because nothing was read, not
+        // because the file is. The core refuses the write whatever is
+        // asked here; this is the sentence that says why.
+        guard !before.pendingHydration else {
+            flash(Self.heldFileNotice(name: before.name), tone: .actionable)
             return false
         }
-        // The check can reload a clean file out from under the save,
-        // which the person is owed a word about, and it can put a
-        // dirty one into a conflict, which the banner says instead.
-        if let outcome = applyCheck(for: id), let sentence = Self.activationNotice([outcome]) {
-            flash(sentence)
-        }
-        guard let file = openFiles.first(where: { $0.id == id }) else { return false }
-        guard file.conflict == .none else { return false }
-        guard client.saveFile(id) else {
-            flash(Self.writeRefusalNotice(name: file.name), tone: .actionable)
+        // A conflict over a copy that is there is refused from the row
+        // as it stands: the banner's answers are the way out and
+        // nothing the disk does takes the question back. A missing
+        // conflict is different. It says nothing is at the path, which
+        // stops being true the moment another tool puts the file back,
+        // and a refusal read off a stale row would then be a sentence
+        // about a file that is there. So that one is looked at again
+        // below before anything is refused.
+        guard before.conflict == .none || before.conflict == .missing else {
+            flash(Self.unresolvedConflictNotice(for: before), tone: .actionable)
             return false
         }
-        // The roster is what the header and the dots read, and a save
-        // moved the dirty flag and the conflict, so the surface is
-        // restated before anything else looks at it. The drafts owe a
-        // write too: this file no longer carries a snapshot.
-        refreshOpenFiles()
-        markFilesDirty()
-        return true
+        return withFileAccess(id) { resolved in
+            // The check can reload a clean file out from under the save,
+            // which the person is owed a word about, and it can put a
+            // dirty one into a conflict.
+            if let outcome = applyCheck(for: id, resolved: resolved),
+               let sentence = Self.activationNotice([outcome]) {
+                flash(sentence)
+            }
+            guard let file = openFiles.first(where: { $0.id == id }) else { return false }
+            guard file.conflict == .none else {
+                // A save was asked for and is not happening, so it is
+                // said, in the sentence for the conflict the check has
+                // just found or confirmed. It takes the place of
+                // whatever the check had to say, because a person who
+                // pressed save is owed the ways out and not only the
+                // news. Without it a draft typed over a file already
+                // marked gone would be refused with no word at all.
+                flash(Self.unresolvedConflictNotice(for: file), tone: .actionable)
+                return false
+            }
+            let target = URL(fileURLWithPath: file.path)
+            let wrote = fileCoordinator.withStagingDirectory(for: target) { staging in
+                client.saveFile(id, stagingDirectory: staging?.path)
+            }
+            guard wrote else {
+                // The core answers false for every refusal and keeps
+                // the reason, which is asked for before anything else
+                // is asked of it. The sentence is chosen from that
+                // reason. The row is read again only because a refusal
+                // can move it, into the missing conflict or out of a
+                // consent, and the sentence for a conflict names the
+                // ways out of the one the row is now in.
+                let refusal = client.saveFileRefusal()
+                refreshOpenFiles()
+                let after = openFiles.first(where: { $0.id == id }) ?? file
+                flash(Self.saveRefusalNotice(refusal, for: after), tone: .actionable)
+                return false
+            }
+            // The write put a new file at the path, and the old
+            // bookmark followed the old one. Made again while the
+            // scope is still open, from the URL the scope is on when
+            // that is where the core wrote, since that is the URL the
+            // grant belongs to.
+            //
+            // When the scope's URL is not where the core wrote, the
+            // file was moved while it was open and the write has made a
+            // new one at the path the core holds. The old bookmark
+            // names the moved file, so if no new one can be made it is
+            // dropped rather than left to lead the next launch there.
+            let inScope = resolved.flatMap { Self.samePath($0.path, file.path) ? $0 : nil }
+            let strayed = resolved != nil && inScope == nil
+            let source = inScope ?? target
+            if !renewBookmark(for: id, from: source, orphansHeld: strayed),
+               owesBookmark(path: file.path) {
+                flash(Self.bookmarkFailureNotice(name: file.name))
+            }
+            // The roster is what the header and the dots read, and a save
+            // moved the dirty flag and the conflict, so the surface is
+            // restated before anything else looks at it. The drafts owe a
+            // write too: this file no longer carries a snapshot.
+            refreshOpenFiles()
+            markFilesDirty()
+            return true
+        }
     }
 
     /// Write the selected file somewhere else and adopt that path.
     public func saveActiveFileAs() {
-        guard let file = activeFile else { return }
-        guard let url = fileCoordinator.chooseDestination(suggestedName: file.name) else { return }
-        // The core refuses a target another open file already holds,
-        // and the only signal it can give is false, which also covers
-        // an ordinary write failure. The roster is the same answer and
-        // it is here, so the refusal gets its own sentence rather than
-        // a general one. Asked before the call rather than after,
-        // because a false afterwards cannot be told apart.
+        duringFilePanel { saveActiveFileAsThroughPanel() }
+    }
+
+    private func saveActiveFileAsThroughPanel() {
+        guard let asked = activeFile else { return }
+        // Said before the panel rather than after it: a held file has
+        // nothing to write, and asking for a destination first would
+        // be asking for an answer that cannot be used.
+        guard !asked.pendingHydration else {
+            flash(Self.heldFileNotice(name: asked.name), tone: .actionable)
+            return
+        }
+        guard let url = fileCoordinator.chooseDestination(suggestedName: asked.name) else { return }
+        // Read again now the panel is down, for the reason the locate
+        // reads its row again: the path compared below has to be the
+        // one the core holds now.
+        guard let file = openFiles.first(where: { $0.id == asked.id }) else { return }
         // Compared on the resolved path, because the roster's path is
         // the one the core resolved through symlinks at open and the
         // panel hands back whatever the person navigated to. On this
-        // system /tmp and /private/tmp are the same directory, and a
-        // comparison that missed that would let the core refuse with
-        // nothing but a false to say why.
+        // system /tmp and /private/tmp are the same directory.
         let target = URL(fileURLWithPath: url.path).resolvingSymlinksInPath().path
-        // Picking the file's own name in the save panel is a save, not
-        // a save as, and every save is checked immediately before it
-        // writes (decisions.md item 5). Without this the one path that
-        // can overwrite a changed disk copy with no conflict raised is
-        // the panel, which is the last place a person would expect it.
-        if URL(fileURLWithPath: file.path).resolvingSymlinksInPath().path == target {
-            saveFile(file.id)
-            return
+        // Everything from here to the bookmark runs inside the access
+        // bracket on the URL the panel handed over. The write is the
+        // core's and the panel's grant is what lets it land.
+        fileCoordinator.withAccess(to: url) {
+            // Picking the file's own name in the save panel is a save, not
+            // a save as, and every save is checked immediately before it
+            // writes (decisions.md item 5). Without this the one path that
+            // can overwrite a changed disk copy with no conflict raised is
+            // the panel, which is the last place a person would expect it.
+            // The save opens the file's own bracket inside this one,
+            // and each closes what it opened.
+            //
+            // Only while something is at that path. A save refuses to
+            // make a file where there is none, and here the person has
+            // just chosen this destination in a panel, which is the
+            // consent a bare save lacks. With nothing there, there is
+            // also no disk copy a check could protect, so the choice
+            // goes on as the save as it is and writes the file.
+            if URL(fileURLWithPath: file.path).resolvingSymlinksInPath().path == target,
+               FileManager.default.fileExists(atPath: target) {
+                saveFile(file.id)
+                return
+            }
+            let wrote = fileCoordinator.withStagingDirectory(for: url) { staging in
+                client.saveFile(file.id, as: url.path, stagingDirectory: staging?.path)
+            }
+            guard wrote else {
+                // The core refuses a target another open file already
+                // holds, before anything is written, and says that this
+                // was the reason. The roster is read only for the name
+                // of the tab that holds it, which the sentence owes the
+                // person and the reason does not carry.
+                let refusal = client.saveFileRefusal()
+                let holder = openFiles.first(where: {
+                    $0.id != file.id
+                        && URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == target
+                })?.name
+                let sentence = Self.saveAsRefusalNotice(
+                    refusal, file: file.name, target: url.lastPathComponent, holder: holder
+                )
+                flash(sentence.text, tone: sentence.tone)
+                return
+            }
+            // The identity moved, so the bookmark has to move with it, or
+            // the next launch would reopen the file the person saved away
+            // from. Made after the write, because the write is what put
+            // the file there, and before the bracket closes. When it
+            // cannot be made the old one is dropped, not kept: it is a
+            // bookmark for the file that was saved away from.
+            if !renewBookmark(for: file.id, from: url, orphansHeld: true),
+               owesBookmark(path: url.path) {
+                flash(Self.bookmarkFailureNotice(name: url.lastPathComponent))
+            }
+            refreshOpenFiles()
+            reconsiderFileRenderMode(for: file.id, resetDismissal: true)
+            markFilesDirty()
         }
-        if let held = openFiles.first(where: {
-            $0.id != file.id
-                && URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == target
-        }) {
-            flash(Self.pathInUseNotice(name: held.name))
-            return
-        }
-        guard client.saveFile(file.id, as: url.path) else {
-            flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
-            return
-        }
-        // The identity moved, so the bookmark has to move with it, or
-        // the next launch would reopen the file the person saved away
-        // from.
-        if let data = FileCoordinator.bookmark(for: url) {
-            client.setFileBookmark(file.id, base64: data.base64EncodedString())
-        }
-        refreshOpenFiles()
-        reconsiderFileRenderMode(for: file.id, resetDismissal: true)
-        markFilesDirty()
     }
 
     /// Close the selected file. A clean file closes immediately. A dirty
     /// file publishes an inline decision and remains editable.
+    ///
+    /// A held file closes immediately whatever its record says. The
+    /// decision offers to save, discard or keep editing a draft, and a
+    /// held file has none: its buffer is empty because nothing was
+    /// read, and a record that came back dirty after its draft was too
+    /// large to keep is dirty in name only. Asking would be asking
+    /// about nothing, and its Save could only be refused.
     @discardableResult
     public func closeActiveFile() -> Bool {
         guard let file = activeFile else { return false }
-        guard !file.isDirty else {
+        guard !file.holdsUnsavedEdits else {
             beginPendingFileClose(
                 file, returningTo: selectedFile, returningToLedger: showingLedger
             )
@@ -3119,6 +3666,8 @@ public final class PageModel: ObservableObject {
     /// Close a named file, which is what the ✕ on a row asks for. A dirty
     /// non-active file is selected so its inline decision appears above its
     /// editor; Keep editing returns to the surface that was showing.
+    /// A held file closes at once, for the reason `closeActiveFile`
+    /// gives.
     public func closeFile(_ id: UInt64) {
         guard let file = openFiles.first(where: { $0.id == id }) else {
             clearPendingFileClose()
@@ -3126,7 +3675,7 @@ public final class PageModel: ObservableObject {
         }
         let wasShowing = selectedFile
         if pendingFileClose?.fileID != id { clearPendingFileClose() }
-        if file.isDirty {
+        if file.holdsUnsavedEdits {
             let wasShowingLedger = showingLedger
             selectedFile = id
             showingLedger = false
@@ -3208,15 +3757,31 @@ public final class PageModel: ObservableObject {
     /// stays refused until one of the three is chosen.
     public func resolveConflict(_ resolution: FileConflictResolution) {
         guard let file = activeFile else { return }
+        // A held row has no copy to choose. Only locating it is meaningful.
+        guard !file.isHeld || resolution == .locate else { return }
         switch resolution {
         case .keepMine:
             // No confirmation. Nothing is lost at this moment: the
             // copy on disk is overwritten by the next save, which is
             // its own deliberate gesture and has its own chord.
-            client.resolveFileKeepMine(file.id)
+            // Bracketed because the core looks at the file on disk to
+            // record what the consent was given against.
+            if !withFileAccess(file.id, { _ in client.resolveFileKeepMine(file.id) }) {
+                refreshOpenFiles()
+                let current = openFiles.first(where: { $0.id == file.id }) ?? file
+                flash("Keep mine could not be applied. " + Self.unresolvedConflictNotice(for: current),
+                      tone: .actionable)
+            }
         case .takeTheirs:
-            guard client.resolveFileTakeTheirs(file.id) else {
+            // The core's read is what needs the bracket; the restating
+            // below reads only what the core already holds.
+            guard withFileAccess(file.id, { _ in client.resolveFileTakeTheirs(file.id) }) else {
                 flash(Self.readRefusalNotice(name: file.name), tone: .actionable)
+                // The refused read is itself news about the file: the
+                // core now knows the copy on disk cannot be read, or
+                // is gone. Restated so the banner stops offering the
+                // action that has just failed and offers Locate.
+                refreshOpenFiles()
                 return
             }
             restateStorage(sheet: file.id)
@@ -3228,9 +3793,161 @@ public final class PageModel: ObservableObject {
             // path the chord takes and not a variant of it.
             saveActiveFileAs()
             return
+        case .locate:
+            locateFile(file.id)
+            return
         }
         if resolution != .takeTheirs { refreshOpenFiles() }
         markFilesDirty()
+    }
+
+    // MARK: Files: locating one that cannot be reached
+
+    /// Ask the person where a file is now, and bind the open file to
+    /// their answer.
+    ///
+    /// This is the way back for a file that is no longer at its path,
+    /// or is there and cannot be read: the bookmark could not be made
+    /// or no longer resolves, or the scope will not start. The person
+    /// knows where the file is, and the panel they answer in is also
+    /// what grants the access that was missing, so one gesture mends
+    /// both.
+    ///
+    /// Everything after the panel runs inside the access bracket on
+    /// the URL it handed over: the core's read, and the fresh bookmark
+    /// that replaces the one that failed.
+    ///
+    /// The core settles the file as a launch would. A file with no
+    /// draft takes the text of the file chosen. A draft stands, with no
+    /// conflict when the file chosen is the one the draft was measured
+    /// against, and in a conflict otherwise, where the three actions
+    /// choose between the copies and Take theirs now has a copy to
+    /// take.
+    ///
+    /// A cancel changes nothing. A file that is already open in
+    /// another tab is refused with its own sentence, and one that is
+    /// not UTF-8 text or is past the size limit is refused with the
+    /// sentence an open gives. After either the file is exactly as it
+    /// was.
+    ///
+    /// It asks for no confirmation and has no chord, like the three
+    /// actions it stands beside.
+    public func locateFile(_ id: UInt64) {
+        duringFilePanel { locateFileThroughPanel(id) }
+    }
+
+    private func locateFileThroughPanel(_ id: UInt64) {
+        guard let asked = openFiles.first(where: { $0.id == id }) else { return }
+        guard let url = fileCoordinator.chooseFileToLocate(recordedPath: asked.path) else { return }
+        // Read again now the panel is down. The main queue drains
+        // while a panel is up, and the row the panel was raised about
+        // is only worth acting on if it is still here.
+        guard let file = openFiles.first(where: { $0.id == id }) else { return }
+        discardStaleDraftNotices()
+        fileCoordinator.withAccess(to: url) {
+            // The core refuses a path another open file holds, and all
+            // it can answer is false. The roster is the same answer
+            // and it is here, so the refusal gets its own sentence, as
+            // Save As does it and for the same reason.
+            var holderNews: String?
+            if let held = openFiles.first(where: {
+                $0.id != id && Self.samePath($0.path, url.path)
+            }) {
+                // A holder the launch is itself still holding has just
+                // been granted: the person chose its path in a panel.
+                // It is asked again here, inside that grant, so one
+                // gesture at least mends the tab the file belongs to.
+                if held.isHeld {
+                    holderNews = Self.activationNotice(settleHeldHolder(held, at: url))
+                }
+            }
+            if let held = openFiles.first(where: {
+                $0.id != id && Self.samePath($0.path, url.path)
+            }) {
+                let refusal = Self.locateHeldNotice(name: file.name, holder: held.name)
+                flash([refusal, holderNews].compactMap { $0 }.joined(separator: " "), tone: .actionable)
+                return
+            }
+            // The old bookmark is dropped if no new one can be made. It
+            // either failed or names a file the person has just said
+            // is not this one, and the next launch must not follow it.
+            guard let bookmarked = settleRelocation(of: id, at: url, orphansHeld: true) else {
+                let refusal = Self.openRefusalNotice(
+                    name: url.lastPathComponent, json: client.openFileErrorJSON())
+                flash([holderNews, refusal].compactMap { $0 }.joined(separator: " "))
+                return
+            }
+            if !bookmarked, owesBookmark(path: url.path) {
+                flash(Self.bookmarkFailureNotice(name: url.lastPathComponent))
+            } else if let sentence = Self.launchNotice(
+                reloaded: [],
+                notices: client.draftNotices().filter { $0.reason == .draftTooLarge }
+            ) {
+                flash(sentence)
+            }
+            // The person asked for this file's text, so a reload flag
+            // the settlement raised is answered without a sentence.
+            client.clearFileReloadNotice(id)
+            refreshOpenFiles()
+            markFilesDirty()
+        }
+    }
+
+    /// Hydrate a held file whose path a locate panel has just been
+    /// pointed at on another file's behalf.
+    ///
+    /// The panel's grant is on this path and is open, which is the one
+    /// thing the held file was missing, so the launch's question is
+    /// put to it again here. If it settles it is given a bookmark from
+    /// the panel's URL, replacing one that failed to let it be read,
+    /// and the surface and the drafts file are restated as an
+    /// activation's retry restates them. What it has to say about
+    /// itself is handed back for the locate to say beside its own
+    /// sentence. One that is dropped instead, because what is there
+    /// will not open as text, leaves the path free, and the locate
+    /// goes on to hear that same refusal from the core about the file
+    /// it was asked for.
+    ///
+    /// The caller has emptied the core's notice list already.
+    private func settleHeldHolder(_ holder: FileSummary, at url: URL) -> [CheckOutcome] {
+        _ = client.hydrateFile(holder.id, resolvedPath: nil)
+        var bookmarkFailure: String?
+        if let row = client.fileRoster().first(where: { $0.id == holder.id }),
+           !row.pendingHydration {
+            if !renewBookmark(for: holder.id, from: url, orphansHeld: true),
+               owesBookmark(path: url.path) {
+                bookmarkFailure = row.name
+            }
+        }
+        var outcomes = concludeHeldRetry(of: holder, recordMoved: false)
+        if let bookmarkFailure { outcomes.append(.bookmarkFailed(bookmarkFailure)) }
+        return outcomes
+    }
+
+    /// Bind an open file to `url` through the core and restate the
+    /// surface around what that settled. Nil when the core refused,
+    /// which leaves the file exactly as it was. Otherwise the answer
+    /// is whether a fresh bookmark could be made.
+    ///
+    /// Called inside an open access bracket on `url`, by the locate
+    /// panel and by the check that follows a moved file. The bookmark
+    /// is made again here, before that bracket closes, because the one
+    /// the file held either failed or named the place the file left.
+    /// `orphansHeld` is as `renewBookmark` has it: whether the old
+    /// bookmark is dropped when a new one cannot be made.
+    private func settleRelocation(of id: UInt64, at url: URL, orphansHeld: Bool) -> Bool? {
+        let before = fileTextSnapshot(for: id)
+        guard client.relocateFile(id, to: url.path) else { return nil }
+        let bookmarked = renewBookmark(for: id, from: url, orphansHeld: orphansHeld)
+        // Restated only when the text moved. A draft that stands is
+        // the text already on screen, and restating it would cost the
+        // caret and the scroll position for nothing.
+        if fileTextSnapshot(for: id) != before, storages[id] != nil {
+            restateStorage(sheet: id)
+        }
+        refreshOpenFiles()
+        reconsiderFileRenderMode(for: id, resetDismissal: true)
+        return bookmarked
     }
 
     // MARK: Files: what else wrote them
@@ -3246,57 +3963,161 @@ public final class PageModel: ObservableObject {
     /// loop, and `flash` overwrites, so the person would see only the
     /// last of them and would be owed the other two. The outcomes are
     /// collected and said together, the way the launch says its own.
+    ///
+    /// Not while a file panel is up, or while the gesture that raised
+    /// one is still using its answer. The check is owed instead and is
+    /// made when that gesture ends (`duringFilePanel`). A modal of any
+    /// other origin puts it off the same way, and the next activation
+    /// or file panel gesture makes it.
     public func checkOpenFilesOnActivate() {
+        guard filePanelGestures == 0, !ModalSession.isBracketed else {
+            activationCheckOwed = true
+            return
+        }
+        activationCheckOwed = false
         var outcomes: [CheckOutcome] = []
         for file in openFiles {
-            if let outcome = applyCheck(for: file.id) { outcomes.append(outcome) }
+            // A held file has nothing to check: nothing of it was ever
+            // read. The activation asks the launch's question again
+            // instead, which is how a file whose volume came back or
+            // whose permissions were mended is noticed without the
+            // person having to locate it.
+            if file.pendingHydration {
+                outcomes += retryHeldFile(file)
+                continue
+            }
+            // One bracket per file, around the check and the reload it
+            // may lead to. A save makes the same call inside the
+            // bracket it already holds.
+            let outcome = withFileAccess(file.id) { applyCheck(for: file.id, resolved: $0) }
+            if let outcome { outcomes.append(outcome) }
         }
         if let sentence = Self.activationNotice(outcomes) { flash(sentence) }
+    }
+
+    /// Hydrate a held file again, and say what came of it.
+    ///
+    /// The same bracket and the same call the launch made. A file that
+    /// still cannot be read stays held and nothing is said, since its
+    /// banner is already saying it. One that settles is drawn from the
+    /// text it was filled with. One that has since gone from its path
+    /// leaves the roster, as a clean file that is gone does at launch,
+    /// and is named.
+    private func retryHeldFile(_ file: FileSummary) -> [CheckOutcome] {
+        discardStaleDraftNotices()
+        let moved: Bool
+        switch hydrateRestoredFile(file) {
+        case .deferred: moved = false
+        case .settled(let recordMoved): moved = recordMoved
+        }
+        return concludeHeldRetry(of: file, recordMoved: moved)
+    }
+
+    /// What follows a second hydration of a held file, whoever asked
+    /// for it: the core's notices are read, a file that settled is
+    /// drawn from the text it was filled with, and the roster and the
+    /// drafts file are brought up to date. The caller emptied the
+    /// notice list before the hydration, so what is read here is the
+    /// hydration's own.
+    private func concludeHeldRetry(of file: FileSummary, recordMoved moved: Bool) -> [CheckOutcome] {
+        var outcomes: [CheckOutcome] = client.draftNotices().map { notice in
+            switch notice.reason {
+            case .missing: return .missing(notice.name)
+            case .unreadable: return .couldNotBeRead(notice.name)
+            case .draftTooLarge: return .draftTooLarge(notice.name)
+            }
+        }
+        let row = client.fileRoster().first(where: { $0.id == file.id })
+        if let row, !row.pendingHydration {
+            if storages[file.id] != nil { restateStorage(sheet: file.id) }
+            if row.externallyReloaded {
+                client.clearFileReloadNotice(file.id)
+                outcomes.append(.reloaded(row.name))
+            }
+        }
+        refreshOpenFiles()
+        if let row, !row.pendingHydration {
+            reconsiderFileRenderMode(for: file.id, resetDismissal: true)
+        }
+        if moved || row == nil || row?.pendingHydration == false { markDraftsRecordMoved() }
+        return outcomes
+    }
+
+    /// Empty the core's notice list before a call whose own notices
+    /// are about to be read from it.
+    ///
+    /// The list is drained by reading it, and outside a launch nothing
+    /// reads it, so it can be holding entries from drafts saves made
+    /// since: one for every save that left an oversized draft out.
+    /// Read after a hydration or a relocation, those would be said as
+    /// if that call had caused them. What is left after this is what
+    /// the call itself put there.
+    private func discardStaleDraftNotices() {
+        _ = client.draftNotices()
     }
 
     /// What one file's check had to say, gathered rather than posted.
     enum CheckOutcome: Equatable {
         case reloaded(String)
-        case unreadable(String)
+        case bookmarkFailed(String)
+        /// A read that was tried and did not give the file's text,
+        /// whatever the reason. It is the sentence "could not be
+        /// read", and is named apart from both the roster's
+        /// `accessRefused` mark and the notice reason `unreadable`,
+        /// either of which can lead here.
+        case couldNotBeRead(String)
         case missing(String)
+        /// A held file settled, and the draft its record once carried
+        /// had been too large to keep.
+        case draftTooLarge(String)
     }
 
     /// The activation's single sentence, on the same shape as the
     /// launch's.
     static func activationNotice(_ outcomes: [CheckOutcome]) -> String? {
         var reloaded: [String] = []
-        var unreadable: [String] = []
+        var notRead: [String] = []
         var missing: [String] = []
+        var tooLarge: [String] = []
+        var bookmarkFailures: [String] = []
         for outcome in outcomes {
             switch outcome {
             case .reloaded(let name): reloaded.append(name)
-            case .unreadable(let name): unreadable.append(name)
+            case .bookmarkFailed(let name): bookmarkFailures.append(name)
+            case .couldNotBeRead(let name): notRead.append(name)
             case .missing(let name): missing.append(name)
+            case .draftTooLarge(let name): tooLarge.append(name)
             }
         }
         // One file keeps the wording it had, so the single file case,
         // which is nearly every case, reads exactly as before.
-        if reloaded.count == 1, unreadable.isEmpty, missing.isEmpty {
-            return reloadedNotice(name: reloaded[0])
-        }
-        if missing.count == 1, unreadable.isEmpty, reloaded.isEmpty {
-            return missingNotice(name: missing[0])
-        }
-        if unreadable.count == 1, reloaded.isEmpty, missing.isEmpty {
-            return readRefusalNotice(name: unreadable[0])
+        if tooLarge.isEmpty, bookmarkFailures.isEmpty {
+            if reloaded.count == 1, notRead.isEmpty, missing.isEmpty {
+                return reloadedNotice(name: reloaded[0])
+            }
+            if missing.count == 1, notRead.isEmpty, reloaded.isEmpty {
+                return missingNotice(name: missing[0])
+            }
+            if notRead.count == 1, reloaded.isEmpty, missing.isEmpty {
+                return readRefusalNotice(name: notRead[0])
+            }
         }
         var clauses: [String] = []
         if !reloaded.isEmpty {
             clauses.append("\(englishList(reloaded)) changed on disk and was read again")
         }
-        if !unreadable.isEmpty {
-            clauses.append("\(englishList(unreadable)) could not be read")
+        if !notRead.isEmpty {
+            clauses.append("\(englishList(notRead)) could not be read")
         }
         if !missing.isEmpty {
             clauses.append("\(englishList(missing)) is no longer at its path")
         }
-        guard !clauses.isEmpty else { return nil }
-        return englishList(clauses) + "."
+        if !tooLarge.isEmpty {
+            clauses.append("unsaved changes to \(englishList(tooLarge)) were too large to keep")
+        }
+        var sentences = clauses.isEmpty ? [] : [englishList(clauses) + "."]
+        sentences += bookmarkFailures.map { bookmarkFailureNotice(name: $0) }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
 
     /// One file's check, and what follows from the answer.
@@ -3310,13 +4131,36 @@ public final class PageModel: ObservableObject {
     /// Returns what the caller owes the person, or nil when the file
     /// is where it was. It says nothing itself, so a caller checking
     /// several files can say one thing about all of them.
+    ///
+    /// It opens no access bracket of its own. Both callers hold one
+    /// when they call, the activation one per file and the save one
+    /// around the check and the write together, and both hand over
+    /// the URL that bracket's bookmark resolved to, or nil when it
+    /// resolved to nothing.
+    ///
+    /// That URL is how a file moved while the app is running is
+    /// followed. A bookmark follows its file, so when the check finds
+    /// nothing at the recorded path and the bookmark has resolved
+    /// somewhere else, the file is there. The open file is bound to
+    /// that path and settled as a located one is, inside the scope
+    /// the caller already holds, and nothing is reported missing. A
+    /// bookmark that leads into a Trash is not followed, for the
+    /// reason the launch does not follow one: a person who threw a
+    /// file away did not move it. When the core refuses the new path,
+    /// because another tab holds it or the file there will not open,
+    /// the file is reported missing as before.
     @discardableResult
-    private func applyCheck(for id: UInt64) -> CheckOutcome? {
+    private func applyCheck(for id: UInt64, resolved: URL?) -> CheckOutcome? {
         guard let file = openFiles.first(where: { $0.id == id }),
               let check = client.checkFile(id)
         else { return nil }
         switch check.state {
         case .unchanged:
+            // The witness matches, but the read can newly refuse access
+            // (and put a dirty file in conflict), or clear a previous
+            // refusal or missing mark. Publish the post-check roster;
+            // the pre-check row cannot tell us whether those flags moved.
+            refreshOpenFiles()
             return nil
         case .changed:
             if file.isDirty {
@@ -3328,16 +4172,43 @@ public final class PageModel: ObservableObject {
                 return nil
             }
             if client.reloadFile(id) {
+                // reload clears externallyReloaded; its successful answer,
+                // not that sticky notice flag, identifies the new disk copy.
+                let source = resolved.flatMap {
+                    Self.samePath($0.path, file.path) ? $0 : nil
+                } ?? URL(fileURLWithPath: file.path)
+                if renewBookmark(for: id, from: source) { markDraftsRecordMoved() }
                 restateStorage(sheet: id)
                 refreshOpenFiles()
                 reconsiderFileRenderMode(for: id, resetDismissal: true)
                 return .reloaded(file.name)
             }
             refreshOpenFiles()
-            return .unreadable(file.name)
+            return .couldNotBeRead(file.name)
         case .missing:
+            if let resolved,
+               !Self.samePath(resolved.path, check.path),
+               !fileCoordinator.isInTrash(resolved),
+               settleRelocation(of: id, at: resolved, orphansHeld: false) != nil {
+                // Owed to the drafts file through no act of the
+                // person's, the way a path a launch found is.
+                markDraftsRecordMoved()
+                guard let row = openFiles.first(where: { $0.id == id }),
+                      row.externallyReloaded
+                else { return nil }
+                client.clearFileReloadNotice(id)
+                refreshOpenFiles()
+                return .reloaded(row.name)
+            }
+            // Restated because the core has marked the row: a draft is
+            // in the missing conflict and a clean file is not found,
+            // and either way a banner offering Locate now stands. The
+            // sentence is said once, when the file is first found
+            // gone. After that the banner is saying it, and an
+            // activation that repeated it would only be talking over
+            // the banner.
             refreshOpenFiles()
-            return .missing(file.name)
+            return file.notFound ? nil : .missing(file.name)
         }
     }
 
@@ -3389,8 +4260,111 @@ public final class PageModel: ObservableObject {
         "\(name) changed on disk. Choose keep mine, take theirs, or Save As before saving."
     }
 
+    /// The refused save's sentence for the conflict the file is
+    /// actually in. A file that changed keeps the wording above. One
+    /// that is gone or cannot be read names Locate first, since
+    /// finding the file is the way out that loses nothing, and neither
+    /// names take theirs, since there is no copy on disk that could be
+    /// taken.
+    public nonisolated static func unresolvedConflictNotice(for file: FileSummary) -> String {
+        if file.accessRefused {
+            return "\(file.name) cannot be read at its path. "
+                + "Choose Locate, keep mine, or Save As before saving."
+        }
+        if file.conflict == .missing {
+            return "\(file.name) is no longer at its path. "
+                + "Choose Locate, keep mine, or Save As before saving."
+        }
+        return unresolvedConflictNotice(name: file.name)
+    }
+
+    /// A save asked of a file with no unsaved edits and nothing at its
+    /// path. The save is refused: it writes a file back and does not
+    /// make one where a person deleted or moved theirs. The wording
+    /// this follows is in docs/spec/feature/file-editing/README.md,
+    /// External changes: "The pad does not recreate a file at a path a
+    /// person deleted." The sentence names the two ways out.
+    /// Keep mine is not among them, because a file with no unsaved
+    /// edits is in no conflict for it to answer. A file that does hold
+    /// edits is in the missing conflict instead, and
+    /// `unresolvedConflictNotice(for:)` is its sentence.
+    public nonisolated static func saveNotFoundNotice(name: String) -> String {
+        "\(name) is no longer at its path, so it was not saved. "
+            + "Choose Locate to find it, or Save As to write it somewhere."
+    }
+
+    /// A save asked of a held file: one that came back from the last
+    /// session and could not be read, so that nothing of it is in the
+    /// buffer to write.
+    public nonisolated static func heldFileNotice(name: String) -> String {
+        "\(name) has not been read, so there is nothing to save. Locate the file or close the tab."
+    }
+
+    /// Locate onto a file that is already open in another tab. Two
+    /// buffers over one file would each believe they were the file, so
+    /// the core refuses and the file being located stays as it was.
+    public nonisolated static func locateHeldNotice(name: String, holder: String) -> String {
+        "\(holder) is already open, so \(name) was not pointed at it. "
+            + "Close it first, or choose another file."
+    }
+
     public nonisolated static func writeRefusalNotice(name: String) -> String {
         "\(name) could not be written."
+    }
+
+    /// The sentence for a save the core refused, chosen from the reason
+    /// the core gave and not from what the row looks like afterwards.
+    ///
+    /// The row cannot stand in for the reason. A file that is not found
+    /// and whose save a keep mine licensed looks, after a write the
+    /// platform refused, exactly like a file refused for being not
+    /// found, and the two owe different sentences: one names Locate and
+    /// Save As, the other says the write did not land.
+    ///
+    /// `file` is the row as it stands after the refusal. It supplies
+    /// the name, and for a conflict it says which one, since each has
+    /// its own ways out. A save refused as not found leaves a file
+    /// holding edits in the missing conflict, and that file is owed the
+    /// conflict's sentence, which offers keep mine; one with no edits
+    /// has no conflict for keep mine to answer. No reason at all is a
+    /// refusal that never reached the core's file, and is worded as the
+    /// write that did not land, which is true of every refused save.
+    public nonisolated static func saveRefusalNotice(
+        _ refusal: FileSaveRefusal?, for file: FileSummary
+    ) -> String {
+        switch refusal {
+        case .conflict:
+            return unresolvedConflictNotice(for: file)
+        case .notFound:
+            return file.conflict == .none
+                ? saveNotFoundNotice(name: file.name)
+                : unresolvedConflictNotice(for: file)
+        case .pendingHydration:
+            return heldFileNotice(name: file.name)
+        case .write, .pathInUse, .unknownFile, nil:
+            return writeRefusalNotice(name: file.name)
+        }
+    }
+
+    /// The sentence and its tone for a save as the core refused, chosen
+    /// from the reason as `saveRefusalNotice(_:for:)` chooses.
+    ///
+    /// `file` is the name of the file being saved, `target` the name
+    /// the person chose for it, and `holder` the tab already open on
+    /// that path when the roster shows one. A save as writes to a path
+    /// the person has just chosen, so it is never refused as not found
+    /// or as a conflict, and those read as the write that did not land.
+    public nonisolated static func saveAsRefusalNotice(
+        _ refusal: FileSaveRefusal?, file: String, target: String, holder: String?
+    ) -> (text: String, tone: NoticeTone) {
+        switch refusal {
+        case .pathInUse:
+            return (pathInUseNotice(name: holder ?? target), .plain)
+        case .pendingHydration:
+            return (heldFileNotice(name: file), .actionable)
+        case .write, .conflict, .notFound, .unknownFile, nil:
+            return (writeRefusalNotice(name: target), .actionable)
+        }
     }
 
     /// Save As onto a path another open file already holds. Two
@@ -3434,7 +4408,7 @@ public final class PageModel: ObservableObject {
     /// warning about unsaved work. Nil when nothing is at risk, so a
     /// caller can append it or not.
     public nonisolated static func draftsAtRiskSentence(files: [FileSummary]) -> String? {
-        let dirty = files.filter(\.isDirty).map(\.name)
+        let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
         guard !dirty.isEmpty else { return nil }
         return "Unsaved changes to \(englishList(dirty)) go with it."
     }

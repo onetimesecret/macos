@@ -55,8 +55,8 @@ pub use clock::{Clock, ManualClock, SystemClock};
 pub use document::{EditIntent, EditSelection, TextSelection};
 pub use files::{
     DRAFT_SNAPSHOT_LIMIT, DroppedReason, ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict,
-    FileId, FileIo, FileNotice, FileStore, FileWitness, LineEnding, OpenFile, OpenRefusal,
-    SaveError, StepOutcome,
+    FileId, FileIo, FileNotice, FileStore, FileWitness, HydrationFate, HydrationOutcome,
+    LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError, StepOutcome,
 };
 pub use harden::harden_process;
 pub use language_detection::detect_source_language;

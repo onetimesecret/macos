@@ -265,9 +265,15 @@ struct Companion {
     /// Why the last `companion_file_open` on this handle refused, held
     /// until the next open so the shell can ask in a second call.
     last_open_refusal: Option<companion_core::OpenRefusal>,
-    /// What the last drafts save or drafts restore has to tell the user
-    /// about: files that did not come back, and drafts that were too
-    /// large to stage. Drained by `companion_drafts_notices_json`.
+    /// Why the last `companion_file_save` or `companion_file_save_as`
+    /// on this handle refused, held until the next save so the shell
+    /// can ask in a second call and choose its sentence from the reason
+    /// rather than from what the roster row looks like afterwards.
+    last_save_refusal: Option<companion_core::SaveError>,
+    /// What the last drafts save and the hydrations after a drafts
+    /// restore have to tell the user about: files that did not come
+    /// back, and drafts that were too large to stage. Drained by
+    /// `companion_drafts_notices_json`.
     drafts_notices: Vec<companion_core::FileNotice>,
 }
 
@@ -555,6 +561,7 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         sync: sync_driver::SyncState::default(),
         files: companion_core::FileStore::new(),
         last_open_refusal: None,
+        last_save_refusal: None,
         drafts_notices: Vec::new(),
     };
     Box::into_raw(Box::new(CompanionHandle {
@@ -3877,6 +3884,7 @@ mod tests {
             sync: sync_driver::SyncState::default(),
             files: companion_core::FileStore::new(),
             last_open_refusal: None,
+            last_save_refusal: None,
             drafts_notices: Vec::new(),
         };
         Box::into_raw(Box::new(CompanionHandle {

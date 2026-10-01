@@ -34,5 +34,9 @@ secrets/
 *.txt
 /.serena/
 
-# Local notes
-[0-9][0-9][0-9][0-9]*-*.md
+# Local notes: dated files at the repository root, and only there. The
+# leading slash matters. Without it the rule also matched every ADR
+# (docs/adr/NNNN-title.md) and every dated decision record, so a new
+# one stayed out of git status and could be left out of a commit
+# without anyone noticing.
+/[0-9][0-9][0-9][0-9]*-*.md

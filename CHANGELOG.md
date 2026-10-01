@@ -9,6 +9,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **File backed documents work under the App Sandbox** (ADR-0035,
+  proposed; app 0.25.0; `companion-core` 0.25.0, `companion-ffi`
+  0.33.0). Not yet verified on a sandboxed signed build: the hardware
+  procedure is `docs/qa/verification-procedures/sandbox-file-access.md`
+  and has not been run.
+  - The entitlements template declares
+    `com.apple.security.files.user-selected.read-write`, and
+    `scripts/package-app.sh --app-store` refuses a build whose final
+    signature lacks it.
+  - File bookmarks are security scoped. Open, save, Save As, the check
+    on activation, reload, keep mine and take theirs each run inside a
+    started scope, in every lane. A record with a plain bookmark from an
+    earlier build still resolves and runs with no scope, and is given a
+    scoped bookmark once its file has been read.
+  - A save stages its temporary file in an item replacement directory
+    and renames it onto the target, instead of creating it beside the
+    target. `companion_file_save` and `companion_file_save_as` take a
+    nullable `staging_dir`; null keeps the temp file beside the target.
+    A staging directory that cannot be used fails the save, and the
+    core does not fall back.
+  - A save keeps the file's mode exactly, where the umask used to strip
+    bits such as group write, and restores its group when the user is
+    able to. This applies with or without a staging directory.
+  - The bookmark is made again after every save and Save As, so a saved
+    file is still found after it is moved. When a bookmark cannot be
+    made the person is told the file may not reopen after a relaunch.
+  - A restore is two steps. `companion_drafts_restore` no longer reads
+    any file of the person's and leaves every row with
+    `pendingHydration` set; the new `companion_file_hydrate` reads one
+    file, given the path its bookmark resolved to, and a file moved
+    while the app was closed is rebound to where it is now. Until it is
+    hydrated the core refuses an edit, a save, a Save As, a reload and
+    both conflict resolutions on a file. Read
+    `companion_drafts_notices_json` after the hydrations.
+    `companion_file_open` on a path a pending file holds now refuses
+    with an `io` error where it used to hand back the pending id; the
+    shell hydrates that file first and then opens.
+  - A bookmark that resolves inside a Trash is not followed, at launch
+    or while the app runs. The file is read at its recorded path and is
+    missing in the ordinary way, so a tab never comes back bound to a
+    thrown away file.
+  - When a restore leaves a file different from its record (dropped,
+    found at a new path, given a new bookmark, read again from a
+    changed copy, or its draft reported too large), the drafts file is
+    sealed again straight away, without waiting for an edit, so the
+    next launch does not repeat the work or the notices.
+  - A file the system will not let the app read is kept, and **Locate…**
+    is the way back. The roster row gains `accessRefused`, set when the
+    platform refuses a read or a stat for a reason other than absence.
+    It is a different word from the drafts notice reason `unreadable`,
+    which keeps its name and its meaning: a clean file dropped at
+    launch because its bytes were read and are not UTF-8, look binary
+    or pass the size limit. Only a refusal by the platform holds a
+    file.
+    A clean file in that state is no longer dropped at launch: its tab
+    comes back with no text, takes no typing, says "NAME cannot be read
+    at PATH", and offers Locate… and Close. It is asked again on every
+    activation. A file with unsaved edits that is missing or cannot be
+    read offers Locate… in front of the conflict's actions, and Take
+    theirs is not offered in either state, since there is no copy to
+    take. A file with unsaved edits that cannot be read stays in its
+    conflict, and its
+    save stays refused, through every later check until it can be read
+    again or keep mine, Save As or Locate answers it. Locate raises the open
+    panel in the file's last known directory; the new
+    `companion_file_relocate` binds the open file to the path chosen
+    and settles it as a hydration does, and a fresh bookmark replaces
+    the old one. A path another open file holds, or a file that would
+    not open, is refused and the file is left as it was.
+  - A clean open file that goes missing keeps its tab and its text and
+    shows "NAME is no longer at PATH" with Locate… and Close, where it
+    used to get only a passing sentence on every activation. The roster
+    row gains `notFound`, set when a check or a read finds nothing at
+    the path. The sentence is said once and the banner stands after.
+  - A tab kept with no text is neither saved nor unsaved. Its header
+    reads "not read" with no dot and no format beside it, and it closes
+    at once with no close decision, even when its record came back
+    marked dirty after a draft too large to keep.
+  - A save never makes a file where there is none. The core's save
+    stats the path and, when nothing is there and no keep mine stands,
+    writes nothing and returns the new `SaveError::NotFound`;
+    `companion_file_save` answers false as for any refusal. A file with
+    no unsaved edits is told "NAME is no longer at its path, so it was
+    not saved. Choose Locate to find it, or Save As to write it
+    somewhere." One with unsaved edits enters the missing conflict and
+    is told "NAME is no longer at its path. Choose Locate, keep mine,
+    or Save As before saving."
+    Keep mine over a missing file still licenses one save, and Save As
+    still writes, back onto the old path included.
+  - A keep mine answers the state it was given over. One chosen over a
+    file that changed no longer licenses making the file again after it
+    is deleted, one chosen over a missing file no longer licenses
+    overwriting a file that has since appeared at the path, and a
+    consent is withdrawn when the buffer settles back to clean. In each
+    case the conflict for what is true now is raised.
+    `companion_file_resolve_keep_mine` asked on a missing conflict
+    whose file is back records no consent and answers false when the
+    file there has changed.
+  - A file kept with keep mine over a changed disk copy reads unsaved
+    until it is saved. Undoing or typing back to the text it held
+    before the edit used to make the header read saved while the disk
+    held the other copy, and no later check corrected it. The core now
+    gives up its saved text at that keep mine, so the file stays dirty
+    until the save the consent was given for. A keep mine over a
+    missing file is unchanged.
+  - A refused save says which refusal it was. The new
+    `companion_file_save_error_json` answers why the last
+    `companion_file_save` or `companion_file_save_as` on the handle
+    refused: `pendingHydration`, `conflict`, `notFound`, `pathInUse`,
+    `unknownFile`, or `write` with the kind of I/O failure. The shell
+    chooses its sentence from that reason and no longer from the
+    roster row, so a write the platform refuses is always said as
+    "NAME could not be written.", including for a file marked not
+    found whose save a keep mine had licensed, which used to be told
+    it was no longer at its path. Save As onto a path another tab
+    holds is now refused by the core and named from its reason.
+  - A save asked of a file standing in the missing conflict looks at
+    the path again before refusing, so a file another tool put back is
+    saved, or shown as changed, and is not refused as gone.
+  - The banners, the header word and the sentences above go beyond the
+    accepted UI record's D-17. The amendment is a draft awaiting
+    ratification, `docs/spec/design/2026-0930-file-conflict-locate.md`.
+  - A relocation that finds the text the file already holds keeps the
+    document, so a saved file that was only moved keeps its undo
+    history, including the step that undoes a take theirs.
+  - Files that traded names while the app was closed are read with all
+    of their bookmarks' scopes open at once and each is given a
+    bookmark for the path it rests at. A Locate that lands on a path a
+    held file holds hydrates that file inside the panel's grant before
+    it refuses. The check on activation waits while a file panel is up
+    and is made when the gesture that raised the panel has finished.
+  - A file moved or renamed while the app is running is followed. When
+    a check finds the file gone and its bookmark has resolved somewhere
+    else, the open file is bound to that path; a clean tab follows
+    silently unless its text differs, and a draft stands and saves to
+    the new path. It used to be reported missing.
+  - `scripts/sandbox-file-access-probe.swift` and its runner are the
+    probe the ADR's sandbox measurements were taken with, run in four
+    variants on 2026-09-30. The output of those runs is in
+    `docs/qa/probe-runs/2026-0930-sandbox-file-access/`.
+
 - **OnetimePad has two window roles over one document model**
   (ADR-0033, #191, #192, #197, #198, #199, #200, #201, #202, #203;
   app 0.24.0).
