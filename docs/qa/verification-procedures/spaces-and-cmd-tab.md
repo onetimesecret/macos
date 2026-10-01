@@ -946,8 +946,9 @@ recorded yet.
 
 ### One visible editing presentation
 
-Implementation checks for the requested presentation switch. This changes the
-previous simultaneous glance behavior.
+Verify the mutually exclusive presentations in
+[ADR-0036](../../adr/0036-editing-presentations-are-mutually-exclusive.md),
+which supersedes ADR-0033's simultaneous glance behavior.
 
 - With the ambient feature enabled, open the regular window from the Dock or
   Cmd-Tab. Neither the resting desktop panel nor the pinned panel remains visible.

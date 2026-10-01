@@ -282,10 +282,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Every caller says why it is raising, because one thing here is
     /// not the same on both routes: see `BackdropRaise`.
     ///
-    /// A raise gives the panel the page content whether or not the
-    /// editor window is open (ADR-0033), and nothing here refuses one.
-    /// Which gestures reach this with the editor window open is the
-    /// routes' question and not the raise's.
+    /// With the ambient feature enabled, every raise closes an open
+    /// editor window through `onWillShowAmbientPanel` before granting
+    /// the panel content ownership and publishing the raised stance
+    /// (ADR-0036). Routes choose which presentation to request; they
+    /// do not keep the editor window open alongside a raised panel.
     func raise(_ reason: BackdropRaise) {
         guard ambientPanelEnabled else { return }
         if editorWindowOpen { onWillShowAmbientPanel?() }
