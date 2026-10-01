@@ -349,6 +349,7 @@ final class DayStackView: NSView {
 
     private var rows: [Row] = []
     private var rendered: Signature?
+    private var expandedLayout = false
 
     /// Extents and line marks change only during layout. Scroll
     /// notifications reuse this captured document half and publish a new
@@ -411,8 +412,15 @@ final class DayStackView: NSView {
     }
 
     @discardableResult
-    func focusEditor() -> Bool {
+    func focusEditor(on page: UInt64? = nil) -> Bool {
         guard let editor = focusableEditor, let window else { return false }
+        if let page, page != coordinator.currentSheet {
+            guard let tab = model.tabs.first(where: { $0.pageID == page }) else { return false }
+            // A header has no text insertion point. Let the ordinary editor
+            // handoff restore this page's saved caret instead of inventing one.
+            pendingCaret = nil
+            model.select(tab.id)
+        }
         return window.makeFirstResponder(editor) && window.firstResponder === editor
     }
 
@@ -581,7 +589,7 @@ final class DayStackView: NSView {
         // A row appearing above the viewport must not move what the
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
-        let anchor = topmostPageAnchor()
+        let anchor = expandedLayout == model.isPageExpanded ? topmostPageAnchor() : nil
         rendered = signature
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
@@ -935,20 +943,52 @@ final class DayStackView: NSView {
     /// this pass, which is what lets the AppKit notifications call it
     /// without re-entering a SwiftUI render.
     func relayout() {
-        guard !isLayingOut, let scroll = enclosingScrollView else { return }
+        guard !isLayingOut, model.owner == coordinator.surface,
+              let scroll = enclosingScrollView else { return }
         isLayingOut = true
-        defer { isLayingOut = false }
+        let expanded = model.isPageExpanded && rows.contains { $0.body === editor }
+        let expansionChanged = expanded != expandedLayout
+        if expansionChanged && expanded && model.pageExpansionReturn == nil {
+            model.pageExpansionReturn = PageModel.PageExpansionReturn(place: currentPlace)
+        }
+        expandedLayout = expanded
+        defer {
+            isLayingOut = false
+            if expansionChanged {
+                if expanded {
+                    if pendingPlace != nil {
+                        settlePendingPlace()
+                    } else {
+                        scrollToDayZero()
+                        if let editor { editor.scrollRangeToVisible(editor.selectedRange()) }
+                    }
+                } else {
+                    scrollToDayZero()
+                    if let place = model.pageExpansionReturn?.place {
+                        open(at: place)
+                        settlePendingPlace()
+                    }
+                    model.pageExpansionReturn = nil
+                }
+            }
+        }
         let width = max(scroll.contentView.bounds.width, 0)
         let clipHeight = scroll.contentView.bounds.height
         var y: CGFloat = 0
         for row in rows {
-            let headerHeight = row.header.preferredHeight
+            row.body.isHidden = expanded && row.body !== editor
+            row.header.isHidden = expanded
+            guard !row.body.isHidden else { continue }
+            let headerHeight = expanded ? 0 : row.header.preferredHeight
             row.header.frame = NSRect(x: 0, y: y, width: width, height: headerHeight)
-            row.header.place()
+            if !expanded { row.header.place() }
             y += headerHeight
             let height: CGFloat
             if let text = row.body as? NSTextView {
-                let minimum = text === editor ? max(0, clipHeight - headerHeight) : 0
+                // The last page owns the unused viewport from the first layout,
+                // whether it is the editor or a quiet rendering. Selecting an
+                // earlier page must not insert a window of space into the roll.
+                let minimum = expanded || row.body === rows.last?.body ? max(0, clipHeight - y) : 0
                 text.minSize = NSSize(width: width, height: minimum)
                 height = max(minimum, Self.measuredHeight(of: text, width: width))
             } else if row.fillsViewport {
@@ -1007,7 +1047,7 @@ final class DayStackView: NSView {
     /// Equal captures retain the revision so consumers can cache by a
     /// scalar identity rather than comparing every line mark.
     private func captureDocumentGeometry() {
-        let extents = rows.map { row in
+        let extents = rows.filter { !$0.body.isHidden }.map { row in
             RollGeometry.Extent(
                 bucket: row.bucket,
                 page: row.page,
@@ -1157,7 +1197,7 @@ final class DayStackView: NSView {
         guard window != nil, let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
         guard origin.y > 0,
-              let row = rows.first(where: { $0.page != nil && $0.body.frame.maxY > origin.y }),
+              let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
               let page = row.page, let text = row.body as? NSTextView,
               let anchor = ScrollAnchor(
                   topOf: text,
@@ -1229,7 +1269,7 @@ final class DayStackView: NSView {
     /// by exactly as far as the roll's first page moved, so what the
     /// reader was looking at stays where it was.
     private func keepStill(anchoredOn anchor: (page: UInt64, top: CGFloat)?) {
-        guard let anchor, let scroll = enclosingScrollView,
+        guard !expandedLayout, let anchor, let scroll = enclosingScrollView,
               let row = rows.first(where: { $0.page == anchor.page }) else { return }
         let origin = Self.offsetAfterPrepending(
             insertedHeight: row.body.frame.minY - anchor.top,
@@ -1478,7 +1518,7 @@ final class DayHeaderView: NSView {
             super.mouseDown(with: event)
             return
         }
-        if dayStack?.focusEditor() != true { super.mouseDown(with: event) }
+        if dayStack?.focusEditor(on: pageID) != true { super.mouseDown(with: event) }
     }
 
     /// Which mark a header draws, as a decision rather than as a

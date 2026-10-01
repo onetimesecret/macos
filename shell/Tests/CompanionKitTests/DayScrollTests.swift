@@ -105,6 +105,7 @@ final class DayScrollTests: XCTestCase {
     /// builds it.
     private func mountRoll(model: PageModel, height: CGFloat = 320) throws -> Roll {
         let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
         let scroll = DayScrollView.makeRoll(
             model: model, coordinator: coordinator,
             emptyHint: "click, ⌃⌥Space, or ↩ to start one"
@@ -206,6 +207,203 @@ final class DayScrollTests: XCTestCase {
                 XCTAssertEqual(editor.selectedRange(), caret)
             }
         }
+    }
+
+    func testLastPageFillsRemainingViewportBeforeSelectionAndKeepsItsSize() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: "first\n")
+        let second = try page(in: model, saying: "second\n")
+        let third = try page(in: model, saying: "third\n")
+        let roll = try mountRoll(model: model, height: 720)
+
+        for height: CGFloat in [720, 480, 900] {
+            roll.scroll.frame.size.height = height
+            roll.scroll.layoutSubtreeIfNeeded()
+            var originalFrames: [NSRect]?
+            for selected in [first, second, third, first] {
+                roll.stack.update(
+                    projection: spreadOverDays(model, selecting: selected),
+                    selectedPage: selected, readOnly: false
+                )
+                let parts = roll.stack.laidOut
+                let last = try XCTUnwrap(parts.last)
+                let viewport = roll.scroll.contentView.bounds.height
+                XCTAssertEqual(last.body.frame.maxY, viewport, accuracy: 0.5)
+                XCTAssertEqual(roll.stack.frame.height, viewport, accuracy: 0.5)
+                let bottom = NSPoint(x: 200, y: viewport - 10)
+                XCTAssertTrue(roll.stack.hitTest(bottom) === last.body,
+                              "the last page must own the blank area before it is selected")
+                for part in parts.dropLast() {
+                    let text = try XCTUnwrap(part.body as? NSTextView)
+                    XCTAssertEqual(text.frame.height,
+                                   DayStackView.measuredHeight(of: text, width: text.frame.width),
+                                   accuracy: 0.5, "selection must not expand an earlier page")
+                }
+                let frames = parts.flatMap { [$0.header.frame, $0.body.frame] }
+                if let originalFrames {
+                    XCTAssertEqual(frames, originalFrames, "selection must not move checkpoints")
+                } else {
+                    originalFrames = frames
+                }
+            }
+        }
+    }
+
+    func testLongRollDoesNotAddViewportHeightToTheSelectedPage() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: longPage(lines: 80))
+        let last = try page(in: model, saying: "short\n")
+        let roll = try mountRoll(model: model)
+        for selected in [first, last] {
+            roll.stack.update(
+                projection: spreadOverDays(model, selecting: selected),
+                selectedPage: selected, readOnly: false
+            )
+            for part in roll.stack.laidOut {
+                let text = try XCTUnwrap(part.body as? NSTextView)
+                XCTAssertEqual(text.frame.height,
+                               DayStackView.measuredHeight(of: text, width: text.frame.width),
+                               accuracy: 0.5)
+            }
+        }
+    }
+
+    func testPageExpansionKeepsEditorAndCaretThenRestoresTheRoll() throws {
+        let model = try makeModel()
+        try page(in: model, saying: longPage(lines: 80))
+        let selected = try page(in: model, saying: "short page\n")
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        let undo = editor.undoManager
+        let caret = NSRange(location: 3, length: 0)
+        editor.setSelectedRange(caret)
+        roll.window.makeFirstResponder(editor)
+        roll.stack.scroll(toDocumentOffset: 200, animated: false)
+        let originalOffset = roll.scroll.contentView.bounds.origin.y
+        let originalFrames = roll.stack.laidOut.flatMap { [$0.header.frame, $0.body.frame] }
+        var handedBack = false
+        model.onHandBackKeys = { handedBack = true }
+
+        model.togglePageExpansion()
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        XCTAssertTrue(model.isPageExpanded)
+        XCTAssertTrue(roll.stack.editor === editor)
+        XCTAssertTrue(editor.textStorage === storage)
+        XCTAssertTrue(editor.undoManager === undo)
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertEqual(editor.selectedRange(), caret)
+        XCTAssertEqual(editor.frame.minY, 0)
+        XCTAssertEqual(editor.frame.height, roll.scroll.contentView.bounds.height)
+        XCTAssertEqual(roll.stack.measuredGeometry.extents.count, 1)
+        for part in roll.stack.laidOut {
+            XCTAssertTrue(part.header.isHidden)
+            XCTAssertEqual(part.body.isHidden, part.body !== editor)
+        }
+        // A resize changes the typing measure without leaving expansion.
+        roll.scroll.frame.size = NSSize(width: 600, height: 600)
+        roll.stack.relayout()
+        XCTAssertEqual(editor.frame.size, roll.scroll.contentView.bounds.size)
+        roll.scroll.frame.size = NSSize(width: 420, height: 320)
+        roll.stack.relayout()
+
+        model.escape()
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        XCTAssertFalse(model.isPageExpanded)
+        XCTAssertFalse(handedBack, "the first Escape only collapses the page")
+        XCTAssertEqual(editor.selectedRange(), caret)
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, originalOffset, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.laidOut.flatMap { [$0.header.frame, $0.body.frame] }, originalFrames)
+        XCTAssertTrue(roll.stack.laidOut.allSatisfy { !$0.header.isHidden && !$0.body.isHidden })
+        model.escape()
+        XCTAssertTrue(handedBack)
+    }
+
+    func testExpansionCarriesBothScrollPositionsAcrossWindowOwnership() throws {
+        let model = try makeModel()
+        try page(in: model, saying: longPage(lines: 80))
+        try page(in: model, saying: longPage(lines: 90))
+        let source = try mountRoll(model: model)
+        DayScrollView.updateRoll(source.scroll, model: model, readOnly: false,
+                                 coordinator: source.coordinator)
+        source.stack.scroll(toDocumentOffset: 200, animated: false)
+        model.togglePageExpansion()
+        DayScrollView.updateRoll(source.scroll, model: model, readOnly: false,
+                                 coordinator: source.coordinator)
+        source.stack.scroll(toDocumentOffset: 400, animated: false)
+
+        model.transferOwnership(to: .editorWindow)
+        DayScrollView.dismantleNSView(source.scroll, coordinator: source.coordinator)
+        let destination = try mountRoll(model: model)
+        DayScrollView.updateRoll(destination.scroll, model: model, readOnly: false,
+                                 coordinator: destination.coordinator)
+        XCTAssertTrue(model.isPageExpanded)
+        XCTAssertEqual(destination.scroll.contentView.bounds.origin.y, 400, accuracy: 0.5)
+        model.escape()
+        DayScrollView.updateRoll(destination.scroll, model: model, readOnly: false,
+                                 coordinator: destination.coordinator)
+        XCTAssertEqual(destination.scroll.contentView.bounds.origin.y, 200, accuracy: 0.5)
+    }
+
+    func testCheckpointClickFocusesItsOwnPageAtTheSavedCaret() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: "first page\n")
+        let second = try page(in: model, saying: "second page\n")
+        let roll = try mountRoll(model: model, height: 720)
+        roll.stack.update(projection: model.timeUnits, selectedPage: second, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let firstCaret = NSRange(location: 3, length: 0)
+        model.viewStates.saveCaret(firstCaret, for: first)
+        editor.setSelectedRange(NSRange(location: 5, length: 0))
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let headerFrame = header.frame
+        let point = NSPoint(x: 200, y: header.frame.maxY - 1)
+        let hit = try XCTUnwrap(roll.stack.hitTest(point))
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: roll.stack.convert(point, to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: roll.window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+        ))
+        roll.window.makeFirstResponder(nil)
+        hit.mouseDown(with: event)
+        // Drive the SwiftUI update that the selection change schedules.
+        roll.stack.update(projection: model.timeUnits, selectedPage: model.selectedPageID,
+                          readOnly: false)
+        XCTAssertEqual(model.selectedPageID, first)
+        XCTAssertEqual(roll.coordinator.currentSheet, first)
+        XCTAssertEqual(editor.selectedRange(), firstCaret)
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertEqual(header.frame, headerFrame)
+        XCTAssertEqual(model.viewStates.carets[second], NSRange(location: 5, length: 0))
+    }
+
+    func testExpansionRequiresAPageAndEndsWhenSelectionChanges() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.canExpandPage)
+        model.togglePageExpansion()
+        XCTAssertFalse(model.isPageExpanded)
+        try page(in: model, saying: "first")
+        let firstTab = try XCTUnwrap(model.selection)
+        try page(in: model, saying: "second")
+        let secondTab = try XCTUnwrap(model.selection)
+        model.togglePageExpansion()
+        XCTAssertTrue(model.isPageExpanded)
+        model.select(firstTab)
+        XCTAssertFalse(model.isPageExpanded)
+        model.select(secondTab)
+        XCTAssertFalse(model.isPageExpanded)
+        model.togglePageExpansion()
+        model.togglePageExpansion()
+        XCTAssertFalse(model.isPageExpanded)
+        model.togglePageExpansion()
+        model.showingLedger = true
+        XCTAssertFalse(model.canExpandPage)
+        XCTAssertFalse(model.isPageExpanded)
+        model.showingLedger = false
+        XCTAssertFalse(model.isPageExpanded)
     }
 
     private func leftClick(in window: NSWindow) throws -> NSEvent {

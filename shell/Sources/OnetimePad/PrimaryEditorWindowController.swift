@@ -316,21 +316,19 @@ private struct PrimaryEditorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if pages.showsPagesDownSide {
-                HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if pages.showsPagesDownSide && !pages.isPageExpanded {
                     if pages.showsTimeUnits {
                         TimeRailView(model: pages)
                     } else {
                         SlotRailView(model: pages)
                     }
                     Divider()
-                    content
                 }
-            } else {
                 content
             }
             PageStatusStack(model: pages)
-            if !pages.showsPagesDownSide {
+            if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
                 if pages.showsTimeUnits {
                     TimeStripView(model: pages)

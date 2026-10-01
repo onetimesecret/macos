@@ -182,8 +182,8 @@ struct BackdropRootView: View {
             // Organization (slots or days) and placement (bottom or
             // side) are independent. The content view answers the
             // former; this branch answers only the latter (D-26).
-            if pages.showsPagesDownSide {
-                HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if pages.showsPagesDownSide && !pages.isPageExpanded {
                     Group {
                         if pages.showsTimeUnits {
                             TimeRailView(model: pages)
@@ -193,20 +193,13 @@ struct BackdropRootView: View {
                     }
                     .stanceFaded(raised: raised, animation: stanceFade)
                     Divider()
-                    pageContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .stanceFaded(raised: raised, animation: stanceFade)
                 }
-            } else {
                 pageContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // The glance is the same ink at the same measure,
-                    // dimmed. Raising and lowering must not make the
-                    // text jump, so only the opacity changes.
                     .stanceFaded(raised: raised, animation: stanceFade)
             }
             PageStatusStack(model: pages)
-            if !pages.showsPagesDownSide {
+            if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
                 Group {
                     if pages.showsTimeUnits {
