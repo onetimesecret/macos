@@ -1363,9 +1363,9 @@ impl FileStore {
     ///
     /// The check is also where the access refused mark is kept honest. A
     /// stat the platform refused sets it. A path with nothing at it
-    /// clears it, since absence is the other state. And while it
-    /// stands, a stat that answers is followed by one read whose only
-    /// purpose is to learn whether the disk copy can be reached again:
+    /// clears it, since absence is the other state. Every successful
+    /// stat is followed by a bounded readability probe, detecting both
+    /// newly refused access and access that has returned:
     /// a sandbox lets an ungranted path be statted and not read, so the
     /// stat alone proves nothing, and without the read a grant that
     /// came back would never be noticed for a file holding a draft.
@@ -1375,8 +1375,8 @@ impl FileStore {
     /// hydration puts such a file in that conflict, and a stat that
     /// matches the witness must not quietly take it out again: the stat
     /// says the path holds what it held, and says nothing about whether
-    /// this process has ever seen it. Only a read that succeeds, a keep
-    /// mine, a save as or a relocation ends it, so a launch and the
+    /// this process can reach it. Only a successful readability probe,
+    /// a keep mine, a save as or a relocation ends it, so a launch and the
     /// activation after it agree about the same disk.
     ///
     /// The check keeps the not found mark honest the same way: a path
@@ -1387,7 +1387,7 @@ impl FileStore {
             return ExternalState::Missing;
         };
         let stat = io.stat(&file.path);
-        let state = external_state(&stat, file.witness);
+        let mut state = external_state(&stat, file.witness);
         // A pending file's conflict is the hydration's to decide, from
         // a read rather than a stat. The state found is still answered.
         if !file.pending_hydration {
@@ -1402,10 +1402,22 @@ impl FileStore {
                 }
                 Ok(_) => {
                     file.not_found = false;
-                    // The bytes are wanted for nothing but the answer,
-                    // and they are a person's text, so they are wiped.
-                    if file.access_refused && io.read(&file.path).map(Zeroizing::new).is_ok() {
-                        file.access_refused = false;
+                    match io.probe_readable(&file.path) {
+                        Ok(()) => file.access_refused = false,
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                            // An inconclusive probe neither restores access
+                            // nor licenses a draft save on a matching stat.
+                            state = ExternalState::Changed;
+                        }
+                        Err(error) => {
+                            file.note_refused_read(OpenRefusal::Io(error.kind()));
+                            // The return value still describes the witness,
+                            // not access. Absence found after stat is newer
+                            // evidence; other probe failures keep that answer.
+                            if file.not_found {
+                                state = ExternalState::Missing;
+                            }
+                        }
                     }
                 }
             }
@@ -2512,6 +2524,109 @@ mod tests {
         fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
             Err(io::Error::from(io::ErrorKind::InvalidInput))
         }
+    }
+
+    struct FaultIo {
+        inner: MemoryIo,
+        probe_error: Cell<Option<io::ErrorKind>>,
+        write_error: Cell<Option<io::ErrorKind>>,
+        reads: Cell<usize>,
+        probes: Cell<usize>,
+    }
+
+    impl FaultIo {
+        fn new() -> Self {
+            Self {
+                inner: MemoryIo::with("/note.txt", b"body"),
+                probe_error: Cell::new(None),
+                write_error: Cell::new(None),
+                reads: Cell::new(0),
+                probes: Cell::new(0),
+            }
+        }
+    }
+
+    impl FileIo for FaultIo {
+        fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+            self.reads.set(self.reads.get() + 1);
+            self.inner.read(path)
+        }
+        fn probe_readable(&self, path: &Path) -> io::Result<()> {
+            self.probes.set(self.probes.get() + 1);
+            match self.probe_error.get() {
+                Some(kind) => Err(io::Error::from(kind)),
+                None => self.inner.probe_readable(path),
+            }
+        }
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+            match self.write_error.get() {
+                Some(kind) => Err(io::Error::from(kind)),
+                None => self.inner.write_atomic(path, bytes),
+            }
+        }
+        fn stat(&self, path: &Path) -> io::Result<FileWitness> {
+            self.inner.stat(path)
+        }
+    }
+
+    #[test]
+    fn refresh_detects_new_read_denial_and_recovery_without_full_reads() {
+        for dirty in [false, true] {
+            let io = FaultIo::new();
+            let mut store = FileStore::new();
+            let id = store.open(&io, Path::new("/note.txt")).unwrap();
+            if dirty {
+                assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+            }
+            let reads = io.reads.get();
+            io.probe_error.set(Some(io::ErrorKind::PermissionDenied));
+            assert_eq!(store.refresh_conflict(&io, id), ExternalState::Unchanged);
+            let file = store.file(id).unwrap();
+            assert!(file.access_refused());
+            assert_eq!(
+                file.conflict(),
+                if dirty {
+                    FileConflict::Changed
+                } else {
+                    FileConflict::None
+                }
+            );
+            assert_eq!(store.refresh_conflict(&io, id), ExternalState::Unchanged);
+            io.probe_error.set(None);
+            assert_eq!(store.refresh_conflict(&io, id), ExternalState::Unchanged);
+            assert!(!store.file(id).unwrap().access_refused());
+            assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
+            assert_eq!(io.reads.get(), reads);
+            assert_eq!(io.probes.get(), 3);
+        }
+    }
+
+    #[test]
+    fn an_interrupted_probe_is_inconclusive_and_does_not_clear_refused_access() {
+        let io = FaultIo::new();
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/note.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+        io.probe_error.set(Some(io::ErrorKind::PermissionDenied));
+        store.refresh_conflict(&io, id);
+        io.probe_error.set(Some(io::ErrorKind::Interrupted));
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        assert!(store.file(id).unwrap().access_refused());
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Changed);
+    }
+
+    #[test]
+    fn probe_disappearance_sets_missing_not_access_refused() {
+        let io = FaultIo::new();
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/note.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+        io.probe_error.set(Some(io::ErrorKind::NotFound));
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Missing);
+        let file = store.file(id).unwrap();
+        assert!(file.not_found());
+        assert!(!file.access_refused());
+        assert_eq!(file.conflict(), FileConflict::Missing);
     }
 
     fn ins(at: u32, text: &str) -> EditOp {

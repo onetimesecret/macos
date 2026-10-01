@@ -4138,15 +4138,11 @@ public final class PageModel: ObservableObject {
         else { return nil }
         switch check.state {
         case .unchanged:
-            // Nothing else wrote the file. The one thing the check can
-            // still have moved is the access refused mark, which the
-            // core clears when it finds the file can be read again, and
-            // the banner that mark was holding up has to come down with
-            // it. The not found mark goes the same way when a file is
-            // back at its path exactly as it left.
-            // A missing conflict comes down here too, when the file is
-            // back as the draft last saw it.
-            if file.accessRefused || file.notFound || file.conflict != .none { refreshOpenFiles() }
+            // The witness matches, but the read can newly refuse access
+            // (and put a dirty file in conflict), or clear a previous
+            // refusal or missing mark. Publish the post-check roster;
+            // the pre-check row cannot tell us whether those flags moved.
+            refreshOpenFiles()
             return nil
         case .changed:
             if file.isDirty {

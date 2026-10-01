@@ -105,9 +105,13 @@ final class JournalingClient: CompanionClient, @unchecked Sendable {
         return super.saveFile(file, as: path, stagingDirectory: stagingDirectory)
     }
 
+    var checkStates: [FileCheckState] = []
+
     override func checkFile(_ file: UInt64) -> FileCheck? {
         journal.note("check")
-        return super.checkFile(file)
+        let answer = super.checkFile(file)
+        if let answer { checkStates.append(answer.state) }
+        return answer
     }
 
     override func reloadFile(_ file: UInt64) -> Bool {
@@ -2470,6 +2474,47 @@ final class FileAccessTests: XCTestCase {
     }
 
     // MARK: A draft whose file cannot be read, across an activation
+
+    func testACleanMatchingWitnessFirstDenialIsPublishedOnActivation() throws {
+        try assertMatchingWitnessFirstDenialIsPublished(dirty: false)
+    }
+
+    func testADirtyMatchingWitnessFirstDenialIsPublishedOnActivation() throws {
+        try assertMatchingWitnessFirstDenialIsPublished(dirty: true)
+    }
+
+    private func assertMatchingWitnessFirstDenialIsPublished(dirty: Bool) throws {
+        try XCTSkipIf(getuid() == 0, "root reads a mode 000 file, so there is nothing to refuse")
+        let fixture = try makeFixture()
+        let (launched, url, id) = try openedFile("on disk\n", in: fixture)
+        if dirty { try type("unsaved ", at: 0, into: id, on: launched.model) }
+        let text = launched.model.storage(for: id).string
+        let before = try XCTUnwrap(launched.model.openFiles.first)
+        XCTAssertFalse(before.accessRefused)
+        XCTAssertFalse(before.notFound)
+        XCTAssertEqual(before.conflict, .none)
+        try lock(url) // permissions change, not the content witness
+        launched.journal.clear()
+        launched.client.checkStates.removeAll()
+
+        launched.model.checkOpenFilesOnActivate()
+
+        XCTAssertEqual(launched.client.checkStates, [.unchanged], "the disk witness still matches")
+        XCTAssertEqual(launched.journal.events, ["start notes.txt", "check", "stop notes.txt"])
+        let row = try XCTUnwrap(launched.model.openFiles.first)
+        XCTAssertEqual(row, launched.client.fileRoster().first, "the first denial reaches the published roster")
+        XCTAssertTrue(row.accessRefused)
+        XCTAssertFalse(row.notFound)
+        XCTAssertFalse(row.pendingHydration)
+        XCTAssertEqual(row.isDirty, dirty)
+        XCTAssertEqual(row.conflict, dirty ? .changed : .none)
+        XCTAssertEqual(FileUnavailableBanner.stands(for: row), !dirty)
+        if dirty {
+            XCTAssertEqual(FileConflictBanner.actions(for: row), [.locate, .keepMine, .saveAs])
+        }
+        XCTAssertEqual(launched.model.storage(for: id).string, text, "the check does not replace the buffer")
+        assertBalanced(launched.scope)
+    }
 
     func testADraftWhoseFileCannotBeReadStaysInItsConflictThroughAnActivation() throws {
         try XCTSkipIf(getuid() == 0, "root reads a mode 000 file, so there is nothing to refuse")
