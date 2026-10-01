@@ -392,6 +392,10 @@ public struct FileConflictBanner: View {
     /// read. Pure, so which file is offered what is testable without a
     /// drawn banner.
     public static func actions(for file: FileSummary) -> [FileConflictResolution] {
+        // hydrate_one leaves held rows with conflict none (see isHeld).
+        // Defend this pure helper against inconsistent input too: no copy
+        // has been read, so Keep mine and Save As have nothing to choose.
+        if file.isHeld { return [.locate] }
         var actions: [FileConflictResolution] = []
         if file.offersLocate { actions.append(.locate) }
         actions.append(.keepMine)

@@ -1371,6 +1371,9 @@ final class FileAccessTests: XCTestCase {
         XCTAssertTrue(PageModel.samePath(row.path, url.path), "it still names the last known path")
         XCTAssertEqual(held.model.storage(for: id).string, "", "nothing was read, so nothing is shown")
         XCTAssertTrue(FileUnavailableBanner.stands(for: row))
+        held.model.selectFile(id)
+        held.model.resolveConflict(.keepMine)
+        XCTAssertTrue(held.journal.events.isEmpty, "a held input never reaches Keep mine")
         XCTAssertNil(held.model.notice, "nothing was dropped, so the launch names nothing")
 
         // Typing is refused by the core, and a save is refused out

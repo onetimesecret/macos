@@ -3757,6 +3757,8 @@ public final class PageModel: ObservableObject {
     /// stays refused until one of the three is chosen.
     public func resolveConflict(_ resolution: FileConflictResolution) {
         guard let file = activeFile else { return }
+        // A held row has no copy to choose. Only locating it is meaningful.
+        guard !file.isHeld || resolution == .locate else { return }
         switch resolution {
         case .keepMine:
             // No confirmation. Nothing is lost at this moment: the

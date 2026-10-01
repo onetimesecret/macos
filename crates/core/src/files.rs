@@ -1909,6 +1909,10 @@ impl FileStore {
                 // so every route that would edit or write its empty
                 // buffer goes on refusing.
                 file.access_refused = true;
+                // Held implies no conflict: this arm has no retained draft,
+                // and hydrate_one has not settled the pending buffer. The
+                // draft-retaining arm above instead settles Changed.
+                debug_assert_eq!(file.conflict, FileConflict::None);
                 HydrationFate::Held
             }
             Err(refusal) => {

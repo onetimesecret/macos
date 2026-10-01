@@ -52,6 +52,23 @@ final class FileSurfaceTests: XCTestCase {
 
     // MARK: The header
 
+    func testAHeldCRLFHeaderSpeaksOnlyTheUnreadState() {
+        let held = file(lineEnding: .crlf, pendingHydration: true, accessRefused: true)
+        let state = FileHeaderState.derive(from: held, renderMode: .source("swift"))
+        XCTAssertEqual(state.spoken, "README.md, not read, this file cannot be read at its path")
+        XCTAssertEqual(state.encodingAndFormat, "")
+        XCTAssertFalse(state.showsUnsavedDot)
+        XCTAssertNil(state.lastEditStamp)
+    }
+
+    func testHeldInputsOfferNoKeepMineEvenWithAnInconsistentConflict() {
+        for conflict in [FileConflict.none, .changed, .missing] {
+            let held = file(dirty: true, conflict: conflict,
+                            pendingHydration: true, accessRefused: true)
+            XCTAssertEqual(FileConflictBanner.actions(for: held), [.locate])
+        }
+    }
+
     func testACleanFileReadsAsSaved() {
         let state = FileHeaderState.derive(from: file())
         XCTAssertEqual(state.name, "README.md")

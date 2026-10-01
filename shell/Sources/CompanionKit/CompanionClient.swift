@@ -266,6 +266,9 @@ extension FileSummary {
     /// file's text. It stays on the surface so a person who knows
     /// where the file is can say so, and until they do it can be
     /// located or closed and nothing else.
+    /// Core `FileStore::hydrate_one` (`crates/core/src/files.rs`) leaves
+    /// held records pending with `conflict == .none`; a staged draft's
+    /// refused read settles into a conflict instead and is not held.
     public var isHeld: Bool { pendingHydration && accessRefused }
 
     /// Whether the row holds edits of the person's that the file on
