@@ -55,6 +55,7 @@ public struct PageContentView: View {
                         Image(systemName: model.isPageExpanded
                               ? "arrow.down.right.and.arrow.up.left"
                               : "arrow.up.left.and.arrow.down.right")
+                            .scaleEffect(x: 1, y: -1)
                             .font(.system(size: 12, weight: .medium))
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
