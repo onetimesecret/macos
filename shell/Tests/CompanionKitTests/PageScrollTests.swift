@@ -41,6 +41,32 @@ final class PageScrollTests: XCTestCase {
         return (scroll, textView, storage, layoutManager, container)
     }
 
+    func testTypingSurfaceFillsViewportAfterResizeAndTextDeletion() {
+        let (scroll, editor, storage, manager, container) = makeStack(cardHeight: 320)
+        for height: CGFloat in [320, 720, 240] {
+            scroll.frame.size.height = height
+            for ink in ["", "short\n", page(lines: 100), "short again\n"] {
+                storage.setAttributedString(NSAttributedString(string: ink))
+                manager.ensureLayout(for: container)
+                scroll.layoutSubtreeIfNeeded()
+                XCTAssertGreaterThanOrEqual(editor.frame.height, scroll.contentSize.height)
+                let point = NSPoint(x: 200, y: scroll.contentView.bounds.maxY - 8)
+                XCTAssertTrue(scroll.contentView.hitTest(point) === editor)
+            }
+        }
+    }
+
+    func testResizingShortTypingSurfaceDoesNotLeaveBlankScrollExtent() {
+        let (scroll, editor, storage, manager, container) = makeStack(cardHeight: 320)
+        storage.setAttributedString(NSAttributedString(string: "short\n"))
+        manager.ensureLayout(for: container)
+        for height: CGFloat in [720, 240, 500, 320] {
+            scroll.frame.size.height = height
+            scroll.layoutSubtreeIfNeeded()
+            XCTAssertEqual(editor.frame.height, scroll.contentSize.height, accuracy: 0.5)
+        }
+    }
+
     private func page(lines: Int) -> String {
         (0..<lines).map { "line \($0) of the page\n" }.joined()
     }
@@ -150,20 +176,22 @@ final class PageScrollTests: XCTestCase {
         )))
     }
 
-    func testBlankClipAcceptsTheFirstClickAndFocusesItsEditor() throws {
+    func testFullHeightEditorAcceptsTheFirstClickAndFocuses() throws {
         let (scroll, editor, _, _, _) = makeStack(cardHeight: 320)
         let window = try XCTUnwrap(scroll.window)
-        let clip = scroll.contentView
+        let point = NSPoint(x: 200, y: 250)
+        let hit = try XCTUnwrap(scroll.contentView.hitTest(point))
+        XCTAssertTrue(hit === editor)
         _ = window.makeFirstResponder(nil)
         let event = try XCTUnwrap(NSEvent.mouseEvent(
             with: .leftMouseDown, location: NSPoint(x: 200, y: 250),
             modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
             context: nil, eventNumber: 1, clickCount: 1, pressure: 1
         ))
-        XCTAssertTrue(clip.needsPanelToBecomeKey)
-        XCTAssertTrue(clip.acceptsFirstMouse(for: event))
+        XCTAssertTrue(hit.needsPanelToBecomeKey)
+        XCTAssertTrue(hit.acceptsFirstMouse(for: event))
         window.postEvent(try mouseEvent(.leftMouseUp, in: window, at: event.locationInWindow), atStart: true)
-        clip.mouseDown(with: event)
+        hit.mouseDown(with: event)
         XCTAssertTrue(window.firstResponder === editor)
     }
 

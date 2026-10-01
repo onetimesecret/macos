@@ -443,6 +443,30 @@ public enum StreamNavigator {
         )
     }
 
+    /// A minimap drag uses the map captured at mouse-down, so viewport
+    /// publications cannot move the coordinate system underneath the pointer.
+    struct ScrollDrag {
+        let layout: Layout
+        let maximumOffset: CGFloat
+        let grabOffset: CGFloat
+
+        init(layout: Layout, geometry: RollGeometry, startY: CGFloat) {
+            self.layout = layout
+            maximumOffset = max(0, geometry.documentHeight - geometry.viewportHeight)
+            if layout.band?.contains(startY) == true {
+                grabOffset = layout.documentOffset(atY: startY) - geometry.viewportTop
+            } else {
+                grabOffset = geometry.viewportHeight * Metrics.trackLead
+            }
+        }
+
+        func offset(atY y: CGFloat) -> CGFloat {
+            if y <= layout.trackTop { return 0 }
+            if y >= layout.trackBottom { return maximumOffset }
+            return min(maximumOffset, max(0, layout.documentOffset(atY: y) - grabOffset))
+        }
+    }
+
     /// Where a click on a node scrolls the roll to: just above the
     /// page's gutter, and never above the document's top.
     public static func jumpOffset(forDocumentTop top: CGFloat) -> CGFloat {

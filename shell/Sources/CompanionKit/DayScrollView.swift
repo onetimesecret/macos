@@ -124,6 +124,7 @@ public struct DayScrollView: NSViewRepresentable {
         model.claimRollGeometry(
             by: stack,
             scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
+            scrubber: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset, animated: false) },
             wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) },
             place: { [weak stack] in stack?.currentPlace },
             from: surface
@@ -395,18 +396,6 @@ final class DayStackView: NSView {
 
     override var needsPanelToBecomeKey: Bool { editor?.isEditable == true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    /// The unused viewport below the pages is part of the editing area.
-    /// Focusing it preserves the selected page and its insertion point.
-    override func mouseDown(with event: NSEvent) {
-        guard let editor = focusableEditor else {
-            super.mouseDown(with: event)
-            return
-        }
-        // Use the editor's click-versus-drag decision for the entire blank
-        // viewport, including the stretch outside the text view's frame.
-        editor.mouseDown(with: event)
-    }
 
     private var focusableEditor: InkTextView? {
         guard model.owner == coordinator.surface,
@@ -953,7 +942,9 @@ final class DayStackView: NSView {
             y += headerHeight
             let height: CGFloat
             if let text = row.body as? NSTextView {
-                height = Self.measuredHeight(of: text, width: width)
+                let minimum = text === editor ? max(0, clipHeight - headerHeight) : 0
+                text.minSize = NSSize(width: width, height: minimum)
+                height = max(minimum, Self.measuredHeight(of: text, width: width))
             } else if row.fillsViewport {
                 height = max(clipHeight - y, Self.minimumRegionHeight)
             } else {
@@ -1060,7 +1051,7 @@ final class DayStackView: NSView {
     /// clip rather than jumping after it. Instant as well in a window
     /// nobody can see, which is a test's, where an animation would be
     /// a frame nobody draws and a clip that has not moved yet.
-    func scroll(toDocumentOffset offset: CGFloat) {
+    func scroll(toDocumentOffset offset: CGFloat, animated: Bool = true) {
         guard let scroll = enclosingScrollView else { return }
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
@@ -1068,7 +1059,7 @@ final class DayStackView: NSView {
         let duration = StreamNavigator.jumpDuration(
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
-        guard duration > 0, window?.isVisible == true else {
+        guard animated, duration > 0, window?.isVisible == true else {
             clip.scroll(to: target)
             scroll.reflectScrolledClipView(clip)
             return

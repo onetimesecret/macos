@@ -181,14 +181,18 @@ final class DayScrollTests: XCTestCase {
             roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
             let editor = try XCTUnwrap(roll.stack.editor)
             let visible = roll.stack.visibleRect
-            XCTAssertGreaterThan(visible.maxY - editor.frame.maxY, 100)
-            for y in [editor.frame.maxY + 12, (editor.frame.maxY + visible.maxY) / 2, visible.maxY - 8] {
+            XCTAssertGreaterThanOrEqual(editor.frame.maxY, visible.maxY)
+            for y in [editor.frame.minY + 100, (editor.frame.minY + visible.maxY) / 2, visible.maxY - 8] {
                 let point = NSPoint(x: visible.midX, y: y)
                 let hit = try XCTUnwrap(roll.stack.hitTest(point))
                 editor.setSelectedRange(caret)
                 _ = roll.window.makeFirstResponder(nil)
-                let event = try leftClick(in: roll.window)
-                XCTAssertTrue(hit === roll.stack, "blank viewport at \(point) hit \(hit)")
+                let location = roll.stack.convert(point, to: nil)
+                let event = try XCTUnwrap(NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0,
+                    windowNumber: roll.window.windowNumber, context: nil, eventNumber: 1,
+                    clickCount: 1, pressure: 1))
+                XCTAssertTrue(hit === editor, "blank viewport at \(point) hit \(hit)")
                 XCTAssertTrue(hit.needsPanelToBecomeKey)
                 XCTAssertTrue(hit.acceptsFirstMouse(for: event))
                 hit.mouseDown(with: event)

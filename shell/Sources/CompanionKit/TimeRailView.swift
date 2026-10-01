@@ -304,10 +304,9 @@ public struct TimeRailView: View {
 ///
 /// It observes the roll's own measurement rather than the model for the
 /// band and the slivers, so a scroll redraws this column and nothing
-/// else on the card. The band, the slivers and the track take no
-/// clicks, so a tap meant for a node still lands on the node, and they
-/// are hidden from VoiceOver, which has the nodes themselves and would
-/// hear nothing here it could act on.
+/// else on the card. The scrollbar lane takes track clicks and the
+/// column takes drags; checkpoint labels retain their navigation taps.
+/// Decorative drawing is hidden from VoiceOver.
 struct StreamNavigatorView: View {
     @ObservedObject var model: PageModel
     @ObservedObject var roll: RollGeometryModel
@@ -321,6 +320,8 @@ struct StreamNavigatorView: View {
     let nodes: [StreamNavigator.Node]
     let chords: [UInt64: Keystroke]
 
+    @GestureState private var isScrubbing = false
+    @State private var scrollDrag: StreamNavigator.ScrollDrag?
     @State private var hoverID: UInt64?
     @State private var layoutCache = StreamNavigatorLayoutCache()
 
@@ -365,7 +366,38 @@ struct StreamNavigatorView: View {
                 ForEach(layout.placed) { placed in
                     node(placed, width: proxy.size.width)
                 }
+                // A dedicated scrollbar lane remains reachable even where
+                // checkpoint rows span the column. Labels keep their taps.
+                Color.clear
+                    .frame(width: Metrics.sliverInset, height: proxy.size.height)
+                    .contentShape(Rectangle())
+                    .onTapGesture(coordinateSpace: .local) { point in
+                        jump(toTrackY: point.y, layout: layout)
+                    }
+                    .allowsHitTesting(drivesRoll && layout.band != nil)
+                    .accessibilityHidden(true)
             }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .local)
+                    .updating($isScrubbing) { _, active, _ in active = true }
+                    .onChanged { value in
+                        guard drivesRoll, layout.band != nil else { return }
+                        if scrollDrag == nil {
+                            scrollDrag = StreamNavigator.ScrollDrag(
+                                layout: layout, geometry: roll.geometry, startY: value.startLocation.y)
+                        }
+                        if let scrollDrag {
+                            roll.scrub(toDocumentOffset: scrollDrag.offset(atY: value.location.y))
+                        }
+                    }
+                    .onEnded { _ in scrollDrag = nil },
+                including: drivesRoll && layout.band != nil ? .all : .subviews
+            )
+            .onChange(of: isScrubbing) { active in
+                if !active { scrollDrag = nil }
+            }
+            .onChange(of: drivesRoll) { _ in scrollDrag = nil }
+            .onDisappear { scrollDrag = nil }
             // Only the owner's rail installs the relay. A relay in the
             // other window would watch that window's wheel events and
             // swallow each one over the column, for a roll it may not
@@ -592,7 +624,8 @@ struct StreamNavigatorView: View {
     /// Bare track was clicked: scroll the roll to the stretch under the
     /// click and select nothing.
     private func jump(toTrackY y: CGFloat, layout: StreamNavigator.Layout) {
-        guard drivesRoll, layout.anchors.count >= 2 else { return }
+        guard drivesRoll, layout.band != nil, layout.anchors.count >= 2,
+              layout.band?.contains(y) != true else { return }
         roll.scroll(toDocumentOffset: layout.jumpOffset(
             forTrackY: y, viewportHeight: roll.geometry.viewportHeight
         ))

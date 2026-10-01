@@ -318,7 +318,7 @@ public struct InkEditorView: NSViewRepresentable {
     /// gets (`makePage`).
     static func bareScroller() -> NSScrollView {
         let scroll = NSScrollView()
-        scroll.contentView = EditorFocusClipView()
+        scroll.contentView = EditorViewportClipView()
         scroll.hasVerticalScroller = true
         // NSScrollView forwards this to its clip, so apply it after replacing
         // the clip view to keep the page's background transparent.
@@ -403,7 +403,8 @@ public struct InkEditorView: NSViewRepresentable {
     /// of short lines shrinks its text view to the width of its longest
     /// one, and every click to the right of the text lands on the scroll
     /// view, where it places no caret. The floor is the clip, so it
-    /// moves with the card (`clipFrameChanged`).
+    /// moves with the card (`clipFrameChanged`). Its height also stays
+    /// at least the viewport height so blank space belongs to the editor.
     ///
     /// Returning to wrapped has one loose end the flags do not tie: a
     /// text view that ran wide keeps that frame, and nothing else takes
@@ -428,7 +429,7 @@ public struct InkEditorView: NSViewRepresentable {
             textView.autoresizingMask = []
             scroll.hasHorizontalScroller = true
         }
-        textView.minSize = NSSize(width: clip.width, height: 0)
+        textView.minSize = NSSize(width: clip.width, height: clip.height)
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -1852,11 +1853,14 @@ public struct InkEditorView: NSViewRepresentable {
                     )
                 }
             }
-            guard appliedWrap == false, let textView, let scroll = scrollView else { return }
-            let width = scroll.contentSize.width
-            textView.minSize = NSSize(width: width, height: 0)
-            guard textView.frame.width < width else { return }
-            textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+            guard let textView, let scroll = scrollView,
+                  scroll.documentView === textView else { return }
+            let size = scroll.contentSize
+            textView.minSize = size
+            if appliedWrap != false {
+                textView.setFrameSize(NSSize(width: size.width, height: textView.frame.height))
+            }
+            textView.sizeToFit()
         }
 
         /// Enforce the one-layout-manager-per-storage invariant
@@ -3949,29 +3953,26 @@ final class InkTextContainer: NSTextContainer {
     }
 }
 
-/// A short page or unsaved file leaves some of its viewport outside the
-/// text view. That space accepts the same focus click as the page itself.
-final class EditorFocusClipView: NSClipView {
-    override var needsPanelToBecomeKey: Bool {
-        (documentView as? InkTextView)?.isEditable == true
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        guard let editor = documentView as? InkTextView, editor.isEditable else {
-            super.mouseDown(with: event)
-            return
+/// Keep an ordinary page's typing surface at least as tall as its viewport.
+/// Roll editors get their minimum height from DayStackView instead.
+final class EditorViewportClipView: NSClipView {
+    override func layout() {
+        super.layout()
+        guard let editor = documentView as? InkTextView else { return }
+        if editor.minSize != bounds.size {
+            editor.minSize = bounds.size
+            editor.sizeToFit()
         }
-        // The editor owns gesture classification and native text tracking even
-        // when this part of the viewport lies outside its document frame.
-        editor.mouseDown(with: event)
     }
 }
 
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
     SealResponder
 {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        isEditable || super.acceptsFirstMouse(for: event)
+    }
+
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 

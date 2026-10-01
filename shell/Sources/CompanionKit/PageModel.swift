@@ -5011,12 +5011,13 @@ public final class PageModel: ObservableObject {
     func claimRollGeometry(
         by roll: AnyObject,
         scroller: ((CGFloat) -> Void)? = nil,
+        scrubber: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
         place: (() -> RollPlace?)? = nil,
         from surface: PresentationOwner
     ) {
         guard admits(.rollGeometry, from: surface) else { return }
-        rollGeometry.claim(by: roll, scroller: scroller, wheel: wheel, place: place)
+        rollGeometry.claim(by: roll, scroller: scroller, scrubber: scrubber, wheel: wheel, place: place)
     }
 
     /// A window reporting its key status. Only the owner's counts: the
