@@ -1830,11 +1830,12 @@ public struct InkEditorView: NSViewRepresentable {
             textView?.refreshHover()
         }
 
-        /// The card resized. Wrapped, the autoresizing mask has already
-        /// done everything needed. Unwrapped, the text view sizes itself
-        /// to its text and nothing else would ever widen it, so the floor
-        /// is re-levelled here and a page narrower than the card is
-        /// stretched to meet it.
+        /// The card resized. The floor under the typing surface is the
+        /// clip's to keep (`EditorViewportClipView`), and wrapped, the
+        /// autoresizing mask has done everything else. Unwrapped, the
+        /// text view sizes itself to its text and nothing else would
+        /// ever widen it, so a page narrower than the card is stretched
+        /// to meet it here.
         ///
         /// A newly mounted page's first real frame also arrives here,
         /// and with it the scroll restore that could not be resolved
@@ -1853,14 +1854,11 @@ public struct InkEditorView: NSViewRepresentable {
                     )
                 }
             }
-            guard let textView, let scroll = scrollView,
+            guard appliedWrap == false, let textView, let scroll = scrollView,
                   scroll.documentView === textView else { return }
-            let size = scroll.contentSize
-            textView.minSize = size
-            if appliedWrap != false {
-                textView.setFrameSize(NSSize(width: size.width, height: textView.frame.height))
-            }
-            textView.sizeToFit()
+            let width = scroll.contentSize.width
+            guard textView.frame.width < width else { return }
+            textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
         }
 
         /// Enforce the one-layout-manager-per-storage invariant
@@ -3954,13 +3952,23 @@ final class InkTextContainer: NSTextContainer {
 }
 
 /// Keep an ordinary page's typing surface at least as tall as its viewport.
-/// Roll editors get their minimum height from DayStackView instead.
+/// Roll editors get their minimum height from DayStackView instead. This
+/// is the one writer of the floor while the page is mounted; `setWrap`
+/// seeds the same value when the wrap mode changes.
 final class EditorViewportClipView: NSClipView {
     override func layout() {
         super.layout()
         guard let editor = documentView as? InkTextView else { return }
-        if editor.minSize != bounds.size {
-            editor.minSize = bounds.size
+        let previous = editor.minSize
+        guard previous != bounds.size else { return }
+        editor.minSize = bounds.size
+        // Only a surface standing on the old floor, or short of the new
+        // one, needs a new frame. A page taller than both already clears
+        // the floor, and `sizeToFit` would lay out the whole document
+        // for nothing on every frame of a live resize.
+        if editor.frame.height <= max(previous.height, bounds.height)
+            || editor.frame.width < bounds.width
+        {
             editor.sizeToFit()
         }
     }
@@ -3969,10 +3977,6 @@ final class EditorViewportClipView: NSClipView {
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
     SealResponder
 {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        isEditable || super.acceptsFirstMouse(for: event)
-    }
-
     weak var coordinator: InkEditorView.Coordinator?
     private var blockAccessibilityChildren: [BlockMetadataField] = []
 
@@ -4156,6 +4160,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     ) -> Bool {
         clickCount == 1
             && modifierFlags.intersection([.command, .shift, .control, .option]) == .control
+    }
+
+    /// An editable page takes the click that brings its window forward,
+    /// so the first click on blank space focuses rather than merely
+    /// activating.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        isEditable || super.acceptsFirstMouse(for: event)
     }
 
     /// A click on the explicit actions affordance opens the object's menu.
