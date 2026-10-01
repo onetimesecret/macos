@@ -917,6 +917,33 @@ ADR claims. Hardware results are not yet recorded.
   timeline must not move another window's scroll position. Check wheel
   scrolling still works on the owned roll.
 
+### Stable last-page layout and explicit page expansion
+
+Implementation checks for the follow-up interaction. Hardware results are not
+recorded yet.
+
+- Open several short pages. Before clicking, the final page fills the unused
+  window height. Click between pages and resize the window: earlier pages keep
+  their text height, and selecting one does not add a window of blank space or
+  move the checkpoint separators. Check a long roll too. Click each checkpoint's
+  horizontal rule and passive labels: the page beneath that header is selected
+  and receives focus at its saved caret. Rename and contextual menus still work.
+- Use the expand icon in the upper right. Only the selected page remains, with
+  the timeline/tab picker and checkpoint headers hidden. Type, select text,
+  undo, and resize. The caret remains in the same editor and long text scrolls.
+- Use the inverse icon, then repeat with Escape. The page returns to the roll,
+  including its prior scroll position. Escape collapses before a subsequent
+  Escape hands back keyboard focus. Expand, scroll, transfer ownership between
+  the panel and editor window, then collapse: both the expanded scroll position
+  and the original timeline return position survive the transfer.
+- Repeat with the picker at the bottom and side, with time units on and off,
+  and in the raised panel. Switch pages through the keyboard while expanded:
+  the new selection returns to the normal layout. A file or ledger has no page
+  expansion control. Check the button's spoken Expand/Collapse page label.
+- Open Settings through the app menu and through a native Settings scene request.
+  Both routes show the existing populated Settings window. Reopening the native
+  scene must not leave a blank second Settings window behind.
+
 ## Results
 
 The 2026-09-28 rows record the maintainer's report of that run; the

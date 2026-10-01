@@ -16,10 +16,11 @@ struct BackdropApp: App {
     @NSApplicationDelegateAdaptor(BackdropAppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // No SwiftUI scene renders anything; the status item + window
-        // (built in the delegate) are the entire UI. A placeholder scene
-        // is required by the `App` protocol.
-        Settings {}
+        // AppKit owns the windows. Native Settings scene requests still
+        // need a destination, even with the menu command replaced below.
+        Settings {
+            SettingsSceneRedirect(openSettings: appDelegate.openSettings)
+        }
             .commands {
                 // ⌘F and its neighbours. The editor answers
                 // `performTextFinderAction:` (its find bar is on), but
