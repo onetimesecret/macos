@@ -65,6 +65,7 @@ public enum CoreDiagnostics {
         level, message in
         guard let message else { return }
         let line = String(cString: message)
+        DiagnosticEvents.shared.recordCoreDiagnostic(line, isFault: level == COMPANION_DIAG_FAULT)
 
         // The unified log first, which is the point of the routing, and
         // then stderr when there is a terminal reading it: a developer

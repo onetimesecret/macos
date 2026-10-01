@@ -358,6 +358,22 @@ current implementation passes:
 
 Record failures with the build number and reproduction steps. See the
 [signing-assets guide](handling-signing-assets-and-credentials.md) before
-sharing diagnostic output. Repeat packaging, upload, processing, and internal
+sharing diagnostic output. The app's **Help** menu offers **Copy Diagnostic
+Summary** for pasting into TestFlight feedback and **Export Diagnostics…**
+for saving a text report. Capture it after reproducing the problem, before
+quitting: the event trail covers only the current process, up to 100 events.
+The report shows selected settings and expected panel altitude; it does not
+measure the actual window stack or detect Lockdown Mode.
+
+**Send Feedback…** opens a draft with an optional contact, diagnostics preview,
+and the full destination URL from Connection settings. Review the snapshot,
+optionally deselect diagnostics, then choose **Send**. This sends the report
+to that server's `/api/v3/feedback` endpoint, separately from Apple's TestFlight
+feedback. Failed requests retain the draft; retrying an unconfirmed request
+may create a duplicate. The export and summary remain available without
+submission. Network tests use a stub transport, so successful receipt by the
+deployed service still needs a deliberate test from the installed build.
+
+Repeat packaging, upload, processing, and internal
 qualification for the next build; account and certificate setup need repeating
 only when those inputs change or expire.

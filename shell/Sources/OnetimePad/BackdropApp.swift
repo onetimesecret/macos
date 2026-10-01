@@ -119,6 +119,12 @@ struct BackdropApp: App {
                         appDelegate.showAbout()
                     }
                 }
+                CommandGroup(replacing: .help) {
+                    Button("Export Diagnostics…") { appDelegate.exportDiagnostics() }
+                    Button("Copy Diagnostic Summary") { appDelegate.copyDiagnosticSummary() }
+                    Divider()
+                    Button("Send Feedback…") { appDelegate.sendFeedback() }
+                }
                 // The Window menu's Close Window (issue #201, ADR-0033).
                 // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
                 // window the keyboard is in and reaches Settings too.
@@ -351,6 +357,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
     private lazy var settings = BackdropSettingsWindowController(model: model)
+    private lazy var feedback = FeedbackWindowController(model: model) { [unowned self] in
+        diagnosticReport()
+    }
+
 
     /// The primary editor window (ADR-0033), the second of the two
     /// content windows over the one model.
@@ -389,6 +399,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var launchedAt = Date.distantPast
     private var aboutActivation = false
     private var settingsActivation = false
+    private var feedbackActivation = false
 
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
@@ -603,6 +614,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         if reason == .openEditorPresentation {
             aboutActivation = false
             settingsActivation = false
+            feedbackActivation = false
         }
         let route = ActivationRouter.decide(reason, in: activationContext())
         if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
@@ -701,9 +713,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // is exactly the surface the activation is routed to. Only
         // About and Settings hold their own claim, and the routing
         // function sees them through `claimedByAnotherWindow`.
-        let claimed = aboutActivation || settingsActivation
+        let claimed = aboutActivation || settingsActivation || feedbackActivation
         aboutActivation = false
         settingsActivation = false
+        feedbackActivation = false
         // Consume pending intent even when About/Settings claim this
         // activation, so it cannot leak into the next real ⌘Tab. Otherwise
         // it takes precedence over recency and keeps the gesture's raise.
@@ -893,12 +906,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         summonKeyFailure = nil
         summonKey = BackdropHotKey.controlOptionSpace(onFailure: { [weak self] failure in
             self?.summonKeyFailure = failure
+            DiagnosticEvents.shared.record(.shortcutFailed, status: Int(failure.status))
             Self.logger.error("summon shortcut registration failed stage=\(failure.stage.rawValue, privacy: .public) status=\(failure.status)")
         }) { [weak self] in
             Task { @MainActor in
                 self?.applySummon(.hotkey)
             }
         }
+        if summonKey != nil { DiagnosticEvents.shared.record(.shortcutRegistered) }
     }
 
     @objc private func explainUnavailableShortcut() {
@@ -1037,6 +1052,28 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     @objc func openSettings() {
         settingsActivation = !NSApp.isActive
         settings.show()
+    }
+
+    private func diagnosticReport() -> DiagnosticsReport {
+        let shortcutStatus = summonKeyFailure.map {
+            "failed (\($0.stage.rawValue), OSStatus \($0.status))"
+        } ?? (summonKey == nil ? "not registered" : "registered")
+        return DiagnosticsReport.capture(model: model, shortcutStatus: shortcutStatus)
+    }
+
+    @objc func exportDiagnostics() {
+        feedbackActivation = !NSApp.isActive
+        NSApp.activate(ignoringOtherApps: true)
+        DiagnosticsActions.export(diagnosticReport())
+    }
+
+    @objc func copyDiagnosticSummary() {
+        DiagnosticsActions.copySummary(diagnosticReport())
+    }
+
+    @objc func sendFeedback() {
+        feedbackActivation = !NSApp.isActive
+        feedback.show()
     }
 
     /// The standard About panel leads with the app's product version and

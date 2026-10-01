@@ -439,6 +439,18 @@ else
   fi
 fi
 
+# Stamp provenance independently of the App Store's numeric build counter.
+# A dirty tree stays visible in reports from locally packaged builds.
+plutil -replace OnetimePadBuildLane -string "$BUILD_LANE" "$APP/Contents/Info.plist"
+SOURCE_REVISION="unknown"
+if RESOLVED_REVISION="$(git rev-parse HEAD 2>/dev/null)"; then
+  SOURCE_REVISION="$RESOLVED_REVISION"
+  if [[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+    SOURCE_REVISION="$SOURCE_REVISION.dirty"
+  fi
+fi
+plutil -replace OnetimePadSourceRevision -string "$SOURCE_REVISION" "$APP/Contents/Info.plist"
+
 # Each lane writes its own id from the manifest: the source plist declares
 # the production id, which only the App Store lane keeps. Written outright
 # rather than derived from the release id: the development ids share no
