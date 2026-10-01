@@ -33,6 +33,41 @@ import XCTest
 @MainActor
 final class EditorOwnershipSequenceTests: XCTestCase {
 
+    func testPresentationSwitchHidesTheEntireAlternateSurface() async throws {
+        let defaults = makeDefaults(named: "exclusive-presentation")
+        let pages = ephemeralPages(defaults: defaults, tag: "exclusive-presentation")
+        let model = BackdropModel(defaults: defaults, pages: pages)
+        let panel = BackdropWindowController(model: model, onCardClick: {})
+        let editor = PrimaryEditorWindowController(model: model)
+        model.onWillShowAmbientPanel = { [weak editor] in editor?.closeForAmbientPanel() }
+        pages.newPage()
+        panel.show()
+        XCTAssertTrue(panel.isVisible)
+        editor.show()
+        XCTAssertTrue(editor.isVisible)
+        XCTAssertFalse(panel.isVisible, "the desktop and pinned panel must be hidden")
+        model.pinned.toggle()
+        XCTAssertFalse(panel.isVisible)
+        model.setAmbientPanelEnabled(false)
+        model.setAmbientPanelEnabled(true)
+        XCTAssertFalse(panel.isVisible, "enabling the feature must not show a duplicate")
+        model.raise(.activation)
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertFalse(editor.isVisible)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertFalse(model.editorWindowOpen)
+        XCTAssertEqual(pages.owner, .panel)
+        model.rest()
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertFalse(editor.isVisible, "rest must not reopen the closed window")
+        XCTAssertTrue(panel.isVisible)
+        editor.show()
+        XCTAssertTrue(editor.isVisible)
+        XCTAssertFalse(panel.isVisible)
+        editor.closeForAmbientPanel()
+        model.setAmbientPanelEnabled(false)
+    }
+
     // MARK: The harness
 
     private func makeDefaults(named suite: String) -> UserDefaults {

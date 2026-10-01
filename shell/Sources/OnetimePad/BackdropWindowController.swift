@@ -22,6 +22,7 @@ import os
 @MainActor
 final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let panel: BackdropPanel
+    var isVisible: Bool { panel.isVisible }
     private let model: BackdropModel
     private var observers: [AnyCancellable] = []
 
@@ -75,7 +76,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.$ambientPanelEnabled
             .dropFirst()
             .sink { [weak self] enabled in
-                self?.applyPanelEnabled(enabled, handBackActivation: false)
+                self?.applyPanelEnabled(enabled && !model.editorWindowOpen, handBackActivation: false)
+            }
+            .store(in: &observers)
+        model.$editorWindowOpen
+            .dropFirst()
+            .sink { [weak self] open in
+                self?.applyPanelEnabled(model.ambientPanelEnabled && !open,
+                                       handBackActivation: false)
             }
             .store(in: &observers)
         // The pin re-altitudes the current stance in place: level,
@@ -322,7 +330,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         panelEnabled: Bool? = nil,
         handBackActivation: Bool = true
     ) {
-        guard panelEnabled ?? model.ambientPanelEnabled else {
+        guard panelEnabled ?? (model.ambientPanelEnabled && !model.editorWindowOpen) else {
             applyPanelEnabled(false, handBackActivation: false)
             return
         }

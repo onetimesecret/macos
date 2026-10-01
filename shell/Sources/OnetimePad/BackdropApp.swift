@@ -135,6 +135,8 @@ struct BackdropApp: App {
                 // are also `isExcludedFromWindowsMenu = true`, so the
                 // menu itself lists the editor window and Settings only.
                 CommandGroup(before: .windowArrangement) {
+                    appDelegate.presentationCommands
+                    Divider()
                     WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
                         appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
                     }
@@ -433,6 +435,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // behind everything again. From the editor window, beside a
         // card already resting, it moves nothing.
         model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
+        model.onWillShowAmbientPanel = { [weak self] in self?.editorWindow.closeForAmbientPanel() }
+        model.onOpenEditorWindow = { [weak self] in self?.openEditorPresentation() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -766,10 +770,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Left click summons (raise, or re-key, or rest — the summon
     /// decision); ⌥-click goes straight to Settings; right click gets
-    /// the boring necessities (About, Settings, Quit; not features).
+    /// presentation switches alongside About, Settings, and Quit.
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
+            menu.autoenablesItems = false
             // Technical identity is optional here; About always carries it.
             // No action, so the line is disabled when the preference exposes it.
             if pages.showsVersionsInMenu {
@@ -791,6 +796,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(showAbout),
                 keyEquivalent: ""
             ).target = self
+            addPresentationItems(to: menu)
+            menu.addItem(.separator())
             let settingsItem = menu.addItem(
                 withTitle: "Settings…",
                 action: #selector(openSettings),
@@ -817,6 +824,38 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         } else {
             applySummon(.statusItem)
         }
+    }
+
+    var presentationCommands: some View {
+        PresentationSwitchMenuItems(model: model,
+                                    openWindow: openEditorPresentation,
+                                    showPanel: showAmbientPresentation)
+    }
+
+    @objc func openEditorPresentation() {
+        applySummon(.reopen)
+    }
+
+    @objc func showAmbientPresentation() {
+        guard model.ambientPanelEnabled else { return }
+        model.raise(.activation)
+    }
+
+    private func addPresentationItems(to menu: NSMenu) {
+        let open = menu.addItem(withTitle: "Open in Window",
+                               action: #selector(openEditorPresentation), keyEquivalent: "")
+        open.target = self
+        let ambient = menu.addItem(withTitle: "Show Ambient Panel",
+                                  action: #selector(showAmbientPresentation), keyEquivalent: "")
+        ambient.target = self
+        ambient.isEnabled = model.ambientPanelEnabled
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        addPresentationItems(to: menu)
+        return menu
     }
 
     /// The chord Settings advertises, taken from the keymap
@@ -1151,5 +1190,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             )
             return true
         }
+    }
+}
+
+private struct PresentationSwitchMenuItems: View {
+    @ObservedObject var model: BackdropModel
+    let openWindow: () -> Void
+    let showPanel: () -> Void
+
+    var body: some View {
+        Button("Open in Window", action: openWindow)
+        Button("Show Ambient Panel", action: showPanel)
+            .disabled(!model.ambientPanelEnabled)
     }
 }

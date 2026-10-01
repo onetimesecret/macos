@@ -288,6 +288,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// routes' question and not the raise's.
     func raise(_ reason: BackdropRaise) {
         guard ambientPanelEnabled else { return }
+        if editorWindowOpen { onWillShowAmbientPanel?() }
         // The owner before the stance. The stance's publication is what
         // the window controller acts on, and its ordering calls bring
         // key delegates of both windows back in here before it returns;
@@ -621,36 +622,20 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     // MARK: The editor window
 
-    /// True while the primary editor window is open: one of the two
-    /// facts the owner is resolved from, and nothing more than a fact.
-    /// It refuses no raise and no view draws by it; the surfaces read
-    /// `pages.owner`. Deliberately not published, so that it cannot
-    /// grow a subscriber that reads it halfway through a change.
-    ///
-    /// No shipping code outside this type reads it; the tests do. The
-    /// reopen (`applicationShouldHandleReopen`) goes through the routing
-    /// table (`ActivationRouter`), which selects the editor window open
-    /// or closed and leaves the choice between opening it and bringing
-    /// it out of the Dock to `PrimaryEditorWindowController.show()`. The
-    /// one route that needs to know whether the window can take the
-    /// keyboard, the rest's activation hand back, asks
-    /// `editorWindowCanTakeKeys`.
-    ///
-    /// A miniaturized window is still open, and still owns while the
-    /// panel rests. ADR-0033 resolves the owner from open and closed,
-    /// and keeps visible for the one sentence about the activation, so
-    /// the two facts are kept apart here as they are there. A window
-    /// going into the Dock is also not among the events the record lets
-    /// move ownership. What the resting card shows beside an owner
-    /// nobody can see is the glance's question (issue #199).
-    private(set) var editorWindowOpen = false
+    /// True while the regular window is open, including when minimized.
+    /// The panel controller uses the emitted value to hide its entire window
+    /// before the editor takes focus. A panel raise closes the regular window
+    /// through onWillShowAmbientPanel before transferring ownership.
+    @Published private(set) var editorWindowOpen = false
+
+    var onOpenEditorWindow: (() -> Void)?
+    var onWillShowAmbientPanel: (() -> Void)?
 
     /// True while the editor window is somewhere the person can see it
     /// and type into it, which is out of the Dock. Fed by the window's
     /// controller from its delegate callbacks
-    /// (`PrimaryEditorWindowController.onScreen`). A plain fact like the
-    /// one above, unpublished for the same reason, and no input to the
-    /// owner. A hidden app does not move it: its one reader, the rest's
+    /// (`PrimaryEditorWindowController.onScreen`). This fact is unpublished
+    /// and is not an input to the owner. A hidden app does not move it: its one reader, the rest's
     /// activation hand back (`editorWindowCanTakeKeys`), runs in an
     /// active app, activating unhides, and the word AppKit sends about
     /// the windows coming back arrives after the activation has been

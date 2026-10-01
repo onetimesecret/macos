@@ -33,6 +33,14 @@ import os
 final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     private let model: BackdropModel
     private var window: NSWindow?
+    var isVisible: Bool { window?.isVisible == true }
+    private var switchingToAmbientPanel = false
+
+    func closeForAmbientPanel() {
+        switchingToAmbientPanel = true
+        window?.close()
+        switchingToAmbientPanel = false
+    }
     private var captureObserver: AnyCancellable?
     private var ownerObserver: AnyCancellable?
 
@@ -222,6 +230,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         // window that can become key keeps the app active; with none, an
         // active app with only a resting card (or no ambient panel) would
         // strand the keyboard. A raised, keyed panel keeps it as before.
+        guard !switchingToAmbientPanel else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let anotherVisibleKeyCapableWindow = NSApp.windows.contains { candidate in
@@ -345,23 +354,15 @@ private struct PrimaryEditorRootView: View {
         .environment(\.presentationSurface, .editorWindow)
     }
 
-    /// The page while this window owns it, and a glance while a raised
-    /// panel does (ADR-0033, B3). The unmount is the point and not a
-    /// side effect: a page's storage takes one layout manager, so the
-    /// window that does not own mounts no editor at all. The glance
-    /// renders from `PageModel.quietRendering(for:)` over private
-    /// storage the model never learns of, so ADR-0006's invariant
-    /// holds and the projection parity assertion never sees a glance
-    /// storage. Sealed objects render as chips exactly as on a quiet
-    /// day.
+    /// Only the selected presentation mounts content. The window is closed
+    /// when switching to the ambient panel; it has no duplicate glance.
     @ViewBuilder
     private var content: some View {
         if pages.owner == .editorWindow {
             PageContentView(model: pages, emptyHint: "click or ↩ to start one")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            GlanceView(model: pages)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
