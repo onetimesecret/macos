@@ -67,6 +67,47 @@ final class PageScrollTests: XCTestCase {
         }
     }
 
+    /// The clip's floor gate refits only a surface the floor can bind. A
+    /// page taller than every viewport it is resized through must not be
+    /// refit by the gate at all: the floor cannot reach it. A wrong gate
+    /// shows up as extra layout work during a live resize, never as a
+    /// wrong frame, so this counts the gate's calls. The short page is the
+    /// positive control that proves the tally is live.
+    func testResizingAroundALongPageSkipsTheFloorRefit() {
+        let heights: [CGFloat] = [720, 240, 500, 320]
+        let (scroll, editor, storage, manager, container) = makeStack(cardHeight: 320)
+
+        storage.setAttributedString(NSAttributedString(string: "short\n"))
+        manager.ensureLayout(for: container)
+        scroll.layoutSubtreeIfNeeded()
+        let shortBefore = editor.floorRefitCount
+        for height in heights {
+            scroll.frame.size.height = height
+            scroll.layoutSubtreeIfNeeded()
+        }
+        XCTAssertEqual(
+            editor.floorRefitCount - shortBefore, heights.count,
+            "the tally is not live: a short page must refit once per new floor"
+        )
+
+        storage.setAttributedString(NSAttributedString(string: page(lines: 400)))
+        manager.ensureLayout(for: container)
+        scroll.layoutSubtreeIfNeeded()
+        let tall = editor.frame.height
+        XCTAssertGreaterThan(tall, heights.max()!, "the fixture must clear every floor it is resized through")
+        let longBefore = editor.floorRefitCount
+        for height in heights {
+            scroll.frame.size.height = height
+            scroll.layoutSubtreeIfNeeded()
+            XCTAssertEqual(
+                editor.floorRefitCount, longBefore,
+                "the gate refit a page the floor cannot bind at a \(height) pt viewport"
+            )
+            XCTAssertEqual(editor.frame.height, tall, accuracy: 0.5)
+            XCTAssertGreaterThanOrEqual(editor.frame.height, manager.usedRect(for: container).height)
+        }
+    }
+
     private func page(lines: Int) -> String {
         (0..<lines).map { "line \($0) of the page\n" }.joined()
     }
