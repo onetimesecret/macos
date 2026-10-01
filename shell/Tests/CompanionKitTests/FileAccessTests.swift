@@ -2583,9 +2583,9 @@ final class FileAccessTests: XCTestCase {
     private final class ActivatingFilePanels: FilePanels {
         var url: URL?
         var whileThePanelIsUp: () -> Void = {}
-        /// A centre of its own, so nothing else hears a panel that
-        /// never was.
-        private let center = NotificationCenter()
+        /// Use the production centre so the model hears the modal end
+        /// before the gesture processes the panel's answer.
+        private let center = NotificationCenter.default
 
         private func answer() -> URL? {
             ModalSession.run(center: center) {
@@ -2640,11 +2640,53 @@ final class FileAccessTests: XCTestCase {
         assertBalanced(held.scope)
     }
 
+    func testAPanelRefusalNoticeSurvivesTheOwedActivationCheck() throws {
+        let fixture = try makeFixture()
+        let (launched, _, _) = try openedFile(in: fixture)
+        let refused = try write("", named: "binary.txt", in: fixture)
+        try Data([0, 1, 2]).write(to: refused)
+        let panels = ActivatingFilePanels()
+        panels.url = refused
+        panels.whileThePanelIsUp = { launched.model.checkOpenFilesOnActivate() }
+        launched.model.fileCoordinator = FileCoordinator(panels: panels, scope: launched.scope)
+
+        launched.model.openFile()
+
+        XCTAssertEqual(launched.journal.events.filter { $0 == "check" }.count, 1)
+        XCTAssertEqual(launched.model.notice,
+                       PageModel.openRefusalNotice(name: "binary.txt", json: launched.client.openFileErrorJSON()))
+    }
+
     func testAnActivationOutsideAnyPanelIsNotPutOff() throws {
         let fixture = try makeFixture()
         let (launched, _, _) = try openedFile(in: fixture)
         launched.model.checkOpenFilesOnActivate()
         XCTAssertEqual(launched.journal.events, ["start notes.txt", "check", "stop notes.txt"])
+    }
+
+    func testANonFileModalEndImmediatelyConsumesAnOwedCheckOnce() throws {
+        let fixture = try makeFixture()
+        let (launched, _, _) = try openedFile(in: fixture)
+        ModalSession.run {
+            ModalSession.run {
+                launched.model.checkOpenFilesOnActivate()
+                launched.model.checkOpenFilesOnActivate()
+                XCTAssertTrue(launched.journal.events.isEmpty)
+            }
+            XCTAssertTrue(launched.journal.events.isEmpty, "inner end must not reenter the outer modal")
+        }
+        XCTAssertEqual(launched.journal.events, ["start notes.txt", "check", "stop notes.txt"])
+        launched.journal.clear()
+        ModalSession.run {}
+        launched.model.openFile() // cancelled panel
+        XCTAssertTrue(launched.journal.events.isEmpty, "the owed check was consumed, not left armed")
+    }
+
+    func testAModalEndWithoutAnActivationDoesNotCheckFiles() throws {
+        let fixture = try makeFixture()
+        let (launched, _, _) = try openedFile(in: fixture)
+        ModalSession.run {}
+        XCTAssertTrue(launched.journal.events.isEmpty)
     }
 
     func testAnActualActivationClearsTheCheckOwedByANonFileModal() throws {

@@ -1470,6 +1470,14 @@ public final class PageModel: ObservableObject {
             self?.markDirty()
             self?.refresh()
         }
+        modalEndObserver = NotificationCenter.default.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            // ModalSession posts synchronously on the main actor. A file
+            // panel's answer is not processed yet; its gesture drains the
+            // owed check instead, after it has finished with that answer.
+            MainActor.assumeIsolated { self?.consumeOwedActivationCheck() }
+        }
     }
 
     /// The one route to a system file panel, a bookmark, a security
@@ -1489,10 +1497,13 @@ public final class PageModel: ObservableObject {
     /// because a locate can be reached from inside another gesture.
     private var filePanelGestures = 0
 
-    /// Whether an activation asked for the file check while a file
-    /// panel gesture was under way, so that the check is owed when the
-    /// gesture ends (`duringFilePanel`).
+    /// Whether an activation asked for the file check during a modal
+    /// bracket or file-panel gesture. Consumed when both are over.
     private var activationCheckOwed = false
+
+    // removeObserver is thread-safe; every other access is main-actor
+    // isolated, but Swift 6 deinit is nonisolated.
+    private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
 
     /// Whether the drafts file owes a write.
     ///
@@ -2644,6 +2655,7 @@ public final class PageModel: ObservableObject {
     }
 
     deinit {
+        if let modalEndObserver { NotificationCenter.default.removeObserver(modalEndObserver) }
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
         if clipboardClearTimer != nil {
@@ -3284,12 +3296,16 @@ public final class PageModel: ObservableObject {
         filePanelGestures += 1
         defer {
             filePanelGestures -= 1
-            if filePanelGestures == 0, activationCheckOwed, !ModalSession.isBracketed {
-                activationCheckOwed = false
-                checkOpenFilesOnActivate()
-            }
+            consumeOwedActivationCheck()
         }
         gesture()
+    }
+
+    private func consumeOwedActivationCheck() {
+        guard activationCheckOwed, filePanelGestures == 0, !ModalSession.isBracketed else { return }
+        // Clear before checking so synchronous observers cannot consume it twice.
+        activationCheckOwed = false
+        checkOpenFilesOnActivate()
     }
 
     /// Open the file at `url`, the path a panel or a drop produced.
