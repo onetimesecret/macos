@@ -133,6 +133,167 @@ final class DayScrollTests: XCTestCase {
 
     // MARK: The shape of the stack
 
+    func testBlankRollAndCheckpointClicksFocusWithoutMovingTheCaret() async throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "first line\nsecond line")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let caret = NSRange(location: 3, length: 0)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let points = [
+            NSPoint(x: 200, y: roll.stack.bounds.maxY - 20),
+            NSPoint(x: 200, y: header.frame.maxY - 1),
+            NSPoint(x: 20, y: header.frame.minY + 8),
+        ]
+        for point in points {
+            editor.setSelectedRange(caret)
+            _ = roll.window.makeFirstResponder(nil)
+            let hit = try XCTUnwrap(roll.stack.hitTest(point))
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: roll.stack.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: roll.window.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+            ))
+            hit.mouseDown(with: event)
+            await settle()
+            XCTAssertTrue(roll.window.firstResponder === editor, "content click at \(point) did not focus")
+            XCTAssertEqual(editor.selectedRange(), caret)
+            XCTAssertEqual(model.selectedPageID, selected)
+            XCTAssertTrue(hit.needsPanelToBecomeKey)
+            XCTAssertTrue(hit.acceptsFirstMouse(for: event))
+        }
+    }
+
+    private final class ClickResponder: NSResponder {
+        var clicks = 0
+        override func mouseDown(with event: NSEvent) { clicks += 1 }
+    }
+
+    func testBlankViewportBelowTrailingNewlineFocusesAtSeveralWindowSizes() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "short page\n")
+        let roll = try mountRoll(model: model)
+        let caret = NSRange(location: 2, length: 0)
+        for height: CGFloat in [320, 720] {
+            roll.scroll.frame.size.height = height
+            roll.scroll.layoutSubtreeIfNeeded()
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let visible = roll.stack.visibleRect
+            XCTAssertGreaterThanOrEqual(editor.frame.maxY, visible.maxY)
+            for y in [editor.frame.minY + 100, (editor.frame.minY + visible.maxY) / 2, visible.maxY - 8] {
+                let point = NSPoint(x: visible.midX, y: y)
+                let hit = try XCTUnwrap(roll.stack.hitTest(point))
+                editor.setSelectedRange(caret)
+                _ = roll.window.makeFirstResponder(nil)
+                let location = roll.stack.convert(point, to: nil)
+                let event = try XCTUnwrap(NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0,
+                    windowNumber: roll.window.windowNumber, context: nil, eventNumber: 1,
+                    clickCount: 1, pressure: 1))
+                XCTAssertTrue(hit === editor, "blank viewport at \(point) hit \(hit)")
+                XCTAssertTrue(hit.needsPanelToBecomeKey)
+                XCTAssertTrue(hit.acceptsFirstMouse(for: event))
+                // The up is queued first, so the click resolves as a focus
+                // click rather than on the host's physical button state.
+                roll.window.postEvent(try XCTUnwrap(NSEvent.mouseEvent(
+                    with: .leftMouseUp, location: location, modifierFlags: [], timestamp: 0,
+                    windowNumber: roll.window.windowNumber, context: nil, eventNumber: 1,
+                    clickCount: 1, pressure: 1)), atStart: true)
+                hit.mouseDown(with: event)
+                XCTAssertTrue(roll.window.firstResponder === editor)
+                XCTAssertEqual(editor.selectedRange(), caret)
+            }
+        }
+    }
+
+    private func leftClick(in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+            clickCount: 1, pressure: 1
+        ))
+    }
+
+    /// The stack itself no longer takes clicks: blank viewport belongs to
+    /// the editor's own frame. What remains ours is the header's forward
+    /// when there is no editor to focus.
+    func testUnavailableRollFocusForwardsHeaderClicksToTheResponderChain() throws {
+        let model = try makeModel()
+        let roll = try mountRoll(model: model)
+        let fallback = ClickResponder()
+        let event = try leftClick(in: roll.window)
+
+        // Before the first page there is no editor to receive focus.
+        XCTAssertFalse(roll.stack.focusEditor())
+
+        let selected = try page(in: model, saying: "writing")
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: true)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        header.nextResponder = fallback
+        XCTAssertFalse(roll.stack.focusEditor())
+        header.mouseDown(with: event)
+        XCTAssertEqual(fallback.clicks, 1, "read-only content swallowed its click")
+
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        roll.scroll.removeFromSuperview()
+        XCTAssertFalse(roll.stack.focusEditor(), "a detached roll reported that it focused")
+        header.mouseDown(with: event)
+        XCTAssertEqual(fallback.clicks, 2)
+    }
+
+    func testCheckpointFocusTraversesAnIntermediateContainer() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "writing")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let container = NSView(frame: header.frame)
+        roll.stack.addSubview(container)
+        header.removeFromSuperview()
+        container.addSubview(header)
+        header.frame.origin = .zero
+        let caret = NSRange(location: 3, length: 0)
+        editor.setSelectedRange(caret)
+        _ = roll.window.makeFirstResponder(nil)
+
+        XCTAssertTrue(header.needsPanelToBecomeKey)
+        header.mouseDown(with: try leftClick(in: roll.window))
+
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertEqual(editor.selectedRange(), caret)
+    }
+
+    func testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "writing")
+        let tab = try XCTUnwrap(model.selection)
+        model.renameTab(tab, to: "named page")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let fields = header.subviews.compactMap { $0 as? NSTextField }
+        let title = try XCTUnwrap(fields.first { $0.stringValue == "named page" })
+        let expected = header.accessibilityLabel()
+
+        for field in fields where !field.isHidden {
+            let local = NSPoint(x: field.frame.midX, y: field.frame.midY)
+            let screen = roll.window.convertPoint(toScreen: header.convert(local, to: nil))
+            let target = try XCTUnwrap(header.accessibilityHitTest(screen) as? NSView)
+            XCTAssertTrue(target === header)
+            XCTAssertEqual(target.accessibilityLabel(), expected)
+        }
+
+        header.beginRename()
+        let local = NSPoint(x: title.frame.midX, y: title.frame.midY)
+        let screen = roll.window.convertPoint(toScreen: header.convert(local, to: nil))
+        let target = try XCTUnwrap(header.accessibilityHitTest(screen) as? NSView)
+        XCTAssertTrue(target === title, "the editable name lost its accessibility target")
+        header.endRename(committed: false)
+    }
+
     /// Every row is its header and then its region, and the document is
     /// exactly as tall as the rows it holds, or as tall as the clip,
     /// when there is less writing than card.

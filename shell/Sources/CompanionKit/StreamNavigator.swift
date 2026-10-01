@@ -333,6 +333,11 @@ public enum StreamNavigator {
         /// this far short of the rail's edge.
         public static let sliverInset: CGFloat = 26
         public static let sliverTrailing: CGFloat = 8
+        /// The scrollbar lane along the rail's leading edge, where a
+        /// track click lands even beside a checkpoint row. It stops
+        /// short of the dots, whose widest sits at `trackX - 3`, so a
+        /// click on a dot still selects its page.
+        public static let scrollLaneWidth: CGFloat = 9
         /// The least the viewport band is drawn as.
         public static let minimumBand: CGFloat = 6
         /// How far above a node's page a jump lands, so the gutter's
@@ -441,6 +446,31 @@ public enum StreamNavigator {
             placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
             activeSegment: nil, slivers: [], sourceHeight: 0, anchors: []
         )
+    }
+
+    /// A minimap drag uses the map captured at mouse-down, so viewport
+    /// publications cannot move the coordinate system underneath the pointer.
+    struct ScrollDrag {
+        let layout: Layout
+        let maximumOffset: CGFloat
+        let grabOffset: CGFloat
+
+        init(layout: Layout, geometry: RollGeometry, startY: CGFloat) {
+            self.layout = layout
+            maximumOffset = max(0, geometry.documentHeight - geometry.viewportHeight)
+            if layout.band?.contains(startY) == true {
+                grabOffset = layout.documentOffset(atY: startY) - geometry.viewportTop
+            } else {
+                grabOffset = geometry.viewportHeight * Metrics.trackLead
+            }
+        }
+
+        /// One mapping, clamped to the document. The anchors already
+        /// carry the track's ends to the document's ends, so no special
+        /// case for either end is needed.
+        func offset(atY y: CGFloat) -> CGFloat {
+            min(maximumOffset, max(0, layout.documentOffset(atY: y) - grabOffset))
+        }
     }
 
     /// Where a click on a node scrolls the roll to: just above the

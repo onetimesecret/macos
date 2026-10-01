@@ -54,6 +54,11 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
             // window, so bringing it forward is wholly this call's.
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
+            // Ordering the window does not replace a field editor or
+            // another responder left by its previous interaction. Wait
+            // for this window's editor if key status transfers ownership
+            // from the panel and the content has yet to remount.
+            model.pages.focusEditorWhenMounted(in: window, requireKeys: true)
             return
         }
         // The fact before the window: the panel has to have let go of

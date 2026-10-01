@@ -15,7 +15,9 @@ and reported passed, exactly these: the four sections marked ADR-0033
 window; Editor window full screen; Stage Manager and Mission Control),
 the checks of issue #190, two checks of issue #184 (the press on a
 partly covered card, and ⌘Tab into a full-screen Space), and the seven
-B4 routes of issue #210. Rows with an empty result have not been run.
+B4 routes of issue #210. The panel-off checks for #215 were added
+after that run and remain unverified. Rows with an empty result have
+not been run.
 
 ## Scope after ADR-0033
 
@@ -37,11 +39,11 @@ A person's launch, a Dock click, a reopen and ⌘Tab select the editor
 window (opening it when closed); with the ambient panel preference on,
 which is the default, the hotkey, the status item and the resting card
 click stay with the panel. With the preference off, ADR-0033 sends the
-hotkey and the status item to the editor window as well; every check
-here assumes it is on. A ⌘Tab that finds the editor
-window closed opens it on the desktop the person is on, and a raised
-panel rests as the window takes the keyboard; one that finds it open
-on another desktop switches there, as it does for any document
+hotkey and the status item to the editor window as well; except for the
+panel-off checks below, every check here assumes it is on. A ⌘Tab that
+finds the editor window closed opens it on the desktop the person is on,
+and a raised panel rests as the window takes the keyboard; one that finds
+it open on another desktop switches there, as it does for any document
 application. A pinned panel floats above every ordinary window, editor
 included; the editor never floats. *Companion* marks Settings and
 About, the ordinary windows ADR-0033 leaves under ADR-0032's companion
@@ -241,6 +243,76 @@ editor window is on, as it does for any document application").
       only, since an unpinned rest lets every click through to the
       desktop (ADR-0015). **Fail:** any of those three summons
       activates the app or switches desktops.
+- [ ] **Panel off: hotkey and status item focus the editor (#215).**
+      *Both.* Turn the ambient panel off, close the editor window, and
+      activate another app with a text field on the same desktop.
+      Press ⌃⌥Space. **Pass:** OnetimePad becomes active, its editor
+      window opens in front, and typing goes into the editor without a
+      second click; the panel stays absent. Repeat with the editor
+      already open behind the other app and again with it miniaturized,
+      then repeat all three cases using a left click on the status item.
+      **Fail:** the window stays miniaturized, typing stays with the
+      other app, a second click is needed, or the panel appears.
+      Paste the relevant stream lines: `editor window=open` is emitted
+      only when the window is created (`PrimaryEditorWindowController.show`);
+      `key gain=editor-window` is emitted only when the panel still owns
+      the page (`BackdropModel.keyStatusChanged`). Neither line is
+      required for an already open or miniaturized editor that owns the
+      page; confirm the active app and typing in every case. Accepted
+      ADR-0033 states: "With the panel off, the hotkey and the status item
+      select the editor window." Turn the panel back on and rerun
+      **The panel's own summons stay with the panel** above.
+- [ ] **Panel off: summons with the editor on another desktop (#215).**
+      *Both.* With the panel off and the editor open on Desktop 1,
+      activate another app on Desktop 3. Press ⌃⌥Space, then repeat from
+      Desktop 3 using a left click on the status item. **Proposed pass:**
+      OnetimePad becomes active, the screen switches to Desktop 1, the
+      existing editor comes forward keyed, typing enters it without a
+      second click, and the panel stays absent. **Fail against this
+      proposed expectation:** the screen stays on Desktop 3, the editor
+      does not receive typing, or the panel appears. Record the actual
+      desktop and keyboard result, including the conditional stream
+      evidence described in the preceding check. Switching desktops for
+      these gestures is an implementation interpretation, unverified on
+      hardware. Accepted ADR-0033 explicitly names ⌘Tab: "⌘Tab from
+      another desktop can carry the person to the desktop the editor
+      window is on, as it does for any document application." It does
+      not explicitly specify Space switching for panel-off summons.
+- [ ] **Content clicks focus at the existing caret (#215).** *Both.*
+      In a scratch page, type two short lines and leave the caret in
+      the middle of the first. Focus another app, then click in the
+      blank content below the lines and type a character. Repeat on
+      the horizontal checkpoint and its day label. **Pass:** the first
+      click focuses the editor and typing resumes at the saved caret;
+      neither the selected page nor the caret changes on that click.
+      Repeat in the panel, the editor window, an empty buffer, and an
+      unsaved file. Enlarge the window with only a short line and its
+      final newline: repeat just below the text, halfway down the blank
+      area, and near the bottom edge, including when already focused.
+      Each point must focus at the existing caret. Then fill a buffer with several lines and click a
+      specific line: the caret must move there and typing must follow.
+      Check a checkpoint's right-click menu and inline rename as well.
+      **Fail:** a content click needs a second click, typing goes to
+      the other app, blank space moves the caret, a line click fails
+      to place it, or rename/context-menu input is intercepted.
+      This check records the click behavior requested for #215; it
+      remains unrun on hardware.
+- [ ] **Blank-space selection gestures remain native (#215).** *Both.*
+      In a scratch buffer with several lines, Shift-click below the
+      text to extend the selection, and drag upward starting in that
+      blank area. Repeat with Option-drag and repeated clicks, and
+      verify read-only text still allows its normal selection gestures.
+      **Pass:** these gestures follow AppKit's text selection behavior;
+      a plain click without dragging preserves the existing caret as
+      requested, including when already focused. **Fail:** a selection
+      gesture is consumed as a focus click, or a drag leaves input stuck.
+- [ ] **Checkpoint accessibility keeps its label and rename input (#215).**
+      *Both.* With VoiceOver on, navigate to the checkpoint and inspect
+      its day, page name, and remaining-time description. Begin an
+      inline rename and navigate into its editable field. **Pass:** the
+      composed checkpoint description is available and the rename field
+      is independently editable. **Fail:** mouse focus redirection
+      hides the spoken checkpoint or its rename field.
 
 ### A pinned panel floats above the editor window (ADR-0033)
 
@@ -815,6 +887,36 @@ first full-screen check above, and its row records it.
       the screen or lands askew, that is a clamping defect and worth its
       own issue; the refusal to change desktops is not.
 
+### Full-height typing surface and timeline interaction (stacked followup to #215)
+
+Implementation checks for the requested interaction; these are not additional
+ADR claims. Hardware results are not yet recorded.
+
+- With an empty page, one short line followed by a newline, and an unsaved
+  file, enlarge and shrink the window. Click near the text, halfway down,
+  and just above the bottom edge. The typing surface fills the available
+  height; each ordinary blank click focuses at the saved caret. Shrinking
+  a short document leaves no extra blank scroll extent. Check checkpoint
+  clicks, rename, and contextual menus as in the checks above.
+- Make a roll long enough to scroll. Click above and below its viewport
+  band on the timeline track, including the narrow lane left of the dots
+  beside checkpoint rows. The roll moves to the corresponding stretch; the
+  selected page stays unchanged. A click on a checkpoint dot or label
+  still selects that page.
+- Click the bare track, then grab the band before the 160 ms jump finishes.
+  The roll follows the drag; the earlier click's travel does not pull it
+  back.
+- Grab the band near its top, middle and bottom. Drag in both directions,
+  then beyond either end of the track. The roll follows directly without
+  a navigation animation, does not jump on grabbing, and reaches both
+  document ends. Repeat over line slivers and checkpoint labels. A drag
+  must not turn into a checkpoint selection on release; a label click
+  still navigates to the checkpoint.
+- With the entire roll visible, the track has no scroll movement. With a
+  file or ledger open, or in the window that does not own the roll, the
+  timeline must not move another window's scroll position. Check wheel
+  scrolling still works on the owned roll.
+
 ## Results
 
 The 2026-09-28 rows record the maintainer's report of that run; the
@@ -841,6 +943,11 @@ is about, in the split ADR-0033 gives.
 | 2026-09-28 | not recorded | editor | Dock icon selects the editor window when open | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | reopen selects the editor window, not the panel | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | panel | hotkey, status item and resting card click stay with the panel | pass | ADR-0033. Reported passed by the maintainer. |
+| | | both | panel off: hotkey and status item focus the editor, closed, open and miniaturized | | #215. Record active app, typing and conditional stream evidence; rerun panel-on summons. |
+| | | both | panel off: hotkey and status item with the editor on another desktop | | #215. Unverified implementation interpretation; record actual desktop and keyboard result against the proposed expectation. |
+| | | both | blank content and checkpoint clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. |
+| | | both | blank-space modified clicks and drag selection remain native | | #215. Include enlarged short buffers and read-only text. |
+| | | both | checkpoint VoiceOver description and inline rename field | | #215. Screen-coordinate accessibility tests pass; VoiceOver check unrun. |
 | 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | editor window never resolves to floating | pass | ADR-0033. Reported passed by the maintainer under the earlier wording, which read the log; no log line names the editor window's level, so judge a rerun by the probe's `layer=` (0 is normal). |
 | 2026-09-28 | not recorded | editor | editor enters and leaves full screen | pass | ADR-0033. Reported passed by the maintainer. |

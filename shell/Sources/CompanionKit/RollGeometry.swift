@@ -182,8 +182,10 @@ public final class RollGeometryModel: ObservableObject {
     /// `scroll(toDocumentOffset:)` and never reaches the roll itself.
     private var scroller: ((CGFloat) -> Void)?
 
-    /// How the mounted roll takes a wheel event that landed on the
-    /// rail, on the same terms.
+    /// The immediate counterpart of an animated navigation jump.
+    private var scrubber: ((CGFloat) -> Void)?
+
+    /// How the mounted roll takes a wheel event that landed on the rail.
     private var wheelRelay: ((NSEvent) -> Void)?
 
     /// Where the mounted roll stands, on the same terms. Asked by the
@@ -198,18 +200,18 @@ public final class RollGeometryModel: ObservableObject {
     /// publication, for the same reason: a mount happens inside
     /// `makeNSView`.
     ///
-    /// The first two closures are the roll's answers to the rail's two
-    /// asks, and the third is its answer to the model's one. Nil is a
-    /// roll that answers none, which is what a test's stand-in is; the
-    /// surface always passes all three.
+    /// The scroll, scrub and wheel closures answer the rail; the place
+    /// reader answers the model. Nil leaves that route unanswered.
     func claim(
         by roll: AnyObject,
         scroller: ((CGFloat) -> Void)? = nil,
+        scrubber: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
         place: (() -> RollPlace?)? = nil
     ) {
         publisher = ObjectIdentifier(roll)
         self.scroller = scroller
+        self.scrubber = scrubber
         wheelRelay = wheel
         placeReader = place
         reset(from: roll)
@@ -247,6 +249,7 @@ public final class RollGeometryModel: ObservableObject {
         let place = placeReader?()
         publisher = nil
         scroller = nil
+        scrubber = nil
         wheelRelay = nil
         placeReader = nil
         book(.unmeasured)
@@ -285,6 +288,11 @@ public final class RollGeometryModel: ObservableObject {
     /// ledger or a file showing, where there is no roll to move.
     public func scroll(toDocumentOffset offset: CGFloat) {
         scroller?(offset)
+    }
+
+    /// Follow a scrollbar drag immediately, without a navigation animation.
+    public func scrub(toDocumentOffset offset: CGFloat) {
+        scrubber?(offset)
     }
 
     /// A wheel turned over the rail. The roll takes the event as if it

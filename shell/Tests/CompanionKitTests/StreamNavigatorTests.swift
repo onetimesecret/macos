@@ -679,6 +679,43 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertTrue(relay.window === window, "and it never had to leave the window for that")
     }
 
+    func testScrollbarDragPreservesGrabAndReachesDocumentEnds() throws {
+        let checkpoints = nodes([slot(tab: 1, page: 11), slot(tab: 2, page: 12, day: -1)])
+        let geometry = RollGeometry(
+            extents: [extent(checkpoints[0], top: 0, height: 100),
+                      extent(checkpoints[1], top: 100, height: 1900)],
+            documentHeight: 2000, viewportTop: 400, viewportHeight: 300)
+        let layout = StreamNavigator.layout(nodes: checkpoints, geometry: geometry, height: 400, width: 102)
+        let band = try XCTUnwrap(layout.band)
+        for grab in [band.y + 1, band.y + band.height / 2, band.y + band.height - 1] {
+            let drag = StreamNavigator.ScrollDrag(layout: layout, geometry: geometry, startY: grab)
+            XCTAssertEqual(drag.offset(atY: grab), 400, accuracy: 0.01)
+            XCTAssertGreaterThan(drag.offset(atY: grab + 10), 400)
+            XCTAssertLessThan(drag.offset(atY: grab - 10), 400)
+            XCTAssertEqual(drag.offset(atY: -100), 0)
+            XCTAssertEqual(drag.offset(atY: 500), 1700)
+        }
+        let trackY = band.y + band.height + 15
+        let drag = StreamNavigator.ScrollDrag(layout: layout, geometry: geometry, startY: trackY)
+        XCTAssertEqual(drag.offset(atY: trackY),
+                       min(1700, layout.jumpOffset(forTrackY: trackY, viewportHeight: 300)), accuracy: 0.01)
+    }
+
+    func testScrubbingUsesImmediateRouteAndRetiresWithClaim() {
+        let roll = RollGeometryModel()
+        let owner = NSObject()
+        var jumps: [CGFloat] = []
+        var scrubs: [CGFloat] = []
+        roll.claim(by: owner, scroller: { jumps.append($0) }, scrubber: { scrubs.append($0) })
+        roll.scroll(toDocumentOffset: 100)
+        roll.scrub(toDocumentOffset: 200)
+        XCTAssertEqual(jumps, [100])
+        XCTAssertEqual(scrubs, [200])
+        roll.relinquish()
+        roll.scrub(toDocumentOffset: 300)
+        XCTAssertEqual(scrubs, [200])
+    }
+
     /// A node's click lands just above its page, never above the
     /// document, and takes no time for a reader who asked for less
     /// motion.

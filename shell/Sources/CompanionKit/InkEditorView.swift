@@ -318,7 +318,10 @@ public struct InkEditorView: NSViewRepresentable {
     /// gets (`makePage`).
     static func bareScroller() -> NSScrollView {
         let scroll = NSScrollView()
+        scroll.contentView = EditorViewportClipView()
         scroll.hasVerticalScroller = true
+        // NSScrollView forwards this to its clip, so apply it after replacing
+        // the clip view to keep the page's background transparent.
         scroll.drawsBackground = false
         return scroll
     }
@@ -400,7 +403,8 @@ public struct InkEditorView: NSViewRepresentable {
     /// of short lines shrinks its text view to the width of its longest
     /// one, and every click to the right of the text lands on the scroll
     /// view, where it places no caret. The floor is the clip, so it
-    /// moves with the card (`clipFrameChanged`).
+    /// moves with the card (`clipFrameChanged`). Its height also stays
+    /// at least the viewport height so blank space belongs to the editor.
     ///
     /// Returning to wrapped has one loose end the flags do not tie: a
     /// text view that ran wide keeps that frame, and nothing else takes
@@ -425,7 +429,7 @@ public struct InkEditorView: NSViewRepresentable {
             textView.autoresizingMask = []
             scroll.hasHorizontalScroller = true
         }
-        textView.minSize = NSSize(width: clip.width, height: 0)
+        textView.minSize = NSSize(width: clip.width, height: clip.height)
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -1826,11 +1830,12 @@ public struct InkEditorView: NSViewRepresentable {
             textView?.refreshHover()
         }
 
-        /// The card resized. Wrapped, the autoresizing mask has already
-        /// done everything needed. Unwrapped, the text view sizes itself
-        /// to its text and nothing else would ever widen it, so the floor
-        /// is re-levelled here and a page narrower than the card is
-        /// stretched to meet it.
+        /// The card resized. The floor under the typing surface is the
+        /// clip's to keep (`EditorViewportClipView`), and wrapped, the
+        /// autoresizing mask has done everything else. Unwrapped, the
+        /// text view sizes itself to its text and nothing else would
+        /// ever widen it, so a page narrower than the card is stretched
+        /// to meet it here.
         ///
         /// A newly mounted page's first real frame also arrives here,
         /// and with it the scroll restore that could not be resolved
@@ -1849,9 +1854,9 @@ public struct InkEditorView: NSViewRepresentable {
                     )
                 }
             }
-            guard appliedWrap == false, let textView, let scroll = scrollView else { return }
+            guard appliedWrap == false, let textView, let scroll = scrollView,
+                  scroll.documentView === textView else { return }
             let width = scroll.contentSize.width
-            textView.minSize = NSSize(width: width, height: 0)
             guard textView.frame.width < width else { return }
             textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
         }
@@ -3946,6 +3951,29 @@ final class InkTextContainer: NSTextContainer {
     }
 }
 
+/// Keep an ordinary page's typing surface at least as tall as its viewport.
+/// Roll editors get their minimum height from DayStackView instead. This
+/// is the one writer of the floor while the page is mounted; `setWrap`
+/// seeds the same value when the wrap mode changes.
+final class EditorViewportClipView: NSClipView {
+    override func layout() {
+        super.layout()
+        guard let editor = documentView as? InkTextView else { return }
+        let previous = editor.minSize
+        guard previous != bounds.size else { return }
+        editor.minSize = bounds.size
+        // Only a surface standing on the old floor, or short of the new
+        // one, needs a new frame. A page taller than both already clears
+        // the floor, and `sizeToFit` would lay out the whole document
+        // for nothing on every frame of a live resize.
+        if editor.frame.height <= max(previous.height, bounds.height)
+            || editor.frame.width < bounds.width
+        {
+            editor.sizeToFit()
+        }
+    }
+}
+
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
     SealResponder
 {
@@ -4134,6 +4162,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             && modifierFlags.intersection([.command, .shift, .control, .option]) == .control
     }
 
+    /// An editable page takes the click that brings its window forward,
+    /// so the first click on blank space focuses rather than merely
+    /// activating.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        isEditable || super.acceptsFirstMouse(for: event)
+    }
+
     /// A click on the explicit actions affordance opens the object's menu.
     /// Control-primary over a chip takes the same direct route as a
     /// secondary click, avoiding text-system additions to the menu. Every
@@ -4141,6 +4176,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// delegate selects the object without opening anything.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if Self.shouldFocusBlankSpace(
+            isEditable: isEditable, clickCount: event.clickCount,
+            modifierFlags: event.modifierFlags,
+            containsTextLine: containsTextLine(at: point)
+        ), consumeBlankFocusClick(event) {
+            return
+        }
         if Self.shouldOpenChipContextMenu(
             clickCount: event.clickCount, modifierFlags: event.modifierFlags),
            let coordinator,
@@ -4166,6 +4208,68 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return
         }
         super.mouseDown(with: event)
+    }
+
+    /// Plain blank-space clicks preserve the existing caret even if the
+    /// editor already has focus. This is the requested page-wide focus
+    /// gesture; modified and repeated clicks retain native selection.
+    nonisolated static func shouldFocusBlankSpace(
+        isEditable: Bool, clickCount: Int,
+        modifierFlags: NSEvent.ModifierFlags, containsTextLine: Bool
+    ) -> Bool {
+        isEditable && !containsTextLine && shouldOpenChipActions(
+            clickCount: clickCount, modifierFlags: modifierFlags
+        )
+    }
+
+    /// A mouse-down alone cannot distinguish a focus click from selection
+    /// dragged out of blank space. Peek at the next tracking event: leave
+    /// a drag queued for NSTextView, or consume the up for a focus click.
+    /// Short waits permit a missing mouse-up to end when the button has
+    /// been released, rather than keeping the tracking loop alive forever.
+    func consumeBlankFocusClick(_ event: NSEvent) -> Bool {
+        guard let window else { return false }
+        while true {
+            if let next = window.nextEvent(
+                matching: [.leftMouseDragged, .leftMouseUp],
+                until: Date(timeIntervalSinceNow: 0.1),
+                inMode: .eventTracking, dequeue: false
+            ) {
+                guard next.type == .leftMouseUp else { return false }
+                _ = window.nextEvent(
+                    matching: .leftMouseUp, until: .distantPast,
+                    inMode: .eventTracking, dequeue: true
+                )
+                window.makeFirstResponder(self)
+                return true
+            }
+            if NSEvent.pressedMouseButtons & 1 == 0 {
+                window.makeFirstResponder(self)
+                return true
+            }
+        }
+    }
+
+    /// A line's full horizontal band uses native text selection, including
+    /// the empty tail of a line and the final empty paragraph. Resolve only
+    /// the line nearest the click rather than walking every line in a file.
+    func containsTextLine(at point: NSPoint) -> Bool {
+        guard let layoutManager, let textContainer else { return false }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        guard local.y >= 0 else { return false }
+        layoutManager.ensureLayout(forBoundingRect: NSRect(
+            x: 0, y: local.y, width: max(1, textContainer.size.width), height: 1
+        ), in: textContainer)
+        let extra = layoutManager.extraLineFragmentRect
+        if layoutManager.extraLineFragmentTextContainer === textContainer,
+           local.y >= extra.minY && local.y < extra.maxY {
+            return true
+        }
+        guard layoutManager.numberOfGlyphs > 0 else { return false }
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer)
+        guard glyph < layoutManager.numberOfGlyphs else { return false }
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return local.y >= line.minY && local.y < line.maxY
     }
 
     /// The frame the block at `index` is drawn with, in this view's

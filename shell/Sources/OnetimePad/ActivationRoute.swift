@@ -113,6 +113,29 @@ struct ActivationContext: Equatable, Sendable {
 /// classifier is kept out of the routing function so the function
 /// itself has one input per row.
 enum ActivationRouter {
+    /// Ordinary editor windows wait for app activation; panel summons
+    /// remain independent of app activation.
+    static func defersForActivation(route: ActivationRoute, appActive: Bool) -> Bool {
+        guard case .openEditorWindow = route else { return false }
+        return !appActive
+    }
+
+    /// About/Settings own their requested activation. Otherwise a pending
+    /// summon preserves its raise, even inside the launch window.
+    static func routeForActivation(
+        pendingSummon: ActivationRoute?,
+        sinceLaunch: TimeInterval,
+        launchWindow: TimeInterval,
+        context: ActivationContext
+    ) -> ActivationRoute {
+        if context.claimedByAnotherWindow { return .noop }
+        if let pendingSummon { return pendingSummon }
+        return decide(
+            activationReason(sinceLaunch: sinceLaunch, launchWindow: launchWindow),
+            in: context
+        )
+    }
+
     /// The routing table. Every combination of `reason` and `context`
     /// resolves to one `ActivationRoute`.
     static func decide(

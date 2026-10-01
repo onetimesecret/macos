@@ -165,8 +165,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PageModel.QuietRendering` private storages, or nothing; ADR-0006's
   one layout manager per storage rule stands. A person's launch, a
   Dock click, a reopen and ⌘Tab select the editor window (opening
-  it when closed); the hotkey, the status item and the resting card
-  click stay with the panel. ⌘W stays `page::Close`; ⇧⌘W closes the
+  it when closed); with the ambient panel enabled, the hotkey, the
+  status item and the resting card click stay with the panel. With the
+  panel off, the hotkey and status item select the editor window.
+  ⌘W stays `page::Close`; ⇧⌘W closes the
   window. The editor window keeps frame autosave only
   (`isRestorable = false`, `sharingType = .none`), and its title is
   the application's name and never page content. The ambient panel

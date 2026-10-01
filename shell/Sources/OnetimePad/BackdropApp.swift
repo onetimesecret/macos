@@ -354,9 +354,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// launch window.
     /// About's activation is flagged by `showAbout`, and Settings' by
     /// `openSettings`, because those windows need the activation for
-    /// themselves without dragging the surface up with them. Every
-    /// other activation, whether by ⌘Tab or the Dock icon, is the user
-    /// choosing this app, and answers with a raise.
+    /// themselves without dragging the surface up with them. A
+    /// panel-off editor summon waits for its own activation before
+    /// showing the window. Every other activation, whether by ⌘Tab or
+    /// the Dock icon, is the user choosing this app and answers with a
+    /// raise.
     ///
     /// The launch time is taken in `applicationWillFinishLaunching`,
     /// the first thing AppKit tells the delegate, rather than in
@@ -369,6 +371,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var launchedAt = Date.distantPast
     private var aboutActivation = false
     private var settingsActivation = false
+
+    /// An inactive app must finish activating before its editor can be key.
+    private var pendingEditorSummon: ActivationRoute?
 
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
@@ -442,7 +447,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         summonKey = BackdropHotKey.controlOptionSpace { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.apply(ActivationRouter.decide(.hotkey, in: self.activationContext()))
+                self.applySummon(.hotkey)
             }
         }
 
@@ -560,6 +565,29 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// Accepted ADR-0033 says: "With the panel off, the hotkey and the
+    /// status item select the editor window." Activating the app for
+    /// this case is an implementation interpretation of that selection,
+    /// so the ordinary editor window can take keyboard focus. Show it from
+    /// that activation callback, which must not route this same gesture
+    /// a second time as a launch or ⌘Tab (and possibly anchor on today).
+    private func applySummon(_ reason: ActivationReason) {
+        let route = ActivationRouter.decide(reason, in: activationContext())
+        if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
+            // Activation is a request and may never deliver its callback.
+            // A stranded route is harmless with the current panel-off rows:
+            // both return .openEditorWindow(.activation), exactly the late
+            // activation route. This relies on their raise staying .activation;
+            // changing it to .summon would require expiring pending intent.
+            assert(route == .openEditorWindow(.activation),
+                   "Deferred panel-off summons must match the late activation route")
+            pendingEditorSummon = route
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        apply(route)
+    }
+
     /// Routes one decision to its verb while preserving associated
     /// values. Kept pure at this boundary so tests can catch a dispatch
     /// implementation that drops the launch's summon reason.
@@ -632,11 +660,24 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let claimed = aboutActivation || settingsActivation
         aboutActivation = false
         settingsActivation = false
-        let reason = ActivationRouter.activationReason(
+        // Consume pending intent even when About/Settings claim this
+        // activation, so it cannot leak into the next real ⌘Tab. Otherwise
+        // it takes precedence over recency and keeps the gesture's raise.
+        let pending = pendingEditorSummon
+        pendingEditorSummon = nil
+        apply(ActivationRouter.routeForActivation(
+            pendingSummon: pending,
             sinceLaunch: Date().timeIntervalSince(launchedAt),
-            launchWindow: Self.launchWindow
-        )
-        apply(ActivationRouter.decide(reason, in: activationContext(claimed: claimed)))
+            launchWindow: Self.launchWindow,
+            context: activationContext(claimed: claimed)
+        ))
+    }
+
+    func applicationWillResignActive(_ notification: Notification) {
+        // A completed activation consumes the intent above. If the app
+        // instead loses activation, no summon should survive that turn
+        // away and take precedence over a later return.
+        pendingEditorSummon = nil
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.
@@ -773,7 +814,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             // opens Settings; anything else summons.
             openSettings()
         } else {
-            apply(ActivationRouter.decide(.statusItem, in: activationContext()))
+            applySummon(.statusItem)
         }
     }
 

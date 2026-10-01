@@ -66,6 +66,25 @@ final class EditorHandoffTests: XCTestCase {
         XCTAssertNil(PageModel.mountedEditor(nil))
     }
 
+    func testFocusWaitsForAnEditorInTheRequestedWindow() async throws {
+        let model = try makeModel()
+        let (outgoingWindow, outgoing) = mountedEditor()
+        let (targetWindow, incoming) = mountedEditor()
+        model.mountEditor(outgoing, from: .panel)
+        XCTAssertNil(PageModel.mountedEditor(outgoing, in: targetWindow))
+        XCTAssertTrue(PageModel.mountedEditor(outgoing, in: outgoingWindow) === outgoing)
+        _ = targetWindow.makeFirstResponder(nil)
+        model.focusEditorWhenMounted(in: targetWindow)
+        await Task.yield()
+        XCTAssertFalse(targetWindow.firstResponder === outgoing)
+        model.mountEditor(incoming, from: .panel)
+        for _ in 0..<20 {
+            if targetWindow.firstResponder === incoming { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(targetWindow.firstResponder === incoming, "a stale mount ended the focus wait")
+    }
+
     // MARK: Retiring the handle when the mount goes
 
     func testDismantlingTheEditorRetiresTheModelsHandle() throws {

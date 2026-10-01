@@ -4703,7 +4703,8 @@ public final class PageModel: ObservableObject {
             for _ in 0..<10 {
                 guard let self else { return }
                 if requireKeys, !self.holdsKeys { return }
-                if let editor = Self.mountedEditor(self.activeEditor) {
+                if requireKeys, let window, !window.isKeyWindow { return }
+                if let editor = Self.mountedEditor(self.activeEditor, in: window) {
                     (window ?? editor.window)?.makeFirstResponder(editor)
                     return
                 }
@@ -4728,8 +4729,11 @@ public final class PageModel: ObservableObject {
     /// ember is lit, and the keystroke beeps, which is the fault the
     /// poll exists to prevent, on the ledger's own return path (issue
     /// #23). A view inside a window is mounted; that is the whole test.
-    static func mountedEditor(_ editor: NSTextView?) -> NSTextView? {
+    static func mountedEditor(_ editor: NSTextView?, in targetWindow: NSWindow? = nil) -> NSTextView? {
         guard let editor, editor.window != nil else { return nil }
+        // Ownership can transfer before SwiftUI replaces the old mount.
+        // A focus request for one window must wait for its own editor.
+        if let targetWindow, editor.window !== targetWindow { return nil }
         return editor
     }
 
@@ -5981,12 +5985,13 @@ public final class PageModel: ObservableObject {
     func claimRollGeometry(
         by roll: AnyObject,
         scroller: ((CGFloat) -> Void)? = nil,
+        scrubber: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
         place: (() -> RollPlace?)? = nil,
         from surface: PresentationOwner
     ) {
         guard admits(.rollGeometry, from: surface) else { return }
-        rollGeometry.claim(by: roll, scroller: scroller, wheel: wheel, place: place)
+        rollGeometry.claim(by: roll, scroller: scroller, scrubber: scrubber, wheel: wheel, place: place)
     }
 
     /// A window reporting its key status. Only the owner's counts: the
