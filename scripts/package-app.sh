@@ -521,7 +521,7 @@ elif [[ -n "$PROVISIONING_PROFILE" ]]; then
   # template through binary form to produce Apple's canonical XML.
   plutil -convert binary1 "$SIGN_ENTITLEMENTS"
   plutil -convert xml1 "$SIGN_ENTITLEMENTS"
-  echo "==> entitlements: app sandbox, outgoing network, user selected files (read write), keychain-access-group $ACCESS_GROUP"
+  echo "==> entitlements: app sandbox, outgoing/incoming network, app scoped bookmarks, user selected files (read write), keychain-access-group $ACCESS_GROUP"
   if ((APP_STORE_MODE)); then
     codesign --force --options runtime --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
   else
@@ -576,6 +576,8 @@ if ((APP_STORE_MODE)); then
   fi
   SIGNED_SANDBOX="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   SIGNED_NETWORK="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_NETWORK_SERVER="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
+  SIGNED_BOOKMARKS="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.files.bookmarks.app-scope' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   SIGNED_USER_SELECTED_FILES="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.files.user-selected.read-write' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   SIGNED_ACCESS_GROUP="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
   SIGNED_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$SIGNED_ENTITLEMENTS" 2>/dev/null || true)"
@@ -589,10 +591,14 @@ if ((APP_STORE_MODE)); then
     echo "signed app entitlements do not match the App Store distribution requirements" >&2
     exit 1
   fi
-  # Checked apart from the rest so the failure names what is missing. A
-  # sandboxed build without this entitlement still signs, uploads and
-  # launches; it only fails later, when a person opens or saves a file of
-  # their own and the sandbox refuses the grant and the bookmark alike.
+  if [[ "$SIGNED_NETWORK_SERVER" != "true" ]]; then
+    echo "signed app lacks com.apple.security.network.server; must be true for the OAuth loopback listener" >&2
+    exit 1
+  fi
+  if [[ "$SIGNED_BOOKMARKS" != "true" ]]; then
+    echo "signed app lacks com.apple.security.files.bookmarks.app-scope; must be true for persistent scoped bookmarks" >&2
+    exit 1
+  fi
   if [[ "$SIGNED_USER_SELECTED_FILES" != "true" ]]; then
     echo "signed app lacks com.apple.security.files.user-selected.read-write, so the sandbox" >&2
     echo "would refuse every file a person opens or saves. scripts/Companion.entitlements" >&2
