@@ -255,6 +255,16 @@ fn write_atomic_preserving_mode(
         .file_name()
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
     let tmp_dir = staging_dir.unwrap_or(dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        // Fail before staging any content. Rename cannot cross filesystems;
+        // only the shell can obtain an authorized replacement directory on
+        // the destination filesystem. Never turn this into a copying save.
+        if std::fs::metadata(tmp_dir)?.dev() != std::fs::metadata(dir)?.dev() {
+            return Err(io::Error::from(io::ErrorKind::CrossesDevices));
+        }
+    }
 
     // What is already at the target, asked once. Its mode and its group
     // are what the new file has to end up with, because the rename
@@ -1768,6 +1778,37 @@ mod tests {
             io::ErrorKind::InvalidInput
         );
         worker.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cross_filesystem_staging_is_rejected_before_creating_a_temp_file() {
+        use std::os::unix::fs::MetadataExt as _;
+        let (root, docs, staging) = target_and_staging("cross-filesystem");
+        let target = docs.join("note.txt");
+        std::fs::write(&target, b"original").unwrap();
+        // /dev is a separate mounted filesystem on macOS and Linux. It
+        // needs no writable fixture: preflight must reject before creation.
+        let other = Path::new("/dev");
+        if std::fs::metadata(other).unwrap().dev() == std::fs::metadata(&docs).unwrap().dev() {
+            eprintln!("cross-filesystem test skipped: /dev shares the scratch filesystem");
+            std::fs::remove_dir_all(root).unwrap();
+            return;
+        }
+        let error = write_atomic_preserving_mode(&target, b"replacement", Some(other)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::CrossesDevices);
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        assert_eq!(std::fs::read_dir(&docs).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(&staging).unwrap().count(), 0);
+        let absent = docs.join("new.txt");
+        assert_eq!(
+            write_atomic_preserving_mode(&absent, b"new", Some(other))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::CrossesDevices
+        );
+        assert!(!absent.exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
