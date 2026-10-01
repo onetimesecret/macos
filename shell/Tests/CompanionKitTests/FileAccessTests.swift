@@ -540,17 +540,56 @@ final class FileAccessTests: XCTestCase {
             ["notes.txt"], "nothing was left beside the target")
     }
 
-    func testWithNoStagingDirectoryToBeHadTheSaveStillWritesBesideTheTarget() throws {
+    func testWithNoStagingDirectoryTheSaveIsRefusedWithoutCallingTheCore() throws {
         let fixture = try makeFixture()
         let (launched, url, id) = try openedFile(in: fixture)
         launched.model.fileCoordinator.makeStagingDirectory = { _ in nil }
         try type("mine ", at: 0, into: id, on: launched.model)
+        launched.journal.clear()
 
-        XCTAssertTrue(launched.model.saveFile(id))
+        XCTAssertFalse(launched.model.saveFile(id))
 
-        XCTAssertEqual(launched.client.stagingDirectories.count, 1)
-        XCTAssertNil(launched.client.stagingDirectories[0], "nil is passed only when none can be had")
-        XCTAssertEqual(try read(url), "mine body\n")
+        XCTAssertTrue(launched.client.stagingDirectories.isEmpty)
+        XCTAssertEqual(launched.journal.events, ["start notes.txt", "check", "stop notes.txt"])
+        assertBalanced(launched.scope)
+        XCTAssertEqual(launched.model.notice, PageModel.writeRefusalNotice(name: "notes.txt"))
+        XCTAssertEqual(try read(url), "body\n")
+        XCTAssertEqual(launched.model.openFiles.first?.isDirty, true)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspace.path),
+                       ["notes.txt"])
+    }
+
+    func testWithNoStagingDirectorySaveAsLeavesTheDestinationAndIdentityAlone() throws {
+        for exists in [false, true] {
+            let fixture = try makeFixture()
+            let (launched, url, id) = try openedFile(in: fixture)
+            try type("mine ", at: 0, into: id, on: launched.model)
+            let target = fixture.workspace.appendingPathComponent("copy.txt")
+            if exists { try Data("destination\n".utf8).write(to: target) }
+            let originalPath = try XCTUnwrap(launched.model.openFiles.first(where: { $0.id == id })?.path)
+            let bookmark = launched.client.fileBookmarkBase64(id)
+            launched.panels.destinationURL = target
+            launched.model.fileCoordinator.makeStagingDirectory = { _ in nil }
+            launched.journal.clear()
+
+            launched.model.saveActiveFileAs()
+
+            XCTAssertTrue(launched.client.stagingDirectories.isEmpty)
+            XCTAssertEqual(launched.journal.events, ["start copy.txt", "stop copy.txt"])
+            assertBalanced(launched.scope)
+            XCTAssertEqual(launched.model.notice, PageModel.writeRefusalNotice(name: "copy.txt"))
+            XCTAssertEqual(launched.model.openFiles.first(where: { $0.id == id })?.path, originalPath)
+            XCTAssertEqual(launched.model.openFiles.first?.isDirty, true)
+            XCTAssertEqual(launched.client.fileBookmarkBase64(id), bookmark)
+            XCTAssertEqual(try read(url), "body\n")
+            if exists {
+                XCTAssertEqual(try read(target), "destination\n")
+            } else {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+            }
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspace.path).sorted(),
+                           exists ? ["copy.txt", "notes.txt"] : ["notes.txt"])
+        }
     }
 
     func testTheBookmarkMadeAfterASaveStillFindsTheFileOnceItMoves() throws {

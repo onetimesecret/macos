@@ -3544,8 +3544,13 @@ public final class PageModel: ObservableObject {
                 return false
             }
             let target = URL(fileURLWithPath: file.path)
-            let wrote = fileCoordinator.withStagingDirectory(for: target) { staging in
-                client.saveFile(id, stagingDirectory: staging?.path)
+            let result = fileCoordinator.withStagingDirectory(for: target) { staging -> Bool? in
+                guard let staging else { return nil }
+                return client.saveFile(id, stagingDirectory: staging.path)
+            }
+            guard let wrote = result else {
+                flash(Self.writeRefusalNotice(name: file.name), tone: .actionable)
+                return false
             }
             guard wrote else {
                 // The core answers false for every refusal and keeps
@@ -3636,8 +3641,13 @@ public final class PageModel: ObservableObject {
                 saveFile(file.id)
                 return
             }
-            let wrote = fileCoordinator.withStagingDirectory(for: url) { staging in
-                client.saveFile(file.id, as: url.path, stagingDirectory: staging?.path)
+            let result = fileCoordinator.withStagingDirectory(for: url) { staging -> Bool? in
+                guard let staging else { return nil }
+                return client.saveFile(file.id, as: url.path, stagingDirectory: staging.path)
+            }
+            guard let wrote = result else {
+                flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
+                return
             }
             guard wrote else {
                 // The core refuses a target another open file already
