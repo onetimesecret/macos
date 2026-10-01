@@ -887,6 +887,36 @@ first full-screen check above, and its row records it.
       the screen or lands askew, that is a clamping defect and worth its
       own issue; the refusal to change desktops is not.
 
+### Full-height typing surface and timeline interaction (stacked followup to #215)
+
+Implementation checks for the requested interaction; these are not additional
+ADR claims. Hardware results are not yet recorded.
+
+- With an empty page, one short line followed by a newline, and an unsaved
+  file, enlarge and shrink the window. Click near the text, halfway down,
+  and just above the bottom edge. The typing surface fills the available
+  height; each ordinary blank click focuses at the saved caret. Shrinking
+  a short document leaves no extra blank scroll extent. Check checkpoint
+  clicks, rename, and contextual menus as in the checks above.
+- Make a roll long enough to scroll. Click above and below its viewport
+  band on the timeline track, including the narrow lane left of the dots
+  beside checkpoint rows. The roll moves to the corresponding stretch; the
+  selected page stays unchanged. A click on a checkpoint dot or label
+  still selects that page.
+- Click the bare track, then grab the band before the 160 ms jump finishes.
+  The roll follows the drag; the earlier click's travel does not pull it
+  back.
+- Grab the band near its top, middle and bottom. Drag in both directions,
+  then beyond either end of the track. The roll follows directly without
+  a navigation animation, does not jump on grabbing, and reaches both
+  document ends. Repeat over line slivers and checkpoint labels. A drag
+  must not turn into a checkpoint selection on release; a label click
+  still navigates to the checkpoint.
+- With the entire roll visible, the track has no scroll movement. With a
+  file or ledger open, or in the window that does not own the roll, the
+  timeline must not move another window's scroll position. Check wheel
+  scrolling still works on the owned roll.
+
 ## Results
 
 The 2026-09-28 rows record the maintainer's report of that run; the

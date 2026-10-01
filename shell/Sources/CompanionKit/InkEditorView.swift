@@ -318,7 +318,7 @@ public struct InkEditorView: NSViewRepresentable {
     /// gets (`makePage`).
     static func bareScroller() -> NSScrollView {
         let scroll = NSScrollView()
-        scroll.contentView = EditorFocusClipView()
+        scroll.contentView = EditorViewportClipView()
         scroll.hasVerticalScroller = true
         // NSScrollView forwards this to its clip, so apply it after replacing
         // the clip view to keep the page's background transparent.
@@ -403,7 +403,8 @@ public struct InkEditorView: NSViewRepresentable {
     /// of short lines shrinks its text view to the width of its longest
     /// one, and every click to the right of the text lands on the scroll
     /// view, where it places no caret. The floor is the clip, so it
-    /// moves with the card (`clipFrameChanged`).
+    /// moves with the card (`clipFrameChanged`). Its height also stays
+    /// at least the viewport height so blank space belongs to the editor.
     ///
     /// Returning to wrapped has one loose end the flags do not tie: a
     /// text view that ran wide keeps that frame, and nothing else takes
@@ -428,7 +429,7 @@ public struct InkEditorView: NSViewRepresentable {
             textView.autoresizingMask = []
             scroll.hasHorizontalScroller = true
         }
-        textView.minSize = NSSize(width: clip.width, height: 0)
+        textView.minSize = NSSize(width: clip.width, height: clip.height)
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -1829,11 +1830,12 @@ public struct InkEditorView: NSViewRepresentable {
             textView?.refreshHover()
         }
 
-        /// The card resized. Wrapped, the autoresizing mask has already
-        /// done everything needed. Unwrapped, the text view sizes itself
-        /// to its text and nothing else would ever widen it, so the floor
-        /// is re-levelled here and a page narrower than the card is
-        /// stretched to meet it.
+        /// The card resized. The floor under the typing surface is the
+        /// clip's to keep (`EditorViewportClipView`), and wrapped, the
+        /// autoresizing mask has done everything else. Unwrapped, the
+        /// text view sizes itself to its text and nothing else would
+        /// ever widen it, so a page narrower than the card is stretched
+        /// to meet it here.
         ///
         /// A newly mounted page's first real frame also arrives here,
         /// and with it the scroll restore that could not be resolved
@@ -1852,9 +1854,9 @@ public struct InkEditorView: NSViewRepresentable {
                     )
                 }
             }
-            guard appliedWrap == false, let textView, let scroll = scrollView else { return }
+            guard appliedWrap == false, let textView, let scroll = scrollView,
+                  scroll.documentView === textView else { return }
             let width = scroll.contentSize.width
-            textView.minSize = NSSize(width: width, height: 0)
             guard textView.frame.width < width else { return }
             textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
         }
@@ -3949,23 +3951,26 @@ final class InkTextContainer: NSTextContainer {
     }
 }
 
-/// A short page or unsaved file leaves some of its viewport outside the
-/// text view. That space accepts the same focus click as the page itself.
-final class EditorFocusClipView: NSClipView {
-    override var needsPanelToBecomeKey: Bool {
-        (documentView as? InkTextView)?.isEditable == true
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        guard let editor = documentView as? InkTextView, editor.isEditable else {
-            super.mouseDown(with: event)
-            return
+/// Keep an ordinary page's typing surface at least as tall as its viewport.
+/// Roll editors get their minimum height from DayStackView instead. This
+/// is the one writer of the floor while the page is mounted; `setWrap`
+/// seeds the same value when the wrap mode changes.
+final class EditorViewportClipView: NSClipView {
+    override func layout() {
+        super.layout()
+        guard let editor = documentView as? InkTextView else { return }
+        let previous = editor.minSize
+        guard previous != bounds.size else { return }
+        editor.minSize = bounds.size
+        // Only a surface standing on the old floor, or short of the new
+        // one, needs a new frame. A page taller than both already clears
+        // the floor, and `sizeToFit` would lay out the whole document
+        // for nothing on every frame of a live resize.
+        if editor.frame.height <= max(previous.height, bounds.height)
+            || editor.frame.width < bounds.width
+        {
+            editor.sizeToFit()
         }
-        // The editor owns gesture classification and native text tracking even
-        // when this part of the viewport lies outside its document frame.
-        editor.mouseDown(with: event)
     }
 }
 
@@ -4155,6 +4160,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     ) -> Bool {
         clickCount == 1
             && modifierFlags.intersection([.command, .shift, .control, .option]) == .control
+    }
+
+    /// An editable page takes the click that brings its window forward,
+    /// so the first click on blank space focuses rather than merely
+    /// activating.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        isEditable || super.acceptsFirstMouse(for: event)
     }
 
     /// A click on the explicit actions affordance opens the object's menu.

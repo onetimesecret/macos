@@ -181,16 +181,26 @@ final class DayScrollTests: XCTestCase {
             roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
             let editor = try XCTUnwrap(roll.stack.editor)
             let visible = roll.stack.visibleRect
-            XCTAssertGreaterThan(visible.maxY - editor.frame.maxY, 100)
-            for y in [editor.frame.maxY + 12, (editor.frame.maxY + visible.maxY) / 2, visible.maxY - 8] {
+            XCTAssertGreaterThanOrEqual(editor.frame.maxY, visible.maxY)
+            for y in [editor.frame.minY + 100, (editor.frame.minY + visible.maxY) / 2, visible.maxY - 8] {
                 let point = NSPoint(x: visible.midX, y: y)
                 let hit = try XCTUnwrap(roll.stack.hitTest(point))
                 editor.setSelectedRange(caret)
                 _ = roll.window.makeFirstResponder(nil)
-                let event = try leftClick(in: roll.window)
-                XCTAssertTrue(hit === roll.stack, "blank viewport at \(point) hit \(hit)")
+                let location = roll.stack.convert(point, to: nil)
+                let event = try XCTUnwrap(NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0,
+                    windowNumber: roll.window.windowNumber, context: nil, eventNumber: 1,
+                    clickCount: 1, pressure: 1))
+                XCTAssertTrue(hit === editor, "blank viewport at \(point) hit \(hit)")
                 XCTAssertTrue(hit.needsPanelToBecomeKey)
                 XCTAssertTrue(hit.acceptsFirstMouse(for: event))
+                // The up is queued first, so the click resolves as a focus
+                // click rather than on the host's physical button state.
+                roll.window.postEvent(try XCTUnwrap(NSEvent.mouseEvent(
+                    with: .leftMouseUp, location: location, modifierFlags: [], timestamp: 0,
+                    windowNumber: roll.window.windowNumber, context: nil, eventNumber: 1,
+                    clickCount: 1, pressure: 1)), atStart: true)
                 hit.mouseDown(with: event)
                 XCTAssertTrue(roll.window.firstResponder === editor)
                 XCTAssertEqual(editor.selectedRange(), caret)
@@ -206,32 +216,31 @@ final class DayScrollTests: XCTestCase {
         ))
     }
 
-    func testUnavailableRollFocusForwardsClicksToTheResponderChain() throws {
+    /// The stack itself no longer takes clicks: blank viewport belongs to
+    /// the editor's own frame. What remains ours is the header's forward
+    /// when there is no editor to focus.
+    func testUnavailableRollFocusForwardsHeaderClicksToTheResponderChain() throws {
         let model = try makeModel()
         let roll = try mountRoll(model: model)
         let fallback = ClickResponder()
-        roll.stack.nextResponder = fallback
         let event = try leftClick(in: roll.window)
 
         // Before the first page there is no editor to receive focus.
         XCTAssertFalse(roll.stack.focusEditor())
-        roll.stack.mouseDown(with: event)
-        XCTAssertEqual(fallback.clicks, 1)
 
         let selected = try page(in: model, saying: "writing")
         roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: true)
         let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
         header.nextResponder = fallback
         XCTAssertFalse(roll.stack.focusEditor())
-        roll.stack.mouseDown(with: event)
         header.mouseDown(with: event)
-        XCTAssertEqual(fallback.clicks, 3, "read-only content swallowed its click")
+        XCTAssertEqual(fallback.clicks, 1, "read-only content swallowed its click")
 
         roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
         roll.scroll.removeFromSuperview()
         XCTAssertFalse(roll.stack.focusEditor(), "a detached roll reported that it focused")
         header.mouseDown(with: event)
-        XCTAssertEqual(fallback.clicks, 4)
+        XCTAssertEqual(fallback.clicks, 2)
     }
 
     func testCheckpointFocusTraversesAnIntermediateContainer() throws {
