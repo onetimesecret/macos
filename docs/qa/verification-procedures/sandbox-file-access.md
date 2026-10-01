@@ -23,6 +23,159 @@ build of each new major macOS.
 
 Use disposable files. Several cases overwrite, move and delete them.
 
+## Validation expectations for the PR #222 follow-up
+
+**Status: pending.** The outcomes in this section are proposed validation
+criteria for the implementation, not observed hardware results or accepted
+project guarantees. Unit tests run without the sandbox do not satisfy these
+checks. Use disposable data and keep copies outside the test directory.
+
+### Record evidence before judging the result
+
+For each run, record the commit, app version, macOS version, machine
+architecture, signing/distribution lane, and case 0 entitlement readback.
+For volume cases, also record filesystem format, mount type, and whether
+the destination is on the boot volume. Record the exact steps, notice text,
+header/banner state, destination contents before and after, and relevant
+sandbox or filesystem errors. Remove file contents and identifying paths
+from shared evidence when they are not needed to explain the result.
+
+Use separate outcomes: **pass**, **fail**, **blocked**, or **not exercised**.
+A denial case is not exercised unless the app actually encounters the
+intended denial; changing permissions or seeing no log output alone is not
+proof. An unavailable volume, signing lane, or denial mechanism is blocked,
+not a pass. A successful unsandboxed run cannot substitute for case 0.
+
+### V1: saves on non-boot volumes
+
+Extend cases 1, 4, 5 and 13a to a writable local external volume, a writable
+exFAT volume, and a writable network share. Record unsupported or unavailable
+configurations rather than treating all non-boot volumes as equivalent.
+On each available volume:
+
+1. Open an existing file through the panel, edit, and save twice.
+2. Save As to a new name, then to an existing disposable destination.
+3. Quit and relaunch. Confirm the selected file and text reopen.
+4. Move the saved file in Finder while the app is closed, then relaunch
+   and save again. Check that the old path is not recreated.
+5. Record the replacement-directory location if observable and compare
+   its filesystem with the destination's. Check for leftover temporary
+   files on both volumes, not only in the app container.
+
+**Expected:** ordinary saves to authorized, writable destinations succeed;
+the written text, subsequent save, relaunch, and moved-file recovery agree.
+A blanket non-boot-volume refusal is a failure to investigate, not an
+accepted outcome. If staging cannot be provided on the destination's
+filesystem, expect an explicit refusal with the original destination and
+edits retained; record this as a failed save, not successful volume support.
+The cross-filesystem guard is not evidence that a real external-volume save
+works. Do not force a cross-volume copying fallback to obtain a pass.
+
+### V2: newly denied reads and recovery
+
+Open two files and leave one clean and one with unsaved edits. While the app
+is inactive, remove read permission from those disposable files without
+changing their contents; activate the app. Restore permissions and activate
+again. Separately repeat with a reproducible sandbox-access denial, if one
+is available; record its mechanism and errors. Mode changes exercise
+filesystem permissions, not security-scope revocation. Never revoke access
+to real customer or production files to manufacture a result.
+
+**Expected after confirmed denial:** the first activation publishes the
+unavailable state even when content timestamps/size still match. The clean
+file retains its loaded text; this is not the unread, empty held state of
+case 16. The dirty file retains its draft and offers recovery actions
+without Take theirs while the other copy cannot be read. No typing is lost
+and no file is written merely because the app activates. After access is
+restored, the unavailable indication clears; differing disk contents must
+still follow the conflict/reload behavior in the existing cases.
+
+Record activation responsiveness with a large file inside the app's open
+size limit. The implementation uses a one-byte readability probe; this is
+not a latency guarantee. A slow activation needs profiling that separates
+that probe from legitimate full reloads after content changes. Hardware
+timing alone cannot prove how many bytes the probe read.
+
+### V3: write-only refusal
+
+Use a disposable directory whose permissions or ACLs allow reading its
+existing file but deny the app's atomic replacement. Record the permissions,
+ACLs, staging location, and actual error; keep a separate recovery copy and
+restore the test permissions afterwards. Do not assume that making the
+file read-only denies replacement when its parent remains writable.
+
+**Expected:** a permission-denied save reports failure, retains the edits,
+and leaves destination contents unchanged. The immediate post-save surface
+reflects the core's access-refused mark. A later successful readability
+probe may clear that mark even if writing is still denied; the mark is not
+a persistent test of writability. Repeated saves must not claim success.
+After permissions are repaired, an explicitly requested save succeeds.
+Disk-full and cross-device failures must not be interpreted as proof that
+read access was lost. A failed Save As elsewhere must not mark the original
+file inaccessible solely because that new destination was denied.
+
+### V4: modal completion and panel-answer ordering
+
+With a file open, activate the app while a non-file modal is up, and change
+the file externally during that modal. Dismiss the modal without another
+activation or file-panel gesture. Repeat with Open, Save As, and Locate
+panels, including cancellation and a deliberately refused choice.
+
+**Expected:** the owed file check runs once the modal and any enclosing
+file-panel gesture have finished; another activation is not required.
+Panel answers are processed before that check. Record whether any notice
+from the answer is replaced by a meaningful external-file notice or by a
+redundant check. Nested modals must not cause an early or duplicate check.
+Real AppKit focus/notification ordering must be observed; unit tests alone
+do not establish it.
+
+### V5: inherited ACLs
+
+On a disposable managed/shared-style directory, record the directory's
+inheritable ACL and the existing file's effective access (`ls -le` is useful
+on macOS). Save a replacement through the app and record the replacement's
+ACL and effective access. Where safe and available, check access as the
+other account or group that the original ACL authorized.
+
+**Expected implementation limitation:** separately staged replacements do
+not reproduce destination-directory inherited ACLs. Mode/group preservation
+is not ACL preservation. Record lost or changed effective access as a
+limitation requiring a maintainer decision, not as an unexplained successful
+save. This procedure does not approve that limitation or establish that the
+implementation meets a shared-directory deployment's requirements.
+
+### V6: held-header accessibility and roster-sized scope use
+
+Repeat case 16 with a file recorded as CRLF before it becomes unreadable.
+Inspect the header visually and with VoiceOver: record the actual spoken
+text and available actions. **Expected:** the held header communicates that
+the file has not been read, without a saved/unsaved claim or encoding/line
+ending facts. No empty encoding label should occupy visual space. Locate
+and Close remain available; Keep mine and Take theirs must not act on an
+unloaded copy.
+
+Extend case 20 with a documented, disposable roster size representative of
+actual use. Record that size, launch responsiveness, recovery behavior, and
+any scoped-resource errors. **Expected:** files remain distinct, drafts are
+retained, and scopes do not accumulate across repeated restore/activation
+cycles. The recursive helper has no fixed cap; a successful small roster
+does not validate arbitrary roster sizes. Use instrumented scope counts
+when available rather than inferring balance from the absence of errors.
+
+### Completion record and separate design decision
+
+Attach one result per case/configuration with evidence references and a
+reason for each blocked or unexercised path. Keep the overall status open
+while required hardware configurations have no result; document any scope
+reduction explicitly rather than silently marking validation complete.
+
+Hardware results cannot ratify the design amendment. The accepted D-17 in
+[the UI/UX decision record](../../spec/design/2026-0915-ui-ux-decisions.md)
+states: "the sentence is a pure function of conflict and filename".
+Record the maintainer's decision on the draft Locate amendment separately;
+do not use these proposed criteria or passing test results to establish
+that acceptance.
+
 ## Implementation note: crossed-file scope bound
 
 `PageModel.settleCrossedFiles` uses `withAccessToBookmarks` to nest the
