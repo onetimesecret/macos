@@ -11,3 +11,10 @@
 "Page layout" = "Page layout";
 "Tabs" = "Tabs";
 "Timeline" = "Timeline";
+
+/* First-use Keychain introduction. */
+"A little help from your Keychain" = "A little help from your Keychain";
+"OnetimePad uses two separate keys for saved pages and their history. macOS may ask you to approve access to each one.\n\nIf a password dialog appears, Allow approves that access once. Always Allow lets this app access that item again without asking each time. Choose whichever you prefer." = "OnetimePad uses two separate keys for saved pages and their history. macOS may ask you to approve access to each one.\n\nIf a password dialog appears, Allow approves that access once. Always Allow lets this app access that item again without asking each time. Choose whichever you prefer.";
+"Continue" = "Continue";
+"Saved pages: state-key\nPage history: ledger-key\nKeychain service: %@" = "Saved pages: state-key\nPage history: ledger-key\nKeychain service: %@";
+"Keychain items used for saved pages and page history" = "Keychain items used for saved pages and page history";

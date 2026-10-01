@@ -1,6 +1,7 @@
 import AppKit
 import CompanionKit
 import SwiftUI
+import os
 
 /// OnetimePad, the background-surface form factor
 /// (docs/spec/feature/background-surface): an ambient pane resting at
@@ -331,10 +332,24 @@ private struct WindowCloseMenuItem: View {
 
 @MainActor
 final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
-    private let model = BackdropModel()
+    private let model: BackdropModel
+    private var startupComplete = false
+    private var activationDuringStartup = false
+
+    override init() {
+        model = BackdropModel()
+        super.init()
+    }
+
+    init(model: BackdropModel) {
+        self.model = model
+        super.init()
+    }
     private var controller: BackdropWindowController?
     private var statusItem: NSStatusItem?
     private var summonKey: BackdropHotKey?
+    private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
+    private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
     /// The primary editor window (ADR-0033), the second of the two
@@ -448,12 +463,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         // ⌃⌥Space, system-wide. Registration can fail (another app
         // holds the combination); the menu-bar item still summons.
-        summonKey = BackdropHotKey.controlOptionSpace { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.applySummon(.hotkey)
-            }
-        }
+        registerSummonShortcut()
 
         // Every modal of ours reports back when it returns
         // (`ModalSession`), and the surface answers by coming forward
@@ -484,7 +494,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             // Sendable. AppKit posts this one on the main thread.
             let closing = (notification.object as AnyObject?).map(ObjectIdentifier.init)
             MainActor.assumeIsolated {
-                guard let self, let closing else { return }
+                guard let self, self.startupComplete, let closing else { return }
                 if NSApp.keyWindow.map(ObjectIdentifier.init) == closing {
                     self.model.auxiliaryWindowReleasedKeys()
                 }
@@ -524,7 +534,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // and a background launch never does. So the opening waits for
         // that activation (`applicationDidBecomeActive`), and a launch
         // nobody activates stays resting.
+        // The explanatory modal activates the app. Hold that activation
+        // until Continue and restoration finish, so it cannot mount an
+        // editor and trigger Keychain access behind the introduction.
+        KeychainIntroduction.showIfNeeded(defaults: FormFactor.settingsDefaults)
         controller.show()
+        startupComplete = true
+        if activationDuringStartup, NSApp.isActive {
+            activationDuringStartup = false
+            launchedAt = Date()
+            applicationDidBecomeActive(notification)
+        }
     }
 
 
@@ -577,6 +597,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// that activation callback, which must not route this same gesture
     /// a second time as a launch or ⌘Tab (and possibly anchor on today).
     private func applySummon(_ reason: ActivationReason) {
+        guard startupComplete else { return }
         // A deliberate selection supersedes an outstanding companion request;
         // only automatic activation callbacks defer to that earlier claim.
         if reason == .openEditorPresentation {
@@ -661,6 +682,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// in an older day is coming back to that sentence. What hangs off
     /// the distinction is the roll's anchor, see `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard startupComplete else {
+            activationDuringStartup = true
+            return
+        }
         // Ahead of the routing table's answer, and ahead of the launch
         // window: coming back to the app is exactly when a checkout, a
         // formatter or another editor has had its turn at a file, and
@@ -767,6 +792,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
+        guard startupComplete else {
+            activationDuringStartup = true
+            return false
+        }
         // The same activation, so the same file check. This is the
         // route a Dock click takes while the app is already frontmost,
         // which `applicationDidBecomeActive` never sees, and a person
@@ -859,15 +888,54 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         applySummon(.showAmbientPresentation)
     }
 
+    private func registerSummonShortcut() {
+        summonKey = nil
+        summonKeyFailure = nil
+        summonKey = BackdropHotKey.controlOptionSpace(onFailure: { [weak self] failure in
+            self?.summonKeyFailure = failure
+            Self.logger.error("summon shortcut registration failed stage=\(failure.stage.rawValue, privacy: .public) status=\(failure.status)")
+        }) { [weak self] in
+            Task { @MainActor in
+                self?.applySummon(.hotkey)
+            }
+        }
+    }
+
+    @objc private func explainUnavailableShortcut() {
+        guard let failure = summonKeyFailure else { return }
+        let alert = NSAlert()
+        alert.messageText = "The keyboard shortcut is unavailable"
+        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, including another copy of OnetimePad, may already use it. You can still open the pad from the menu bar. Close any other copy or change a conflicting shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
+        alert.addButton(withTitle: "Try Again")
+        alert.addButton(withTitle: "OK")
+        settingsActivation = !NSApp.isActive
+        NSApp.activate(ignoringOtherApps: true)
+        if ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn {
+            registerSummonShortcut()
+        }
+    }
+
     /// Shared context-menu commands with explicit enablement for the ambient feature.
     private func addPresentationItems(to menu: NSMenu) {
+        Self.addPresentationItems(to: menu, ambientPanelEnabled: model.ambientPanelEnabled,
+                                  target: self)
+        if summonKeyFailure != nil {
+            menu.addItem(withTitle: "⌃⌥Space unavailable…",
+                         action: #selector(explainUnavailableShortcut), keyEquivalent: "").target = self
+        }
+    }
+
+    /// AppKit's automatic validation must not overwrite our preference check.
+    static func addPresentationItems(to menu: NSMenu, ambientPanelEnabled: Bool,
+                                     target: NSObject) {
+        menu.autoenablesItems = false
         let open = menu.addItem(withTitle: "Open in Window",
                                action: #selector(openEditorPresentation), keyEquivalent: "")
-        open.target = self
+        open.target = target
         let ambient = menu.addItem(withTitle: "Show Ambient Panel",
                                   action: #selector(showAmbientPresentation), keyEquivalent: "")
-        ambient.target = self
-        ambient.isEnabled = model.ambientPanelEnabled
+        ambient.target = target
+        ambient.isEnabled = ambientPanelEnabled
     }
 
     /// The Dock context menu uses the same explicit switches as the status item.
