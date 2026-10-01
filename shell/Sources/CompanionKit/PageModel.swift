@@ -1425,12 +1425,10 @@ public final class PageModel: ObservableObject {
         // asked for a second way of looking at it (issue #79).
         let showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
         self.showsTimeUnits = showsTimeUnits
-        // An existing user who explicitly enabled the old combined
-        // prototype keeps the layout they chose. A new install has
-        // neither key and therefore opens at Slots + bottom, the
-        // shipping default in D-13.
+        // Default to vertical tabs when no placement has been chosen.
+        // An explicit placement preference still wins.
         showsPagesDownSide = defaults.object(forKey: Self.pagesDownSideKey) as? Bool
-            ?? showsTimeUnits
+            ?? true
         // Unset → the standard patterns, "HH:mm" and "HH:mm:ss".
         stampFormat = StreamNavigator.StampFormat(
             short: defaults.string(forKey: Self.stampShortKey)
