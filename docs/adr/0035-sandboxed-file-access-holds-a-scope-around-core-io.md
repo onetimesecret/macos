@@ -386,6 +386,12 @@ This record is proposed, and these are not settled by it:
 - A save still replaces the inode. The mode is kept, and a mode that
   cannot be set now fails the save. The group is restored when the user
   is able to. Hard links and extended attributes are lost as before.
+  Destination-directory inherited ACLs are not preserved: a temp file
+  created in a separate staging directory inherits from that directory,
+  not the destination's. Carrying mode and group does not reproduce
+  those ACLs, so replacement can change effective access in managed or
+  shared directories. This is a limitation of the staged-save implementation,
+  not a completed hardware-verification result.
   The mode and group handling applies to the temp file beside the
   target as well, so a save with no staging directory also behaves
   differently than it did: a group writable file keeps that bit.

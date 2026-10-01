@@ -2202,6 +2202,11 @@ fn external_state(stat: &io::Result<FileWitness>, witness: Option<FileWitness>) 
 /// full. What is left is the platform saying no: a denied read, which
 /// is what a sandbox answers for a file whose grant is gone, and a path
 /// that holds something other than a regular file.
+// Deliberately broader than PermissionDenied: an unclassified read IO
+// failure or non-regular replacement must preserve a restorable record,
+// not drop it as if its contents had been inspected. Interrupted is the
+// exhausted read/witness retry case; NotFound has its own missing state.
+// This conservative read policy is not a classifier for write failures.
 fn refusal_is_unreachable(refusal: OpenRefusal) -> bool {
     matches!(
         refusal,
@@ -2669,6 +2674,29 @@ mod tests {
                 assert_eq!(file.path(), Path::new("/note.txt"));
                 assert_eq!(io.inner.bytes("/note.txt"), b"body");
             }
+        }
+    }
+
+    #[test]
+    fn read_unreachable_policy_is_deliberately_broader_than_access_denial() {
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::InvalidInput,
+            io::ErrorKind::Other,
+            io::ErrorKind::StorageFull,
+        ] {
+            assert!(refusal_is_unreachable(OpenRefusal::Io(kind)));
+        }
+        for refusal in [
+            OpenRefusal::Io(io::ErrorKind::NotFound),
+            OpenRefusal::Io(io::ErrorKind::Interrupted),
+            OpenRefusal::NotUtf8,
+            OpenRefusal::Binary,
+            OpenRefusal::TooLarge {
+                limit: FILE_SIZE_LIMIT,
+            },
+        ] {
+            assert!(!refusal_is_unreachable(refusal));
         }
     }
 

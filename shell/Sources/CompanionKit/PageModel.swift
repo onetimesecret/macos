@@ -2395,7 +2395,9 @@ public final class PageModel: ObservableObject {
     /// at once, nested, and hand it the URLs those brackets are open
     /// on. A file with no bookmark, or one that resolves to nothing,
     /// contributes no bracket, and the body runs all the same. Each
-    /// bracket closes what it opened, innermost first.
+    /// bracket closes what it opened, innermost first. For N roster rows,
+    /// this can hold N concurrent security scopes and uses O(N) stack
+    /// depth; both are bounded by the restored roster size.
     private func withAccessToBookmarks(
         of files: ArraySlice<FileSummary>, opened: [URL], _ body: ([URL]) -> Void
     ) {
