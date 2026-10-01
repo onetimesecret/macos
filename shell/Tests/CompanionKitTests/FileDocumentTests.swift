@@ -7,9 +7,14 @@ import XCTest
 final class ScriptedFilePanels: FilePanels {
     var openURL: URL?
     var destinationURL: URL?
+    /// What the locate panel answers. Nil is a cancel.
+    var locateURL: URL?
 
     private(set) var opens = 0
     private(set) var destinations = 0
+    /// Each locate panel raised: the file it asked about and the
+    /// directory it started in.
+    private(set) var locates: [(name: String, directory: URL)] = []
 
     func chooseFileToOpen() -> URL? {
         opens += 1
@@ -21,6 +26,10 @@ final class ScriptedFilePanels: FilePanels {
         return destinationURL
     }
 
+    func chooseFileToLocate(named name: String, in directory: URL) -> URL? {
+        locates.append((name, directory))
+        return locateURL
+    }
 }
 
 /// The file lane driven whole through the model: open a real file in a
@@ -676,6 +685,45 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(try read(url), "mine before\n", "keep mine wins on the next save")
     }
 
+    func testKeepMineOverAChangedFileReadsUnsavedWhenUndoneBackToTheOldText() throws {
+        // The text the buffer returns to is the copy the disk no longer
+        // holds. A header that read saved there would be untrue, and
+        // nothing would ever correct it: the check answers unchanged.
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("before\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        let mounted = model.storage(for: id)
+        try type("mine ", at: 0, into: id, on: model)
+        try Data("theirs\n".utf8).write(to: url)
+        model.checkOpenFilesOnActivate()
+        model.resolveConflict(.keepMine)
+
+        XCTAssertTrue(model.undoEdit(sheet: id).applied)
+
+        XCTAssertEqual(mounted.string, "before\n")
+        var row = try XCTUnwrap(model.openFiles.first)
+        XCTAssertTrue(row.isDirty, "the disk holds the other copy")
+        XCTAssertEqual(FileHeaderState.derive(from: row).saveWord, "unsaved")
+        XCTAssertTrue(FileHeaderState.derive(from: row).showsUnsavedDot)
+        model.checkOpenFilesOnActivate()
+        row = try XCTUnwrap(model.openFiles.first)
+        XCTAssertTrue(row.isDirty, "and an activation does not take the word back")
+        XCTAssertEqual(row.conflict, FileConflict.none)
+        XCTAssertEqual(try read(url), "theirs\n")
+
+        // The save the consent was given for writes the old text back,
+        // and only then does the header read saved.
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertEqual(try read(url), "before\n")
+        row = try XCTUnwrap(model.openFiles.first)
+        XCTAssertFalse(row.isDirty)
+        XCTAssertEqual(FileHeaderState.derive(from: row).saveWord, "saved")
+    }
+
     func testTakeTheirsDirectlyTakesTheCopyOnDiskAndCanBeUndoneAndRedone() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
@@ -924,7 +972,7 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertFalse(restored.isDirty)
         XCTAssertEqual(
             second.storage(for: restored.id).string, "just reading\n",
-            "the restore hands back a roster that is ready to draw")
+            "the launch hydrates every restored file before anything draws it")
     }
 
     func testRestoredFileReinfersSuggestionButDoesNotPersistExplicitMode() throws {

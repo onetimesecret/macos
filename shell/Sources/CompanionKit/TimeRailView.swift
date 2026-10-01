@@ -1064,7 +1064,7 @@ struct FileShelfRow: View {
                     .truncationMode(.middle)
             }
             ZStack {
-                if file.isDirty { UnsavedDot() }
+                if file.holdsUnsavedEdits { UnsavedDot() }
             }
             .frame(height: 3)
             .padding(.horizontal, 3)

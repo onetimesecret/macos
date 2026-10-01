@@ -119,15 +119,18 @@ Three ways in, all of them explicit.
 - **Reopening on relaunch.** The pad remembers which files were open,
   in what order, with what selection, and reopens them at launch. It
   remembers them by URL bookmark, so a file that moved or was renamed
-  is still found. The app is not sandboxed today, so a plain bookmark
-  is what it takes and what it uses. Bookmarks are created, resolved
-  and accessed through one function in the shell, so the security
-  scoped variant is a small change when the sandbox arrives with
-  TestFlight. Nothing in this specification claims sandbox access
-  exists now. A bookmark that no longer resolves leaves the tab in a plain
-  unavailable state naming the last known path, with an action to
-  locate the file and one to close the tab. It never silently
-  disappears and never recreates the file.
+  is still found. The bookmarks are security scoped ones, which is what
+  lets a sandboxed build read and write the file again after a
+  relaunch, and the bookmark is made again after every save
+  ([ADR-0035](../../../adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md),
+  proposed). Sandboxed access has not been verified on a signed build,
+  and nothing in this specification claims it has. A clean file
+  that is there and that the system will not let the pad read leaves
+  the tab in a plain unavailable state naming the last known path, with
+  an action to locate the file and one to close the tab. A clean file
+  that is no longer at its path, with no bookmark that finds it, has
+  its tab dropped with a notice naming it. A file with unsaved edits
+  always keeps its tab and its draft. The pad never recreates the file.
 
 Opening a file does not create a page, does not take a slot on the strip,
 and does not start any clock.
@@ -162,8 +165,9 @@ is discarded when the tab closes.
 Saving is explicit. There is no autosave to the file.
 
 - **Cmd S** writes the buffer to the file. The write is atomic: the
-  bytes go to a temporary file in the same directory, are flushed, and
-  are then renamed over the target, so a crash or a full disk leaves
+  bytes go to a temporary file in a staging directory the app asks the
+  system for, are flushed, and are then renamed over the target, so a
+  crash or a full disk leaves
   either the old file or the new one and never a truncated one. The
   file's permission bits are preserved across the replace, and a file
   opened through a symlink is resolved to the real file when it opens,
@@ -178,12 +182,35 @@ Saving is explicit. There is no autosave to the file.
   file is left exactly as it was. Save As onto a path another open file
   already holds is refused before anything is written, because two tabs
   over one file would race each other's saves.
+- **A save never makes a file where there is none.** Cmd S on a file
+  whose path holds nothing is refused and nothing is written, because
+  the pad does not recreate a file at a path a person deleted. With no
+  unsaved edits the refusal says "NAME is no longer at its path, so it
+  was not saved. Choose Locate to find it, or Save As to write it
+  somewhere." With unsaved edits the tab stands in the missing conflict
+  described under External changes, and the refusal names Locate, Keep
+  mine and Save As. Keep mine is the one answer that lets a save write
+  at the empty path, once, and only when it was chosen while the path
+  was empty: a Keep mine chosen over a file that changed does not carry
+  over to that file being deleted afterwards, and one chosen over an
+  empty path does not carry over to a file that has since appeared
+  there. Either question is asked again. A file that is back at its
+  path when the save is asked is saved if it is as the pad last saw it,
+  and otherwise stands in the changed conflict. Save As is not refused
+  this way, including back onto the file's own old path: a destination
+  chosen in the panel is the person's to make a file at. A save that
+  was allowed and whose write then failed says "NAME could not be
+  written.", whatever else is true of the file, so a failed write is
+  never said as a file that must be located.
 - **State.** The header shows the filename and one of two words:
-  saved, or unsaved. A small orange dot on the tab or shelf row means
+  saved, or unsaved. A tab kept with no text, because the system would
+  not let the pad read the file, shows a third, not read, with no dot
+  and no encoding or format beside it.
+  A small orange dot on the tab or shelf row means
   that file has unsaved changes. The dot appears on the first edit that
   changes the bytes and clears on a successful write. A write that
-  fails leaves the dot, keeps the draft, and shows the failure with its
-  reason, for example a read only volume or a permission denial.
+  fails leaves the dot, keeps the draft, and says that the file could
+  not be written.
 - **Quit with unsaved changes.** Quit asks nothing and never writes an
   open file through the file-save path. It first seals the staged draft
   into the app's own state; a settled flush exits, and the next launch
@@ -271,7 +298,11 @@ looks changed, against what was read.
     version. Choosing it takes a fresh reading of the file being
     overwritten and licenses exactly one save. The check the pad makes
     before every write does not undo the choice, and the save spends
-    it, so a second conflict later asks again.
+    it, so a second conflict later asks again. From the choice until
+    that save the header reads unsaved, even if the text is undone or
+    typed back to what it was before the edit: that text is the copy
+    the disk no longer holds, and the tab is not what is on disk until
+    it is written.
   - **Take theirs.** Replace the buffer with the file immediately,
     without confirmation. The replacement enters the file's edit
     history, so Undo restores the prior buffer and Redo reapplies the
@@ -282,9 +313,40 @@ looks changed, against what was read.
 
   Save is refused while the tab is in conflict, until one of the three
   actions is chosen.
-- **The file was deleted or moved** while open: the tab keeps its
-  buffer, says so, and offers Save As. The pad does not recreate a file
-  at a path a person deleted.
+- **The file was moved or renamed** while open: the bookmark follows
+  it, and the tab is bound to the new path at the next check. A clean
+  tab follows without a notice unless the text also changed. A draft
+  stands and the next save lands at the new path. A file moved to the
+  Trash is not followed.
+- **The file was deleted**, or moved somewhere the bookmark does not
+  find, while open: the tab keeps its buffer and says so, in a banner
+  that stays until the file is found. With no unsaved edits the banner
+  offers **Locate** and Close. With unsaved edits the tab stands in a
+  conflict that offers Locate, Keep mine and Save As, and not Take
+  theirs, since there is no copy to take. The pad does not recreate a
+  file at a path a person deleted. A save asked of such a tab is
+  refused, as Saving describes.
+- **The file cannot be read** where it is, because the system refuses:
+  the tab says so and offers Locate. With unsaved edits the conflict
+  offers Locate, Keep mine and Save As, and not Take theirs, since
+  there is no copy the pad can take. That conflict stands, and saving
+  stays refused, for as long as the file cannot be read, until one of
+  the three is chosen.
+
+**Locate** raises the open panel in the file's last known directory and
+asks where the file is now. The tab is bound to the file chosen. With
+no unsaved edits it takes that file's text. With unsaved edits the
+draft stands: there is no conflict when the file chosen is the one the
+draft was made against, and the ordinary changed conflict when it is
+not. A file already open in another tab, or one the pad would refuse to
+open, is refused and the tab is left as it was. Cancelling changes
+nothing. Locate asks for no confirmation and has no chord
+([ADR-0035](../../../adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md),
+proposed). The accepted UI record counts three conflict actions (D-17
+in `../../design/2026-0915-ui-ux-decisions.md`); Locate and the banner
+for a file that cannot be reached are proposed as an amendment to it in
+[`../../design/2026-0930-file-conflict-locate.md`](../../design/2026-0930-file-conflict-locate.md),
+a draft that has not been ratified.
 
 No merge, no diff view, no three way resolution in v1.
 
@@ -296,20 +358,27 @@ included.
 
 The drafts file records what was open. It does not record a clean
 file's text, only its identity, so the pad reads each file from disk at
-launch and settles each tab into one of six states.
+launch and settles each tab into one of these states.
 
 | the record | the file on disk | what happens |
 | --- | --- | --- |
 | clean | unchanged | filled from disk, clean, nothing said |
 | clean | changed | filled from disk, clean, reload notice |
-| clean | missing or unreadable | tab dropped, notice naming the file |
+| clean | missing, or not text the pad opens | tab dropped, notice naming the file |
+| clean | there, and the system refuses the read | tab kept with no text shown, saying the file cannot be read, with Locate and Close |
 | dirty | unchanged | draft kept, last edit time preserved, and the disk copy learned so that undoing back to it reads as saved again |
 | dirty | changed | draft kept, tab opens in conflict |
-| dirty | missing | draft kept, tab opens in conflict |
+| dirty | missing | draft kept, tab opens in conflict, Locate offered |
+| dirty | there, and the system refuses the read | draft kept, tab opens in conflict saying the file cannot be read, with Locate, Keep mine and Save As |
+
+A tab kept with no text takes no typing and refuses a save until the
+file is located or can be read again, which the pad checks each time
+the app becomes active. Its header reads not read, since nothing of the
+file is in the tab to be saved or unsaved.
 
 One unreadable file never fails the whole restore. Each record is
-settled on its own, so a file on an unmounted volume costs its own tab
-and no other.
+settled on its own, so a file on an unmounted volume affects its own
+tab and no other.
 
 ## Closing a tab
 
@@ -324,6 +393,10 @@ The file remains editable while it stands, with three actions:
 - **Discard changes** closes the tab and destroys the draft.
 - **Keep editing** leaves the tab open with its draft intact. It is the
   default action.
+
+A tab kept with no text closes at once and is never asked this, even
+when its record came back marked dirty: it holds no typing to save,
+discard or keep.
 
 The decision is consumed only by those three actions. Nothing else
 closes the tab, and a second Cmd W on the same tab while the decision
@@ -487,9 +560,15 @@ active tab is a page rather than a file.
 
 - Every file tab and shelf row exposes a label that names the file and
   its save state in words, not by the dot alone. The unsaved dot is a
-  redundant cue, never the only one.
-- The conflict state is announced when it appears, and its three
-  actions are reachable in the keyboard order they are read in.
+  redundant cue, never the only one. A tab kept with no text is
+  labelled not read, and a file that is gone or cannot be read says so
+  in the same label.
+- The conflict state is announced when it appears, and its actions are
+  reachable in the keyboard order they are read in: three for a file
+  that changed on disk, and Locate, Keep mine and Save As for one that
+  is gone or cannot be read. The banner for a file that cannot be
+  reached with no conflict standing carries its sentence as its label,
+  with Locate and Close.
 - Save failures and refusals are announced, not only drawn.
 - The Files and Pad groups are exposed as named groups, so a screen
   reader user hears which class they are moving through.

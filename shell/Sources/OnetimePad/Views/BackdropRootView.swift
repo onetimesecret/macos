@@ -534,11 +534,13 @@ struct BackdropRootView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            Text(state.encodingAndFormat)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if !state.encodingAndFormat.isEmpty {
+                Text(state.encodingAndFormat)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         // The name yields its width before the facts beside it do: a
         // middle-truncated file name still says which file this is,

@@ -172,7 +172,7 @@ final class TimeUnitModeTests: XCTestCase {
     func testOrganizationAndPlacementPersistIndependently() throws {
         let (first, defaults) = try makeModel()
         XCTAssertFalse(first.showsTimeUnits)
-        XCTAssertFalse(first.showsPagesDownSide)
+        XCTAssertTrue(first.showsPagesDownSide)
 
         first.showsTimeUnits = true
         first.showsPagesDownSide = false
