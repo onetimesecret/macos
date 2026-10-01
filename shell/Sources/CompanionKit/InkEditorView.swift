@@ -3969,6 +3969,9 @@ final class EditorViewportClipView: NSClipView {
         if editor.frame.height <= max(previous.height, bounds.height)
             || editor.frame.width < bounds.width
         {
+            #if DEBUG
+                editor.floorRefitCount += 1
+            #endif
             editor.sizeToFit()
         }
     }
@@ -4014,6 +4017,15 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         /// Deterministic screen-space input for hover-refresh wiring tests.
         /// Production always reads the current window-server state instead.
         var hoverRefreshInput: (screenPoint: NSPoint, holdsKeys: Bool, pointsIntoWindow: Bool)?
+
+        /// Test-only tally of the floor refits `EditorViewportClipView`
+        /// asks for, so a test can assert that its gate skips a page
+        /// already taller than the viewport. A wrong gate there is extra
+        /// layout work on every frame of a live resize, not a wrong frame,
+        /// so no geometry assertion would catch it. AppKit's own clip
+        /// observer refits the view on every clip frame change regardless,
+        /// which is why this counts the gate and not `sizeToFit` itself.
+        fileprivate(set) var floorRefitCount = 0
     #endif
 
     /// Keep the text view's native accessibility hierarchy intact. The
