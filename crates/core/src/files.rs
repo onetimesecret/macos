@@ -256,6 +256,14 @@ pub trait FileIo {
     /// # Errors
     /// Whatever the platform said about the read.
     fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+    /// Probe a regular file's readability without reading its full contents.
+    /// Implementations must use bounded storage and read at most one byte;
+    /// an empty regular file also succeeds. This does not validate content
+    /// or establish that every later read will succeed.
+    ///
+    /// # Errors
+    /// Whatever the platform said about opening or probing the file.
+    fn probe_readable(&self, path: &Path) -> io::Result<()>;
     /// Write the whole file at once, atomically, preserving the mode of
     /// the file already at the path when there is one.
     ///
@@ -2387,6 +2395,10 @@ mod tests {
     }
 
     impl FileIo for MemoryIo {
+        fn probe_readable(&self, path: &Path) -> io::Result<()> {
+            self.stat(path).map(|_| ())
+        }
+
         fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
             self.files
                 .lock()
@@ -2447,6 +2459,10 @@ mod tests {
     }
 
     impl FileIo for ShiftingIo {
+        fn probe_readable(&self, _path: &Path) -> io::Result<()> {
+            Ok(())
+        }
+
         fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
             let mut left = self.left.lock().unwrap();
             if *left == 0 {
@@ -2480,6 +2496,10 @@ mod tests {
     }
 
     impl FileIo for NonRegularIo {
+        fn probe_readable(&self, path: &Path) -> io::Result<()> {
+            self.stat(path).map(|_| ())
+        }
+
         fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
             self.read_called.set(true);
             Ok(Vec::new())

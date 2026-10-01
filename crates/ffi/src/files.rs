@@ -113,6 +113,19 @@ impl<'a> RealFileIo<'a> {
 }
 
 impl FileIo for RealFileIo<'_> {
+    fn probe_readable(&self, path: &Path) -> io::Result<()> {
+        use std::io::Read as _;
+        let mut file = open_regular_file(path)?;
+        let mut byte = Zeroizing::new([0u8; 1]);
+        for _ in 0..3 {
+            match file.read(&mut byte[..]) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                result => return result.map(|_| ()),
+            }
+        }
+        Err(io::Error::from(io::ErrorKind::Interrupted))
+    }
+
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         read_regular_file(path)
     }
@@ -160,6 +173,14 @@ impl FileIo for RealFileIo<'_> {
 fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
     use std::io::Read as _;
 
+    let mut file = open_regular_file(path)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Shared checked, nonblocking open for full reads and bounded probes.
+fn open_regular_file(path: &Path) -> io::Result<std::fs::File> {
     let metadata = std::fs::metadata(path)?;
     if !metadata.file_type().is_file() {
         return Err(io::Error::from(io::ErrorKind::InvalidInput));
@@ -171,15 +192,13 @@ fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
         use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(persist::O_NONBLOCK);
     }
-    let mut file = options.open(path)?;
+    let file = options.open(path)?;
     // Asked again through the open file itself, which no substitution
     // at the name can change afterwards.
     if !file.metadata()?.file_type().is_file() {
         return Err(io::Error::from(io::ErrorKind::InvalidInput));
     }
-    let mut bytes = Vec::with_capacity(metadata.len().try_into().unwrap_or(0));
-    file.read_to_end(&mut bytes)?;
-    Ok(bytes)
+    Ok(file)
 }
 
 #[cfg(unix)]
@@ -1704,6 +1723,53 @@ mod tests {
     use super::*;
     use companion_core::FILE_SIZE_LIMIT as LIMIT;
     use std::ffi::{CStr, CString};
+
+    #[test]
+    fn readability_probe_accepts_empty_and_large_regular_files_and_refuses_directories() {
+        let root = scratch_dir("readability-probe");
+        let path = root.join("sparse.txt");
+        let file = std::fs::File::create(&path).unwrap();
+        let io = RealFileIo::new();
+        io.probe_readable(&path).unwrap();
+        file.set_len(64 * 1024 * 1024).unwrap();
+        io.probe_readable(&path).unwrap();
+        assert_eq!(
+            io.probe_readable(&root).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            io.probe_readable(&root.join("absent")).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        drop(file);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn readability_probe_refuses_a_fifo_without_blocking() {
+        let root = scratch_dir("probe-fifo");
+        let fifo = root.join("pipe");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            tx.send(RealFileIo::new().probe_readable(&fifo).unwrap_err().kind())
+                .unwrap();
+        });
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(5))
+                .expect("probe must not block on FIFO"),
+            io::ErrorKind::InvalidInput
+        );
+        worker.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn cstring(s: &str) -> CString {
         CString::new(s).unwrap()

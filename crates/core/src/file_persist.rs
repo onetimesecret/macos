@@ -308,6 +308,13 @@ mod tests {
     }
 
     impl FileIo for MemoryIo {
+        fn probe_readable(&self, path: &Path) -> io::Result<()> {
+            if self.denied.lock().unwrap().contains(path) {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            self.stat(path).map(|_| ())
+        }
+
         fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
             if self.denied.lock().unwrap().contains(path) {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
