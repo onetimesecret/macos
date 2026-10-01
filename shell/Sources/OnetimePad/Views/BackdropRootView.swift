@@ -272,22 +272,18 @@ struct BackdropRootView: View {
         }
     }
 
-    /// The page while the panel owns it, and a glance while the editor
-    /// window does (ADR-0033, B3). The unmount is the point and not a
-    /// side effect: the one editor writes `activeEditor`, the storage's
-    /// delegate and its layout manager at mount and on every update, so
-    /// the window that does not own mounts no editor at all, read only
-    /// or otherwise. The glance renders from
-    /// `PageModel.quietRendering(for:)` over private storage the model
-    /// never learns of, so ADR-0006's invariant holds and the
-    /// projection parity assertion never sees a glance storage. Sealed
-    /// objects render as chips exactly as on a quiet day.
+    /// The panel mounts content only while it owns. The whole panel is
+    /// hidden while the regular window is selected, including its resting form.
     @ViewBuilder
     private var pageContent: some View {
         if pages.owner == .panel {
             PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
-        } else {
+        } else if !model.editorWindowOpen {
+            // Reserved never-grant policy: a visible read-only panel still
+            // renders its page. Ordinary switches hide the entire non-owner.
             GlanceView(model: pages)
+        } else {
+            Color.clear
         }
     }
 
@@ -422,6 +418,17 @@ struct BackdropRootView: View {
     /// with the navigation rail's headings.
     private var headerIndicators: some View {
         HStack(spacing: 8) {
+            if raised {
+                Button {
+                    model.onOpenEditorWindow?()
+                } label: {
+                    Image(systemName: "macwindow")
+                }
+                .buttonStyle(.plain)
+                .help("Open in Window")
+                .accessibilityLabel("Open in Window")
+            }
+
             // Standing indicator while the capture opt-out is on.
             // Doubly load-bearing here: the backdrop is on screen for
             // every screenshot and screen share, so "the exclusion is

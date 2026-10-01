@@ -1,33 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// The window that does not own the page content shows a glance, not a
-/// second editor (ADR-0033). A glance is a rendering of the selected
-/// page over private storage: it cannot take focus, cannot be selected,
-/// is not a first responder candidate and is never entered into
-/// `PageModel.storages`, so ADR-0006's one layout manager per storage
-/// rule holds unchanged.
-///
-/// It follows the owning editor through `PageModel.quietRendering(for:)`:
-/// the model drops its cached rendering at every accepted edit (through
-/// `invalidateQuietRendering(for:)` on the ops path) and at every
-/// dependency change (through `invalidateQuietRenderings`), and the
-/// SwiftUI wrapper re-reads on the next publish. Sealed objects render
-/// as chips exactly as on a quiet day; no plaintext appears here that
-/// the owning editor would not show.
-///
-/// Two directions: the resting card while the editor window owns, and
-/// the editor window while a raised panel owns. Both mount this view;
-/// the surface's own root view is responsible for asking the resolver
-/// (`PresentationOwner.mayWrite`) and building `GlanceView` in the not
-/// owning branch.
-
-// MARK: - The SwiftUI wrapper
-
-/// The glance the non-owner mounts in place of `PageContentView`.
-/// Watches the model so an edit accepted on the other window's editor
-/// republishes and this wrapper hands its NSView the model's rebuilt
-/// rendering.
+/// Read-only rendering retained for the reserved never-grant panel policy.
+/// With the editor window closed and panel ownership prohibited, the panel
+/// still shows the selected page over private storage. The shipped policy
+/// grants ownership instead; ordinary presentation switches hide the entire
+/// non-owner window (ADR-0036), so they never use this view.
 public struct GlanceView: NSViewRepresentable {
     @ObservedObject var model: PageModel
 

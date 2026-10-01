@@ -65,7 +65,8 @@ final class LaunchStanceTests: XCTestCase {
             ActivationRouter.decide(.launchActivation, in: context()),
             openEditorWindow: { editorRaise = $0 },
             raisePanel: { _ in XCTFail("launch must not raise the panel") },
-            summonPanel: { XCTFail("launch must not summon the panel") }
+            summonPanel: { XCTFail("launch must not summon the panel") },
+            closeEditorForPanel: { XCTFail("launch must not close the editor") }
         )
 
         XCTAssertEqual(editorRaise, .summon)

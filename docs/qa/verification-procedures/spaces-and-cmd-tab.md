@@ -944,6 +944,35 @@ recorded yet.
   Both routes show the existing populated Settings window. Reopening the native
   scene must not leave a blank second Settings window behind.
 
+### One visible editing presentation
+
+Verify the mutually exclusive presentations in
+[ADR-0036](../../adr/0036-editing-presentations-are-mutually-exclusive.md),
+which supersedes ADR-0033's simultaneous glance behavior.
+
+- With the ambient feature enabled, open the regular window from the Dock or
+  Cmd-Tab. Neither the resting desktop panel nor the pinned panel remains visible.
+  Toggle Pin and the ambient preference in Settings while the window is open:
+  enabling the feature does not reveal a second editing presentation.
+- Choose Show Ambient Panel from the Window menu, the menu-bar icon's right-click
+  menu, or the Dock icon's right-click menu. The regular window closes and the
+  panel shows the selected page. Use Escape to rest it: the regular window does
+  not reappear. Confirm caret, page selection, undo, and scroll through each switch.
+- Choose Open in Window from the panel header or either icon's context menu.
+  The entire panel disappears and the regular window takes focus. Repeat after
+  minimizing the window, with the panel pinned, and on another Space.
+- Disable the ambient feature: Show Ambient Panel is disabled in the menus.
+  Hotkey and menu-bar summons continue to select the regular window. Opening
+  Settings, About, and modal dialogs must not reveal a second content surface.
+- With the regular window open, switch to another app and press the hotkey or
+  left-click the status item. Each summons the panel and closes the regular
+  window; resting the panel does not reopen it. Summons anchor on today, while
+  Show Ambient Panel preserves the current roll position.
+- Choose Open in Window with Settings or About frontmost. The editor takes
+  focus. In the status context menu, enable the version preference and confirm
+  the version line remains disabled. The resting card shows no window-switch
+  button; the raised card does.
+
 ## Results
 
 The 2026-09-28 rows record the maintainer's report of that run; the

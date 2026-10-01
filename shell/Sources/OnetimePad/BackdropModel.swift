@@ -282,10 +282,9 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Every caller says why it is raising, because one thing here is
     /// not the same on both routes: see `BackdropRaise`.
     ///
-    /// A raise gives the panel the page content whether or not the
-    /// editor window is open (ADR-0033), and nothing here refuses one.
-    /// Which gestures reach this with the editor window open is the
-    /// routes' question and not the raise's.
+    /// Raise changes ownership and stance only. Deliberate presentation
+    /// switches close the editor window in the activation dispatch before
+    /// calling this primitive; modal and focus recovery never close it.
     func raise(_ reason: BackdropRaise) {
         guard ambientPanelEnabled else { return }
         // The owner before the stance. The stance's publication is what
@@ -329,9 +328,9 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Esc, a click outside the card, or a summon from a keyed
     /// surface: back behind everything.
     ///
-    /// With the editor window open this is also where the page content
-    /// goes back to it (ADR-0033), and the owner settles before the
-    /// stance is published for `raise(_:)`'s reason: the rest hands the
+    /// Opening the editor window settles this rest during the handoff.
+    /// Ordinary panel rests leave the editor window closed (ADR-0036).
+    /// The owner settles before the stance is published: the rest hands the
     /// keyboard away from inside the publication, and the window that
     /// receives it has to find itself the owner already.
     func rest() {
@@ -621,36 +620,30 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     // MARK: The editor window
 
-    /// True while the primary editor window is open: one of the two
-    /// facts the owner is resolved from, and nothing more than a fact.
-    /// It refuses no raise and no view draws by it; the surfaces read
-    /// `pages.owner`. Deliberately not published, so that it cannot
-    /// grow a subscriber that reads it halfway through a change.
-    ///
-    /// No shipping code outside this type reads it; the tests do. The
-    /// reopen (`applicationShouldHandleReopen`) goes through the routing
-    /// table (`ActivationRouter`), which selects the editor window open
-    /// or closed and leaves the choice between opening it and bringing
-    /// it out of the Dock to `PrimaryEditorWindowController.show()`. The
-    /// one route that needs to know whether the window can take the
-    /// keyboard, the rest's activation hand back, asks
-    /// `editorWindowCanTakeKeys`.
-    ///
-    /// A miniaturized window is still open, and still owns while the
-    /// panel rests. ADR-0033 resolves the owner from open and closed,
-    /// and keeps visible for the one sentence about the activation, so
-    /// the two facts are kept apart here as they are there. A window
-    /// going into the Dock is also not among the events the record lets
-    /// move ownership. What the resting card shows beside an owner
-    /// nobody can see is the glance's question (issue #199).
+    /// True while the regular window is open, including when minimized.
+    /// Deliberately unpublished: observers must not order windows during
+    /// the partial ownership transition in `editorWindowOpened()`.
     private(set) var editorWindowOpen = false
+
+    /// The panel header requests the explicit Open in Window route.
+    var onOpenEditorWindow: (() -> Void)?
+
+    /// Orders the alternate presentation only after the editor window is
+    /// shown, or after its close has settled ownership. This callback is
+    /// separate from the unpublished open fact to avoid willSet ordering.
+    var onEditorWindowPresentationChanged: ((Bool) -> Void)?
+
+    /// Called after the successor window has been ordered front. The panel
+    /// can now disappear without leaving AppKit to choose an interim key window.
+    func editorWindowShown() {
+        onEditorWindowPresentationChanged?(true)
+    }
 
     /// True while the editor window is somewhere the person can see it
     /// and type into it, which is out of the Dock. Fed by the window's
     /// controller from its delegate callbacks
-    /// (`PrimaryEditorWindowController.onScreen`). A plain fact like the
-    /// one above, unpublished for the same reason, and no input to the
-    /// owner. A hidden app does not move it: its one reader, the rest's
+    /// (`PrimaryEditorWindowController.onScreen`). This fact is unpublished
+    /// and is not an input to the owner. A hidden app does not move it: its one reader, the rest's
     /// activation hand back (`editorWindowCanTakeKeys`), runs in an
     /// active app, activating unhides, and the word AppKit sends about
     /// the windows coming back arrives after the activation has been
@@ -777,6 +770,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         editorWindowOnScreen = false
         editorWindowIsKey = false
         settleOwner()
+        onEditorWindowPresentationChanged?(false)
     }
 
     // MARK: Geometry
