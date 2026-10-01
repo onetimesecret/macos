@@ -73,12 +73,13 @@ final class PageScrollTests: XCTestCase {
 
     private func mouseEvent(
         _ type: NSEvent.EventType, in window: NSWindow,
-        at location: NSPoint, flags: NSEvent.ModifierFlags = [], clickCount: Int = 1
+        at location: NSPoint, flags: NSEvent.ModifierFlags = [], clickCount: Int = 1,
+        eventNumber: Int = 1
     ) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(
             with: type, location: location, modifierFlags: flags,
             timestamp: 0, windowNumber: window.windowNumber,
-            context: nil, eventNumber: 1, clickCount: clickCount, pressure: 1
+            context: nil, eventNumber: eventNumber, clickCount: clickCount, pressure: 1
         ))
     }
 
@@ -132,7 +133,14 @@ final class PageScrollTests: XCTestCase {
         let (scroll, editor, _, _, _) = makeStack(cardHeight: 320)
         let window = try XCTUnwrap(scroll.window)
         let start = NSPoint(x: 200, y: 250)
-        let drag = try mouseEvent(.leftMouseDragged, in: window, at: NSPoint(x: 200, y: 50))
+        // The drag is identified by its event number rather than its
+        // location: a posted event's locationInWindow is re-derived from
+        // the window's screen frame on the way back out of the queue, and
+        // an offscreen test window lands at a different frame on the CI
+        // image than it does locally.
+        let drag = try mouseEvent(
+            .leftMouseDragged, in: window, at: NSPoint(x: 200, y: 50), eventNumber: 7
+        )
         window.postEvent(drag, atStart: true)
         XCTAssertFalse(editor.consumeBlankFocusClick(try mouseEvent(.leftMouseDown, in: window, at: start)))
         let queued = window.nextEvent(
@@ -140,7 +148,7 @@ final class PageScrollTests: XCTestCase {
         )
         XCTAssertEqual(queued?.type, .leftMouseDragged,
                        "NSTextView must receive the drag rather than losing it to focus handling")
-        XCTAssertEqual(queued?.locationInWindow, drag.locationInWindow)
+        XCTAssertEqual(queued?.eventNumber, drag.eventNumber)
     }
 
     func testTextLineBandsKeepNativeCaretPlacement() {
