@@ -885,8 +885,8 @@ public final class PageModel: ObservableObject {
 
     /// Whether navigation represents the day each live page was born
     /// on, rather than the durable slot containing it (issue #79). A
-    /// prototype, off until the user asks for it. Placement is the
-    /// independent `showsPagesDownSide` preference (D-26).
+    /// prototype, off until the user asks for it. Timeline navigation
+    /// always appears vertically; Tabs navigation appears at the bottom.
     ///
     /// Persisted the way every other preference here is, and persisted
     /// nowhere else: this writes one boolean to `defaults` and never
@@ -926,26 +926,15 @@ public final class PageModel: ObservableObject {
     }
     private static let timeUnitsKey = "showsTimeUnits"
 
-    /// Where page navigation is drawn, independently of what the
-    /// navigation represents. `false` is the original bottom strip;
-    /// `true` is the fixed-width leading column (D-26).
-    ///
-    /// This is a presentation preference only. Like `showsTimeUnits`,
-    /// it lives in UserDefaults and never marks the sealed page store
-    /// dirty. Keeping the two booleans separate is what makes all four
-    /// combinations reachable without moving any page or slot.
-    @Published public var showsPagesDownSide: Bool {
-        didSet {
-            defaults.set(showsPagesDownSide, forKey: Self.pagesDownSideKey)
-        }
-    }
-    private static let pagesDownSideKey = "showsPagesDownSide"
+    /// Timeline uses the leading column; Tabs uses the bottom navigation.
+    /// Older placement preferences are ignored in favor of these two layouts.
+    public var showsPagesDownSide: Bool { showsTimeUnits }
 
     /// How a page's birth time reads on the rail and in the gutters
     /// while pages are organized by day (`StreamNavigator.StampFormat`):
     /// the pattern every page reads in, and the finer one two pages
     /// born the same minute fall back to. A presentation preference
-    /// like the two above: it lives in UserDefaults and marks nothing
+    /// like the layout preference above: it lives in UserDefaults and marks nothing
     /// dirty.
     @Published public var stampFormat: StreamNavigator.StampFormat {
         didSet {
@@ -1455,10 +1444,6 @@ public final class PageModel: ObservableObject {
         // asked for a second way of looking at it (issue #79).
         let showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
         self.showsTimeUnits = showsTimeUnits
-        // Default to vertical tabs when no placement has been chosen.
-        // An explicit placement preference still wins.
-        showsPagesDownSide = defaults.object(forKey: Self.pagesDownSideKey) as? Bool
-            ?? true
         // Unset → the standard patterns, "HH:mm" and "HH:mm:ss".
         stampFormat = StreamNavigator.StampFormat(
             short: defaults.string(forKey: Self.stampShortKey)

@@ -6,3 +6,8 @@
 
 /* The compact metadata label for an edited block. */
 "edited" = "edited";
+
+/* The page navigation layout in General settings. */
+"Page layout" = "Page layout";
+"Tabs" = "Tabs";
+"Timeline" = "Timeline";
