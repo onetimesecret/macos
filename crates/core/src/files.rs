@@ -2281,8 +2281,15 @@ fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
 /// Write the buffer to `path` and settle the file around what landed.
 fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result<(), SaveError> {
     let bytes = file.bytes_to_write_zeroizing();
-    io.write_atomic(path, &bytes)
-        .map_err(|e| SaveError::Io(e.kind()))?;
+    if let Err(error) = io.write_atomic(path, &bytes) {
+        // Only denial at the file's current path informs its access mark.
+        // A failed Save As elsewhere says nothing about the original, and
+        // disk full, EXDEV, etc. are not evidence of missing access.
+        if path == file.path && error.kind() == io::ErrorKind::PermissionDenied {
+            file.access_refused = true;
+        }
+        return Err(SaveError::Io(error.kind()));
+    }
     // The witness has to describe what is on disk now, so it is taken
     // after the write rather than predicted from the bytes. A stat that
     // will not answer leaves the file with no witness, which reads as
@@ -2627,6 +2634,38 @@ mod tests {
         assert!(file.not_found());
         assert!(!file.access_refused());
         assert_eq!(file.conflict(), FileConflict::Missing);
+    }
+
+    #[test]
+    fn only_write_access_denial_at_current_path_sets_access_refused() {
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::StorageFull,
+            io::ErrorKind::CrossesDevices,
+            io::ErrorKind::Other,
+        ] {
+            for save_as in [false, true] {
+                let io = FaultIo::new();
+                let mut store = FileStore::new();
+                let id = store.open(&io, Path::new("/note.txt")).unwrap();
+                assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+                io.write_error.set(Some(kind));
+                let result = if save_as {
+                    store.save_as(&io, id, Path::new("/elsewhere.txt"))
+                } else {
+                    store.save(&io, id)
+                };
+                assert_eq!(result, Err(SaveError::Io(kind)));
+                let file = store.file(id).unwrap();
+                assert_eq!(
+                    file.access_refused(),
+                    !save_as && kind == io::ErrorKind::PermissionDenied
+                );
+                assert!(file.is_dirty());
+                assert_eq!(file.path(), Path::new("/note.txt"));
+                assert_eq!(io.inner.bytes("/note.txt"), b"body");
+            }
+        }
     }
 
     fn ins(at: u32, text: &str) -> EditOp {
