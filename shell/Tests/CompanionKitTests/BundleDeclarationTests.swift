@@ -73,20 +73,8 @@ final class BundleDeclarationTests: XCTestCase {
         XCTAssertEqual(keys["com.apple.security.network.client"] as? Bool, true)
     }
 
-    /// File backed documents under the sandbox rest on this one key
-    /// (ADR-0035). The probe signed with the sandbox alone could not
-    /// make a security scoped bookmark at all, so without the key a
-    /// file opens once, from the panel's own grant, and is out of reach
-    /// at the next launch. Nothing in the shell fails to compile when
-    /// the key goes, and the dev and local lanes are not sandboxed, so
-    /// they would go on working; the loss would first be seen in an App
-    /// Store build. The packaging script reads the key back out of the
-    /// final signature, and this pins the source it signs from.
-    ///
-    /// The second assertion holds the other half of the same decision:
-    /// the app scope bookmark entitlement made no difference to the
-    /// probe, so the record decides against declaring it, and a key
-    /// arriving here later should arrive with a reason.
+    /// Keep the source template aligned with the file access entitlements
+    /// that package-app.sh verifies in the distribution signature.
     func testDistributionEntitlementsDeclareUserSelectedFileAccess() throws {
         let entitlements = Self.shellDirectory
             .deletingLastPathComponent()
@@ -98,10 +86,10 @@ final class BundleDeclarationTests: XCTestCase {
 
         XCTAssertEqual(
             keys["com.apple.security.files.user-selected.read-write"] as? Bool, true,
-            "without it a sandboxed build cannot make the bookmark a file is reopened by")
-        XCTAssertNil(
-            keys["com.apple.security.files.bookmarks.app-scope"],
-            "ADR-0035 declares no app scope bookmark entitlement; the probe showed it changes nothing")
+            "package-app.sh requires user selected file read and write access")
+        XCTAssertEqual(
+            keys["com.apple.security.files.bookmarks.app-scope"] as? Bool, true,
+            "package-app.sh requires the app scope bookmark entitlement")
     }
 
     /// The local and dev lanes' identities are checked into the build-lane

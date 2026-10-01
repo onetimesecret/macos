@@ -19,8 +19,8 @@ import os
 /// One store, one model: the root view is handed the panel's own
 /// `PageModel`, never a second one. Exactly one of the two windows owns
 /// the live page content at a time (`PageModel.owner`). This one owns
-/// while it is open and the panel rests, and shows a glance
-/// (`GlanceView`) while a raised panel has the page. What it reports to
+/// while it is open. Selecting the ambient presentation closes this
+/// window (ADR-0036). What it reports to
 /// the model is three facts, that it opened or closed, that it gained
 /// or lost the keyboard and whether it is on screen, and
 /// `BackdropModel` decides what each one moves.
@@ -33,6 +33,9 @@ import os
 final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     private let model: BackdropModel
     private var window: NSWindow?
+    /// Suppresses the ordinary close's deferred activation handback while
+    /// the deliberate switch is about to give the panel the keyboard.
+    private var switchingToAmbientPanel = false
     private var captureObserver: AnyCancellable?
     private var ownerObserver: AnyCancellable?
 
@@ -46,6 +49,17 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    /// Actual visibility, used by presentation handoff checks.
+    var isVisible: Bool { window?.isVisible == true }
+
+    /// Close and release the editor for a deliberate ambient switch. The
+    /// switch supplies the next key window, so close must not deactivate later.
+    func closeForAmbientPanel() {
+        switchingToAmbientPanel = true
+        defer { switchingToAmbientPanel = false }
+        window?.close()
+    }
+
     /// Open the window, or bring the open one forward.
     func show() {
         if let window {
@@ -54,6 +68,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
             // window, so bringing it forward is wholly this call's.
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
+            model.editorWindowShown()
             // Ordering the window does not replace a field editor or
             // another responder left by its previous interaction. Wait
             // for this window's editor if key status transfers ownership
@@ -105,6 +120,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         observeOwner()
 
         window.makeKeyAndOrderFront(nil)
+        model.editorWindowShown()
         model.pages.focusEditorWhenMounted(in: window)
         Self.logger.info("editor window=open")
     }
@@ -222,6 +238,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         // window that can become key keeps the app active; with none, an
         // active app with only a resting card (or no ambient panel) would
         // strand the keyboard. A raised, keyed panel keeps it as before.
+        guard !switchingToAmbientPanel else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let anotherVisibleKeyCapableWindow = NSApp.windows.contains { candidate in
@@ -316,21 +333,19 @@ private struct PrimaryEditorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if pages.showsPagesDownSide {
-                HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if pages.showsPagesDownSide && !pages.isPageExpanded {
                     if pages.showsTimeUnits {
                         TimeRailView(model: pages)
                     } else {
                         SlotRailView(model: pages)
                     }
                     Divider()
-                    content
                 }
-            } else {
                 content
             }
             PageStatusStack(model: pages)
-            if !pages.showsPagesDownSide {
+            if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
                 if pages.showsTimeUnits {
                     TimeStripView(model: pages)
@@ -347,23 +362,15 @@ private struct PrimaryEditorRootView: View {
         .environment(\.presentationSurface, .editorWindow)
     }
 
-    /// The page while this window owns it, and a glance while a raised
-    /// panel does (ADR-0033, B3). The unmount is the point and not a
-    /// side effect: a page's storage takes one layout manager, so the
-    /// window that does not own mounts no editor at all. The glance
-    /// renders from `PageModel.quietRendering(for:)` over private
-    /// storage the model never learns of, so ADR-0006's invariant
-    /// holds and the projection parity assertion never sees a glance
-    /// storage. Sealed objects render as chips exactly as on a quiet
-    /// day.
+    /// Only the selected presentation mounts content. The window is closed
+    /// when switching to the ambient panel; it has no duplicate glance.
     @ViewBuilder
     private var content: some View {
         if pages.owner == .editorWindow {
             PageContentView(model: pages, emptyHint: "click or ↩ to start one")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            GlanceView(model: pages)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

@@ -77,6 +77,34 @@ final class ActivationRouteTests: XCTestCase {
         }
     }
 
+    func testExplicitPresentationCommandsIgnoreCompanionClaims() {
+        for claimed in [false, true] {
+            XCTAssertEqual(ActivationRouter.decide(.openEditorPresentation,
+                in: base(claimedByAnotherWindow: claimed)), .openEditorWindow(.activation))
+            XCTAssertEqual(ActivationRouter.decide(.showAmbientPresentation,
+                in: base(claimedByAnotherWindow: claimed)), .showAmbientPanel)
+        }
+        XCTAssertEqual(ActivationRouter.decide(.showAmbientPresentation,
+            in: base(ambientPanelEnabled: false)), .noop)
+    }
+
+    func testOnlyDeliberatePanelRoutesCloseTheEditorBeforeRaising() {
+        for route in [ActivationRoute.showAmbientPanel, .summonPanel,
+                      .raisePanel(.activation), .raisePanel(.summon)] {
+            var events: [String] = []
+            BackdropAppDelegate.dispatch(route,
+                openEditorWindow: { _ in XCTFail("unexpected editor route") },
+                raisePanel: { _ in events.append("raise") },
+                summonPanel: { events.append("summon") },
+                closeEditorForPanel: { events.append("close") })
+            switch route {
+            case .showAmbientPanel: XCTAssertEqual(events, ["close", "raise"])
+            case .summonPanel: XCTAssertEqual(events, ["close", "summon"])
+            default: XCTAssertEqual(events, ["raise"])
+            }
+        }
+    }
+
     // MARK: About and Settings keep their claim
 
     func testActivationsClaimedByAnotherWindowNoop() {
@@ -192,7 +220,7 @@ final class ActivationRouteTests: XCTestCase {
     }
 
     func testPanelRoutesAndNoopNeverDeferForActivation() {
-        for route in [ActivationRoute.summonPanel, .raisePanel(.activation), .raisePanel(.summon), .noop] {
+        for route in [ActivationRoute.summonPanel, .showAmbientPanel, .raisePanel(.activation), .raisePanel(.summon), .noop] {
             for active in [false, true] {
                 XCTAssertFalse(ActivationRouter.defersForActivation(route: route, appActive: active))
             }

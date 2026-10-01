@@ -47,6 +47,33 @@ public struct PageContentView: View {
     }
 
     public var body: some View {
+        VStack(spacing: 0) {
+            if Self.mounts(surface: surface, owner: model.owner), model.canExpandPage {
+                HStack {
+                    Spacer()
+                    Button(action: model.togglePageExpansion) {
+                        Image(systemName: model.isPageExpanded
+                              ? "arrow.down.right.and.arrow.up.left"
+                              : "arrow.up.left.and.arrow.down.right")
+                            .scaleEffect(x: 1, y: -1)
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(model.isPageExpanded ? "Collapse page (Esc)" : "Expand page")
+                    .accessibilityLabel(model.isPageExpanded ? "Collapse page" : "Expand page")
+                    .disabled(readOnly)
+                }
+                .padding(.trailing, 6)
+            }
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if !Self.mounts(surface: surface, owner: model.owner) {
             // A form factor's root view draws its own stand in for the
             // window that does not own, and never reaches this. It is

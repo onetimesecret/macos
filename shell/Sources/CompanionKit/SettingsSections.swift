@@ -135,9 +135,10 @@ public struct GeneralSettingsView: View {
                     }
                     if let ambientPanelEnabled {
                         Toggle(
-                            "Show the ambient panel",
+                            "Enable the ambient panel",
                             isOn: ambientPanelEnabled
                         )
+                        .help("Makes the ambient panel available through its hotkey and the Show Ambient Panel command.")
                     }
                     Button("Reset to default position and size", action: resetSurface)
                 } header: {

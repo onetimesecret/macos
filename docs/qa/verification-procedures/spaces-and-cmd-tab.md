@@ -917,6 +917,62 @@ ADR claims. Hardware results are not yet recorded.
   timeline must not move another window's scroll position. Check wheel
   scrolling still works on the owned roll.
 
+### Stable last-page layout and explicit page expansion
+
+Implementation checks for the follow-up interaction. Hardware results are not
+recorded yet.
+
+- Open several short pages. Before clicking, the final page fills the unused
+  window height. Click between pages and resize the window: earlier pages keep
+  their text height, and selecting one does not add a window of blank space or
+  move the checkpoint separators. Check a long roll too. Click each checkpoint's
+  horizontal rule and passive labels: the page beneath that header is selected
+  and receives focus at its saved caret. Rename and contextual menus still work.
+- Use the expand icon in the upper right. Only the selected page remains, with
+  the timeline/tab picker and checkpoint headers hidden. Type, select text,
+  undo, and resize. The caret remains in the same editor and long text scrolls.
+- Use the inverse icon, then repeat with Escape. The page returns to the roll,
+  including its prior scroll position. Escape collapses before a subsequent
+  Escape hands back keyboard focus. Expand, scroll, transfer ownership between
+  the panel and editor window, then collapse: both the expanded scroll position
+  and the original timeline return position survive the transfer.
+- Repeat with the picker at the bottom and side, with time units on and off,
+  and in the raised panel. Switch pages through the keyboard while expanded:
+  the new selection returns to the normal layout. A file or ledger has no page
+  expansion control. Check the button's spoken Expand/Collapse page label.
+- Open Settings through the app menu and through a native Settings scene request.
+  Both routes show the existing populated Settings window. Reopening the native
+  scene must not leave a blank second Settings window behind.
+
+### One visible editing presentation
+
+Verify the mutually exclusive presentations in
+[ADR-0036](../../adr/0036-editing-presentations-are-mutually-exclusive.md),
+which supersedes ADR-0033's simultaneous glance behavior.
+
+- With the ambient feature enabled, open the regular window from the Dock or
+  Cmd-Tab. Neither the resting desktop panel nor the pinned panel remains visible.
+  Toggle Pin and the ambient preference in Settings while the window is open:
+  enabling the feature does not reveal a second editing presentation.
+- Choose Show Ambient Panel from the Window menu, the menu-bar icon's right-click
+  menu, or the Dock icon's right-click menu. The regular window closes and the
+  panel shows the selected page. Use Escape to rest it: the regular window does
+  not reappear. Confirm caret, page selection, undo, and scroll through each switch.
+- Choose Open in Window from the panel header or either icon's context menu.
+  The entire panel disappears and the regular window takes focus. Repeat after
+  minimizing the window, with the panel pinned, and on another Space.
+- Disable the ambient feature: Show Ambient Panel is disabled in the menus.
+  Hotkey and menu-bar summons continue to select the regular window. Opening
+  Settings, About, and modal dialogs must not reveal a second content surface.
+- With the regular window open, switch to another app and press the hotkey or
+  left-click the status item. Each summons the panel and closes the regular
+  window; resting the panel does not reopen it. Summons anchor on today, while
+  Show Ambient Panel preserves the current roll position.
+- Choose Open in Window with Settings or About frontmost. The editor takes
+  focus. In the status context menu, enable the version preference and confirm
+  the version line remains disabled. The resting card shows no window-switch
+  button; the raised card does.
+
 ## Results
 
 The 2026-09-28 rows record the maintainer's report of that run; the

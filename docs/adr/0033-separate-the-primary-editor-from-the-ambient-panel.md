@@ -6,6 +6,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-09-18
+- **Superseded in part by:** [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md), specifically simultaneous visibility, the non-owner glance, and the switching consequences that keep both content windows open. The distinct window roles, ownership boundary and activation routes stand.
 - **Supersedes in part:** [ADR-0010](0010-form-factors-as-sibling-targets.md), specifically Amendment 1 except its login launch clause; [ADR-0019](0019-the-pad-is-on-every-space.md), specifically the reach of its all Spaces rule over the whole application, which now covers the ambient panel only; and [ADR-0032](0032-inactive-raised-surfaces-follow-normal-app-stacking.md), specifically its return switch consequence and the reach of its companion window rule over the primary editor. Their remaining decisions stand.
 - **Depends on:** [ADR-0006](0006-persistent-editor-storage-swap.md) for the one layout manager per storage rule, and [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md) with [ADR-0016](0016-content-persists-across-restart.md) for the persistence model that bounds window restoration.
 
@@ -339,3 +340,4 @@ The proposal carried five open questions. Each is answered in the Decision.
   ambient panel) and ADR-0032 (its return switch consequence and its companion
   window rule's reach over the editor window). ADR-0006 stands and its second
   eject trigger did not fire.
+- 2026-10-01: Superseded in part by [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md). The panel and primary editor are mutually exclusive visible presentations. Raising the panel closes the editor window; opening the editor window hides the entire panel, including its resting and pinned forms. This replaces the non-owner glance and the consequences describing both windows remaining visible; the other decisions stand.

@@ -103,13 +103,9 @@ public final class FileCoordinator {
     ///
     /// Settable so a test can stand in front of the refusal. The
     /// default asks the system for an item replacement directory for
-    /// the target. What is known about that directory is what was
-    /// observed, not something this code holds the system to: in the
-    /// sandbox probe runs the directory handed back was one a rename
-    /// onto the target succeeded from. Nothing here relies on that
-    /// always holding. If the directory is ever on another volume the
-    /// rename fails, the core takes its temp file back, and the save
-    /// is refused out loud with the file on disk untouched.
+    /// the target. The core checks that staging and the destination
+    /// directory are on the same filesystem before creating a temp
+    /// file; a cross-volume directory is refused, not copied from.
     public var makeStagingDirectory: (_ target: URL) -> URL? = FileCoordinator.itemReplacementDirectory
 
     /// The default panels are the real ones in the app and refusing
@@ -280,11 +276,11 @@ public final class FileCoordinator {
     /// for. Every lane stages this way, so the builds a developer runs
     /// exercise the route the sandboxed build depends on.
     ///
-    /// The body is handed nil only when no directory can be had, and
-    /// the core then makes the temp file beside the target as it
-    /// always did. After a save that landed, the temp file was renamed
-    /// away; after one that did not, the core took it back. Either way
-    /// the directory is empty by the time it is removed.
+    /// The body is handed nil only when no directory can be had. Save
+    /// callers must refuse that case rather than pass nil to the core,
+    /// where it would request a sibling temp file. After a save that
+    /// landed, the temp file was renamed away; after one that did not,
+    /// the core took it back.
     public func withStagingDirectory<T>(for target: URL, _ body: (URL?) -> T) -> T {
         let directory = makeStagingDirectory(target)
         defer {

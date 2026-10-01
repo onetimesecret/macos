@@ -455,7 +455,9 @@ public final class PageModel: ObservableObject {
     /// goes back to the roll expects the slot they left to still be the
     /// selected slot. Selecting any tab clears this, so the two are
     /// never both live.
-    @Published public private(set) var selectedFile: UInt64?
+    @Published public private(set) var selectedFile: UInt64? {
+        didSet { if selectedFile != nil { expandedPageID = nil } }
+    }
 
     /// What the surface is showing, as one value: the open file when
     /// one is selected, otherwise the selected slot, otherwise today.
@@ -526,10 +528,38 @@ public final class PageModel: ObservableObject {
     /// from and the gestures act on. It is the tab's id and never the
     /// page's, because a slot the user is looking at may hold nothing.
     /// Nil only when no tabs exist.
-    @Published public var selection: UInt64?
+    @Published public var selection: UInt64? {
+        didSet { if selection != oldValue { expandedPageID = nil } }
+    }
 
     /// The ledger tab is showing instead of a page.
-    @Published public var showingLedger = false
+    @Published public var showingLedger = false {
+        didSet { if showingLedger { expandedPageID = nil } }
+    }
+
+    /// Temporary presentation state, scoped to the page being expanded.
+    @Published private var expandedPageID: UInt64?
+
+    struct PageExpansionReturn {
+        let place: RollPlace?
+    }
+    // Shared with the mounted roll so a window handoff retains the return place.
+    var pageExpansionReturn: PageExpansionReturn?
+
+    public var canExpandPage: Bool {
+        selectedPageID != nil && selectedFile == nil && !showingLedger
+    }
+
+    public var isPageExpanded: Bool {
+        canExpandPage && expandedPageID != nil && expandedPageID == selectedPageID
+    }
+
+    public func togglePageExpansion() {
+        guard canExpandPage else { return }
+        if !isPageExpanded { pageExpansionReturn = nil }
+        expandedPageID = isPageExpanded ? nil : selectedPageID
+        refocusEditorIfKeyed()
+    }
 
     /// The audit trail, newest first: refreshed on every `refresh()` and
     /// whenever the ledger is shown. Metadata only, never content.
@@ -3514,8 +3544,13 @@ public final class PageModel: ObservableObject {
                 return false
             }
             let target = URL(fileURLWithPath: file.path)
-            let wrote = fileCoordinator.withStagingDirectory(for: target) { staging in
-                client.saveFile(id, stagingDirectory: staging?.path)
+            let result = fileCoordinator.withStagingDirectory(for: target) { staging -> Bool? in
+                guard let staging else { return nil }
+                return client.saveFile(id, stagingDirectory: staging.path)
+            }
+            guard let wrote = result else {
+                flash(Self.writeRefusalNotice(name: file.name), tone: .actionable)
+                return false
             }
             guard wrote else {
                 // The core answers false for every refusal and keeps
@@ -3606,8 +3641,13 @@ public final class PageModel: ObservableObject {
                 saveFile(file.id)
                 return
             }
-            let wrote = fileCoordinator.withStagingDirectory(for: url) { staging in
-                client.saveFile(file.id, as: url.path, stagingDirectory: staging?.path)
+            let result = fileCoordinator.withStagingDirectory(for: url) { staging -> Bool? in
+                guard let staging else { return nil }
+                return client.saveFile(file.id, as: url.path, stagingDirectory: staging.path)
+            }
+            guard let wrote = result else {
+                flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
+                return
             }
             guard wrote else {
                 // The core refuses a target another open file already
@@ -4765,10 +4805,12 @@ public final class PageModel: ObservableObject {
         action.perform()
     }
 
-    /// Esc: leave the ledger if it is showing; otherwise hand the
-    /// keyboard back.
+    /// Esc first leaves page expansion, then the ledger, then hands back keys.
     public func escape() {
-        if showingLedger {
+        if isPageExpanded {
+            expandedPageID = nil
+            refocusEditorIfKeyed()
+        } else if showingLedger {
             showingLedger = false
             refocusEditorIfKeyed()
         } else {
