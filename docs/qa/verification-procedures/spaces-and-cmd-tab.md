@@ -899,8 +899,13 @@ ADR claims. Hardware results are not yet recorded.
   a short document leaves no extra blank scroll extent. Check checkpoint
   clicks, rename, and contextual menus as in the checks above.
 - Make a roll long enough to scroll. Click above and below its viewport
-  band on the timeline track, including beside checkpoint rows. The roll
-  moves to the corresponding stretch; the selected page stays unchanged.
+  band on the timeline track, including the narrow lane left of the dots
+  beside checkpoint rows. The roll moves to the corresponding stretch; the
+  selected page stays unchanged. A click on a checkpoint dot or label
+  still selects that page.
+- Click the bare track, then grab the band before the 160 ms jump finishes.
+  The roll follows the drag; the earlier click's travel does not pull it
+  back.
 - Grab the band near its top, middle and bottom. Drag in both directions,
   then beyond either end of the track. The roll follows directly without
   a navigation animation, does not jump on grabbing, and reaches both

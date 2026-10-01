@@ -366,10 +366,12 @@ struct StreamNavigatorView: View {
                 ForEach(layout.placed) { placed in
                     node(placed, width: proxy.size.width)
                 }
-                // A dedicated scrollbar lane remains reachable even where
-                // checkpoint rows span the column. Labels keep their taps.
+                // A scrollbar lane along the leading edge stays reachable
+                // where checkpoint rows span the column. It stops short of
+                // the dots on the track, so the dots and the labels keep
+                // their taps.
                 Color.clear
-                    .frame(width: Metrics.sliverInset, height: proxy.size.height)
+                    .frame(width: Metrics.scrollLaneWidth, height: proxy.size.height)
                     .contentShape(Rectangle())
                     .onTapGesture(coordinateSpace: .local) { point in
                         jump(toTrackY: point.y, layout: layout)
@@ -624,8 +626,8 @@ struct StreamNavigatorView: View {
     /// Bare track was clicked: scroll the roll to the stretch under the
     /// click and select nothing.
     private func jump(toTrackY y: CGFloat, layout: StreamNavigator.Layout) {
-        guard drivesRoll, layout.band != nil, layout.anchors.count >= 2,
-              layout.band?.contains(y) != true else { return }
+        guard drivesRoll, let band = layout.band, !band.contains(y),
+              layout.anchors.count >= 2 else { return }
         roll.scroll(toDocumentOffset: layout.jumpOffset(
             forTrackY: y, viewportHeight: roll.geometry.viewportHeight
         ))

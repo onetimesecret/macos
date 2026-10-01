@@ -368,6 +368,12 @@ final class DayStackView: NSView {
     /// the whole pass again.
     private var isLayingOut = false
 
+    /// The jump animation still travelling, if any, so a scrub can
+    /// retire it before moving the clip itself. Serial numbered, so a
+    /// retired jump's completion cannot clear a later jump's entry.
+    private var jumpSerial = 0
+    private var activeJump: Int?
+
     /// Where the caret goes once the editor lands on the page a click
     /// into a quiet region promoted. The click knows the character it
     /// landed on; the swap that makes that page editable happens a
@@ -1050,7 +1056,10 @@ final class DayStackView: NSView {
     /// to fire along the way, so the band on the rail travels with the
     /// clip rather than jumping after it. Instant as well in a window
     /// nobody can see, which is a test's, where an animation would be
-    /// a frame nobody draws and a clip that has not moved yet.
+    /// a frame nobody draws and a clip that has not moved yet. A scrub
+    /// from the rail's band passes `animated: false` and lands at once,
+    /// retiring any jump still travelling so the two do not pull the
+    /// clip in different directions.
     func scroll(toDocumentOffset offset: CGFloat, animated: Bool = true) {
         guard let scroll = enclosingScrollView else { return }
         let clip = scroll.contentView
@@ -1060,16 +1069,31 @@ final class DayStackView: NSView {
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
         guard animated, duration > 0, window?.isVisible == true else {
+            if activeJump != nil {
+                // A zero length group on the same property supersedes
+                // the running one, so the jump stops where it is.
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    clip.animator().setBoundsOrigin(target)
+                }
+                activeJump = nil
+            }
             clip.scroll(to: target)
             scroll.reflectScrolledClipView(clip)
             return
         }
+        jumpSerial += 1
+        let serial = jumpSerial
+        activeJump = serial
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             clip.animator().setBoundsOrigin(target)
-        } completionHandler: { [weak scroll] in
+        } completionHandler: { [weak scroll, weak self] in
             MainActor.assumeIsolated {
+                if let self, self.activeJump == serial {
+                    self.activeJump = nil
+                }
                 guard let scroll else { return }
                 scroll.reflectScrolledClipView(scroll.contentView)
             }
