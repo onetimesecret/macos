@@ -23,12 +23,15 @@ must be checked on the publishing account and test Macs.
 build.** In the source inspected on 2026-09-30, the
 [entitlements template](../../scripts/Companion.entitlements) declares
 `com.apple.security.files.user-selected.read-write` beside the sandbox,
-outgoing network, and Keychain access-group entries, and the packaging script
-refuses an App Store build whose signature lacks it.
+outgoing and incoming network, app-scoped bookmarks, and Keychain access-group
+entries. The packaging script refuses an App Store build whose signature lacks
+any of the required sandbox capabilities. Incoming network access supports the
+OAuth callback listener bound to `127.0.0.1`; it does not change its bind address.
 [FileCoordinator](../../shell/Sources/CompanionKit/FileCoordinator.swift)
 creates and resolves security-scoped bookmarks and brackets each file
 operation in a started scope, saves stage their temporary file outside the
-document's directory, and files are reread at launch one at a time inside
+document's directory and refuse the write if that staging directory is
+unavailable, and files are reread at launch one at a time inside
 their own scope. A file the system will not let the app read, or one that is
 no longer at its path, keeps its tab and offers **Locate…**, which raises an
 open panel so the person can point the app at the file; a file from an earlier
@@ -42,7 +45,18 @@ Treat file editing and reopening files after relaunch as release gates, and
 run the
 [sandbox file access procedure](../qa/verification-procedures/sandbox-file-access.md)
 on the TestFlight build; its cases 14, 16 and 17 are the ones that exercise
-Locate. Packaging success does not establish that they work.
+Locate. Packaging success does not establish that they work. Also test a new
+sync sign-in through the browser callback and credential access on the installed
+TestFlight build before distributing it to the wider internal group.
+
+The entitlement selection follows Apple's
+[App Sandbox entitlement reference](https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/EnablingAppSandbox.html).
+For networking, Apple states: “The sole difference is in whether your app is
+initiating the connection or is receiving connections initiated by other apps
+or other hosts.” For persistent file access, it states: “If you want to provide
+your sandboxed app with persistent access to file system resources, you must
+enable security-scoped bookmark and URL access.” These are platform guidance,
+not evidence that this build has passed signed-runtime testing.
 
 ## 1. Prepare the build Mac and account
 
@@ -242,8 +256,9 @@ may remain after an earlier failure.
 Before compiling, the script checks identity availability and the profile's
 team, explicit App ID, Keychain group, selected certificate, expiry, and profile
 class. After signing, it checks the app signature, build number, embedded
-profile, hardened-runtime flag, sandbox/network/user-selected-file/Keychain
-entitlements, and the package signature. These are
+profile, hardened-runtime flag, sandbox/outgoing-network/incoming-network/
+app-scoped-bookmark/user-selected-file/Keychain entitlements, and the package
+signature. These are
 local checks, not a substitute for Apple's validation. In particular, inspect
 profile validity and certificate suitability rather than assuming the script
 checks every distribution requirement.
