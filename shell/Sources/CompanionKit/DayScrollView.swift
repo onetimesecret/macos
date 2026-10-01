@@ -399,13 +399,26 @@ final class DayStackView: NSView {
     /// The unused viewport below the pages is part of the editing area.
     /// Focusing it preserves the selected page and its insertion point.
     override func mouseDown(with event: NSEvent) {
-        focusEditor()
+        guard let editor = focusableEditor else {
+            super.mouseDown(with: event)
+            return
+        }
+        // Use the editor's click-versus-drag decision for the entire blank
+        // viewport, including the stretch outside the text view's frame.
+        editor.mouseDown(with: event)
     }
 
-    func focusEditor() {
+    private var focusableEditor: InkTextView? {
         guard model.owner == coordinator.surface,
-              let editor, editor.isEditable, editor.window === window else { return }
-        window?.makeFirstResponder(editor)
+              let window, let editor, editor.isEditable,
+              editor.window === window else { return nil }
+        return editor
+    }
+
+    @discardableResult
+    func focusEditor() -> Bool {
+        guard let editor = focusableEditor, let window else { return false }
+        return window.makeFirstResponder(editor) && window.firstResponder === editor
     }
 
     // MARK: What the roll is watching
@@ -1400,7 +1413,16 @@ final class DayHeaderView: NSView {
     /// The checkpoint belongs to the content area. Its passive labels
     /// share the focus click; an inline rename keeps its own text input.
     override var needsPanelToBecomeKey: Bool {
-        (superview as? DayStackView)?.needsPanelToBecomeKey ?? false
+        dayStack?.needsPanelToBecomeKey ?? false
+    }
+
+    private var dayStack: DayStackView? {
+        var ancestor = superview
+        while let view = ancestor {
+            if let stack = view as? DayStackView { return stack }
+            ancestor = view.superview
+        }
+        return nil
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -1414,12 +1436,34 @@ final class DayHeaderView: NSView {
         return hit
     }
 
+    // Mouse hit redirection must not replace the composed spoken header
+    // with an individual passive label. The editable rename field keeps
+    // its own accessibility target.
+    private enum AccessibilityHit: Sendable { case outside, header, rename }
+
+    override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        let target: AccessibilityHit = MainActor.assumeIsolated {
+            guard let window else { return .outside }
+            let local = convert(window.convertPoint(fromScreen: point), from: nil)
+            guard bounds.contains(local) else { return .outside }
+            if titleField.isEditable && !titleField.isHidden && titleField.frame.contains(local) {
+                return .rename
+            }
+            return .header
+        }
+        switch target {
+        case .header: return self
+        case .rename: return titleField
+        case .outside: return super.accessibilityHitTest(point)
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.control) {
             super.mouseDown(with: event)
             return
         }
-        (superview as? DayStackView)?.focusEditor()
+        if dayStack?.focusEditor() != true { super.mouseDown(with: event) }
     }
 
     /// Which mark a header draws, as a decision rather than as a

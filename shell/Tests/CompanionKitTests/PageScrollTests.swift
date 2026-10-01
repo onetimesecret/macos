@@ -45,27 +45,76 @@ final class PageScrollTests: XCTestCase {
         (0..<lines).map { "line \($0) of the page\n" }.joined()
     }
 
+    private func mouseEvent(
+        _ type: NSEvent.EventType, in window: NSWindow,
+        at location: NSPoint, flags: NSEvent.ModifierFlags = [], clickCount: Int = 1
+    ) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: location, modifierFlags: flags,
+            timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: clickCount, pressure: 1
+        ))
+    }
+
     func testBlankEditorClicksFocusAndPreserveInsertionPoint() throws {
-        for ink in ["", "first line\nsecond line"] {
-            let (scroll, editor, storage, layoutManager, container) = makeStack(cardHeight: 320)
-            let window = try XCTUnwrap(scroll.window)
-            storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: ink)
-            layoutManager.ensureLayout(for: container)
-            scroll.layoutSubtreeIfNeeded()
-            let caret = NSRange(location: min(3, storage.length), length: 0)
-            editor.setSelectedRange(caret)
-            _ = window.makeFirstResponder(nil)
-            let point = NSPoint(x: 200, y: 250)
-            let hit = try XCTUnwrap(scroll.hitTest(point))
-            let event = try XCTUnwrap(NSEvent.mouseEvent(
-                with: .leftMouseDown, location: scroll.convert(point, to: nil),
-                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
-                context: nil, eventNumber: 1, clickCount: 1, pressure: 1
-            ))
-            hit.mouseDown(with: event)
-            XCTAssertTrue(window.firstResponder === editor)
-            XCTAssertEqual(editor.selectedRange(), caret)
+        for ink in ["", "first line\nsecond line\n"] {
+            for alreadyFocused in [false, true] {
+                let (scroll, editor, storage, layoutManager, container) = makeStack(cardHeight: 720)
+                let window = try XCTUnwrap(scroll.window)
+                storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: ink)
+                layoutManager.ensureLayout(for: container)
+                scroll.layoutSubtreeIfNeeded()
+                let caret = NSRange(location: min(3, storage.length), length: 0)
+                editor.setSelectedRange(caret)
+                _ = window.makeFirstResponder(alreadyFocused ? editor : nil)
+                // Exercise the enlarged gap below the final newline through
+                // the actual view hit by a click, including the clip.
+                let point = NSPoint(x: 200, y: 650)
+                let hit = try XCTUnwrap(scroll.hitTest(point))
+                let location = scroll.convert(point, to: nil)
+                window.postEvent(try mouseEvent(.leftMouseUp, in: window, at: location), atStart: true)
+                hit.mouseDown(with: try mouseEvent(.leftMouseDown, in: window, at: location))
+                XCTAssertTrue(window.firstResponder === editor)
+                XCTAssertEqual(editor.selectedRange(), caret)
+            }
         }
+    }
+
+    func testBlankFocusPredicateLeavesNativeGesturesAlone() {
+        XCTAssertTrue(InkTextView.shouldFocusBlankSpace(
+            isEditable: true, clickCount: 1, modifierFlags: [.capsLock, .numericPad], containsTextLine: false
+        ))
+        for flags: NSEvent.ModifierFlags in [.shift, .command, .option, .control, [.shift, .option]] {
+            XCTAssertFalse(InkTextView.shouldFocusBlankSpace(
+                isEditable: true, clickCount: 1, modifierFlags: flags, containsTextLine: false
+            ))
+        }
+        for count in [2, 3] {
+            XCTAssertFalse(InkTextView.shouldFocusBlankSpace(
+                isEditable: true, clickCount: count, modifierFlags: [], containsTextLine: false
+            ))
+        }
+        XCTAssertFalse(InkTextView.shouldFocusBlankSpace(
+            isEditable: false, clickCount: 1, modifierFlags: [], containsTextLine: false
+        ))
+        XCTAssertFalse(InkTextView.shouldFocusBlankSpace(
+            isEditable: true, clickCount: 1, modifierFlags: [], containsTextLine: true
+        ))
+    }
+
+    func testBlankMouseDownLeavesDragQueuedForNativeTracking() throws {
+        let (scroll, editor, _, _, _) = makeStack(cardHeight: 320)
+        let window = try XCTUnwrap(scroll.window)
+        let start = NSPoint(x: 200, y: 250)
+        let drag = try mouseEvent(.leftMouseDragged, in: window, at: NSPoint(x: 200, y: 50))
+        window.postEvent(drag, atStart: true)
+        XCTAssertFalse(editor.consumeBlankFocusClick(try mouseEvent(.leftMouseDown, in: window, at: start)))
+        let queued = window.nextEvent(
+            matching: .leftMouseDragged, until: .distantPast, inMode: .eventTracking, dequeue: true
+        )
+        XCTAssertEqual(queued?.type, .leftMouseDragged,
+                       "NSTextView must receive the drag rather than losing it to focus handling")
+        XCTAssertEqual(queued?.locationInWindow, drag.locationInWindow)
     }
 
     func testTextLineBandsKeepNativeCaretPlacement() {
@@ -85,6 +134,22 @@ final class PageScrollTests: XCTestCase {
         XCTAssertFalse(editor.containsTextLine(at: NSPoint(x: 200, y: 2)))
     }
 
+    func testAttachmentLineBandKeepsNativeCaretPlacement() {
+        let (_, editor, storage, layoutManager, container) = makeStack(cardHeight: 320)
+        let attachment = NSTextAttachment()
+        attachment.attachmentCell = NSTextAttachmentCell(imageCell: NSImage(size: NSSize(width: 80, height: 100)))
+        storage.setAttributedString(NSAttributedString(attachment: attachment))
+        layoutManager.ensureLayout(for: container)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+        XCTAssertGreaterThan(line.height, 50)
+        XCTAssertTrue(editor.containsTextLine(at: NSPoint(
+            x: 200, y: editor.textContainerOrigin.y + line.midY
+        )))
+        XCTAssertFalse(editor.containsTextLine(at: NSPoint(
+            x: 200, y: editor.textContainerOrigin.y + line.maxY + 20
+        )))
+    }
+
     func testBlankClipAcceptsTheFirstClickAndFocusesItsEditor() throws {
         let (scroll, editor, _, _, _) = makeStack(cardHeight: 320)
         let window = try XCTUnwrap(scroll.window)
@@ -97,6 +162,7 @@ final class PageScrollTests: XCTestCase {
         ))
         XCTAssertTrue(clip.needsPanelToBecomeKey)
         XCTAssertTrue(clip.acceptsFirstMouse(for: event))
+        window.postEvent(try mouseEvent(.leftMouseUp, in: window, at: event.locationInWindow), atStart: true)
         clip.mouseDown(with: event)
         XCTAssertTrue(window.firstResponder === editor)
     }

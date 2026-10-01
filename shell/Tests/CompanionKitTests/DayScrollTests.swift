@@ -165,6 +165,126 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    private final class ClickResponder: NSResponder {
+        var clicks = 0
+        override func mouseDown(with event: NSEvent) { clicks += 1 }
+    }
+
+    func testBlankViewportBelowTrailingNewlineFocusesAtSeveralWindowSizes() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "short page\n")
+        let roll = try mountRoll(model: model)
+        let caret = NSRange(location: 2, length: 0)
+        for height: CGFloat in [320, 720] {
+            roll.scroll.frame.size.height = height
+            roll.scroll.layoutSubtreeIfNeeded()
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let visible = roll.stack.visibleRect
+            XCTAssertGreaterThan(visible.maxY - editor.frame.maxY, 100)
+            for y in [editor.frame.maxY + 12, (editor.frame.maxY + visible.maxY) / 2, visible.maxY - 8] {
+                let point = NSPoint(x: visible.midX, y: y)
+                let hit = try XCTUnwrap(roll.stack.hitTest(point))
+                editor.setSelectedRange(caret)
+                _ = roll.window.makeFirstResponder(nil)
+                let event = try leftClick(in: roll.window)
+                XCTAssertTrue(hit === roll.stack, "blank viewport at \(point) hit \(hit)")
+                XCTAssertTrue(hit.needsPanelToBecomeKey)
+                XCTAssertTrue(hit.acceptsFirstMouse(for: event))
+                hit.mouseDown(with: event)
+                XCTAssertTrue(roll.window.firstResponder === editor)
+                XCTAssertEqual(editor.selectedRange(), caret)
+            }
+        }
+    }
+
+    private func leftClick(in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+            clickCount: 1, pressure: 1
+        ))
+    }
+
+    func testUnavailableRollFocusForwardsClicksToTheResponderChain() throws {
+        let model = try makeModel()
+        let roll = try mountRoll(model: model)
+        let fallback = ClickResponder()
+        roll.stack.nextResponder = fallback
+        let event = try leftClick(in: roll.window)
+
+        // Before the first page there is no editor to receive focus.
+        XCTAssertFalse(roll.stack.focusEditor())
+        roll.stack.mouseDown(with: event)
+        XCTAssertEqual(fallback.clicks, 1)
+
+        let selected = try page(in: model, saying: "writing")
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: true)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        header.nextResponder = fallback
+        XCTAssertFalse(roll.stack.focusEditor())
+        roll.stack.mouseDown(with: event)
+        header.mouseDown(with: event)
+        XCTAssertEqual(fallback.clicks, 3, "read-only content swallowed its click")
+
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        roll.scroll.removeFromSuperview()
+        XCTAssertFalse(roll.stack.focusEditor(), "a detached roll reported that it focused")
+        header.mouseDown(with: event)
+        XCTAssertEqual(fallback.clicks, 4)
+    }
+
+    func testCheckpointFocusTraversesAnIntermediateContainer() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "writing")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let container = NSView(frame: header.frame)
+        roll.stack.addSubview(container)
+        header.removeFromSuperview()
+        container.addSubview(header)
+        header.frame.origin = .zero
+        let caret = NSRange(location: 3, length: 0)
+        editor.setSelectedRange(caret)
+        _ = roll.window.makeFirstResponder(nil)
+
+        XCTAssertTrue(header.needsPanelToBecomeKey)
+        header.mouseDown(with: try leftClick(in: roll.window))
+
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertEqual(editor.selectedRange(), caret)
+    }
+
+    func testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "writing")
+        let tab = try XCTUnwrap(model.selection)
+        model.renameTab(tab, to: "named page")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let fields = header.subviews.compactMap { $0 as? NSTextField }
+        let title = try XCTUnwrap(fields.first { $0.stringValue == "named page" })
+        let expected = header.accessibilityLabel()
+
+        for field in fields where !field.isHidden {
+            let local = NSPoint(x: field.frame.midX, y: field.frame.midY)
+            let screen = roll.window.convertPoint(toScreen: header.convert(local, to: nil))
+            let target = try XCTUnwrap(header.accessibilityHitTest(screen) as? NSView)
+            XCTAssertTrue(target === header)
+            XCTAssertEqual(target.accessibilityLabel(), expected)
+        }
+
+        header.beginRename()
+        let local = NSPoint(x: title.frame.midX, y: title.frame.midY)
+        let screen = roll.window.convertPoint(toScreen: header.convert(local, to: nil))
+        let target = try XCTUnwrap(header.accessibilityHitTest(screen) as? NSView)
+        XCTAssertTrue(target === title, "the editable name lost its accessibility target")
+        header.endRename(committed: false)
+    }
+
     /// Every row is its header and then its region, and the document is
     /// exactly as tall as the rows it holds, or as tall as the clip,
     /// when there is less writing than card.

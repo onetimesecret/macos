@@ -286,7 +286,10 @@ editor window is on, as it does for any document application").
       click focuses the editor and typing resumes at the saved caret;
       neither the selected page nor the caret changes on that click.
       Repeat in the panel, the editor window, an empty buffer, and an
-      unsaved file. Then fill a buffer with several lines and click a
+      unsaved file. Enlarge the window with only a short line and its
+      final newline: repeat just below the text, halfway down the blank
+      area, and near the bottom edge, including when already focused.
+      Each point must focus at the existing caret. Then fill a buffer with several lines and click a
       specific line: the caret must move there and typing must follow.
       Check a checkpoint's right-click menu and inline rename as well.
       **Fail:** a content click needs a second click, typing goes to
@@ -294,6 +297,22 @@ editor window is on, as it does for any document application").
       to place it, or rename/context-menu input is intercepted.
       This check records the click behavior requested for #215; it
       remains unrun on hardware.
+- [ ] **Blank-space selection gestures remain native (#215).** *Both.*
+      In a scratch buffer with several lines, Shift-click below the
+      text to extend the selection, and drag upward starting in that
+      blank area. Repeat with Option-drag and repeated clicks, and
+      verify read-only text still allows its normal selection gestures.
+      **Pass:** these gestures follow AppKit's text selection behavior;
+      a plain click without dragging preserves the existing caret as
+      requested, including when already focused. **Fail:** a selection
+      gesture is consumed as a focus click, or a drag leaves input stuck.
+- [ ] **Checkpoint accessibility keeps its label and rename input (#215).**
+      *Both.* With VoiceOver on, navigate to the checkpoint and inspect
+      its day, page name, and remaining-time description. Begin an
+      inline rename and navigate into its editable field. **Pass:** the
+      composed checkpoint description is available and the rename field
+      is independently editable. **Fail:** mouse focus redirection
+      hides the spoken checkpoint or its rename field.
 
 ### A pinned panel floats above the editor window (ADR-0033)
 
@@ -897,6 +916,8 @@ is about, in the split ADR-0033 gives.
 | | | both | panel off: hotkey and status item focus the editor, closed, open and miniaturized | | #215. Record active app, typing and conditional stream evidence; rerun panel-on summons. |
 | | | both | panel off: hotkey and status item with the editor on another desktop | | #215. Unverified implementation interpretation; record actual desktop and keyboard result against the proposed expectation. |
 | | | both | blank content and checkpoint clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. |
+| | | both | blank-space modified clicks and drag selection remain native | | #215. Include enlarged short buffers and read-only text. |
+| | | both | checkpoint VoiceOver description and inline rename field | | #215. Screen-coordinate accessibility tests pass; VoiceOver check unrun. |
 | 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |
 | 2026-09-28 | not recorded | editor | editor window never resolves to floating | pass | ADR-0033. Reported passed by the maintainer under the earlier wording, which read the log; no log line names the editor window's level, so judge a rerun by the probe's `layer=` (0 is normal). |
 | 2026-09-28 | not recorded | editor | editor enters and leaves full screen | pass | ADR-0033. Reported passed by the maintainer. |

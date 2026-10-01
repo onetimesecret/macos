@@ -579,6 +579,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             // both return .openEditorWindow(.activation), exactly the late
             // activation route. This relies on their raise staying .activation;
             // changing it to .summon would require expiring pending intent.
+            assert(route == .openEditorWindow(.activation),
+                   "Deferred panel-off summons must match the late activation route")
             pendingEditorSummon = route
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -669,6 +671,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             launchWindow: Self.launchWindow,
             context: activationContext(claimed: claimed)
         ))
+    }
+
+    func applicationWillResignActive(_ notification: Notification) {
+        // A completed activation consumes the intent above. If the app
+        // instead loses activation, no summon should survive that turn
+        // away and take precedence over a later return.
+        pendingEditorSummon = nil
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.

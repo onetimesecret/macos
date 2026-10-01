@@ -320,6 +320,8 @@ public struct InkEditorView: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.contentView = EditorFocusClipView()
         scroll.hasVerticalScroller = true
+        // NSScrollView forwards this to its clip, so apply it after replacing
+        // the clip view to keep the page's background transparent.
         scroll.drawsBackground = false
         return scroll
     }
@@ -3961,7 +3963,9 @@ final class EditorFocusClipView: NSClipView {
             super.mouseDown(with: event)
             return
         }
-        window?.makeFirstResponder(editor)
+        // The editor owns gesture classification and native text tracking even
+        // when this part of the viewport lies outside its document frame.
+        editor.mouseDown(with: event)
     }
 }
 
@@ -4160,8 +4164,11 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// delegate selects the object without opening anything.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if !event.modifierFlags.contains(.control), !containsTextLine(at: point) {
-            window?.makeFirstResponder(self)
+        if Self.shouldFocusBlankSpace(
+            isEditable: isEditable, clickCount: event.clickCount,
+            modifierFlags: event.modifierFlags,
+            containsTextLine: containsTextLine(at: point)
+        ), consumeBlankFocusClick(event) {
             return
         }
         if Self.shouldOpenChipContextMenu(
@@ -4191,24 +4198,66 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         super.mouseDown(with: event)
     }
 
-    /// A line's full horizontal band uses native text selection, including
-    /// the empty tail of a line. Space above or below the laid-out lines
-    /// only restores focus, leaving the insertion point where it was.
-    func containsTextLine(at point: NSPoint) -> Bool {
-        guard let layoutManager, let textContainer else { return false }
-        layoutManager.ensureLayout(for: textContainer)
-        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
-        let glyphs = layoutManager.glyphRange(for: textContainer)
-        var onLine = false
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, _, stop in
-            if local.y >= rect.minY && local.y < rect.maxY {
-                onLine = true
-                stop.pointee = true
+    /// Plain blank-space clicks preserve the existing caret even if the
+    /// editor already has focus. This is the requested page-wide focus
+    /// gesture; modified and repeated clicks retain native selection.
+    nonisolated static func shouldFocusBlankSpace(
+        isEditable: Bool, clickCount: Int,
+        modifierFlags: NSEvent.ModifierFlags, containsTextLine: Bool
+    ) -> Bool {
+        isEditable && !containsTextLine && shouldOpenChipActions(
+            clickCount: clickCount, modifierFlags: modifierFlags
+        )
+    }
+
+    /// A mouse-down alone cannot distinguish a focus click from selection
+    /// dragged out of blank space. Peek at the next tracking event: leave
+    /// a drag queued for NSTextView, or consume the up for a focus click.
+    /// Short waits permit a missing mouse-up to end when the button has
+    /// been released, rather than keeping the tracking loop alive forever.
+    func consumeBlankFocusClick(_ event: NSEvent) -> Bool {
+        guard let window else { return false }
+        while true {
+            if let next = window.nextEvent(
+                matching: [.leftMouseDragged, .leftMouseUp],
+                until: Date(timeIntervalSinceNow: 0.1),
+                inMode: .eventTracking, dequeue: false
+            ) {
+                guard next.type == .leftMouseUp else { return false }
+                _ = window.nextEvent(
+                    matching: .leftMouseUp, until: .distantPast,
+                    inMode: .eventTracking, dequeue: true
+                )
+                window.makeFirstResponder(self)
+                return true
+            }
+            if NSEvent.pressedMouseButtons & 1 == 0 {
+                window.makeFirstResponder(self)
+                return true
             }
         }
+    }
+
+    /// A line's full horizontal band uses native text selection, including
+    /// the empty tail of a line and the final empty paragraph. Resolve only
+    /// the line nearest the click rather than walking every line in a file.
+    func containsTextLine(at point: NSPoint) -> Bool {
+        guard let layoutManager, let textContainer else { return false }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        guard local.y >= 0 else { return false }
+        layoutManager.ensureLayout(forBoundingRect: NSRect(
+            x: 0, y: local.y, width: max(1, textContainer.size.width), height: 1
+        ), in: textContainer)
         let extra = layoutManager.extraLineFragmentRect
-        return onLine || (layoutManager.extraLineFragmentTextContainer === textContainer
-            && local.y >= extra.minY && local.y < extra.maxY)
+        if layoutManager.extraLineFragmentTextContainer === textContainer,
+           local.y >= extra.minY && local.y < extra.maxY {
+            return true
+        }
+        guard layoutManager.numberOfGlyphs > 0 else { return false }
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer)
+        guard glyph < layoutManager.numberOfGlyphs else { return false }
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return local.y >= line.minY && local.y < line.maxY
     }
 
     /// The frame the block at `index` is drawn with, in this view's
