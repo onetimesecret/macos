@@ -523,6 +523,12 @@ elif [[ -n "$PROVISIONING_PROFILE" ]]; then
   # was checked before any build or bundle replacement began.
   cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
   echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
+  if ((APP_STORE_MODE)); then
+    # macOS cp preserves a downloaded profile's quarantine attribute. Clean
+    # the assembled bundle after the final copy, without changing the source.
+    echo "==> Removing quarantine attributes from $APP before signing"
+    xattr -dr com.apple.quarantine "$APP"
+  fi
   SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
   ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
 
@@ -627,6 +633,12 @@ if ((APP_STORE_MODE)); then
   fi
 
   PKG=dist/OnetimePad.pkg
+  APP_XATTRS="$(xattr -r "$APP")"
+  if grep -Eq ': com\.apple\.quarantine$' <<<"$APP_XATTRS"; then
+    echo "signed app still contains com.apple.quarantine; refusing to package it" >&2
+    printf '%s\n' "$APP_XATTRS" >&2
+    exit 1
+  fi
   rm -f "$PKG"
   echo "==> productbuild $PKG"
   productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
