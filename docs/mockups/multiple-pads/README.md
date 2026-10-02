@@ -42,7 +42,11 @@ here. Timeline remains above the variable Files list.
 
 ## Earlier wireframes
 
-These remain historical comparisons, not the latest picker specification:
+These remain historical comparisons, not the latest picker specification.
+On 2026-10-01 each was edited only to place Timeline above Files: the original
+elements are wrapped in translated groups, and the one description naming the
+order was updated. The
+[initial exploration](initial-folder-scoped-exploration.md) records the change.
 
 - [01-active-pad.svg](01-active-pad.svg)
 - [02-switch-pad.svg](02-switch-pad.svg)

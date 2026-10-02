@@ -9,6 +9,11 @@ documentation_status: draft
 > describes the later mockup. Its one-folder model and shortcut recommendation
 > are not the current mockup direction. Neither exploration is an accepted
 > architecture decision. The SVGs are wireframes, not implementation specifications.
+>
+> Edited 2026-10-01: at the user’s request, this record and its three SVGs now
+> place Timeline above Files; the 2026-09-18 version had Files above Timeline.
+> The SVG edits wrap the original elements in `translate` groups, so their
+> coordinates still describe the old layout. Git history holds the original.
 
 The timeline sidebar intentionally approximates the real implementation;
 its behaviour is outside the focus of this exploration.
