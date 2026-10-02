@@ -23,6 +23,23 @@ final class PadCatalogTests: XCTestCase {
         catalog.removeFolder("/work/familia/docs", from: docs)
         XCTAssertEqual(catalog.pad(forPath: "/work/familia/docs/note.md"), familia)
     }
+    func testNewPadsUseV7AndLegacyIDsAreNotRemintedOnReload() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        XCTAssertEqual(pad.uuid.6 >> 4, 7)
+        XCTAssertEqual(pad.uuid.8 >> 6, 2)
+        catalog.assign(tabUUID: "legacy-tab", to: pad)
+        let legacy = "6D07A934-226E-4F3A-A799-099AE914AA42"
+        let raw = try XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))
+        let json = try XCTUnwrap(String(data: raw, encoding: .utf8))
+        defaults.set(Data(json.replacingOccurrences(of: pad.uuidString, with: legacy).utf8), forKey: PadCatalog.storageKey)
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertNil(restored.loadFailure)
+        XCTAssertEqual(restored.activeID, UUID(uuidString: legacy))
+        XCTAssertEqual(restored.owner(ofTabUUID: "legacy-tab"), UUID(uuidString: legacy))
+        XCTAssertEqual(restored.entries.first?.id, PadCatalog.scratchID)
+    }
     func testAppMatchingUsesRecentManualSelectionAndCanBeDisabled() throws {
         let catalog = PadCatalog(defaults: try defaults())
         catalog.isEnabled = true

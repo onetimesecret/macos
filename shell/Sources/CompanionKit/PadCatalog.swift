@@ -105,7 +105,7 @@ public final class PadCatalog: ObservableObject {
         guard loadFailure == nil else { return nil }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let id = UUID()
+        let id = UUIDv7.generate()
         entries.append(PadEntry(id: id, name: String(trimmed.prefix(80)), folderPaths: [],
             applicationBundleIDs: [], isScratch: false))
         activate(id)

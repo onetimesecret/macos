@@ -97,6 +97,16 @@ Storage choice, migration, and metadata removal still require review.
 - Stable ownership must survive native tab restoration. A restore-reminted
   numeric handle is insufficient as the persistent catalog identity; the
   implementation must use stable identity and verify restart behavior.
+- The maintainer's follow-up instruction is: “re: UUIDs, use uuidv7.” Newly
+  minted pad IDs and core `ItemId` identities (tabs, pages, chips, and block
+  records) use UUIDv7 in this experiment.
+  Existing stored IDs and Scratch's nil sentinel are preserved. This departs
+  from the **proposed** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md),
+  whose item-identity wording is “Every sheet/chip gets a random 128-bit
+  identifier (UUIDv4) at creation, minted in the Rust core.” UUIDv7 encodes
+  Unix milliseconds plus 74 random bits ([RFC 9562 §5.7](https://www.rfc-editor.org/rfc/rfc9562.html#section-5.7));
+  the earlier fully-random-identity rationale cannot be carried forward as
+  an unchanged privacy claim. This proposal records that scope explicitly.
 - Path equality, nested roots, inaccessible associations, activation failures,
   association editing, and bounded recency need tests and documented failure
   behavior. Sample chooser exclusivity does not prove any of them.
