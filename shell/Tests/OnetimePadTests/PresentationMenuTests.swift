@@ -7,7 +7,7 @@ import XCTest
 
 final class PresentationMenuTests: XCTestCase {
     @MainActor
-    func testIntroductionActivationDoesNotMountEditorBeforeStartupCompletes() {
+    func testActivationBeforeStartupCompletesDoesNotMountEditor() {
         let suite = "onetimepad.startup-test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
