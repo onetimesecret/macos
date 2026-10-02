@@ -746,8 +746,12 @@ func writeComposerLayer(mark: Mark, to outDir: URL) {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     NSColor.clear.setFill()
     NSRect(x: 0, y: 0, width: 1024, height: 1024).fill(using: .copy)
-    let tile = NSRect(x: 100, y: 100, width: 824, height: 824)
-    mark.draw(.white, tile, markScale, .zero, .zero)
+    // Composer layers use the full canvas; the standalone renderer's
+    // 100px tile inset would shrink the foreground a second time.
+    let tile = NSRect(x: 0, y: 0, width: 1024, height: 1024)
+    // The logo's 0.88 optical fit makes this 70.4% of the canvas height.
+    let foregroundScale: CGFloat = mark.name == "logo" ? 0.80 : markScale
+    mark.draw(.white, tile, foregroundScale, .zero, .zero)
     NSGraphicsContext.restoreGraphicsState()
     guard let png = rep.representation(using: .png, properties: [:]) else {
         fail("could not encode the Composer foreground")
@@ -763,7 +767,7 @@ func writeComposerLayer(mark: Mark, to outDir: URL) {
     cg.beginTransparencyLayer(auxiliaryInfo: nil)
     for distance in 0...420 {
         let offset = CGFloat(distance) / sqrt(2)
-        mark.draw(.black, tile, markScale, NSPoint(x: offset, y: -offset), .zero)
+        mark.draw(.black, tile, foregroundScale, NSPoint(x: offset, y: -offset), .zero)
     }
     let ramp = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
         colors: [CGColor(gray: 1, alpha: 0.24), CGColor(gray: 1, alpha: 0)] as CFArray,
