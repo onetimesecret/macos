@@ -92,7 +92,7 @@ Verified persisted candidates are:
 | `fontSize` | `PageModel` | Normalized through `InkStyle.Typeface` |
 | `snapsToBoundaries` | `PageModel` | Sent to the core at initialization and on changes |
 | `showsTimeUnits` | `PageModel` | Enabling may reconcile the selected page |
-| `showsPagesDownSide` | `PageModel` | Falls back to the legacy `showsTimeUnits` value when absent |
+| `showsPagesDownSide` | `PageModel` | Retired: placement now follows `showsTimeUnits`, and the stored key is removed at launch; do not migrate it |
 | `stampFormatShort` | `PageModel` | Empty is a valid stored value meaning use the standard pattern |
 | `stampFormatFine` | `PageModel` | Empty is a valid stored value meaning use the standard pattern |
 | `connection.serverURL` | `PageModel` | Persists only after core validation succeeds |
@@ -382,14 +382,7 @@ Missing and explicitly stored values are distinct. Migration does not materializ
 
 ### Navigation compatibility
 
-If `showsPagesDownSide` is absent, it inherits the explicitly stored legacy `showsTimeUnits` value. This preserves the old combined preference behavior:
-
-```swift
-showsPagesDownSide = defaults.object(forKey: Self.pagesDownSideKey) as? Bool
-    ?? showsTimeUnits
-```
-
-— `shell/Sources/CompanionKit/PageModel.swift:1397-1404`
+Navigation placement is no longer stored. Settings offers two layouts, Tabs (bottom) and Timeline (side), and `showsPagesDownSide` is a computed property that returns `showsTimeUnits`. `PageModel` removes any stored `showsPagesDownSide` value at initialization, so a settings file must not carry or migrate that key.
 
 ### Geometry compatibility
 

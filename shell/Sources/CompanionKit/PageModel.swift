@@ -929,6 +929,7 @@ public final class PageModel: ObservableObject {
     /// Timeline uses the leading column; Tabs uses the bottom navigation.
     /// Older placement preferences are ignored in favor of these two layouts.
     public var showsPagesDownSide: Bool { showsTimeUnits }
+    private static let retiredPagesDownSideKey = "showsPagesDownSide"
 
     /// How a page's birth time reads on the rail and in the gutters
     /// while pages are organized by day (`StreamNavigator.StampFormat`):
@@ -1444,6 +1445,10 @@ public final class PageModel: ObservableObject {
         // asked for a second way of looking at it (issue #79).
         let showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
         self.showsTimeUnits = showsTimeUnits
+        // Placement follows the layout now, so the retired independent
+        // placement key is dropped rather than left for a later read
+        // to resurrect.
+        defaults.removeObject(forKey: Self.retiredPagesDownSideKey)
         // Unset → the standard patterns, "HH:mm" and "HH:mm:ss".
         stampFormat = StreamNavigator.StampFormat(
             short: defaults.string(forKey: Self.stampShortKey)

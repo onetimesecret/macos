@@ -194,6 +194,8 @@ final class TimeUnitModeTests: XCTestCase {
                 let model = isolatedModel(defaults: defaults)
                 XCTAssertEqual(model.showsTimeUnits, timeline)
                 XCTAssertEqual(model.showsPagesDownSide, timeline)
+                XCTAssertNil(defaults.object(forKey: "showsPagesDownSide"),
+                             "the retired placement key outlived a launch")
             }
         }
     }
