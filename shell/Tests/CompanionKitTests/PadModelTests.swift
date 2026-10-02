@@ -450,6 +450,38 @@ final class PadModelTests: XCTestCase {
         XCTAssertEqual(model.pads.rememberedFile(for: pad), "/unrestored-file.txt")
     }
 
+    func testRosterReadCrossingMidnightDefersCheckpointPruningUntilStableDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let before = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 23, minute: 59, second: 59)))
+        let after = before.addingTimeInterval(2)
+        XCTAssertNil(PageModel.validatedPadRosterDate(readStartedAt: before, readFinishedAt: after, calendar: calendar, finishedCalendar: calendar))
+        let beforeReference = try XCTUnwrap(PageModel.validatedPadRosterDate(readStartedAt: before.addingTimeInterval(-1), readFinishedAt: before, calendar: calendar, finishedCalendar: calendar))
+        XCTAssertEqual(PageModel.padDateKey(forDayBucket: 0, now: beforeReference, calendar: calendar), "2026-10-02")
+        let catalog = PadCatalog(defaults: try defaults())
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-02")
+        catalog.assign(tabUUID: "closed", to: pad)
+        catalog.reconcileTabs([], checkpointKeys: nil)
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
+        XCTAssertEqual(catalog.owner(ofTabUUID: "closed"), PadCatalog.scratchID)
+        let stableReference = try XCTUnwrap(PageModel.validatedPadRosterDate(readStartedAt: after, readFinishedAt: after.addingTimeInterval(1), calendar: calendar, finishedCalendar: calendar))
+        let stableKey = pad.uuidString + "/" + PageModel.padDateKey(forDayBucket: -1, now: stableReference, calendar: calendar)
+        catalog.reconcileTabs([], checkpointKeys: [stableKey])
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
+        catalog.reconcileTabs([], checkpointKeys: [])
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .chronological)
+    }
+    func testRosterDateValidationRejectsTimezoneAndBackwardsClockChanges() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 12)))
+        var movedCalendar = calendar
+        movedCalendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 3600))
+        XCTAssertNil(PageModel.validatedPadRosterDate(readStartedAt: now, readFinishedAt: now.addingTimeInterval(1), calendar: calendar, finishedCalendar: movedCalendar))
+        XCTAssertNil(PageModel.validatedPadRosterDate(readStartedAt: now, readFinishedAt: now.addingTimeInterval(-1), calendar: calendar, finishedCalendar: calendar))
+    }
+
     func testProjectedDaySortKeysStayStableForFuturePagesAndRosterReordering() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

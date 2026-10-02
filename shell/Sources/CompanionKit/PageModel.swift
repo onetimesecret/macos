@@ -427,6 +427,8 @@ public final class PageModel: ObservableObject {
     private var lastPadsEnabled = false
     private var isApplyingCatalogChange = false
     private var pendingPadTabOwners: [UInt64: UUID] = [:]
+    private var padRosterDate: Date?
+    private var padRosterCalendar = Calendar.current
     private var padFileRosterReady = false
     private var applicationContext: PadApplicationContext?
 
@@ -2858,10 +2860,27 @@ public final class PageModel: ObservableObject {
     }
     public func toggleDaySort() { pads.toggleDaySort(for: pads.activeID) }
     public func toggleCheckpointSort(dayBucket: Int) {
+        // A read spanning a day boundary supplies no unambiguous date for its
+        // relative offsets. Wait for the next stable refresh before writing.
+        guard padRosterDate != nil else { return }
         pads.toggleCheckpointSort(for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
     }
     public func dateKey(forDayBucket bucket: Int) -> String {
-        Self.padDateKey(forDayBucket: bucket, now: Date(), calendar: .current)
+        // The roster's offsets and this reference must describe the same day.
+        // An empty key makes the read-only controls show the default order while
+        // a boundary-crossing snapshot waits for a stable refresh.
+        guard let padRosterDate else { return "" }
+        return Self.padDateKey(forDayBucket: bucket, now: padRosterDate, calendar: padRosterCalendar)
+    }
+    /// The FFI reads its clock only after acquiring its lock and does not export
+    /// that reference. A bracket on one local day can validate the day; a bracket
+    /// crossing midnight or a timezone/offset change cannot and must defer writes.
+    static func validatedPadRosterDate(readStartedAt start: Date, readFinishedAt end: Date,
+        calendar: Calendar, finishedCalendar: Calendar) -> Date? {
+        guard end >= start, calendar == finishedCalendar,
+            calendar.timeZone.secondsFromGMT(for: start) == calendar.timeZone.secondsFromGMT(for: end),
+            calendar.isDate(start, inSameDayAs: end) else { return nil }
+        return end
     }
     /// Preferences belong to the displayed local day, independently of roster
     /// order or any page's creation stamp. Future-born pages after a backwards
@@ -2911,14 +2930,22 @@ public final class PageModel: ObservableObject {
         // died. The menu's two items are asked again on every one of
         // them rather than at a list of paths someone has to keep.
         refreshEditSteps()
+        let rosterCalendar = Calendar.current
+        let readStartedAt = Date()
         tabs = client.tabs()
+        let readFinishedAt = Date()
+        padRosterDate = Self.validatedPadRosterDate(readStartedAt: readStartedAt,
+            readFinishedAt: readFinishedAt, calendar: rosterCalendar, finishedCalendar: .current)
+        padRosterCalendar = rosterCalendar
         for (id, owner) in pendingPadTabOwners {
             if let uuid = tabs.first(where: { $0.id == id })?.uuid { pads.assign(tabUUID: uuid, to: owner) }
         }
         pendingPadTabOwners.removeAll()
         if stateLoaded && saveLicence {
-            let checkpointKeys = Self.checkpointSortKeys(for: tabs, now: Date(), calendar: .current) {
-                pads.owner(ofTabUUID: $0.uuid)
+            let checkpointKeys = padRosterDate.map { reference in
+                Self.checkpointSortKeys(for: tabs, now: reference, calendar: padRosterCalendar) {
+                    pads.owner(ofTabUUID: $0.uuid)
+                }
             }
             pads.reconcileTabs(Set(tabs.compactMap(\.uuid)), checkpointKeys: checkpointKeys)
         }

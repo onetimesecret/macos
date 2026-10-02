@@ -340,11 +340,12 @@ public final class PadCatalog: ObservableObject {
     }
     /// Reconciles against complete live rosters, never the active pad projection.
     /// Empty surviving tabs retain ownership; expired-page date preferences do not.
-    func reconcileTabs(_ live: Set<String>, checkpointKeys: Set<String>) {
+    /// Nil keys defer date pruning when the roster's calendar reference is ambiguous.
+    func reconcileTabs(_ live: Set<String>, checkpointKeys: Set<String>?) {
         guard loadFailure == nil else { return }
         let owners = tabOwners.filter { live.contains($0.key) && $0.value != Self.scratchID }
         let remembered = rememberedTabs.filter { live.contains($0.value) && owner(ofTabUUID: $0.value) == $0.key }
-        let sort = checkpointSort.filter { checkpointKeys.contains($0.key) }
+        let sort = checkpointKeys.map { keys in checkpointSort.filter { keys.contains($0.key) } } ?? checkpointSort
         let recency = Dictionary(uniqueKeysWithValues: orderedRecency.prefix(Self.recentPadLimit).map { ($0.key, $0.value) })
         let validPads = Set(entries.map(\.id))
         let days = daySort.filter { validPads.contains($0.key) }
