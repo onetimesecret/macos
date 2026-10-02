@@ -30,12 +30,17 @@
   <text x="116" y="153" class="ui ink" font-size="15" font-weight="650">major-loon</text>
   <text x="116" y="175" class="mono muted" font-size="10">…/worktrees/macos/major-loon</text>
   <path d="M274 153l5 5 5-5" fill="none" stroke="#aaaab0" stroke-width="1.5"/>
-  <text x="54" y="232" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">FILES</text>
-  <text x="84" y="264" class="mono quiet" font-size="13">what.txt</text>
-  <text x="54" y="330" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">TIMELINE</text>
-  <line x1="73" y1="356" x2="73" y2="780" stroke="#3f3f44" stroke-width="2"/>
-  <circle cx="73" cy="390" r="6" fill="#ff5a2b"/>
-  <text x="94" y="386" class="mono quiet" font-size="13">Today</text>
+  <!-- Persistent Timeline above variable Files -->
+  <g transform="translate(0 -98)">
+    <text x="54" y="330" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">TIMELINE</text>
+    <line x1="73" y1="356" x2="73" y2="780" stroke="#3f3f44" stroke-width="2"/>
+    <circle cx="73" cy="390" r="6" fill="#ff5a2b"/>
+    <text x="94" y="386" class="mono quiet" font-size="13">Today</text>
+  </g>
+  <g transform="translate(0 500)">
+    <text x="54" y="232" class="ui muted" font-size="11" font-weight="700" letter-spacing="1.6">FILES</text>
+    <text x="84" y="264" class="mono quiet" font-size="13">what.txt</text>
+  </g>
   <rect x="313" y="82" width="1093" height="830" fill="#252528"/>
   <text x="365" y="180" class="mono muted" font-size="23">The editor remains in place while choosing a pad.</text>
 

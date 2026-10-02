@@ -73,6 +73,14 @@ somewhere specific. Some are milestone plans, some are scoped to a
 single issue and its review. A plan is superseded by the work landing,
 so plans age out to archive rather than being kept current.
 
+## mockups/
+
+Inspectable design explorations and their interaction records. The
+[one-pad-picker mockup](mockups/multiple-pads/README.md) includes the reviewed
+browser prototype, folder and application association proposals, and approaches
+removed during review. Browser behavior and simulated native actions are
+identified separately; a mockup is not evidence of a shipped contract.
+
 ## qa/
 
 Verification runbooks for what CI cannot reach. The
@@ -91,6 +99,10 @@ Dated reports on the external landscape and on techniques the app might
 adopt: what other software does, what a technique costs, what is true
 rather than assumed. Findings feed specs and ADRs; a report stays as
 written and is not edited to match a later conclusion.
+
+For application identity, supplied paths, pasteboard representations, and
+explicit transfer validation, see
+[macOS application context and deliberate paste](research/2026-1001-macos-context-and-pasteboard.md).
 
 ## soto/
 

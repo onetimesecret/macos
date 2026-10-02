@@ -34,14 +34,19 @@
   <text x="100" y="281" class="ui ink" font-size="12" font-weight="650">major-loon</text>
   <text x="100" y="299" class="mono muted" font-size="8">…/macos/major-loon</text>
   <path d="M239 280l4 4 4-4" fill="none" stroke="#aaaab0" stroke-width="1.3"/>
-  <text x="87" y="352" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">FILES</text>
-  <text x="106" y="381" class="mono quiet" font-size="11">what.txt</text>
-  <text x="87" y="430" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">TIMELINE</text>
-  <line x1="105" y1="454" x2="105" y2="720" stroke="#414146" stroke-width="2"/>
-  <circle cx="105" cy="480" r="5" fill="#ff5a2b"/>
-  <text x="124" y="477" class="mono quiet" font-size="11">Today</text>
-  <circle cx="105" cy="566" r="4" fill="#66666b"/>
-  <text x="124" y="563" class="mono muted" font-size="10">Yesterday</text>
+  <!-- Persistent Timeline above variable Files -->
+  <g transform="translate(0 -78)">
+    <text x="87" y="430" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">TIMELINE</text>
+    <line x1="105" y1="454" x2="105" y2="720" stroke="#414146" stroke-width="2"/>
+    <circle cx="105" cy="480" r="5" fill="#ff5a2b"/>
+    <text x="124" y="477" class="mono quiet" font-size="11">Today</text>
+    <circle cx="105" cy="566" r="4" fill="#66666b"/>
+    <text x="124" y="563" class="mono muted" font-size="10">Yesterday</text>
+  </g>
+  <g transform="translate(0 350)">
+    <text x="87" y="352" class="ui muted" font-size="9" font-weight="700" letter-spacing="1.3">FILES</text>
+    <text x="106" y="381" class="mono quiet" font-size="11">what.txt</text>
+  </g>
   <rect x="275" y="216" width="575" height="584" fill="#28282b"/>
   <text x="314" y="276" class="mono quiet" font-size="11">what.txt</text>
   <line x1="307" y1="292" x2="816" y2="292" class="hair"/>
