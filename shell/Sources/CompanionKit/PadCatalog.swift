@@ -118,13 +118,20 @@ public final class PadCatalog: ObservableObject {
     }
     public func activate(_ id: UUID, recordRecency: Bool = true) {
         guard loadFailure == nil, entries.contains(where: { $0.id == id }) else { return }
-        // Re-selecting the active pad changes neither selection nor recency.
-        guard activeID != id || (recordRecency && lastUsed[id] == nil) else { return }
+        let ordered = orderedRecency
+        let recordsVisit = recordRecency && ordered.first?.key != id
+        // A true re-selection of the manual MRU is a no-op. A manual visit to
+        // an automatically selected older pad must still promote its recency.
+        guard activeID != id || recordsVisit else { return }
         activeID = id
-        if recordRecency {
-            lastUsed[id] = Date().timeIntervalSince1970
-            let recent = Set(orderedRecency.prefix(Self.recentPadLimit).map(\.key))
-            lastUsed = lastUsed.filter { recent.contains($0.key) }
+        if recordsVisit {
+            let recent = [id] + ordered.map(\.key).filter { $0 != id }.prefix(Self.recentPadLimit - 1)
+            // Logical ranks avoid clock rollback and floating-point counter
+            // overflow. Existing timestamp values retain their relative order
+            // on read and are normalized at the next recorded manual visit.
+            lastUsed = Dictionary(uniqueKeysWithValues: recent.enumerated().map {
+                ($0.element, Double(recent.count - $0.offset))
+            })
         }
         changed()
     }

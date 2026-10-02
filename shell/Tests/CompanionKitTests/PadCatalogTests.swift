@@ -56,6 +56,50 @@ final class PadCatalogTests: XCTestCase {
         for n in 0..<10 { _ = catalog.create(named: "Other \(n)") }
         XCTAssertNil(catalog.pad(forApplication: "dev.zed.Zed"))
     }
+    func testManualVisitWinsOverLegacyFutureTimestampsAndRemainsRecentAfterReload() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        catalog.isEnabled = true
+        catalog.appAssociationsEnabled = true
+        let pads = try (0..<10).map { try XCTUnwrap(catalog.create(named: "Pad \($0)")) }
+        catalog.addApplication("dev.zed.Zed", to: pads[0])
+        catalog.addApplication("dev.zed.Zed", to: pads[9])
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))) as? [String: Any])
+        // Older builds stored wall-clock timestamps. All these values are in
+        // the future relative to the review host, and the oldest pad is absent
+        // from the bounded recent set before it is explicitly visited.
+        json["lastUsed"] = pads.enumerated().flatMap {
+            [$0.element.uuidString, 4_000_000_000 + Double($0.offset)] as [Any]
+        }
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: PadCatalog.storageKey)
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertEqual(restored.pad(forApplication: "dev.zed.Zed"), pads[9])
+        restored.activate(pads[0])
+        XCTAssertEqual(restored.activeID, pads[0])
+        XCTAssertEqual(restored.pad(forApplication: "dev.zed.Zed"), pads[0])
+        XCTAssertEqual(PadCatalog(defaults: defaults).pad(forApplication: "dev.zed.Zed"), pads[0])
+    }
+
+    func testManualReselectionPromotesAnAutomaticallySelectedOlderPadOnce() throws {
+        let catalog = PadCatalog(defaults: try defaults())
+        catalog.isEnabled = true
+        catalog.appAssociationsEnabled = true
+        let older = try XCTUnwrap(catalog.create(named: "Familia"))
+        let newer = try XCTUnwrap(catalog.create(named: "Otto"))
+        catalog.addApplication("dev.zed.Zed", to: older)
+        catalog.addApplication("dev.zed.Zed", to: newer)
+        catalog.activate(older, recordRecency: false)
+        XCTAssertEqual(catalog.activeID, older)
+        XCTAssertEqual(catalog.pad(forApplication: "dev.zed.Zed"), newer)
+        var changes = 0
+        catalog.onChange = { changes += 1 }
+        catalog.activate(older)
+        XCTAssertEqual(catalog.pad(forApplication: "dev.zed.Zed"), older)
+        XCTAssertEqual(changes, 1)
+        catalog.activate(older)
+        XCTAssertEqual(changes, 1, "the active manual MRU must remain a no-op")
+    }
+
     func testOwnershipAndIndependentDateSortSurviveCatalogReload() throws {
         let defaults = try defaults()
         let catalog = PadCatalog(defaults: defaults)
