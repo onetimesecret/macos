@@ -1,3 +1,4 @@
+# docs/adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md
 ---
 documentation_status: needs-review # draft | reviewed | stale
 ---

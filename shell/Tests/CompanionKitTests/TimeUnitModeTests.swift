@@ -609,6 +609,6 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"),
                       "the caption must say what Timeline costs, at the rail's real width")
         XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"),
-                      "the persistence reassurance (D-26 acceptance) was dropped")
+                      "the persistence reassurance (ADR-0037) was dropped")
     }
 }

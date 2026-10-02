@@ -310,7 +310,7 @@ public struct GeneralSettingsView: View {
         model.fontFamily = family
     }
 
-    /// The caption says both what changes and what it costs (D-26).
+    /// The caption says both what changes and what it costs (ADR-0037).
     /// User-facing copy never exposes the components' code names.
     static let pageLayoutCaption: String =
         "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
