@@ -399,7 +399,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var launchedAt = Date.distantPast
     private var aboutActivation = false
     private var settingsActivation = false
-    private var feedbackActivation = false
+    /// The activation claim for every other window or alert of ours that
+    /// is not the surface: Send Feedback, Export Diagnostics, and the
+    /// alert that explains an unavailable shortcut.
+    private var auxiliaryActivation = false
 
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
@@ -614,7 +617,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         if reason == .openEditorPresentation {
             aboutActivation = false
             settingsActivation = false
-            feedbackActivation = false
+            auxiliaryActivation = false
         }
         let route = ActivationRouter.decide(reason, in: activationContext())
         if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
@@ -704,20 +707,23 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // that is true whether or not this particular activation moves
         // any window (decisions.md item 5).
         pages.checkOpenFilesOnActivate()
-        // Both flags are consumed by whichever activation arrives next,
-        // launch window or not: each was set only when an activation
-        // was certain to follow, so this is that activation, and a flag
-        // left standing here would swallow the next real ⌘Tab instead.
+        // All three flags are consumed by whichever activation arrives
+        // next, launch window or not: each was set only when an
+        // activation was certain to follow, so this is that activation,
+        // and a flag left standing here would swallow the next real ⌘Tab
+        // instead.
         //
         // Under ADR-0033 an editor window on screen is not a claim: it
         // is exactly the surface the activation is routed to. Only
-        // About and Settings hold their own claim, and the routing
-        // function sees them through `claimedByAnotherWindow`.
-        let claimed = aboutActivation || settingsActivation || feedbackActivation
+        // About, Settings and the auxiliary windows and alerts (Send
+        // Feedback, Export Diagnostics, the unavailable shortcut) hold
+        // their own claim, and the routing function sees them through
+        // `claimedByAnotherWindow`.
+        let claimed = aboutActivation || settingsActivation || auxiliaryActivation
         aboutActivation = false
         settingsActivation = false
-        feedbackActivation = false
-        // Consume pending intent even when About/Settings claim this
+        auxiliaryActivation = false
+        // Consume pending intent even when one of those claims this
         // activation, so it cannot leak into the next real ⌘Tab. Otherwise
         // it takes precedence over recency and keeps the gesture's raise.
         let pending = pendingEditorSummon
@@ -923,7 +929,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "macOS could not register ⌃⌥Space. Another app, including another copy of OnetimePad, may already use it. You can still open the pad from the menu bar. Close any other copy or change a conflicting shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
         alert.addButton(withTitle: "Try Again")
         alert.addButton(withTitle: "OK")
-        settingsActivation = !NSApp.isActive
+        auxiliaryActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
         if ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn {
             registerSummonShortcut()
@@ -1062,7 +1068,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func exportDiagnostics() {
-        feedbackActivation = !NSApp.isActive
+        auxiliaryActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
         DiagnosticsActions.export(diagnosticReport())
     }
@@ -1072,7 +1078,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func sendFeedback() {
-        feedbackActivation = !NSApp.isActive
+        auxiliaryActivation = !NSApp.isActive
         feedback.show()
     }
 
