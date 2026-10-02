@@ -6,6 +6,13 @@ import Foundation
 public struct FeedbackClient: Sendable {
     public static let maximumMessageLength = 200_000
 
+    /// RFC 3986 section 2.3's unreserved characters: ALPHA, DIGIT, and
+    /// "-", ".", "_", "~". Spelled out rather than built from
+    /// `.alphanumerics`, which admits letters outside ASCII.
+    private static let unreserved = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
+
     public enum Failure: Error, LocalizedError, Equatable {
         case invalidServer
         case emptyMessage
@@ -65,18 +72,19 @@ public struct FeedbackClient: Sendable {
         guard let endpoint = endpointURL else {
             throw Failure.invalidServer
         }
-        var form = URLComponents()
-        form.queryItems = [
-            URLQueryItem(name: "msg", value: report),
-            URLQueryItem(name: "tz", value: String(timeZone.prefix(64))),
-        ]
-        // URLComponents leaves '+' literal, while form decoders interpret it
-        // as a space. Escape it explicitly so addresses and C++ survive.
-        guard let body = form.percentEncodedQuery?
-            .replacingOccurrences(of: "+", with: "%2B")
-            .data(using: .utf8) else {
+        // Each value is escaped against RFC 3986's unreserved set and
+        // nothing wider, so every byte a form decoder could read as
+        // structure ('&', '=', ';', '%'), as a space ('+'), or could alter
+        // (a newline, any non ASCII text) travels as an escape. URLComponents' query
+        // encoding is the wrong tool here: it leaves '+' and ';' literal,
+        // and a form decoder reads the first as a space and may split on
+        // the second.
+        guard let message = report.addingPercentEncoding(withAllowedCharacters: Self.unreserved),
+              let zone = String(timeZone.prefix(64))
+                .addingPercentEncoding(withAllowedCharacters: Self.unreserved) else {
             throw Failure.invalidResponse
         }
+        let body = Data("msg=\(message)&tz=\(zone)".utf8)
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"

@@ -96,6 +96,48 @@ final class FeedbackClientTests: XCTestCase {
         XCTAssertTrue(body.contains("%2B"), "a literal plus must survive form decoding")
     }
 
+    func testEveryByteOutsideTheUnreservedSetTravelsEscaped() async throws {
+        let box = RequestBox()
+        StubProtocol.reply = { request in
+            box.save(request)
+            return (200, Data(#"{"record":{},"details":{"message":"Message received."}}"#.utf8))
+        }
+        let message = "C++; a & b = c % d / e ? f\né 🙂"
+
+        try await makeClient().send(message: message)
+
+        let body = try XCTUnwrap(box.body().flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertFalse(body.contains(";"), "some form decoders split on a literal semicolon")
+        XCTAssertFalse(body.contains("+"), "a form decoder reads a literal plus as a space")
+        // What is left literal is the unreserved set, the escapes, and the
+        // one '&' and two '=' that are the form's own structure.
+        let literal = CharacterSet(
+            charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~%&="
+        )
+        XCTAssertTrue(body.unicodeScalars.allSatisfy { literal.contains($0) }, body)
+        XCTAssertEqual(body.filter { $0 == "&" }.count, 1)
+        XCTAssertEqual(body.filter { $0 == "=" }.count, 2)
+
+        let fields = formDecode(body)
+        XCTAssertEqual(fields.map(\.name), ["msg", "tz"])
+        XCTAssertEqual(fields.first?.value, message, "the exact message survives a form decode")
+        XCTAssertEqual(fields.last?.value, "America/Vancouver")
+    }
+
+    /// What an `application/x-www-form-urlencoded` reader does with a
+    /// body: split on '&', then on the first '=', read '+' as a space,
+    /// then undo the escapes. Stricter than `URLComponents`, which keeps a
+    /// '+' as it is and so would pass a body a server reads differently.
+    private func formDecode(_ body: String) -> [(name: String, value: String?)] {
+        func decode(_ text: Substring) -> String? {
+            text.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+        }
+        return body.split(separator: "&", omittingEmptySubsequences: false).map { pair in
+            let parts = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return (decode(parts[0]) ?? "", parts.count == 2 ? decode(parts[1]) : nil)
+        }
+    }
+
     func testRateLimitAndInvalidAcknowledgementDoNotCountAsSuccess() async {
         StubProtocol.reply = { _ in (429, Data(#"{"message":"retry later"}"#.utf8)) }
         do {
