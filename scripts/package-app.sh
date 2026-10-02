@@ -346,23 +346,21 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # together, and the shade is the only thing that separates them at a
 # glance, so it is not something a shade experiment gets to change.
 #
-# A release build uses whatever OnetimePad icon is already sitting in
-# dist/icons/ (the most recently rendered one), so a custom
-# scripts/build-icons.sh run right before packaging survives instead of
-# being overwritten by a forced rebuild back to the standard shade.
-# Only build the standard icon when none exists yet. The glob excludes
-# the dev icon by name, or a dev packaging run would leave it as the
-# most recent icns and the next release would ship it.
+# Local and App Store release builds compile the saved Composer document.
+# Ship its asset catalog as well as its generated icns and read the icon
+# names from actool's partial plist. Ad-hoc renders do not select the
+# release icon; edit artwork/OnetimePad-Glass.icon in Icon Composer.
 if [[ "$CONFIG" == "debug" ]]; then
   scripts/build-icons.sh --dev
   ICON="dist/icons/OnetimePad-dev.icns"
 else
-  ICON="$(ls -t dist/icons/OnetimePad*.icns 2>/dev/null \
-    | grep -v '/OnetimePad-dev\.icns$' | head -n1 || true)"
-  if [[ -z "$ICON" ]]; then
-    scripts/build-icons.sh
-    ICON="dist/icons/OnetimePad.icns"
-  fi
+  scripts/build-icons.sh --glass
+  GLASS_OUTPUT=dist/icons/glass
+  ICON_FILE="$(plutil -extract CFBundleIconFile raw "$GLASS_OUTPUT/icon-info.plist")"
+  ICON_NAME="$(plutil -extract CFBundleIconName raw "$GLASS_OUTPUT/icon-info.plist")"
+  ICON="$GLASS_OUTPUT/$ICON_FILE.icns"
+  cp "$GLASS_OUTPUT/Assets.car" "$APP/Contents/Resources/Assets.car"
+  plutil -replace CFBundleIconName -string "$ICON_NAME" "$APP/Contents/Info.plist"
 fi
 # Finder and the Dock cache icons by bundle metadata. Replacing the
 # contents of a fixed AppIcon.icns does not reliably invalidate that
