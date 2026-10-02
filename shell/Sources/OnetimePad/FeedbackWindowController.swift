@@ -55,6 +55,17 @@ final class FeedbackDraft: ObservableObject {
 
     func refreshDiagnostics() { report = makeReport() }
 
+    /// Every show of the window, first or fifth: an idle draft takes the
+    /// destination and the snapshot afresh, so a reopened window reviews
+    /// the app as it is now rather than as it was at the first open. A
+    /// send in flight or one that succeeded keeps both, because they are
+    /// what that send carried.
+    func prepareForPresentation() {
+        guard !sending && !sent else { return }
+        refreshDestination()
+        refreshDiagnostics()
+    }
+
     func startAnother() {
         message = ""
         contact = ""
@@ -128,7 +139,7 @@ final class FeedbackWindowController: NSObject {
             window.center()
             self.window = window
         }
-        draft?.refreshDestination()
+        draft?.prepareForPresentation()
         if let window { levelFollower.follow(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)

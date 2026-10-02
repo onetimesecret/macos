@@ -68,6 +68,37 @@ final class FeedbackDraftTests: XCTestCase {
         XCTAssertFalse(draft.sent)
     }
 
+    func testPresentationRetakesTheSnapshotOnlyWhileTheDraftIsIdle() async {
+        var captures = 0
+        var server = "https://first.example.test"
+        let draft = FeedbackDraft(
+            serverURL: { server },
+            makeReport: {
+                captures += 1
+                return DiagnosticsReport(summary: "summary", details: "snapshot \(captures)")
+            },
+            submit: { _, _, _ in }
+        )
+        XCTAssertEqual(draft.report.details, "snapshot 1")
+        draft.prepareForPresentation()
+        XCTAssertEqual(draft.report.details, "snapshot 2", "an idle draft reviews the app as it is now")
+
+        draft.message = "Reviewed message"
+        let task = draft.send()
+        XCTAssertTrue(draft.sending)
+        server = "https://second.example.test"
+        draft.prepareForPresentation()
+        XCTAssertEqual(draft.report.details, "snapshot 2", "a send in flight keeps what it carries")
+        XCTAssertEqual(draft.destination, "https://first.example.test/api/v3/feedback")
+
+        await task?.value
+        XCTAssertTrue(draft.sent)
+        draft.prepareForPresentation()
+        XCTAssertEqual(draft.report.details, "snapshot 2", "a sent draft keeps what it sent")
+        XCTAssertEqual(draft.destination, "https://first.example.test/api/v3/feedback")
+        XCTAssertEqual(captures, 2)
+    }
+
     func testFreshOpenRefreshesDestinationWithoutDiscardingDraft() {
         var server = "invalid"
         let draft = FeedbackDraft(serverURL: { server }, makeReport: { self.report })
