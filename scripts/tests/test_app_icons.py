@@ -109,6 +109,18 @@ class AppIconTests(unittest.TestCase):
         fallback = self.resources / f'{metadata["CFBundleIconFile"]}.icns'
         self.assertEqual(fallback.read_bytes(), b"black development icon")
 
+    def test_older_xcode_is_rejected_before_icon_compilation(self):
+        commands = self.checkout / "commands"
+        commands.mkdir()
+        xcodebuild = commands / "xcodebuild"
+        xcodebuild.write_text('#!/bin/bash\nprintf "Xcode 26.6\\nBuild version 17F113\\n"\n')
+        xcodebuild.chmod(0o755)
+        result = self.assemble("release", {"PATH": f'{commands}:{os.environ["PATH"]}'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("requires Xcode 27 or later", result.stderr)
+        self.assertFalse((self.icons / "glass").exists())
+        self.assertFalse(list(self.resources.iterdir()))
+
     def test_failed_compile_does_not_package_stale_glass_outputs(self):
         compiled = self.icons / "glass"
         compiled.mkdir()

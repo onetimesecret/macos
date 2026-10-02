@@ -149,6 +149,13 @@ build_glass_icon() {
     echo "--glass needs Xcode with Icon Composer support (actool); select it with DEVELOPER_DIR or xcode-select." >&2
     exit 1
   fi
+  local xcode_version xcode_major
+  xcode_version="$(xcodebuild -version </dev/null | awk '$1 == "Xcode" {print $2}')"
+  xcode_major="${xcode_version%%.*}"
+  if [[ ! "$xcode_major" =~ ^[0-9]+$ ]] || ((xcode_major < 27)); then
+    echo "--glass requires Xcode 27 or later for the saved refractivity artwork (selected: ${xcode_version:-unknown}); set DEVELOPER_DIR or xcode-select." >&2
+    exit 1
+  fi
   local compiled="${1:-$OUT/glass}" minimum_target
   minimum_target="$(plutil -extract LSMinimumSystemVersion raw shell/OnetimePad-Info.plist)"
   mkdir -p "$compiled"
