@@ -310,10 +310,14 @@ public struct GeneralSettingsView: View {
         model.fontFamily = family
     }
 
+    /// The caption says both what changes and what it costs (D-26).
+    /// User-facing copy never exposes the components' code names.
     static let pageLayoutCaption: String =
-        "Tabs shows named pages along the bottom. Timeline is a prototype that groups live "
-            + "pages by the day they were written, newest first, down the side; lines always "
-            + "wrap and older blank pages are counted rather than drawn."
+        "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
+            + "that groups live pages by the day they were written, newest first, down the "
+            + "side, taking \(Int(TimeRailView.width)) points from the page; lines always wrap and older blank pages "
+            + "are counted rather than drawn. Changing this moves no content and writes "
+            + "nothing new to disk."
 
     /// The section only exists when the switch is offered, so the
     /// caption's job is to say why this build has one and how long it

@@ -604,5 +604,9 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertTrue(caption.contains("Tabs shows named pages along the bottom"))
         XCTAssertTrue(caption.contains("Timeline is a prototype"))
         XCTAssertTrue(caption.contains("down the side"))
+        XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"),
+                      "the caption must say what Timeline costs, at the rail's real width")
+        XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"),
+                      "the persistence reassurance (D-26 acceptance) was dropped")
     }
 }
