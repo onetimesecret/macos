@@ -158,14 +158,21 @@ jobs:
   # enough for every assertion here.
   package-release:
     name: release packaging (macos)
+    # GitHub-hosted preview image, not a self-hosted runner label:
+    # https://github.com/actions/runner-images/issues/14404
     # The saved Composer document enables Xcode 27's refractivity feature.
     runs-on: xcode-27
-    env:
-      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Show release Xcode toolchain
-        run: xcodebuild -version
+      - name: Verify release Xcode toolchain
+        run: |
+          version="$(xcodebuild -version | awk '$1 == "Xcode" {print $2}')" || version=
+          major="${version%%.*}"
+          if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 27)); then
+            echo "release packaging requires Xcode 27 or later (selected: ${version:-unknown})" >&2
+            exit 1
+          fi
+          xcodebuild -version
       - name: Install pinned toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2

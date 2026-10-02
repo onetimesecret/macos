@@ -63,15 +63,78 @@ class AppIconTests(unittest.TestCase):
         with self.plist.open("rb") as file:
             return plistlib.load(file)
 
-    def require_actool(self):
-        available = subprocess.run(
-            ["xcrun", "--find", "actool"], capture_output=True, check=False
+    def require_icon_composer(self):
+        try:
+            available = subprocess.run(
+                ["xcrun", "--find", "actool"], capture_output=True, check=False
+            )
+            version = subprocess.run(
+                ["xcodebuild", "-version"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            self.skipTest("requires Xcode 27 or later with actool")
+        selected = next(
+            (line.split()[1] for line in version.stdout.splitlines()
+             if line.startswith("Xcode ") and len(line.split()) > 1),
+            "",
         )
-        if available.returncode:
-            self.skipTest("requires Xcode with actool")
+        major = selected.split(".")[0]
+        if available.returncode or version.returncode or not major.isdigit() or int(major) < 27:
+            self.skipTest("requires Xcode 27 or later with actool")
+
+    def mock_toolchain(self, xcodebuild_body=None, compiler_exit=None):
+        """Keep failure-path tests independent of the installed Xcode selection."""
+        commands = self.checkout / "commands"
+        commands.mkdir(exist_ok=True)
+        xcodebuild = commands / "xcodebuild"
+        xcodebuild.write_text(
+            "#!/bin/bash\n" + (xcodebuild_body or
+            'printf "Xcode 27.0\\nBuild version 27A266a\\n"\n')
+        )
+        xcodebuild.chmod(0o755)
+        fixture = commands / "icon-info.plist"
+        fixture.write_bytes(plistlib.dumps({
+            "CFBundleIconFile": "OnetimePad-Glass",
+            "CFBundleIconName": "OnetimePad-Glass",
+        }))
+        xcrun = commands / "xcrun"
+        compile_body = f"exit {compiler_exit}\n" if compiler_exit is not None else (
+            'set -eu\n'
+            'while [[ $# -gt 0 ]]; do\n'
+            '  case "$1" in\n'
+            '    --compile) compiled="$2"; shift 2 ;;\n'
+            '    --output-partial-info-plist) partial="$2"; shift 2 ;;\n'
+            '    *) shift ;;\n'
+            '  esac\n'
+            'done\n'
+            'mkdir -p "$compiled"\n'
+            'printf "compiled glass catalog" > "$compiled/Assets.car"\n'
+            'printf "generated glass fallback" > "$compiled/OnetimePad-Glass.icns"\n'
+            f'cp {shlex.quote(str(fixture))} "$partial"\n'
+            'if [[ -n "${MOCK_MISSING:-}" ]]; then rm "$compiled/$MOCK_MISSING"; fi\n'
+            'if [[ -n "${MOCK_EMPTY:-}" ]]; then : > "$compiled/$MOCK_EMPTY"; fi\n'
+        )
+        xcrun.write_text(
+            '#!/bin/bash\nif [[ "$1" == "--find" ]]; then exit 0; fi\n' + compile_body
+        )
+        xcrun.chmod(0o755)
+        return {"PATH": f'{commands}:{os.environ["PATH"]}'}
+
+    def compile_glass(self, env=None):
+        return subprocess.run(
+            [str(ROOT / "scripts/build-icons.sh"), "--glass", str(self.icons / "glass")],
+            env={**os.environ, **(env or {})},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
     def test_release_bundles_compiled_glass_and_generated_fallback(self):
-        self.require_actool()
+        self.require_icon_composer()
         result = self.assemble("release")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         metadata = self.read_metadata()
@@ -89,7 +152,7 @@ class AppIconTests(unittest.TestCase):
         self.assertNotIn(b"experiment", fallback.read_bytes())
 
     def test_release_compiles_when_invoker_has_closed_stdin(self):
-        self.require_actool()
+        self.require_icon_composer()
         result = self.assemble("release", closed_stdin=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertGreater((self.resources / "Assets.car").stat().st_size, 0)
@@ -110,33 +173,71 @@ class AppIconTests(unittest.TestCase):
         self.assertEqual(fallback.read_bytes(), b"black development icon")
 
     def test_older_xcode_is_rejected_before_icon_compilation(self):
-        commands = self.checkout / "commands"
-        commands.mkdir()
-        xcodebuild = commands / "xcodebuild"
-        xcodebuild.write_text('#!/bin/bash\nprintf "Xcode 26.6\\nBuild version 17F113\\n"\n')
-        xcodebuild.chmod(0o755)
-        result = self.assemble("release", {"PATH": f'{commands}:{os.environ["PATH"]}'})
+        env = self.mock_toolchain(
+            xcodebuild_body='printf "Xcode 26.6\\nBuild version 17F113\\n"\n'
+        )
+        result = self.assemble("release", env)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("requires Xcode 27 or later", result.stderr)
         self.assertFalse((self.icons / "glass").exists())
         self.assertFalse(list(self.resources.iterdir()))
+
+    def test_failed_xcode_version_reports_required_toolchain(self):
+        env = self.mock_toolchain(
+            xcodebuild_body='printf "toolchain unavailable\\n" >&2\nexit 70\n'
+        )
+        result = self.compile_glass(env)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("requires Xcode 27 or later", result.stderr)
+        self.assertFalse((self.icons / "glass").exists())
 
     def test_failed_compile_does_not_package_stale_glass_outputs(self):
         compiled = self.icons / "glass"
         compiled.mkdir()
         for name in ("Assets.car", "OnetimePad-Glass.icns", "icon-info.plist"):
             (compiled / name).write_bytes(b"stale")
-        commands = self.checkout / "commands"
-        commands.mkdir()
-        xcrun = commands / "xcrun"
-        xcrun.write_text(
-            '#!/bin/bash\nif [[ "$1" == "--find" ]]; then exit 0; fi\nexit 42\n'
-        )
-        xcrun.chmod(0o755)
-        result = self.assemble("release", {"PATH": f'{commands}:{os.environ["PATH"]}'})
+        result = self.assemble("release", self.mock_toolchain(compiler_exit=42))
         self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
         self.assertFalse(list(compiled.iterdir()))
         self.assertFalse(list(self.resources.iterdir()))
+
+    def test_successful_compile_rejects_missing_or_empty_outputs(self):
+        env = self.mock_toolchain()
+        for name in ("Assets.car", "icon-info.plist", "OnetimePad-Glass.icns"):
+            for kind in ("MISSING", "EMPTY"):
+                with self.subTest(output=name, kind=kind):
+                    result = self.compile_glass({**env, f"MOCK_{kind}": name})
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("glass icon", result.stderr.lower())
+                    self.assertIn(name, result.stderr)
+
+    def test_release_rejects_missing_or_empty_icon_metadata(self):
+        # Bypass compiler validation to exercise the packaging guard itself.
+        renderer = self.checkout / "scripts/build-icons.sh"
+        renderer.write_text(
+            '#!/bin/bash\nset -eu\n[[ "$1" == "--glass" ]]\n'
+            'mkdir -p dist/icons/glass\n'
+            'printf "compiled glass catalog" > dist/icons/glass/Assets.car\n'
+            'printf "generated fallback" > dist/icons/glass/OnetimePad-Glass.icns\n'
+            'cp icon-fixture.plist dist/icons/glass/icon-info.plist\n'
+        )
+        for key in ("CFBundleIconFile", "CFBundleIconName"):
+            for kind in ("missing", "empty"):
+                with self.subTest(key=key, kind=kind):
+                    metadata = {
+                        "CFBundleIconFile": "OnetimePad-Glass",
+                        "CFBundleIconName": "OnetimePad-Glass",
+                    }
+                    if kind == "missing":
+                        del metadata[key]
+                    else:
+                        metadata[key] = ""
+                    (self.checkout / "icon-fixture.plist").write_bytes(plistlib.dumps(metadata))
+                    result = self.assemble("release")
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("glass icon", result.stderr.lower())
+                    self.assertIn(key, result.stderr)
+                    self.assertFalse(list(self.resources.iterdir()))
 
 
 if __name__ == "__main__":

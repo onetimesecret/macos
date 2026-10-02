@@ -19,8 +19,12 @@
 #   scripts/build-icons.sh --dev              # the dev lane's black icon
 #   scripts/build-icons.sh --list             # available marks and styles
 #   scripts/build-icons.sh --composer         # foreground and cast shadow for Icon Composer
+#       exports to dist/icons/composer-logo (or composer-<mark>).
+#       Import/copy the PNGs into artwork/OnetimePad-Glass.icon/Assets by hand;
+#       the saved Composer document and its assets define the release icon.
+#       --composer does not update the artwork compiled by --glass.
 #   scripts/build-icons.sh --mark maruhi --composer # alternate motif
-#   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon for packaging
+#   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon; directory is repo-relative
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 #   scripts/build-icons.sh --shadows [rrggbb]
@@ -36,7 +40,9 @@
 #       for every unit of zoom (default 4, so deeper zooms show more)
 #
 # A --mark <maruhi|logo> anywhere in the arguments picks the motif for
-# any of the above and defaults to the maruhi. The logo mark is the
+# rendered modes above. Ad-hoc renders default to maruhi; the standard,
+# --dev, and --composer modes default to logo. --glass rejects --mark.
+# The logo mark is the
 # onetimesecret.com logo, read from the app's own resources at
 # shell/Sources/CompanionKit/Resources, so the brand lockup is either of
 #   scripts/build-icons.sh --mark logo <name> flat dc4a22
@@ -150,7 +156,7 @@ build_glass_icon() {
     exit 1
   fi
   local xcode_version xcode_major
-  xcode_version="$(xcodebuild -version </dev/null | awk '$1 == "Xcode" {print $2}')"
+  xcode_version="$(xcodebuild -version </dev/null 2>/dev/null | awk '$1 == "Xcode" {print $2}')" || xcode_version=
   xcode_major="${xcode_version%%.*}"
   if [[ ! "$xcode_major" =~ ^[0-9]+$ ]] || ((xcode_major < 27)); then
     echo "--glass requires Xcode 27 or later for the saved refractivity artwork (selected: ${xcode_version:-unknown}); set DEVELOPER_DIR or xcode-select." >&2
@@ -168,10 +174,26 @@ build_glass_icon() {
   xcrun actool artwork/OnetimePad-Glass.icon \
     --compile "$compiled" \
     --platform macosx \
+    --target-device mac \
     --minimum-deployment-target "$minimum_target" \
     --app-icon OnetimePad-Glass \
     --output-partial-info-plist "$compiled/icon-info.plist" \
     --output-format human-readable-text --warnings --notices </dev/null
+  local output icon_file
+  for output in Assets.car icon-info.plist; do
+    if [[ ! -s "$compiled/$output" ]]; then
+      echo "could not compile glass icon: actool produced no nonempty $compiled/$output" >&2
+      exit 1
+    fi
+  done
+  if ! icon_file="$(plutil -extract CFBundleIconFile raw "$compiled/icon-info.plist" 2>/dev/null)" || [[ -z "$icon_file" ]]; then
+    echo "could not compile glass icon: missing CFBundleIconFile in $compiled/icon-info.plist" >&2
+    exit 1
+  fi
+  if [[ ! -s "$compiled/$icon_file.icns" ]]; then
+    echo "could not compile glass icon: actool produced no nonempty $compiled/$icon_file.icns" >&2
+    exit 1
+  fi
 }
 
 case $# in
