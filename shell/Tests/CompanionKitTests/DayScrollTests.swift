@@ -134,6 +134,27 @@ final class DayScrollTests: XCTestCase {
 
     // MARK: The shape of the stack
 
+    func testExperimentalChronologicalRollAnchorsTodayInsteadOfDocumentOrigin() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let today = try page(in: model, saying: longPage(lines: 80))
+        _ = try page(in: model, saying: longPage(lines: 80))
+        let projected = spreadOverDays(model, selecting: today)
+        let chronological = TimeUnitProjection(
+            units: Array(projected.units.reversed()), hiddenBlankPages: projected.hiddenBlankPages)
+        let roll = try mountRoll(model: model)
+        // This test explicitly closes the retained window. AppKit's default
+        // release-on-close would over-release it when Swift drops the fixture.
+        roll.window.isReleasedWhenClosed = false
+        roll.stack.update(projection: chronological, selectedPage: today, readOnly: false)
+        let checkpoint = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == today })
+        XCTAssertGreaterThan(checkpoint.header.frame.minY, 0)
+        roll.stack.scrollToDayZero()
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, checkpoint.header.frame.minY, accuracy: 1)
+        XCTAssertEqual(roll.stack.laidOut.first?.header.mark, .hairline)
+        roll.window.close()
+    }
+
     func testBlankRollAndCheckpointClicksFocusWithoutMovingTheCaret() async throws {
         let model = try makeModel()
         let selected = try page(in: model, saying: "first line\nsecond line")

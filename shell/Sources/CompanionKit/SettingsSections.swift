@@ -206,6 +206,19 @@ public struct GeneralSettingsView: View {
                 SettingsCaption(Self.pageOrganizationCaption)
             }
             Section {
+                Toggle("Multiple pads and context associations · experiment", isOn: Binding(
+                    get: { model.pads.isEnabled }, set: { model.pads.isEnabled = $0 }
+                ))
+                .disabled(model.pads.loadFailure != nil)
+                if let failure = model.pads.loadFailure {
+                    Text(failure).font(.caption).foregroundStyle(Color.emberText)
+                }
+            } header: {
+                SettingsCaption("Off preserves the existing single-pad navigation and shortcuts.")
+            } footer: {
+                SettingsCaption("Pad names, folder paths, and associated app identifiers are stored in unencrypted local preferences. Note content stays in its existing storage.")
+            }
+            Section {
                 Picker("Show pages", selection: $model.showsPagesDownSide) {
                     Text("Along the bottom").tag(false)
                     Text("Down the side").tag(true)

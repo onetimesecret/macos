@@ -1,0 +1,45 @@
+---
+documentation_status: needs-review
+---
+
+# Native pad context experiment
+
+This opt-in implementation attempts the [one-pad-picker proposal](../mockups/multiple-pads/one-pad-picker-design.md). The behavior below describes implementation observations and proposals from this attempt; it is not an accepted security or compatibility guarantee. Settings → General → Multiple pads and context associations · experiment enables it; disabling it exposes the existing shared store through the legacy navigation and numbered shortcuts.
+
+## Model and persistence
+
+One `PageModel`, one core `SheetStore`, and the existing encrypted page state remain. Pads are local navigation groups over durable tab UUIDs; numeric tab IDs are re-minted on restore and are unsuitable for ownership. The FFI summary now exposes the already-persisted UUID, without changing the encrypted snapshot format. Existing tabs and unassigned restored/synced tabs belong to Scratch. New pages belong to the selected pad. Selecting an empty pad creates no page. All-pad liveness still drives expiry, storage pruning, and core emptiness/key rotation; inactive pads do not extend page lifetime.
+
+The catalog is stored as `experimentalPadCatalogV1` in the build's UserDefaults domain. **Pad names, folder paths, application bundle IDs, ownership UUIDs, remembered selections, sorting choices, and pad recency are local but unencrypted metadata.** No note text, clipboard data, window titles, or app-switch journal is written to this catalog. This is an explicit experimental storage choice, not an assertion that metadata cannot be sensitive. Settings states this limitation. Unreadable, malformed, and unknown-version catalogs are preserved and cannot enable the experiment or overwrite themselves with fallback state. Catalog and encrypted content writes are separate transactions; a crash can leave ownership metadata without its newly minted page. Such orphan metadata contains no page content.
+
+Catalog ownership is device-local. Sync continues to carry the existing page/tab store; it does not synchronize the pad catalog or association definitions. Remote tabs without local ownership appear in Scratch. Names and bindings do not change note TTL.
+
+## Context and associations
+
+Each normalized absolute directory root belongs to one pad; one pad can have multiple roots. Scratch has no folder associations. Adding a folder uses an explicit system folder panel. The selected path is an association identity, not permission to scan or read its contents. No directory bookmark is created and no filesystem watch runs. Names and symlink aliases are not inferred to be identical. A rename requires removing the old association and choosing the new directory.
+
+Opening a file through an existing explicit file operation supplies its URL. A component-boundary path match selects the associated pad, with the longest root winning nested bindings. Matching uses the supplied URL; file ownership is then recorded under the core's canonical file path. The normal file coordinator remains responsible for file access and security scope. Files can remain open in different pads; changing pads does not close or discard them. Successful Save As, Locate, and bookmark relocation transfer ownership when the roster path changes.
+
+Application associations store bundle IDs. Their editable list consists of regular applications already running. While both the experiment and app associations are enabled, the app observer retains only the previous regular application's bundle ID in memory; it reads no window contents, clipboard, or Accessibility data. On arrival, enabled app associations can select the most recently manually visited matching pad among the active pad and the last nine visited pads. Automatic app routing does not update manual recency. Equal recency uses catalog order. A selected file, modal operation, pending file-close decision, or conceal confirmation blocks this soft route. A supplied file operation therefore takes precedence whichever notification arrives first.
+
+An associated app icon activates a running `NSRunningApplication`; it does not launch an absent app or identify a particular project window. Selecting a pad manually and explicitly opening another file also wait for an unfinished file-close decision. Actual Command-Tab notification ordering, cross-Space activation, and sandboxed panel behavior require hardware verification.
+
+## Native surface
+
+A shared `PadPickerView` appears in the primary editor and ambient panel only while the experiment is enabled. Its closed header shows the pad name and folder tally; Scratch omits the folder tally. Associated app icons align at the trailing edge. Running apps supply their actual icons; a stopped app has a disabled generic icon.
+
+The popover highlights the entire pad cell. Folder labels are inert; add and × remove controls operate on the pad whose row contains them. Each row's Applications menu adds or removes regular running apps. The footer contains the global App associations and Full paths toggles, plus New pad creation. Native controls show only association choices and state, never clipboard contents.
+
+The experimental sidebar groups checkpoints from `model.timeUnits`, followed by Files. Independent controls change day ordering and each day's checkpoint ordering. The paper reads the same projection, starts at the first checkpoint rule, and locates Today by bucket zero even when ascending order places it last. It uses native implementation geometry, preserving the mockup's intentional timeline approximation rather than reproducing its sample layout.
+
+## Sorting and shortcuts
+
+The experiment sorts a read-only day projection per pad and checkpoint order per calendar date. Equal creation timestamps use stable tab UUID order, reversed with the direction. Reversing one day's checkpoints does not reverse other days or mutate tab order/content. Date keys are derived from local page creation dates, so a relative day moving at midnight keeps its preference. Changing the system timezone can regroup dates; this experiment does not define timezone migration of those preferences.
+
+While enabled, application-local Command-0 selects Scratch and Command-1…9 select the first nine named pads, unless those chords are explicitly remapped or disabled by the user keymap. The owning surface installs an application-local monitor, so shortcuts also work with the picker closed; modal panels suspend that route. The UI shows available hints while Command is held and resets them on release, app deactivation, or editor ownership transfer. A claimed digit without a corresponding pad is consumed rather than falling through to select a page. No global numbered hotkey is installed. Legacy numbered page shortcuts remain the default when the experiment is disabled. Explicit user keymap remappings and null bindings take precedence; native shortcut tests cover this behavior. The experiment claims only still-bundled page-digit bindings and the unbound Scratch zero; changed bindings and explicit null bindings remain with the user keymap. Release compatibility still requires a scoped decision.
+
+## Verification and remaining work
+
+Automated tests cover catalog reload and refusal, exclusive/nested folder routing, soft app recency, independent date sorting, no-mint switching, new-page ownership, inactive editor-storage preservation, legacy navigation on disable, UUID ownership after relaunch, file routing, soft-route modal refusal and precedence, and file ownership through Save As. Native UI tests cover shared timeline/roll projections and shortcut routing. The 17 targeted catalog, model, shortcut, and mounted-timeline tests passed on 2026-10-01. The final automated gate on 2026-10-01 passed: Rust formatting; workspace Clippy with and without `test-util` with warnings denied; 767 Rust tests without the feature and 769 with it (one existing ignored test in each run); the universal test-util core build; Swift build and all 1,475 Swift tests (288 executable-target tests and 1,187 shared-target tests). The 17 new tests are included in those counts. ADR structural lint passed for 38 records. These are execution observations on this development host, not release compatibility or runtime privacy guarantees. The [native verification runbook](../qa/pad-context-experiment.md) covers the outstanding signed-app and hardware checks; their inclusion does not mean they passed.
+
+This experiment does not implement directory scanning, automatic copying, clipboard collection, project-window identity, pad catalog sync, encrypted association metadata, directory relocation tracking, or Scratch clear-on-close. Its native timeline follows the implementation's existing geometry; the mockup's timeline remains an intentional approximation.

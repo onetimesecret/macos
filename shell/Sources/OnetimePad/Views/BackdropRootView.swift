@@ -179,6 +179,11 @@ struct BackdropRootView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 32)
             Divider()
+            if pages.pads.isEnabled {
+                PadPickerView(model: pages)
+                    .disabled(!raised)
+                Divider()
+            }
             // Organization (slots or days) and placement (bottom or
             // side) are independent. The content view answers the
             // former; this branch answers only the latter (D-26).

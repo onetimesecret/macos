@@ -91,12 +91,20 @@ public struct TimeRailView: View {
     static let width: CGFloat = 110
 
     public var body: some View {
+        if model.pads.isEnabled {
+            experimentalRail
+        } else {
+            legacyRail
+        }
+    }
+
+    private var legacyRail: some View {
         let projection = model.timeUnits
         // A file or the ledger showing replaces the roll, so no page is
         // the page on screen while one is selected, and no node lights.
         let rollIsShowing = !model.showingLedger && model.selectedFile == nil
         let nodes = StreamNavigator.nodes(
-            projection: projection, tabs: model.tabs,
+            projection: projection, tabs: model.navigationTabs,
             selection: rollIsShowing ? model.selection : nil,
             surfaceShowsRoll: rollIsShowing,
             stampFormat: model.stampFormat
@@ -106,7 +114,7 @@ public struct TimeRailView: View {
         // heading itself fills the column for its trailing plus, which
         // made the two labels look unrelated. One leading alignment line
         // gives the shelf, its heading, and the stream a shared origin.
-        VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 2) {
             // The Files shelf: fixed, above the days, and drawn only
             // when a file is open (ADR-0028). Files are navigation
             // peers and not dated regions, so they sit outside the roll
@@ -114,9 +122,9 @@ public struct TimeRailView: View {
             // nothing here reaches `TimeUnitProjection.project`, which
             // is the ADR-0020 guarantee kept structurally: a file never
             // enters `tabs`, so the projection cannot see one.
-            if !model.openFiles.isEmpty {
+            if !model.navigationFiles.isEmpty {
                 GroupLabel(text: "FILES")
-                ForEach(model.openFiles) { file in
+                ForEach(model.navigationFiles) { file in
                     FileShelfRow(
                         file: file,
                         selected: model.selectedFile == file.id && !model.showingLedger,
@@ -133,7 +141,7 @@ public struct TimeRailView: View {
                 ),
                 drivesRoll: Self.drivesRoll(surface: surface, owner: model.owner),
                 nodes: nodes,
-                chords: chords(for: nodes, openFileCount: model.openFiles.count)
+                chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
             hiddenPages(count: projection.hiddenBlankPages)
         }
@@ -141,6 +149,96 @@ public struct TimeRailView: View {
         .padding(.vertical, 6)
         .frame(width: Self.width)
         .background(Color.panelBackground)
+    }
+
+    /// Display-order controls act on the same projection the roll receives.
+    /// They do not reorder slots or change a page's creation day.
+    private var experimentalRail: some View {
+        let projection = model.timeUnits
+        let showingRoll = !model.showingLedger && model.selectedFile == nil
+        let nodes = StreamNavigator.nodes(
+            projection: projection, tabs: model.navigationTabs,
+            selection: showingRoll ? model.selection : nil,
+            surfaceShowsRoll: showingRoll, stampFormat: model.stampFormat
+        )
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 3) {
+                    GroupLabel(text: "TIMELINE")
+                    Spacer(minLength: 0)
+                    sortControl(
+                        direction: model.pads.daySortDirection(for: model.pads.activeID),
+                        label: "days", action: model.toggleDaySort
+                    )
+                    Button(action: model.newPage) { Image(systemName: "plus") }
+                        .buttonStyle(.plain).help("New page").accessibilityLabel("New page")
+                }
+                ForEach(projection.units) { unit in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 3) {
+                            Text(unit.railLabel).font(.caption).foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                            sortControl(
+                                direction: model.pads.checkpointSortDirection(
+                                    for: model.pads.activeID,
+                                    onDate: model.dateKey(forDayBucket: unit.bucket)
+                                ),
+                                label: "\(unit.spokenLabel) checkpoints",
+                                action: { model.toggleCheckpointSort(dayBucket: unit.bucket) }
+                            )
+                        }
+                        ForEach(nodes.filter { $0.bucket == unit.bucket }) { node in
+                            Button {
+                                model.select(target: node.target)
+                                if Self.drivesRoll(surface: surface, owner: model.owner),
+                                   let extent = model.rollGeometry.geometry.extents.first(where: {
+                                       $0.page == node.page && $0.bucket == node.bucket
+                                   }) {
+                                    model.rollGeometry.scroll(toDocumentOffset:
+                                        StreamNavigator.jumpOffset(forDocumentTop: extent.top))
+                                }
+                            } label: {
+                                HStack {
+                                    Text(node.stamp.isEmpty ? "New page…" : node.stamp)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(6).contentShape(Rectangle())
+                                .background(node.active ? Color.ember.opacity(0.14) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(.caption, design: .monospaced))
+                            .help(node.title.isEmpty ? node.spokenDay : node.title)
+                            .accessibilityAddTraits(node.active ? .isSelected : [])
+                        }
+                    }
+                }
+                hiddenPages(count: projection.hiddenBlankPages)
+                if !model.navigationFiles.isEmpty {
+                    Divider().padding(.vertical, 4)
+                    GroupLabel(text: "FILES")
+                    ForEach(model.navigationFiles) { file in
+                        FileShelfRow(file: file,
+                            selected: model.selectedFile == file.id && !model.showingLedger,
+                            model: model)
+                    }
+                }
+            }
+            .padding(.horizontal, 7).padding(.vertical, 8)
+        }
+        .frame(width: 150).background(Color.panelBackground)
+    }
+
+    private func sortControl(
+        direction: PadSortDirection, label: String, action: @escaping () -> Void
+    ) -> some View {
+        let next = direction == .chronological ? "newest first" : "oldest first"
+        return Button(action: action) {
+            Image(systemName: direction == .chronological ? "arrow.down" : "arrow.up")
+                .font(.system(size: 10)).frame(width: 18, height: 18)
+        }
+        .buttonStyle(.plain).help("Sort \(label) \(next)")
+        .accessibilityLabel("Sort \(label) \(next)")
     }
 
     /// The PAD group's heading with the strip's + on it. The plus sits
@@ -807,9 +905,9 @@ public struct SlotRailView: View {
         // rail. The two placement modes are peers, so changing between
         // them must not make the Files and Pad labels jump sideways.
         VStack(alignment: .leading, spacing: 2) {
-            if !model.openFiles.isEmpty {
+            if !model.navigationFiles.isEmpty {
                 GroupLabel(text: "FILES")
-                ForEach(model.openFiles) { file in
+                ForEach(model.navigationFiles) { file in
                     FileShelfRow(
                         file: file,
                         selected: model.selectedFile == file.id && !model.showingLedger,
@@ -820,7 +918,7 @@ public struct SlotRailView: View {
             }
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 2) {
-                    ForEach(model.tabs) { sheet in
+                    ForEach(model.navigationTabs) { sheet in
                         SlotRailRow(
                             sheet: sheet,
                             selected: model.selection == sheet.id
@@ -870,14 +968,14 @@ public struct SlotRailView: View {
     fileprivate static let space = "slotRail"
 
     private var blankCount: Int {
-        model.tabs.count { !$0.hasPage }
+        model.navigationTabs.count { !$0.hasPage }
     }
 
     private func reorder(dragged: UInt64, pointerY: CGFloat) {
-        let target = model.tabs
+        let target = model.navigationTabs
             .filter { $0.id != dragged }
             .count { rowFrames[$0.id].map { $0.midY < pointerY } ?? false }
-        guard let current = model.tabs.firstIndex(where: { $0.id == dragged }), target != current
+        guard let current = model.navigationTabs.firstIndex(where: { $0.id == dragged }), target != current
         else { return }
         model.move(dragged, to: target)
     }
