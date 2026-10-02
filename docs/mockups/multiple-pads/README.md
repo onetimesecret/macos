@@ -16,7 +16,8 @@ not evidence that the native application implements them.
 - [Editable visualization fragment](one-pad-picker.fragment.html): authored
   content used by the visualization host, without the standalone wrapper.
 - [Published version](https://onetimepad-one-pad-picker.blush-morel-9019.chatgpt.site/):
-  the live prototype; the checked-in HTML is the snapshot for this record.
+  the live prototype at review time. The link may stop working; the checked-in
+  HTML is the snapshot for this record.
 - [Proposed ADR-0038](../../adr/0038-pad-selection-and-associations.md): pad
   selection and the distinction between folder routing and app hints.
 - [Initial folder-scoped exploration](initial-folder-scoped-exploration.md):
@@ -24,8 +25,12 @@ not evidence that the native application implements them.
 
 The standalone file is copied unchanged from the published output. It retains
 that output's `sandbox="allow-scripts"` iframe and Content Security Policy.
-The wrapper and icon support reference allowed CDN assets, so a first visit may
-need network access to render all icons. The fragment is easier to read and edit;
+Opening the standalone file runs third-party scripts: the framed document loads
+Floating UI and Lucide from unpkg.com at pinned versions, without Subresource
+Integrity attributes, and its policy allows `'unsafe-inline'` and
+`'unsafe-eval'`. Without network access the icons and Floating UI tooltips may
+not render. The fragment
+is easier to read and edit;
 regenerate the standalone output through the visualization workflow after a
 change instead of stripping its wrapper. The prototype uses sample locations
 and content. It does not read the local filesystem or activate another app.
