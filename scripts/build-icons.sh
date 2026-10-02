@@ -20,7 +20,7 @@
 #   scripts/build-icons.sh --list             # available marks and styles
 #   scripts/build-icons.sh --composer         # foreground and cast shadow for Icon Composer
 #   scripts/build-icons.sh --mark maruhi --composer # alternate motif
-#   scripts/build-icons.sh --glass            # compile the saved Composer icon for packaging
+#   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon for packaging
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 #   scripts/build-icons.sh --shadows [rrggbb]
@@ -149,20 +149,22 @@ build_glass_icon() {
     echo "--glass needs Xcode with Icon Composer support (actool); select it with DEVELOPER_DIR or xcode-select." >&2
     exit 1
   fi
-  local compiled="$OUT/glass" minimum_target
+  local compiled="${1:-$OUT/glass}" minimum_target
   minimum_target="$(plutil -extract LSMinimumSystemVersion raw shell/OnetimePad-Info.plist)"
   mkdir -p "$compiled"
   # Compile every time, including saved material and appearance changes.
   # Remove earlier outputs so a failed compile cannot leave them in use.
   rm -f "$compiled/Assets.car" "$compiled/OnetimePad-Glass.icns" "$compiled/icon-info.plist"
   echo "==> Compiling artwork/OnetimePad-Glass.icon"
+  # actool's helper can crash when a CI caller leaves stdin closed.
+  # Give the noninteractive compiler an open descriptor with EOF.
   xcrun actool artwork/OnetimePad-Glass.icon \
     --compile "$compiled" \
     --platform macosx \
     --minimum-deployment-target "$minimum_target" \
     --app-icon OnetimePad-Glass \
     --output-partial-info-plist "$compiled/icon-info.plist" \
-    --output-format human-readable-text --warnings --notices
+    --output-format human-readable-text --warnings --notices </dev/null
 }
 
 case $# in
@@ -226,19 +228,20 @@ EOF
         build_scout
         ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
     ;;
   2)
     case "$1" in
+      --glass) build_glass_icon "$2" ;;
       --sheet) build_sheet "$2" ;;
       --shadows) build_shadows "$2" ;;
       --sweep) build_sweep "$2" ;;
       --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -256,12 +259,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac

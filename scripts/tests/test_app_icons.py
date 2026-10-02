@@ -2,6 +2,7 @@
 
 import os
 import plistlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,19 +28,22 @@ class AppIconTests(unittest.TestCase):
         self.plist = self.resources.parent / "Info.plist"
         shutil.copy2(ROOT / "shell/OnetimePad-Info.plist", self.plist)
         (self.checkout / "scripts").mkdir()
-        (self.checkout / "shell").mkdir()
-        shutil.copy2(ROOT / "scripts/build-icons.sh", self.checkout / "scripts")
-        shutil.copy2(ROOT / "shell/OnetimePad-Info.plist", self.checkout / "shell")
-        shutil.copytree(
-            ROOT / "artwork/OnetimePad-Glass.icon",
-            self.checkout / "artwork/OnetimePad-Glass.icon",
+        # Run the real compiler script from the stable repository directory.
+        # ibtoold may outlive its caller; deleting its working directory
+        # between tests can poison later compiler invocations.
+        renderer = self.checkout / "scripts/build-icons.sh"
+        renderer.write_text(
+            '#!/bin/bash\nset -eu\n[[ "$1" == "--glass" ]]\n'
+            f'exec {shlex.quote(str(ROOT / "scripts/build-icons.sh"))} '
+            f'--glass {shlex.quote(str(self.checkout / "dist/icons/glass"))}\n'
         )
+        renderer.chmod(0o755)
         self.icons = self.checkout / "dist/icons"
         self.icons.mkdir(parents=True)
         # An experiment must never replace the saved Composer release icon.
         (self.icons / "OnetimePad-experiment.icns").write_bytes(b"experiment")
 
-    def assemble(self, config, env=None):
+    def assemble(self, config, env=None, closed_stdin=False):
         return subprocess.run(
             ["bash", "-euc", ICON_ASSEMBLY],
             cwd=self.checkout,
@@ -51,6 +55,7 @@ class AppIconTests(unittest.TestCase):
             },
             capture_output=True,
             text=True,
+            preexec_fn=(lambda: os.close(0)) if closed_stdin else None,
             timeout=120,
         )
 
@@ -58,12 +63,15 @@ class AppIconTests(unittest.TestCase):
         with self.plist.open("rb") as file:
             return plistlib.load(file)
 
-    def test_release_bundles_compiled_glass_and_generated_fallback(self):
+    def require_actool(self):
         available = subprocess.run(
             ["xcrun", "--find", "actool"], capture_output=True, check=False
         )
         if available.returncode:
             self.skipTest("requires Xcode with actool")
+
+    def test_release_bundles_compiled_glass_and_generated_fallback(self):
+        self.require_actool()
         result = self.assemble("release")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         metadata = self.read_metadata()
@@ -79,6 +87,12 @@ class AppIconTests(unittest.TestCase):
         self.assertEqual(fallback.read_bytes(), source.read_bytes())
         self.assertTrue(metadata["CFBundleIconFile"].startswith("AppIcon-"))
         self.assertNotIn(b"experiment", fallback.read_bytes())
+
+    def test_release_compiles_when_invoker_has_closed_stdin(self):
+        self.require_actool()
+        result = self.assemble("release", closed_stdin=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertGreater((self.resources / "Assets.car").stat().st_size, 0)
 
     def test_debug_selects_black_icon_without_compiling_glass(self):
         # Stub only rendering; run the packaging branch and metadata writes.
