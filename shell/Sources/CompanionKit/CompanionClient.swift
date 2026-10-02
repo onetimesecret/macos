@@ -28,6 +28,8 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     /// The tab's id: the slot, not the page.
     public let id: UInt64
     /// Stable identity across relaunch; numeric ids are re-minted by restore.
+    /// A defaulted `var` keeps existing memberwise initializer call sites
+    /// source-compatible while older summaries without this key still decode.
     public var uuid: String? = nil
     /// Whether the slot holds a page at all. False after an expiry and
     /// before the next deliberate gesture opens one; the tab draws the

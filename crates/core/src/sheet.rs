@@ -27,8 +27,9 @@ use crate::ledger::SizeClass;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
-/// A time-ordered 128-bit item identifier (a version 7 UUID), minted at
-/// creation. The sequential [`SheetId`] and [`ChipId`] counters stay for
+/// A stable 128-bit item identifier. Newly minted values are version 7 UUIDs;
+/// restored legacy version 4 values retain their original bytes. The
+/// sequential [`SheetId`] and [`ChipId`] counters stay for
 /// internal ordering; this is the only identifier that may appear in the
 /// ledger or in any persisted artifact (ADR-0012; `UUIDv7` follow-up in ADR-0039).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -38,6 +39,8 @@ impl ItemId {
     /// Mint a `UUIDv7` from Unix milliseconds and the operating system CSPRNG.
     /// The timestamp is visible in the ID; the remaining 74 bits are random.
     /// Same-millisecond order and clock-rollback monotonicity are not promised.
+    /// A pre-epoch clock uses timestamp zero; a clock beyond the 48-bit field
+    /// uses its maximum value. Neither clock condition aborts identity minting.
     ///
     /// Panicking when the CSPRNG is unavailable is deliberate: a fallback
     /// identifier would be predictable, and an unpredictable identity is
@@ -48,15 +51,19 @@ impl ItemId {
     pub fn random() -> Self {
         let mut bytes = [0u8; 16];
         getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available");
-        let millis = SystemTime::now()
+        Self::version_seven_at(SystemTime::now(), bytes)
+    }
+
+    fn version_seven_at(time: SystemTime, bytes: [u8; 16]) -> Self {
+        let millis = time
             .duration_since(UNIX_EPOCH)
-            .expect("the wall clock must be at or after the Unix epoch")
+            .unwrap_or_default()
             .as_millis();
         Self::version_seven(millis, bytes)
     }
 
     fn version_seven(millis: u128, mut bytes: [u8; 16]) -> Self {
-        assert!(millis < (1_u128 << 48), "UUIDv7 timestamp must fit 48 bits");
+        let millis = millis.min((1_u128 << 48) - 1);
         // RFC 9562 §5.7: 48-bit big-endian timestamp, version 7 and
         // RFC variant, with all other bits drawn from the CSPRNG.
         bytes[..6].copy_from_slice(&millis.to_be_bytes()[10..]);
@@ -1235,6 +1242,37 @@ mod tests {
                 .all(|c| c == '-' || c.is_ascii_digit() || ('a'..='f').contains(&c))
         );
         assert_eq!(ItemId::from_bytes(*id.as_bytes()), id);
+    }
+
+    #[test]
+    fn item_id_clock_boundaries_clamp_without_changing_random_bits() {
+        let random = [0xAB; 16];
+        let earliest = ItemId::version_seven_at(UNIX_EPOCH - Duration::from_millis(1), random);
+        let epoch = ItemId::version_seven_at(UNIX_EPOCH, random);
+        assert_eq!(earliest, epoch);
+        assert_eq!(&earliest.as_bytes()[..6], &[0; 6]);
+        let submillisecond =
+            ItemId::version_seven_at(UNIX_EPOCH + Duration::from_nanos(999_999), random);
+        assert_eq!(submillisecond, epoch);
+        let one_millisecond =
+            ItemId::version_seven_at(UNIX_EPOCH + Duration::from_millis(1), random);
+        assert_eq!(&one_millisecond.as_bytes()[..6], &[0, 0, 0, 0, 0, 1]);
+
+        let maximum_millis = (1_u64 << 48) - 1;
+        let maximum =
+            ItemId::version_seven_at(UNIX_EPOCH + Duration::from_millis(maximum_millis), random);
+        let beyond = ItemId::version_seven_at(
+            UNIX_EPOCH + Duration::from_millis(maximum_millis + 1),
+            random,
+        );
+        assert_eq!(beyond, maximum);
+        assert_eq!(ItemId::version_seven(u128::MAX, random), maximum);
+        assert_eq!(&maximum.as_bytes()[..6], &[0xFF; 6]);
+        // Clamping changes only the timestamp; version/variant masking and
+        // the supplied random bits remain identical at both bounds.
+        assert_eq!(&earliest.as_bytes()[6..], &maximum.as_bytes()[6..]);
+        assert_eq!(earliest.as_bytes()[6] >> 4, 7);
+        assert_eq!(earliest.as_bytes()[8] >> 6, 2);
     }
 
     #[test]
