@@ -222,7 +222,8 @@ public struct TabStripView: View {
 
 /// Days placed along the bottom. This is the horizontal presentation
 /// of the same `TimeUnitProjection` the side column uses; it changes
-/// neither grouping nor selection semantics (D-26).
+/// neither grouping nor selection semantics (D-26). No layout draws
+/// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
 public struct TimeStripView: View {
     @ObservedObject var model: PageModel
 

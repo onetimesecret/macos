@@ -36,10 +36,4 @@ secrets/
 
 # Local notes
 [0-9][0-9][0-9][0-9]*-*.md
-# Shared clipboard research and draft records
-!docs/research/2026-1001-macos-context-and-pasteboard.md
-!docs/adr/0037-explicit-clipboard-operations.md
-!docs/adr/0038-pad-selection-and-associations.md
-!docs/law/0002-copy.md
-!docs/law/0003-paste.md
 .agent-telemetry

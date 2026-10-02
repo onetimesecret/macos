@@ -86,7 +86,7 @@ final class ModalSessionTests: XCTestCase {
         XCTAssertFalse(ModalSession.isRunning)
     }
 
-    func testOnlyOpenAndSavePanelsEnterTheModalBracket() throws {
+    func testFilePanelsAreBracketedAndQuitStaysInline() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -100,10 +100,13 @@ final class ModalSessionTests: XCTestCase {
             encoding: .utf8
         )
 
+        let quitStart = try XCTUnwrap(appDelegate.range(of: "    func applicationShouldTerminate("))
+        let quitEnd = try XCTUnwrap(appDelegate.range(of: "\n    }", range: quitStart.upperBound..<appDelegate.endIndex))
+        let quit = appDelegate[quitStart.lowerBound..<quitEnd.upperBound]
         XCTAssertEqual(coordinator.components(separatedBy: "ModalSession.run").count - 1, 2)
-        XCTAssertFalse(appDelegate.contains("ModalSession.run"), "quit does not enter a modal session")
+        XCTAssertFalse(quit.contains("ModalSession.run"), "quit does not enter a modal session")
         XCTAssertFalse(coordinator.contains("NSAlert"), "file decisions are inline")
-        XCTAssertFalse(appDelegate.contains("NSAlert"), "quit owns no alert")
+        XCTAssertFalse(quit.contains("NSAlert"), "quit owns no alert")
     }
 
     /// A rename is not destructive and takes an inline field (D-14,

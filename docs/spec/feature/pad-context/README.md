@@ -8,7 +8,7 @@ Status: experimental proposal, default off. The maintainer requested a native
 implementation attempt after reviewing the 2026-10-01
 [one-pad-picker design](../../../mockups/multiple-pads/one-pad-picker-design.md).
 That design owns the interaction detail and rejected alternatives;
-[ADR-0038](../../../adr/0038-pad-selection-and-associations.md) owns the proposed
+[ADR-0039](../../../adr/0039-pad-selection-and-associations.md) owns the proposed
 association model and shortcut decision. Neither establishes release acceptance.
 
 ## Experimental contract
@@ -46,7 +46,7 @@ record the actual storage/routing choices, test observations, and limitations.
 The catalog is unencrypted local context metadata, separate from note content.
 It is not synced. Paths use lexical identity; folder relocation and project
 window recognition are outside this attempt. Clipboard transfers remain the
-separate [ADR-0037](../../../adr/0037-explicit-clipboard-operations.md) proposal.
+separate [ADR-0038](../../../adr/0038-explicit-clipboard-operations.md) proposal.
 
 [Native verification](../../../qa/pad-context-experiment.md) lists signed-app,
 activation, accessibility, and release checks still owed. Passing unit tests

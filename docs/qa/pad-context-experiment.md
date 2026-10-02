@@ -83,5 +83,5 @@ UUID mappings explicitly. The experiment's context metadata storage is distinct
 from note ciphertext; record its actual contents and limitations.
 
 Clipboard compatibility claims require the independent release matrix in
-[ADR-0037](../adr/0037-explicit-clipboard-operations.md). No broad macOS release
+[ADR-0038](../adr/0038-explicit-clipboard-operations.md). No broad macOS release
 promise follows from a successful local build or this runbook.

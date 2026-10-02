@@ -60,6 +60,9 @@ Three pages minted in one minute read as three copies of one page.
   `testTheStampPatternsAreSettingsWithTheStandardBehindThem` and
   `testAPlaceholderTitleIsNotCarriedTwice`; `StampFormatSettingTests`
   pins the two keys and that neither marks content dirty.
+  *Amended 2026-10-01:* the Days choice in Settings is now Timeline,
+  under Page layout
+  ([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
 - **D-45 (fixed)** One dot. The active node is a filled ember dot, the
   one dot on the rail; every other page is a quaternary tick across
   the track, wider for a day's first page, so the track reads as a

@@ -57,7 +57,12 @@ enum BackdropRaise {
 final class BackdropModel: ObservableObject, QuitFlushable {
     /// The surface's posture. The window controller follows this; the
     /// view styles by it.
-    @Published private(set) var stance: BackdropStance = .resting
+    @Published private(set) var stance: BackdropStance = .resting {
+        didSet {
+            guard oldValue != stance else { return }
+            DiagnosticEvents.shared.record(stance == .raised ? .panelRaised : .panelRested)
+        }
+    }
 
     /// The card's place and measure within the pane, clamped and
     /// persisted. The window controller reports pane sizes; the views
@@ -724,7 +729,12 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// with the panel off nothing else can hold the keyboard and with
     /// it on ADR-0033 gives them to the editor window anyway.
     @Published private(set) var ambientPanelEnabled: Bool {
-        didSet { defaults.set(ambientPanelEnabled, forKey: Self.ambientPanelEnabledKey) }
+        didSet {
+            defaults.set(ambientPanelEnabled, forKey: Self.ambientPanelEnabledKey)
+            if oldValue != ambientPanelEnabled {
+                DiagnosticEvents.shared.record(ambientPanelEnabled ? .panelEnabled : .panelDisabled)
+            }
+        }
     }
     private static let ambientPanelEnabledKey = "ambientPanelEnabled"
 

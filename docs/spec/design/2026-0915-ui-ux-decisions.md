@@ -541,6 +541,12 @@ are sentences read down a column untruncated. Days, side: chronology is
 vertical, and the intended default. Days, bottom: a left-to-right
 timeline that keeps the page's full width.
 
+*Amended 2026-10-01:* one setting, Page layout: Tabs (Slots along the
+bottom) or Timeline (Days down the side). Slots + side and Days +
+bottom are no longer supported states; the metrics below stand for the
+two that remain
+([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
+
 Metrics do not change with the choice. Along the bottom: 32 tall,
 padded 6 × 4, 2 between tabs, title row 18, gauge 3, capped 140 wide,
 `+` pinned right, groups `FILES` then `PAD`. Down the side: 110 wide,
@@ -587,6 +593,10 @@ read as a page an instant from death rather than a slot standing ready.
   none since issue #158 (`PageModel.swift:3720`), so no refusal is
   drawn. What remains open is when the prototype label comes off and
   the default flips.
+  *Amended 2026-10-01:* D-26's two settings will not exist, so the gate
+  is restated: Tabs stays the default until the prototype label comes
+  off Timeline
+  ([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
 - **D-26 (fixed)** Two settings, four combinations, as above. The single
   switch that flips grouping and orientation together is the defect this
   replaces: it pushed code names into user-facing copy and left one
@@ -597,6 +607,12 @@ read as a page an instant from death rather than a slot standing ready.
   combination is a supported state; a mode flip moves no content and
   writes nothing new to disk; each caption says what the choice costs as
   well as what it does; time-related settings sit under the Days choice.
+  *Amended 2026-10-01:* superseded by one setting, Page layout: Tabs or
+  Timeline. Grouping and placement change together. The rest of the
+  acceptance stands: a flip moves no content and writes nothing new to
+  disk, the caption says what each layout costs, and time-related
+  settings sit under Timeline
+  ([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
 
 ## 5 · Status lines and notices
 

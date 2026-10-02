@@ -184,9 +184,9 @@ struct BackdropRootView: View {
                     .disabled(!raised)
                 Divider()
             }
-            // Organization (slots or days) and placement (bottom or
-            // side) are independent. The content view answers the
-            // former; this branch answers only the latter (D-26).
+            // Placement follows the layout: Tabs along the bottom,
+            // Timeline down the side. The content view answers
+            // organization; this branch answers only placement.
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
                     Group {

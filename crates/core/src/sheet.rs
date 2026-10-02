@@ -30,7 +30,7 @@ use crate::ttl::{self, Ttl};
 /// A time-ordered 128-bit item identifier (a version 7 UUID), minted at
 /// creation. The sequential [`SheetId`] and [`ChipId`] counters stay for
 /// internal ordering; this is the only identifier that may appear in the
-/// ledger or in any persisted artifact (ADR-0012; `UUIDv7` follow-up in ADR-0038).
+/// ledger or in any persisted artifact (ADR-0012; `UUIDv7` follow-up in ADR-0039).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId([u8; 16]);
 

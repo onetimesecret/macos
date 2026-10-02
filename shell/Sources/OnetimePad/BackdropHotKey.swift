@@ -11,6 +11,12 @@ import Foundation
 /// and option-only global shortcuts were disabled outright on macOS
 /// 15.0–15.1 — a two-modifier default sidesteps the whole class of bug.
 final class BackdropHotKey {
+    struct RegistrationFailure: Equatable {
+        enum Stage: String { case eventHandler, shortcut }
+        let stage: Stage
+        let status: OSStatus
+    }
+
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private let action: () -> Void
@@ -20,7 +26,9 @@ final class BackdropHotKey {
     /// app still works: the menu-bar item and the resting card summon
     /// the panel, and ⌘Tab or the Dock icon select the editor window
     /// (ADR-0033).
-    init?(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
+    init?(keyCode: UInt32, modifiers: UInt32,
+          onFailure: (RegistrationFailure) -> Void = { _ in },
+          action: @escaping () -> Void) {
         self.action = action
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -39,23 +47,39 @@ final class BackdropHotKey {
             selfPointer,
             &eventHandler
         )
-        guard installed == noErr else { return nil }
+        guard installed == noErr else {
+            onFailure(RegistrationFailure(stage: .eventHandler, status: installed))
+            return nil
+        }
         let id = EventHotKeyID(signature: OSType(0x424B_4450) /* 'BKDP' */, id: 1)
+        // Exclusive, deliberately. A plain registration succeeds beside
+        // any other holder and the keystroke then reaches every
+        // registrant, so a conflict fires both apps and is never
+        // reported. Exclusive turns an exclusive holder (another copy of
+        // OnetimePad among them) into `eventHotKeyExistsErr`, which the
+        // app explains. While we hold it, non exclusive registrants for
+        // ⌃⌥Space stop receiving it (CarbonEvents.h, kEventHotKeyExclusive).
         let registered = RegisterEventHotKey(
-            keyCode, modifiers, id, GetEventDispatcherTarget(), 0, &hotKeyRef
+            keyCode, modifiers, id, GetEventDispatcherTarget(),
+            UInt32(kEventHotKeyExclusive), &hotKeyRef
         )
         guard registered == noErr, hotKeyRef != nil else {
             RemoveEventHandler(eventHandler)
             eventHandler = nil
+            onFailure(RegistrationFailure(stage: .shortcut, status: registered))
             return nil
         }
     }
 
     /// ⌃⌥Space, the backdrop's raise/rest gesture.
-    static func controlOptionSpace(action: @escaping () -> Void) -> BackdropHotKey? {
+    static func controlOptionSpace(
+        onFailure: (RegistrationFailure) -> Void = { _ in },
+        action: @escaping () -> Void
+    ) -> BackdropHotKey? {
         BackdropHotKey(
             keyCode: UInt32(kVK_Space),
             modifiers: UInt32(controlKey | optionKey),
+            onFailure: onFailure,
             action: action
         )
     }

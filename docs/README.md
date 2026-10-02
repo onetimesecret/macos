@@ -66,13 +66,6 @@ surprising, or unresolved observations from doing so. An observation
 starts in ABERRATIONS and graduates into DOGFOOD, an issue, or an ADR
 once it is understood.
 
-## plans/
-
-Routes to a milestone: what has to happen, in what order, to get
-somewhere specific. Some are milestone plans, some are scoped to a
-single issue and its review. A plan is superseded by the work landing,
-so plans age out to archive rather than being kept current.
-
 ## mockups/
 
 Inspectable design explorations and their interaction records. The
@@ -84,6 +77,13 @@ identified separately; a mockup is not evidence of a shipped contract.
 The opt-in native attempt is defined in the [pad-context feature proposal](spec/feature/pad-context/README.md),
 with [implementation notes](development/pad-context-experiment.md) and a
 [native verification runbook](qa/pad-context-experiment.md).
+
+## plans/
+
+Routes to a milestone: what has to happen, in what order, to get
+somewhere specific. Some are milestone plans, some are scoped to a
+single issue and its review. A plan is superseded by the work landing,
+so plans age out to archive rather than being kept current.
 
 ## qa/
 

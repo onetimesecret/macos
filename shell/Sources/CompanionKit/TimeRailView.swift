@@ -891,7 +891,8 @@ final class WheelRelayView: NSView {
 
 /// Durable slots placed down the leading edge. The slots remain the
 /// same named, reorderable objects as the bottom presentation; only
-/// their measure and reading direction change (D-26).
+/// their measure and reading direction change (D-26). No layout draws
+/// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
 public struct SlotRailView: View {
     @ObservedObject var model: PageModel
     @State private var rowFrames: [UInt64: CGRect] = [:]

@@ -67,7 +67,7 @@ the exploratory terms hard and soft association. A supplied path may identify
 one pad even when that pad is not in the active/recent picker. An application
 hint may suggest only an already active/recent pad; when several qualify,
 most recently active is the proposed tie-breaker. This model is recorded in
-[proposed ADR-0038](../../adr/0038-pad-selection-and-associations.md), not
+[proposed ADR-0039](../../adr/0039-pad-selection-and-associations.md), not
 implemented by the HTML.
 
 An app hint adds value only when a broad application identity reduces the
@@ -86,7 +86,7 @@ enforces it. The intended implementation uses deliberately supplied paths and
 limited app identity, rather than probing another app's project or document.
 The [macOS research](../../research/2026-1001-macos-context-and-pasteboard.md)
 describes the platform limitations and validation still required. The
-[explicit clipboard ADR](../../adr/0037-explicit-clipboard-operations.md),
+[explicit clipboard ADR](../../adr/0038-explicit-clipboard-operations.md),
 [copy law](../../law/0002-copy.md), and [paste law](../../law/0003-paste.md)
 govern the separate proposed transfer work.
 
@@ -114,10 +114,13 @@ govern the separate proposed transfer work.
 **Keyboard ownership needs a successor decision.** Accepted
 [ADR-0017](../../adr/0017-durable-tabs-expiring-pages.md) states:
 “⌘1 to ⌘9 are shortcuts to the first nine slots and the rest have no chord
-(issue #158).” The mockup assigns those digits to pads. ADR-0038 proposes the
+(issue #158).” The mockup assigns those digits to pads. ADR-0039 proposes the
 replacement within its scope; its acceptance and the predecessor's reciprocal
 supersession record are still required. The accepted ADR has not been rewritten
-to make the mockup appear compliant.
+to make the mockup appear compliant. Other records, including the interaction
+model, the keymap dispatch reference, and the hardware checklist, state the
+same slot ownership; ADR-0039's consequences list them, and none has been
+edited.
 
 **Day-order policy needs a successor design decision.** The accepted
 [2026-09-15 UI/UX decision record](../../spec/design/2026-0915-ui-ux-decisions.md#4--how-pages-are-organized-and-where-they-live)

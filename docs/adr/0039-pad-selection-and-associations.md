@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0038: Pad selection and associations
+# ADR-0039: Pad selection and associations
 
 - **Status:** proposed
 - **Date:** 2026-10-01
@@ -26,7 +26,7 @@ that the existing application enforces the boundary. The
 [macOS research](../research/2026-1001-macos-context-and-pasteboard.md)
 separates supplied paths from app identity and explains why an app name does
 not identify the focused project in another app. Clipboard transfers remain
-the distinct topic of [ADR-0037](0037-explicit-clipboard-operations.md).
+the distinct topic of [ADR-0038](0038-explicit-clipboard-operations.md).
 
 The pad shortcuts requested in the latest mockup conflict with accepted
 [ADR-0017](0017-durable-tabs-expiring-pages.md), which states:
@@ -79,7 +79,8 @@ These fields can disclose work context; UserDefaults would leave them outside
 the encrypted note-content envelope. The catalog must contain no note content
 or clipboard payload, and the attempt must state this limitation clearly.
 Proposed [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md)
-says “Settings remain in UserDefaults (never secrets).” Its proposed status and
+says, with its source markup: “**Settings** remain in `UserDefaults` (never
+secrets).” Its proposed status and
 original scope do not establish authority for storing this new metadata.
 Storage choice, migration, and metadata removal still require review.
 
@@ -94,6 +95,21 @@ Storage choice, migration, and metadata removal still require review.
 - Redirecting numbered shortcuts from slots to pads changes an existing
   command contract. It needs explicit successor acceptance and native keymap
   validation; browser interception is not that validation.
+- ADR-0017 is not the only record that gives ⌘1 to ⌘9 to slots. The cap
+  paragraph and keyboard map of
+  [04-interaction-model.md](../spec/design/04-interaction-model.md), the
+  [vertical time tabs feature spec](../spec/feature/vertical-time-tabs/README.md)
+  with its mode off and its
+  [capacity and Today proposal](../spec/feature/vertical-time-tabs/2026-0904-capacity-and-today-proposal.md),
+  the [keymap dispatch reference](../development/keymap-format-and-dispatch.md),
+  the [background surface](../spec/feature/background-surface/README.md) hand
+  checks, and the [hardware verification checklist](../qa/hardware-verification.md)
+  state the same ownership. The keyboard map, the capacity proposal and the
+  checklist also give ⌘0 to the ledger, while `default-keymap.json` leaves
+  `cmd-0` unbound (issue #78). Plans, open questions and historical ADRs
+  mention the map in passing. Acceptance must sweep `docs/` for these chords,
+  then update or supersede each normative record alongside ADR-0017; none is
+  edited while this ADR is proposed.
 - Stable ownership must survive native tab restoration. A restore-reminted
   numeric handle is insufficient as the persistent catalog identity; the
   implementation must use stable identity and verify restart behavior.
@@ -130,3 +146,8 @@ Storage choice, migration, and metadata removal still require review.
 - The catalog's metadata cannot fit the agreed storage threat boundary.
   Revisit its storage location and opt-in policy; do not advertise encrypted
   context metadata based on encrypted note storage.
+
+## Decision history
+
+- 2026-10-01: Proposed after the one-pad-picker mockup review. Acceptance and
+  the supersession of ADR-0017's slot shortcut clause remain outstanding.

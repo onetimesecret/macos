@@ -41,6 +41,10 @@ RECIPROCAL_FIELDS = {
 
 ADR_FILE = re.compile(r"^(\d{4})-(?:[a-z0-9]+-)*[a-z0-9]+\.md$")
 TITLE = re.compile(r"^# ADR-(\d{4}): \S")
+# An optional first line naming the file's own path, as in
+# "# docs/adr/0035-slug.md". It is a header comment above the frontmatter,
+# not the record's title.
+FILE_HEADER = re.compile(r"^#[ \t]+(\S+\.md)[ \t]*$")
 # A canonical metadata bullet: "- **Field:** value", value optionally on
 # the following lines.
 FIELD = re.compile(r"^- \*\*([^*]+):\*\*[ \t]*(.*)$")
@@ -200,29 +204,33 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
 
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    front, body_start, front_error = split_frontmatter(lines)
+    header = FILE_HEADER.match(lines[0]) if lines else None
+    skip = 1 if header and Path(header.group(1)).name == path.name else 0
+    front, body_start, front_error = split_frontmatter(lines[skip:])
+    body_start += skip
+    front_line = 1 + skip
 
     if front_error == "unterminated":
-        bad(1, "frontmatter block opens with --- but is never closed")
+        bad(front_line, "frontmatter block opens with --- but is never closed")
         return problems, relations
     if front_error == "missing":
-        bad(1, "missing --- frontmatter block")
+        bad(front_line, "missing --- frontmatter block")
     elif not front:
-        bad(1, "frontmatter block is empty")
+        bad(front_line, "frontmatter block is empty")
     else:
         found = [
             (i, m.group(1))
-            for i, raw in enumerate(front, start=2)
+            for i, raw in enumerate(front, start=front_line + 1)
             for m in [DOC_STATUS_LINE.match(raw.strip())]
             if m
         ]
         raw_keys = [
             i
-            for i, raw in enumerate(front, start=2)
+            for i, raw in enumerate(front, start=front_line + 1)
             if raw.strip().startswith("documentation_status")
         ]
         if not raw_keys:
-            bad(1, "frontmatter has no documentation_status")
+            bad(front_line, "frontmatter has no documentation_status")
         elif len(raw_keys) > 1:
             bad(
                 raw_keys[1],

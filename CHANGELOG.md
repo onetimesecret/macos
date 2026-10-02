@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings offers two page layouts, Tabs and Timeline** (app 0.26.0).
+  Tabs draws named pages along the bottom at full width; Timeline, still
+  a prototype, groups live pages by day down the side. The separate
+  placement setting is gone: placement follows the layout, and the
+  stored `showsPagesDownSide` key is removed at launch. Someone who had
+  Slots with pages down the side now sees Tabs along the bottom. This
+  replaces D-26's two settings; ADR-0037 records the change.
+
+- **⌃⌥Space registers exclusively, and a failed registration is
+  explained** (app 0.26.0). When another app, or another copy of
+  OnetimePad, already holds the combination exclusively, registration
+  fails instead of sharing the key, and the status item and Dock menus
+  offer "⌃⌥Space unavailable…" with the stage, the OSStatus and a Try
+  Again. While OnetimePad holds the key, other apps' non exclusive
+  registrations for ⌃⌥Space stop receiving it.
+
+- **A first launch explains Keychain access before the app asks for
+  it** (app 0.26.0). A one time introduction names the two Keychain
+  items (state-key for saved pages, ledger-key for page history) and
+  what Allow and Always Allow mean. macOS still owns every
+  authorization decision. Activation is held until the introduction is
+  dismissed and startup finishes, so no editor mounts behind it.
+
 - **File backed documents work under the App Sandbox** (ADR-0035,
   proposed; app 0.25.0; `companion-core` 0.25.0, `companion-ffi`
   0.33.0). Not yet verified on a sandboxed signed build: the hardware
@@ -313,6 +336,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the interval through `companion_clipboard_clear_seconds`.
 
 ### Added
+
+- **The Help menu exports diagnostics and sends reviewed feedback**
+  (app 0.26.0). **Copy Diagnostic Summary** copies a summary: version,
+  build, source revision and build lane, macOS and architecture,
+  process uptime, panel and editor state, shortcut status, page layout
+  and sync on or off. **Export Diagnostics…** saves that summary
+  followed by up to 100 typed events from the current process. Backend
+  diagnostic strings are classified into labels and discarded. **Send
+  Feedback…** shows the full destination, an optional contact and the
+  exact report, and posts only when Send is chosen, to
+  `/api/v3/feedback` on the server in Connection settings
+  (`https://eu.onetimesecret.com` when none is configured), with no
+  cookies or stored credentials. A failed send keeps the draft. Receipt
+  by a deployed server has not yet been tested from an installed build.
 
 - **App Store upload packaging is available.**
   `scripts/package-app.sh --app-store` builds a sandboxed release,
