@@ -31,6 +31,11 @@ record the existing slot shortcuts and opened files before enabling it.
 7. Create a typo, rename it, and reject empty or over-80-character names. Remove a
    named pad after reading the confirmation. Verify its content and open files
    appear in Scratch, its associations are removed, and Scratch cannot be removed.
+8. Open a page/chip conceal offer without confirming. Switch pads, create a pad,
+   remove the active pad, and toggle the experiment in separate trials. Verify
+   the outgoing offer closes. Rename the same pad or toggle full paths; its offer
+   should remain. With a controlled delayed response, dismiss and reopen an offer
+   for the same target; the earlier result must not populate the new offer.
 
 ## Folder bindings and file context
 
@@ -47,12 +52,18 @@ record the existing slot shortcuts and opened files before enabling it.
    remembered path. Disable the experiment, Save As an associated file, and re-enable;
    expect its existing pad ownership and selected file to survive the path change.
    A pending close confirmation must prevent switching pads.
+   Disable/re-enable the experiment during that decision; it must remain visible.
+   Also close an inactive dirty file while pads are off, then enable pads and
+   choose Keep Editing; verify the previous file returns in its owning pad.
 5. Try missing, renamed, inaccessible, symlinked, and case-varied paths. Record
    the actual matching behavior and any unsupported case; do not infer permission
    or document provenance from a path association. Reject an accessible symlink
    alias bound to another pad. On case-insensitive volumes reject alternate-case
    aliases; on case-sensitive volumes allow distinct existing directories. Verify
    inaccessible paths report only the fallback behavior, not physical uniqueness.
+6. Reopen an already-open file from a different pad, using its original path and
+   a symlink alias. Add a folder binding to another pad and repeat. Verify the
+   existing file keeps its owner; an already-open Scratch file stays in Scratch.
 
 ## App associations
 

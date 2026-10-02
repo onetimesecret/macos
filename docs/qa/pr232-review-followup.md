@@ -42,3 +42,54 @@ Regression coverage also exercises separate refused content/draft restores,
 closed-file pruning, symlinked roots with missing leaves, renaming/removal and
 selected-file restoration. Native VoiceOver, chooser, activation and signed-app
 checks remain in [the manual runbook](pad-context-experiment.md).
+
+## Greptile follow-up and focused self-review
+
+The checkout was verified against PR #232 before editing: repository
+`onetimesecret/macos`, branch `codex/pad-context-implementation`, base `main`,
+and reviewed head `349dd4193d033509378ff2387e94bc94d2ba70a0`.
+
+### Summary
+
+Three attached comments identified remaining state/routing defects; two were
+already addressed by the preceding follow-up. The focused review found two
+clock-rollback issues and a return-navigation edge. All are addressed below.
+These are implementation observations, not accepted security or storage claims.
+
+### Primary findings
+
+| Attached feedback | Assessment and resolution |
+| --- | --- |
+| 1. Conceal confirmation survives pad switch | Fixed. An actual pad/context transition dismisses the outgoing offer, including create, active-pad removal and experiment toggles. Same-pad metadata edits preserve it. This does not cancel an already-confirmed request. |
+| 2. Dirty-close decision disappears on disable | Fixed. Experiment toggles keep the pending file selected and align its owner when enabling, so the inline decision retains its subject. Keep Editing returns through owner-aware selection if its previous file belongs to another pad. |
+| 3. Reopening moves an already-open file | Fixed. The returned core ID is compared with the pre-open roster; an existing file retains its canonical-path owner, including implicit Scratch. Only newly opened files acquire folder/active-pad ownership. |
+| 4. Disabled Save As loses ownership | Already addressed in `1f05bed`: transfers run regardless of the navigation gate. The existing disabled-Save-As regression passed again. |
+| 5. Closed file paths remain stored | Already addressed in `1f05bed`: authoritative roster updates prune closed-file ownership and remembered selections. The closed-file and refused-draft-restore regressions passed again. |
+| Self-review: wall-clock recency | Fixed. Bounded logical ranks represent manual visit order without depending on the wall clock; legacy timestamp order is normalized on the next recorded visit. Manual reselection after automatic routing promotes the pad once. |
+| Self-review: folded Today sort key | Fixed. Lookup and pruning use the displayed local calendar day, so future-born pages folded into Today do not change its preference when tabs reorder. |
+
+### Pre-existing issues
+
+The conceal completion guard previously distinguished only targets. A response
+could populate a newly opened offer for the same page/chip. This is also fixed:
+each offer has an immutable transient UUIDv7 identity, captured by confirmation
+and checked with the target on completion. That identity is not persisted or
+sent to the core/network. Successful earlier requests still arm their existing
+clipboard-clear lifecycle; this change isolates UI results rather than cancelling
+an authorized operation.
+
+### Speculative issues
+
+None identified as actionable in this focused pass. Timezone regrouping remains
+the documented experimental behavior; native activation and accessibility still
+require the manual runbook.
+
+### Clean files and final verification
+
+Independent review found no remaining actionable issue in the changed catalog,
+model, and regression tests. The final full Swift run passed **1,528 tests**
+(296 executable-target and 1,232 shared-target tests), including ten new tests.
+The initial new date fixture used the wrong wire-key spelling; correcting it and
+asserting the decoded offsets/timestamps preceded the final passing run.
+No Rust or packaging implementation changed in this round, so their preceding
+results above were not rerun. `git diff --check` and ADR structural lint passed.
