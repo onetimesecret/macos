@@ -95,6 +95,21 @@ Storage choice, migration, and metadata removal still require review.
 - Redirecting numbered shortcuts from slots to pads changes an existing
   command contract. It needs explicit successor acceptance and native keymap
   validation; browser interception is not that validation.
+- ADR-0017 is not the only record that gives ⌘1 to ⌘9 to slots. The cap
+  paragraph and keyboard map of
+  [04-interaction-model.md](../spec/design/04-interaction-model.md), the
+  [vertical time tabs feature spec](../spec/feature/vertical-time-tabs/README.md)
+  with its mode off and its
+  [capacity and Today proposal](../spec/feature/vertical-time-tabs/2026-0904-capacity-and-today-proposal.md),
+  the [keymap dispatch reference](../development/keymap-format-and-dispatch.md),
+  the [background surface](../spec/feature/background-surface/README.md) hand
+  checks, and the [hardware verification checklist](../qa/hardware-verification.md)
+  state the same ownership. The keyboard map, the capacity proposal and the
+  checklist also give ⌘0 to the ledger, while `default-keymap.json` leaves
+  `cmd-0` unbound (issue #78). Plans, open questions and historical ADRs
+  mention the map in passing. Acceptance must sweep `docs/` for these chords,
+  then update or supersede each normative record alongside ADR-0017; none is
+  edited while this ADR is proposed.
 - Stable ownership must survive native tab restoration. A restore-reminted
   numeric handle is insufficient as the persistent catalog identity; the
   implementation must use stable identity and verify restart behavior.

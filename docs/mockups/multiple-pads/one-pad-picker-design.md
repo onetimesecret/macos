@@ -117,7 +117,10 @@ govern the separate proposed transfer work.
 (issue #158).” The mockup assigns those digits to pads. ADR-0038 proposes the
 replacement within its scope; its acceptance and the predecessor's reciprocal
 supersession record are still required. The accepted ADR has not been rewritten
-to make the mockup appear compliant.
+to make the mockup appear compliant. Other records, including the interaction
+model, the keymap dispatch reference, and the hardware checklist, state the
+same slot ownership; ADR-0038's consequences list them, and none has been
+edited.
 
 **Day-order policy needs a successor design decision.** The accepted
 [2026-09-15 UI/UX decision record](../../spec/design/2026-0915-ui-ux-decisions.md#4--how-pages-are-organized-and-where-they-live)
