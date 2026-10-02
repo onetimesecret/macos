@@ -255,10 +255,12 @@ may remain after an earlier failure.
 
 Before compiling, the script checks identity availability and the profile's
 team, explicit App ID, Keychain group, selected certificate, expiry, and profile
-class. After signing, it checks the app signature, build number, embedded
-profile, hardened-runtime flag, sandbox/outgoing-network/incoming-network/
-app-scoped-bookmark/user-selected-file/Keychain entitlements, and the package
-signature. These are
+class. After embedding the profile, it removes `com.apple.quarantine`
+recursively from the App Store bundle before signing. The external source
+profile is unchanged. After signing, it checks the app signature, build number,
+embedded profile, hardened-runtime flag, sandbox/outgoing-network/incoming-network/
+app-scoped-bookmark/user-selected-file/Keychain entitlements, absence of
+quarantine attributes in the bundle, and the package signature. These are
 local checks, not a substitute for Apple's validation. In particular, inspect
 profile validity and certificate suitability rather than assuming the script
 checks every distribution requirement.
@@ -274,7 +276,15 @@ codesign --verify --deep --strict --verbose=2 dist/OnetimePad.app
 codesign -dvvv dist/OnetimePad.app
 codesign -d --entitlements - --xml dist/OnetimePad.app
 pkgutil --check-signature dist/OnetimePad.pkg
+xattr -r dist/OnetimePad.app
 ```
+
+The attribute listing must not contain `com.apple.quarantine`. If Transporter
+reports error **91109** for `embedded.provisionprofile`, a downloaded profile's
+quarantine attribute may have been copied into the app. Rerun packaging with
+the cleanup above and upload the newly generated `dist/OnetimePad.pkg`.
+Removing attributes from the source profile or app does not update an already
+created package.
 
 Confirm the production bundle ID, selected version/build, intended signing team
 and identities, and rendered entitlements. Record the commit, version, build
