@@ -212,6 +212,160 @@ final class PadModelTests: XCTestCase {
         XCTAssertNotNil(model.pendingFileClose)
     }
 
+    func testPadNavigationDismissesConcealForPagesAndChips() throws {
+        for useChip in [false, true] {
+            let model = isolatedModel(defaults: try defaults())
+            model.loadStateIfNeeded()
+            model.pads.isEnabled = true
+            let source = try XCTUnwrap(model.createPad(named: "Source"))
+            model.newPage()
+            let target: ConcealDraft.Target
+            if useChip {
+                let chip = try XCTUnwrap(model.sealText("private", replacing: NSRange(location: 0, length: 0)))
+                target = .chip(chip.chipId)
+            } else {
+                target = .page(try XCTUnwrap(model.selectedPageID))
+            }
+            model.beginConceal(target)
+            model.activatePad(PadCatalog.scratchID)
+            XCTAssertNil(model.concealDraft)
+            model.activatePad(source)
+            model.beginConceal(target)
+            XCTAssertNotNil(model.createPad(named: "Created"))
+            XCTAssertNil(model.concealDraft)
+            model.activatePad(source)
+            model.beginConceal(target)
+            XCTAssertTrue(model.removePad(source))
+            XCTAssertNil(model.concealDraft)
+        }
+    }
+    func testExperimentToggleDismissesConcealButSamePadEditsPreserveIt() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        let target = ConcealDraft.Target.page(try XCTUnwrap(model.selectedPageID))
+        model.beginConceal(target)
+        model.pads.isEnabled = true
+        XCTAssertNil(model.concealDraft)
+        let pad = try XCTUnwrap(model.createPad(named: "Familia"))
+        model.newPage()
+        let current = ConcealDraft.Target.page(try XCTUnwrap(model.selectedPageID))
+        model.beginConceal(current)
+        model.activatePad(pad)
+        XCTAssertTrue(model.renamePad(pad, to: "Renamed"))
+        model.pads.showFullPaths.toggle()
+        model.pads.appAssociationsEnabled.toggle()
+        XCTAssertEqual(model.concealDraft?.target, current)
+        model.pads.isEnabled = false
+        XCTAssertNil(model.concealDraft)
+    }
+    func testExperimentToggleKeepsPendingDirtyCloseVisibleAndRestoresItsOwner() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let owner = try XCTUnwrap(model.createPad(named: "Owner"))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pad-toggle-dirty-\(UUID().uuidString).txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        model.openFile(at: file)
+        let id = try XCTUnwrap(model.selectedFile)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "dirty ")]))
+        model.applyOps(sheet: id, opsJSON: ops)
+        let storage = model.storage(for: id)
+        let before = storage.string
+        _ = model.closeActiveFile()
+        model.pads.isEnabled = false
+        XCTAssertEqual(model.selectedFile, id)
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        XCTAssertEqual(model.activeFile?.holdsUnsavedEdits, true)
+        model.pads.activate(PadCatalog.scratchID) // Inactive navigation preference differs.
+        model.pads.isEnabled = true
+        XCTAssertEqual(model.pads.activeID, owner)
+        XCTAssertEqual(model.selectedFile, id)
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        XCTAssertTrue(model.navigationFiles.contains { $0.id == id })
+        XCTAssertTrue(model.storage(for: id) === storage)
+        XCTAssertEqual(storage.string, before)
+        model.resolvePendingFileClose(.keepEditing)
+        XCTAssertNil(model.pendingFileClose)
+        XCTAssertEqual(model.selectedFile, id)
+        XCTAssertEqual(model.activeFile?.holdsUnsavedEdits, true)
+    }
+    func testKeepEditingAfterEnablingPadsReturnsToPreviousFilesOwner() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-toggle-close-return-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = directory.appendingPathComponent("first.txt")
+        let second = directory.appendingPathComponent("second.txt")
+        try "first".write(to: first, atomically: true, encoding: .utf8)
+        try "second".write(to: second, atomically: true, encoding: .utf8)
+        let ownerA = try XCTUnwrap(model.createPad(named: "A"))
+        model.openFile(at: first)
+        let fileA = try XCTUnwrap(model.selectedFile)
+        let ownerB = try XCTUnwrap(model.createPad(named: "B"))
+        model.openFile(at: second)
+        let fileB = try XCTUnwrap(model.selectedFile)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "dirty ")]))
+        model.applyOps(sheet: fileB, opsJSON: ops)
+        model.pads.isEnabled = false
+        model.selectFile(fileA)
+        model.closeFile(fileB)
+        XCTAssertEqual(model.pendingFileClose?.fileID, fileB)
+        XCTAssertEqual(model.selectedFile, fileB)
+        model.pads.isEnabled = true
+        XCTAssertEqual(model.pads.activeID, ownerB)
+        model.resolvePendingFileClose(.keepEditing)
+        XCTAssertNil(model.pendingFileClose)
+        XCTAssertEqual(model.pads.activeID, ownerA)
+        XCTAssertEqual(model.selectedFile, fileA)
+        XCTAssertEqual(model.navigationFiles.map(\.id), [fileA])
+        XCTAssertEqual(model.openFiles.first { $0.id == fileB }?.holdsUnsavedEdits, true)
+    }
+
+    func testReopeningExistingFilePreservesOwnerDespiteNewFolderBindingAndAlias() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-reopen-owner-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("note.txt")
+        let alias = directory.appendingPathComponent("alias.txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: file)
+        let owner = try XCTUnwrap(model.createPad(named: "Owner"))
+        model.openFile(at: file)
+        let id = try XCTUnwrap(model.selectedFile)
+        let other = try XCTUnwrap(model.createPad(named: "Other"))
+        XCTAssertTrue(model.pads.addFolder(directory.path, to: other))
+        for supplied in [file, alias] {
+            model.activatePad(other)
+            model.openFile(at: supplied)
+            XCTAssertEqual(model.selectedFile, id)
+            XCTAssertEqual(model.openFiles.count, 1)
+            XCTAssertEqual(model.pads.activeID, owner)
+            XCTAssertEqual(model.pads.owner(ofFile: try XCTUnwrap(model.activeFile?.path)), owner)
+        }
+    }
+    func testReopeningScratchFileDoesNotAcquireCurrentPadOwnership() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pad-reopen-scratch-\(UUID().uuidString).txt")
+        try "scratch file".write(to: file, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        model.openFile(at: file)
+        let id = try XCTUnwrap(model.selectedFile)
+        _ = try XCTUnwrap(model.createPad(named: "Other"))
+        model.openFile(at: file)
+        XCTAssertEqual(model.selectedFile, id)
+        XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+        XCTAssertEqual(model.pads.owner(ofFile: try XCTUnwrap(model.activeFile?.path)), PadCatalog.scratchID)
+        XCTAssertEqual(model.openFiles.count, 1)
+    }
+
     func testSwitchingPadsRestoresSelectedFileAndRemovalRehomesWithoutDeleting() throws {
         let model = isolatedModel(defaults: try defaults())
         model.loadStateIfNeeded()
@@ -294,6 +448,44 @@ final class PadModelTests: XCTestCase {
         XCTAssertTrue(model.openFiles.isEmpty)
         XCTAssertEqual(model.pads.owner(ofFile: "/unrestored-file.txt"), pad)
         XCTAssertEqual(model.pads.rememberedFile(for: pad), "/unrestored-file.txt")
+    }
+
+    func testProjectedDaySortKeysStayStableForFuturePagesAndRosterReordering() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 12)))
+        XCTAssertEqual(PageModel.padDateKey(forDayBucket: 0, now: today, calendar: calendar), "2026-10-02")
+        XCTAssertEqual(PageModel.padDateKey(forDayBucket: 4, now: today, calendar: calendar), "2026-10-02")
+        XCTAssertEqual(PageModel.padDateKey(forDayBucket: -1, now: today, calendar: calendar), "2026-10-01")
+        let midnight = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 3)))
+        XCTAssertEqual(PageModel.padDateKey(forDayBucket: -1, now: midnight, calendar: calendar), "2026-10-02")
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        let original = try XCTUnwrap(model.tabs.first)
+        func summary(id: UInt64, offset: Int, stamp: UInt64) throws -> TabSummary {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+            json["id"] = id
+            json["page_day_offset"] = offset
+            json["page_created_ms"] = stamp
+            let decoded = try JSONDecoder().decode(TabSummary.self, from: JSONSerialization.data(withJSONObject: json))
+            XCTAssertEqual(decoded.pageDayOffset, offset, "the fixture must exercise the supplied day bucket")
+            XCTAssertEqual(decoded.pageCreatedMs, stamp, "the fixture must retain its distinct creation stamp")
+            return decoded
+        }
+        let future = try summary(id: 101, offset: 4, stamp: 1_900_000_000_000)
+        let current = try summary(id: 102, offset: 0, stamp: 1_791_000_000_000)
+        let yesterday = try summary(id: 103, offset: -1, stamp: 1_790_000_000_000)
+        let owner = PadCatalog.scratchID
+        let todayKey = owner.uuidString + "/2026-10-02"
+        let expected: Set<String> = [todayKey, owner.uuidString + "/2026-10-01"]
+        XCTAssertEqual(PageModel.checkpointSortKeys(for: [future, current, yesterday], now: today, calendar: calendar, owner: { _ in owner }), expected)
+        XCTAssertEqual(PageModel.checkpointSortKeys(for: [yesterday, current, future], now: today, calendar: calendar, owner: { _ in owner }), expected)
+        let onlyFuture = PageModel.checkpointSortKeys(for: [future], now: today, calendar: calendar, owner: { _ in owner })
+        XCTAssertEqual(onlyFuture, [todayKey])
+        let catalog = PadCatalog(defaults: try defaults())
+        catalog.toggleCheckpointSort(for: owner, onDate: "2026-10-02")
+        catalog.reconcileTabs([], checkpointKeys: onlyFuture)
+        XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-02"), .reverseChronological)
     }
 
     func testFailedContentRestoreDoesNotPruneSavedPadOwnership() throws {

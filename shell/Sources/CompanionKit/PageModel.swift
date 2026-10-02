@@ -62,6 +62,9 @@ public enum DocumentEditOp: Equatable, Sendable {
 /// (docs/spec/04 — not a modal). Holds options and outcome, never
 /// content: the payload stays core-side throughout.
 public struct ConcealDraft {
+    /// Identifies this offer, so a response cannot populate a later offer for
+    /// the same page or chip. Ephemeral; never written to the catalog or core.
+    public let id: UUID
     /// Sendable explicitly, not by inference: a public enum gets no
     /// implicit conformance, and this value is captured by the
     /// detached task that carries the conceal to the network.
@@ -87,6 +90,7 @@ public struct ConcealDraft {
     public var receiptId: String?
 
     public init(target: Target, ttlSecs: UInt64) {
+        self.id = UUIDv7.generate()
         self.target = target
         self.ttlSecs = ttlSecs
     }
@@ -2815,9 +2819,21 @@ public final class PageModel: ObservableObject {
         defer { isApplyingCatalogChange = false }
         updateApplicationContextObservation()
         if pads.isEnabled != lastPadsEnabled || (pads.isEnabled && pads.activeID != lastPadID) {
+            // The inline conceal offer belongs to the pad surface being left.
+            // Dismissing it cannot cancel a request already confirmed in flight.
+            concealDraft = nil
             if lastPadsEnabled {
                 pads.rememberSelection(tabUUID: selectedTab?.uuid,
                     filePath: activeFile?.path, for: lastPadID)
+            }
+            // Settings can change the experiment while a dirty-close decision
+            // stands. Keep its file visible in either layout; when enabling, use
+            // that file's owner so filtering cannot hide the decision's subject.
+            let pendingFile = pendingFileClose.flatMap { pending in
+                openFiles.first { $0.id == pending.fileID }
+            }
+            if pads.isEnabled, let pendingFile {
+                pads.activate(pads.owner(ofFile: pendingFile.path), recordRecency: false)
             }
             lastPadID = pads.activeID
             lastPadsEnabled = pads.isEnabled
@@ -2826,6 +2842,7 @@ public final class PageModel: ObservableObject {
             expandedPageID = nil
             if pads.isEnabled { restorePadSelection() }
             else { selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id)) }
+            if let pendingFile { selectedFile = pendingFile.id }
         }
         objectWillChange.send()
     }
@@ -2844,21 +2861,22 @@ public final class PageModel: ObservableObject {
         pads.toggleCheckpointSort(for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
     }
     public func dateKey(forDayBucket bucket: Int) -> String {
-        let calendar = Calendar.current
-        let date: Date
-        // Positive offsets are future-born pages after a backwards clock step.
-        // The projection groups them under Today (bucket zero); use their actual
-        // creation date for the preference key, matching the projected group.
-        if let stamp = navigationTabs.first(where: { min($0.pageDayOffset ?? 1, 0) == bucket && $0.pageCreatedMs != nil })?.pageCreatedMs {
-            date = Date(timeIntervalSince1970: Double(stamp) / 1000)
-        } else {
-            date = calendar.date(byAdding: .day, value: bucket, to: Date()) ?? Date()
-        }
-        return Self.padDateKey(date)
+        Self.padDateKey(forDayBucket: bucket, now: Date(), calendar: .current)
     }
-    private static func padDateKey(_ date: Date) -> String {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+    /// Preferences belong to the displayed local day, independently of roster
+    /// order or any page's creation stamp. Future-born pages after a backwards
+    /// clock step are projected into Today and use Today's preference too.
+    static func padDateKey(forDayBucket bucket: Int, now: Date, calendar: Calendar) -> String {
+        let date = calendar.date(byAdding: .day, value: min(bucket, 0), to: now) ?? now
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    }
+    static func checkpointSortKeys(for tabs: [TabSummary], now: Date, calendar: Calendar,
+        owner: (TabSummary) -> UUID) -> Set<String> {
+        Set(tabs.compactMap { tab in
+            guard tab.hasPage, let offset = tab.pageDayOffset else { return nil }
+            return owner(tab).uuidString + "/" + padDateKey(forDayBucket: offset, now: now, calendar: calendar)
+        })
     }
     private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
         guard pads.isEnabled else { return projection }
@@ -2899,11 +2917,9 @@ public final class PageModel: ObservableObject {
         }
         pendingPadTabOwners.removeAll()
         if stateLoaded && saveLicence {
-            let checkpointKeys = Set(tabs.compactMap { tab -> String? in
-                guard tab.hasPage, let stamp = tab.pageCreatedMs else { return nil }
-                let date = Self.padDateKey(Date(timeIntervalSince1970: Double(stamp) / 1000))
-                return pads.owner(ofTabUUID: tab.uuid).uuidString + "/" + date
-            })
+            let checkpointKeys = Self.checkpointSortKeys(for: tabs, now: Date(), calendar: .current) {
+                pads.owner(ofTabUUID: $0.uuid)
+            }
             pads.reconcileTabs(Set(tabs.compactMap(\.uuid)), checkpointKeys: checkpointKeys)
         }
         let livePages = livePageIDs
@@ -3546,6 +3562,9 @@ public final class PageModel: ObservableObject {
         // after them touches the file.
         var owed: [DraftNotice] = []
         var droppedPendingRow = false
+        // The core canonicalizes paths and returns an existing ID for a reopen,
+        // including aliases. Path spelling cannot decide whether this is new.
+        let previouslyOpenIDs = Set(client.fileRoster().map(\.id))
         let opened: (id: UInt64, bookmarked: Bool)? = fileCoordinator.withAccess(to: url) {
             // Asked of the core rather than of the published roster,
             // so the rule holds for any pending row and not only for
@@ -3604,8 +3623,16 @@ public final class PageModel: ObservableObject {
         refreshOpenFiles()
         reconsiderFileRenderMode(for: id)
         if pads.isEnabled {
-            let target = pads.pad(forPath: url.path) ?? pads.activeID
-            pads.assign(filePath: openFiles.first(where: { $0.id == id })?.path ?? url.path, to: target)
+            let path = openFiles.first(where: { $0.id == id })?.path ?? url.path
+            let target: UUID
+            if previouslyOpenIDs.contains(id) {
+                // Reopening selects an existing document, never silently moves
+                // it to the current pad or a newly added folder association.
+                target = pads.owner(ofFile: path)
+            } else {
+                target = pads.pad(forPath: url.path) ?? pads.activeID
+                pads.assign(filePath: path, to: target)
+            }
             activatePad(target)
         }
         selectFile(id)
@@ -3943,8 +3970,16 @@ public final class PageModel: ObservableObject {
             let previousLedger = ledgerBeforePendingFileClose
             clearPendingFileClose()
             if selectedFile == pending.fileID, previous != pending.fileID {
-                selectedFile = previous.flatMap { previousID in
+                let returningFile = previous.flatMap { previousID in
                     openFiles.contains(where: { $0.id == previousID }) ? previousID : nil
+                }
+                if let returningFile {
+                    // The experiment may have been enabled while the decision
+                    // stood. Restore through ownership-aware navigation rather
+                    // than leaving the file outside the active pad's roster.
+                    selectFile(returningFile)
+                } else {
+                    selectedFile = nil
                 }
                 showingLedger = previousLedger
                 refocusEditorIfKeyed()
@@ -5923,6 +5958,7 @@ public final class PageModel: ObservableObject {
         draft.error = nil
         concealDraft = draft
         let client = self.client
+        let draftID = draft.id
         let target = draft.target
         let ttl = draft.ttlSecs
         let passphrase = draft.passphrase
@@ -5935,12 +5971,12 @@ public final class PageModel: ObservableObject {
                 client.concealSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             }
             await MainActor.run { [weak self] in
-                self?.finishConceal(outcome, for: target)
+                self?.finishConceal(outcome, for: target, draftID: draftID)
             }
         }
     }
 
-    func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target) {
+    func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target, draftID: UUID) {
         // Before the staleness guard: the round trip moved core-side
         // state (a receipt in the ledger either way), whether or not
         // the draft that started it is still standing.
@@ -5950,10 +5986,10 @@ public final class PageModel: ObservableObject {
         // showing when the response returns.
         if outcome.ok { armClipboardClear() }
         // The confirmation may have been dismissed — or reopened on a
-        // different target — while the call was out; a stale outcome
+        // new offer for the same target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
         // is on the clipboard and the receipt marked either way.)
-        guard var draft = concealDraft, draft.target == target else { return }
+        guard var draft = concealDraft, draft.id == draftID, draft.target == target else { return }
         draft.inFlight = false
         if outcome.ok {
             draft.error = nil
