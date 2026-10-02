@@ -777,6 +777,9 @@ func writeComposerLayer(mark: Mark, to outDir: URL) {
     cg.endTransparencyLayer()
     NSGraphicsContext.restoreGraphicsState()
     // A small separable blur softens the silhouette without requiring a GPU.
+    // Only alpha is blurred because this layer is pure black: all RGB channels
+    // are zero, so changing alpha preserves its premultiplied representation.
+    // A colored shadow would need its premultiplied RGB channels blurred too.
     let pixels = shadow.bitmapData!
     let stride = shadow.bytesPerRow
     var alpha = [Double](repeating: 0, count: 1024 * 1024)

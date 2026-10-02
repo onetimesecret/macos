@@ -108,6 +108,8 @@ Edit the document in Icon Composer, then run
 `scripts/build-icons.sh --glass` to compile just the icon, or use the release
 commands above to package it. Debug builds keep the black development icon.
 Ad-hoc icons rendered with `build-icons.sh` no longer select the release icon.
+See the [exported glass icon preview](artwork/OnetimePad-Glass-CastShadow.png)
+for the current composition.
 
 Signing values stay outside the checkout, one environment directory per lane,
 so every worktree reads the same ones: `dev/.env` for the dev lane,
