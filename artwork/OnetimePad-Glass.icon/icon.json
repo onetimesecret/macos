@@ -1,0 +1,43 @@
+{
+  "features" : [
+    "refractivity"
+  ],
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.86275,0.29020,0.13333,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "01-logo-foreground.png",
+          "name" : "01-logo-foreground"
+        },
+        {
+          "glass" : false,
+          "image-name" : "00-logo-cast-shadow.png",
+          "name" : "Cast shadow"
+        }
+      ],
+      "name" : "Group",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 0.15
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.18
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.18
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

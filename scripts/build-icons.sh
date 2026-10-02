@@ -18,6 +18,8 @@
 #   scripts/build-icons.sh <name> <style> <rrggbb>
 #   scripts/build-icons.sh --dev              # the dev lane's black icon
 #   scripts/build-icons.sh --list             # available marks and styles
+#   scripts/build-icons.sh --composer         # foreground and cast shadow for Icon Composer
+#   scripts/build-icons.sh --mark maruhi --composer # alternate motif
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 #   scripts/build-icons.sh --shadows [rrggbb]
@@ -157,6 +159,13 @@ case $# in
       --list)
         swift scripts/render-icon.swift --list
         ;;
+      --composer)
+        if [[ -z "$MARK_CHOSEN" ]]; then
+          MARK=logo
+          MARK_FLAG=(--mark logo)
+        fi
+        swift scripts/render-icon.swift "${MARK_FLAG[@]}" --composer "$OUT/composer-$MARK"
+        ;;
       --rrggbb)
         cat <<'EOF'
 0f766e  deep teal, the OnetimePad default (complement of the ember accent)
@@ -188,7 +197,7 @@ EOF
         build_scout
         ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -200,7 +209,7 @@ EOF
       --sweep) build_sweep "$2" ;;
       --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -218,12 +227,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac
