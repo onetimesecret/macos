@@ -15,8 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   placement setting is gone: placement follows the layout, and the
   stored `showsPagesDownSide` key is removed at launch. Someone who had
   Slots with pages down the side now sees Tabs along the bottom. This
-  replaces D-26's two settings; the 2026-0915 decision record is not
-  yet amended.
+  replaces D-26's two settings; ADR-0037 records the change.
 
 - **⌃⌥Space registers exclusively, and a failed registration is
   explained** (app 0.26.0). When another app, or another copy of
