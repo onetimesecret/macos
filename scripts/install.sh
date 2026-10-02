@@ -133,10 +133,18 @@ install_bundle() { # <app name>
 # OnetimePad in Launchpad and Spotlight, over state the new id cannot
 # read. It goes only after it has quit: quit_installed exits rather
 # than return when the app will not go, and we never remove a live app.
-migrate_legacy_bundle() { # <legacy app name>
-  local name="$1"
+#
+# The local lane later installed as OnetimePad.app, which is also the
+# name a TestFlight install takes. That bundle goes only when it carries
+# this lane's id, so a TestFlight copy at the same path is left alone.
+migrate_legacy_bundle() { # <legacy app name> [required bundle id]
+  local name="$1" id="${2:-}"
   local legacy="$APP_DEST/$name.app"
   [[ -d "$legacy" ]] || return 0
+  if [[ -n "$id" ]] &&
+    [[ "$(plutil -extract CFBundleIdentifier raw "$legacy/Contents/Info.plist" 2>/dev/null)" != "$id" ]]; then
+    return 0
+  fi
   quit_installed "$name"
   echo "==> Removing legacy $legacy (this app is now $BUILD_APP_NAME.app)"
   rm -rf "$legacy"
@@ -145,6 +153,7 @@ migrate_legacy_bundle() { # <legacy app name>
 quit_installed "$BUILD_APP_NAME"
 install_bundle "$BUILD_APP_NAME"
 migrate_legacy_bundle CompanionBackdrop
+migrate_legacy_bundle "$PRODUCTION_APP_NAME" "$BUILD_BUNDLE_ID"
 
 if [[ "$NO_LAUNCH" == 0 ]]; then
   if ((ALLOW_CAPTURE)); then
