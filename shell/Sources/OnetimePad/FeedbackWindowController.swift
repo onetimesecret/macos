@@ -150,7 +150,7 @@ final class FeedbackWindowController: NSObject {
 private struct FeedbackView: View {
     @ObservedObject var draft: FeedbackDraft
     let close: () -> Void
-    let export: (DiagnosticsReport, @escaping (Bool) -> Void) -> Void
+    let export: (DiagnosticsReport, @escaping @MainActor (Bool) -> Void) -> Void
     @State private var exportResult: String?
 
     var body: some View {
@@ -246,23 +246,21 @@ enum DiagnosticsActions {
         NSPasteboard.general.setString(report.summary, forType: .string)
     }
 
+    /// The save panel and any error both arrive as sheets on `window`.
+    /// `completion` hears the outcome once the last of them has gone, so
+    /// a caller is never told the export finished while its alert is
+    /// still up.
     static func export(
         _ report: DiagnosticsReport, attachedTo window: NSWindow,
-        completion: @escaping (Bool) -> Void
+        completion: @escaping @MainActor (Bool) -> Void
     ) {
         let panel = savePanel()
         panel.beginSheetModal(for: window) { response in
             MainActor.assumeIsolated {
                 guard response == .OK, let url = panel.url else { completion(false); return }
-                do {
-                    try report.details.write(to: url, atomically: true, encoding: .utf8)
-                    completion(true)
-                } catch {
-                    let alert = NSAlert()
-                    alert.messageText = "Could not export diagnostics"
-                    alert.informativeText = error.localizedDescription
-                    alert.beginSheetModal(for: window)
-                    completion(false)
+                guard let alert = write(report, to: url) else { completion(true); return }
+                alert.beginSheetModal(for: window) { _ in
+                    MainActor.assumeIsolated { completion(false) }
                 }
             }
         }
@@ -277,20 +275,30 @@ enum DiagnosticsActions {
         return panel
     }
 
+    /// The same export with no window to hang it on: the panel and any
+    /// error run app modal instead.
     @discardableResult
     static func export(_ report: DiagnosticsReport) -> Bool {
         let panel = savePanel()
         guard ModalSession.run({ panel.runModal() }) == .OK, let url = panel.url else { return false }
+        guard let alert = write(report, to: url) else { return true }
+        ModalSession.run { alert.runModal() }
+        return false
+    }
+
+    /// The one write both exports make. Nil when the report is on disk;
+    /// otherwise the alert that says why it is not, for the caller to
+    /// present as a sheet or app modal, whichever it is running.
+    private static func write(_ report: DiagnosticsReport, to url: URL) -> NSAlert? {
         do {
             try report.details.write(to: url, atomically: true, encoding: .utf8)
-            return true
+            return nil
         } catch {
             let alert = NSAlert()
             alert.messageText = "Could not export diagnostics"
             alert.informativeText = error.localizedDescription
             alert.addButton(withTitle: "OK")
-            ModalSession.run { alert.runModal() }
-            return false
+            return alert
         }
     }
 }
