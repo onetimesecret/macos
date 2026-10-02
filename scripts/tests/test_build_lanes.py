@@ -15,8 +15,8 @@ SIGNING_VARIABLES = (
 )
 PREFIXES = ("DEV_", "LOCAL_", "APP_STORE_")
 SELECTION = (
-    'printf "%s|%s|%s|%s|%s|%s\\n" "$CONFIG" "$BUILD_BUNDLE_ID" '
-    '"$CODESIGN_IDENTITY" "$INSTALLER_IDENTITY" '
+    'printf "%s|%s|%s|%s|%s|%s|%s\\n" "$CONFIG" "$BUILD_BUNDLE_ID" '
+    '"$BUILD_APP_NAME" "$CODESIGN_IDENTITY" "$INSTALLER_IDENTITY" '
     '"$PROVISIONING_PROFILE" "$PROFILE_CLASS"'
 )
 
@@ -73,9 +73,9 @@ class BuildLaneTests(unittest.TestCase):
         # App Store lane keeps one.
         self.write_every_environment()
         expected = {
-            "dev": "debug|dev.onetimesecret.pad.debug|dev-file||dev-file|development",
-            "local": "release|dev.onetimesecret.pad|local-file||local-file|development",
-            "app-store": "release|com.onetimesecret.pad|staging-file|staging-file|staging-file|app-store",
+            "dev": "debug|dev.onetimesecret.pad.debug|OnetimePad Debug|dev-file||dev-file|development",
+            "local": "release|dev.onetimesecret.pad|OnetimePad Local|local-file||local-file|development",
+            "app-store": "release|com.onetimesecret.pad|OnetimePad|staging-file|staging-file|staging-file|app-store",
         }
         for lane, values in expected.items():
             with self.subTest(lane=lane):

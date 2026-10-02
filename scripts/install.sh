@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # The local lane: build the release bundle as dev.onetimesecret.pad, sign
-# it, and install it to APP_DEST (default /Applications). The installed copy
+# it, and install it to APP_DEST (default /Applications) as
+# "OnetimePad Local.app", beside a TestFlight OnetimePad.app rather than
+# over it. The installed copy
 # runs from /Applications rather than from .build/ or dist/, so
 # rebuilds in the repo never kill it. See
 # environments/example/.env.example for pinning a signing identity
@@ -136,20 +138,20 @@ migrate_legacy_bundle() { # <legacy app name>
   local legacy="$APP_DEST/$name.app"
   [[ -d "$legacy" ]] || return 0
   quit_installed "$name"
-  echo "==> Removing legacy $legacy (this app is now OnetimePad.app)"
+  echo "==> Removing legacy $legacy (this app is now $BUILD_APP_NAME.app)"
   rm -rf "$legacy"
 }
 
-quit_installed OnetimePad
-install_bundle OnetimePad
+quit_installed "$BUILD_APP_NAME"
+install_bundle "$BUILD_APP_NAME"
 migrate_legacy_bundle CompanionBackdrop
 
 if [[ "$NO_LAUNCH" == 0 ]]; then
   if ((ALLOW_CAPTURE)); then
     echo "==> Launching installed app (screen capture allowed)"
-    open --env COMPANION_ALLOW_CAPTURE=1 "$APP_DEST/OnetimePad.app"
+    open --env COMPANION_ALLOW_CAPTURE=1 "$APP_DEST/$BUILD_APP_NAME.app"
   else
     echo "==> Launching installed app"
-    open "$APP_DEST/OnetimePad.app"
+    open "$APP_DEST/$BUILD_APP_NAME.app"
   fi
 fi

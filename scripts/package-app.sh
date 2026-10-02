@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Package the app as a real .app bundle: dist/OnetimePad.app.
+# Package the app as a real .app bundle under dist/, named per lane
+# (scripts/build-lanes.sh): "OnetimePad Debug.app" for --debug,
+# "OnetimePad Local.app" for the local lane, and OnetimePad.app only for
+# --app-store, so no development bundle takes the TestFlight copy's name.
 # A bare `swift run` binary has no CFBundleIdentifier, so macOS cannot
 # address it: TCC grants don't stick, per-app pickers cannot list it,
 # and LaunchServices registers it as a nameless process. The bundle is
@@ -21,8 +24,8 @@
 # COMPANION_ALLOW_CAPTURE set, which also seeds it on. `open` does not
 # forward the caller's environment; pass the variable explicitly, and to
 # either configuration:
-#   open --env COMPANION_ALLOW_CAPTURE=1 dist/OnetimePad.app
-#   open --env COMPANION_ALLOW_CAPTURE=1 /Applications/OnetimePad.app
+#   open --env COMPANION_ALLOW_CAPTURE=1 "dist/OnetimePad Debug.app"
+#   open --env COMPANION_ALLOW_CAPTURE=1 "/Applications/OnetimePad Local.app"
 # Both entry points take --allow-capture, which is the same launch
 # without the incantation: scripts/dev.sh --allow-capture and
 # scripts/install.sh --allow-capture.
@@ -43,8 +46,9 @@
 # the documented login keychain fallback.
 #
 # Before signing, the assembled bundle is hashed into
-# dist/OnetimePad.presig.sha256, the reproducible pre-signature
-# artifact ADR-0012 publishes.
+# dist/<bundle name>.presig.sha256 (dist/OnetimePad.presig.sha256 for
+# --app-store), the reproducible pre-signature artifact ADR-0012
+# publishes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -315,7 +319,7 @@ if [[ "$CONFIG" == "release" ]]; then
   fi
 fi
 
-APP=dist/OnetimePad.app
+APP="dist/$BUILD_APP_NAME.app"
 echo "==> Assembling $APP (App $VERSION, FFI $FFI_VERSION, Core $CORE_VERSION, $CONFIG)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -638,5 +642,5 @@ if ((APP_STORE_MODE)); then
   fi
   echo "Built $APP and $PKG (App Store build $APP_STORE_BUILD_NUMBER)."
 else
-  echo "Built $APP. Launch with: open $APP"
+  echo "Built $APP. Launch with: open \"$APP\""
 fi

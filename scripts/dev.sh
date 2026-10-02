@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The dev lane: rebuild whatever is stale, package the debug bundle,
-# and launch it from dist/. The debug build takes its own bundle id
+# and launch it from dist/ as "OnetimePad Debug.app". The debug build
+# takes its own bundle id
 # (dev.onetimesecret.pad.debug), a "Dev" display name and the black app icon
 # (ADR-0012), so it runs
 # beside the installed copy without contending for the menu bar,
@@ -34,6 +35,8 @@
 # runner: scripts/sandbox-file-access-probe.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+source scripts/build-lanes.sh
 
 NO_LAUNCH=0
 # The dev lane defaults to allowing screen capture so scripted runs and
@@ -85,7 +88,7 @@ running_from() { # <absolute path>
   pgrep -f "$(printf '%s' "$1" | sed 's/[][\.|$(){}?+*^]/\\&/g')" >/dev/null
 }
 
-DIST_APP="$PWD/dist/OnetimePad.app"
+DIST_APP="$PWD/dist/$DEV_APP_NAME.app"
 if running_from "$DIST_APP/Contents/MacOS"; then
   echo "==> Asking the copy running from dist/ to quit"
   quit_err=""

@@ -21,6 +21,12 @@
 PRODUCTION_BUNDLE_ID="com.onetimesecret.pad"
 LOCAL_BUNDLE_ID="dev.onetimesecret.pad"
 DEV_BUNDLE_ID="dev.onetimesecret.pad.debug"
+# Bundle file names. Only App Store builds take the plain name, so a local
+# install never replaces /Applications/OnetimePad.app, the path a TestFlight
+# install occupies, and a debug bundle never reads as either in Finder.
+PRODUCTION_APP_NAME="OnetimePad"
+LOCAL_APP_NAME="OnetimePad Local"
+DEV_APP_NAME="OnetimePad Debug"
 ENVIRONMENTS_DIR="${ONETIMEPAD_ENVIRONMENTS_DIR:-$HOME/.local/appledev/CompanionApp/environments}"
 
 SIGNING_VARIABLES=(CODESIGN_IDENTITY INSTALLER_IDENTITY PROVISIONING_PROFILE)
@@ -89,18 +95,21 @@ select_build_lane() { # <dev|local|app-store>
     dev)
       CONFIG="debug"
       BUILD_BUNDLE_ID="$DEV_BUNDLE_ID"
+      BUILD_APP_NAME="$DEV_APP_NAME"
       INSTALLER_IDENTITY=""
       PROFILE_CLASS="development"
       ;;
     local)
       CONFIG="release"
       BUILD_BUNDLE_ID="$LOCAL_BUNDLE_ID"
+      BUILD_APP_NAME="$LOCAL_APP_NAME"
       INSTALLER_IDENTITY=""
       PROFILE_CLASS="development"
       ;;
     app-store)
       CONFIG="release"
       BUILD_BUNDLE_ID="$PRODUCTION_BUNDLE_ID"
+      BUILD_APP_NAME="$PRODUCTION_APP_NAME"
       PROFILE_CLASS="app-store"
       ;;
   esac
