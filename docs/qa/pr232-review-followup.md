@@ -93,3 +93,30 @@ The initial new date fixture used the wrong wire-key spelling; correcting it and
 asserting the decoded offsets/timestamps preceded the final passing run.
 No Rust or packaging implementation changed in this round, so their preceding
 results above were not rerun. `git diff --check` and ADR structural lint passed.
+
+## Last Greptile check
+
+The last check started from a clean checkout of `codex/pad-context-implementation`
+in `onetimesecret/macos`, matching PR #232 head
+`a7210c0514cecc98c31f2120b7263d1a7c0189c8` and base `main`.
+Greptile's summary was updated at **2026-10-02 06:13:14 UTC**
+(2026-10-01 locally). GitHub marked the earlier five threads resolved; the
+summary and inline threads identified two remaining findings:
+
+| Feedback | Assessment and resolution |
+| --- | --- |
+| [Shortcut bypasses another window's sheet](https://github.com/onetimesecret/macos/pull/232#discussion_r4163209132) | Valid and fixed. The shortcut monitor inspects all app windows for an attached sheet or a sheet parent, matching the application-context route. A real AppKit multiwindow regression verifies suspension for either sheet representation and resumption after dismissal. |
+| [Midnight resets checkpoint order](https://github.com/onetimesecret/macos/pull/232#discussion_r4163300085) | Valid and fixed. The shell brackets the core roster read and validates one calendar day, timezone/offset and forward wall-clock interval. A consistent read provides a shared reference for date lookup, sorting and toggling. An ambiguous read defers date-preference pruning and checkpoint toggles until a consistent refresh; tab ownership still reconciles. Tests cover crossing midnight, preference retention, later normal pruning, timezone changes and backwards clock steps. |
+
+These are observations of the changes and test results, not newly accepted
+persistence or compatibility guarantees. The full Swift gate passed **1,530 tests**
+(296 executable-target and 1,234 shared-target tests). This includes two new model
+tests and replacement of the earlier boolean-only shortcut test with the AppKit
+window regression. ADR structural lint passed for 39 records and
+`git diff --check` passed. No Rust or packaging implementation changed.
+
+Independent review caught and corrected an initial fallback that also bypassed
+the independent day-sort direction. The final fallback keeps that direction and
+uses chronological checkpoint order while no date reference is available.
+The full Swift suite passed again after that correction. Final independent review
+passed both fixes and found no remaining actionable issue in this patch.

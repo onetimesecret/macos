@@ -91,9 +91,15 @@ record the existing slot shortcuts and opened files before enabling it.
 3. Hold Command to reveal assignments, release it, and move focus to another
    app. Check hints clear and Command-0 always selects Scratch while the
    experiment is enabled. Test user keymap overrides and the disabled mode.
+   Leave a pad-name sheet open in one app window, focus another app window,
+   and press a Command digit. Verify the active pad stays unchanged until the
+   sheet is dismissed, then verify the shortcut works again.
 4. Change overall day direction, then change checkpoints within just one day.
    Check the rail and paper agree while another day's order stays unchanged.
    Switch pads and restart to check preference scoping.
+   With a controlled clock, span local midnight during a roster refresh. Verify
+   the saved checkpoint direction survives the ambiguous refresh and applies to
+   the same calendar date after the next consistent refresh.
 5. Verify Timeline stays above Files as files are opened and closed, and test
    narrow window layout, keyboard reachability, and menu closing. With VoiceOver,
    verify each sort button announces its subject and current order as its value,
