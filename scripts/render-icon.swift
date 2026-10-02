@@ -16,6 +16,8 @@
 // interesting crops at each zoom level by scoring corner and
 // intersection density instead of walking a blind grid, keeping
 // perUnit picks for every unit of zoom. `--mark` applies to all four.
+// `--composer <output-directory>` exports a transparent 1024px foreground
+// and a separate fading cast shadow for arranging in Icon Composer.
 
 import AppKit
 
@@ -736,6 +738,88 @@ func render(px: Int, style: Style, base: NSColor, mark: Mark) -> NSBitmapImageRe
     return rep
 }
 
+/// Separate full-canvas foreground and cast-shadow artwork for Icon Composer.
+/// Composer supplies the background, icon mask, and foreground glass material.
+func writeComposerLayer(mark: Mark, to outDir: URL) {
+    let rep = makeBitmap(width: 1024, height: 1024)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSColor.clear.setFill()
+    NSRect(x: 0, y: 0, width: 1024, height: 1024).fill(using: .copy)
+    let tile = NSRect(x: 100, y: 100, width: 824, height: 824)
+    mark.draw(.white, tile, markScale, .zero, .zero)
+    NSGraphicsContext.restoreGraphicsState()
+    guard let png = rep.representation(using: .png, properties: [:]) else {
+        fail("could not encode the Composer foreground")
+    }
+    // A separate art-directed cast shadow, kept below the glass foreground.
+    // Sweep southeast, then fade the union rather than stacking translucent ink.
+    let shadow = makeBitmap(width: 1024, height: 1024)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: shadow)
+    NSColor.clear.setFill()
+    NSRect(x: 0, y: 0, width: 1024, height: 1024).fill(using: .copy)
+    let cg = NSGraphicsContext.current!.cgContext
+    cg.beginTransparencyLayer(auxiliaryInfo: nil)
+    for distance in 0...420 {
+        let offset = CGFloat(distance) / sqrt(2)
+        mark.draw(.black, tile, markScale, NSPoint(x: offset, y: -offset), .zero)
+    }
+    let ramp = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+        colors: [CGColor(gray: 1, alpha: 0.24), CGColor(gray: 1, alpha: 0)] as CFArray,
+        locations: [0, 1])!
+    cg.setBlendMode(.destinationIn)
+    cg.drawLinearGradient(ramp,
+        start: CGPoint(x: tile.midX, y: tile.midY),
+        end: CGPoint(x: tile.midX + 420 / sqrt(2), y: tile.midY - 420 / sqrt(2)),
+        options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+    cg.setBlendMode(.normal)
+    cg.endTransparencyLayer()
+    NSGraphicsContext.restoreGraphicsState()
+    // A small separable blur softens the silhouette without requiring a GPU.
+    // Only alpha is blurred because this layer is pure black: all RGB channels
+    // are zero, so changing alpha preserves its premultiplied representation.
+    // A colored shadow would need its premultiplied RGB channels blurred too.
+    let pixels = shadow.bitmapData!
+    let stride = shadow.bytesPerRow
+    var alpha = [Double](repeating: 0, count: 1024 * 1024)
+    for y in 0..<1024 { for x in 0..<1024 {
+        alpha[y * 1024 + x] = Double(pixels[y * stride + x * 4 + 3])
+    }}
+    for horizontal in [true, false] {
+        var softened = alpha
+        for y in 0..<1024 { for x in 0..<1024 {
+            var sum = 0.0
+            for delta in -3...3 {
+                let sx = horizontal ? x + delta : x
+                let sy = horizontal ? y : y + delta
+                if sx >= 0 && sx < 1024 && sy >= 0 && sy < 1024 {
+                    sum += alpha[sy * 1024 + sx]
+                }
+            }
+            softened[y * 1024 + x] = sum / 7
+        }}
+        alpha = softened
+    }
+    for y in 0..<1024 { for x in 0..<1024 {
+        pixels[y * stride + x * 4 + 3] = UInt8(alpha[y * 1024 + x].rounded())
+    }}
+    guard let shadowPNG = shadow.representation(using: .png, properties: [:]) else {
+        fail("could not encode the Composer cast shadow")
+    }
+    do {
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        let shadowURL = outDir.appendingPathComponent("00-\(mark.name)-cast-shadow.png")
+        try shadowPNG.write(to: shadowURL)
+        print(shadowURL.path)
+        let url = outDir.appendingPathComponent("01-\(mark.name)-foreground.png")
+        try png.write(to: url)
+        print(url.path)
+    } catch {
+        fail("writing \(outDir.path): \(error.localizedDescription)")
+    }
+}
+
 func writeIconset(style: Style, base: NSColor, mark: Mark, to outDir: URL) {
     // iconutil's expected members: each point size at 1x and 2x,
     // sharing pixel renderings where they coincide.
@@ -1001,6 +1085,11 @@ func takeMark(_ arguments: [String]) -> (mark: Mark, rest: [String]) {
 
 let (mark, arguments) = takeMark(CommandLine.arguments)
 
+if arguments.count == 3, arguments[1] == "--composer" {
+    writeComposerLayer(mark: mark, to: URL(fileURLWithPath: arguments[2], isDirectory: true))
+    exit(0)
+}
+
 if arguments.count == 2, arguments[1] == "--list" {
     for mark in marks {
         print("mark \(mark.name)\t\(mark.summary)")
@@ -1059,6 +1148,7 @@ guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
     let treatmentNames = shadowTreatments.map(\.name).joined(separator: "|")
     fail("""
     usage: swift render-icon.swift [--mark <mark>] <style> <rrggbb> <output.iconset>
+           swift render-icon.swift [--mark <mark>] --composer <output-directory>
            swift render-icon.swift [--mark <mark>] --sheet <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --shadows <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --sweep <zoom> <rrggbb> <output.png> [grid]

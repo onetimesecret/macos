@@ -333,6 +333,10 @@ private struct PrimaryEditorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if pages.pads.isEnabled {
+                PadPickerView(model: pages)
+                Divider()
+            }
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
                     if pages.showsTimeUnits {

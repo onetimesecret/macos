@@ -19,7 +19,7 @@
 //! The excerpt on a chip is mechanical; counts are counts; detection
 //! never returns.
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
@@ -27,15 +27,20 @@ use crate::ledger::SizeClass;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
-/// A random 128-bit item identifier (a version 4 UUID), minted at
-/// creation. The sequential [`SheetId`] and [`ChipId`] counters stay for
+/// A stable 128-bit item identifier. Newly minted values are version 7 UUIDs;
+/// restored legacy version 4 values retain their original bytes. The
+/// sequential [`SheetId`] and [`ChipId`] counters stay for
 /// internal ordering; this is the only identifier that may appear in the
-/// ledger or in any persisted artifact (ADR-0012).
+/// ledger or in any persisted artifact (ADR-0012; `UUIDv7` follow-up in ADR-0039).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId([u8; 16]);
 
 impl ItemId {
-    /// Mint a fresh identity from the operating system CSPRNG.
+    /// Mint a `UUIDv7` from Unix milliseconds and the operating system CSPRNG.
+    /// The timestamp is visible in the ID; the remaining 74 bits are random.
+    /// Same-millisecond order and clock-rollback monotonicity are not promised.
+    /// A pre-epoch clock uses timestamp zero; a clock beyond the 48-bit field
+    /// uses its maximum value. Neither clock condition aborts identity minting.
     ///
     /// Panicking when the CSPRNG is unavailable is deliberate: a fallback
     /// identifier would be predictable, and an unpredictable identity is
@@ -46,9 +51,23 @@ impl ItemId {
     pub fn random() -> Self {
         let mut bytes = [0u8; 16];
         getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available");
-        // Version 4 in the high nibble of byte 6, RFC 4122 variant in the
-        // top two bits of byte 8.
-        bytes[6] = (bytes[6] & 0x0F) | 0x40;
+        Self::version_seven_at(SystemTime::now(), bytes)
+    }
+
+    fn version_seven_at(time: SystemTime, bytes: [u8; 16]) -> Self {
+        let millis = time
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        Self::version_seven(millis, bytes)
+    }
+
+    fn version_seven(millis: u128, mut bytes: [u8; 16]) -> Self {
+        let millis = millis.min((1_u128 << 48) - 1);
+        // RFC 9562 §5.7: 48-bit big-endian timestamp, version 7 and
+        // RFC variant, with all other bits drawn from the CSPRNG.
+        bytes[..6].copy_from_slice(&millis.to_be_bytes()[10..]);
+        bytes[6] = (bytes[6] & 0x0F) | 0x70;
         bytes[8] = (bytes[8] & 0x3F) | 0x80;
         Self(bytes)
     }
@@ -256,7 +275,7 @@ impl SealedChip {
         self.id
     }
 
-    /// The random item identity, minted when this chip was sealed. The
+    /// The item identity, minted when this chip was sealed. The
     /// only identifier of this chip that may leave the process.
     #[must_use]
     pub fn uuid(&self) -> ItemId {
@@ -401,7 +420,7 @@ impl Sheet {
         self.id
     }
 
-    /// The random item identity, minted when this page was created. The
+    /// The item identity, minted when this page was created. The
     /// only identifier of this page that may leave the process.
     #[must_use]
     pub fn uuid(&self) -> ItemId {
@@ -730,7 +749,7 @@ impl Tab {
         self.id
     }
 
-    /// The random item identity, minted when this tab was opened.
+    /// The item identity, minted when this tab was opened.
     #[must_use]
     pub fn uuid(&self) -> ItemId {
         self.uuid
@@ -1170,15 +1189,42 @@ mod tests {
     }
 
     #[test]
-    fn item_ids_are_random_version_four() {
+    fn item_ids_are_version_seven_with_current_unix_milliseconds() {
         let mut seen = std::collections::HashSet::new();
         for _ in 0..1000 {
+            let before = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
             let id = ItemId::random();
+            let after = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
             let bytes = *id.as_bytes();
-            assert_eq!(bytes[6] >> 4, 0x4, "version nibble");
+            let mut timestamp = [0u8; 8];
+            timestamp[2..].copy_from_slice(&bytes[..6]);
+            let millis = u128::from(u64::from_be_bytes(timestamp));
+            assert!((before..=after).contains(&millis), "Unix milliseconds");
+            assert_eq!(bytes[6] >> 4, 0x7, "version nibble");
             assert_eq!(bytes[8] >> 6, 0b10, "variant bits");
             assert!(seen.insert(bytes), "a minted identity repeated");
         }
+    }
+
+    #[test]
+    fn item_id_v7_matches_rfc_9562_vector_and_orders_distinct_milliseconds() {
+        let random = [
+            0, 0, 0, 0, 0, 0, 0xcc, 0xc3, 0x18, 0xc4, 0xdc, 0x0c, 0x0c, 0x07, 0x39, 0x8f,
+        ];
+        let id = ItemId::version_seven(0x017f_22e2_79b0, random);
+        assert_eq!(id.to_string(), "017f22e2-79b0-7cc3-98c4-dc0c0c07398f");
+        let later = ItemId::version_seven(0x017f_22e2_79b1, [0; 16]);
+        assert!(id < later);
+        // Restoring an older UUIDv4 retains every original bit.
+        let mut legacy = [0x44; 16];
+        legacy[8] = 0x84;
+        assert_eq!(ItemId::from_bytes(legacy).as_bytes(), &legacy);
     }
 
     #[test]
@@ -1196,6 +1242,37 @@ mod tests {
                 .all(|c| c == '-' || c.is_ascii_digit() || ('a'..='f').contains(&c))
         );
         assert_eq!(ItemId::from_bytes(*id.as_bytes()), id);
+    }
+
+    #[test]
+    fn item_id_clock_boundaries_clamp_without_changing_random_bits() {
+        let random = [0xAB; 16];
+        let earliest = ItemId::version_seven_at(UNIX_EPOCH - Duration::from_millis(1), random);
+        let epoch = ItemId::version_seven_at(UNIX_EPOCH, random);
+        assert_eq!(earliest, epoch);
+        assert_eq!(&earliest.as_bytes()[..6], &[0; 6]);
+        let submillisecond =
+            ItemId::version_seven_at(UNIX_EPOCH + Duration::from_nanos(999_999), random);
+        assert_eq!(submillisecond, epoch);
+        let one_millisecond =
+            ItemId::version_seven_at(UNIX_EPOCH + Duration::from_millis(1), random);
+        assert_eq!(&one_millisecond.as_bytes()[..6], &[0, 0, 0, 0, 0, 1]);
+
+        let maximum_millis = (1_u64 << 48) - 1;
+        let maximum =
+            ItemId::version_seven_at(UNIX_EPOCH + Duration::from_millis(maximum_millis), random);
+        let beyond = ItemId::version_seven_at(
+            UNIX_EPOCH + Duration::from_millis(maximum_millis + 1),
+            random,
+        );
+        assert_eq!(beyond, maximum);
+        assert_eq!(ItemId::version_seven(u128::MAX, random), maximum);
+        assert_eq!(&maximum.as_bytes()[..6], &[0xFF; 6]);
+        // Clamping changes only the timestamp; version/variant masking and
+        // the supplied random bits remain identical at both bounds.
+        assert_eq!(&earliest.as_bytes()[6..], &maximum.as_bytes()[6..]);
+        assert_eq!(earliest.as_bytes()[6] >> 4, 7);
+        assert_eq!(earliest.as_bytes()[8] >> 6, 2);
     }
 
     #[test]

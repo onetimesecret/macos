@@ -148,10 +148,15 @@ public struct ResolvedKeymap: Sendable {
 
     public let bindings: [Binding]
     public let diagnostics: [KeymapDiagnostic]
+    /// Explicit `null` declarations remain distinguishable from chords that
+    /// have never been assigned, for opt-in command layers such as pad picking.
+    public let explicitlyUnbound: [KeymapContext: Set<Keystroke>]
 
-    public init(bindings: [Binding], diagnostics: [KeymapDiagnostic]) {
+    public init(bindings: [Binding], diagnostics: [KeymapDiagnostic],
+                explicitlyUnbound: [KeymapContext: Set<Keystroke>] = [:]) {
         self.bindings = bindings
         self.diagnostics = diagnostics
+        self.explicitlyUnbound = explicitlyUnbound
     }
 
     /// The empty map, which is what a build with an unreadable default
@@ -303,7 +308,8 @@ public enum Keymap {
         if let overrideFailure {
             resolved = ResolvedKeymap(
                 bindings: resolved.bindings,
-                diagnostics: [.fileRejected(.userOverride, overrideFailure)] + resolved.diagnostics
+                diagnostics: [.fileRejected(.userOverride, overrideFailure)] + resolved.diagnostics,
+                explicitlyUnbound: resolved.explicitlyUnbound
             )
         }
         return resolved
@@ -363,7 +369,8 @@ public enum Keymap {
     ) -> ResolvedKeymap {
         ResolvedKeymap(
             bindings: previous?.bindings ?? [],
-            diagnostics: diagnostics + (previous?.diagnostics ?? [])
+            diagnostics: diagnostics + (previous?.diagnostics ?? []),
+            explicitlyUnbound: previous?.explicitlyUnbound ?? [:]
         )
     }
 
@@ -376,6 +383,7 @@ public enum Keymap {
     ) -> ResolvedKeymap {
         var diagnostics = diagnostics
         var table: [KeymapContext: [Keystroke: ResolvedKeymap.Binding]] = [:]
+        var explicitlyUnbound: [KeymapContext: Set<Keystroke>] = [:]
 
         for (source, sections) in sources {
             for section in sections {
@@ -438,6 +446,9 @@ public enum Keymap {
 
                     guard let command else {
                         var unbound = false
+                        for context in contexts {
+                            explicitlyUnbound[context, default: []].insert(keystroke)
+                        }
                         for context in contexts where table[context]?[keystroke] != nil {
                             table[context]?[keystroke] = nil
                             unbound = true
@@ -450,6 +461,7 @@ public enum Keymap {
                     }
 
                     for context in contexts {
+                        explicitlyUnbound[context]?.remove(keystroke)
                         // A section that restates a chord already
                         // pointed at this command changes nothing, and
                         // must take nothing away either: an override
@@ -498,7 +510,8 @@ public enum Keymap {
                     : $0.context.rawValue < $1.context.rawValue
             }
 
-        return ResolvedKeymap(bindings: bindings, diagnostics: diagnostics)
+        return ResolvedKeymap(bindings: bindings, diagnostics: diagnostics,
+                              explicitlyUnbound: explicitlyUnbound)
     }
 }
 

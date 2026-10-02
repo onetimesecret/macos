@@ -179,6 +179,11 @@ struct BackdropRootView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 32)
             Divider()
+            if pages.pads.isEnabled {
+                PadPickerView(model: pages)
+                    .disabled(!raised)
+                Divider()
+            }
             // Placement follows the layout: Tabs along the bottom,
             // Timeline down the side. The content view answers
             // organization; this branch answers only placement.

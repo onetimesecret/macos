@@ -48,9 +48,9 @@ public struct TabStripView: View {
             // been: the same views in the same order with the same
             // spacing, and `stripGroupsAreAbsentWithNoFileOpen` holds
             // the model side of that.
-            if !model.openFiles.isEmpty {
+            if !model.navigationFiles.isEmpty {
                 GroupLabel(text: "FILES")
-                ForEach(model.openFiles) { file in
+                ForEach(model.navigationFiles) { file in
                     FileTab(
                         file: file,
                         selected: model.selectedFile == file.id && !model.showingLedger,
@@ -66,7 +66,7 @@ public struct TabStripView: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 2) {
-                        ForEach(model.tabs) { sheet in
+                        ForEach(model.navigationTabs) { sheet in
                             SheetTab(
                                 sheet: sheet,
                                 selected: model.selection == sheet.id && !model.showingLedger,
@@ -127,10 +127,10 @@ public struct TabStripView: View {
     /// whose midpoint the pointer has passed. Midpoints, not edges, keep
     /// the order stable while the strip re-lays-out mid-drag.
     private func reorder(dragged: UInt64, pointerX: CGFloat) {
-        let target = model.tabs
+        let target = model.navigationTabs
             .filter { $0.id != dragged }
             .count { tabFrames[$0.id].map { $0.midX < pointerX } ?? false }
-        let current = model.tabs.firstIndex { $0.id == dragged }
+        let current = model.navigationTabs.firstIndex { $0.id == dragged }
         if let current, target != current {
             model.move(dragged, to: target)
         }
@@ -236,9 +236,9 @@ public struct TimeStripView: View {
         let selected = TimeRailView.selectedBucket(
             projection: projection, selection: model.selection)
         HStack(spacing: 2) {
-            if !model.openFiles.isEmpty {
+            if !model.navigationFiles.isEmpty {
                 GroupLabel(text: "FILES")
-                ForEach(model.openFiles) { file in
+                ForEach(model.navigationFiles) { file in
                     FileTab(
                         file: file,
                         selected: model.selectedFile == file.id && !model.showingLedger,
@@ -255,9 +255,9 @@ public struct TimeStripView: View {
                             unit: unit,
                             selected: !model.showingLedger && model.selectedFile == nil
                                 && unit.bucket == selected,
-                            chord: TimeRailView.chord(
+                            chord: model.pads.isEnabled ? nil : TimeRailView.chord(
                                 forRowAt: TimeRailView.targetIndex(
-                                    forDay: index, openFileCount: model.openFiles.count),
+                                    forDay: index, openFileCount: model.navigationFiles.count),
                                 keymap: model.keymap),
                             model: model
                         )

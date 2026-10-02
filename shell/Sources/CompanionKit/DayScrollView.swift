@@ -319,6 +319,7 @@ final class DayStackView: NSView {
         let pages: [[UInt64]]
         let selected: UInt64?
         let clipWidth: CGFloat
+        let padExperiment: Bool
     }
 
     let model: PageModel
@@ -530,7 +531,8 @@ final class DayStackView: NSView {
             buckets: projection.units.map(\.bucket),
             pages: projection.units.map(\.pageIDs),
             selected: selectedPage,
-            clipWidth: clipWidth
+            clipWidth: clipWidth,
+            padExperiment: model.pads.isEnabled
         )
         // The typeface can change under a roll that is otherwise still:
         // the editor's page is restyled here, and the quiet days follow
@@ -631,7 +633,8 @@ final class DayStackView: NSView {
                 header.show(
                     dayText: DayHeaderView.dayText(spokenLabel: unit.spokenLabel, stamp: nil),
                     spokenLabel: unit.spokenLabel,
-                    mark: DayHeaderView.mark(isFirstOnRoll: isFirstOnRoll, isFirstOfDay: true),
+                    mark: model.pads.isEnabled && isFirstOnRoll ? .hairline :
+                        DayHeaderView.mark(isFirstOnRoll: isFirstOnRoll, isFirstOfDay: true),
                     summary: nil
                 )
                 // The empty place is where the surface stands only by
@@ -665,7 +668,7 @@ final class DayStackView: NSView {
                         spokenLabel: unit.spokenLabel, stamp: stamps[index], firstOfDay: firstOfDay
                     ),
                     spokenLabel: unit.spokenLabel,
-                    mark: DayHeaderView.mark(
+                    mark: model.pads.isEnabled && isFirstOnRoll ? .hairline : DayHeaderView.mark(
                         isFirstOnRoll: isFirstOnRoll && firstOfDay, isFirstOfDay: firstOfDay
                     ),
                     summary: summary
@@ -1009,6 +1012,7 @@ final class DayStackView: NSView {
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
+        if pendingTodayAnchor { scrollToDayZero() }
     }
 
     // MARK: What the rail draws behind the days
@@ -1171,15 +1175,26 @@ final class DayStackView: NSView {
 
     // MARK: Anchoring
 
-    /// Day 0 is the top of the document, and a summon puts the clip back
-    /// on it. Instant and unanimated: there is no anchoring state that
-    /// can be wrong, and nothing to reduce for a reader who asked for
-    /// less motion.
+    /// Summon anchors the Today region even when the experiment displays
+    /// older days above it. A fresh unsized roll waits for its first layout.
+    private var pendingTodayAnchor = false
     func scrollToDayZero() {
         // A summon outranks a place still waiting to be opened on.
         pendingPlace = nil
         guard let scroll = enclosingScrollView else { return }
-        scroll.contentView.scroll(to: .zero)
+        if model.pads.isEnabled {
+            guard let today = rows.first(where: { $0.bucket == 0 }),
+                  !scroll.contentView.bounds.isEmpty else {
+                pendingTodayAnchor = true
+                return
+            }
+            pendingTodayAnchor = false
+            let floor = max(frame.height - scroll.contentView.bounds.height, 0)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(today.header.frame.minY, floor)))
+        } else {
+            pendingTodayAnchor = false
+            scroll.contentView.scroll(to: .zero)
+        }
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
@@ -1216,6 +1231,7 @@ final class DayStackView: NSView {
 
     /// Open the roll on `place` once it can be found.
     func open(at place: RollPlace) {
+        pendingTodayAnchor = false
         pendingPlace = place
     }
 
@@ -1421,6 +1437,8 @@ final class DayHeaderView: NSView {
     /// The page under the slot, which the sync item is addressed to:
     /// enrolment is per page (relay protocol §1), not per slot.
     private var pageID: UInt64?
+    /// Stable page target carried by this checkpoint, used by rail/roll tests.
+    var pageIdentity: UInt64? { pageID }
 
     /// The title the gutter showed when a rename began, or nil while
     /// the title is a label (D-14, issue #172). Its presence is the

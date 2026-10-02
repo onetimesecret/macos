@@ -16,3 +16,14 @@ public enum CompanionLocalization {
         return .main
     }()
 }
+
+/// Explicit bundle lookup for pad UI and formatted accessibility copy.
+public enum CompanionL10n {
+    public static func string(_ key: String) -> String {
+        NSLocalizedString(key, bundle: CompanionLocalization.bundle, comment: "")
+    }
+
+    public static func format(_ key: String, _ arguments: CVarArg...) -> String {
+        String(format: string(key), locale: Locale.current, arguments: arguments)
+    }
+}

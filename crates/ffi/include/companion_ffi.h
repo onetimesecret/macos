@@ -263,6 +263,12 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  * entry per slot, whether or not it holds a page. Free with
  * companion_string_free(). Fields per tab:
  *   id (the TAB's id, what the selection and the keyboard address),
+ *   uuid (string: the TAB's stable ItemId in lowercase hyphenated UUID
+ *     form. It survives restore unchanged while the dense numeric id is
+ *     re-minted. Newly minted identities are UUIDv7: the first 48 bits
+ *     encode Unix milliseconds at creation, clamped to zero for a
+ *     pre-epoch clock or to 2^48-1 beyond that range. Restored legacy
+ *     UUIDv4 identities coexist unchanged and carry no such timestamp),
  *   has_page (bool, false is a slot whose page expired or was never
  *     opened; every clock field below is meaningless then, and the
  *     strip draws the dashed empty treatment instead of a gauge),
