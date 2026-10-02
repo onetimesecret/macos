@@ -23,16 +23,16 @@ not evidence that the native application implements them.
 - [Initial folder-scoped exploration](initial-folder-scoped-exploration.md):
   earlier proposal, retained with its reasoning and references.
 
-The standalone file is copied unchanged from the published output. It retains
-that output's `sandbox="allow-scripts"` iframe and Content Security Policy.
-Opening the standalone file runs third-party scripts: the framed document loads
-Floating UI and Lucide from unpkg.com at pinned versions, without Subresource
-Integrity attributes, and its policy allows `'unsafe-inline'` and
-`'unsafe-eval'`. Without network access the icons and Floating UI tooltips may
-not render. The fragment
-is easier to read and edit;
-regenerate the standalone output through the visualization workflow after a
-change instead of stripping its wrapper. The prototype uses sample locations
+The standalone file is the published output with its remote scripts removed.
+The published output loaded Floating UI and Lucide from unpkg.com at run time.
+The checked-in copy makes no network request: it embeds the twelve Lucide icons
+it uses ([notices](THIRD_PARTY_NOTICES.md)), shows native titles in place of
+the Floating UI tooltips, and narrows both Content Security Policies to inline
+script and style plus `data:` images, with no remote host and no
+`'unsafe-eval'`. It keeps the output's `sandbox="allow-scripts"` iframe. The
+fragment is easier to read and edit; regenerate the standalone output through
+the visualization workflow after a change instead of stripping its wrapper,
+then remove the remote scripts again. The prototype uses sample locations
 and content. It does not read the local filesystem or activate another app.
 
 The timeline sidebar intentionally approximates the real implementation.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>One Pad Picker</title>
 <style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
 </head>
@@ -15,7 +15,7 @@
 &lt;meta charset=&quot;utf-8&quot;&gt;
 &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
 &lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
-&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27;; style-src &#x27;unsafe-inline&#x27;; img-src data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
 &lt;title&gt;One Pad Picker&lt;/title&gt;
 &lt;style&gt;:root {
   color-scheme: light dark;
@@ -1792,8 +1792,14 @@ html&gt;body{padding:0}&lt;/style&gt;
 })();
 &lt;/script&gt;
 
-&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
-&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+// The mockup loads no remote script, so Floating UI is absent and the host
+// tooltip script below returns early. Native titles stand in for it.
+document.addEventListener(&quot;pointerover&quot;, (event) =&gt; {
+  const trigger = event.target.closest?.(&quot;[data-tooltip]&quot;);
+  if (trigger != null) trigger.title = trigger.dataset.tooltip;
+});
+&lt;/script&gt;
 &lt;script&gt;
 (() =&gt; {
   if (window.FloatingUIDOM == null) {
@@ -2361,7 +2367,86 @@ html&gt;body{padding:0}&lt;/style&gt;
     }
   })();
 &lt;/script&gt;
-&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot;&gt;
+// Lucide 1.17.0 subset: the twelve icons this mockup uses, copied from the npm
+// tarball (sha512-icbHK+hG15rWoacjNi3aw+UXHRmZ9Ee1fJ6ZSu7lbC4GOig7evVEXYCfK77FvjQHusPgi0D/QN7zTO+5wZ8PwQ==),
+// with createIcons reduced to lucide&#x27;s replaceElement. License notices are in
+// THIRD_PARTY_NOTICES.md beside this file.
+(() =&gt; {
+  const defaultAttributes = {
+    xmlns: &quot;http://www.w3.org/2000/svg&quot;,
+    width: 24,
+    height: 24,
+    viewBox: &quot;0 0 24 24&quot;,
+    fill: &quot;none&quot;,
+    stroke: &quot;currentColor&quot;,
+    &quot;stroke-width&quot;: 2,
+    &quot;stroke-linecap&quot;: &quot;round&quot;,
+    &quot;stroke-linejoin&quot;: &quot;round&quot;,
+  };
+  const path = (d) =&gt; [&quot;path&quot;, { d }];
+  const icons = {
+    &quot;arrow-down-wide-narrow&quot;: [path(&quot;m3 16 4 4 4-4&quot;), path(&quot;M7 20V4&quot;), path(&quot;M11 4h10&quot;), path(&quot;M11 8h7&quot;), path(&quot;M11 12h4&quot;)],
+    &quot;arrow-up-wide-narrow&quot;: [path(&quot;m3 8 4-4 4 4&quot;), path(&quot;M7 4v16&quot;), path(&quot;M11 12h10&quot;), path(&quot;M11 16h7&quot;), path(&quot;M11 20h4&quot;)],
+    check: [path(&quot;M20 6 9 17l-5-5&quot;)],
+    &quot;chevron-down&quot;: [path(&quot;m6 9 6 6 6-6&quot;)],
+    &quot;chevron-left&quot;: [path(&quot;m15 18-6-6 6-6&quot;)],
+    &quot;chevron-right&quot;: [path(&quot;m9 18 6-6-6-6&quot;)],
+    compass: [
+      [&quot;circle&quot;, { cx: &quot;12&quot;, cy: &quot;12&quot;, r: &quot;10&quot; }],
+      path(&quot;m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z&quot;),
+    ],
+    &quot;file-pen-line&quot;: [
+      path(&quot;M14.364 13.634a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506l4.013-4.009a1 1 0 0 0-3.004-3.004z&quot;),
+      path(&quot;M14.487 7.858A1 1 0 0 1 14 7V2&quot;),
+      path(&quot;M20 19.645V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l2.516 2.516&quot;),
+      path(&quot;M8 18h1&quot;),
+    ],
+    folder: [path(&quot;M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z&quot;)],
+    &quot;square-terminal&quot;: [
+      path(&quot;m7 11 2-2-2-2&quot;),
+      path(&quot;M11 13h4&quot;),
+      [&quot;rect&quot;, { width: &quot;18&quot;, height: &quot;18&quot;, x: &quot;3&quot;, y: &quot;3&quot;, rx: &quot;2&quot;, ry: &quot;2&quot; }],
+    ],
+    terminal: [path(&quot;M12 19h8&quot;), path(&quot;m4 17 6-6-6-6&quot;)],
+    x: [path(&quot;M18 6 6 18&quot;), path(&quot;m6 6 12 12&quot;)],
+  };
+  const createSVGElement = ([tag, attrs, children = []]) =&gt; {
+    const element = document.createElementNS(&quot;http://www.w3.org/2000/svg&quot;, tag);
+    for (const name of Object.keys(attrs)) element.setAttribute(name, String(attrs[name]));
+    for (const child of children) element.appendChild(createSVGElement(child));
+    return element;
+  };
+  const replaceElement = (element, attrs) =&gt; {
+    const iconName = element.getAttribute(&quot;data-lucide&quot;);
+    const iconNode = icons[iconName];
+    if (iconNode == null) {
+      console.warn(`${element.outerHTML} icon name was not found in the provided icons object.`);
+      return;
+    }
+    const elementAttrs = Object.fromEntries(Array.from(element.attributes, (attr) =&gt; [attr.name, attr.value]));
+    const hasA11yProp = Object.keys(elementAttrs).some(
+      (name) =&gt; name.startsWith(&quot;aria-&quot;) || name === &quot;role&quot; || name === &quot;title&quot;,
+    );
+    const classNames = [&quot;lucide&quot;, `lucide-${iconName}`, ...(elementAttrs.class ?? &quot;&quot;).split(&quot; &quot;)].filter(
+      (name, index, all) =&gt; name.trim() !== &quot;&quot; &amp;&amp; all.indexOf(name) === index,
+    );
+    element.replaceWith(createSVGElement([&quot;svg&quot;, {
+      ...defaultAttributes,
+      &quot;data-lucide&quot;: iconName,
+      ...(hasA11yProp ? {} : { &quot;aria-hidden&quot;: &quot;true&quot; }),
+      ...attrs,
+      ...elementAttrs,
+      class: classNames.join(&quot; &quot;),
+    }, iconNode]));
+  };
+  globalThis.lucide = {
+    createIcons: ({ attrs = {}, root = document } = {}) =&gt; {
+      root.querySelectorAll(&quot;[data-lucide]&quot;).forEach((element) =&gt; replaceElement(element, attrs));
+    },
+  };
+})();
+&lt;/script&gt;
 &lt;script&gt;
 (() =&gt; {
   const initialize = () =&gt; {
