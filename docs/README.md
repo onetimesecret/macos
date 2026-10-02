@@ -66,13 +66,6 @@ surprising, or unresolved observations from doing so. An observation
 starts in ABERRATIONS and graduates into DOGFOOD, an issue, or an ADR
 once it is understood.
 
-## plans/
-
-Routes to a milestone: what has to happen, in what order, to get
-somewhere specific. Some are milestone plans, some are scoped to a
-single issue and its review. A plan is superseded by the work landing,
-so plans age out to archive rather than being kept current.
-
 ## mockups/
 
 Inspectable design explorations and their interaction records. The
@@ -80,6 +73,13 @@ Inspectable design explorations and their interaction records. The
 browser prototype, folder and application association proposals, and approaches
 removed during review. Browser behavior and simulated native actions are
 identified separately; a mockup is not evidence of a shipped contract.
+
+## plans/
+
+Routes to a milestone: what has to happen, in what order, to get
+somewhere specific. Some are milestone plans, some are scoped to a
+single issue and its review. A plan is superseded by the work landing,
+so plans age out to archive rather than being kept current.
 
 ## qa/
 
