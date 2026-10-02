@@ -218,6 +218,10 @@ private struct FeedbackView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                // The form holds still while a send is in flight. Close
+                // does not: the send's task finishes without the window,
+                // and the draft keeps its result for the next open.
+                .disabled(draft.sending)
                 HStack {
                     Button("Close", action: close).keyboardShortcut(.cancelAction)
                     Spacer()
@@ -232,7 +236,6 @@ private struct FeedbackView: View {
             }
         }
         .padding(22)
-        .disabled(draft.sending)
     }
 }
 
