@@ -98,6 +98,19 @@ Two entry points, both in `scripts/`:
   Follow [Distributing OnetimePad through TestFlight](docs/development/testflight-distribution.md)
   for account setup, upload, and tester qualification.
 
+Release packaging compiles [artwork/OnetimePad-Glass.icon](artwork/OnetimePad-Glass.icon)
+with Xcode's `actool` and bundles both `Assets.car` and the generated `.icns`.
+The document enables refractivity; Apple's
+[Xcode 27 release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes)
+introduce Icon Composer 2.0 with “support for refractivity”. Release packaging
+requires Xcode 27 or later; set `DEVELOPER_DIR` or `xcode-select` to select it.
+Edit the document in Icon Composer, then run
+`scripts/build-icons.sh --glass` to compile just the icon, or use the release
+commands above to package it. Debug builds keep the black development icon.
+Ad-hoc icons rendered with `build-icons.sh` no longer select the release icon.
+See the [exported glass icon preview](artwork/OnetimePad-Glass-CastShadow.png)
+for the current composition.
+
 Signing values stay outside the checkout, one environment directory per lane,
 so every worktree reads the same ones: `dev/.env` for the dev lane,
 `local/.env` for the local lane, and `staging/.env` for the App Store lane,
