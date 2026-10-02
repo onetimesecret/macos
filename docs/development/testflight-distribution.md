@@ -374,6 +374,6 @@ may create a duplicate. The export and summary remain available without
 submission. Network tests use a stub transport, so successful receipt by the
 deployed service still needs a deliberate test from the installed build.
 
-Repeat packaging, upload, processing, and internal
-qualification for the next build; account and certificate setup need repeating
-only when those inputs change or expire.
+Repeat packaging, upload, processing, and internal qualification for the next
+build; account and certificate setup need repeating only when those inputs
+change or expire.
