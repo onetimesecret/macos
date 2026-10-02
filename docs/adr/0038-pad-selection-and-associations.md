@@ -136,3 +136,8 @@ Storage choice, migration, and metadata removal still require review.
 - The catalog's metadata cannot fit the agreed storage threat boundary.
   Revisit its storage location and opt-in policy; do not advertise encrypted
   context metadata based on encrypted note storage.
+
+## Decision history
+
+- 2026-10-01: Proposed after the one-pad-picker mockup review. Acceptance and
+  the supersession of ADR-0017's slot shortcut clause remain outstanding.
