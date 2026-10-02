@@ -34,7 +34,7 @@ final class FeedbackDraft: ObservableObject {
     }
 
     var destination: String {
-        FeedbackClient(serverURL: serverURL).endpointURL?.absoluteString ?? "Invalid server URL — update Connection settings."
+        FeedbackClient(serverURL: serverURL).endpointURL?.absoluteString ?? "Invalid server URL. Update it in Connection settings."
     }
 
     func refreshDestination() {
