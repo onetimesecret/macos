@@ -421,6 +421,9 @@ public final class PageModel: ObservableObject {
     public let pads: PadCatalog
     private var lastPadID = PadCatalog.scratchID
     private var lastPadsEnabled = false
+    private var isApplyingCatalogChange = false
+    private var pendingPadTabOwners: [UInt64: UUID] = [:]
+    private var padFileRosterReady = false
     private var applicationContext: PadApplicationContext?
 
     /// The strip: one entry per durable tab, in visible order, whether
@@ -1687,6 +1690,7 @@ public final class PageModel: ObservableObject {
         // to read them because of the other one would lose a person's
         // unsaved typing to an unrelated failure.
         restoreDrafts()
+        if pads.isEnabled { restorePadSelection() }
         // The load is settled, mint included: what happens from here is
         // the user's work, and only that can block a later quit.
         mutatedSinceLoad = false
@@ -2203,7 +2207,12 @@ public final class PageModel: ObservableObject {
     /// file that came back from a disk copy that had changed while the
     /// app was away.
     private func restoreDrafts() {
-        guard client.draftsRestore(from: draftsFileURL.path) else { return }
+        guard client.draftsRestore(from: draftsFileURL.path) else {
+            padFileRosterReady = !FileManager.default.fileExists(atPath: draftsFileURL.path)
+            if padFileRosterReady { pads.reconcileFiles([]) }
+            return
+        }
+        padFileRosterReady = true
         // Whether the roster in memory came to differ from the one the
         // drafts file holds, which decides at the end whether a write
         // is owed.
@@ -2234,12 +2243,12 @@ public final class PageModel: ObservableObject {
             }
             waiting = deferred
         }
-        if pads.isEnabled {
-            pads.transferFiles(client.fileRoster().compactMap { new in
-                guard let old = restoredFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
-                return (old.path, new.path)
-            })
-        }
+        // Maintain already-recorded ownership even while pad navigation is off.
+        // Unowned Scratch paths remain implicit and incur no catalog write.
+        pads.transferFiles(client.fileRoster().compactMap { new in
+            guard let old = restoredFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
+            return (old.path, new.path)
+        })
         refreshOpenFiles()
         for file in openFiles {
             // The core restored either the draft or the current disk copy;
@@ -2760,6 +2769,7 @@ public final class PageModel: ObservableObject {
     /// unfinished confirmation. Called by the transient workspace observer.
     func routeFromApplication(_ bundleID: String) {
         guard !ModalSession.isRunning, !ModalSession.isBracketed,
+            NSApp?.windows.contains(where: { $0.attachedSheet != nil || $0.sheetParent != nil }) != true,
             pendingFileClose == nil, concealDraft == nil, selectedFile == nil,
             let target = pads.pad(forApplication: bundleID) else { return }
         pads.activate(target, recordRecency: false)
@@ -2767,7 +2777,7 @@ public final class PageModel: ObservableObject {
     public func activatePad(_ id: UUID) {
         guard pads.isEnabled else { return }
         guard pendingFileClose == nil else {
-            flash("Finish the file close decision before switching pads.")
+            flash(CompanionL10n.string("pad.switch.pendingClose"))
             return
         }
         pads.activate(id)
@@ -2776,6 +2786,16 @@ public final class PageModel: ObservableObject {
     public func createPad(named name: String) -> UUID? {
         guard pads.isEnabled, pendingFileClose == nil else { return nil }
         return pads.create(named: name)
+    }
+    @discardableResult
+    public func renamePad(_ id: UUID, to name: String) -> Bool {
+        guard pads.isEnabled, pendingFileClose == nil else { return false }
+        return pads.rename(id, to: name)
+    }
+    @discardableResult
+    public func removePad(_ id: UUID) -> Bool {
+        guard pads.isEnabled, pendingFileClose == nil else { return false }
+        return pads.remove(id)
     }
     private func updateApplicationContextObservation() {
         guard !FormFactor.runningUnderTests else { return }
@@ -2790,11 +2810,14 @@ public final class PageModel: ObservableObject {
         }
     }
     private func padCatalogChanged() {
+        guard !isApplyingCatalogChange else { return }
+        isApplyingCatalogChange = true
+        defer { isApplyingCatalogChange = false }
         updateApplicationContextObservation()
         if pads.isEnabled != lastPadsEnabled || (pads.isEnabled && pads.activeID != lastPadID) {
-            if lastPadsEnabled { pads.onChange = nil
-                pads.remember(tabUUID: selectedTab?.uuid, for: lastPadID)
-                pads.onChange = { [weak self] in self?.padCatalogChanged() }
+            if lastPadsEnabled {
+                pads.rememberSelection(tabUUID: selectedTab?.uuid,
+                    filePath: activeFile?.path, for: lastPadID)
             }
             lastPadID = pads.activeID
             lastPadsEnabled = pads.isEnabled
@@ -2812,6 +2835,9 @@ public final class PageModel: ObservableObject {
         if showsTimeUnits {
             selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
         }
+        selectedFile = navigationFiles.first {
+            PadCatalog.normalizedPath($0.path) == pads.rememberedFile(for: pads.activeID)
+        }?.id
     }
     public func toggleDaySort() { pads.toggleDaySort(for: pads.activeID) }
     public func toggleCheckpointSort(dayBucket: Int) {
@@ -2820,12 +2846,18 @@ public final class PageModel: ObservableObject {
     public func dateKey(forDayBucket bucket: Int) -> String {
         let calendar = Calendar.current
         let date: Date
+        // Positive offsets are future-born pages after a backwards clock step.
+        // The projection groups them under Today (bucket zero); use their actual
+        // creation date for the preference key, matching the projected group.
         if let stamp = navigationTabs.first(where: { min($0.pageDayOffset ?? 1, 0) == bucket && $0.pageCreatedMs != nil })?.pageCreatedMs {
             date = Date(timeIntervalSince1970: Double(stamp) / 1000)
         } else {
             date = calendar.date(byAdding: .day, value: bucket, to: Date()) ?? Date()
         }
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return Self.padDateKey(date)
+    }
+    private static func padDateKey(_ date: Date) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
     private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
@@ -2862,6 +2894,18 @@ public final class PageModel: ObservableObject {
         // them rather than at a list of paths someone has to keep.
         refreshEditSteps()
         tabs = client.tabs()
+        for (id, owner) in pendingPadTabOwners {
+            if let uuid = tabs.first(where: { $0.id == id })?.uuid { pads.assign(tabUUID: uuid, to: owner) }
+        }
+        pendingPadTabOwners.removeAll()
+        if stateLoaded && saveLicence {
+            let checkpointKeys = Set(tabs.compactMap { tab -> String? in
+                guard tab.hasPage, let stamp = tab.pageCreatedMs else { return nil }
+                let date = Self.padDateKey(Date(timeIntervalSince1970: Double(stamp) / 1000))
+                return pads.owner(ofTabUUID: tab.uuid).uuidString + "/" + date
+            })
+            pads.reconcileTabs(Set(tabs.compactMap(\.uuid)), checkpointKeys: checkpointKeys)
+        }
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
         // editor-side document. The filter is on the live PAGE
@@ -3244,6 +3288,9 @@ public final class PageModel: ObservableObject {
         }
         guard selectedFile != id else { return }
         selectedFile = id
+        if pads.isEnabled {
+            pads.rememberSelection(tabUUID: selectedTab?.uuid, filePath: activeFile?.path, for: pads.activeID)
+        }
         refocusEditorIfKeyed()
     }
 
@@ -3255,13 +3302,14 @@ public final class PageModel: ObservableObject {
     /// selection naming a file the roster no longer holds, so a closed
     /// file cannot leave the surface pointing at nothing.
     func standOpenFiles(_ files: [FileSummary]) {
-        if pads.isEnabled {
-            pads.transferFiles(files.compactMap { new in
-                guard let old = openFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
-                return (old.path, new.path)
-            })
-        }
+        // Maintain already-recorded ownership even while pad navigation is off.
+        // Unowned Scratch paths remain implicit and incur no catalog write.
+        pads.transferFiles(files.compactMap { new in
+            guard let old = openFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
+            return (old.path, new.path)
+        })
         openFiles = files
+        if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
                 // A pending close is answered only by its own three
@@ -4979,9 +5027,9 @@ public final class PageModel: ObservableObject {
         let id = client.newTab()
         // A failed ask changed nothing; only a real tab is dirt.
         if id != 0 {
-            if pads.isEnabled, let tab = client.tabs().first(where: { $0.id == id }), let uuid = tab.uuid {
-                pads.assign(tabUUID: uuid, to: pads.activeID)
-            }
+            // The immediately following refresh supplies the stable UUID once;
+            // keep the requested owner until that shared roster read completes.
+            if pads.isEnabled { pendingPadTabOwners[id] = pads.activeID }
             markDirty()
         }
         return id

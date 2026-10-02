@@ -98,4 +98,100 @@ final class PadCatalogTests: XCTestCase {
         restored.showFullPaths = true
         XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
     }
+    func testRenamingAndRemovingPadRetainsContentOwnershipInScratch() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Typo"))
+        catalog.assign(tabUUID: "tab", to: pad)
+        catalog.assign(filePath: "/note.txt", to: pad)
+        catalog.rememberSelection(tabUUID: "tab", filePath: "/note.txt", for: pad)
+        XCTAssertFalse(catalog.rename(pad, to: "  "))
+        XCTAssertFalse(catalog.rename(pad, to: String(repeating: "x", count: 81)))
+        XCTAssertTrue(catalog.rename(pad, to: " Familia "))
+        XCTAssertEqual(catalog.activePad.name, "Familia")
+        XCTAssertFalse(catalog.remove(PadCatalog.scratchID))
+        XCTAssertTrue(catalog.remove(pad))
+        XCTAssertEqual(catalog.activeID, PadCatalog.scratchID)
+        XCTAssertEqual(catalog.owner(ofTabUUID: "tab"), PadCatalog.scratchID)
+        XCTAssertEqual(catalog.owner(ofFile: "/note.txt"), PadCatalog.scratchID)
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertEqual(restored.entries.count, 1)
+        XCTAssertNil(restored.rememberedFile(for: pad))
+    }
+    func testNoOpSelectionAndImplicitScratchMovesDoNotPersist() throws {
+        let catalog = PadCatalog(defaults: try defaults())
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.assign(tabUUID: "tab", to: pad)
+        catalog.remember(tabUUID: "tab", for: pad)
+        var changes = 0
+        catalog.onChange = { changes += 1 }
+        catalog.activate(pad)
+        catalog.assign(tabUUID: "tab", to: pad)
+        catalog.remember(tabUUID: "tab", for: pad)
+        let paths = catalog.showFullPaths
+        catalog.showFullPaths = paths
+        catalog.transferFiles([("/unowned.txt", "/new.txt")])
+        catalog.assign(filePath: "/new.txt", to: PadCatalog.scratchID)
+        XCTAssertEqual(changes, 0)
+    }
+    func testReconciliationPrunesClosedIdentitiesAndExpiredDayPreferences() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.assign(tabUUID: "closed", to: pad)
+        catalog.assign(tabUUID: "empty-surviving", to: pad)
+        catalog.assign(filePath: "/closed.txt", to: pad)
+        catalog.rememberSelection(tabUUID: "closed", filePath: "/closed.txt", for: pad)
+        catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-01")
+        catalog.reconcileTabs(["empty-surviving"], checkpointKeys: [])
+        catalog.reconcileFiles([])
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertEqual(restored.owner(ofTabUUID: "closed"), PadCatalog.scratchID)
+        XCTAssertEqual(restored.owner(ofTabUUID: "empty-surviving"), pad)
+        XCTAssertEqual(restored.owner(ofFile: "/closed.txt"), PadCatalog.scratchID)
+        XCTAssertNil(restored.rememberedTab(for: pad))
+        XCTAssertNil(restored.rememberedFile(for: pad))
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
+    }
+    func testSymlinkAndCaseAliasesCannotAcquireAnotherOwner() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-alias-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("Work")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        let alias = directory.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: root)
+        let catalog = PadCatalog(defaults: try defaults())
+        let first = try XCTUnwrap(catalog.create(named: "First"))
+        let second = try XCTUnwrap(catalog.create(named: "Second"))
+        XCTAssertTrue(catalog.addFolder(root.path, to: first))
+        XCTAssertFalse(catalog.addFolder(alias.path, to: second))
+        XCTAssertEqual(catalog.pad(forPath: alias.appendingPathComponent("new.txt").path), first)
+        let sensitivity = try root.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames
+        let alternate = directory.appendingPathComponent("work")
+        if sensitivity == true {
+            try FileManager.default.createDirectory(at: alternate, withIntermediateDirectories: false)
+            XCTAssertTrue(catalog.addFolder(alternate.path, to: second))
+        } else {
+            XCTAssertFalse(catalog.addFolder(alternate.path, to: second))
+            XCTAssertEqual(catalog.pad(forPath: alternate.appendingPathComponent("new.txt").path), first)
+        }
+    }
+    func testRememberedFileFollowsPathTransferAndLegacyCatalogLoads() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.assign(filePath: "/before.txt", to: pad)
+        catalog.rememberSelection(tabUUID: "tab", filePath: "/before.txt", for: pad)
+        catalog.transferFiles([("/before.txt", "/after.txt")])
+        XCTAssertEqual(catalog.rememberedFile(for: pad), "/after.txt")
+        XCTAssertEqual(PadCatalog(defaults: defaults).rememberedFile(for: pad), "/after.txt")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))) as? [String: Any])
+        json.removeValue(forKey: "rememberedFiles")
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: PadCatalog.storageKey)
+        let legacy = PadCatalog(defaults: defaults)
+        XCTAssertNil(legacy.loadFailure)
+        XCTAssertEqual(legacy.owner(ofFile: "/after.txt"), pad)
+    }
+
 }

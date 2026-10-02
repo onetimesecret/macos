@@ -137,6 +137,31 @@ final class PadModelTests: XCTestCase {
         XCTAssertEqual(model.navigationFiles.count, 1)
     }
 
+    func testSaveAsWhileExperimentDisabledPreservesOwnershipAndRememberedFile() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let pad = try XCTUnwrap(model.createPad(named: "Familia"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-disabled-save-as-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let before = directory.appendingPathComponent("before.txt")
+        let after = directory.appendingPathComponent("after.txt")
+        try "hello".write(to: before, atomically: true, encoding: .utf8)
+        model.openFile(at: before)
+        let fileID = try XCTUnwrap(model.selectedFile)
+        model.pads.isEnabled = false
+        model.selectFile(fileID)
+        model.fileCoordinator = FileCoordinator(panels: PadTestPanels(destination: after))
+        model.saveActiveFileAs()
+        let saved = try XCTUnwrap(model.activeFile)
+        XCTAssertEqual(model.pads.owner(ofFile: saved.path), pad)
+        XCTAssertEqual(model.pads.rememberedFile(for: pad), PadCatalog.normalizedPath(saved.path))
+        model.pads.isEnabled = true
+        XCTAssertEqual(model.selectedFile, fileID)
+        XCTAssertEqual(model.navigationFiles.map(\.id), [fileID])
+    }
+
     func testInactiveExpiryKeepsOtherPadContentAndDoesNotMint() throws {
         let model = isolatedModel(defaults: try defaults())
         model.loadStateIfNeeded()
@@ -185,6 +210,112 @@ final class PadModelTests: XCTestCase {
         XCTAssertEqual(model.pads.activeID, current)
         XCTAssertEqual(model.selectedFile, id)
         XCTAssertNotNil(model.pendingFileClose)
+    }
+
+    func testSwitchingPadsRestoresSelectedFileAndRemovalRehomesWithoutDeleting() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let pad = try XCTUnwrap(model.createPad(named: "Familia"))
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let ink = model.storage(for: page)
+        ink.append(NSAttributedString(string: "keep this ink"))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pad-remember-file-\(UUID().uuidString).txt")
+        try "file ink".write(to: file, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        model.openFile(at: file)
+        let fileID = try XCTUnwrap(model.selectedFile)
+        model.activatePad(PadCatalog.scratchID)
+        model.activatePad(pad)
+        XCTAssertEqual(model.selectedFile, fileID)
+        XCTAssertEqual(model.activeFile?.id, fileID)
+        XCTAssertTrue(model.renamePad(pad, to: "Renamed"))
+        XCTAssertTrue(model.removePad(pad))
+        XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+        XCTAssertTrue(model.tabs.contains { $0.pageID == page })
+        XCTAssertTrue(model.navigationFiles.contains { $0.id == fileID })
+        XCTAssertTrue(model.storage(for: page) === ink)
+        XCTAssertEqual(ink.string, "keep this ink")
+    }
+    func testPageExpiryPrunesDateOrderButRetainsSurvivingTabOwnership() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let pad = try XCTUnwrap(model.createPad(named: "Familia"))
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let uuid = try XCTUnwrap(model.selectedTab?.uuid)
+        let date = model.dateKey(forDayBucket: 0)
+        model.toggleCheckpointSort(dayBucket: 0)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .reverseChronological)
+        XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
+        model.coreClient.ageForTests(byMs: 3 * 24 * 60 * 60 * 1_000)
+        model.coreClient.expireDue()
+        model.refresh()
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .chronological)
+        XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), pad)
+        model.closeCurrent()
+        XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), PadCatalog.scratchID)
+    }
+
+    func testClosingFilePrunesItsRecordedOwnerAndRememberedSelection() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let pad = try XCTUnwrap(model.createPad(named: "Familia"))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pad-prune-closed-\(UUID().uuidString).txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        model.openFile(at: file)
+        let path = try XCTUnwrap(model.activeFile?.path)
+        XCTAssertEqual(model.pads.owner(ofFile: path), pad)
+        _ = model.closeActiveFile()
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertEqual(model.pads.owner(ofFile: path), PadCatalog.scratchID)
+        XCTAssertNil(model.pads.rememberedFile(for: pad))
+    }
+    func testFailedDraftRestoreDoesNotPruneSavedFileOwnership() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        catalog.isEnabled = true
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.assign(filePath: "/unrestored-file.txt", to: pad)
+        catalog.rememberSelection(tabUUID: nil, filePath: "/unrestored-file.txt", for: pad)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-draft-refused-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try Data("unreadable draft state".utf8).write(to: FormFactor.draftsFileURL(in: directory))
+        let model = PageModel(formFactor: .backdrop, defaults: defaults,
+            seams: .init(stateDirectory: directory, client: .ephemeral(tag: UUID().uuidString)))
+        model.refreshOpenFiles()
+        model.loadStateIfNeeded()
+        model.refreshOpenFiles()
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertEqual(model.pads.owner(ofFile: "/unrestored-file.txt"), pad)
+        XCTAssertEqual(model.pads.rememberedFile(for: pad), "/unrestored-file.txt")
+    }
+
+    func testFailedContentRestoreDoesNotPruneSavedPadOwnership() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        catalog.isEnabled = true
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.assign(tabUUID: "unrestored-tab", to: pad)
+        catalog.remember(tabUUID: "unrestored-tab", for: pad)
+        catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-01")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-refused-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try Data("unreadable core state".utf8).write(to: FormFactor.stateFileURL(in: directory))
+        let model = PageModel(formFactor: .backdrop, defaults: defaults,
+            seams: .init(stateDirectory: directory, client: .ephemeral(tag: UUID().uuidString)))
+        model.refresh() // Before restore, an empty ephemeral roster is not authoritative.
+        model.loadStateIfNeeded()
+        model.refresh()
+        XCTAssertEqual(model.pads.owner(ofTabUUID: "unrestored-tab"), pad)
+        XCTAssertEqual(model.pads.rememberedTab(for: pad), "unrestored-tab")
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .reverseChronological)
     }
 
 }
