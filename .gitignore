@@ -37,6 +37,3 @@ secrets/
 # Local notes
 [0-9][0-9][0-9][0-9]*-*.md
 .agent-telemetry
-
-# Numbered records under docs/ are source, not local notes
-!docs/**/[0-9][0-9][0-9][0-9]*-*.md
