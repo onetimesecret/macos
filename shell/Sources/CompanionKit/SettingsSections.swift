@@ -197,25 +197,15 @@ public struct GeneralSettingsView: View {
             }
 
             Section {
-                Picker("Organize pages by", selection: $model.showsTimeUnits) {
-                    Text("Slots").tag(false)
-                    Text("Days (time tabs) · prototype").tag(true)
+                Picker("Page layout", selection: $model.showsTimeUnits) {
+                    Text("Tabs").tag(false)
+                    Text("Timeline").tag(true)
                 }
                 .pickerStyle(.segmented)
             } header: {
-                SettingsCaption(Self.pageOrganizationCaption)
+                SettingsCaption(Self.pageLayoutCaption)
             }
-            Section {
-                Picker("Show pages", selection: $model.showsPagesDownSide) {
-                    Text("Along the bottom").tag(false)
-                    Text("Down the side").tag(true)
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                SettingsCaption(Self.pagePlacementCaption)
-            }
-            // The rounding switch and the time patterns are about
-            // time, so they appear only under the Days choice (D-26).
+            // Timeline exposes the time-specific preferences.
             if model.showsTimeUnits {
                 Section {
                     Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
@@ -320,18 +310,14 @@ public struct GeneralSettingsView: View {
         model.fontFamily = family
     }
 
-    /// The two axes' captions say both what changes and what it costs.
+    /// The caption says both what changes and what it costs (D-26).
     /// User-facing copy never exposes the components' code names.
-    static let pageOrganizationCaption: String =
-        "Slots are pages you name and close yourself. Days is a prototype that groups live "
-            + "pages by the day they were written, newest first; lines always wrap and older "
-            + "blank pages are counted rather than drawn. Changing this moves no content and "
-            + "writes nothing new to disk."
-
-    static let pagePlacementCaption: String =
-        "Along the bottom keeps the page at full width and may scroll sideways. Down the side "
-            + "keeps longer names readable but takes 110 points from the page. Placement does "
-            + "not change how pages are grouped or stored."
+    static let pageLayoutCaption: String =
+        "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
+            + "that groups live pages by the day they were written, newest first, down the "
+            + "side, taking \(Int(TimeRailView.width)) points from the page; lines always wrap and older blank pages "
+            + "are counted rather than drawn. Changing this moves no content and writes "
+            + "nothing new to disk."
 
     /// The section only exists when the switch is offered, so the
     /// caption's job is to say why this build has one and how long it

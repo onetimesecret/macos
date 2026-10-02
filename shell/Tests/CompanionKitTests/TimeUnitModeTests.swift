@@ -169,22 +169,35 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertTrue(second.showsTimeUnits, "the preference did not survive a relaunch")
     }
 
-    func testOrganizationAndPlacementPersistIndependently() throws {
+    func testLayoutFollowsTheRememberedMode() throws {
         let (first, defaults) = try makeModel()
         XCTAssertFalse(first.showsTimeUnits)
-        XCTAssertTrue(first.showsPagesDownSide)
+        XCTAssertFalse(first.showsPagesDownSide)
 
         first.showsTimeUnits = true
-        first.showsPagesDownSide = false
-        let daysAlongBottom = isolatedModel(defaults: defaults)
-        XCTAssertTrue(daysAlongBottom.showsTimeUnits)
-        XCTAssertFalse(daysAlongBottom.showsPagesDownSide)
+        let timeline = isolatedModel(defaults: defaults)
+        XCTAssertTrue(timeline.showsTimeUnits)
+        XCTAssertTrue(timeline.showsPagesDownSide)
 
-        daysAlongBottom.showsTimeUnits = false
-        daysAlongBottom.showsPagesDownSide = true
-        let slotsDownSide = isolatedModel(defaults: defaults)
-        XCTAssertFalse(slotsDownSide.showsTimeUnits)
-        XCTAssertTrue(slotsDownSide.showsPagesDownSide)
+        timeline.showsTimeUnits = false
+        let tabs = isolatedModel(defaults: defaults)
+        XCTAssertFalse(tabs.showsTimeUnits)
+        XCTAssertFalse(tabs.showsPagesDownSide)
+    }
+
+    func testLegacyPlacementCannotCreateAnUnsupportedLayout() throws {
+        let (_, defaults) = try makeModel()
+        for timeline in [false, true] {
+            for legacyPlacement in [false, true] {
+                defaults.set(timeline, forKey: "showsTimeUnits")
+                defaults.set(legacyPlacement, forKey: "showsPagesDownSide")
+                let model = isolatedModel(defaults: defaults)
+                XCTAssertEqual(model.showsTimeUnits, timeline)
+                XCTAssertEqual(model.showsPagesDownSide, timeline)
+                XCTAssertNil(defaults.object(forKey: "showsPagesDownSide"),
+                             "the retired placement key outlived a launch")
+            }
+        }
     }
 
     func testOldCombinedPreferenceKeepsTheLayoutTheUserChose() throws {
@@ -588,21 +601,14 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertNotEqual(model.wrapsLines, wrapped, "the chord stayed refused with the mode off")
     }
 
-    /// The internal component names never reach either half of the
-    /// two-axis setting, and each caption names its real cost (D-26).
-    func testTheNavigationCaptionsNameNoCodeWords() {
-        let captions = [
-            GeneralSettingsView.pageOrganizationCaption,
-            GeneralSettingsView.pagePlacementCaption,
-        ]
-        for caption in captions {
-            let words = caption.lowercased()
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            XCTAssertFalse(words.contains("strip"), caption)
-            XCTAssertFalse(words.contains("rail"), caption)
-        }
-        XCTAssertTrue(GeneralSettingsView.pageOrganizationCaption.contains("prototype"))
-        XCTAssertTrue(GeneralSettingsView.pageOrganizationCaption.contains("moves no content"))
-        XCTAssertTrue(GeneralSettingsView.pagePlacementCaption.contains("110 points"))
+    func testLayoutCaptionExplainsBothChoices() {
+        let caption = GeneralSettingsView.pageLayoutCaption
+        XCTAssertTrue(caption.contains("Tabs shows named pages along the bottom"))
+        XCTAssertTrue(caption.contains("Timeline is a prototype"))
+        XCTAssertTrue(caption.contains("down the side"))
+        XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"),
+                      "the caption must say what Timeline costs, at the rail's real width")
+        XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"),
+                      "the persistence reassurance (D-26 acceptance) was dropped")
     }
 }

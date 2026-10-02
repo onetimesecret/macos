@@ -3,7 +3,7 @@ import AppKit
 /// A modal of ours, bracketed so the rest of the app can tell when it
 /// has returned.
 ///
-/// The app's modal inventory is limited to the system open and save panels.
+/// The app brackets system open/save panels and explanatory alerts.
 /// Dirty close, conflict resolution, rename, and quit do not enter a modal
 /// session. What the surface needs from the two panels is one fact at
 /// two moments. While one is up, a press into it must not be read as a
@@ -29,7 +29,7 @@ import AppKit
 /// and the app delegate, and the form factor that answers is the one
 /// that knows what a raise is.
 public enum ModalSession {
-    /// Posted after an open or save panel has returned, accepted or
+    /// Posted after a bracketed modal has returned, accepted or
     /// cancelled alike. The object is nil; nothing about
     /// which panel it was bears on what the surface does next.
     public static let didEndNotification = Notification.Name("CompanionKit.ModalSession.didEnd")

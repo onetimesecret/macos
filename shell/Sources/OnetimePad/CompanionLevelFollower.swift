@@ -1,9 +1,9 @@
 import AppKit
 import Combine
 
-/// Keeps one companion window (Settings, About) at the surface's
-/// keyless altitude for as long as that window is open (ADR-0032,
-/// workplan item A4).
+/// Keeps one companion window (Settings, About, Send Feedback) at the
+/// surface's keyless altitude for as long as that window is open
+/// (ADR-0032, workplan item A4).
 ///
 /// A raised card floats above normal windows, and so does a pinned
 /// resting one; a companion left at `.normal` would sit key yet
@@ -16,7 +16,8 @@ import Combine
 /// lets go when the window closes.
 ///
 /// There is one of these per companion window and one implementation
-/// for both, so Settings and About cannot drift apart.
+/// for all of them, so Settings, About and Send Feedback cannot drift
+/// apart.
 @MainActor
 final class CompanionLevelFollower {
     private let model: BackdropModel
