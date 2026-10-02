@@ -52,6 +52,13 @@ final class BackdropHotKey {
             return nil
         }
         let id = EventHotKeyID(signature: OSType(0x424B_4450) /* 'BKDP' */, id: 1)
+        // Exclusive, deliberately. A plain registration succeeds beside
+        // any other holder and the keystroke then reaches every
+        // registrant, so a conflict fires both apps and is never
+        // reported. Exclusive turns an exclusive holder (another copy of
+        // OnetimePad among them) into `eventHotKeyExistsErr`, which the
+        // app explains. While we hold it, non exclusive registrants for
+        // ⌃⌥Space stop receiving it (CarbonEvents.h, kEventHotKeyExclusive).
         let registered = RegisterEventHotKey(
             keyCode, modifiers, id, GetEventDispatcherTarget(),
             UInt32(kEventHotKeyExclusive), &hotKeyRef
