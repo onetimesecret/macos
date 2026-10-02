@@ -88,8 +88,8 @@ public struct TimeRailView: View {
     /// under them, with room for "10 days ago" in the monospaced
     /// caption. Longer than that truncates at the tail, which is the
     /// net rather than the plan.
-    static let width: CGFloat = 110
-    static let experimentalWidth: CGFloat = 150
+    nonisolated static let width: CGFloat = 110
+    nonisolated static let experimentalWidth: CGFloat = 150
 
     /// Use the same measure in the view and layout disclosures; turning the
     /// experiment off keeps the legacy rail's 110-point width.
