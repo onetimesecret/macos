@@ -1,0 +1,254 @@
+<!-- Design exploration. The timeline sidebar intentionally approximates the real implementation; its behaviour is not the focus of this work. -->
+<div id="otp-one-picker" aria-label="OnetimePad single pad picker proposal" aria-description="The timeline sidebar is intentionally approximate. This exploration concerns the pad picker and folder details.">
+  <div class="p-window">
+    <div class="p-titlebar"><span class="p-dots" aria-hidden="true">● ● ●</span><span>OnetimePad</span><span class="p-proposal">Design proposal</span></div>
+    <div class="p-toolbar">
+      <button type="button" class="p-picker cursor-interaction" aria-label="Choose pad" aria-expanded="true" aria-controls="otp-pad-menu"><span class="p-picker-identity"><span class="p-name-line"><span class="p-active-name">Familia</span><i data-lucide="chevron-down" aria-hidden="true"></i></span><span class="p-selected-folders"></span></span></button>
+      <div class="p-associated-apps" aria-label="Associated applications"></div>
+      <nav id="otp-pad-menu" class="p-menu" aria-label="Pads and current pad actions"></nav>
+    </div>
+    <div class="p-body">
+      <aside class="p-sidebar" aria-label="Approximate timeline and open files">
+        <div class="p-timeline-heading"><span class="p-label">TIMELINE</span><button type="button" class="p-sort-days cursor-interaction" aria-label="Reverse day order"></button></div><nav class="p-rail" aria-label="Selected pad timeline"></nav>
+        <section class="p-files" aria-label="Selected pad open files"><div class="p-label">FILES</div><div class="p-file-list"></div></section>
+      </aside>
+      <main class="p-paper" aria-label="Selected pad pages"></main>
+    </div>
+    <div class="p-footer"><span class="p-current-position"></span><span class="p-message" aria-live="polite"></span></div>
+    <section class="p-chooser" role="dialog" aria-modal="true" aria-label="Folder chooser preview" hidden></section>
+  </div>
+</div>
+<style>
+#otp-one-picker{color-scheme:light dark}
+#otp-one-picker .p-window{--p-paper:light-dark(#faf9f7,#2b2b2d);--p-chrome:light-dark(#eeedea,#363638);--p-side:light-dark(#f3f1ed,#252527);--p-ink:light-dark(#30302e,#e4e2de);--p-muted:light-dark(#69645d,#b5b0a8);--p-line:light-dark(#d8d4cd,#4b4946);--p-selected:light-dark(#e7e2da,#45413c);--p-accent:light-dark(#b94322,#f08057);--p-shadow:light-dark(#00000018,#00000060);font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--p-paper);color:var(--p-ink);border:1px solid var(--p-line);border-radius:12px;box-shadow:0 5px 22px var(--p-shadow);position:relative;isolation:isolate;width:100%;min-height:665px}
+#otp-one-picker .p-window *{box-sizing:border-box}
+#otp-one-picker [hidden]{display:none!important}
+#otp-one-picker .p-window button{font:inherit;color:inherit;background:transparent;border:0;border-radius:5px;max-width:100%;padding:9px 11px;text-align:left;overflow-wrap:anywhere}
+#otp-one-picker .p-window button:hover{background:var(--p-selected)}
+#otp-one-picker .p-window button:disabled{opacity:.5}
+#otp-one-picker .p-window svg,#otp-one-picker .p-window i[data-lucide]{width:15px;height:15px;flex-shrink:0}
+#otp-one-picker .p-titlebar{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:8px 14px;border-bottom:1px solid var(--p-line);border-radius:12px 12px 0 0;background:var(--p-chrome);font:500 13px system-ui}
+#otp-one-picker .p-dots{letter-spacing:3px;color:var(--p-muted);white-space:nowrap;user-select:none}
+#otp-one-picker .p-proposal{color:var(--p-muted);font:12px system-ui;text-align:right}
+#otp-one-picker .p-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;padding:7px 12px;min-height:50px;border-bottom:1px solid var(--p-line);position:relative;z-index:3}
+#otp-one-picker .p-picker{display:flex;align-items:center;gap:12px;font-weight:500!important}
+#otp-one-picker .p-folder-detail{display:flex;align-items:center;gap:8px;color:var(--p-muted);min-width:0;max-width:100%;padding:6px 0;overflow-wrap:anywhere}
+#otp-one-picker .p-folder-value{min-width:0}
+#otp-one-picker .p-menu{position:absolute;top:calc(100% + 6px);left:12px;width:350px;max-width:calc(100% - 24px);background:var(--p-chrome);border:1px solid var(--p-line);border-radius:9px;box-shadow:0 8px 23px var(--p-shadow);padding:8px}
+#otp-one-picker .p-label{font:500 11px system-ui;letter-spacing:1.3px;color:var(--p-muted);margin-bottom:9px}
+#otp-one-picker .p-menu>.p-label{padding:6px 11px 0}
+#otp-one-picker .p-menu .p-pad-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px}
+#otp-one-picker .p-pad-identity{min-width:0;display:block}
+#otp-one-picker .p-pad-name{display:block}
+#otp-one-picker .p-folder-subtitle{display:flex;align-items:center;gap:6px;margin-top:6px;color:var(--p-muted);font:12px system-ui;overflow-wrap:anywhere}
+#otp-one-picker .p-folder-subtitle svg{width:13px;height:13px}
+#otp-one-picker .p-check{display:flex;align-items:center;width:15px;flex-shrink:0}
+#otp-one-picker .p-pad-actions{border-top:1px solid var(--p-line);margin-top:8px;padding-top:10px}
+#otp-one-picker .p-action-target{padding:0 11px 7px;color:var(--p-muted);font:12px system-ui;overflow-wrap:anywhere}
+#otp-one-picker .p-pad-actions button{display:block;width:100%;padding:10px 11px}
+#otp-one-picker .p-body{display:grid;grid-template-columns:172px minmax(0,1fr);min-height:524px}
+#otp-one-picker .p-sidebar{background:var(--p-side);border-right:1px solid var(--p-line);padding:18px 10px}
+#otp-one-picker .p-rail{border-left:1px solid var(--p-line);margin-left:9px;padding-left:6px}
+#otp-one-picker .p-day{font:12px system-ui;color:var(--p-muted);padding:9px 5px 5px}
+#otp-one-picker .p-time{display:block;width:100%;position:relative;margin:2px 0}
+#otp-one-picker .p-time[aria-pressed=true]{background:var(--p-selected);box-shadow:inset 2px 0 var(--p-accent)}
+#otp-one-picker .p-minimap{display:flex;flex-direction:column;gap:5px;padding:8px 0 3px;pointer-events:none}
+#otp-one-picker .p-minimap i{height:2px;background:var(--p-muted);opacity:.32}
+#otp-one-picker .p-files{margin-top:24px;padding-top:16px;border-top:1px solid var(--p-line)}
+#otp-one-picker .p-file{display:block;padding:8px 5px;color:var(--p-muted);overflow-wrap:anywhere}
+#otp-one-picker .p-paper{padding:24px 27px;min-width:0}
+#otp-one-picker .p-page-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:21px;color:var(--p-muted);font:12px system-ui}
+#otp-one-picker .p-entry{border-top:1px solid var(--p-line);padding:17px 0 25px;min-height:166px}
+#otp-one-picker .p-entry.is-current{border-top:2px solid var(--p-accent)}
+#otp-one-picker .p-stamp{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--p-muted);margin-bottom:17px}
+#otp-one-picker .p-copy{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85}
+#otp-one-picker .p-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;min-height:46px;padding:10px 14px;border-top:1px solid var(--p-line);border-radius:0 0 12px 12px;background:var(--p-chrome);color:var(--p-muted);font:12px system-ui}
+#otp-one-picker .p-message:empty{display:none}
+#otp-one-picker .p-chooser{position:absolute;z-index:5;top:110px;left:50%;transform:translateX(-50%);width:460px;max-width:calc(100% - 24px);background:var(--p-chrome);border:1px solid var(--p-line);border-radius:9px;padding:20px;box-shadow:0 12px 30px var(--p-shadow)}
+#otp-one-picker .p-chooser-heading{font:500 14px system-ui;margin-bottom:9px;overflow-wrap:anywhere}
+#otp-one-picker .p-secondary{font:12px system-ui;color:var(--p-muted);overflow-wrap:anywhere}
+#otp-one-picker .p-folder-options{border:1px solid var(--p-line);border-radius:6px;background:var(--p-paper);padding:5px;margin-top:15px}
+#otp-one-picker .p-folder-option{width:100%;display:flex;align-items:center;gap:10px;padding:11px!important}
+#otp-one-picker .p-folder-option[aria-pressed=true]{background:var(--p-selected)}
+#otp-one-picker .p-folder-option .p-secondary{display:block;margin-top:4px}
+#otp-one-picker .p-chooser-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:17px}
+#otp-one-picker .p-primary{background:var(--p-selected)!important;font-weight:500!important}
+#otp-one-picker .p-window{display:flex;flex-direction:column}
+#otp-one-picker .p-body{flex:1}
+#otp-one-picker .p-picker{align-items:flex-start}
+#otp-one-picker .p-picker-identity{display:block;min-width:0}
+#otp-one-picker .p-name-line{display:flex;align-items:center;gap:14px}
+#otp-one-picker .p-selected-folders{display:block;font-weight:400}
+#otp-one-picker .p-selected-folder{display:flex;align-items:center;gap:7px;color:var(--p-muted);font:12px system-ui;margin-top:7px;overflow-wrap:anywhere}
+#otp-one-picker .p-selected-folder span{min-width:0}
+#otp-one-picker .p-menu{width:410px}
+#otp-one-picker .p-pad-item{padding:3px 0 8px}
+#otp-one-picker .p-pad-top{display:flex;align-items:center;gap:4px}
+#otp-one-picker .p-pad-top .p-pad-row{flex:1;min-width:0;padding:7px 11px}
+#otp-one-picker .p-bindings{padding-left:11px}
+#otp-one-picker .p-binding-row{display:flex;align-items:center;gap:4px}
+#otp-one-picker .p-menu .p-binding-name{display:flex;align-items:center;gap:7px;color:var(--p-muted);font:12px system-ui;padding:5px 7px;flex:1;min-width:0}
+#otp-one-picker .p-binding-name span{min-width:0}
+#otp-one-picker .p-menu .p-unlink{display:flex;align-items:center;justify-content:center;padding:7px;color:var(--p-muted);flex-shrink:0}
+#otp-one-picker .p-menu .p-add-folder{display:flex;align-items:center;gap:7px;color:var(--p-muted);font:12px system-ui;padding:5px 7px}
+#otp-one-picker .p-menu .p-unlink svg{width:12px;height:12px}
+#otp-one-picker .p-clear-option{display:flex;align-items:center;gap:6px;flex-shrink:0;padding:3px 8px 3px 0;color:var(--p-muted);font:11px system-ui}
+#otp-one-picker .p-window input[type=checkbox]{accent-color:var(--p-accent);margin:0;width:15px;height:15px;flex-shrink:0}
+#otp-one-picker .p-global-settings{border-top:1px solid var(--p-line);padding:12px 11px 5px;margin-top:4px}
+#otp-one-picker .p-global-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#otp-one-picker .p-setting-help{font:12px system-ui;color:var(--p-muted);margin-top:7px;line-height:1.5}
+#otp-one-picker .p-chooser-context{font:12px system-ui;color:var(--p-muted);margin-top:7px;overflow-wrap:anywhere}
+#otp-one-picker .p-scratch-help{padding:0 11px 4px;color:var(--p-muted);font:12px system-ui;overflow-wrap:anywhere}
+#otp-one-picker .p-window input[role=switch]{appearance:none;width:28px;height:16px;border:1px solid var(--p-line);border-radius:16px;background:var(--p-selected);position:relative}
+#otp-one-picker .p-window input[role=switch]::before{content:'';position:absolute;width:10px;height:10px;top:2px;left:2px;border-radius:50%;background:var(--p-paper)}
+#otp-one-picker .p-window input[role=switch]:checked{background:var(--p-accent);border-color:var(--p-accent)}
+#otp-one-picker .p-window input[role=switch]:checked::before{transform:translateX(12px)}
+@media(pointer:coarse){#otp-one-picker .p-clear-option,#otp-one-picker .p-global-toggle{min-height:44px}#otp-one-picker .p-window input[type=checkbox]{width:20px;height:20px}}
+@media(max-width:620px){#otp-one-picker .p-body{grid-template-columns:120px minmax(0,1fr);min-height:560px}#otp-one-picker .p-sidebar{padding:16px 5px}#otp-one-picker .p-paper{padding:21px 15px}#otp-one-picker .p-dots{display:none}#otp-one-picker .p-toolbar{gap:5px 10px}}
+@media(max-width:390px){#otp-one-picker .p-sidebar{display:none}#otp-one-picker .p-body{grid-template-columns:1fr}#otp-one-picker .p-paper{padding:20px 16px}#otp-one-picker .p-toolbar{padding:7px 8px}#otp-one-picker .p-menu{left:8px;max-width:calc(100% - 16px)}#otp-one-picker .p-chooser{padding:15px}}
+@media(pointer:coarse){#otp-one-picker .p-window button{min-height:44px}}
+#otp-one-picker .p-toolbar{min-height:50px;flex-wrap:nowrap;justify-content:space-between}
+#otp-one-picker .p-picker-identity{display:flex;align-items:center;gap:14px}
+#otp-one-picker .p-folder-tally{display:flex;align-items:center;gap:5px;color:var(--p-muted);font:12px system-ui;white-space:nowrap}
+#otp-one-picker .p-associated-apps{margin-left:auto;display:flex;gap:5px}
+#otp-one-picker .p-window .p-app-icon{padding:7px;display:flex}
+#otp-one-picker .p-pad-item{border-radius:6px;cursor:default}
+#otp-one-picker .p-pad-item:hover,#otp-one-picker .p-pad-item:focus-within{background:var(--p-selected)}
+#otp-one-picker .p-pad-item button:hover{background:transparent}
+#otp-one-picker .p-pad-item .p-unlink:hover{background:var(--p-chrome)}
+#otp-one-picker .p-shortcut{display:none;color:var(--p-muted);margin-left:auto;white-space:nowrap}
+#otp-one-picker.p-command-held .p-shortcut{display:block}
+#otp-one-picker .p-path-toggle{margin-top:16px}
+#otp-one-picker .p-timeline-heading,#otp-one-picker .p-day-heading{display:flex;align-items:center;justify-content:space-between;gap:4px}
+#otp-one-picker .p-timeline-heading .p-label{margin:0}
+#otp-one-picker .p-window .p-sort,#otp-one-picker .p-window .p-sort-days{padding:5px;display:flex;flex-shrink:0}
+#otp-one-picker .p-day-group{margin-bottom:10px}
+#otp-one-picker .p-paper{padding-top:15px}
+@media(max-width:480px){#otp-one-picker .p-picker-identity{gap:7px}#otp-one-picker .p-name-line{gap:6px}#otp-one-picker .p-associated-apps{gap:0}#otp-one-picker .p-folder-tally{font:11px system-ui}}
+</style>
+<script>
+(()=>{
+  const root=document.getElementById('otp-one-picker');
+  const folderPaths=['~/Projects/familia','~/Projects/familia/docs','~/Projects/otto','~/Projects/textprov','~/Documents/dog-jokes','~/Documents/familia-notes'];
+  const pads=[
+    {id:'scratch',name:'Scratch',files:[],notes:['A thought before the next meeting.\n\nKeep the editor close to the work.','Loose notes\n\nOne idea, while it is still useful.','A question to return to\n\nKeep the writing surface close.']},
+    {id:'familia',name:'Familia',files:['handoff.md','what.txt'],notes:['Model relationships\n\nCheck how the references behave after a rename.','Migration notes\n\nTry the next change against a small local example.','Next check\n\nReturn to the relationship tests.']},
+    {id:'otto',name:'Otto',files:['routes.md'],notes:['Routing notes\n\nKeep the handler contract small.','Review the authentication flow\n\nCheck the redirect before the next build.','Before the next build\n\nCheck the wording for the error response.']},
+    {id:'textprov',name:'TextProv',files:[],notes:['Text provenance\n\nWrite down the assumptions before the experiment.','Selection boundaries\n\nKeep the sample and its attribution together.','Next experiment\n\nCompare the two small examples.']},
+    {id:'dog-jokes',name:'Dog Jokes',files:[],notes:['Why did the dog sit in the shade?\n\nIt did not want to be a hot dog.','What do you call a dog magician?\n\nA labracadabrador.','A joke for later\n\nThis one needs another walk.']}
+  ];
+  const times=['09:12','11:46','14:08'];
+  const dom={window:root.querySelector('.p-window'),toolbar:root.querySelector('.p-toolbar'),picker:root.querySelector('.p-picker'),name:root.querySelector('.p-active-name'),folders:root.querySelector('.p-selected-folders'),menu:root.querySelector('.p-menu'),rail:root.querySelector('.p-rail'),files:root.querySelector('.p-file-list'),paper:root.querySelector('.p-paper'),position:root.querySelector('.p-current-position'),message:root.querySelector('.p-message'),chooser:root.querySelector('.p-chooser')};
+  function normalize(value){
+    const defaults={version:3,pad:1,folders:[[],[0,1],[2],[],[4]],positions:[1,1,2,0,1],menuOpen:false,fullPath:false,appAssociations:true,dayOrder:false,checkpointOrder:[false,false],day:0};
+    if(!value||value.version!==3)return defaults;
+    const claimed=new Set();
+    const folders=pads.map((_,index)=>{
+      if(index===0)return [];
+      const supplied=Array.isArray(value.folders?.[index])?value.folders[index]:defaults.folders[index];
+      return supplied.filter(folder=>{if(!Number.isInteger(folder)||folder<0||folder>=folderPaths.length||claimed.has(folder))return false;claimed.add(folder);return true;});
+    });
+    return {...defaults,pad:Number.isInteger(value.pad)&&value.pad>=0&&value.pad<pads.length?value.pad:1,folders,positions:pads.map((_,index)=>Number.isInteger(value.positions?.[index])&&value.positions[index]>=0&&value.positions[index]<times.length?value.positions[index]:defaults.positions[index]),menuOpen:typeof value.menuOpen==='boolean'?value.menuOpen:true,fullPath:value.fullPath===true,appAssociations:value.appAssociations===true,dayOrder:value.dayOrder===true,checkpointOrder:[value.checkpointOrder?.[0]===true,value.checkpointOrder?.[1]===true],day:value.day===1?1:0};
+  }
+  const state=normalize(window.openai?.widgetState?.privateContent?.onePadPicker);
+  let choosing=false,chosenFolder=-1,chooserPad=-1,replacingFolder=-1,message='';
+  function el(tag,cls,text){const item=document.createElement(tag);if(cls)item.className=cls;if(text!==undefined)item.textContent=text;return item;}
+  function icon(name){const item=el('i');item.dataset.lucide=name;item.setAttribute('aria-hidden','true');return item;}
+  function button(text,action,cls){const item=el('button','cursor-interaction '+(cls||''),text);item.type='button';item.onclick=action;return item;}
+  function folderName(index){return folderPaths[index].split('/').pop();}
+  function folderOwner(folder){return state.folders.findIndex(list=>list.includes(folder));}
+  function remember(){window.openai?.setWidgetState?.({modelContent:{mockup:'one-pad-picker',selectedPad:pads[state.pad].name,selectedFolders:state.folders[state.pad].map(index=>folderPaths[index]),pickerOpen:state.menuOpen,appAssociations:state.appAssociations,fullPaths:state.fullPath,dayOrder:state.dayOrder,checkpointOrder:state.checkpointOrder},privateContent:{onePadPicker:state}})?.catch(()=>{});}
+  function commit(){render();remember();}
+  function selectPad(index){state.pad=index;state.menuOpen=false;message='';commit();dom.picker.focus();}
+  function openChooser(pad,folder=-1){
+    if(pad===0)return;
+    chooserPad=pad;replacingFolder=folder;chosenFolder=folder>=0?folder:folderPaths.findIndex((_,index)=>folderOwner(index)<0);choosing=true;state.menuOpen=false;message='';render();dom.chooser.querySelector('button:not(:disabled)')?.focus();
+  }
+  function closeChooser(){choosing=false;chooserPad=-1;replacingFolder=-1;render();dom.picker.focus();}
+  function toggle(label,checked,onChange,cls){
+    const wrapper=el('label',cls);const text=el('span','',label);const input=el('input','cursor-interaction');input.type='checkbox';input.setAttribute('role','switch');input.checked=checked;input.onchange=()=>onChange(input.checked);wrapper.append(text,input);return wrapper;
+  }
+  function renderMenu(){
+    dom.menu.replaceChildren();dom.menu.hidden=!state.menuOpen;dom.picker.setAttribute('aria-expanded',String(state.menuOpen));
+    if(!state.menuOpen)return;
+    dom.menu.append(el('div','p-label','PADS'));
+    pads.forEach((pad,index)=>{
+      const item=el('section','p-pad-item');item.setAttribute('aria-label',pad.name+' pad');
+      const top=el('div','p-pad-top');const choose=button('',()=>selectPad(index),'p-pad-row');choose.setAttribute('aria-current',String(index===state.pad));choose.setAttribute('aria-label','Select '+pad.name);
+      const check=el('span','p-check');if(index===state.pad)check.append(icon('check'));choose.append(el('span','p-pad-name',pad.name),check);const shortcut=el('span','p-shortcut','⌘'+index);shortcut.setAttribute('aria-hidden','true');choose.append(shortcut);top.append(choose);item.onclick=event=>{if(!event.target.closest('button,input,label,.p-binding-name'))selectPad(index);};
+      item.append(top);
+      if(index===0)item.append(el('div','p-scratch-help','Usual page expiry across restarts.'));
+      if(index>0){
+        const bindings=el('div','p-bindings');
+        state.folders[index].forEach(folder=>{
+          const row=el('div','p-binding-row');const change=el('span','p-binding-name');change.dataset.tooltip=folderPaths[folder];change.append(icon('folder'),el('span','',state.fullPath?folderPaths[folder]:folderName(folder)));
+          const remove=button('',()=>{state.folders[index]=state.folders[index].filter(value=>value!==folder);message='Folder removed from '+pad.name;commit();},'p-unlink');remove.append(icon('x'));remove.setAttribute('aria-label','Remove '+folderName(folder)+' folder from '+pad.name);remove.dataset.tooltip='Remove folder association';row.append(change,remove);bindings.append(row);
+        });
+        const add=button(state.folders[index].length?'+ Add folder…':'+ Add folder…',()=>openChooser(index),'p-add-folder');add.setAttribute('aria-label','Add folder to '+pad.name);if(!state.folders[index].length)bindings.append(el('span','p-binding-name','No folder linked'));bindings.append(add);item.append(bindings);
+      }
+      dom.menu.append(item);
+    });
+    const settings=el('section','p-global-settings');settings.setAttribute('aria-label','Application options');settings.append(toggle('App associations',state.appAssociations,value=>{state.appAssociations=value;commit();},'p-global-toggle'),el('div','p-setting-help','Use application context to suggest pads.'));settings.append(toggle('Show full paths',state.fullPath,value=>{state.fullPath=value;commit();},'p-global-toggle p-path-toggle'));dom.menu.append(settings);
+  }
+  const dayNames=['Today','Yesterday'];
+  const previousTimes=['08:30','13:15'];
+  function orderedCheckpoints(day){const indexes=day===0?[0,1,2]:[0,1];return state.checkpointOrder[day]?indexes.reverse():indexes;}
+  function sortButton(label,reverse,action){const item=button('',action,'p-sort');item.append(icon(reverse?'arrow-up-wide-narrow':'arrow-down-wide-narrow'));item.setAttribute('aria-label',label);item.dataset.tooltip=label;return item;}
+  function renderPaper(){
+    dom.paper.replaceChildren();
+    orderedCheckpoints(state.day).forEach(index=>{
+      const entry=el('section','p-entry'+(index===state.positions[state.pad]?' is-current':''));
+      entry.append(el('div','p-stamp',(state.day===0?times:previousTimes)[index]),el('div','p-copy',pads[state.pad].notes[index]));dom.paper.append(entry);
+    });
+  }
+  function renderSidebar(){
+    dom.rail.replaceChildren();
+    const dayButton=root.querySelector('.p-sort-days');dayButton.replaceChildren(icon(state.dayOrder?'arrow-down-wide-narrow':'arrow-up-wide-narrow'));dayButton.setAttribute('aria-label',state.dayOrder?'Show newest days first':'Show oldest days first');dayButton.dataset.tooltip=dayButton.getAttribute('aria-label');dayButton.onclick=()=>{state.dayOrder=!state.dayOrder;commit();};
+    (state.dayOrder?[1,0]:[0,1]).forEach(day=>{
+      const group=el('section','p-day-group');const heading=el('div','p-day-heading');
+      heading.append(button(dayNames[day],()=>{state.day=day;commit();},'p-day'),sortButton('Sort '+dayNames[day]+' checkpoints '+(state.checkpointOrder[day]?'oldest':'newest')+' first',state.checkpointOrder[day],()=>{state.checkpointOrder[day]=!state.checkpointOrder[day];commit();}));group.append(heading);
+      orderedCheckpoints(day).forEach(index=>{
+        const item=button((day===0?times:previousTimes)[index],()=>{state.day=day;state.positions[state.pad]=index;state.menuOpen=false;commit();},'p-time');item.setAttribute('aria-pressed',String(day===state.day&&index===state.positions[state.pad]));
+        const minimap=el('span','p-minimap');minimap.setAttribute('aria-hidden','true');for(let mark=0;mark<5;mark++){const line=el('i');line.style.width=(30+(index*7+mark*17+state.pad*11)%60)+'%';minimap.append(line);}item.append(minimap);group.append(item);
+      });dom.rail.append(group);
+    });
+    dom.files.replaceChildren();if(!pads[state.pad].files.length)dom.files.append(el('span','p-file','No files'));else pads[state.pad].files.forEach(file=>dom.files.append(el('span','p-file',file)));
+  }
+  function renderChooser(){
+    dom.chooser.replaceChildren();dom.chooser.hidden=!choosing;dom.toolbar.inert=choosing;root.querySelector('.p-body').inert=choosing;
+    if(!choosing)return;
+    dom.chooser.append(el('div','p-chooser-heading',(replacingFolder>=0?'Change folder for ':'Add folder to ')+pads[chooserPad].name),el('div','p-secondary','Folder chooser preview · sample locations'));
+    if(replacingFolder>=0)dom.chooser.append(el('div','p-chooser-context','Replacing '+folderPaths[replacingFolder]));
+    const options=el('div','p-folder-options');folderPaths.forEach((path,index)=>{
+      const owner=folderOwner(index);const unavailable=owner>=0&&index!==replacingFolder;
+      const row=button('',()=>{chosenFolder=index;renderChooser();globalThis.lucide?.createIcons?.();},'p-folder-option');row.setAttribute('aria-pressed',String(index===chosenFolder));row.disabled=unavailable;
+      const text=el('span');text.append(el('span','',folderName(index)),el('span','p-secondary',path));if(unavailable)text.append(el('span','p-secondary','Linked to '+pads[owner].name));row.append(icon('folder'),text);options.append(row);
+    });
+    const actions=el('div','p-chooser-actions');const confirm=button(replacingFolder>=0?'Change Folder':'Link Folder',()=>{
+      if(chosenFolder<0)return;
+      const owner=folderOwner(chosenFolder);if(owner>=0&&chosenFolder!==replacingFolder)return;
+      const target=chooserPad;const slot=state.folders[target].indexOf(replacingFolder);if(slot>=0)state.folders[target][slot]=chosenFolder;else state.folders[target].push(chosenFolder);choosing=false;chooserPad=-1;replacingFolder=-1;state.menuOpen=true;message='Folder linked to '+pads[target].name;commit();dom.picker.focus();
+    },'p-primary');confirm.disabled=chosenFolder<0;actions.append(button('Cancel',closeChooser),confirm);dom.chooser.append(options,actions);
+  }
+  function render(){
+    dom.name.textContent=pads[state.pad].name;dom.picker.setAttribute('aria-label','Choose pad, current pad '+pads[state.pad].name);dom.folders.replaceChildren();
+    if(state.pad>0){const count=state.folders[state.pad].length;const tally=el('span','p-folder-tally');tally.append(icon('folder'),el('span','',count+' '+(count===1?'folder':'folders')));dom.folders.append(tally);}
+    const apps=root.querySelector('.p-associated-apps');apps.replaceChildren();
+    const associations=[[],['Zed','Terminal'],['Zed'],['TextEdit'],['Safari']];
+    if(state.appAssociations)associations[state.pad].forEach(name=>{const app=button('',()=>{message='Switch to '+name+' · simulated in this mockup';dom.message.textContent=message;},'p-app-icon');app.dataset.tooltip='Switch to '+name;app.setAttribute('aria-label','Switch to '+name+' (mockup)');app.append(icon({Zed:'square-terminal',Terminal:'terminal',TextEdit:'file-pen-line',Safari:'compass'}[name]));apps.append(app);});
+    dom.position.textContent=pads[state.pad].name+' · '+dayNames[state.day]+' · '+((state.day===0?times:previousTimes)[state.positions[state.pad]]||times[0]);dom.message.textContent=message;
+    renderMenu();renderSidebar();renderPaper();renderChooser();globalThis.lucide?.createIcons?.({attrs:{width:15,height:15}});
+    reserveSpace();
+  }
+  function reserveSpace(){const needed=choosing?Math.max(665,110+dom.chooser.scrollHeight+40):state.menuOpen?Math.max(665,dom.toolbar.offsetTop+dom.toolbar.offsetHeight+dom.menu.scrollHeight+80):665;dom.window.style.minHeight=needed+'px';}
+  dom.picker.onclick=()=>{state.menuOpen=!state.menuOpen;message='';commit();};
+  root.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(choosing){event.preventDefault();closeChooser();}else if(state.menuOpen){event.preventDefault();state.menuOpen=false;commit();dom.picker.focus();}});
+  root.addEventListener('click',event=>{if(!choosing&&state.menuOpen&&event.target.isConnected&&!event.target.closest('.p-toolbar')&&!event.target.closest('.p-chooser')){state.menuOpen=false;commit();}});
+  window.addEventListener('openai:set_globals',event=>{const saved=event.detail?.globals?.widgetState?.privateContent?.onePadPicker;if(!saved)return;Object.assign(state,normalize(saved));choosing=false;chooserPad=-1;replacingFolder=-1;message='';render();});
+  render();
+  const sizing=new ResizeObserver(reserveSpace);[dom.toolbar,dom.menu,dom.chooser].forEach(element=>sizing.observe(element));
+  window.addEventListener('keydown',event=>{root.classList.toggle('p-command-held',event.metaKey);if(event.metaKey&&!event.ctrlKey&&!event.altKey&&/^[0-4]$/.test(event.key)&&!choosing){event.preventDefault();selectPad(Number(event.key));}});
+  window.addEventListener('keyup',event=>root.classList.toggle('p-command-held',event.metaKey));
+  window.addEventListener('blur',()=>root.classList.remove('p-command-held'));
+})();
+</script>

@@ -66,6 +66,14 @@ surprising, or unresolved observations from doing so. An observation
 starts in ABERRATIONS and graduates into DOGFOOD, an issue, or an ADR
 once it is understood.
 
+## mockups/
+
+Inspectable design explorations and their interaction records. The
+[one-pad-picker mockup](mockups/multiple-pads/README.md) includes the reviewed
+browser prototype, folder and application association proposals, and approaches
+removed during review. Browser behavior and simulated native actions are
+identified separately; a mockup is not evidence of a shipped contract.
+
 ## plans/
 
 Routes to a milestone: what has to happen, in what order, to get
@@ -91,6 +99,10 @@ Dated reports on the external landscape and on techniques the app might
 adopt: what other software does, what a technique costs, what is true
 rather than assumed. Findings feed specs and ADRs; a report stays as
 written and is not edited to match a later conclusion.
+
+For application identity, supplied paths, pasteboard representations, and
+explicit transfer validation, see
+[macOS application context and deliberate paste](research/2026-1001-macos-context-and-pasteboard.md).
 
 ## soto/
 
