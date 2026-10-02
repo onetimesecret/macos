@@ -418,6 +418,11 @@ public final class PageModel: ObservableObject {
     /// items and sealed file live.
     public let formFactor: FormFactor
 
+    public let pads: PadCatalog
+    private var lastPadID = PadCatalog.scratchID
+    private var lastPadsEnabled = false
+    private var applicationContext: PadApplicationContext?
+
     /// The strip: one entry per durable tab, in visible order, whether
     /// or not the tab holds a page (ADR-0017). A tab whose page expired
     /// keeps its place here, named and empty.
@@ -1387,6 +1392,7 @@ public final class PageModel: ObservableObject {
         CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)
         self.formFactor = formFactor
         self.defaults = defaults
+        pads = PadCatalog(defaults: defaults)
         let resolvedClient =
             seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
         client = resolvedClient
@@ -1498,6 +1504,10 @@ public final class PageModel: ObservableObject {
             self?.markDirty()
             self?.refresh()
         }
+        lastPadID = pads.activeID
+        lastPadsEnabled = pads.isEnabled
+        pads.onChange = { [weak self] in self?.padCatalogChanged() }
+        updateApplicationContextObservation()
         modalEndObserver = NotificationCenter.default.addObserver(
             forName: ModalSession.didEndNotification, object: nil, queue: nil
         ) { [weak self] _ in
@@ -1678,7 +1688,8 @@ public final class PageModel: ObservableObject {
             newTab()
         }
         refresh()
-        selection = tabs.first?.id
+        selection = navigationTabs.first?.id
+        if pads.isEnabled { restorePadSelection() }
         // The third sealed file, after the pages and after the
         // selection settles. It is licensed by nothing: a state file
         // that would not open says nothing about the drafts, which are
@@ -2209,7 +2220,8 @@ public final class PageModel: ObservableObject {
         var recordMoved = false
         // Asked of the core directly, not through `refreshOpenFiles`:
         // that would publish rows that are not fit to draw yet.
-        var waiting = client.fileRoster().filter(\.pendingHydration)
+        let restoredFiles = client.fileRoster()
+        var waiting = restoredFiles.filter(\.pendingHydration)
         // In passes, because a hydration can wait. A file whose
         // bookmark resolves to the recorded path of a file not yet
         // hydrated is put off by the core until that one has settled,
@@ -2231,6 +2243,12 @@ public final class PageModel: ObservableObject {
                 deferred = []
             }
             waiting = deferred
+        }
+        if pads.isEnabled {
+            pads.transferFiles(client.fileRoster().compactMap { new in
+                guard let old = restoredFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
+                return (old.path, new.path)
+            })
         }
         refreshOpenFiles()
         for file in openFiles {
@@ -2737,8 +2755,114 @@ public final class PageModel: ObservableObject {
     /// mode would need the timer this whole design exists to avoid.
     /// What it costs instead is a walk over the summaries the model has
     /// already decoded, with no call into the core at all.
+
+    // MARK: Experimental pads (local navigation ownership)
+
+    public var navigationTabs: [TabSummary] {
+        guard pads.isEnabled else { return tabs }
+        return tabs.filter { pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
+    }
+    public var navigationFiles: [FileSummary] {
+        guard pads.isEnabled else { return openFiles }
+        return openFiles.filter { pads.owner(ofFile: $0.path) == pads.activeID }
+    }
+    /// Soft application context yields to any explicit file context or an
+    /// unfinished confirmation. Called by the transient workspace observer.
+    func routeFromApplication(_ bundleID: String) {
+        guard !ModalSession.isRunning, !ModalSession.isBracketed,
+            pendingFileClose == nil, concealDraft == nil, selectedFile == nil,
+            let target = pads.pad(forApplication: bundleID) else { return }
+        pads.activate(target, recordRecency: false)
+    }
+    public func activatePad(_ id: UUID) {
+        guard pads.isEnabled else { return }
+        guard pendingFileClose == nil else {
+            flash("Finish the file close decision before switching pads.")
+            return
+        }
+        pads.activate(id)
+    }
+    @discardableResult
+    public func createPad(named name: String) -> UUID? {
+        guard pads.isEnabled, pendingFileClose == nil else { return nil }
+        return pads.create(named: name)
+    }
+    private func updateApplicationContextObservation() {
+        guard !FormFactor.runningUnderTests else { return }
+        if pads.isEnabled && pads.appAssociationsEnabled {
+            if applicationContext == nil {
+                applicationContext = PadApplicationContext { [weak self] bundleID in
+                    self?.routeFromApplication(bundleID)
+                }
+            }
+        } else {
+            applicationContext = nil
+        }
+    }
+    private func padCatalogChanged() {
+        updateApplicationContextObservation()
+        if pads.isEnabled != lastPadsEnabled || (pads.isEnabled && pads.activeID != lastPadID) {
+            if lastPadsEnabled { pads.onChange = nil
+                pads.remember(tabUUID: selectedTab?.uuid, for: lastPadID)
+                pads.onChange = { [weak self] in self?.padCatalogChanged() }
+            }
+            lastPadID = pads.activeID
+            lastPadsEnabled = pads.isEnabled
+            showingLedger = false
+            selectedFile = nil
+            expandedPageID = nil
+            if pads.isEnabled { restorePadSelection() }
+            else { selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id)) }
+        }
+        objectWillChange.send()
+    }
+    private func restorePadSelection() {
+        let remembered = pads.rememberedTab(for: pads.activeID)
+        selection = navigationTabs.first { $0.uuid == remembered }?.id ?? navigationTabs.first?.id
+        if showsTimeUnits {
+            selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
+        }
+    }
+    public func toggleDaySort() { pads.toggleDaySort(for: pads.activeID) }
+    public func toggleCheckpointSort(dayBucket: Int) {
+        pads.toggleCheckpointSort(for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
+    }
+    public func dateKey(forDayBucket bucket: Int) -> String {
+        let calendar = Calendar.current
+        let date: Date
+        if let stamp = navigationTabs.first(where: { min($0.pageDayOffset ?? 1, 0) == bucket && $0.pageCreatedMs != nil })?.pageCreatedMs {
+            date = Date(timeIntervalSince1970: Double(stamp) / 1000)
+        } else {
+            date = calendar.date(byAdding: .day, value: bucket, to: Date()) ?? Date()
+        }
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    }
+    private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
+        guard pads.isEnabled else { return projection }
+        let summaries = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        var units = projection.units.map { unit in
+            let direction = pads.checkpointSortDirection(for: pads.activeID, onDate: dateKey(forDayBucket: unit.bucket))
+            let ordered = zip(unit.tabIDs, unit.pageIDs).sorted { a, b in
+                let lhs = summaries[a.0]?.pageCreatedMs ?? 0, rhs = summaries[b.0]?.pageCreatedMs ?? 0
+                if lhs == rhs {
+                    let left = summaries[a.0]?.uuid ?? String(a.0)
+                    let right = summaries[b.0]?.uuid ?? String(b.0)
+                    return direction == .chronological ? left < right : left > right
+                }
+                return direction == .chronological ? lhs < rhs : lhs > rhs
+            }
+            return TimeUnitProjection.Unit(bucket: unit.bucket, label: unit.label, spokenLabel: unit.spokenLabel,
+                railLabel: unit.railLabel, pageIDs: ordered.map { $0.1 }, tabIDs: ordered.map { $0.0 },
+                fractionRemaining: unit.fractionRemaining, paused: unit.paused, toppedUp: unit.toppedUp,
+                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining)
+        }
+        if pads.daySortDirection(for: pads.activeID) == .chronological { units.reverse() }
+        return TimeUnitProjection(units: units, hiddenBlankPages: projection.hiddenBlankPages)
+    }
+
     public var timeUnits: TimeUnitProjection {
-        TimeUnitProjection.project(tabs: tabs, selectedPageID: selectedPageID, unit: .day)
+        sortedPadProjection(TimeUnitProjection.project(tabs: navigationTabs, selectedPageID: selectedPageID, unit: .day))
     }
 
     public func refresh() {
@@ -2776,7 +2900,7 @@ public final class PageModel: ObservableObject {
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
         fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
-        selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
+        selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id))
         // When pages are organized by day, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
         // at something the surface is not drawing. One boolean ahead of
@@ -3079,8 +3203,8 @@ public final class PageModel: ObservableObject {
     /// the rail. With no file open the array is exactly what it has
     /// always been, element for element, in both modes.
     public var visibleTargets: [SurfaceTarget] {
-        let files = openFiles.map { SurfaceTarget.file($0.id) }
-        guard showsTimeUnits else { return files + tabs.map { .tab($0.id) } }
+        let files = navigationFiles.map { SurfaceTarget.file($0.id) }
+        guard showsTimeUnits else { return files + navigationTabs.map { .tab($0.id) } }
         return files + timeUnits.units.map { unit -> SurfaceTarget in
             guard let tab = unit.tabIDs.first else { return .today }
             return .tab(tab)
@@ -3117,6 +3241,13 @@ public final class PageModel: ObservableObject {
     /// separates this from `select(_:)`: a file is not a slot, and
     /// there is no empty file to conjure.
     public func selectFile(_ id: UInt64) {
+        if pads.isEnabled, let file = openFiles.first(where: { $0.id == id }) {
+            let target = pads.owner(ofFile: file.path)
+            if target != pads.activeID {
+                activatePad(target)
+                guard pads.activeID == target else { return }
+            }
+        }
         showingLedger = false
         if pendingFileClose?.fileID != id {
             clearPendingFileClose()
@@ -3134,6 +3265,12 @@ public final class PageModel: ObservableObject {
     /// selection naming a file the roster no longer holds, so a closed
     /// file cannot leave the surface pointing at nothing.
     func standOpenFiles(_ files: [FileSummary]) {
+        if pads.isEnabled {
+            pads.transferFiles(files.compactMap { new in
+                guard let old = openFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
+                return (old.path, new.path)
+            })
+        }
         openFiles = files
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
@@ -3362,6 +3499,10 @@ public final class PageModel: ObservableObject {
     /// reads the file afresh. One that is still held is refused by the
     /// core, and the refusal is said like any other.
     public func openFile(at url: URL) {
+        if pads.isEnabled, pendingFileClose != nil {
+            flash("Finish the file close decision before opening another file.")
+            return
+        }
         // The bracket closes before anything is said or drawn: what it
         // guards is the core's read and the bookmark, and nothing
         // after them touches the file.
@@ -3424,6 +3565,11 @@ public final class PageModel: ObservableObject {
         }
         refreshOpenFiles()
         reconsiderFileRenderMode(for: id)
+        if pads.isEnabled {
+            let target = pads.pad(forPath: url.path) ?? pads.activeID
+            pads.assign(filePath: openFiles.first(where: { $0.id == id })?.path ?? url.path, to: target)
+            activatePad(target)
+        }
         selectFile(id)
         markFilesDirty()
     }
@@ -4482,7 +4628,7 @@ public final class PageModel: ObservableObject {
         ) {
             // The days start after the Files shelf, so the day's own
             // place is its index past the files the rail drew above it.
-            return openFiles.count + day
+            return navigationFiles.count + day
         }
         return targets.firstIndex(of: .tab(selection)) ?? 0
     }
@@ -4500,6 +4646,13 @@ public final class PageModel: ObservableObject {
     /// `refresh()` reconciles, so a page that expires under the cursor
     /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
+        if pads.isEnabled, let tab = tabs.first(where: { $0.id == id }) {
+            let target = pads.owner(ofTabUUID: tab.uuid)
+            if target != pads.activeID {
+                activatePad(target)
+                guard pads.activeID == target else { return }
+            }
+        }
         let leavingLedger = showingLedger
         clearPendingFileClose()
         // A slot and a file are never both showing, so choosing a slot
@@ -4520,6 +4673,7 @@ public final class PageModel: ObservableObject {
         // neither arm: it keeps its editor, keeps its focus, and asks
         // for nothing.
         if leavingLedger || leavingFile || minted { refocusEditorIfKeyed() }
+        if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
     }
 
     /// ⌘1 to ⌘9: jump by visible order. With the strip that is the
@@ -4834,7 +4988,12 @@ public final class PageModel: ObservableObject {
     private func newTab() -> UInt64 {
         let id = client.newTab()
         // A failed ask changed nothing; only a real tab is dirt.
-        if id != 0 { markDirty() }
+        if id != 0 {
+            if pads.isEnabled, let tab = client.tabs().first(where: { $0.id == id }), let uuid = tab.uuid {
+                pads.assign(tabUUID: uuid, to: pads.activeID)
+            }
+            markDirty()
+        }
         return id
     }
 
@@ -4871,6 +5030,7 @@ public final class PageModel: ObservableObject {
             // no-op on the switch paths where focus never left.
             showingLedger = false
             selection = created
+            if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
             refocusEditorIfKeyed()
         }
     }
@@ -5013,7 +5173,7 @@ public final class PageModel: ObservableObject {
         // widening the strip (ADR-0017 item 11). A selected slot that
         // already holds a page: the grant promises one page and not one
         // per keystroke, so focus what exists.
-        if tabs.isEmpty {
+        if navigationTabs.isEmpty {
             newPage()
         } else if let tab = selection, selectedTab?.hasPage == false {
             openPageIfSlotIsEmpty(tab)
@@ -5132,7 +5292,13 @@ public final class PageModel: ObservableObject {
     /// the ⌘-number map follows. The arrangement is the slot's, so it
     /// survives every page the slot holds.
     public func move(_ id: UInt64, to index: Int) {
-        _ = client.moveTab(id: id, to: UInt64(max(0, index)))
+        var destination = max(0, index)
+        if pads.isEnabled {
+            let remaining = tabs.filter { $0.id != id }
+            let active = remaining.indices.filter { pads.owner(ofTabUUID: remaining[$0].uuid) == pads.activeID }
+            destination = destination < active.count ? active[destination] : active.last.map { $0 + 1 } ?? remaining.count
+        }
+        _ = client.moveTab(id: id, to: UInt64(destination))
         markDirty()
         refresh()
     }

@@ -3631,6 +3631,7 @@ fn summary_json(
     let remaining = page.map_or(std::time::Duration::ZERO, |sheet| sheet.remaining(now));
     serde_json::json!({
         "id": tab.id().raw(),
+        "uuid": tab.uuid().to_string(),
         "has_page": page.is_some(),
         "page_id": page.map(|sheet| sheet.id().raw()),
         "title": tab.label(utc_offset_seconds),
@@ -4020,6 +4021,30 @@ mod tests {
     /// The whole strip as summaries, in visible order.
     unsafe fn strip(handle: *mut CompanionHandle) -> Vec<serde_json::Value> {
         serde_json::from_str(&unsafe { take_json(companion_tabs_json(handle)) }).unwrap()
+    }
+
+    #[test]
+    fn tab_summary_uuid_survives_reorder_and_dense_restore_ids() {
+        unsafe {
+            let handle = handle();
+            let first = companion_tab_new(handle);
+            let second = companion_tab_new(handle);
+            let third = companion_tab_new(handle);
+            let before = strip(handle);
+            let second_uuid = before[1]["uuid"].clone();
+            let third_uuid = before[2]["uuid"].clone();
+            assert!(second_uuid.as_str().is_some_and(|uuid| uuid.len() == 36));
+            assert!(companion_tab_close(handle, first));
+            assert!(companion_tab_move(handle, third, 0));
+            age_by(handle, 0);
+            let restored = strip(handle);
+            assert_eq!(restored[0]["id"], 1);
+            assert_eq!(restored[0]["uuid"], third_uuid);
+            assert_eq!(restored[1]["id"], 2);
+            assert_eq!(restored[1]["uuid"], second_uuid);
+            assert_ne!(second, 0);
+            companion_free(handle);
+        }
     }
 
     /// The page a tab holds, read back through the summaries, or `None`
@@ -5533,7 +5558,7 @@ mod tests {
     /// summary is decoded by name on the far side, so a rename here is
     /// an empty window there.
     #[test]
-    fn the_fifteen_existing_summary_keys_are_unchanged() {
+    fn existing_summary_fields_and_additive_stable_uuid_are_preserved() {
         let handle = handle();
         unsafe {
             let (_tab, page) = new_page(handle);
@@ -5548,6 +5573,7 @@ mod tests {
             keys.sort_unstable();
             let mut expected = [
                 "id",
+                "uuid",
                 "has_page",
                 "page_id",
                 "title",
