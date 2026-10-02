@@ -291,8 +291,10 @@ final class PadShortcutMonitor: ObservableObject {
         return number == 0 ? existing == nil : existing?.selectsPageNumber == number
     }
 
-    nonisolated static func allowsPadSwitch(isModal: Bool, hasAttachedSheet: Bool, isSheet: Bool) -> Bool {
-        !isModal && !hasAttachedSheet && !isSheet
+    /// Pad selection is shared across windows, so a sheet in any app window
+    /// suspends these application-local shortcuts even if another window is key.
+    static func allowsPadSwitch(isModal: Bool, windows: [NSWindow]) -> Bool {
+        !isModal && !windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
     }
 
     func install(model: PageModel, surface: PresentationOwner) {
@@ -303,9 +305,7 @@ final class PadShortcutMonitor: ObservableObject {
                 self.commandHeld = event.modifierFlags.contains(.command)
                 guard event.type == .keyDown,
                       event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-                      Self.allowsPadSwitch(isModal: NSApp.modalWindow != nil,
-                                           hasAttachedSheet: NSApp.keyWindow?.attachedSheet != nil,
-                                           isSheet: NSApp.keyWindow?.sheetParent != nil),
+                      Self.allowsPadSwitch(isModal: NSApp.modalWindow != nil, windows: NSApp.windows),
                       let key = event.charactersIgnoringModifiers, let number = Int(key),
                       (0...9).contains(number), Self.allows(number: number, keymap: model.keymap)
                 else { return false }

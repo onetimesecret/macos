@@ -46,11 +46,34 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
     }
 
-    func testPadShortcutsYieldToBothSheetAndItsParentWindow() {
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, hasAttachedSheet: false, isSheet: false))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: true, hasAttachedSheet: false, isSheet: false))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, hasAttachedSheet: true, isSheet: false))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, hasAttachedSheet: false, isSheet: true))
+    func testPadShortcutsYieldToSheetAttachedToAnotherWindow() {
+        _ = NSApplication.shared
+        let windows = (0..<3).map { _ in
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            return window
+        }
+        let parent = windows[0], other = windows[1], sheet = windows[2]
+        defer {
+            if parent.attachedSheet === sheet { parent.endSheet(sheet) }
+            windows.forEach { $0.orderOut(nil); $0.close() }
+        }
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: true, windows: [parent, other]))
+        parent.beginSheet(sheet)
+        XCTAssertFalse(parent.isKeyWindow)
+        XCTAssertTrue(parent.attachedSheet === sheet)
+        XCTAssertTrue(sheet.sheetParent === parent)
+        // The other window has no sheet; inspecting only that window would
+        // incorrectly allow a shortcut to change the shared pad selection.
+        XCTAssertNil(other.attachedSheet)
+        XCTAssertNil(other.sheetParent)
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other]))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other, sheet]))
+        parent.endSheet(sheet)
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
     }
 
     func testSortAccessibilitySeparatesCurrentOrderFromNextAction() {
