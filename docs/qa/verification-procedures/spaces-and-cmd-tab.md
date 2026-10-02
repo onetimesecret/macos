@@ -88,7 +88,7 @@ does not.
 
 Quit any running copy first (`scripts/quit-app.sh`; only the graceful
 path saves state), then `scripts/package-app.sh && open
-dist/OnetimePad.app`.
+"dist/OnetimePad Local.app"`.
 
 Have at least three desktops (Mission Control, add two), and close both
 Settings and About before starting, since an open ordinary window is the
