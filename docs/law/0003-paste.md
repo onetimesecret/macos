@@ -19,7 +19,10 @@ sources:
 Complete draft for review under [behaviour law conventions](README.md); do not
 build against it as an accepted law. [ADR-0037](../adr/0037-explicit-clipboard-operations.md)
 consumes this proposed rule. No numbered accepted record currently incorporates
-the broader paste contract.
+the broader paste contract, so the decision list is empty. The rows sit in a
+draft law rather than in ADR-0037 because they form a contract table in which
+each row names its test or its debt, which an ADR does not hold; decisions join
+the front matter as a dated record numbers them.
 
 ## The rule
 
