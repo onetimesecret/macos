@@ -25,10 +25,15 @@ boundaries; its architectural status remains proposed. The companion
 [copy law](../law/0002-copy.md) and [paste law](../law/0003-paste.md) are complete
 drafts with explicit coverage debts, rather than accepted implementation claims.
 
-Accepted [Law 0001](../law/0001-sealed-object.md#the-rule) provides the existing
-sealed-object boundary, exactly:
+Accepted [Law 0001](../law/0001-sealed-object.md#the-rule) states its governing
+rule, exactly:
 
-> Plaintext leaves the object only through an action that names that consequence.
+> A sealed item occupies one position in the document, but its plaintext is
+> not part of the document's ambient text.
+
+The explanatory prose that follows the rule, not the rule itself, gives the
+sealed-object egress boundary this proposal relies on:
+“Plaintext leaves the object only through an action that names that consequence.”
 
 That authority governs sealed objects. It does not establish an ordinary copy,
 rich-paste, application-provenance, or OS-compatibility guarantee. The

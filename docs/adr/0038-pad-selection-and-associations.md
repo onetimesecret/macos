@@ -79,7 +79,8 @@ These fields can disclose work context; UserDefaults would leave them outside
 the encrypted note-content envelope. The catalog must contain no note content
 or clipboard payload, and the attempt must state this limitation clearly.
 Proposed [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md)
-says “Settings remain in UserDefaults (never secrets).” Its proposed status and
+says, with its source markup: “**Settings** remain in `UserDefaults` (never
+secrets).” Its proposed status and
 original scope do not establish authority for storing this new metadata.
 Storage choice, migration, and metadata removal still require review.
 
