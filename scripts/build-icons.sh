@@ -24,6 +24,8 @@
 #       the saved Composer document and its assets define the release icon.
 #       --composer does not update the artwork compiled by --glass.
 #   scripts/build-icons.sh --mark maruhi --composer # alternate motif
+#   scripts/build-icons.sh --update-glass-artwork # regenerate saved logo layers and glass preview
+#       retains the material and appearance settings in icon.json.
 #   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon; directory is repo-relative
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
@@ -146,6 +148,28 @@ build_icon_if_stale() { # <app name> <style> <rrggbb shade>
   build_icon "$@"
 }
 
+update_glass_artwork() {
+  if [[ -n "$MARK_CHOSEN" ]]; then
+    echo "--update-glass-artwork updates the saved logo composition; use --composer for alternate marks." >&2
+    exit 1
+  fi
+  local developer_dir composer_tool document
+  developer_dir="${DEVELOPER_DIR:-$(xcode-select --print-path)}"
+  composer_tool="$(dirname "$developer_dir")/Applications/Icon Composer.app/Contents/Executables/ictool"
+  if [[ ! -x "$composer_tool" ]]; then
+    echo "--update-glass-artwork needs Icon Composer in the selected Xcode; set DEVELOPER_DIR or xcode-select." >&2
+    exit 1
+  fi
+  document="$PWD/artwork/OnetimePad-Glass.icon"
+  echo "==> Updating saved glass foreground and cast shadow"
+  swift scripts/render-icon.swift --mark logo --composer "$OUT/composer-logo"
+  cp "$OUT/composer-logo/01-logo-foreground.png" "$document/Assets/01-logo-foreground.png"
+  cp "$OUT/composer-logo/00-logo-cast-shadow.png" "$document/Assets/00-logo-cast-shadow.png"
+  "$composer_tool" "$document" --export-image \
+    --output-file "$PWD/artwork/OnetimePad-Glass-CastShadow.png" \
+    --platform macOS --rendition Default --width 1024 --height 1024 --scale 1
+}
+
 build_glass_icon() {
   if [[ -n "$MARK_CHOSEN" ]]; then
     echo "--glass compiles artwork/OnetimePad-Glass.icon; --mark applies to rendered artwork only." >&2
@@ -226,6 +250,9 @@ case $# in
       --glass)
         build_glass_icon
         ;;
+      --update-glass-artwork)
+        update_glass_artwork
+        ;;
       --rrggbb)
         cat <<'EOF'
 0f766e  deep teal, the OnetimePad default (complement of the ember accent)
@@ -257,7 +284,7 @@ EOF
         build_scout
         ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --update-glass-artwork | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -270,7 +297,7 @@ EOF
       --sweep) build_sweep "$2" ;;
       --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --update-glass-artwork | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -288,12 +315,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --update-glass-artwork | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --update-glass-artwork | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac

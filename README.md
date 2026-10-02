@@ -106,7 +106,11 @@ introduce Icon Composer 2.0 with “support for refractivity”. Release packagi
 requires Xcode 27 or later; set `DEVELOPER_DIR` or `xcode-select` to select it.
 Edit the document in Icon Composer, then run
 `scripts/build-icons.sh --glass` to compile just the icon, or use the release
-commands above to package it. Debug builds keep the black development icon.
+commands above to package it. To regenerate the saved S foreground, matching
+cast shadow, and glass preview from the Swift renderer, run
+`scripts/build-icons.sh --update-glass-artwork`, then `--glass` to compile.
+This keeps the material and appearance settings in `icon.json`.
+Debug builds keep the black development icon.
 Ad-hoc icons rendered with `build-icons.sh` no longer select the release icon.
 See the [exported glass icon preview](artwork/OnetimePad-Glass-CastShadow.png)
 for the current composition.
