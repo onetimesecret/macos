@@ -203,10 +203,10 @@ public struct GeneralSettingsView: View {
                 }
                 .pickerStyle(.segmented)
             } header: {
-                SettingsCaption(Self.pageLayoutCaption)
+                SettingsCaption(Self.pageLayoutCaption(experimental: model.pads.isEnabled))
             }
             Section {
-                Toggle("Multiple pads and context associations · experiment", isOn: Binding(
+                Toggle(CompanionL10n.string("pad.settings.enabled"), isOn: Binding(
                     get: { model.pads.isEnabled }, set: { model.pads.isEnabled = $0 }
                 ))
                 .disabled(model.pads.loadFailure != nil)
@@ -214,9 +214,9 @@ public struct GeneralSettingsView: View {
                     Text(failure).font(.caption).foregroundStyle(Color.emberText)
                 }
             } header: {
-                SettingsCaption("Off preserves the existing single-pad navigation and shortcuts.")
+                SettingsCaption(CompanionL10n.string("pad.settings.caption"))
             } footer: {
-                SettingsCaption("Pad names, folder paths, and associated app identifiers are stored in unencrypted local preferences. Note content stays in its existing storage.")
+                SettingsCaption(CompanionL10n.string("pad.settings.storage"))
             }
             // Timeline exposes the time-specific preferences.
             if model.showsTimeUnits {
@@ -325,12 +325,18 @@ public struct GeneralSettingsView: View {
 
     /// The caption says both what changes and what it costs (ADR-0037).
     /// User-facing copy never exposes the components' code names.
-    static let pageLayoutCaption: String =
-        "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
+    static var pageLayoutCaption: String { pageLayoutCaption(experimental: false) }
+
+    static func pageLayoutCaption(experimental: Bool) -> String {
+        if experimental {
+            return CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width(experimental: true)))
+        }
+        return "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
             + "that groups live pages by the day they were written, newest first, down the "
-            + "side, taking \(Int(TimeRailView.width)) points from the page; lines always wrap and older blank pages "
+            + "side, taking \(Int(TimeRailView.width(experimental: experimental))) points from the page; lines always wrap and older blank pages "
             + "are counted rather than drawn. Changing this moves no content and writes "
             + "nothing new to disk."
+    }
 
     /// The section only exists when the switch is offered, so the
     /// caption's job is to say why this build has one and how long it

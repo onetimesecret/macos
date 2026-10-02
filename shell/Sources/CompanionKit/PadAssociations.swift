@@ -45,11 +45,11 @@ extension PageModel {
     }
     public func activateAssociatedApplication(_ bundleID: String) {
         guard let app = runningAssociationApplications.first(where: { $0.bundleIdentifier == bundleID }) else {
-            flash("This associated application is not running.")
+            flash(CompanionL10n.string("pad.app.notRunning"))
             return
         }
         if !app.activate(options: [.activateIgnoringOtherApps]) {
-            flash("The associated application could not be activated.")
+            flash(CompanionL10n.string("pad.app.activationFailed"))
         }
     }
     public func addApplication(_ bundleID: String, toPad id: UUID) {
@@ -65,12 +65,12 @@ extension PageModel {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
-        panel.prompt = "Associate"
+        panel.prompt = CompanionL10n.string("pad.folder.associate")
         let response = ModalSession.run { panel.runModal() }
         guard response == .OK else { return }
         for url in panel.urls {
             if !pads.addFolder(url.path, to: id) {
-                flash("This folder is already associated with a pad.")
+                flash(CompanionL10n.string("pad.folder.owned"))
             }
         }
     }

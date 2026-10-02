@@ -34,6 +34,52 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(PadShortcutMonitor.allows(number: 0, keymap: keymap))
     }
 
+    func testNameValidationExplainsEmptyAndOverlongNamesWithoutTruncating() {
+        for name in ["", " ", "\n\t"] {
+            XCTAssertEqual(PadNameDraft.validationMessage(name), CompanionL10n.string("pad.name.empty"))
+        }
+        let exactLimit = String(repeating: "🐕", count: 80)
+        XCTAssertNil(PadNameDraft.validationMessage("  " + exactLimit + "\n"))
+        XCTAssertEqual(PadNameDraft.validationMessage(exactLimit + "x"),
+                       CompanionL10n.string("pad.name.long"))
+        XCTAssertNotEqual(CompanionL10n.string("pad.name.empty"), "pad.name.empty")
+        XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
+    }
+
+    func testPadShortcutsYieldToBothSheetAndItsParentWindow() {
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, hasAttachedSheet: false, isSheet: false))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: true, hasAttachedSheet: false, isSheet: false))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, hasAttachedSheet: true, isSheet: false))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, hasAttachedSheet: false, isSheet: true))
+    }
+
+    func testSortAccessibilitySeparatesCurrentOrderFromNextAction() {
+        let oldest = PadSortCopy(direction: .chronological, subject: "days")
+        XCTAssertEqual(oldest.label, "days sort order")
+        XCTAssertEqual(oldest.currentOrder, "Oldest first")
+        XCTAssertEqual(oldest.action, "Activate to sort days newest first")
+        let newest = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
+        XCTAssertEqual(newest.currentOrder, "Newest first")
+        XCTAssertEqual(newest.action, "Activate to sort today checkpoints oldest first")
+    }
+
+    func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {
+        XCTAssertEqual(TimeRailView.width(experimental: false), 110)
+        XCTAssertEqual(TimeRailView.width(experimental: true), 150)
+        XCTAssertEqual(TimeRailView.width, TimeRailView.width(experimental: false))
+        XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: false).contains("110 points"))
+        XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: true).contains("150 points"))
+    }
+
+    func testPadLocalizedFormatsKeepNamesAndPathsLiteral() {
+        XCTAssertEqual(CompanionL10n.format("pad.picker.current", "Familia 100%"),
+                       "Choose pad, current pad Familia 100%")
+        XCTAssertEqual(CompanionL10n.format("pad.folder.remove", "/tmp/%@", "Dog Jokes"),
+                       "Remove /tmp/%@ from Dog Jokes")
+        XCTAssertEqual(CompanionL10n.format("pad.folder.one", 1), "1 folder")
+        XCTAssertEqual(CompanionL10n.format("pad.folder.many", 2), "2 folders")
+    }
+
     func testNativeRollAndRailFollowSameSortedActivePadProjection() throws {
         let suite = "pad-picker-ui-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

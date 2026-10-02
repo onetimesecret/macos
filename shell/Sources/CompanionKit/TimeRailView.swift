@@ -89,6 +89,13 @@ public struct TimeRailView: View {
     /// caption. Longer than that truncates at the tail, which is the
     /// net rather than the plan.
     static let width: CGFloat = 110
+    static let experimentalWidth: CGFloat = 150
+
+    /// Use the same measure in the view and layout disclosures; turning the
+    /// experiment off keeps the legacy rail's 110-point width.
+    nonisolated static func width(experimental: Bool) -> CGFloat {
+        experimental ? experimentalWidth : width
+    }
 
     public var body: some View {
         if model.pads.isEnabled {
@@ -147,7 +154,7 @@ public struct TimeRailView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
-        .frame(width: Self.width)
+        .frame(width: Self.width(experimental: false))
         .background(Color.panelBackground)
     }
 
@@ -164,14 +171,15 @@ public struct TimeRailView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 3) {
-                    GroupLabel(text: "TIMELINE")
+                    GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
                     Spacer(minLength: 0)
                     sortControl(
                         direction: model.pads.daySortDirection(for: model.pads.activeID),
-                        label: "days", action: model.toggleDaySort
+                        label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort
                     )
                     Button(action: model.newPage) { Image(systemName: "plus") }
-                        .buttonStyle(.plain).help("New page").accessibilityLabel("New page")
+                        .buttonStyle(.plain).help(CompanionL10n.string("pad.page.new"))
+                        .accessibilityLabel(CompanionL10n.string("pad.page.new"))
                 }
                 ForEach(projection.units) { unit in
                     VStack(alignment: .leading, spacing: 3) {
@@ -183,7 +191,7 @@ public struct TimeRailView: View {
                                     for: model.pads.activeID,
                                     onDate: model.dateKey(forDayBucket: unit.bucket)
                                 ),
-                                label: "\(unit.spokenLabel) checkpoints",
+                                label: CompanionL10n.format("pad.sort.checkpoints", unit.spokenLabel),
                                 action: { model.toggleCheckpointSort(dayBucket: unit.bucket) }
                             )
                         }
@@ -199,7 +207,7 @@ public struct TimeRailView: View {
                                 }
                             } label: {
                                 HStack {
-                                    Text(node.stamp.isEmpty ? "New page…" : node.stamp)
+                                    Text(node.stamp.isEmpty ? CompanionL10n.string("pad.page.newPlaceholder") : node.stamp)
                                     Spacer(minLength: 0)
                                 }
                                 .padding(6).contentShape(Rectangle())
@@ -216,7 +224,7 @@ public struct TimeRailView: View {
                 hiddenPages(count: projection.hiddenBlankPages)
                 if !model.navigationFiles.isEmpty {
                     Divider().padding(.vertical, 4)
-                    GroupLabel(text: "FILES")
+                    GroupLabel(text: CompanionL10n.string("pad.files.heading"))
                     ForEach(model.navigationFiles) { file in
                         FileShelfRow(file: file,
                             selected: model.selectedFile == file.id && !model.showingLedger,
@@ -226,19 +234,21 @@ public struct TimeRailView: View {
             }
             .padding(.horizontal, 7).padding(.vertical, 8)
         }
-        .frame(width: 150).background(Color.panelBackground)
+        .frame(width: Self.width(experimental: true)).background(Color.panelBackground)
     }
 
     private func sortControl(
         direction: PadSortDirection, label: String, action: @escaping () -> Void
     ) -> some View {
-        let next = direction == .chronological ? "newest first" : "oldest first"
+        let copy = PadSortCopy(direction: direction, subject: label)
         return Button(action: action) {
             Image(systemName: direction == .chronological ? "arrow.down" : "arrow.up")
                 .font(.system(size: 10)).frame(width: 18, height: 18)
         }
-        .buttonStyle(.plain).help("Sort \(label) \(next)")
-        .accessibilityLabel("Sort \(label) \(next)")
+        .buttonStyle(.plain).help(copy.action)
+        .accessibilityLabel(copy.label)
+        .accessibilityValue(copy.currentOrder)
+        .accessibilityHint(copy.action)
     }
 
     /// The PAD group's heading with the strip's + on it. The plus sits
@@ -1121,6 +1131,21 @@ private struct SlotRailRow: View {
             description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
         }
         return description
+    }
+}
+
+/// VoiceOver announces the current ordering as the value and the next ordering
+/// as the action, rather than presenting the next state as the current state.
+struct PadSortCopy {
+    let direction: PadSortDirection
+    let subject: String
+
+    var label: String { CompanionL10n.format("pad.sort.label", subject) }
+    var currentOrder: String {
+        CompanionL10n.string(direction == .chronological ? "pad.sort.oldest" : "pad.sort.newest")
+    }
+    var action: String {
+        CompanionL10n.format(direction == .chronological ? "pad.sort.toNewest" : "pad.sort.toOldest", subject)
     }
 }
 
