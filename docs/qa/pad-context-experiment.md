@@ -28,6 +28,10 @@ record the existing slot shortcuts and opened files before enabling it.
 6. Exercise the existing page-expiry test seams with inactive pads. Confirm
    expiration follows existing page rules and navigation does not revive content.
 
+7. Create a typo, rename it, and reject empty or over-80-character names. Remove a
+   named pad after reading the confirmation. Verify its content and open files
+   appear in Scratch, its associations are removed, and Scratch cannot be removed.
+
 ## Folder bindings and file context
 
 1. Add two directories to one named pad through the explicit chooser. Confirm
@@ -37,11 +41,18 @@ record the existing slot shortcuts and opened files before enabling it.
    A similarly named sibling directory must not match by string prefix alone.
 3. Cancel the chooser, remove an association, and restart. Confirm each operation
    has only its named effect; no sample directory or file is created or scanned.
-4. Open an unrelated file, then switch pads. Check file ownership and dirty/save/
-   close behavior, including a pending close confirmation across a pad switch.
+4. Open an unrelated file, then switch A → B → A. Expect A's selected file to
+   return if still open, with its edits retained. Close the file and repeat;
+   expect A's remembered tab instead. Check Save As and Locate also update the
+   remembered path. Disable the experiment, Save As an associated file, and re-enable;
+   expect its existing pad ownership and selected file to survive the path change.
+   A pending close confirmation must prevent switching pads.
 5. Try missing, renamed, inaccessible, symlinked, and case-varied paths. Record
    the actual matching behavior and any unsupported case; do not infer permission
-   or document provenance from a path association.
+   or document provenance from a path association. Reject an accessible symlink
+   alias bound to another pad. On case-insensitive volumes reject alternate-case
+   aliases; on case-sensitive volumes allow distinct existing directories. Verify
+   inaccessible paths report only the fallback behavior, not physical uniqueness.
 
 ## App associations
 
@@ -73,13 +84,20 @@ record the existing slot shortcuts and opened files before enabling it.
    Check the rail and paper agree while another day's order stays unchanged.
    Switch pads and restart to check preference scoping.
 5. Verify Timeline stays above Files as files are opened and closed, and test
-   narrow window layout, VoiceOver labels, keyboard reachability, and menu closing.
+   narrow window layout, keyboard reachability, and menu closing. With VoiceOver,
+   verify each sort button announces its subject and current order as its value,
+   while its hint describes the next order that activation will select.
 
 ## Persistence failures and release limits
 
 Using injected disposable preferences, present an invalid catalog and confirm
 it is not overwritten with a new empty catalog. Test duplicate owners and stale
-UUID mappings explicitly. The experiment's context metadata storage is distinct
+UUID mappings explicitly. After successful restore, close tabs/files and expire
+pages; inspect that ownership, remembered selections, and obsolete date-sort
+keys are pruned across every pad. Repeat with a refused content/draft restore;
+its absent temporary roster must not prune saved ownership. Repeatedly select
+an already-selected tab/pad and verify no catalog write is owed. Move an unowned
+Scratch file and verify it does not gain an explicit ownership entry. The experiment's context metadata storage is distinct
 from note ciphertext; record its actual contents and limitations.
 
 Clipboard compatibility claims require the independent release matrix in

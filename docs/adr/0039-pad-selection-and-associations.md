@@ -121,8 +121,29 @@ Storage choice, migration, and metadata removal still require review.
   whose item-identity wording is “Every sheet/chip gets a random 128-bit
   identifier (UUIDv4) at creation, minted in the Rust core.” UUIDv7 encodes
   Unix milliseconds plus 74 random bits ([RFC 9562 §5.7](https://www.rfc-editor.org/rfc/rfc9562.html#section-5.7));
-  the earlier fully-random-identity rationale cannot be carried forward as
+  the RFC defines `unix_ts_ms` as a “48-bit big-endian unsigned number of the
+  Unix Epoch timestamp in milliseconds”.
+  The earlier fully-random-identity rationale cannot be carried forward as
   an unchanged privacy claim. This proposal records that scope explicitly.
+  UUIDv7 timestamps are not trusted evidence of real creation time: the
+  proposed generators clamp clocks before the Unix epoch to zero and clocks
+  beyond the 48-bit field to `2^48 - 1` milliseconds. The Swift generator also
+  treats NaN dates as zero and infinite dates as the corresponding bound.
+  These rules keep malformed wall clocks from aborting identity minting while
+  retaining OS CSPRNG randomness; they do not promise monotonic IDs across a
+  clock rollback. The FFI tab-summary `uuid` is the stable identity, while
+  `id` is a restore-reminted numeric handle. Restored UUIDv4 values coexist
+  with newly minted UUIDv7 values, so consumers must not interpret every
+  summary UUID as containing a creation timestamp.
+- The revised implementation proposal compares explicitly supplied directory
+  aliases using resolved symlinks and volume/inode metadata when available,
+  and folds path spelling only when the volume reports case-insensitive
+  matching. It does not infer a universal case-folding rule. Inaccessible
+  roots fall back to resolved lexical comparison; that fallback cannot
+  establish that two unavailable spellings refer to different physical
+  directories. Thus one-owner-by-physical-identity remains a proposed
+  requirement with an explicit unavailable-metadata limitation. No directory
+  tree scan, watcher, or file-content read is part of this comparison.
 - Path equality, nested roots, inaccessible associations, activation failures,
   association editing, and bounded recency need tests and documented failure
   behavior. Sample chooser exclusivity does not prove any of them.

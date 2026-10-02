@@ -26,8 +26,10 @@ select among the active/recent pads when enabled, and yield to explicit file
 context and unresolved modal/confirmation operations. Header icons deliberately
 activate an associated running app.
 
-The picker contains per-pad add/remove controls and global application/full-path
-options. The closed header uses a folder tally. Command-0 selects Scratch and
+The picker contains per-pad binding controls, rename/removal actions, and global
+application/full-path options. Removing a named pad rehomes its existing pages
+and files to Scratch; it does not delete their content. The closed header uses
+a folder tally. Command-0 selects Scratch and
 Command-1…9 select named pads in roster order while enabled, preserving explicit
 user keymap overrides. Timeline precedes Files; day direction and checkpoint
 direction within each date are independent display preferences.
@@ -44,7 +46,9 @@ release defaults.
 [Native implementation notes](../../../development/pad-context-experiment.md)
 record the actual storage/routing choices, test observations, and limitations.
 The catalog is unencrypted local context metadata, separate from note content.
-It is not synced. Paths use lexical identity; folder relocation and project
+It is not synced. Explicitly supplied paths use symlink resolution and available
+filesystem metadata to compare directory aliases, with a documented fallback
+when that metadata is unavailable. Folder relocation tracking and project
 window recognition are outside this attempt. Clipboard transfers remain the
 separate [ADR-0038](../../../adr/0038-explicit-clipboard-operations.md) proposal.
 

@@ -76,7 +76,9 @@ identified separately; a mockup is not evidence of a shipped contract.
 
 The opt-in native attempt is defined in the [pad-context feature proposal](spec/feature/pad-context/README.md),
 with [implementation notes](development/pad-context-experiment.md) and a
-[native verification runbook](qa/pad-context-experiment.md).
+[native verification runbook](qa/pad-context-experiment.md). The
+[PR #232 follow-up checklist](qa/pr232-review-followup.md) records each review
+observation and its implementation resolution.
 
 ## plans/
 

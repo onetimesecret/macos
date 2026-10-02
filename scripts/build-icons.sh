@@ -288,12 +288,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --composer | --glass [directory] | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac
