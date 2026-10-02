@@ -14,7 +14,10 @@ scripts/install.sh
 ```
 
 Builds the core only if it is stale, builds the app, and installs it
-to `/Applications` (override with `APP_DEST`). Running the installed
+to `/Applications` as `OnetimePad Local.app` (override the directory
+with `APP_DEST`). A TestFlight install keeps `OnetimePad.app`. A local
+install left at that name by an older `scripts/install.sh` is removed,
+and only when its bundle id is `dev.onetimesecret.pad`. Running the installed
 copy matters for two reasons:
 
 - Rebuilds in the repo never touch it. `swift build` re-signs whatever
@@ -325,8 +328,8 @@ binary from a terminal still shows those lines as they happen, and is
 still the fastest loop while you are working on the core:
 
 ```bash
-osascript -e 'tell application "/Applications/OnetimePad.app" to quit'
-/Applications/OnetimePad.app/Contents/MacOS/OnetimePad
+osascript -e 'tell application "/Applications/OnetimePad Local.app" to quit'
+"/Applications/OnetimePad Local.app/Contents/MacOS/OnetimePad"
 ```
 
 Reach for `log show` for the launch you cannot reproduce, and the

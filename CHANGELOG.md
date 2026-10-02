@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Development bundles no longer take the TestFlight copy's name.**
+  `scripts/dev.sh` builds `dist/OnetimePad Debug.app` and
+  `scripts/install.sh` installs `/Applications/OnetimePad Local.app`;
+  only `package-app.sh --app-store` still produces `OnetimePad.app`.
+  The names live in `scripts/build-lanes.sh` beside the bundle ids.
+  `install.sh` removes a local install it left at
+  `/Applications/OnetimePad.app` only when that bundle carries the local
+  id, so a TestFlight install there is untouched.
+
 - **Settings offers two page layouts, Tabs and Timeline** (app 0.26.0).
   Tabs draws named pages along the bottom at full width; Timeline, still
   a prototype, groups live pages by day down the side. The separate

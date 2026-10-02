@@ -41,7 +41,7 @@ not document and a unit test cannot reach, hence "verify on hardware".
 
 Quit any running instance first (`swift build` re-signs in place and
 SIGKILLs a live one), then
-`scripts/package-app.sh && open dist/OnetimePad.app`.
+`scripts/package-app.sh && open "dist/OnetimePad Local.app"`.
 
 - Raise with ⌃⌥Space, press the header, drag slowly across the screen.
   **Pass:** the card stays glued to the pointer for the whole sweep.

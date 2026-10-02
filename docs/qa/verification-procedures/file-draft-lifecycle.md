@@ -80,7 +80,7 @@ as the state directory is.
 
 ## Case 1: a kill with a dirty file open
 
-1. Launch `dist/OnetimePad.app`. Open `/tmp/qa-draft.txt` through File >
+1. Launch `dist/OnetimePad Debug.app`. Open `/tmp/qa-draft.txt` through File >
    Open. Confirm the tab appears in the FILES group, that it carries no
    countdown gauge, and that the header reads saved.
 2. Type a distinctive line into the file, for example
@@ -90,7 +90,7 @@ as the state directory is.
    `drafts.sealed` exists and has a recent mtime.
 4. Note the wall clock time. This is the draft's last edit time, and
    step 6 checks it.
-5. `pkill -9 -f 'dist/OnetimePad\.app'`, then `ls -la "$STATE"` and
+5. `pkill -9 -f 'dist/OnetimePad Debug\.app'`, then `ls -la "$STATE"` and
    record every
    file present, in particular anything matching `*.[0-9a-f]*.tmp`.
 6. Launch the app.

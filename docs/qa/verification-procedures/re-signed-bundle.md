@@ -61,7 +61,7 @@ in `SUPERSEDED_MAGICS`, never on a key failure
 2. Record the evidence that must not change:
 
    ```sh
-   codesign -dv --verbose=4 /Applications/OnetimePad.app 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier'
+   codesign -dv --verbose=4 "/Applications/OnetimePad Local.app" 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier'
    ls -la "$STATE"
    shasum -a 256 "$STATE/state.sealed"
    ```
@@ -70,9 +70,9 @@ in `SUPERSEDED_MAGICS`, never on a key failure
    the easiest different identity:
 
    ```sh
-   codesign --force --deep --sign - /Applications/OnetimePad.app
-   codesign --verify --strict /Applications/OnetimePad.app
-   codesign -dv --verbose=4 /Applications/OnetimePad.app 2>&1 | grep Authority
+   codesign --force --deep --sign - "/Applications/OnetimePad Local.app"
+   codesign --verify --strict "/Applications/OnetimePad Local.app"
+   codesign -dv --verbose=4 "/Applications/OnetimePad Local.app" 2>&1 | grep Authority
    ```
 
    Signing with a second real certificate instead is equally valid and

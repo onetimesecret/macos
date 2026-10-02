@@ -49,7 +49,7 @@ next. This procedure is what tells the three outcomes apart.
 
 Quit any running copy first (`scripts/quit-app.sh`; only the graceful
 path saves state), then `scripts/package-app.sh && open
-dist/OnetimePad.app`.
+"dist/OnetimePad Local.app"`.
 
 In a second terminal, watch the surface's own log, which now carries the
 gate:

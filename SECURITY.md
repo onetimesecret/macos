@@ -20,10 +20,11 @@ disabled).
 ## Verifying a build
 
 The packaging script hashes the app bundle it has just assembled,
-before `codesign` runs, and writes the result to
-`dist/OnetimePad.presig.sha256`.
+before `codesign` runs, and writes the result beside it:
+`dist/OnetimePad Local.presig.sha256` for the default local build,
+`dist/OnetimePad.presig.sha256` for an App Store build.
 
-The file holds one line, `<sha256>  OnetimePad.app`. The digest is
+The file holds one line, `<sha256>  <bundle name>.app`. The digest is
 taken over every regular file in the bundle, by relative path and
 content: `find` the bundle, sort the paths under `LC_ALL=C` so the
 order is byte order rather than the caller's locale, hash each file,
@@ -36,7 +37,7 @@ To reproduce it:
 git checkout <commit>          # clean tree, see the note below
 scripts/build-core.sh
 scripts/package-app.sh
-cat dist/OnetimePad.presig.sha256
+cat "dist/OnetimePad Local.presig.sha256"
 ```
 
 Compare that line against the published one. The build script stamps
