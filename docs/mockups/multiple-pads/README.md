@@ -18,7 +18,7 @@ not evidence that the native application implements them.
 - [Published version](https://onetimepad-one-pad-picker.blush-morel-9019.chatgpt.site/):
   the live prototype at review time. The link may stop working; the checked-in
   HTML is the snapshot for this record.
-- [Proposed ADR-0038](../../adr/0038-pad-selection-and-associations.md): pad
+- [Proposed ADR-0039](../../adr/0039-pad-selection-and-associations.md): pad
   selection and the distinction between folder routing and app hints.
 - [Initial folder-scoped exploration](initial-folder-scoped-exploration.md):
   earlier proposal, retained with its reasoning and references.

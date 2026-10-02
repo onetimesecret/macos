@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0037: Explicit clipboard operations
+# ADR-0038: Explicit clipboard operations
 
 - **Status:** proposed
 - **Date:** 2026-10-01

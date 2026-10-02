@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0038: Pad selection and associations
+# ADR-0039: Pad selection and associations
 
 - **Status:** proposed
 - **Date:** 2026-10-01
@@ -26,7 +26,7 @@ that the existing application enforces the boundary. The
 [macOS research](../research/2026-1001-macos-context-and-pasteboard.md)
 separates supplied paths from app identity and explains why an app name does
 not identify the focused project in another app. Clipboard transfers remain
-the distinct topic of [ADR-0037](0037-explicit-clipboard-operations.md).
+the distinct topic of [ADR-0038](0038-explicit-clipboard-operations.md).
 
 The pad shortcuts requested in the latest mockup conflict with accepted
 [ADR-0017](0017-durable-tabs-expiring-pages.md), which states:

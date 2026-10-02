@@ -6,7 +6,7 @@ dated: 2026-10-01
 governs: An explicit transfer gesture imports offered content into a stable named destination under its selected paste mode.
 decisions: []
 consumed-by:
-  - docs/adr/0037-explicit-clipboard-operations.md
+  - docs/adr/0038-explicit-clipboard-operations.md
 sources:
   - maintainer instructions in the 2026-10-01 design conversation (primary scope constraint)
   - docs/law/0001-sealed-object.md (accepted, sealed-object scope)
@@ -17,10 +17,10 @@ sources:
 # Law 0003: Paste
 
 Complete draft for review under [behaviour law conventions](README.md); do not
-build against it as an accepted law. [ADR-0037](../adr/0037-explicit-clipboard-operations.md)
+build against it as an accepted law. [ADR-0038](../adr/0038-explicit-clipboard-operations.md)
 consumes this proposed rule. No numbered accepted record currently incorporates
 the broader paste contract, so the decision list is empty. The rows sit in a
-draft law rather than in ADR-0037 because they form a contract table in which
+draft law rather than in ADR-0038 because they form a contract table in which
 each row names its test or its debt, which an ADR does not hold; decisions join
 the front matter as a dated record numbers them.
 
