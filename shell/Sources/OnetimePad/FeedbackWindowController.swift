@@ -116,6 +116,12 @@ final class FeedbackWindowController: NSObject {
             window.title = "Send Feedback"
             window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false
+            // No saved application state: restoration would write a
+            // snapshot of the window, draft included, under
+            // ~/Library/Saved Application State. `sharingType` stays at
+            // its default, as Settings and About leave it: the capture
+            // exclusion covers the surfaces that hold ink, not this one.
+            window.isRestorable = false
             window.collectionBehavior.insert(.moveToActiveSpace)
             window.setContentSize(NSSize(width: 560, height: 630))
             window.contentMinSize = NSSize(width: 480, height: 540)
