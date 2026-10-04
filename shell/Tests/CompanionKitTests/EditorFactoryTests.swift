@@ -47,6 +47,19 @@ final class EditorFactoryTests: XCTestCase {
 
     // MARK: Building the editor
 
+    func testEditorKeepsItsPurposeLabelWithAndWithoutContent() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator
+        ))
+
+        XCTAssertEqual(textView.accessibilityLabel(), "Editor content")
+        model.storage(for: page).replaceCharacters(in: NSRange(location: 0, length: 0), with: "A page")
+        XCTAssertEqual(textView.accessibilityLabel(), "Editor content")
+    }
+
     func testTheBuiltEditorCarriesTheFlagsThePageRestsOn() throws {
         let model = try makeModel()
         let page = try mintPage(in: model)

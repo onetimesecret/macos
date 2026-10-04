@@ -217,6 +217,7 @@ public struct InkEditorView: NSViewRepresentable {
         storage.delegate = coordinator
 
         let textView = InkTextView(frame: .zero, textContainer: container)
+        textView.setAccessibilityLabel("Editor content")
         // Rich text stays on so chip attachments survive editing; the
         // user-facing surface is still plain, ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).

@@ -56,6 +56,8 @@ private struct SettingsCaption: View {
         Text(text)
             .font(.caption)
             .foregroundStyle(.secondary)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -147,7 +149,7 @@ public struct GeneralSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         if ambientPanelEnabled != nil {
                             SettingsCaption(
-                                "The card that rests at the desktop and rises on ⌃⌥Space. Off shows only the primary editor window; the hotkey and the menu bar item open that window instead."
+                                "The ambient panel rests at the desktop. Use Show Ambient Panel in the Window menu or your configured shortcut to raise it. When disabled, the shortcut and menu bar item open the primary editor window instead."
                             )
                         }
                         if keepsAbove != nil {
