@@ -194,11 +194,6 @@ private struct FileMenuItems: View {
     }
 }
 
-/// The Edit menu's Undo and Redo.
-///
-/// SwiftUI supplies their placement and shortcuts. At launch the delegate
-/// replaces their targets with the nil-targeted AppKit selectors so menu
-/// validation follows the focused responder.
 enum ManualLanguageChoiceTarget: Equatable {
     case editor
     case file(UInt64)
@@ -275,6 +270,8 @@ private struct LanguageDetectionMenuItems: View {
 }
 
 @MainActor
+/// SwiftUI supplies Undo/Redo placement and shortcuts. The delegate keeps
+/// their targets on the AppKit responder chain as menus are rebuilt.
 private struct UndoRedoItems: View {
     let undoShortcut: KeyboardShortcut?
     let redoShortcut: KeyboardShortcut?
@@ -346,6 +343,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
     private var controller: BackdropWindowController?
     private var statusItem: NSStatusItem?
+    private var undoMenuRouting: UndoMenuRoutingWatch?
     private var summonKey: BackdropHotKey?
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
@@ -432,7 +430,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // scene, and it is the placeholder). Move it into place, so
         // the menu bar reads: App | File | Edit | View | Window | Help.
         Self.moveFileMenuAfterAppMenu()
-        Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
+        undoMenuRouting = UndoMenuRoutingWatch(mainMenu: { NSApp.mainMenu })
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -1259,15 +1257,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     static func routeUndoRedoThroughResponder(in mainMenu: NSMenu?) {
         guard let editMenu = mainMenu?.items.first(where: { $0.title == "Edit" })?.submenu
         else { return }
-        editMenu.autoenablesItems = true
+        if !editMenu.autoenablesItems { editMenu.autoenablesItems = true }
         for (title, action) in [
             ("Undo", #selector(EditStepResponder.undo(_:))),
             ("Redo", #selector(EditStepResponder.redo(_:))),
         ] {
-            guard let item = editMenu.items.first(where: { $0.title == title }) else { continue }
-            item.target = nil
-            item.action = action
-            item.isEnabled = true
+            guard let item = editMenu.items.first(where: {
+                $0.title == title || $0.action == action
+            }) else { continue }
+            if item.target != nil { item.target = nil }
+            if item.action != action { item.action = action }
+            // AppKit owns enabled state. Resetting it here would undo the
+            // focused responder's validation after history is exhausted.
         }
     }
 
