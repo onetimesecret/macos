@@ -127,6 +127,7 @@ public struct DayScrollView: NSViewRepresentable {
             scrubber: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset, animated: false) },
             wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) },
             place: { [weak stack] in stack?.currentPlace },
+            pad: { [weak stack] in stack?.renderedPadID },
             from: surface
         )
     }
@@ -170,7 +171,9 @@ public struct DayScrollView: NSViewRepresentable {
         // not applied here: the rows it names are assembled by the pass
         // below, and SwiftUI may not have sized the clip yet.
         if let place = model.viewStates.takeRollPlace() {
-            stack.open(at: place)
+            if !model.pads.isEnabled || model.navigationTabs.contains(where: { $0.pageID == place.page }) {
+                stack.open(at: place)
+            }
         }
         stack.update(
             projection: model.timeUnits,
@@ -201,6 +204,10 @@ public struct DayScrollView: NSViewRepresentable {
     ) {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let stack = scroll.documentView as? DayStackView else { return }
+        if coordinator.model.pads.isEnabled,
+           coordinator.model.rollGeometry.holdsClaim(stack), let pad = stack.renderedPadID {
+            coordinator.model.rememberPadReadingPlace(stack.currentPlace, for: pad)
+        }
         // Whatever became of the editor, this roll's measurement
         // describes a surface that is going away, and the rail must not
         // keep drawing the shape of it behind a ledger (issue #131).
@@ -215,9 +222,10 @@ public struct DayScrollView: NSViewRepresentable {
         // so the surface that mounts this page next finds it, and the
         // layout manager leaves the storage. The caret only: the roll's
         // offset belongs to the roll's one clip and to no page in it,
-        // and it is the hand off that carries it to the other window
-        // (`PageModel.transferOwnership`), never a dismantle, since a
-        // roll rebuilt in its own window opens at Day 0. A parked
+        // and a handoff carries it to the other window
+        // (`PageModel.transferOwnership`). Multiple pads additionally keep
+        // the semantic reading position above for File/Ledger round trips;
+        // the single-pad layout still opens a rebuilt roll at Day 0. A parked
         // editor stands on no page and an editor already replaced has
         // no storage, and `leavePage` declines both.
         coordinator.leavePage(editor, scrollView: nil)
@@ -320,7 +328,10 @@ final class DayStackView: NSView {
         let selected: UInt64?
         let clipWidth: CGFloat
         let padExperiment: Bool
+        let padID: UUID?
     }
+
+    private(set) var renderedPadID: UUID?
 
     let model: PageModel
     let coordinator: InkEditorView.Coordinator
@@ -532,8 +543,35 @@ final class DayStackView: NSView {
             pages: projection.units.map(\.pageIDs),
             selected: selectedPage,
             clipWidth: clipWidth,
-            padExperiment: model.pads.isEnabled
+            padExperiment: model.pads.isEnabled,
+            padID: model.pads.isEnabled ? model.pads.activeID : nil
         )
+        let changingPad = signature.padExperiment && signature.padID != renderedPadID
+        if changingPad, let pad = signature.padID {
+            // On a new mount an ownership handoff may already have supplied a
+            // more recent anchor. Otherwise use this pad's own last reading.
+            if let place = pendingPlace, !signature.pages.joined().contains(place.page) {
+                pendingPlace = nil
+            }
+            if pendingPlace == nil {
+                if let place = model.readingPlace(for: pad), signature.pages.joined().contains(place.page) {
+                    open(at: place)
+                } else {
+                    pendingTodayAnchor = true
+                }
+            }
+        } else if signature.padExperiment, let previous = rendered,
+                  previous.buckets != signature.buckets || previous.pages != signature.pages {
+            // Save before reordering rows; the same visible character can then
+            // be found against the new document order and current wrap width.
+            if let place = currentPlace, signature.pages.joined().contains(place.page) {
+                open(at: place)
+            } else {
+                pendingPlace = nil
+                pendingTodayAnchor = true
+            }
+        }
+        renderedPadID = signature.padID
         // The typeface can change under a roll that is otherwise still:
         // the editor's page is restyled here, and the quiet days follow
         // through `refreshQuietRegions`, since the model dropped their
@@ -591,7 +629,8 @@ final class DayStackView: NSView {
         // A row appearing above the viewport must not move what the
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
-        let anchor = expandedLayout == model.isPageExpanded ? topmostPageAnchor() : nil
+        let anchor = !changingPad && pendingPlace == nil && expandedLayout == model.isPageExpanded
+            ? topmostPageAnchor() : nil
         rendered = signature
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
@@ -1190,10 +1229,10 @@ final class DayStackView: NSView {
             }
             pendingTodayAnchor = false
             let floor = max(frame.height - scroll.contentView.bounds.height, 0)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(today.header.frame.minY, floor)))
+            self.scroll(toDocumentOffset: min(today.header.frame.minY, floor), animated: false)
         } else {
             pendingTodayAnchor = false
-            scroll.contentView.scroll(to: .zero)
+            self.scroll(toDocumentOffset: 0, animated: false)
         }
         scroll.reflectScrolledClipView(scroll.contentView)
     }
@@ -1201,9 +1240,10 @@ final class DayStackView: NSView {
     // MARK: The roll's place across a hand off (ADR-0033)
 
     /// Where the roll stands: the first page with anything below the
-    /// top edge of the clip, and the line of it at that edge. Nil at
-    /// Day 0, which is no place at all (`RollPlace`), and nil from a
-    /// roll that is in no window, which nobody is reading.
+    /// top edge of the clip, and the line of it at that edge. The single
+    /// pad handoff treats the origin as no place. Multiple pads retain
+    /// that first visible page too, since sorting can move it elsewhere.
+    /// A roll outside a window has no reading position.
     ///
     /// A top edge in a header, or in the empty Today above the first
     /// page, is a place above that page's first line, and the anchor
@@ -1211,7 +1251,7 @@ final class DayStackView: NSView {
     var currentPlace: RollPlace? {
         guard window != nil, let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
-        guard origin.y > 0,
+        guard origin.y > 0 || model.pads.isEnabled,
               let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
               let page = row.page, let text = row.body as? NSTextView,
               let anchor = ScrollAnchor(
@@ -1250,12 +1290,18 @@ final class DayStackView: NSView {
         pendingPlace = nil
         guard let row = rows.first(where: { $0.page == place.page }),
               let text = row.body as? NSTextView,
-              let within = place.anchor.offset(in: text) else { return }
+              let within = place.anchor.offset(in: text) else {
+            scrollToDayZero()
+            return
+        }
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(
             x: within.x, y: min(max(text.frame.minY + within.y, 0), floor)
         )
+        // Restoring a different document order supersedes a navigation jump
+        // still animating toward coordinates in the previous document.
+        self.scroll(toDocumentOffset: target.y, animated: false)
         clip.scroll(to: target)
         scroll.reflectScrolledClipView(clip)
     }

@@ -1133,6 +1133,24 @@ public final class PageModel: ObservableObject {
     /// is deliberately not published.
     var viewStates = PageViewStates()
 
+    // Session-only reading positions. Pad selection and ordering can move every
+    // preceding page, so these carry a page and text anchor rather than pixels.
+    private var padReadingPlaces: [UUID: RollPlace] = [:]
+
+    func rememberPadReadingPlace(_ place: RollPlace?, for pad: UUID) {
+        // A detached or not-yet-measured roll has no new reading to contribute.
+        // Dead pages are removed by refresh and checked again on retrieval.
+        guard let place else { return }
+        padReadingPlaces[pad] = place
+    }
+
+    func readingPlace(for pad: UUID) -> RollPlace? {
+        guard let place = padReadingPlaces[pad],
+              tabs.contains(where: { $0.pageID == place.page && pads.owner(ofTabUUID: $0.uuid) == pad })
+        else { return nil }
+        return place
+    }
+
     /// Each visible day's page as the roll renders it while the editor
     /// is standing somewhere else (issue #79): the same ink and the same
     /// chip faces, in an attributed string the quiet regions copy into
@@ -2825,6 +2843,10 @@ public final class PageModel: ObservableObject {
             // Dismissing it cannot cancel a request already confirmed in flight.
             concealDraft = nil
             if lastPadsEnabled {
+                if showsTimeUnits && !showingLedger && selectedFile == nil,
+                   rollGeometry.currentPadID == lastPadID {
+                    rememberPadReadingPlace(rollGeometry.currentPlace, for: lastPadID)
+                }
                 pads.rememberSelection(tabUUID: selectedTab?.uuid,
                     filePath: activeFile?.path, for: lastPadID)
             }
@@ -2971,6 +2993,7 @@ public final class PageModel: ObservableObject {
         // under the same exemption: a file's place is dropped by the
         // roster, never by a set it was never in.
         viewStates.prune(keeping: livePages)
+        padReadingPlaces = padReadingPlaces.filter { livePages.contains($0.value.page) }
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -6297,10 +6320,11 @@ public final class PageModel: ObservableObject {
         scrubber: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
         place: (() -> RollPlace?)? = nil,
+        pad: (() -> UUID?)? = nil,
         from surface: PresentationOwner
     ) {
         guard admits(.rollGeometry, from: surface) else { return }
-        rollGeometry.claim(by: roll, scroller: scroller, scrubber: scrubber, wheel: wheel, place: place)
+        rollGeometry.claim(by: roll, scroller: scroller, scrubber: scrubber, wheel: wheel, place: place, pad: pad)
     }
 
     /// A window reporting its key status. Only the owner's counts: the

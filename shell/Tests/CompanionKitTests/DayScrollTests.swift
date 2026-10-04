@@ -134,6 +134,167 @@ final class DayScrollTests: XCTestCase {
 
     // MARK: The shape of the stack
 
+    func testPadSwitchRestoresVisibleCharacterAndEmptyPadStartsAtToday() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let scratch = PadCatalog.scratchID
+        let pageID = try page(in: model, saying: longPage(lines: 200))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: 650, animated: false)
+        let original = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(original.page, pageID)
+        XCTAssertGreaterThan(original.anchor.characterIndex, 0)
+
+        let empty = try XCTUnwrap(model.createPad(named: "Empty"))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+        XCTAssertNil(roll.stack.currentPlace)
+        model.activatePad(scratch)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(roll.stack.currentPlace, original)
+
+        // Two catalog changes before the roll renders must not label Scratch's
+        // position as the intermediate pad's position.
+        model.activatePad(empty)
+        model.activatePad(scratch)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(roll.stack.currentPlace, original)
+    }
+
+    func testReorderingCheckpointsInBothDirectionsPreservesVisibleCharacter() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let first = try page(in: model, saying: longPage(lines: 140))
+        _ = try page(in: model, saying: longPage(lines: 140))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        let row = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == first })
+        roll.stack.scroll(toDocumentOffset: row.body.frame.minY + 500, animated: false)
+        let original = try XCTUnwrap(roll.stack.currentPlace)
+        for _ in 0..<2 {
+            model.toggleCheckpointSort(dayBucket: 0)
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+            XCTAssertEqual(roll.stack.currentPlace, original)
+        }
+    }
+
+    func testTwoPopulatedPadsRetainDistinctReadingAnchors() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let scratch = PadCatalog.scratchID
+        let scratchPage = try page(in: model, saying: longPage(lines: 220))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: 550, animated: false)
+        let scratchPlace = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(scratchPlace.page, scratchPage)
+
+        let other = try XCTUnwrap(model.createPad(named: "Other"))
+        let otherPage = try page(in: model, saying: longPage(lines: 220))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: 1150, animated: false)
+        let otherPlace = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(otherPlace.page, otherPage)
+        XCTAssertNotEqual(scratchPlace.anchor.characterIndex, otherPlace.anchor.characterIndex)
+
+        for _ in 0..<2 {
+            model.activatePad(scratch)
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+            XCTAssertEqual(roll.stack.currentPlace, scratchPlace)
+            model.activatePad(other)
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+            XCTAssertEqual(roll.stack.currentPlace, otherPlace)
+        }
+    }
+
+    func testLedgerRoundTripRestoresPadReadingPositionOnNewRoll() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        _ = try page(in: model, saying: longPage(lines: 180))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: 700, animated: false)
+        let original = try XCTUnwrap(roll.stack.currentPlace)
+        model.showingLedger = true
+        DayScrollView.dismantleNSView(roll.scroll, coordinator: roll.coordinator)
+        model.showingLedger = false
+        let returned = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(returned.scroll, model: model, readOnly: false, coordinator: returned.coordinator)
+        XCTAssertEqual(returned.stack.currentPlace, original)
+    }
+
+    func testDayOrderChangesPreserveVisibleCharacterInLongPage() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let first = try page(in: model, saying: longPage(lines: 180))
+        _ = try page(in: model, saying: longPage(lines: 180))
+        let reverse = spreadOverDays(model, selecting: first)
+        let chronological = TimeUnitProjection(units: Array(reverse.units.reversed()),
+            hiddenBlankPages: reverse.hiddenBlankPages)
+        let roll = try mountRoll(model: model, height: 120)
+        roll.stack.update(projection: reverse, selectedPage: first, readOnly: false)
+        roll.stack.scroll(toDocumentOffset: 600, animated: false)
+        let original = try XCTUnwrap(roll.stack.currentPlace)
+        for projection in [chronological, reverse] {
+            roll.stack.update(projection: projection, selectedPage: first, readOnly: false)
+            XCTAssertEqual(roll.stack.currentPlace, original)
+        }
+    }
+
+    func testReadingAnchorOmittedFromProjectionFallsBackToToday() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let omitted = try page(in: model, saying: longPage(lines: 180))
+        let visible = try page(in: model, saying: longPage(lines: 180))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        let row = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == omitted })
+        roll.stack.scroll(toDocumentOffset: row.body.frame.minY + 500, animated: false)
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, omitted)
+        model.rememberPadReadingPlace(place, for: PadCatalog.scratchID)
+        let filtered = TimeUnitProjection.project(
+            tabs: model.navigationTabs.filter { $0.pageID != omitted }, selectedPageID: visible, unit: .day)
+
+        // The page is still live, but this presentation omits it (for example,
+        // an older blank checkpoint). Reusing the stack must reset its clip.
+        roll.stack.update(projection: filtered, selectedPage: visible, readOnly: false)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+
+        // A newly mounted stack must also reject the remembered hidden page.
+        let fresh = try mountRoll(model: model, height: 120)
+        fresh.stack.update(projection: filtered, selectedPage: visible, readOnly: false)
+        XCTAssertEqual(fresh.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+        fresh.stack.scroll(toDocumentOffset: 400, animated: false)
+        fresh.stack.open(at: place)
+        fresh.stack.update(projection: filtered, selectedPage: visible, readOnly: false)
+        XCTAssertEqual(fresh.scroll.contentView.bounds.origin.y, 0, accuracy: 1,
+            "an invalid pending restore must not leave stale document coordinates")
+    }
+
+    func testFileViewCannotOverwritePadReadingPositionWhileSwitching() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let scratch = PadCatalog.scratchID
+        _ = try page(in: model, saying: longPage(lines: 180))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: 600, animated: false)
+        let original = try XCTUnwrap(roll.stack.currentPlace)
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("pad-read-\(UUID()).txt")
+        try "File content".write(to: path, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: path) }
+        model.openFile(at: path)
+        XCTAssertNotNil(model.selectedFile)
+        DayScrollView.dismantleNSView(roll.scroll, coordinator: roll.coordinator)
+        let other = try XCTUnwrap(model.createPad(named: "Other"))
+        model.activatePad(scratch)
+        XCTAssertNotNil(model.selectedFile)
+        XCTAssertEqual(model.readingPlace(for: scratch), original)
+        XCTAssertNil(model.readingPlace(for: other))
+    }
+
     func testExperimentalChronologicalRollAnchorsTodayInsteadOfDocumentOrigin() throws {
         let model = try makeModel()
         model.pads.isEnabled = true
