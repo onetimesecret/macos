@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 
 @testable import CompanionKit
 
@@ -57,6 +58,25 @@ final class TimeRailTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         return isolatedModel(defaults: defaults)
+    }
+
+    func testDenseNavigatorHostsAtMinimumWindowHeightWithoutDrivingFileOrLedger() throws {
+        let model = try makeModel()
+        let tabs = (1...60).map { slot(tab: UInt64($0), page: UInt64($0 + 100)) }
+        let checkpoints = StreamNavigator.nodes(
+            projection: project(tabs), tabs: tabs, selection: nil, surfaceShowsRoll: false)
+        let host = NSHostingView(rootView: StreamNavigatorView(
+            model: model, roll: RollGeometryModel(), drivesRoll: false,
+            nodes: checkpoints, chords: [:]))
+        host.frame = NSRect(x: 0, y: 0, width: 142, height: 180)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.frame.height, 180)
+        XCTAssertTrue(StreamNavigator.requiredHeight(nodes: checkpoints) > host.frame.height)
+        let layout = StreamNavigator.layout(nodes: checkpoints, geometry: RollGeometry(extents: [], documentHeight: 0, viewportTop: 0, viewportHeight: 0),
+                                           height: 72, width: 142, compact: true)
+        XCTAssertNil(layout.band)
+        XCTAssertTrue(layout.slivers.isEmpty)
+        XCTAssertEqual(layout.placed.count, 60, "file and ledger still expose checkpoint navigation")
     }
 
     // MARK: The rows, and where they send a click

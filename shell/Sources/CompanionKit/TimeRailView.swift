@@ -354,6 +354,7 @@ struct StreamNavigatorView: View {
 
     @GestureState private var isScrubbing = false
     @State private var scrollDrag: StreamNavigator.ScrollDrag?
+    @State private var dragInvalidated = false
     @State private var hoverID: UInt64?
     @State private var layoutCache = StreamNavigatorLayoutCache()
 
@@ -365,82 +366,141 @@ struct StreamNavigatorView: View {
                 nodes: nodes, geometry: roll.geometry,
                 height: proxy.size.height, width: proxy.size.width
             )
-            ZStack(alignment: .topLeading) {
-                // Bare track: a click here scrolls the roll to the
-                // stretch clicked, selecting nothing. Under everything,
-                // so the nodes above take their own clicks first.
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(coordinateSpace: .local) { point in
-                        jump(toTrackY: point.y, layout: layout)
-                    }
-                track(layout)
-                if let windowY = layout.windowY {
-                    windowMark(at: windowY)
-                }
-                ForEach(layout.placed) { placed in
-                    if let noteY = placed.noteY {
-                        emptyDaysNote(placed.node.emptyDays, at: noteY)
-                    }
-                }
-                if let segment = layout.activeSegment {
-                    Rectangle()
-                        .fill(Color.ember)
-                        .frame(width: 2, height: segment.height)
-                        .offset(x: Metrics.trackX - 0.5, y: segment.y)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-                slivers(layout)
-                if let band = layout.band {
-                    viewportBand(band, width: proxy.size.width)
-                }
-                ForEach(layout.placed) { placed in
-                    node(placed, width: proxy.size.width)
-                }
-                // A scrollbar lane along the leading edge stays reachable
-                // where checkpoint rows span the column. It stops short of
-                // the dots on the track, so the dots and the labels keep
-                // their taps.
-                Color.clear
-                    .frame(width: Metrics.scrollLaneWidth, height: proxy.size.height)
-                    .contentShape(Rectangle())
-                    .onTapGesture(coordinateSpace: .local) { point in
-                        jump(toTrackY: point.y, layout: layout)
-                    }
-                    .allowsHitTesting(drivesRoll && layout.band != nil)
-                    .accessibilityHidden(true)
-            }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .local)
-                    .updating($isScrubbing) { _, active, _ in active = true }
-                    .onChanged { value in
-                        guard drivesRoll, layout.band != nil else { return }
-                        if scrollDrag == nil {
-                            scrollDrag = StreamNavigator.ScrollDrag(
-                                layout: layout, geometry: roll.geometry, startY: value.startLocation.y)
+            let dense = StreamNavigator.requiredHeight(nodes: nodes) > proxy.size.height
+            if dense {
+                let mapHeight = min(max(0, proxy.size.height), max(40, proxy.size.height * 0.4))
+                let map = StreamNavigator.layout(nodes: nodes, geometry: roll.geometry,
+                    height: mapHeight, width: proxy.size.width, compact: true)
+                VStack(spacing: 4) {
+                    canvas(map, width: proxy.size.width, height: mapHeight, compact: true)
+                        .frame(height: mapHeight)
+                    ScrollViewReader { reader in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 3) {
+                                ForEach(layout.placed) { placed in
+                                    node(placed, width: proxy.size.width, positioned: false)
+                                        .id(placed.node.id)
+                                }
+                            }
                         }
-                        if let scrollDrag {
-                            roll.scrub(toDocumentOffset: scrollDrag.offset(atY: value.location.y))
-                        }
+                        .onAppear { revealActive(using: reader) }
+                        .onChange(of: model.selection) { _ in revealActive(using: reader) }
+                        .onChange(of: model.pads.activeID) { _ in revealActive(using: reader) }
+                        .onChange(of: nodes.map(\.id)) { _ in revealActive(using: reader) }
                     }
-                    .onEnded { _ in scrollDrag = nil },
-                including: drivesRoll && layout.band != nil ? .all : .subviews
-            )
-            .onChange(of: isScrubbing) { active in
-                if !active { scrollDrag = nil }
+                }
+            } else {
+                canvas(layout, width: proxy.size.width, height: proxy.size.height, compact: false)
             }
-            .onChange(of: drivesRoll) { _ in scrollDrag = nil }
-            .onDisappear { scrollDrag = nil }
-            // Only the owner's rail installs the relay. A relay in the
-            // other window would watch that window's wheel events and
-            // swallow each one over the column, for a roll it may not
-            // drive.
-            .background(drivesRoll ? WheelRelay { event in roll.relay(wheel: event) } : nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("pad stream"))
+    }
+
+    private func canvas(_ layout: StreamNavigator.Layout, width: CGFloat,
+                        height: CGFloat, compact: Bool) -> some View {
+        ZStack(alignment: .topLeading) {
+            // Bare track: a click here scrolls the roll to the
+            // stretch clicked, selecting nothing. Under everything,
+            // so the nodes above take their own clicks first.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { point in
+                    jump(toTrackY: point.y, layout: layout)
+                }
+            track(layout)
+            if let windowY = layout.windowY {
+                windowMark(at: windowY)
+            }
+            ForEach(layout.placed) { placed in
+                if let noteY = placed.noteY {
+                    emptyDaysNote(placed.node.emptyDays, at: noteY)
+                }
+            }
+            if let segment = layout.activeSegment {
+                Rectangle()
+                    .fill(Color.ember)
+                    .frame(width: 2, height: segment.height)
+                    .offset(x: Metrics.trackX - 0.5, y: segment.y)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            slivers(layout)
+            if let band = layout.band {
+                viewportBand(band, width: width)
+            }
+            ForEach(layout.placed) { placed in
+                if compact {
+                    marker(for: placed.node)
+                        .offset(x: Metrics.trackX - 3, y: placed.y)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                } else {
+                    node(placed, width: width)
+                }
+            }
+            // A scrollbar lane along the leading edge stays reachable
+            // where checkpoint rows span the column. It stops short of
+            // the dots on the track, so the dots and the labels keep
+            // their taps.
+            Color.clear
+                .frame(width: Metrics.scrollLaneWidth, height: height)
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { point in
+                    jump(toTrackY: point.y, layout: layout)
+                }
+                .allowsHitTesting(drivesRoll && layout.band != nil)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Timeline reading position")
+                .accessibilityValue("\(Int(100 * roll.geometry.viewportTop / max(1, roll.geometry.documentHeight - roll.geometry.viewportHeight))) percent")
+                .accessibilityAdjustableAction { direction in
+                    let step = max(1, roll.geometry.viewportHeight * 0.8)
+                    let delta: CGFloat = direction == .increment ? step : -step
+                    let maximum = max(0, roll.geometry.documentHeight - roll.geometry.viewportHeight)
+                    roll.scrub(toDocumentOffset: min(maximum, max(0, roll.geometry.viewportTop + delta)))
+                }
+                .accessibilityHidden(!drivesRoll || layout.band == nil)
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .local)
+                .updating($isScrubbing) { _, active, _ in active = true }
+                .onChanged { value in
+                    guard drivesRoll, layout.band != nil, !dragInvalidated else { return }
+                    if scrollDrag == nil {
+                        scrollDrag = StreamNavigator.ScrollDrag(
+                            layout: layout, geometry: roll.geometry, startY: value.startLocation.y)
+                    }
+                    if let scrollDrag {
+                        roll.scrub(toDocumentOffset: scrollDrag.offset(atY: value.location.y))
+                    }
+                }
+                .onEnded { _ in scrollDrag = nil; dragInvalidated = false },
+            including: drivesRoll && layout.band != nil ? .all : .subviews
+        )
+        .onChange(of: isScrubbing) { active in
+            if !active { scrollDrag = nil; dragInvalidated = false }
+        }
+        .onChange(of: drivesRoll) { _ in invalidateDrag() }
+        .onChange(of: model.pads.activeID) { _ in invalidateDrag() }
+        .onChange(of: nodes.map(\.id)) { _ in invalidateDrag() }
+        .onChange(of: width) { _ in invalidateDrag() }
+        .onChange(of: height) { _ in invalidateDrag() }
+        .onChange(of: roll.geometry.document) { _ in invalidateDrag() }
+        .onDisappear { scrollDrag = nil }
+        // Only the owner's rail installs the relay. A relay in the
+        // other window would watch that window's wheel events and
+        // swallow each one over the column, for a roll it may not
+        // drive.
+        .background(drivesRoll ? WheelRelay { event in roll.relay(wheel: event) } : nil)
+    }
+
+    private func revealActive(using reader: ScrollViewProxy) {
+        if let active = nodes.first(where: \.active) { reader.scrollTo(active.id, anchor: .center) }
+    }
+
+    private func invalidateDrag() {
+        if isScrubbing || scrollDrag != nil { dragInvalidated = true }
+        scrollDrag = nil
     }
 
     // MARK: The track
@@ -450,17 +510,20 @@ struct StreamNavigatorView: View {
     /// different kind of ground.
     @ViewBuilder
     private func track(_ layout: StreamNavigator.Layout) -> some View {
-        let solidEnd = layout.windowY ?? layout.trackBottom
+        let retainedFirst = layout.placed.first?.node.trailing == true
+        let solidStart = retainedFirst ? (layout.windowY ?? layout.trackBottom) : layout.trackTop
+        let solidEnd = retainedFirst ? layout.trackBottom : (layout.windowY ?? layout.trackBottom)
         Rectangle()
             .fill(Color.secondary.opacity(0.15))
-            .frame(width: 1, height: max(0, solidEnd - layout.trackTop))
-            .offset(x: Metrics.trackX, y: layout.trackTop)
+            .frame(width: 1, height: max(0, solidEnd - solidStart))
+            .offset(x: Metrics.trackX, y: solidStart)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-        if let windowY = layout.windowY, layout.trackBottom > windowY {
+        if retainedFirst || layout.windowY != nil {
+            let windowY = layout.windowY ?? layout.trackBottom
             Path { path in
-                path.move(to: CGPoint(x: Metrics.trackX + 0.5, y: windowY))
-                path.addLine(to: CGPoint(x: Metrics.trackX + 0.5, y: layout.trackBottom))
+                path.move(to: CGPoint(x: Metrics.trackX + 0.5, y: retainedFirst ? layout.trackTop : windowY))
+                path.addLine(to: CGPoint(x: Metrics.trackX + 0.5, y: retainedFirst ? windowY : layout.trackBottom))
             }
             .stroke(Color.secondary.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             .allowsHitTesting(false)
@@ -481,7 +544,7 @@ struct StreamNavigatorView: View {
                 .foregroundStyle(.tertiary)
         }
         .offset(x: Metrics.trackX - 3, y: y - 6)
-        .help("seven-day window ends here; the pages below are retained because they hold content")
+        .help("seven-day boundary; pages outside the window are retained because they hold content")
         .accessibilityHidden(true)
     }
 
@@ -548,46 +611,49 @@ struct StreamNavigatorView: View {
     /// the first of its day, its minute, and under the active one its
     /// gauge. Hover reveals a fill behind it and never content (D-10);
     /// the tooltip repeats what the gutter already shows.
-    private func node(_ placed: StreamNavigator.Placed, width: CGFloat) -> some View {
+    private func node(_ placed: StreamNavigator.Placed, width: CGFloat, positioned: Bool = true) -> some View {
         let node = placed.node
         let first = node.firstOfDay
         let hovered = hoverID == node.id
-        return HStack(alignment: .top, spacing: 8) {
-            marker(for: node)
-                .padding(.top, 4)
-            VStack(alignment: .leading, spacing: 1) {
-                if first {
-                    Text(node.dayLabel)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(node.active ? .primary : .secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+        return Button { jump(to: placed) } label: {
+            HStack(alignment: .top, spacing: 8) {
+                marker(for: node)
+                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    if first {
+                        Text(node.dayLabel)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(node.active ? .primary : .secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    if !node.stamp.isEmpty {
+                        Text(node.stamp)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(node.active ? .secondary : .tertiary)
+                            .lineLimit(1)
+                    }
+                    if node.trailing {
+                        Text(StreamNavigator.retainedLabel)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    if node.active, !node.trailing, node.hasPage {
+                        GaugeBar(
+                            fraction: node.fractionRemaining,
+                            paused: node.paused,
+                            toppedUp: node.toppedUp,
+                            lastHour: node.lastHour
+                        )
+                        .frame(width: Metrics.gaugeWidth, height: 3)
+                        .padding(.top, 2)
+                    }
                 }
-                if !node.stamp.isEmpty {
-                    Text(node.stamp)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(node.active ? .secondary : .tertiary)
-                        .lineLimit(1)
-                }
-                if node.trailing {
-                    Text(StreamNavigator.retainedLabel)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-                if node.active, !node.trailing, node.hasPage {
-                    GaugeBar(
-                        fraction: node.fractionRemaining,
-                        paused: node.paused,
-                        toppedUp: node.toppedUp,
-                        lastHour: node.lastHour
-                    )
-                    .frame(width: Metrics.gaugeWidth, height: 3)
-                    .padding(.top, 2)
-                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
+        .buttonStyle(.plain)
         .padding(.leading, Metrics.trackX - (first ? 3 : 2))
         .padding(.trailing, 2)
         .frame(width: width, height: placed.rowHeight, alignment: .topLeading)
@@ -596,7 +662,7 @@ struct StreamNavigatorView: View {
                 .fill(hovered ? Color.primary.opacity(0.07) : .clear)
         )
         .contentShape(Rectangle())
-        .offset(y: placed.y - (first ? 7 : 6))
+        .offset(y: positioned ? placed.y - (first ? 7 : 6) : 0)
         .onHover { inside in
             if inside {
                 hoverID = node.id
@@ -604,12 +670,23 @@ struct StreamNavigatorView: View {
                 hoverID = nil
             }
         }
-        .onTapGesture { jump(to: placed) }
+        .contextMenu {
+            if model.pads.isEnabled {
+                Button(PadSortCopy(
+                    direction: model.pads.checkpointSortDirection(
+                        for: model.pads.activeID, onDate: model.dateKey(forDayBucket: node.bucket)),
+                    subject: CompanionL10n.format("pad.sort.checkpoints", node.spokenDay)).action) {
+                    model.toggleCheckpointSort(dayBucket: node.bucket)
+                }
+            }
+        }
         .help(StreamNavigator.help(for: node, chord: chords[node.id]))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
+        .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(node.active ? [.isSelected] : [])
+        .accessibilityAction { jump(to: placed) }
     }
 
     /// The mark on the track. The active node is a filled ember dot,
