@@ -88,8 +88,8 @@ public struct TimeRailView: View {
     /// under them, with room for "10 days ago" in the monospaced
     /// caption. Longer than that truncates at the tail, which is the
     /// net rather than the plan.
-    static let width: CGFloat = 110
-    static let experimentalWidth: CGFloat = 150
+    nonisolated static let width: CGFloat = 110
+    nonisolated static let experimentalWidth: CGFloat = 150
 
     /// Use the same measure in the view and layout disclosures; turning the
     /// experiment off keeps the legacy rail's 110-point width.
@@ -97,15 +97,9 @@ public struct TimeRailView: View {
         experimental ? experimentalWidth : width
     }
 
-    public var body: some View {
-        if model.pads.isEnabled {
-            experimentalRail
-        } else {
-            legacyRail
-        }
-    }
+    public var body: some View { unifiedRail }
 
-    private var legacyRail: some View {
+    private var unifiedRail: some View {
         let projection = model.timeUnits
         // A file or the ledger showing replaces the roll, so no page is
         // the page on screen while one is selected, and no node lights.
@@ -131,22 +125,27 @@ public struct TimeRailView: View {
             // enters `tabs`, so the projection cannot see one.
             if !model.navigationFiles.isEmpty {
                 GroupLabel(text: "FILES")
-                ForEach(model.navigationFiles) { file in
-                    FileShelfRow(
-                        file: file,
-                        selected: model.selectedFile == file.id && !model.showingLedger,
-                        model: model
-                    )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(model.navigationFiles) { file in
+                            FileShelfRow(
+                                file: file,
+                                selected: model.selectedFile == file.id && !model.showingLedger,
+                                model: model
+                            )
+                        }
+                    }
                 }
+                .frame(maxHeight: 80)
             }
             padHeading
             StreamNavigatorView(
                 model: model,
                 roll: Self.roll(
                     surface: surface, owner: model.owner,
-                    owners: model.rollGeometry, unclaimed: unclaimedRoll
+                    owners: rollIsShowing ? model.rollGeometry : unclaimedRoll, unclaimed: unclaimedRoll
                 ),
-                drivesRoll: Self.drivesRoll(surface: surface, owner: model.owner),
+                drivesRoll: rollIsShowing && Self.drivesRoll(surface: surface, owner: model.owner),
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
@@ -154,87 +153,8 @@ public struct TimeRailView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
-        .frame(width: Self.width(experimental: false))
+        .frame(width: Self.width(experimental: model.pads.isEnabled))
         .background(Color.panelBackground)
-    }
-
-    /// Display-order controls act on the same projection the roll receives.
-    /// They do not reorder slots or change a page's creation day.
-    private var experimentalRail: some View {
-        let projection = model.timeUnits
-        let showingRoll = !model.showingLedger && model.selectedFile == nil
-        let nodes = StreamNavigator.nodes(
-            projection: projection, tabs: model.navigationTabs,
-            selection: showingRoll ? model.selection : nil,
-            surfaceShowsRoll: showingRoll, stampFormat: model.stampFormat
-        )
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 3) {
-                    GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
-                    Spacer(minLength: 0)
-                    sortControl(
-                        direction: model.pads.daySortDirection(for: model.pads.activeID),
-                        label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort
-                    )
-                    Button(action: model.newPage) { Image(systemName: "plus") }
-                        .buttonStyle(.plain).help(CompanionL10n.string("pad.page.new"))
-                        .accessibilityLabel(CompanionL10n.string("pad.page.new"))
-                }
-                ForEach(projection.units) { unit in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 3) {
-                            Text(unit.railLabel).font(.caption).foregroundStyle(.secondary)
-                            Spacer(minLength: 0)
-                            sortControl(
-                                direction: model.pads.checkpointSortDirection(
-                                    for: model.pads.activeID,
-                                    onDate: model.dateKey(forDayBucket: unit.bucket)
-                                ),
-                                label: CompanionL10n.format("pad.sort.checkpoints", unit.spokenLabel),
-                                action: { model.toggleCheckpointSort(dayBucket: unit.bucket) }
-                            )
-                        }
-                        ForEach(nodes.filter { $0.bucket == unit.bucket }) { node in
-                            Button {
-                                model.select(target: node.target)
-                                if Self.drivesRoll(surface: surface, owner: model.owner),
-                                   let extent = model.rollGeometry.geometry.extents.first(where: {
-                                       $0.page == node.page && $0.bucket == node.bucket
-                                   }) {
-                                    model.rollGeometry.scroll(toDocumentOffset:
-                                        StreamNavigator.jumpOffset(forDocumentTop: extent.top))
-                                }
-                            } label: {
-                                HStack {
-                                    Text(node.stamp.isEmpty ? CompanionL10n.string("pad.page.newPlaceholder") : node.stamp)
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(6).contentShape(Rectangle())
-                                .background(node.active ? Color.ember.opacity(0.14) : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(.caption, design: .monospaced))
-                            .help(node.title.isEmpty ? node.spokenDay : node.title)
-                            .accessibilityAddTraits(node.active ? .isSelected : [])
-                        }
-                    }
-                }
-                hiddenPages(count: projection.hiddenBlankPages)
-                if !model.navigationFiles.isEmpty {
-                    Divider().padding(.vertical, 4)
-                    GroupLabel(text: CompanionL10n.string("pad.files.heading"))
-                    ForEach(model.navigationFiles) { file in
-                        FileShelfRow(file: file,
-                            selected: model.selectedFile == file.id && !model.showingLedger,
-                            model: model)
-                    }
-                }
-            }
-            .padding(.horizontal, 7).padding(.vertical, 8)
-        }
-        .frame(width: Self.width(experimental: true)).background(Color.panelBackground)
     }
 
     private func sortControl(
@@ -264,6 +184,11 @@ public struct TimeRailView: View {
         HStack(spacing: 0) {
             GroupLabel(text: "PAD")
             Spacer(minLength: 0)
+            if model.pads.isEnabled {
+                sortControl(
+                    direction: model.pads.daySortDirection(for: model.pads.activeID),
+                    label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort)
+            }
             Button(action: model.newPage) {
                 Image(systemName: "plus")
                     .font(.system(size: 10, weight: .bold))
