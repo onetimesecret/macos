@@ -59,6 +59,7 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
+                        newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
                         saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
                         saveAsShortcut: appDelegate.shortcut(for: .fileSaveAs),
@@ -120,6 +121,8 @@ struct BackdropApp: App {
                     }
                 }
                 CommandGroup(replacing: .help) {
+                    Button("OnetimePad Help") { appDelegate.showHelp() }
+                    Divider()
                     Button("Export Diagnostics…") { appDelegate.exportDiagnostics() }
                     Button("Copy Diagnostic Summary") { appDelegate.copyDiagnosticSummary() }
                     Divider()
@@ -153,25 +156,12 @@ struct BackdropApp: App {
     }
 }
 
-/// The File menu: Open, Save, Save As and Close File (ADR-0028).
-///
-/// A view of its own because a `CommandMenu`'s content is a view, and a
-/// view is what can observe the model whose state greys three of these
-/// four out.
-///
-/// Every item goes through `perform`, the same route the chord takes,
-/// so each verb has one implementation. Save, Save As and Close File
-/// are dimmed while a page rather than a file is showing, because on a
-/// page those chords mean something else entirely and a menu that
-/// offered them under a file's names would be lying about what the
-/// click does.
-///
-/// Enablement is display and never a gate: the model's own arms decide
-/// what happens, and a click that arrives anyway lands on the page
-/// reading of the chord rather than on nothing.
+/// Page and file commands share the keyboard dispatch path. Save,
+/// Save As, and Close File apply only to the open file.
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
+    let newShortcut: KeyboardShortcut?
     let openShortcut: KeyboardShortcut?
     let saveShortcut: KeyboardShortcut?
     let saveAsShortcut: KeyboardShortcut?
@@ -185,6 +175,9 @@ private struct FileMenuItems: View {
     }
 
     var body: some View {
+        Button("New Page") { pages.perform(.pageNew) }
+            .keyboardShortcut(newShortcut)
+        Divider()
         Button("Open…") { pages.perform(.fileOpen) }
             .keyboardShortcut(openShortcut)
         Divider()
@@ -357,6 +350,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
     private lazy var settings = BackdropSettingsWindowController(model: model)
+    private lazy var help = HelpWindowController(model: model)
     private lazy var feedback = FeedbackWindowController(model: model) { [unowned self] in
         diagnosticReport()
     }
@@ -1080,6 +1074,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     @objc func sendFeedback() {
         auxiliaryActivation = !NSApp.isActive
         feedback.show()
+    }
+
+    func showHelp() {
+        auxiliaryActivation = !NSApp.isActive
+        help.show()
     }
 
     /// The standard About panel leads with the app's product version and
