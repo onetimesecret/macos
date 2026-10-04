@@ -2,6 +2,16 @@
 # docs/development/keymap-format-and-dispatch.md
 ---
 
+> Shortcut scope, 2026-10-03: [ADR-0039](../adr/0039-pad-selection-and-associations.md) supersedes the
+> numbered page/slot/day shortcut assignments below when multiple pads are
+> enabled. Scratch uses ⌘0; the first nine other pads use ⌘1–⌘9. The
+> existing single-pad map remains when pads are disabled. Page neighbour
+> navigation uses ⌥⌘←/→; direct page-selection commands remain configurable
+> through the keymap. Historical ledger ⌘0 checks require an explicit
+> nonconflicting binding in the multi-pad context. This notice records the
+> decision and does not assert that the native checks have passed.
+
+
 # Keymap format and command dispatch
 
 The keyboard map is a file, not code (issue #76). What each chord does

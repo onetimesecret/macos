@@ -4,7 +4,7 @@ title: UI/UX decisions for the background surface
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0914-ui-ux-decisions.md; docs/design-brief.md (Tokens and parameters)
-superseded-by:
+superseded-by: docs/adr/0040-shared-pad-timeline-navigation.md, on fixed newest-first day ordering in Timeline only
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
@@ -27,6 +27,12 @@ sources:
   - shell/Sources/CompanionKit/TimeRailView.swift
   - shell/Sources/CompanionKit/Theme.swift
 ---
+
+> Scoped successor, 2026-10-03: [ADR-0040](../../adr/0040-shared-pad-timeline-navigation.md)
+> replaces fixed newest-first day ordering in Timeline. Its shared navigator, selectable day/checkpoint
+> ordering, density handling, and session reading-position rules are approved
+> design requirements, not an implementation verification report.
+
 
 # UI/UX decisions for the background surface
 

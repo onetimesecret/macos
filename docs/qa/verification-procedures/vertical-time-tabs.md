@@ -13,6 +13,12 @@ has closed.
 **Owner:** delano.
 **Status:** open. Not yet run on hardware.
 
+> Shortcut scope, 2026-10-03: [ADR-0039](../../adr/0039-pad-selection-and-associations.md)
+> supersedes numbered page/day shortcuts when multiple pads are enabled.
+> Scratch uses ⌘0; the first nine other pads use ⌘1–⌘9. Run the numbered
+> page/Today checks below with pads disabled or explicit nonconflicting page
+> bindings. The decision does not assert that native verification has passed.
+
 ## Why this needs hardware at all
 
 Almost everything about the model is already pinned automatically. The
