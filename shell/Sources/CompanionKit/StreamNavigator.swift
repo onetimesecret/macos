@@ -167,8 +167,10 @@ public enum StreamNavigator {
     /// and what lies past the seventh is drawn as the window's end
     /// rather than counted as absence.
     public static func emptyDays(between above: Int, and below: Int) -> Int {
-        let last = !isTrailing(bucket: above) && isTrailing(bucket: below) ? -windowDays : below
-        return max(0, above - last - 1)
+        let newer = max(above, below)
+        let older = min(above, below)
+        let last = !isTrailing(bucket: newer) && isTrailing(bucket: older) ? -windowDays : older
+        return max(0, newer - last - 1)
     }
 
     /// "1 empty day", "2 empty days": the note above a node whose day
@@ -424,10 +426,14 @@ public enum StreamNavigator {
         /// piece by piece.
         public func documentOffset(atY y: CGFloat) -> CGFloat {
             guard anchors.count >= 2 else { return 0 }
+            if y <= anchors[0].y { return anchors[0].document }
+            if y >= anchors[anchors.count - 1].y { return anchors[anchors.count - 1].document }
             for index in 1..<anchors.count {
                 let a = anchors[index - 1], b = anchors[index]
                 if y <= b.y {
-                    let share = (y - a.y) / max(1, b.y - a.y)
+                    let span = b.y - a.y
+                    guard span > 0 else { continue }
+                    let share = (y - a.y) / span
                     return a.document + share * (b.document - a.document)
                 }
             }
@@ -500,13 +506,26 @@ public enum StreamNavigator {
     /// neighbours or, with none, spread evenly between the document's
     /// ends, so the extents landing moves the nodes instead of
     /// unstacking them.
+    public static func requiredHeight(nodes: [Node]) -> CGFloat {
+        Metrics.top + Metrics.bottom + nodes.reduce(0) { total, node in
+            total + (node.firstOfDay ? Metrics.firstRow : Metrics.row)
+                + (node.active && !node.trailing && node.hasPage ? Metrics.gaugeReserve : 0)
+                + (node.trailing ? Metrics.trailingReserve : 0)
+                + (node.emptyDays > 0 ? Metrics.gapBand : 0)
+        } + Metrics.windowReserve
+    }
+
     public static func layout(
-        nodes: [Node], geometry: RollGeometry, height: CGFloat, width: CGFloat
+        nodes: [Node], geometry: RollGeometry, height: CGFloat, width: CGFloat,
+        compact: Bool = false
     ) -> Layout {
         guard height > 0, !nodes.isEmpty else { return .empty }
+        if compact && height <= Metrics.top + Metrics.bottom { return .empty }
         let documentHeight = resolvedDocumentHeight(geometry)
         let document = max(1, documentHeight)
-        let windowIndex = nodes.firstIndex(where: \.trailing)
+        let windowIndex = nodes.first?.trailing == true
+            ? nodes.firstIndex(where: { !$0.trailing })
+            : nodes.firstIndex(where: \.trailing)
         let documentTops = resolvedDocumentTops(
             nodes: nodes, geometry: geometry, documentHeight: documentHeight)
         var reserves: [CGFloat] = []
@@ -516,13 +535,13 @@ public enum StreamNavigator {
             let atWindow = index == windowIndex
             let gapBand = node.emptyDays > 0
                 ? (atWindow ? Metrics.gapBandAtWindow : Metrics.gapBand) : 0
-            let reserve = gapBand + (atWindow ? Metrics.windowReserve : 0)
+            let reserve = compact ? 0 : gapBand + (atWindow ? Metrics.windowReserve : 0)
             var rowHeight = node.firstOfDay ? Metrics.firstRow : Metrics.row
             if node.active, !node.trailing, node.hasPage { rowHeight += Metrics.gaugeReserve }
             if node.trailing { rowHeight += Metrics.trailingReserve }
             gapBands.append(gapBand)
             reserves.append(reserve)
-            heights.append(rowHeight + reserve)
+            heights.append(compact ? 0 : rowHeight + reserve)
         }
         let span = height - Metrics.top - Metrics.bottom
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
@@ -548,7 +567,7 @@ public enum StreamNavigator {
             Placed(
                 node: nodes[index], y: nodeYs[index],
                 rowTop: nodeYs[index] - 8, rowHeight: heights[index] - reserves[index],
-                noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
+                noteY: !compact && nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
         }
@@ -562,7 +581,7 @@ public enum StreamNavigator {
             segment = Segment(y: from, height: max(2, to - from))
         }
 
-        let windowY = windowIndex.map { ys[$0] + gapBands[$0] + 2 }
+        let windowY = windowIndex.map { compact ? nodeYs[$0] : ys[$0] + gapBands[$0] + 2 }
 
         let available = width - Metrics.trackX - Metrics.sliverInset - Metrics.sliverTrailing
         var slivers: [Int: Sliver] = [:]
@@ -578,7 +597,7 @@ public enum StreamNavigator {
                     // point, and two lines landing on the same one are
                     // one sliver.
                     let y = map(line.y).rounded()
-                    if rows.contains(where: { y >= $0.0 && y <= $0.1 }) { continue }
+                    if !compact && rows.contains(where: { y >= $0.0 && y <= $0.1 }) { continue }
                     let key = Int(y)
                     let sliver = Sliver(
                         id: key,
@@ -642,7 +661,9 @@ public enum StreamNavigator {
         for index in 1..<anchors.count {
             let a = anchors[index - 1], b = anchors[index]
             if offset <= b.document {
-                let share = (offset - a.document) / max(1, b.document - a.document)
+                let span = b.document - a.document
+                guard span > 0 else { return a.y }
+                let share = (offset - a.document) / span
                 return a.y + share * (b.y - a.y)
             }
         }

@@ -65,6 +65,53 @@ final class StreamNavigatorTests: XCTestCase {
             bucket: node.bucket, page: node.page, top: top, height: height, lines: lines)
     }
 
+    func testGapCountsAreIndependentOfDayDirection() {
+        for (a, b) in [(0, -3), (-4, -9), (-8, -12)] {
+            XCTAssertEqual(StreamNavigator.emptyDays(between: a, and: b),
+                           StreamNavigator.emptyDays(between: b, and: a))
+        }
+        XCTAssertEqual(StreamNavigator.emptyDays(between: -3, and: 0), 2)
+    }
+
+    func testRetainedBoundarySeparatesOldestFirstNodes() throws {
+        let ordered = Array(nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: -4),
+            slot(tab: 3, page: 33, day: -9)
+        ]).reversed())
+        let geometry = RollGeometry(extents: ordered.enumerated().map {
+            extent($0.element, top: CGFloat($0.offset) * 1000, height: 1000)
+        }, documentHeight: 3000, viewportTop: 0, viewportHeight: 200)
+        let layout = StreamNavigator.layout(nodes: ordered, geometry: geometry, height: 280, width: 140)
+        let boundary = try XCTUnwrap(layout.windowY)
+        XCTAssertGreaterThan(boundary, layout.placed[0].y)
+        XCTAssertLessThan(boundary, layout.placed[1].y)
+    }
+
+    func testDenseMapFitsMinimumHeightAndCoversLongDocumentInBothOrders() {
+        let checkpoints = nodes((1...60).map {
+            slot(tab: UInt64($0), page: UInt64($0 + 100), day: 0,
+                 createdMs: born + UInt64($0) * 60_000)
+        })
+        for ordered in [checkpoints, Array(checkpoints.reversed())] {
+            let geometry = RollGeometry(extents: ordered.enumerated().map {
+                extent($0.element, top: CGFloat($0.offset) * 5000, height: 5000)
+            }, documentHeight: 300000, viewportTop: 140000, viewportHeight: 180)
+            XCTAssertGreaterThan(StreamNavigator.requiredHeight(nodes: ordered), 180)
+            let layout = StreamNavigator.layout(nodes: ordered, geometry: geometry,
+                                                 height: 72, width: 142, compact: true)
+            XCTAssertEqual(layout.placed.count, 60)
+            XCTAssertTrue(layout.placed.allSatisfy { $0.y >= layout.trackTop && $0.y <= layout.trackBottom })
+            XCTAssertEqual(layout.documentOffset(atY: layout.trackBottom), 300000, accuracy: 1)
+            let last = layout.anchors[layout.anchors.count - 2]
+            let end = layout.anchors[layout.anchors.count - 1]
+            XCTAssertLessThan(end.y - last.y, 1, "dense segments are smaller than a point")
+            XCTAssertEqual(layout.documentOffset(atY: (last.y + end.y) / 2),
+                           (last.document + end.document) / 2, accuracy: 0.001)
+            XCTAssertNotNil(layout.band)
+        }
+    }
+
     // MARK: The nodes
 
     /// One node per page in the roll's order, the first page of each
