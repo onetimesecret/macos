@@ -248,7 +248,10 @@ impl KeyPackageKeeper {
 /// short to try) stays where it was, still owed to the relay. The cost
 /// of trying both: a payload neither opens spends both, so the device
 /// joins no ballot until the next attach publishes a fresh package,
-/// which the spent standing one makes the pump owe at once.
+/// which the spent standing one makes the pump owe at once. The payload
+/// is whatever the proposal carried, and nothing checks the proposer
+/// before the try, so any holder of the channel key can impose that
+/// cost at will.
 pub fn open_proposal_entropy(
     standing: &mut KeyPackageKeeper,
     pending: &mut Option<KeyPackageKeeper>,
@@ -995,6 +998,9 @@ impl SyncSession {
                     return;
                 };
                 let Some(entropy) = open_proposal_entropy(packages, pending, &sealed.0) else {
+                    crate::diagnostics::diag_fault!(
+                        "companion-ffi: a ceremony proposal named this device and neither key package opened its entry; the device stays out of that ballot."
+                    );
                     return;
                 };
                 // Mirror the proposer's ballot: every named device must

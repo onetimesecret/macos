@@ -506,11 +506,18 @@ type Refusal = &'static str;
 /// engine standing keeps the session and chain and republishes a
 /// fresh package, which is the move after a ceremony spends one.
 pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
-    // Declared first so it drops last, after any core lock taken below.
     let _flight = match AttachFlight::begin(handle) {
         Ok(flight) => flight,
         Err(reason) => return serde_json::json!({ "ok": false, "reason": reason }),
     };
+    attach_in_flight(handle)
+}
+
+/// The attach itself, run only under an [`AttachFlight`]. A function of
+/// its own because the flight's drop re-takes the handle lock: every
+/// guard taken in here is released when this returns, before that drop
+/// runs, whatever order the bindings below come in.
+fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
     if let Err(reason) = ensure_engine(handle) {
         return serde_json::json!({ "ok": false, "reason": reason });
     }

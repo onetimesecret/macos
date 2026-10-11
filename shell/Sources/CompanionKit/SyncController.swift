@@ -357,6 +357,8 @@ public final class SyncController: ObservableObject {
     private func begin() {
         session &+= 1
         signinFailure = nil
+        // A fresh configuration starts the backoff afresh.
+        quietRefusals = 0
         let endpoints = SyncEndpoints.resolve(
             serverUrl: serverUrlProvider(), defaults: defaults)
         guard endpoints.complete,

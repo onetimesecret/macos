@@ -2750,7 +2750,9 @@ pub unsafe extern "C" fn companion_connection_configure(
     });
     // The token is taken out of the parsed tree rather than copied out
     // of it, so the tree drops holding null where the token was and
-    // the one copy is the zeroizing one.
+    // our one copy is the zeroizing one. A token the parser had to
+    // unescape also passed through serde_json's own scratch buffer,
+    // which is not ours to wipe.
     match value.get_mut("token").map(serde_json::Value::take) {
         Some(serde_json::Value::String(token)) => {
             let token = Zeroizing::new(token);
