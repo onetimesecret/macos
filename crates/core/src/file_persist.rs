@@ -147,7 +147,8 @@ fn write_drafts(store: &FileStore, bodies: &[DraftBody], wall_ms: u64, out: &mut
 /// Every record's document is built before the store is touched, so a
 /// refusal leaves it as it was. The price is the peak: the store's old
 /// documents, every replayed one and the snapshot buffer are all held
-/// at once, until the store is cleared and the new ones adopted.
+/// at once, until the store is cleared and the new ones adopted. That
+/// is about three times the drafts' size, where [`emit`] needs two.
 ///
 /// `wall_ms` is the reading of the clock at the restore. It is accepted
 /// and deliberately unused: a file has no countdown to drain and no

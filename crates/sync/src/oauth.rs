@@ -489,12 +489,14 @@ fn token_request(endpoint: &str, body: Zeroizing<Vec<u8>>) -> HttpRequest {
 fn form_body(pairs: &[(&str, &str)]) -> Zeroizing<Vec<u8>> {
     let capacity = pairs
         .iter()
-        .map(|(key, value)| key.len() + value.len() * 3 + 2)
+        .map(|(key, value)| (key.len() + value.len()) * 3 + 2)
         .sum();
     let mut body = Zeroizing::new(Vec::with_capacity(capacity));
     for (key, value) in pairs {
-        // Keys are written as they are, and the capacity counts them
-        // once: they are literals of unreserved characters.
+        // Keys are written as they are: they are literals of unreserved
+        // characters. The capacity counts them at the worst case all
+        // the same, so a key that broke the rule could not outgrow the
+        // buffer in a release build, where the assertion is gone.
         debug_assert!(
             key.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b)),
@@ -642,11 +644,9 @@ mod tests {
             &body[..],
             b"grant_type=refresh_token&refresh_token=%C3%A9%20%2F"
         );
-        let worst = "grant_type".len()
-            + "refresh_token".len() * 3
+        let worst = ("grant_type".len() + "refresh_token".len()) * 3
             + 2
-            + "refresh_token".len()
-            + "\u{e9} /".len() * 3
+            + ("refresh_token".len() + "\u{e9} /".len()) * 3
             + 2;
         assert_eq!(body.capacity(), worst);
     }

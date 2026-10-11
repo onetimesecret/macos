@@ -976,9 +976,11 @@ public final class SyncController: ObservableObject {
     /// nothing started the pump until the switch was toggled or the
     /// person signed out and in. The retry is on the same 30-second
     /// clock as an unreachable relay, and like it has no cap; unlike
-    /// it, no sentence stands, as none did before. A trouble the gate
-    /// did name (`signedOut`, `refused`, `notConfigured`) is not a
-    /// condition a timer clears, and is not retried.
+    /// it, no sentence stands, as none did before. A named trouble
+    /// (`signedOut`, `refused`, `notConfigured`), whether the gate
+    /// named it or the core answered `not_configured` or `poisoned`
+    /// (`settledTrouble`), is not a condition a timer clears, and is
+    /// not retried.
     public nonisolated static func attachRetries(after settled: Trouble?) -> Bool {
         settled == nil || settled == .unreachable
     }
@@ -999,20 +1001,26 @@ public final class SyncController: ObservableObject {
     /// outcome's reason is the coarser of the two: the core answers the
     /// second 401 on one attach with `signed_out`, which is exactly the
     /// case `.refused` exists to tell apart, so the gate decides and
-    /// the reason only fills in what the gate does not name. `busy` is
-    /// another attach already in flight and names no trouble at all,
-    /// so it reads as none even from a core whose gate this shell
-    /// cannot decode, and is retried rather than shown as "no server".
+    /// the reason only fills in what the gate does not name.
+    ///
+    /// A reason this shell does not name reads as no trouble, so even
+    /// from a core whose gate this shell cannot decode the refusal is
+    /// retried rather than shown as "no server": `busy` (another attach
+    /// already in flight), `keychain`, `refused`, `not_attached`, and
+    /// whatever a newer core adds to a list the header does not close.
+    /// `poisoned` keeps the not-configured reading it always had: a
+    /// core in that state answers nothing until the app relaunches, and
+    /// no timer clears it.
     public nonisolated static func settledTrouble(
         ok: Bool, reason: String?, gate: SyncGate?
     ) -> Trouble? {
         var inferred: Trouble?
         if !ok {
             switch reason {
+            case "not_configured", "poisoned": inferred = .notConfigured
             case "signed_out": inferred = .signedOut
             case "unreachable": inferred = .unreachable
-            case "busy": inferred = nil
-            default: inferred = .notConfigured
+            default: inferred = nil
             }
         }
         return reconciled(trouble: inferred, gate: gate)

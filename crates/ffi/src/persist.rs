@@ -655,6 +655,12 @@ fn work_buffer(plaintext: &[u8]) -> Zeroizing<Vec<u8>> {
 /// authenticated against `aad`. The returned buffer wipes on drop;
 /// `None` for anything that was not sealed under this key with these
 /// associated bytes, bit for bit.
+/// The shortest body [`open_body`] could ever open: a nonce and a tag
+/// around an empty plaintext.
+pub(crate) fn sealed_body_floor() -> usize {
+    NONCE_LEN + CHACHA20_POLY1305.tag_len()
+}
+
 pub(crate) fn open_body(key: &[u8], aad: &[u8], body: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     let key = aead_key(key)?;
     if body.len() < NONCE_LEN {

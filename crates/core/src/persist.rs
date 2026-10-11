@@ -378,7 +378,9 @@ impl<C: Clock> SheetStore<C> {
         // a stepped clock; years is not slightly. A clock below
         // `WALL_CLOCK_FLOOR_MS` is the broken party, and clamping to it
         // would fail the other way by as much, so the stamps are left
-        // as written for that load.
+        // as written for that load. The creation stamp clamps with the
+        // rest, so a clamped record's row reads as created at about the
+        // load rather than at the future date it was written with.
         let ceiling = if wall_ms < WALL_CLOCK_FLOOR_MS {
             u64::MAX
         } else {

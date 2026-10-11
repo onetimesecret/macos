@@ -221,12 +221,16 @@ impl KeyPackageKeeper {
     /// Open entropy a proposer sealed to this package. Spends the
     /// private half: `None` afterwards until a fresh mint, and `None`
     /// for a payload not sealed to this package. A payload too short to
-    /// carry the proposer's key is refused before the private half is
-    /// touched, and spends nothing.
+    /// carry the proposer's key and a sealed body could never open, so
+    /// it is refused before the private half is touched, and spends
+    /// nothing.
     #[must_use]
     pub fn open_entropy(&mut self, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         let eph_pub = sealed.get(..32)?;
         let body = sealed.get(32..)?;
+        if body.len() < persist::sealed_body_floor() {
+            return None;
+        }
         let private = self.private.take()?;
         let peer = agreement::UnparsedPublicKey::new(&agreement::X25519, eph_pub);
         let wrap_key = agreement::agree_ephemeral(private, &peer, wrap_key_from).ok()??;
@@ -1490,6 +1494,10 @@ mod tests {
         let mut standing = KeyPackageKeeper::mint(&pkcs8).unwrap();
         let mut pending = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
         assert!(open_proposal_entropy(&mut standing, &mut pending, b"short").is_none());
+        // A key's worth and a body with no room for its nonce and tag:
+        // it could never open, so it is refused before either try too.
+        let keyed = [0u8; 32 + 27];
+        assert!(open_proposal_entropy(&mut standing, &mut pending, &keyed).is_none());
         assert!(!standing.is_spent());
         let pending = pending.expect("never tried, so never dropped");
         assert!(!pending.is_spent());

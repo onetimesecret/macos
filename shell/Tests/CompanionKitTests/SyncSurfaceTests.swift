@@ -265,6 +265,18 @@ final class SyncSurfaceTests: XCTestCase {
             SyncController.settledTrouble(ok: false, reason: "busy", gate: .off),
             .notConfigured
         )
+        // The same holds for any reason the shell does not name; the
+        // two that name a condition no timer clears still read so.
+        XCTAssertNil(SyncController.settledTrouble(ok: false, reason: "keychain", gate: nil))
+        XCTAssertNil(SyncController.settledTrouble(ok: false, reason: "not_attached", gate: nil))
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "not_configured", gate: nil),
+            .notConfigured
+        )
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "poisoned", gate: nil),
+            .notConfigured
+        )
     }
 
     func testQuietAttachRefusalsBackOffToAFiveMinuteCeiling() {
