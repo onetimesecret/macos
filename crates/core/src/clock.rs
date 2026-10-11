@@ -146,7 +146,7 @@ fn continuous_now() -> Instant {
 /// charged on this clock, through the `Instant`s the store holds.
 #[must_use]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub(crate) fn sleep_inclusive_ns() -> u64 {
+fn sleep_inclusive_ns() -> u64 {
     #[cfg(target_os = "macos")]
     const SLEEP_INCLUSIVE: libc::clockid_t = libc::CLOCK_MONOTONIC;
     #[cfg(target_os = "linux")]
@@ -361,9 +361,10 @@ mod tests {
         assert!(SystemClock.wall_ms() > 1_700_000_000_000);
     }
 
-    /// The reading the sealed file stamps itself with. It must never
-    /// run backwards, or time away would come out negative and a page
-    /// would gain life across a relaunch.
+    /// The reading every interval a running session observes is
+    /// charged on, through the `Instant`s the store holds. It must
+    /// never run backwards, or a countdown would gain life within a
+    /// session.
     #[test]
     fn the_sleep_inclusive_reading_never_runs_backwards() {
         let first = sleep_inclusive_ns();
