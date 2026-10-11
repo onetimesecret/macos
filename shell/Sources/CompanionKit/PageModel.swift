@@ -5509,8 +5509,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// The page the three seal routes write into, or nil while a file
-    /// shows. The ledger is not model state; the editor refuses a seal
-    /// there itself.
+    /// or the ledger shows, the same pair `canExpandPage` refuses.
     ///
     /// Not `selectedPageID` on its own. The selection names a slot, and
     /// `selectFile` deliberately leaves it on the slot the person left,
@@ -5523,7 +5522,7 @@ public final class PageModel: ObservableObject {
     /// so, and the chord, the offer button and the drop take the same
     /// answer from here.
     public var sealTarget: UInt64? {
-        guard selectedFile == nil else { return nil }
+        guard selectedFile == nil, !showingLedger else { return nil }
         return selectedPageID
     }
 

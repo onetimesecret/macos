@@ -1089,6 +1089,10 @@ impl FileStore {
         if file.pending_hydration {
             return false;
         }
+        // Nothing to simulate or apply, so nothing of the text is copied.
+        if ops.is_empty() {
+            return true;
+        }
         // Phase one: the whole batch against a simulation in exact code
         // units, so a refusal is atomic and a boundary inside a
         // surrogate pair is policed as strictly as the document would.
@@ -1096,7 +1100,9 @@ impl FileStore {
         // the way out like every other plaintext copy this module takes,
         // and the simulation is sized once, in UTF-16 units, to the most
         // the batch can make it, so it never grows and no reallocation
-        // leaves an unwiped copy behind.
+        // leaves an unwiped copy behind. Exact sizing costs one extra
+        // counting pass over the text; `text.len()` would bound it with
+        // slack instead.
         let text = Zeroizing::new(file.text());
         // Every variant named, so one added later that inserts text is
         // a compile error here rather than an undersized buffer.
@@ -1119,9 +1125,6 @@ impl FileStore {
             if !sim_admit(&mut sim, op) {
                 return false;
             }
-        }
-        if ops.is_empty() {
-            return true;
         }
         let before_selection =
             selection.and_then(|selection| file.document.snapshot_selection(selection.before));

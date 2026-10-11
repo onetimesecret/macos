@@ -5051,11 +5051,11 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     // MARK: Drop-to-seal
 
     /// An external drag seals, and only where a seal can land. Anywhere
-    /// else (over a file, or a view that takes no edits) it is refused
-    /// and the content goes back to its source: dragging onto this pad
-    /// means "stage this", and over a file the alternative was writing
-    /// what was dragged into the file as plaintext the next save puts on
-    /// disk. The cursor says so rather than promising a seal.
+    /// else (over a file, or a view that takes no edits) this view takes
+    /// nothing: dragging onto this pad means "stage this", and over a
+    /// file the alternative was writing what was dragged into the file
+    /// as plaintext the next save puts on disk. The cursor says so
+    /// rather than promising a seal.
     private func sealsExternalDrag(_ sender: NSDraggingInfo) -> Bool {
         isExternalDrag(sender) && coordinator?.sealsHere == true
     }

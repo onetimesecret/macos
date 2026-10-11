@@ -28,8 +28,9 @@ use zeroize::Zeroize;
 /// dropping a buffer costs in proportion to its pages and waits on any
 /// other in progress. Locked buffers are text chips, a page or two
 /// each; images take [`SecretBuffer::new_unlocked`]. The lock covers a
-/// vector's whole capacity, spare bytes included, since those are wiped
-/// too; a vector handed in with slack wires that much more. A buffer
+/// non-empty vector's whole capacity, spare bytes included, since those
+/// are wiped too; a vector handed in with slack wires that much more.
+/// An empty one is not locked, whatever its capacity. A buffer
 /// leaked rather than dropped keeps its pages counted and locked for
 /// the life of the process. The count is this module's alone: it
 /// assumes nothing else in the process calls `mlock`, since releasing a
@@ -140,7 +141,7 @@ impl Drop for SecretBuffer {
 /// included.
 fn allocation(bytes: &Vec<u8>) -> Range<usize> {
     let start = bytes.as_ptr() as usize;
-    start..start + bytes.capacity()
+    start..start.saturating_add(bytes.capacity())
 }
 
 /// How many live locked buffers touch each page, by page number. Taken
