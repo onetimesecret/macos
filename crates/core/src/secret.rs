@@ -45,7 +45,9 @@ use zeroize::Zeroize;
 /// built.
 pub struct SecretBuffer {
     bytes: Vec<u8>,
-    locked: bool,
+    /// The range `lock_pages` counted, kept so the unlock uncounts
+    /// exactly that range rather than recomputing it.
+    locked: Option<Range<usize>>,
 }
 
 impl SecretBuffer {
@@ -55,7 +57,8 @@ impl SecretBuffer {
     /// whole life.
     #[must_use]
     pub fn new(bytes: Vec<u8>) -> Self {
-        let locked = !bytes.is_empty() && lock_pages(allocation(&bytes));
+        let range = allocation(&bytes);
+        let locked = (!bytes.is_empty() && lock_pages(range.clone())).then_some(range);
         Self { bytes, locked }
     }
 
@@ -76,7 +79,7 @@ impl SecretBuffer {
     pub fn new_unlocked(bytes: Vec<u8>) -> Self {
         Self {
             bytes,
-            locked: false,
+            locked: None,
         }
     }
 
@@ -98,7 +101,7 @@ impl SecretBuffer {
     /// zeroize-on-drop guarantee holds regardless.
     #[must_use]
     pub fn is_locked(&self) -> bool {
-        self.locked
+        self.locked.is_some()
     }
 
     /// In-crate access to the plaintext. `pub(crate)` keeps the raw
@@ -115,14 +118,14 @@ impl SecretBuffer {
     ///
     /// Every byte of the allocation is zeroed in place, the spare
     /// capacity a vector may arrive with included, and the length is
-    /// unchanged — so the subsequent unlock covers the same range that
-    /// was locked. Idempotent: a second call is a harmless no-op.
+    /// unchanged; the unlock then uncounts the very range the lock
+    /// counted, kept from `new`. Idempotent: a second call is a
+    /// harmless no-op.
     fn wipe(&mut self) {
         self.bytes.as_mut_slice().zeroize();
         self.bytes.spare_capacity_mut().zeroize();
-        if self.locked {
-            unlock_pages(allocation(&self.bytes));
-            self.locked = false;
+        if let Some(range) = self.locked.take() {
+            unlock_pages(range);
         }
     }
 }

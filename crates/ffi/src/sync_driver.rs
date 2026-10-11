@@ -694,6 +694,9 @@ fn package_needs_republish(engine: &EngineState) -> bool {
 
 /// Build the engine if none stands. Requires configuration and a
 /// sign-in; mints what pairing has not delivered — the founder path.
+/// A re-attach with a package already waiting needs only the
+/// configuration: it reads no keychain and mints nothing, so it never
+/// answers `keychain`.
 fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Ok(mut guard) = handle.inner.lock() else {
         return Err("poisoned");

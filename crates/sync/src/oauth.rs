@@ -490,6 +490,13 @@ fn form_body(pairs: &[(&str, &str)]) -> Zeroizing<Vec<u8>> {
         .sum();
     let mut body = Zeroizing::new(Vec::with_capacity(capacity));
     for (key, value) in pairs {
+        // Keys are written as they are, and the capacity counts them
+        // once: they are literals of unreserved characters.
+        debug_assert!(
+            key.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b)),
+            "a form key needs no encoding"
+        );
         if !body.is_empty() {
             body.push(b'&');
         }

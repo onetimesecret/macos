@@ -143,6 +143,11 @@ fn write_drafts(store: &FileStore, bodies: &[DraftBody], wall_ms: u64, out: &mut
 /// Read a drafts snapshot back into the store, replacing whatever it
 /// held, and return how many files were restored.
 ///
+/// Every record's document is built before the store is touched, so a
+/// refusal leaves it as it was. The price is the peak: the store's old
+/// documents, every replayed one and the snapshot buffer are all held
+/// at once, until the store is cleared and the new ones adopted.
+///
 /// `wall_ms` is the reading of the clock at the restore. It is accepted
 /// and deliberately unused: a file has no countdown to drain and no
 /// deadline to move, which is the whole difference between this file

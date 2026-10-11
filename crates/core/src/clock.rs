@@ -169,7 +169,7 @@ fn sleep_inclusive_ns() -> u64 {
 /// Scoped like its Darwin and Linux siblings.
 #[must_use]
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub(crate) fn sleep_inclusive_ns() -> u64 {
+fn sleep_inclusive_ns() -> u64 {
     static FALLBACK_BASE: OnceLock<Instant> = OnceLock::new();
     let base = *FALLBACK_BASE.get_or_init(Instant::now);
     u64::try_from(base.elapsed().as_nanos()).unwrap_or(u64::MAX)

@@ -444,9 +444,12 @@ public final class SyncController: ObservableObject {
                 // Only a success or turning sync off resets the count:
                 // an unreachable turn between two quiet refusals keeps
                 // its own 30 seconds and leaves the backoff standing.
-                if settled == nil { quietRefusals += 1 }
+                // `busy` is another attach already in flight, not a
+                // refusal the backoff is for: it waits the flat clock.
+                let quiet = settled == nil && outcome.reason != "busy"
+                if quiet { quietRefusals += 1 }
                 armRetry(
-                    after: settled == nil
+                    after: quiet
                         ? Self.attachRetryDelay(quietRefusals: quietRefusals) : 30)
             }
             return

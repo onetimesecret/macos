@@ -1098,9 +1098,11 @@ impl FileStore {
         // it (a UTF-8 byte bounds a UTF-16 unit), so it never grows and no
         // reallocation leaves an unwiped copy behind.
         let text = Zeroizing::new(file.text());
+        // Every variant named, so one added later that inserts text is
+        // a compile error here rather than an undersized buffer.
         let room = ops.iter().fold(text.len(), |room, op| match op {
             EditOp::Insert { text: inserted, .. } => room.saturating_add(inserted.len()),
-            _ => room,
+            EditOp::Delete { .. } | EditOp::InsertChip { .. } => room,
         });
         // A batch whose room the allocator cannot meet is refused, not
         // an abort.

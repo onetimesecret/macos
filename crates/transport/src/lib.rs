@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use ots_client::{HttpRequest, HttpResponse, Transport, TransportError};
 use ureq::Agent;
+use zeroize::Zeroizing;
 
 /// How long a DNS lookup may take.
 const RESOLVE_PATIENCE: Duration = Duration::from_secs(10);
@@ -174,7 +175,9 @@ impl Transport for UreqTransport {
         // the server chooses; a larger body grows as it is read, up to
         // `BODY_LIMIT`, and a length the allocator cannot meet falls
         // back to growth rather than aborting.
-        let mut body = Vec::new();
+        // Wiped on every way out, a read that fails partway included:
+        // a token answer cut off halfway is still most of a token.
+        let mut body = Zeroizing::new(Vec::new());
         let expected = response.body().content_length().unwrap_or(0);
         let _ = body.try_reserve_exact(usize::try_from(expected.min(PRESIZE_LIMIT)).unwrap_or(0));
         response
@@ -184,6 +187,9 @@ impl Transport for UreqTransport {
             .reader()
             .read_to_end(&mut body)
             .map_err(|e| TransportError(e.to_string()))?;
+        // Moved out whole: the allocation goes to the caller, who wipes
+        // it, and the empty vector left behind holds nothing.
+        let body = std::mem::take(&mut *body);
         Ok(HttpResponse { status, body })
     }
 }
