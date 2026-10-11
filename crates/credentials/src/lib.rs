@@ -961,21 +961,27 @@ mod tests {
 
     #[test]
     fn the_diagnostic_sink_is_replaced_and_may_emit_again() {
+        // The sink is process-wide; keychain tests may emit into it concurrently.
+        let replaced = Arc::new(AtomicUsize::new(0));
+        let first = Arc::clone(&replaced);
+        set_diagnostic_sink(move |line: &str| {
+            if line == "once" {
+                first.fetch_add(1, Ordering::SeqCst);
+            }
+        });
         let lines = Arc::new(Mutex::new(Vec::new()));
-        set_diagnostic_sink(|_: &str| panic!("a replaced sink must not be called"));
         let sink_lines = Arc::clone(&lines);
         set_diagnostic_sink(move |line: &str| {
-            let first = {
-                let mut lines = sink_lines.lock().unwrap();
-                lines.push(line.to_string());
-                lines.len() == 1
-            };
-            if first {
+            sink_lines.lock().unwrap().push(line.to_string());
+            if line == "once" {
                 emit_diagnostic("again");
             }
         });
         emit_diagnostic("once");
-        assert_eq!(*lines.lock().unwrap(), ["once", "again"]);
+        let lines = lines.lock().unwrap();
+        let once = lines.iter().position(|l| l == "once").expect("delivered");
+        assert!(lines[once..].iter().any(|l| l == "again"));
+        assert_eq!(replaced.load(Ordering::SeqCst), 0);
     }
 
     #[test]
