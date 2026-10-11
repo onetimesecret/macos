@@ -17,7 +17,9 @@ from pathlib import Path
 if sys.version_info < (3, 11):
     sys.stderr.write(
         "verify-betlang.py needs Python 3.11 or later (for tomllib); "
-        f"this is {sys.version.split()[0]} at {sys.executable}\n"
+        f"this is {sys.version.split()[0]} at {sys.executable}. "
+        "Install a newer python3 (Homebrew's python@3.12, for one) and "
+        "put it first in PATH.\n"
     )
     sys.exit(2)
 

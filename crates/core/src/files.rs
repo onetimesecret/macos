@@ -1102,7 +1102,12 @@ impl FileStore {
             EditOp::Insert { text: inserted, .. } => room.saturating_add(inserted.len()),
             _ => room,
         });
-        let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::with_capacity(room));
+        // A batch whose room the allocator cannot meet is refused, not
+        // an abort.
+        let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::new());
+        if sim.try_reserve_exact(room).is_err() {
+            return false;
+        }
         sim.extend(text.encode_utf16());
         for op in ops {
             if !sim_admit(&mut sim, op) {

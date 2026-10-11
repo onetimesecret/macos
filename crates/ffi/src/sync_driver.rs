@@ -588,6 +588,11 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
 /// session nobody signed out of, and wedge there: `note_reachable`
 /// deliberately will not clear `Refused`, and nothing short of a fresh
 /// ceremony or an explicit sign-out ever does.
+fn attach_refused(companion: &mut Companion) -> serde_json::Value {
+    sign_out_locked(companion);
+    serde_json::json!({ "ok": false, "reason": "signed_out" })
+}
+
 /// The one attach in flight. It clears the flag when it drops, which
 /// is on every way out of `attach`.
 struct AttachFlight<'a>(&'a CompanionHandle);
@@ -612,11 +617,6 @@ impl Drop for AttachFlight<'_> {
             guard.sync.attaching = false;
         }
     }
-}
-
-fn attach_refused(companion: &mut Companion) -> serde_json::Value {
-    sign_out_locked(companion);
-    serde_json::json!({ "ok": false, "reason": "signed_out" })
 }
 
 /// Detach: tell the relay (best effort — attachments age out
@@ -678,11 +678,13 @@ fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
 /// accepted. That attach is not sure to land: the one that follows an
 /// abandonment runs on the first pump after a wake from sleep, which is
 /// exactly when the network is not up yet. The second: the engine's
-/// own first attach never landed. Either way a re-attach mints and
-/// sends again; while the relay stays unreachable that is one attempt
-/// per pump, on the pump's own cadence. Not while a ballot is in
-/// flight: the package was spent on that ballot, and its outcome
-/// decides.
+/// own first attach never landed. Either way a re-attach sends again,
+/// one attempt per pump on the pump's own cadence, for as long as the
+/// relay is unreachable or refuses the attach: against a relay that
+/// keeps answering `5xx`, that is one small extra request per long-poll
+/// turn, the price of never leaving the roster naming a package this
+/// device cannot open. Not while a ballot is in flight: the package
+/// was spent on that ballot, and its outcome decides.
 fn package_needs_republish(engine: &EngineState) -> bool {
     (engine.packages.is_spent()
         || !engine.packages.is_published()
@@ -696,6 +698,9 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Ok(mut guard) = handle.inner.lock() else {
         return Err("poisoned");
     };
+    if guard.sync.config.is_none() {
+        return Err("not_configured");
+    }
     // A re-attach with a package already waiting sends that one again.
     // The relay may have taken it and its answer been lost, and a fresh
     // mint would drop the private half the roster might now name; the

@@ -29,8 +29,11 @@ const RESPONSE_PATIENCE: Duration = Duration::from_secs(60);
 /// How long a request or response body may take to move, in either
 /// direction. A relay frame is at most a few megabytes.
 const BODY_PATIENCE: Duration = Duration::from_secs(60);
-/// The whole call, end to end, whatever the phases above add up to.
-const CALL_PATIENCE: Duration = Duration::from_secs(180);
+/// The whole call, end to end. Past the sum of the phases above
+/// (220 seconds), so a slow call that keeps moving inside every phase is
+/// never cut by this one; it binds only on a call stalled somewhere the
+/// phases do not see.
+const CALL_PATIENCE: Duration = Duration::from_secs(240);
 
 /// The most of a response body read: ureq's own `read_to_vec` default
 /// (10 MiB), the cap every call had before it was read here by hand.
@@ -237,6 +240,20 @@ mod tests {
             "a quiet long-poll must be able to finish"
         );
         assert!(timeouts.global.unwrap() > first_byte);
+        // The global is the outer bound, not a tighter one: a call
+        // within every phase's budget finishes.
+        let phases = [
+            timeouts.resolve,
+            timeouts.connect,
+            timeouts.send_request,
+            timeouts.send_body,
+            timeouts.recv_response,
+            timeouts.recv_body,
+        ]
+        .into_iter()
+        .map(Option::unwrap)
+        .sum::<Duration>();
+        assert!(timeouts.global.unwrap() >= phases);
     }
 
     #[test]

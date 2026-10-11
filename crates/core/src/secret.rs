@@ -146,23 +146,18 @@ fn allocation(bytes: &Vec<u8>) -> Range<usize> {
 #[cfg(unix)]
 static LOCKED_PAGES: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
 
-/// The page size the lock works in. Asked of the OS once; 4096 where
-/// there is no OS to ask, which is also where there is no lock.
+/// The page size the lock works in, asked of the OS once. 4096 should
+/// `sysconf` answer something that is not a positive power of two.
 #[cfg(unix)]
 fn page_size() -> usize {
     static PAGE: OnceLock<usize> = OnceLock::new();
     *PAGE.get_or_init(|| {
-        #[cfg(unix)]
-        {
-            // SAFETY: `sysconf` is a plain libc query taking no pointer.
-            let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-            if let Ok(page) = usize::try_from(page)
-                && page.is_power_of_two()
-            {
-                return page;
-            }
+        // SAFETY: `sysconf` is a plain libc query taking no pointer.
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        match usize::try_from(page) {
+            Ok(page) if page.is_power_of_two() => page,
+            _ => 4096,
         }
-        4096
     })
 }
 

@@ -7495,10 +7495,6 @@ mod tests {
         }
     }
 
-    /// The sign-in surface through the seam itself: configure resumes
-    /// the persisted sign-in, begin parks a ceremony, cancel forgets
-    /// it, and sign-out deletes the one account — status telling the
-    /// truth at every step.
     #[test]
     fn a_second_attach_while_one_is_in_flight_is_refused_as_busy() {
         // Two attaches at once would each mint a package, and the relay
@@ -7525,6 +7521,10 @@ mod tests {
         }
     }
 
+    /// The sign-in surface through the seam itself: configure resumes
+    /// the persisted sign-in, begin parks a ceremony, cancel forgets
+    /// it, and sign-out deletes the one account — status telling the
+    /// truth at every step.
     #[test]
     fn the_sync_routes_report_configure_begin_cancel_and_signout() {
         let credentials: Arc<dyn CredentialStore> =
