@@ -154,6 +154,11 @@ fn wrap_key_from(shared: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
 pub struct KeyPackageKeeper {
     private: Option<agreement::EphemeralPrivateKey>,
     package: KeyPackage,
+    /// Whether an attach carrying this package has been accepted by the
+    /// relay. A mint is not a publication: the package reaches a
+    /// proposer only through the relay's roster, and an attach that
+    /// never landed leaves the roster naming whatever came before.
+    published: bool,
 }
 
 impl KeyPackageKeeper {
@@ -179,6 +184,7 @@ impl KeyPackageKeeper {
                 x25519_pub,
                 signature,
             },
+            published: false,
         })
     }
 
@@ -195,6 +201,19 @@ impl KeyPackageKeeper {
     #[must_use]
     pub fn is_spent(&self) -> bool {
         self.private.is_none()
+    }
+
+    /// Record that the relay accepted an attach carrying this package.
+    pub fn mark_published(&mut self) {
+        self.published = true;
+    }
+
+    /// Whether the relay has accepted an attach carrying this package.
+    /// An unpublished package is as unreachable as a spent one: the
+    /// roster a proposer seals to still names its predecessor.
+    #[must_use]
+    pub fn is_published(&self) -> bool {
+        self.published
     }
 
     /// Open entropy a proposer sealed to this package. Spends the
@@ -1317,6 +1336,18 @@ mod tests {
             packages.is_spent(),
             "a spent package is owed a fresh mint, however the ballot ends"
         );
+    }
+
+    #[test]
+    fn a_mint_is_not_a_publication() {
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+        let mut packages = KeyPackageKeeper::mint(pkcs8.as_ref()).unwrap();
+        assert!(
+            !packages.is_published(),
+            "nothing has reached the relay yet"
+        );
+        packages.mark_published();
+        assert!(packages.is_published());
     }
 
     #[test]

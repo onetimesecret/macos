@@ -23,6 +23,14 @@ use zeroize::Zeroize;
 /// short secrets routinely sit on one page, so dropping one would have
 /// left the other swappable while its `is_locked` still said otherwise.
 ///
+/// The price is memory: every buffer costs at least one page, which is
+/// 16 KiB on Apple silicon, and every locked one wires that much. Text
+/// chips are the buffers locked (images take [`SecretBuffer::new_unlocked`]),
+/// and a lock the OS refuses under `RLIMIT_MEMLOCK` is reported by
+/// [`SecretBuffer::is_locked`] rather than failing the seal, so a pad
+/// holding more chips than the limit wires degrades to unlocked buffers
+/// that are still wiped on drop.
+///
 /// It deliberately implements **none** of `Clone`, `Copy`, `Debug`,
 /// `Display`, `Serialize`, or `Deserialize`: the buffer cannot be
 /// duplicated, logged, or persisted by accident. That structural

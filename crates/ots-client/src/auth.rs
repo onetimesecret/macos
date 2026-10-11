@@ -35,8 +35,11 @@ impl BasicAuth {
 impl AuthStrategy for BasicAuth {
     fn apply(&self, request: &mut HttpRequest) {
         let credentials = Zeroizing::new(format!("{}:{}", self.username, *self.password));
-        // Base64 is a disguise, not a protection: the encoding is the
-        // secret and is wiped like it.
+        // Base64 is a disguise, not a protection, so this intermediate
+        // copy is wiped like the secret it encodes. The header value
+        // built from it is not: `HttpRequest::headers` holds plain
+        // strings, so that copy lives unwiped for the life of the
+        // request, as the bearer token's does.
         let encoded = Zeroizing::new(base64::encode(credentials.as_bytes()));
         request
             .headers

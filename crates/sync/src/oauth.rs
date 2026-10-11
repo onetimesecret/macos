@@ -217,12 +217,81 @@ impl TokenBody {
 /// A token field: a string moved into its wrapper, or `None` for an
 /// absent, null, empty, or non-string value. An empty string is a
 /// missing token (see [`parse_token_response`]), and a value of some
-/// other type is not a token this crate would carry.
+/// other type is not a token this crate would carry. Not an error
+/// either: `Option<String>` alone would refuse the whole answer over a
+/// field of the wrong type, and a refresh answer with a usable access
+/// token and a malformed rotation is an answer whose rotation is
+/// absent, the reading this crate took before the field was parsed
+/// straight into its wrapper.
 fn non_empty_token<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Zeroizing<String>>, D::Error> {
-    let value: Option<String> = serde::Deserialize::deserialize(deserializer)?;
-    Ok(value.filter(|token| !token.is_empty()).map(Zeroizing::new))
+    let token = deserializer.deserialize_any(TokenField)?;
+    Ok(token.filter(|token| !token.is_empty()))
+}
+
+/// Takes a string as a token and any other JSON value as no token,
+/// draining arrays and objects so the rest of the body still parses.
+struct TokenField;
+
+impl<'de> serde::de::Visitor<'de> for TokenField {
+    type Value = Option<Zeroizing<String>>;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a token string, or any value standing for none")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(Some(Zeroizing::new(value.to_owned())))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(Some(Zeroizing::new(value)))
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+        Ok(None)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while map
+            .next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?
+            .is_some()
+        {}
+        Ok(None)
+    }
 }
 
 /// Parse a *refresh* answer, where the rotated token is optional.
@@ -480,6 +549,32 @@ mod tests {
             49152,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_token_field_of_the_wrong_type_reads_as_absent_not_as_a_refusal() {
+        let answer = |body: &str| HttpResponse {
+            status: 200,
+            body: body.as_bytes().to_vec(),
+        };
+        // A refresh answer whose rotation is malformed still carries a
+        // usable access token: the rotation reads as declined.
+        for rotation in ["123", "true", "[1, \"x\"]", "{\"a\": [1]}", "null", "\"\""] {
+            let body = format!(r#"{{"access_token":"at-2","refresh_token":{rotation},"x":1}}"#);
+            let (access, rotated) = parse_refresh_response(&answer(&body)).unwrap();
+            assert_eq!(access.as_str(), "at-2", "{rotation}");
+            assert!(rotated.is_none(), "{rotation}");
+        }
+        // A grant still needs both tokens as strings.
+        assert!(
+            parse_token_response(&answer(r#"{"access_token":"a","refresh_token":7}"#)).is_err()
+        );
+        assert!(
+            parse_token_response(&answer(r#"{"access_token":7,"refresh_token":"r"}"#)).is_err()
+        );
+        let grant =
+            parse_token_response(&answer(r#"{"access_token":"a","refresh_token":"r"}"#)).unwrap();
+        assert_eq!((grant.access.as_str(), grant.refresh.as_str()), ("a", "r"));
     }
 
     #[test]
