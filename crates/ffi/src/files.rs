@@ -128,8 +128,9 @@ impl FileIo for RealFileIo<'_> {
 
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         // At most one byte past the limit: a file swapped for a huge one
-        // between the core's size stat and this open is not read whole,
-        // and the core's own length check refuses what comes back.
+        // between the core's size stat and this open is read no further
+        // than that, which is still the limit's worth of memory, and the
+        // core's own length check refuses what comes back.
         read_regular(path, companion_core::FILE_SIZE_LIMIT as u64 + 1)
     }
 

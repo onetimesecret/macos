@@ -235,6 +235,12 @@ front` names it) and leave this window visible but not key.
       the one the mint paths make worth re-checking, since they now ask
       for focus where they used not to; the ask is refused for an
       unkeyed surface, and the refusal is what this line is about.
+- [ ] Launch without activating (`open -g` on the bundle, or as a login
+      item) while another app is frontmost and no Keychain prompt is
+      due: the pad comes up without taking the keys or the menu bar,
+      and `lsappinfo front` is unchanged. Then a first launch that
+      shows the Keychain introduction: once it is dismissed, the editor
+      window is key and the menu bar is the pad's.
 
 ## §G — File-close decision and editor keys
 

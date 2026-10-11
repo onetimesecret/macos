@@ -710,14 +710,14 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Ok(mut guard) = handle.inner.lock() else {
         return Err("poisoned");
     };
-    if guard.sync.config.is_none() {
+    let Some(relay_url) = guard.sync.config.as_ref().map(|c| c.relay_url.clone()) else {
         return Err("not_configured");
-    }
+    };
     // A re-attach with a package already waiting sends that one again.
     // The relay may have taken it and its answer been lost, and a fresh
     // mint would drop the private half the roster might now name; the
     // waiting package is unspent, since a proposal that opens with it
-    // adopts it and one that does not drops it.
+    // adopts it and a try that spends it otherwise drops it.
     if guard
         .sync
         .engine
@@ -726,10 +726,6 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     {
         return Ok(());
     }
-    let Some(config) = &guard.sync.config else {
-        return Err("not_configured");
-    };
-    let relay_url = config.relay_url.clone();
     let credentials = &*guard.credentials;
     let Some(pkcs8) = pairing::ensure_device_identity(credentials) else {
         return Err("keychain");

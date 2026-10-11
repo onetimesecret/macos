@@ -245,7 +245,10 @@ impl KeyPackageKeeper {
 /// as the standing one, published and now spent. One whose try spent
 /// it on nothing is dropped, so no attach ever sends a package whose
 /// private half is gone; one the try never reached (a payload too
-/// short to try) stays where it was, still owed to the relay.
+/// short to try) stays where it was, still owed to the relay. The cost
+/// of trying both: a payload neither opens spends both, so the device
+/// joins no ballot until the next attach publishes a fresh package,
+/// which the spent standing one makes the pump owe at once.
 pub fn open_proposal_entropy(
     standing: &mut KeyPackageKeeper,
     pending: &mut Option<KeyPackageKeeper>,

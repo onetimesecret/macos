@@ -70,7 +70,8 @@ pub struct Emitted {
 /// a person's unsaved typing in heap nothing ever scrubs. The price is
 /// that every draft's snapshot and the buffer they are copied into are
 /// held at once, about twice the drafts' size at the peak, all of it
-/// zeroizing.
+/// zeroizing. An allocation the system refuses aborts, as the growth
+/// this replaced did at up to twice the size.
 #[must_use]
 pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
     // Each draft is exported exactly once, out here, and both passes
