@@ -25,6 +25,7 @@ use companion_sync::oauth::{AuthCeremony, SyncAuthError, TokenGrant, parse_token
 use companion_sync::relay::RelayRefusal;
 use ots_client::{HttpResponse, Transport};
 use ring::signature::Ed25519KeyPair;
+use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
 
 use crate::diagnostics::diag_fault;
@@ -364,11 +365,15 @@ pub(crate) fn signin_finish<T: Transport>(
             SyncAuthError::NoCode => "no_code",
             _ => "refused",
         })?;
-    let response = transport.send(request).map_err(|_| "unreachable")?;
+    let mut response = transport.send(request).map_err(|_| "unreachable")?;
     if abandoned.load(Ordering::Relaxed) {
+        response.body.zeroize();
         return Err("abandoned");
     }
-    parse_token_response(&response).map_err(|_| "refused")
+    // The body carried both tokens; the grant holds them now.
+    let grant = parse_token_response(&response).map_err(|_| "refused");
+    response.body.zeroize();
+    grant
 }
 
 /// The keeper for a configuration, resuming from the persisted
@@ -672,19 +677,25 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
         }
     };
     let (request, transport) = staged;
-    let Ok(response) = transport.send(request) else {
+    let Ok(mut response) = transport.send(request) else {
         if let Ok(mut guard) = handle.inner.lock() {
             note_fault(&mut guard, GateFault::Unreachable);
         }
         return Err("unreachable");
     };
     let Ok(mut guard) = handle.inner.lock() else {
+        response.body.zeroize();
         return Err("poisoned");
     };
     let Some(engine) = guard.sync.engine.as_mut() else {
+        response.body.zeroize();
         return Err("not_attached");
     };
-    match engine.session.absorb_refresh(&response) {
+    // The body carried the tokens; whichever way the absorb goes, the
+    // keeper holds what it kept and the body is wiped here.
+    let absorbed = engine.session.absorb_refresh(&response);
+    response.body.zeroize();
+    match absorbed {
         // A rotation is a new durable secret and has to land before it
         // is used; a server that declined to rotate leaves the resting
         // token correct, so there is nothing to write and no reason to

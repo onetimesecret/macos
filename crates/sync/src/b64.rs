@@ -43,10 +43,17 @@ pub fn encode_url_nopad(input: &[u8]) -> String {
 }
 
 /// Decode the standard alphabet, padding optional. `None` on any byte
-/// outside the alphabet — a relay handing back garbage is refused, not
-/// guessed at.
+/// outside the alphabet, on a length no encoding produces, or on more
+/// padding than an encoding carries — a relay handing back garbage is
+/// refused, not guessed at.
 pub fn decode(input: &str) -> Option<Vec<u8>> {
     let trimmed = input.trim_end_matches('=');
+    // An encoder emits four characters per three bytes, two or three
+    // for a final one or two: a lone trailing character is no byte at
+    // all, and more than two pad characters pad nothing.
+    if trimmed.len() % 4 == 1 || input.len() - trimmed.len() > 2 {
+        return None;
+    }
     let mut out = Vec::with_capacity(trimmed.len() * 3 / 4);
     let mut acc: u32 = 0;
     let mut bits = 0u32;
@@ -111,5 +118,22 @@ mod tests {
     fn refuses_bytes_outside_the_alphabet() {
         assert!(decode("Zm9v!").is_none());
         assert!(decode("Zg=A").is_none());
+    }
+
+    #[test]
+    fn refuses_lengths_and_padding_no_encoder_produces() {
+        // A dangling character carries six bits, which is not a byte.
+        assert!(decode("A").is_none());
+        assert!(decode("Zm9vA").is_none());
+        assert!(decode("AAAAA").is_none());
+        // Padding past the two characters an encoder can need.
+        assert!(decode("Zg=====").is_none());
+        assert!(decode("Zm9v===").is_none());
+        // Non-zero leftover bits were already refused; still are.
+        assert!(decode("Zh").is_none());
+        assert!(decode("Zm9vB").is_none());
+        // Optional padding stays optional.
+        assert_eq!(decode("Zg").unwrap(), b"f");
+        assert_eq!(decode("Zm8").unwrap(), b"fo");
     }
 }

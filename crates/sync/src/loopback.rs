@@ -45,7 +45,10 @@ impl OneShotListener {
     /// the ephemeral port) is answered `404` and does not consume the
     /// ceremony: only the `/callback` redirect or the deadline ends
     /// the wait. The listener is consumed either way: one redirect,
-    /// then gone.
+    /// then gone. A `/callback` carrying the wrong `state` does end
+    /// it, and the ceremony then aborts with nothing stored, which is
+    /// the row docs/spec/feature/sync/account-auth.md §5 prescribes
+    /// for a redirect with the wrong state.
     ///
     /// `abandoned` is the user's own way out. Five minutes is the
     /// right patience for someone reading a consent screen and the
@@ -57,7 +60,13 @@ impl OneShotListener {
     /// offering none (ADR-0027 §5, `signing_in`).
     #[must_use]
     pub fn accept_redirect(self, patience: Duration, abandoned: &AtomicBool) -> Option<String> {
-        let deadline = std::time::Instant::now() + patience;
+        let began = std::time::Instant::now();
+        // A patience past what the clock can add is every patience
+        // there is, not a reason to panic in a thread holding the
+        // browser trip.
+        let deadline = began
+            .checked_add(patience)
+            .unwrap_or_else(|| began + Duration::from_secs(366 * 24 * 60 * 60));
         self.listener.set_nonblocking(true).ok()?;
         loop {
             if abandoned.load(Ordering::Relaxed) {
@@ -205,6 +214,16 @@ mod tests {
         assert_eq!(query, "code=abc&state=xyz");
         let answer = browser.join().unwrap();
         assert!(answer.starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn a_patience_the_clock_cannot_add_is_not_a_panic() {
+        let listener = OneShotListener::bind().unwrap();
+        assert!(
+            listener
+                .accept_redirect(Duration::MAX, &AtomicBool::new(true))
+                .is_none()
+        );
     }
 
     #[test]

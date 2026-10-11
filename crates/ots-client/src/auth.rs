@@ -35,10 +35,12 @@ impl BasicAuth {
 impl AuthStrategy for BasicAuth {
     fn apply(&self, request: &mut HttpRequest) {
         let credentials = Zeroizing::new(format!("{}:{}", self.username, *self.password));
-        let encoded = base64::encode(credentials.as_bytes());
+        // Base64 is a disguise, not a protection: the encoding is the
+        // secret and is wiped like it.
+        let encoded = Zeroizing::new(base64::encode(credentials.as_bytes()));
         request
             .headers
-            .push(("Authorization".into(), format!("Basic {encoded}")));
+            .push(("Authorization".into(), format!("Basic {}", *encoded)));
     }
 }
 

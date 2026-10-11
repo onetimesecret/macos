@@ -197,12 +197,12 @@ impl RelayApi {
             .collect::<Option<Vec<_>>>()
             .ok_or(RelayRefusal::Protocol(response.status))?;
         Ok(AttachAnswer {
-            epoch: field_u64(&value, "epoch")?,
+            epoch: field_u64(&value, "epoch", response.status)?,
             frame_present: value
                 .get("frame_present")
                 .and_then(Value::as_bool)
                 .ok_or(RelayRefusal::Protocol(response.status))?,
-            next_seq: field_u64(&value, "next_seq")?,
+            next_seq: field_u64(&value, "next_seq", response.status)?,
             peers,
         })
     }
@@ -226,7 +226,7 @@ impl RelayApi {
         }
         let value = ok_json(response)?;
         Ok(FrameAnswer::Present {
-            epoch: field_u64(&value, "epoch")?,
+            epoch: field_u64(&value, "epoch", response.status)?,
             frame: field_blob(&value, "frame").ok_or(RelayRefusal::Protocol(response.status))?,
         })
     }
@@ -289,7 +289,7 @@ impl RelayApi {
     pub fn parse_publish_deltas(response: &HttpResponse) -> Result<PublishAnswer, RelayRefusal> {
         let value = ok_json(response)?;
         Ok(PublishAnswer {
-            seq: field_u64(&value, "seq")?,
+            seq: field_u64(&value, "seq", response.status)?,
         })
     }
 
@@ -327,9 +327,9 @@ impl RelayApi {
             .collect::<Option<Vec<_>>>()
             .ok_or(RelayRefusal::Protocol(response.status))?;
         Ok(DeltaBatch {
-            epoch: field_u64(&value, "epoch")?,
+            epoch: field_u64(&value, "epoch", response.status)?,
             blobs,
-            next_seq: field_u64(&value, "next_seq")?,
+            next_seq: field_u64(&value, "next_seq", response.status)?,
         })
     }
 
@@ -376,11 +376,11 @@ fn ok_json(response: &HttpResponse) -> Result<Value, RelayRefusal> {
     serde_json::from_slice(&response.body).map_err(|_| RelayRefusal::Protocol(response.status))
 }
 
-fn field_u64(value: &Value, key: &str) -> Result<u64, RelayRefusal> {
+fn field_u64(value: &Value, key: &str, status: u16) -> Result<u64, RelayRefusal> {
     value
         .get(key)
         .and_then(Value::as_u64)
-        .ok_or(RelayRefusal::Protocol(0))
+        .ok_or(RelayRefusal::Protocol(status))
 }
 
 fn field_blob(value: &Value, key: &str) -> Option<Vec<u8>> {

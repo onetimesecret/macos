@@ -9,8 +9,27 @@
 //! "status code is an error" behaviour and hands every response back as
 //! `Ok`, whatever its status.
 
+use std::time::Duration;
+
 use ots_client::{HttpRequest, HttpResponse, Transport, TransportError};
 use ureq::Agent;
+
+/// How long a DNS lookup may take.
+const RESOLVE_PATIENCE: Duration = Duration::from_secs(10);
+/// How long opening the socket and the TLS handshake may take, and
+/// how long sending the request line and headers may.
+const CONNECT_PATIENCE: Duration = Duration::from_secs(15);
+/// How long the server may take to start answering. The sync relay's
+/// long-poll holds a request open for 25 seconds by design
+/// (docs/spec/feature/sync/relay-protocol.md, `wait=25`), so this sits
+/// well past it: a bound the long-poll could not fit inside would
+/// turn every quiet channel into a timeout.
+const RESPONSE_PATIENCE: Duration = Duration::from_secs(60);
+/// How long a request or response body may take to move, in either
+/// direction. A relay frame is at most a few megabytes.
+const BODY_PATIENCE: Duration = Duration::from_secs(60);
+/// The whole call, end to end, whatever the phases above add up to.
+const CALL_PATIENCE: Duration = Duration::from_secs(180);
 
 /// A [`Transport`] backed by a pooled `ureq::Agent` (rustls). Cheap to
 /// clone (internally `Arc`-shared); construct one per process and reuse
@@ -33,10 +52,39 @@ impl Default for UreqTransport {
 }
 
 impl UreqTransport {
-    /// A transport with ureq's default (rustls) TLS configuration.
+    /// A transport with ureq's default (rustls) TLS configuration,
+    /// which follows no redirect, speaks only TLS, and bounds every
+    /// phase of a call.
+    ///
+    /// The boundary check in [`Transport::send`] looks at the URL a
+    /// caller hands in. Left to its defaults, ureq would then follow
+    /// up to ten redirects on its own, to any host and over plain
+    /// `http://`, and hand back whatever a third host answered as if
+    /// the relay had said it. No redirect is followed: a `3xx` comes
+    /// back as the response it is, for the API layer to refuse by
+    /// status like any other non-`2xx`.
+    ///
+    /// The timeouts are what keep a dead connection from becoming a
+    /// dead feature. ureq's defaults bound nothing, and the shell
+    /// marks a sync pump or a conceal as in flight until the call
+    /// returns: a laptop that slept mid-long-poll, or a NAT that
+    /// dropped the path without a reset, would otherwise park that
+    /// thread for the life of the process and nothing would ever
+    /// schedule the next one.
     #[must_use]
     pub fn new() -> Self {
-        let config = Agent::config_builder().http_status_as_error(false).build();
+        let config = Agent::config_builder()
+            .http_status_as_error(false)
+            .https_only(true)
+            .max_redirects(0)
+            .timeout_resolve(Some(RESOLVE_PATIENCE))
+            .timeout_connect(Some(CONNECT_PATIENCE))
+            .timeout_send_request(Some(CONNECT_PATIENCE))
+            .timeout_send_body(Some(BODY_PATIENCE))
+            .timeout_recv_response(Some(RESPONSE_PATIENCE))
+            .timeout_recv_body(Some(BODY_PATIENCE))
+            .timeout_global(Some(CALL_PATIENCE))
+            .build();
         Self {
             agent: config.into(),
             allowed_hosts: None,
@@ -133,6 +181,38 @@ mod tests {
         let request = Api::new("https://elsewhere.example", Box::new(NoAuth)).status_request();
         let err = transport.send(request).unwrap_err();
         assert!(err.0.contains("allowlist"), "{}", err.0);
+    }
+
+    #[test]
+    fn the_agent_follows_no_redirect_and_speaks_only_tls() {
+        // The boundary is checked on the URL handed in; a redirect
+        // would be a second URL nobody checked.
+        let config = UreqTransport::new().agent.config().clone();
+        assert!(config.https_only());
+        assert_eq!(config.max_redirects(), 0);
+        let bounded = UreqTransport::bounded("a.example", "b.example");
+        assert!(bounded.agent.config().https_only());
+        assert_eq!(bounded.agent.config().max_redirects(), 0);
+    }
+
+    #[test]
+    fn every_phase_of_a_call_is_bounded_and_the_long_poll_fits() {
+        let timeouts = UreqTransport::new().agent.config().timeouts();
+        assert!(timeouts.resolve.is_some());
+        assert!(timeouts.connect.is_some());
+        assert!(timeouts.send_request.is_some());
+        assert!(timeouts.send_body.is_some());
+        assert!(timeouts.recv_body.is_some());
+        assert!(timeouts.global.is_some());
+        // The relay holds a long-poll open for 25 seconds by design.
+        let first_byte = timeouts
+            .recv_response
+            .expect("the response wait is bounded");
+        assert!(
+            first_byte > Duration::from_secs(25),
+            "a quiet long-poll must be able to finish"
+        );
+        assert!(timeouts.global.unwrap() > first_byte);
     }
 
     #[test]
