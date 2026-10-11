@@ -51,10 +51,11 @@ pub fn decode(input: &str) -> Option<Vec<u8>> {
     let pad = input.len() - trimmed.len();
     let tail = trimmed.len() % 4;
     // An encoder emits four characters per three bytes, two or three
-    // for a final one or two, and pads only that final group up to
-    // four: a lone trailing character is no byte at all, and padding
-    // after a whole group, or past four, pads nothing.
-    if tail == 1 || (pad > 0 && (tail == 0 || tail + pad > 4)) {
+    // for a final one or two, and pads only that final group, to
+    // exactly four: a lone trailing character is no byte at all, and
+    // padding after a whole group, short of four or past it, is none
+    // an encoder wrote.
+    if tail == 1 || (pad > 0 && tail + pad != 4) {
         return None;
     }
     let mut out = Vec::with_capacity(trimmed.len() * 3 / 4);
@@ -138,6 +139,7 @@ mod tests {
         assert!(decode("==").is_none());
         assert!(decode("Zm9v=").is_none());
         assert!(decode("Zm8==").is_none());
+        assert!(decode("Zg=").is_none());
         // Non-zero leftover bits were already refused; still are.
         assert!(decode("Zh").is_none());
         assert!(decode("Zm9vB").is_none());

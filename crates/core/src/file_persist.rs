@@ -67,7 +67,10 @@ pub struct Emitted {
 /// two-pass rule: a sizing walk, then the write. A buffer grown as it
 /// is written reallocates, and every reallocation copies the drafts
 /// already written and frees the old block unwiped, which would strand
-/// a person's unsaved typing in heap nothing ever scrubs.
+/// a person's unsaved typing in heap nothing ever scrubs. The price is
+/// that every draft's snapshot and the buffer they are copied into are
+/// held at once, about twice the drafts' size at the peak, all of it
+/// zeroizing.
 #[must_use]
 pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
     // Each draft is exported exactly once, out here, and both passes
@@ -106,6 +109,7 @@ pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
 fn write_drafts(store: &FileStore, bodies: &[DraftBody], wall_ms: u64, out: &mut dyn Sink) {
     out.raw(MAGIC);
     out.u64(wall_ms);
+    debug_assert_eq!(bodies.len(), store.files().len(), "one body per file");
     out.u64(store.files().len() as u64);
     for (file, body) in store.files().iter().zip(bodies) {
         let snapshot = match body {

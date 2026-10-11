@@ -21,7 +21,11 @@ use zeroize::Zeroize;
 /// said otherwise. The count the OS does not keep is kept here instead
 /// (`LOCKED_PAGES`): a page is unlocked only when the last locked
 /// buffer touching it goes, and buffers keep sharing pages, so a short
-/// chip costs its own bytes and not a page.
+/// chip costs its own bytes and not a page. The table holds one entry
+/// per locked page, and `mlock` runs while it is held, so locking or
+/// dropping a buffer costs in proportion to its pages and waits on any
+/// other in progress. Locked buffers are text chips, a page or two
+/// each; images take [`SecretBuffer::new_unlocked`].
 ///
 /// It deliberately implements **none** of `Clone`, `Copy`, `Debug`,
 /// `Display`, `Serialize`, or `Deserialize`: the buffer cannot be
@@ -152,6 +156,7 @@ fn page_size() -> usize {
 
 /// The numbers of the pages a non-empty address range touches.
 fn pages(range: &Range<usize>) -> Range<usize> {
+    debug_assert!(!range.is_empty(), "an empty range touches no page");
     let page = page_size();
     range.start / page..(range.end - 1) / page + 1
 }
@@ -165,8 +170,8 @@ fn lock_pages(range: Range<usize>) -> bool {
     // stays allocated for the duration of the call.
     let ret = unsafe { libc::mlock(std::ptr::without_provenance(range.start), range.len()) };
     if ret != 0 {
-        // A refused lock may have wired part of the range before it
-        // failed. Pages no other buffer holds are given back.
+        // Should a refused lock have wired any of the range, the pages
+        // no other buffer holds are given back.
         for page in pages(&range).filter(|page| !counts.contains_key(page)) {
             unlock_page(page);
         }
@@ -186,7 +191,8 @@ fn unlock_pages(range: Range<usize>) {
     for page in pages(&range) {
         match counts.get_mut(&page) {
             Some(count) if *count > 1 => *count -= 1,
-            _ => {
+            counted => {
+                debug_assert!(counted.is_some(), "unlocking a page never counted");
                 counts.remove(&page);
                 unlock_page(page);
             }
@@ -273,7 +279,13 @@ mod tests {
         let start = (block.as_ptr() as usize).div_ceil(page) * page;
         let first = start..start + 16;
         let second = start + 64..start + 80;
-        let count = || LOCKED_PAGES.lock().unwrap().get(&(start / page)).copied();
+        let count = || {
+            LOCKED_PAGES
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&(start / page))
+                .copied()
+        };
 
         assert!(
             lock_pages(first.clone()),

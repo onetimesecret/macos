@@ -140,6 +140,13 @@ const STAMP_SLACK_S: i64 = 2;
 /// The same slack in milliseconds, for the ledger's wall stamps.
 const STAMP_SLACK_MS: u64 = 2_000;
 
+/// 2026-10-01T00:00:00Z. A wall clock reading earlier than this is
+/// wrong, not early: no build that runs this code was made before it.
+/// The ledger's stamp clamp stands aside below it, because clamping to
+/// a clock that reads 1970 would backdate every record, and the first
+/// correct clock after that would evict the whole trail.
+const WALL_CLOCK_FLOOR_MS: u64 = 1_790_812_800_000;
+
 /// A persisted Unix-second stamp, clamped into the sane range on the
 /// way in: positive, and no later than the wall clock plus
 /// [`STAMP_SLACK_S`]. A stamp is trusted arithmetic downstream, so a
@@ -366,9 +373,17 @@ impl<C: Clock> SheetStore<C> {
         // stamped by a wall clock that was years ahead would sit inside
         // the 90-day window for as long as the stamp stayed ahead of
         // the clock that judges it, and be re-persisted under the
-        // long-lived key every write, which is the one direction the
-        // ledger's retention is not allowed to fail in (ADR-0012).
-        let ceiling = wall_ms.saturating_add(STAMP_SLACK_MS);
+        // long-lived key every write. ADR-0012 accepts "a metadata
+        // record living slightly too long or dying slightly early" from
+        // a stepped clock; years is not slightly. A clock below
+        // `WALL_CLOCK_FLOOR_MS` is the broken party, and clamping to it
+        // would fail the other way by as much, so the stamps are left
+        // as written for that load.
+        let ceiling = if wall_ms < WALL_CLOCK_FLOOR_MS {
+            u64::MAX
+        } else {
+            wall_ms.saturating_add(STAMP_SLACK_MS)
+        };
         let mut loaded = Vec::new();
         for _ in 0..record_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
@@ -2051,6 +2066,31 @@ mod tests {
         let (mut later, _) = store();
         let past_window = record.at_wall_ms() + crate::ledger::LEDGER_RETENTION_MS + 1;
         assert_eq!(later.restore_ledger(&clamped, past_window).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_clock_that_reads_before_the_floor_leaves_ledger_stamps_alone() {
+        // A launch before the clock is set reads 1970. Clamped to it,
+        // every record would be backdated, and the next load under a
+        // correct clock would evict the lot as 56 years old.
+        let stamped = 1_800_000_000_000;
+        let record = ledger_record(ItemId::random(), stamped);
+        let file = ledger_file(std::slice::from_ref(&record));
+
+        let (mut revived, _) = store();
+        assert_eq!(revived.restore_ledger(&file, 5_000).unwrap(), 1);
+        let kept = revived.ledger().next().unwrap().clone();
+        assert_eq!(kept.at_wall_ms(), stamped);
+
+        let (mut corrected, _) = store();
+        let rewritten = ledger_file(std::slice::from_ref(&kept));
+        assert_eq!(
+            corrected
+                .restore_ledger(&rewritten, stamped + 1_000)
+                .unwrap(),
+            1,
+            "the record survives the clock coming right"
+        );
     }
 
     #[test]
