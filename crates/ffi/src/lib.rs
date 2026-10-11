@@ -3191,8 +3191,10 @@ pub unsafe extern "C" fn companion_sync_signin_begin(handle: *mut CompanionHandl
 /// is left for a finish nobody began, which is a caller out of order
 /// rather than anything a user did; `not_configured` is a finish with
 /// no keeper standing to take the grant, which is a ceremony begun
-/// while the sync engine already held a sign-in. Free with
-/// [`companion_string_free`].
+/// while the sync engine already held a sign-in. "Nothing stored" is
+/// this device's promise: by a `not_configured` finish the code has
+/// been redeemed, so the issuer holds a refresh token this device
+/// dropped, live until it expires. Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.

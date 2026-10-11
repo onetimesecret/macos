@@ -26,7 +26,8 @@ use zeroize::Zeroize;
 /// chip costs its own bytes and not a page. The table holds one entry
 /// per locked page, and `mlock` runs while it is held, so locking or
 /// dropping a buffer costs in proportion to its pages and waits on any
-/// other in progress. Locked buffers are text chips, a page or two
+/// other in progress; pages are given back one `munlock` per contiguous
+/// run. The buffers this crate locks are text chips, a page or two
 /// each; images take [`SecretBuffer::new_unlocked`]. The lock covers a
 /// non-empty vector's whole capacity, spare bytes included, since those
 /// are wiped too; a vector handed in with slack wires that much more.
@@ -188,10 +189,10 @@ fn lock_pages(range: Range<usize>) -> bool {
     let ret = unsafe { libc::mlock(std::ptr::without_provenance(range.start), range.len()) };
     if ret != 0 {
         // Should a refused lock have wired any of the range, the pages
-        // no other buffer holds are given back.
-        for page in pages(&range).filter(|page| !counts.contains_key(page)) {
-            unlock_page(page);
-        }
+        // no other buffer holds are given back, a run at a time and
+        // under the table lock, so no buffer can count one of them in
+        // between.
+        unlock_runs(pages(&range).filter(|page| !counts.contains_key(page)));
         return false;
     }
     for page in pages(&range) {
@@ -205,6 +206,7 @@ fn lock_pages(range: Range<usize>) -> bool {
 #[cfg(unix)]
 fn unlock_pages(range: Range<usize>) {
     let mut counts = LOCKED_PAGES.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut released = Vec::new();
     for page in pages(&range) {
         match counts.get_mut(&page) {
             Some(count) if *count > 1 => *count -= 1,
@@ -214,19 +216,44 @@ fn unlock_pages(range: Range<usize>) {
             counted => {
                 debug_assert!(counted.is_some(), "unlocking a page never counted");
                 counts.remove(&page);
-                unlock_page(page);
+                released.push(page);
             }
         }
     }
+    unlock_runs(released.into_iter());
+}
+
+/// Unlock ascending page numbers, one `munlock` per contiguous run.
+#[cfg(unix)]
+fn unlock_runs(pages: impl Iterator<Item = usize>) {
+    for run in runs(pages) {
+        unlock_run(run);
+    }
+}
+
+/// Ascending page numbers gathered into contiguous runs.
+#[cfg(unix)]
+fn runs(pages: impl Iterator<Item = usize>) -> Vec<Range<usize>> {
+    let mut runs: Vec<Range<usize>> = Vec::new();
+    for page in pages {
+        match runs.last_mut() {
+            Some(open) if open.end == page => open.end = page + 1,
+            _ => runs.push(page..page + 1),
+        }
+    }
+    runs
 }
 
 #[cfg(unix)]
-fn unlock_page(page: usize) {
+fn unlock_run(pages: Range<usize>) {
     let size = page_size();
     // SAFETY: `munlock` reads no memory; it asks the kernel to stop
-    // wiring one whole page that a live allocation touches.
+    // wiring whole pages that a live allocation touches.
     unsafe {
-        let _ = libc::munlock(std::ptr::without_provenance(page * size), size);
+        let _ = libc::munlock(
+            std::ptr::without_provenance(pages.start * size),
+            pages.len() * size,
+        );
     }
 }
 
@@ -322,6 +349,13 @@ mod tests {
         unlock_pages(second);
         assert_eq!(count(), None, "the last buffer off the page unlocks it");
         drop(block);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pages_are_given_back_a_contiguous_run_at_a_time() {
+        assert_eq!(runs([1, 2, 3, 5, 7, 8].into_iter()), vec![1..4, 5..6, 7..9]);
+        assert!(runs(std::iter::empty()).is_empty());
     }
 
     #[test]

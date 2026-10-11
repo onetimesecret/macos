@@ -613,9 +613,14 @@ impl<'a> AttachFlight<'a> {
 
 impl Drop for AttachFlight<'_> {
     fn drop(&mut self) {
-        if let Ok(mut guard) = self.0.inner.lock() {
-            guard.sync.attaching = false;
-        }
+        // Cleared through a poisoned lock too, so the flag never
+        // outlives the attach that raised it.
+        let mut guard = self
+            .0
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.sync.attaching = false;
     }
 }
 

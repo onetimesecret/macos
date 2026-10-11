@@ -451,6 +451,10 @@ public final class SyncController: ObservableObject {
                 armRetry(
                     after: quiet
                         ? Self.attachRetryDelay(quietRefusals: quietRefusals) : 30)
+            } else {
+                // A named trouble arms no retry; whatever comes after
+                // it starts the backoff afresh.
+                quietRefusals = 0
             }
             return
         }

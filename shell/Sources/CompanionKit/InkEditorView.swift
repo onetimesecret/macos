@@ -1034,13 +1034,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// would route to the page behind the file (the slot the
         /// selection still names) and rewrite the file's storage under
         /// the projection guard with a chip the file's own document
-        /// does not hold. The model refuses the same case on its side
-        /// (`PageModel.sealTarget`); this is the editor's half, which
-        /// also keeps a refused seal from clearing the clipboard or
-        /// flashing a line about a seal that did not happen.
+        /// does not hold. It asks the model's own answer
+        /// (`PageModel.sealTarget`) as well as the mounted document, so
+        /// the two refuse the same cases by construction; this half also
+        /// keeps a refused seal from clearing the clipboard or flashing
+        /// a line about a seal that did not happen.
         var sealsHere: Bool {
             guard let textView, let sheet = currentSheet, !sheet.isFileID,
-                  textView.isEditable
+                  textView.isEditable, model.sealTarget != nil
             else { return false }
             return true
         }

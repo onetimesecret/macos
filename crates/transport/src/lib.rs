@@ -28,13 +28,15 @@ const CONNECT_PATIENCE: Duration = Duration::from_secs(15);
 /// turn every quiet channel into a timeout.
 const RESPONSE_PATIENCE: Duration = Duration::from_secs(60);
 /// How long a request or response body may take to move, in either
-/// direction. A relay frame is at most a few megabytes.
-const BODY_PATIENCE: Duration = Duration::from_secs(60);
+/// direction. A deadline for the whole body, not an idle timer, so it
+/// sets a floor on throughput: `BODY_LIMIT` in five minutes is about
+/// 35 KB/s, which a slow or congested link still meets.
+const BODY_PATIENCE: Duration = Duration::from_secs(300);
 /// The whole call, end to end. Past the sum of the phases above
-/// (220 seconds), so a slow call that keeps moving inside every phase is
+/// (700 seconds), so a slow call that keeps moving inside every phase is
 /// never cut by this one; it binds only on a call stalled somewhere the
 /// phases do not see.
-const CALL_PATIENCE: Duration = Duration::from_secs(240);
+const CALL_PATIENCE: Duration = Duration::from_secs(720);
 
 /// The most of a response body read: ureq's own `read_to_vec` default
 /// (10 MiB), the cap every call had before it was read here by hand.
