@@ -178,8 +178,11 @@ pub(crate) struct EngineState {
     pub packages: KeyPackageKeeper,
     /// A fresh package minted for a re-attach and not yet accepted. It
     /// replaces `packages` only when the relay takes it, so an attach
-    /// that fails leaves the package the roster names, and its private
-    /// half, where they were.
+    /// the relay refuses leaves the package the roster names, and its
+    /// private half, where they were. An attach the relay took but
+    /// whose answer never arrived leaves the roster naming this one
+    /// instead, so while it waits the pump keeps re-attaching
+    /// (`package_needs_republish`) until an acceptance is heard.
     pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
@@ -631,7 +634,8 @@ fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
 }
 
 /// Whether the relay's roster names a package this device cannot open,
-/// or none of this device's, with no ballot left to account for it.
+/// or none of this device's, or perhaps a pending one whose acceptance
+/// was never heard, with no ballot left to account for it.
 /// The first: the device opened its entry on a ballot that has since
 /// committed or been abandoned, so the standing package is spent, and
 /// stays the standing one until an attach carrying its replacement is
@@ -644,7 +648,9 @@ fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
 /// flight: the package was spent on that ballot, and its outcome
 /// decides.
 fn package_needs_republish(engine: &EngineState) -> bool {
-    (engine.packages.is_spent() || !engine.packages.is_published())
+    (engine.packages.is_spent()
+        || !engine.packages.is_published()
+        || engine.pending_packages.is_some())
         && !engine.session.ballot_in_flight()
 }
 
@@ -2495,12 +2501,14 @@ mod tests {
         let pkcs8 = pairing::ensure_device_identity(&credentials).unwrap();
 
         // A re-attach mints beside the standing package; an attach that
-        // never lands changes nothing the roster relies on.
+        // never lands changes nothing the roster relies on. The pump
+        // still owes an attach: the relay may have taken the pending
+        // package and the answer been lost on the way back.
         engine.pending_packages = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
         let sent = engine.pending_packages.as_ref().unwrap().package().clone();
         assert_eq!(engine.packages.package(), &standing);
         assert!(engine.packages.is_published());
-        assert!(!package_needs_republish(&engine));
+        assert!(package_needs_republish(&engine));
 
         // A concurrent re-attach minted again while the first was in
         // flight: the first's acceptance is not the second's.
@@ -2516,6 +2524,7 @@ mod tests {
         assert_eq!(engine.packages.package(), &sent);
         assert!(engine.packages.is_published());
         assert!(engine.pending_packages.is_none());
+        assert!(!package_needs_republish(&engine));
     }
 
     fn attached_engine(credentials: &dyn CredentialStore) -> EngineState {

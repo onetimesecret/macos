@@ -36,6 +36,11 @@ const CALL_PATIENCE: Duration = Duration::from_secs(180);
 /// (10 MiB), the cap every call had before it was read here by hand.
 const BODY_LIMIT: u64 = 10 * 1024 * 1024;
 
+/// The most a declared `Content-Length` reserves ahead of the read.
+/// Token answers, the bodies the presize is for, are a few hundred
+/// bytes; relay frames above this are sealed blobs and grow as read.
+const PRESIZE_LIMIT: u64 = 64 * 1024;
+
 /// A [`Transport`] backed by a pooled `ureq::Agent` (rustls). Cheap to
 /// clone (internally `Arc`-shared); construct one per process and reuse
 /// it rather than building a fresh agent per call.
@@ -161,12 +166,14 @@ impl Transport for UreqTransport {
         // Sized from `Content-Length` where the server sent one, so a
         // token answer lands in one allocation instead of leaving a
         // freed, unwiped partial copy behind at every growth; the
-        // caller wipes the one buffer. The cap is ureq's own default
-        // for `read_to_vec`, and a length the allocator cannot meet
-        // falls back to growth rather than aborting.
+        // caller wipes the one buffer. The reservation stops at
+        // `PRESIZE_LIMIT`, so a declared length is never an allocation
+        // the server chooses; a larger body grows as it is read, up to
+        // `BODY_LIMIT`, and a length the allocator cannot meet falls
+        // back to growth rather than aborting.
         let mut body = Vec::new();
         let expected = response.body().content_length().unwrap_or(0);
-        let _ = body.try_reserve_exact(usize::try_from(expected.min(BODY_LIMIT)).unwrap_or(0));
+        let _ = body.try_reserve_exact(usize::try_from(expected.min(PRESIZE_LIMIT)).unwrap_or(0));
         response
             .body_mut()
             .with_config()
