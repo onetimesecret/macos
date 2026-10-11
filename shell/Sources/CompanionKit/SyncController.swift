@@ -446,9 +446,7 @@ public final class SyncController: ObservableObject {
                 // Only a success or turning sync off resets the count:
                 // an unreachable turn between two quiet refusals keeps
                 // its own 30 seconds and leaves the backoff standing.
-                // `busy` is another attach already in flight, not a
-                // refusal the backoff is for: it waits the flat clock.
-                let quiet = settled == nil && outcome.reason != "busy"
+                let quiet = Self.attachBacksOff(afterRefusal: outcome.reason)
                 if quiet { quietRefusals += 1 }
                 armRetry(
                     after: quiet
@@ -973,18 +971,20 @@ public final class SyncController: ObservableObject {
     ///
     /// An unreachable relay retries, as it always has. So does a
     /// refusal that settled to no trouble at all: the core refused the
-    /// attach for a reason the gate does not record (`keychain`, with
-    /// the keychain locked at that moment; `refused`, for a relay
-    /// answer other than a second 401, a `5xx` among them) while the
-    /// gate still reads ready. Left there, sync was enabled,
-    /// unattached, with no sentence standing and no timer armed, and
-    /// nothing started the pump until the switch was toggled or the
-    /// person signed out and in. The retry is on the same 30-second
-    /// clock as an unreachable relay, and like it has no cap; unlike
-    /// it, no sentence stands, as none did before; the core's
-    /// diagnostics carry each such refusal. A named trouble
-    /// (`signedOut`, `refused` and `notConfigured` among them), whether the gate
-    /// named it or the core answered `not_configured` or `poisoned`
+    /// attach for a reason the gate does not record (the core's
+    /// `keychain` reason, with the keychain locked at that moment, or
+    /// its `refused` reason, for a relay answer other than a second
+    /// 401, a `5xx` among them) while the gate still reads ready. Left
+    /// there, sync was enabled, unattached, with no sentence standing
+    /// and no timer armed, and nothing started the pump until the
+    /// switch was toggled or the person signed out and in. The retry
+    /// starts on the same 30-second clock as an unreachable relay and
+    /// backs off (`attachBacksOff`, `attachRetryDelay`), and like it
+    /// has no cap on tries; unlike it, no sentence stands, as none did
+    /// before; the core's diagnostics carry each such refusal. A named
+    /// trouble (`Trouble.signedOut`, `Trouble.refused` and
+    /// `Trouble.notConfigured` among them), whether the gate named it
+    /// or the core answered `not_configured` or `poisoned`
     /// (`settledTrouble`), is not a condition a timer clears, and is
     /// not retried.
     public nonisolated static func attachRetries(after settled: Trouble?) -> Bool {
@@ -1001,6 +1001,20 @@ public final class SyncController: ObservableObject {
     public nonisolated static func attachRetryDelay(quietRefusals: Int) -> TimeInterval {
         let doublings = min(max(quietRefusals - 1, 0), 4)
         return TimeInterval(min(30 << doublings, 300))
+    }
+
+    /// Whether a retried attach refusal counts toward that backoff,
+    /// read from the core's reason rather than the trouble it settled
+    /// to. The gate keeps an earlier turn's `unreachable` until a round
+    /// trip reaches the relay, and a re-attach mints its package from
+    /// the Keychain before it touches the network, so a `keychain`
+    /// refusal after an unreachable turn settles to `.unreachable`.
+    /// Read from that, it would retry on the flat clock and read the
+    /// Keychain every 30 seconds. Only `unreachable` itself keeps the
+    /// flat clock; `busy` is another attach already in flight, not a
+    /// refusal the backoff is for.
+    public nonisolated static func attachBacksOff(afterRefusal reason: String?) -> Bool {
+        reason != "unreachable" && reason != "busy"
     }
 
     /// What an attach outcome and the core's gate together mean. The

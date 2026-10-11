@@ -291,6 +291,23 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 50), 300)
     }
 
+    func testAQuietRefusalAfterAnUnreachableTurnStillBacksOff() {
+        // The gate keeps the earlier turn's unreachable until a round
+        // trip reaches the relay, so a keychain refusal on the next
+        // attach settles to .unreachable. It is retried, and the
+        // reason, not the stale gate, counts it toward the backoff.
+        let settled = SyncController.settledTrouble(
+            ok: false, reason: "keychain", gate: .unreachable)
+        XCTAssertEqual(settled, .unreachable)
+        XCTAssertTrue(SyncController.attachRetries(after: settled))
+        XCTAssertTrue(SyncController.attachBacksOff(afterRefusal: "keychain"))
+        XCTAssertTrue(SyncController.attachBacksOff(afterRefusal: "refused"))
+        // An unreachable relay keeps the flat clock, and a busy attach
+        // is another one already in flight.
+        XCTAssertFalse(SyncController.attachBacksOff(afterRefusal: "unreachable"))
+        XCTAssertFalse(SyncController.attachBacksOff(afterRefusal: "busy"))
+    }
+
     func testARefusedGateSaysSoAndSpareThePad() {
         XCTAssertEqual(
             SyncController.sentence(

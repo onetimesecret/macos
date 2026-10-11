@@ -173,8 +173,10 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
     let file_count = count(&mut reader)?;
 
     // Everything is decoded before the store is touched, so a damaged
-    // buffer leaves whatever was open exactly as it was.
-    let mut records = Vec::with_capacity(file_count);
+    // buffer leaves whatever was open exactly as it was. Not reserved
+    // from `file_count`: `count` bounds it by the bytes left, one per
+    // record, and a record is far larger than one byte.
+    let mut records = Vec::new();
     for _ in 0..file_count {
         let mut record = reader.framed().ok_or(Malformed)?;
         let bookmark = record.bytes().ok_or(Malformed)?.to_vec();

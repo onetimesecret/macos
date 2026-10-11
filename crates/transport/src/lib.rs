@@ -185,8 +185,9 @@ impl Transport for UreqTransport {
         // `BODY_LIMIT`, and a length the allocator cannot meet falls
         // back to growth rather than aborting. A body with no declared
         // length, a decompressed one among them, grows as before.
-        // Wiped on every way out, a read that fails partway included:
-        // a token answer cut off halfway is still most of a token.
+        // Wiped if the read fails partway, since a token answer cut off
+        // halfway is still most of a token; on success the allocation
+        // goes whole to the caller.
         let mut body = Zeroizing::new(Vec::new());
         let expected = response.body().content_length().unwrap_or(0);
         let _ = body.try_reserve_exact(usize::try_from(expected.min(PRESIZE_LIMIT)).unwrap_or(0));
