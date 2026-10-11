@@ -32,7 +32,7 @@ use crate::diagnostics::diag_fault;
 use crate::gop::GopKeyChain;
 use crate::pairing::{self, MailboxMessage};
 use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
-use crate::sync_session::{KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
+use crate::sync_session::{KeyPackage, KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
 use crate::{Companion, CompanionHandle};
 
 /// Where the sync refresh token rests: its own account in the
@@ -176,6 +176,11 @@ pub(crate) struct EngineState {
     pub session: SyncSession,
     pub chain: GopKeyChain,
     pub packages: KeyPackageKeeper,
+    /// A fresh package minted for a re-attach and not yet accepted. It
+    /// replaces `packages` only when the relay takes it, so an attach
+    /// that fails leaves the package the roster names, and its private
+    /// half, where they were.
+    pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
     pub unpublished_frame: Option<Vec<u8>>,
@@ -508,12 +513,19 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
             let Some(engine) = guard.sync.engine.as_mut() else {
                 return serde_json::json!({ "ok": false, "reason": "not_attached" });
             };
+            let sent = engine
+                .pending_packages
+                .as_ref()
+                .unwrap_or(&engine.packages)
+                .package()
+                .clone();
             engine
                 .session
-                .attach_request(&engine.packages.package().clone())
+                .attach_request(&sent)
                 .zip(transport)
+                .map(|(request, transport)| (request, transport, sent))
         };
-        let Some((request, transport)) = staged else {
+        let Some((request, transport, sent)) = staged else {
             return serde_json::json!({ "ok": false, "reason": "signed_out" });
         };
         let Ok(response) = transport.send(request) else {
@@ -530,9 +542,7 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
         };
         match engine.session.absorb_attach(&response) {
             Ok(()) => {
-                // The roster now names this package; until here it was a
-                // mint the relay had never seen.
-                engine.packages.mark_published();
+                adopt_accepted(engine, &sent);
                 let answer = serde_json::json!({
                     "ok": true,
                     "epoch": engine.session.attach_epoch(),
@@ -600,20 +610,39 @@ pub(crate) fn detach(handle: &CompanionHandle) -> bool {
     true
 }
 
+/// What an accepted attach does to the keeper. The roster now names
+/// the package sent; until here it was a mint the relay had never seen,
+/// and the one it replaces kept its private half, so a proposal sealed
+/// to that one in the meantime still opened. Matched by value: a
+/// concurrent attach may have minted again since, and its package is
+/// not the one accepted here.
+fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
+    if engine
+        .pending_packages
+        .as_ref()
+        .is_some_and(|pending| pending.package() == sent)
+        && let Some(fresh) = engine.pending_packages.take()
+    {
+        engine.packages = fresh;
+    }
+    if engine.packages.package() == sent {
+        engine.packages.mark_published();
+    }
+}
+
 /// Whether the relay's roster names a package this device cannot open,
-/// with no ballot left to account for it. Two ways there: the device
-/// opened its entry on a ballot that has since committed or been
-/// abandoned, so the package is spent; or the attach that was to
-/// publish a fresh one never landed, so the roster still names the one
-/// before it. The second is not rare: the attach that follows an
-/// abandonment runs on the first pump after a wake from sleep, which
-/// is exactly when the network is not up yet, and building the engine
-/// re-mints before the send, so a failed send would otherwise leave a
-/// fresh package nobody but this device has ever seen. A re-attach
-/// mints and publishes again; while the relay stays unreachable that
-/// is one attempt per pump, on the pump's own cadence. Not while a
-/// ballot is in flight: the package was spent on that ballot, and its
-/// outcome decides.
+/// or none of this device's, with no ballot left to account for it.
+/// The first: the device opened its entry on a ballot that has since
+/// committed or been abandoned, so the standing package is spent, and
+/// stays the standing one until an attach carrying its replacement is
+/// accepted. That attach is not sure to land: the one that follows an
+/// abandonment runs on the first pump after a wake from sleep, which is
+/// exactly when the network is not up yet. The second: the engine's
+/// own first attach never landed. Either way a re-attach mints and
+/// sends again; while the relay stays unreachable that is one attempt
+/// per pump, on the pump's own cadence. Not while a ballot is in
+/// flight: the package was spent on that ballot, and its outcome
+/// decides.
 fn package_needs_republish(engine: &EngineState) -> bool {
     (engine.packages.is_spent() || !engine.packages.is_published())
         && !engine.session.ballot_in_flight()
@@ -644,12 +673,10 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     };
     if let Some(engine) = guard.sync.engine.as_mut() {
         // Re-attach: fresh package, standing session and chain. The
-        // assignment is destructive: the private half of the package
-        // the relay's roster names goes here, before the attach is
-        // sent, so until one lands the device opens no proposal. The
-        // pump's republish (`package_needs_republish`) is what closes
-        // that window after an attach that fails.
-        engine.packages = packages;
+        // package waits beside the standing one until the relay takes
+        // it (`attach`), so the private half of the package the roster
+        // names is never dropped before its replacement is accepted.
+        engine.pending_packages = Some(packages);
         return Ok(());
     }
     let Some(keeper) = guard.sync.keeper.take() else {
@@ -668,6 +695,7 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
         session,
         chain,
         packages,
+        pending_packages: None,
         unpublished_frame: None,
     });
     Ok(())
@@ -2459,6 +2487,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_re_attach_keeps_the_standing_package_until_the_relay_takes_its_replacement() {
+        let credentials = InMemoryCredentialStore::default();
+        let mut engine = attached_engine(&credentials);
+        let standing = engine.packages.package().clone();
+        let pkcs8 = pairing::ensure_device_identity(&credentials).unwrap();
+
+        // A re-attach mints beside the standing package; an attach that
+        // never lands changes nothing the roster relies on.
+        engine.pending_packages = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        let sent = engine.pending_packages.as_ref().unwrap().package().clone();
+        assert_eq!(engine.packages.package(), &standing);
+        assert!(engine.packages.is_published());
+        assert!(!package_needs_republish(&engine));
+
+        // A concurrent re-attach minted again while the first was in
+        // flight: the first's acceptance is not the second's.
+        let first = sent.clone();
+        engine.pending_packages = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        adopt_accepted(&mut engine, &first);
+        assert_eq!(engine.packages.package(), &standing);
+        assert!(engine.pending_packages.is_some());
+
+        // The acceptance of the package that waits swaps it in.
+        let sent = engine.pending_packages.as_ref().unwrap().package().clone();
+        adopt_accepted(&mut engine, &sent);
+        assert_eq!(engine.packages.package(), &sent);
+        assert!(engine.packages.is_published());
+        assert!(engine.pending_packages.is_none());
+    }
+
     fn attached_engine(credentials: &dyn CredentialStore) -> EngineState {
         let pkcs8 = pairing::ensure_device_identity(credentials).unwrap();
         let secret = pairing::ensure_channel_secret(credentials, true).unwrap();
@@ -2479,6 +2538,7 @@ mod tests {
             ),
             chain: GopKeyChain::root(&secret).unwrap(),
             packages,
+            pending_packages: None,
             unpublished_frame: None,
         }
     }

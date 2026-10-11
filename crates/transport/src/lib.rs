@@ -9,6 +9,7 @@
 //! "status code is an error" behaviour and hands every response back as
 //! `Ok`, whatever its status.
 
+use std::io::Read as _;
 use std::time::Duration;
 
 use ots_client::{HttpRequest, HttpResponse, Transport, TransportError};
@@ -30,6 +31,10 @@ const RESPONSE_PATIENCE: Duration = Duration::from_secs(60);
 const BODY_PATIENCE: Duration = Duration::from_secs(60);
 /// The whole call, end to end, whatever the phases above add up to.
 const CALL_PATIENCE: Duration = Duration::from_secs(180);
+
+/// The most of a response body read: ureq's own `read_to_vec` default
+/// (10 MiB), the cap every call had before it was read here by hand.
+const BODY_LIMIT: u64 = 10 * 1024 * 1024;
 
 /// A [`Transport`] backed by a pooled `ureq::Agent` (rustls). Cheap to
 /// clone (internally `Arc`-shared); construct one per process and reuse
@@ -153,9 +158,21 @@ impl Transport for UreqTransport {
             .run(http_request)
             .map_err(|e| TransportError(e.to_string()))?;
         let status = response.status().as_u16();
-        let body = response
+        // Sized from `Content-Length` where the server sent one, so a
+        // token answer lands in one allocation instead of leaving a
+        // freed, unwiped partial copy behind at every growth; the
+        // caller wipes the one buffer. The cap is ureq's own default
+        // for `read_to_vec`, and a length the allocator cannot meet
+        // falls back to growth rather than aborting.
+        let mut body = Vec::new();
+        let expected = response.body().content_length().unwrap_or(0);
+        let _ = body.try_reserve_exact(usize::try_from(expected.min(BODY_LIMIT)).unwrap_or(0));
+        response
             .body_mut()
-            .read_to_vec()
+            .with_config()
+            .limit(BODY_LIMIT)
+            .reader()
+            .read_to_end(&mut body)
             .map_err(|e| TransportError(e.to_string()))?;
         Ok(HttpResponse { status, body })
     }
