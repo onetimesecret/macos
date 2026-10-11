@@ -3424,7 +3424,8 @@ pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> 
 /// `wait_seconds` (§8 budgets 25; a longer wait is held to 25, the
 /// relay protocol's long-poll), walk the ballot patience, and
 /// publish a committed ceremony's frame. **Blocks for up to the whole
-/// long-poll**; the core mutex is held only between round-trips, so
+/// long-poll**, and for an attach besides on a turn that owes the relay
+/// a key package; the core mutex is held only between round-trips, so
 /// the pad never waits on the network. Returns
 /// `{"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, …],
 /// "state"}`, where `page` is the cross-device identity and `page_id`

@@ -187,7 +187,9 @@ pub(crate) struct EngineState {
     /// private half, where they were. An attach the relay took but
     /// whose answer never arrived leaves the roster naming this one
     /// instead, so while it waits the pump keeps re-attaching
-    /// (`package_needs_republish`) until an acceptance is heard.
+    /// (`package_needs_republish`) until an acceptance is heard, and a
+    /// proposal sealed to it in the meantime still opens
+    /// (`sync_session::open_proposal_entropy`, which adopts it).
     pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
@@ -714,8 +716,8 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     // A re-attach with a package already waiting sends that one again.
     // The relay may have taken it and its answer been lost, and a fresh
     // mint would drop the private half the roster might now name; the
-    // waiting package is unspent, since nothing opens with it until it
-    // is adopted.
+    // waiting package is unspent, since a proposal that opens with it
+    // adopts it and one that does not drops it.
     if guard
         .sync
         .engine
@@ -1268,9 +1270,18 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                         session,
                         chain,
                         packages,
+                        pending_packages,
                         ..
                     } = engine;
-                    match session.absorb_deltas(&response, store, chain, packages, &trusted, now) {
+                    match session.absorb_deltas(
+                        &response,
+                        store,
+                        chain,
+                        packages,
+                        pending_packages,
+                        &trusted,
+                        now,
+                    ) {
                         Ok(absorbed) => {
                             committed = absorbed
                                 .iter()
@@ -3196,10 +3207,11 @@ mod tests {
                 session,
                 chain,
                 packages,
+                pending_packages,
                 ..
             } = engine;
             session
-                .absorb_deltas(&empty, store, chain, packages, &[], 0)
+                .absorb_deltas(&empty, store, chain, packages, pending_packages, &[], 0)
                 .unwrap();
         }
         sweep_outbound(&mut companion, 2_000, &mut events);

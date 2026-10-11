@@ -232,6 +232,32 @@ impl KeyPackageKeeper {
     }
 }
 
+/// Open a proposal's entropy with whichever of this device's packages
+/// the relay's roster named when the proposer sealed it: the standing
+/// one, or a pending one whose attach the relay took though its answer
+/// was lost (`EngineState::pending_packages` in `sync_driver`). Each
+/// try spends the package it tries, so the standing one goes first and
+/// the pending one is left alone when the standing one opens; it is
+/// still owed to the relay, and the next attach sends it. A pending
+/// package that opens is the one the roster named, so it is adopted
+/// as the standing one, published and now spent. One that refuses is
+/// spent on nothing and dropped, so no attach ever sends a package
+/// whose private half is gone.
+pub fn open_proposal_entropy(
+    standing: &mut KeyPackageKeeper,
+    pending: &mut Option<KeyPackageKeeper>,
+    sealed: &[u8],
+) -> Option<Zeroizing<Vec<u8>>> {
+    if let Some(entropy) = standing.open_entropy(sealed) {
+        return Some(entropy);
+    }
+    let mut fresh = pending.take()?;
+    let entropy = fresh.open_entropy(sealed)?;
+    fresh.mark_published();
+    *standing = fresh;
+    Some(entropy)
+}
+
 // ---------------------------------------------------------------------
 // The session
 // ---------------------------------------------------------------------
@@ -743,6 +769,7 @@ impl SyncSession {
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        pending: &mut Option<KeyPackageKeeper>,
         trusted: &[Vec<u8>],
         now_ms: u64,
     ) -> Result<Vec<SyncEvent>, RelayRefusal> {
@@ -769,6 +796,7 @@ impl SyncSession {
                 store,
                 chain,
                 packages,
+                pending,
                 trusted,
                 now_ms,
                 &mut events,
@@ -804,6 +832,7 @@ impl SyncSession {
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        pending: &mut Option<KeyPackageKeeper>,
         trusted: &[Vec<u8>],
         now_ms: u64,
         events: &mut Vec<SyncEvent>,
@@ -892,17 +921,19 @@ impl SyncSession {
                 events.push(SyncEvent::Terminal(page));
             }
             DeltaEnvelope::Control { payload } => {
-                self.dispatch_control(payload, store, chain, packages, now_ms, events);
+                self.dispatch_control(payload, store, chain, packages, pending, now_ms, events);
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_control<C: Clock>(
         &mut self,
         payload: ControlPayload,
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        pending: &mut Option<KeyPackageKeeper>,
         now_ms: u64,
         events: &mut Vec<SyncEvent>,
     ) {
@@ -951,7 +982,7 @@ impl SyncSession {
                 let Some(sealed) = entropy_sealed.get(&self.device_fingerprint) else {
                     return;
                 };
-                let Some(entropy) = packages.open_entropy(&sealed.0) else {
+                let Some(entropy) = open_proposal_entropy(packages, pending, &sealed.0) else {
                     return;
                 };
                 // Mirror the proposer's ballot: every named device must
@@ -1390,6 +1421,59 @@ mod tests {
     }
 
     #[test]
+    fn a_proposal_sealed_to_the_pending_package_opens_and_adopts_it() {
+        // The relay took the attach carrying the pending package and
+        // its answer was lost: the roster names the pending one.
+        let (pkcs8, _) = identity();
+        let mut standing = KeyPackageKeeper::mint(&pkcs8).unwrap();
+        let mut pending = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        let named = pending.as_ref().unwrap().package().clone();
+        let sealed = named.seal_entropy(b"to the pending one").unwrap();
+        assert_eq!(
+            open_proposal_entropy(&mut standing, &mut pending, &sealed)
+                .unwrap()
+                .as_slice(),
+            b"to the pending one"
+        );
+        assert!(pending.is_none(), "adopted, not left waiting");
+        assert_eq!(standing.package(), &named);
+        assert!(standing.is_published() && standing.is_spent());
+    }
+
+    #[test]
+    fn a_proposal_sealed_to_the_standing_package_leaves_the_pending_one_owed() {
+        let (pkcs8, _) = identity();
+        let mut standing = KeyPackageKeeper::mint(&pkcs8).unwrap();
+        let mut pending = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        let sealed = standing
+            .package()
+            .seal_entropy(b"to the standing one")
+            .unwrap();
+        assert_eq!(
+            open_proposal_entropy(&mut standing, &mut pending, &sealed)
+                .unwrap()
+                .as_slice(),
+            b"to the standing one"
+        );
+        assert!(standing.is_spent());
+        let pending = pending.expect("still waiting for the relay to take it");
+        assert!(!pending.is_spent(), "never tried, so still reachable");
+    }
+
+    #[test]
+    fn a_proposal_neither_package_opens_drops_the_pending_one() {
+        let (pkcs8, _) = identity();
+        let mut standing = KeyPackageKeeper::mint(&pkcs8).unwrap();
+        let mut pending = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        assert!(open_proposal_entropy(&mut standing, &mut pending, &[0u8; 64]).is_none());
+        assert!(standing.is_spent());
+        assert!(
+            pending.is_none(),
+            "spent on nothing, so no attach may send it again"
+        );
+    }
+
+    #[test]
     fn the_publish_clock_coalesces_to_two_second_grain() {
         let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         let mut session = session("fp-a");
@@ -1549,6 +1633,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &mut None,
                 &[],
                 0,
             )
@@ -1566,6 +1651,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &mut None,
                 &[],
                 0,
             )
@@ -1603,6 +1689,7 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &mut None,
                 &[],
                 0,
             )
@@ -1617,6 +1704,7 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &mut None,
                 std::slice::from_ref(&identity_b),
                 0,
             )
@@ -1684,6 +1772,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &mut None,
                 &[],
                 0,
             )
@@ -1711,6 +1800,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &mut None,
                 &[],
                 0,
             )
@@ -1775,6 +1865,7 @@ mod tests {
             &mut store_b,
             &mut chain_b,
             &mut packages_b,
+            &mut None,
             &[],
             0,
         )
@@ -1801,6 +1892,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &mut None,
                 &[],
                 0,
             )
@@ -1818,6 +1910,7 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &mut None,
                 &[],
                 0,
             )
@@ -1829,6 +1922,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &mut None,
                 &[],
                 0,
             )
@@ -1931,6 +2025,7 @@ mod tests {
             &mut store_b,
             &mut chain_b,
             &mut packages_b,
+            &mut None,
             &[],
             0,
         )
@@ -1944,6 +2039,62 @@ mod tests {
             packages_b.open_entropy(&sealed).unwrap().as_slice(),
             b"still mine"
         );
+    }
+
+    #[test]
+    fn a_device_joins_a_ballot_sealed_to_the_package_it_has_not_heard_accepted() {
+        let clock = ManualClock::new();
+        let mut store_a = SheetStore::new(clock.clone());
+        let page_a = store_a.new_tab().1;
+        let uuid = store_a.sheet(page_a).unwrap().uuid();
+        let mut store_b = SheetStore::new(clock.clone());
+        let page_b = store_b.new_tab().1;
+        let pristine = store_b.document_version(page_b).unwrap();
+        let full = store_a.export_document_updates(page_a, &pristine).unwrap();
+        store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
+
+        let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut a = session("fp-a");
+        let mut b = session("fp-b");
+        let (pkcs8_a, _) = identity();
+        let (pkcs8_b, _) = identity();
+        let packages_a = KeyPackageKeeper::mint(&pkcs8_a).unwrap();
+        // B's standing package is the one before; the roster names the
+        // pending one, whose acceptance B never heard.
+        let mut standing_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let mut pending_b = Some(KeyPackageKeeper::mint(&pkcs8_b).unwrap());
+        let named = pending_b.as_ref().unwrap().package().clone();
+        let mut relay = FakeRelay::default();
+
+        assert!(a.propose_ceremony(
+            uuid,
+            &[CeremonyPeer {
+                fingerprint: "fp-b".into(),
+                package: named.clone(),
+            }],
+            &packages_a.package().clone(),
+            0,
+        ));
+        let request = a.publish_request(0, &chain_a).unwrap();
+        a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+
+        b.absorb_deltas(
+            &relay.serve_fetch(0),
+            &mut store_b,
+            &mut chain_b,
+            &mut standing_b,
+            &mut pending_b,
+            &[],
+            0,
+        )
+        .unwrap();
+        assert!(
+            b.publish_request(2_000, &chain_b).is_some(),
+            "B opened its entry and queued its acceptance"
+        );
+        assert!(pending_b.is_none());
+        assert_eq!(standing_b.package(), &named);
     }
 
     #[test]

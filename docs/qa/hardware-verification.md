@@ -76,6 +76,10 @@ both and note any divergence in feel, not just function:
       *general clipboard is untouched* (`pbpaste` before/after
       matches). The core read the drag pasteboard itself —
       `companion_sheet_seal_from_drag` — no byte transited Swift.
+- [ ] **Drag over a file or the ledger:** with a file or the ledger
+      showing, drag text from another app onto it. The cursor shows no
+      copy badge and the drop puts nothing in the file. Then drop a
+      Finder file there and record whether it opens or is refused.
 - [ ] **Image drag:** drop an image; confirm the app's behaviour
       (accept-and-seal or refuse) matches the spec's current text-first
       posture, and nothing crashes or renders raw data.

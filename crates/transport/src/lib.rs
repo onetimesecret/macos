@@ -39,7 +39,10 @@ const BODY_PATIENCE: Duration = Duration::from_secs(120);
 /// The whole call, end to end. Past the sum of the phases above
 /// (340 seconds), so a slow call that keeps moving inside every phase is
 /// never cut by this one; it binds only on a call stalled somewhere the
-/// phases do not see.
+/// phases do not see. One budget serves every call, so an interactive
+/// one (a conceal, a token exchange) waits as long as the long-poll
+/// can: a server that accepts the connection and never answers holds
+/// it for `RESPONSE_PATIENCE`, not a few seconds.
 const CALL_PATIENCE: Duration = Duration::from_secs(360);
 
 /// The most of a response body read: ureq's own `read_to_vec` default
@@ -180,7 +183,8 @@ impl Transport for UreqTransport {
         // `PRESIZE_LIMIT`, so a declared length is never an allocation
         // the server chooses; a larger body grows as it is read, up to
         // `BODY_LIMIT`, and a length the allocator cannot meet falls
-        // back to growth rather than aborting.
+        // back to growth rather than aborting. A body with no declared
+        // length, a decompressed one among them, grows as before.
         // Wiped on every way out, a read that fails partway included:
         // a token answer cut off halfway is still most of a token.
         let mut body = Zeroizing::new(Vec::new());
