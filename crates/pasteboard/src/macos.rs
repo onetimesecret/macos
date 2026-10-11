@@ -1,15 +1,6 @@
 #![allow(unsafe_code)]
-//! The real `NSPasteboard` adapter (macOS only). Meets the same
-//! [`Pasteboard`] contract [`crate::MemoryPasteboard`] is tested
-//! against — the hygiene rules in this file are the ones under test in
-//! `super::tests`, not new ones.
-//!
-//! Content lives on the classic (single-item) API
-//! (`declareTypes:owner:` / `setString:forType:` / `setData:forType:`):
-//! the companion always writes exactly one item, and this is what
-//! nspasteboard.org-aware clipboard managers scan for the hygiene
-//! marker types. Images ride on `NSPasteboardTypePNG`; deeper image
-//! format support is open question #6 in doc 06.
+//! The real `NSPasteboard` adapter (macOS only), on the classic
+//! single-item API that nspasteboard.org-aware managers scan.
 
 use objc2::rc::Retained;
 use objc2_app_kit::{
@@ -24,10 +15,7 @@ use crate::{
     TRANSIENT_TYPE, WriteOptions,
 };
 
-/// `Pasteboard` over a real `NSPasteboard`. [`SystemPasteboard::new`]
-/// binds the system clipboard; tests bind an isolated, uniquely-named
-/// pasteboard so they never touch the developer's real clipboard and
-/// never race each other.
+/// `Pasteboard` over a real `NSPasteboard`.
 #[derive(Debug)]
 pub struct SystemPasteboard {
     pasteboard: Retained<NSPasteboard>,
@@ -40,7 +28,7 @@ impl Default for SystemPasteboard {
 }
 
 impl SystemPasteboard {
-    /// Binds `NSPasteboard.generalPasteboard` — the real system clipboard.
+    /// Binds the system clipboard.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -48,10 +36,7 @@ impl SystemPasteboard {
         }
     }
 
-    /// Binds the drag pasteboard (`NSPasteboardNameDrag`) — the board an
-    /// in-flight drag session's content rides on. Drop-to-seal reads it
-    /// core-side, so dropped bytes never transit the shell (the drag
-    /// boundary decision, docs/qa/hardware-verification.md).
+    /// Binds the drag pasteboard, so dropped bytes are read core-side.
     #[must_use]
     pub fn drag() -> Self {
         Self {
@@ -60,9 +45,7 @@ impl SystemPasteboard {
         }
     }
 
-    /// An isolated, uniquely-named pasteboard — not the system clipboard.
-    /// For tests only, so they don't clobber the developer's clipboard or
-    /// race each other over shared global state.
+    /// An isolated, uniquely-named pasteboard for tests.
     #[cfg(test)]
     fn for_testing() -> Self {
         Self {
@@ -94,14 +77,8 @@ impl Pasteboard for SystemPasteboard {
 
         let nspasteboard_concealed = self.types_present().iter().any(|t| t == CONCEALED_TYPE);
 
-        // Provenance, read in the same pass as the content so the shell
-        // never has a reason to touch the board itself (ADR-0007
-        // Amendment 1, ADR-0013). Only the declared `public.url` flavor
-        // is consulted: the HTML flavor sometimes knows its source too,
-        // but there is no standard place it keeps it (Chromium uses a
-        // private type of its own, WebKit writes none), so digging
-        // through markup would be a parser, not a read, and the flavor
-        // is deliberately left alone.
+        // Only `public.url`: HTML has no standard place for its source
+        // (ADR-0013).
         let origin_url = self
             .pasteboard
             .stringForType(url_type)
@@ -137,9 +114,8 @@ impl Pasteboard for SystemPasteboard {
         }
         let types_array = NSArray::from_slice(&declared);
 
-        // SAFETY: `new_owner` is `None` — the companion never needs
-        // pasteboard-owner callbacks (promised data, change notification);
-        // it writes concrete bytes up front.
+        // SAFETY: no owner; concrete bytes are written up front, so no
+        // owner callbacks are needed.
         let new_count = unsafe { self.pasteboard.declareTypes_owner(&types_array, None) };
 
         match kind {
@@ -154,8 +130,7 @@ impl Pasteboard for SystemPasteboard {
             }
         }
 
-        // Empty data is the nspasteboard.org convention for marker-only
-        // types: their presence, not their payload, is the signal.
+        // nspasteboard.org markers carry empty data.
         let marker_data = NSData::with_bytes(&[]);
         self.pasteboard
             .setData_forType(Some(&marker_data), &transient_marker);
@@ -184,9 +159,6 @@ impl Pasteboard for SystemPasteboard {
         if types.iter().any(|t| t == TRANSIENT_TYPE) {
             return false;
         }
-        // The same two types read() can represent, answered from the
-        // declared-type list alone — no content bytes cross into this
-        // process for a yes/no.
         let string_type = unsafe { NSPasteboardTypeString }.to_string();
         let png_type = unsafe { NSPasteboardTypePNG }.to_string();
         types.iter().any(|t| *t == string_type || *t == png_type)
@@ -225,13 +197,10 @@ mod tests {
     fn read_captures_the_origin_url_when_present_and_none_otherwise() {
         use objc2_foundation::NSArray;
         let pb = SystemPasteboard::for_testing();
-        // Text with a `public.url` flavor beside it, declared together,
-        // as a browser leaves a copied link.
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
         let types = NSArray::from_slice(&[string_type, url_type]);
-        // SAFETY: no owner; concrete bytes are written up front, as in
-        // `write` above.
+        // SAFETY: no owner; concrete bytes are written up front.
         unsafe { pb.pasteboard.declareTypes_owner(&types, None) };
         pb.pasteboard
             .setString_forType(&NSString::from_str("quoted paragraph"), string_type);
@@ -245,7 +214,6 @@ mod tests {
             Some("https://example.test/article?token=q")
         );
 
-        // A plain write declares no URL flavor, so the read reports none.
         let mut pb = SystemPasteboard::for_testing();
         write_text(&mut pb, "no origin here", false);
         assert!(pb.read().unwrap().origin_url.is_none());
@@ -265,13 +233,10 @@ mod tests {
         let mut pb = SystemPasteboard::for_testing();
         let receipt = write_text(&mut pb, "secret", true);
 
-        // Another write lands on the same (isolated) pasteboard, as if
-        // the user copied something else since — never clobber it.
         write_text(&mut pb, "their stuff", false);
         assert!(!pb.clear_if_unchanged(receipt));
         assert!(pb.read().is_some());
 
-        // Untouched since our write -> the guarded clear proceeds.
         let receipt2 = write_text(&mut pb, "secret again", true);
         assert!(pb.clear_if_unchanged(receipt2));
         assert!(pb.read().is_none());
@@ -289,15 +254,14 @@ mod tests {
     #[test]
     fn our_own_transient_write_is_not_offered() {
         let mut pb = SystemPasteboard::for_testing();
-        assert!(!pb.holds_external_content()); // empty board
+        assert!(!pb.holds_external_content());
 
         let receipt = write_text(&mut pb, "our copy-out", true);
-        assert!(!pb.holds_external_content()); // transient-marked
+        assert!(!pb.holds_external_content());
 
         pb.clear_if_unchanged(receipt);
-        assert!(!pb.holds_external_content()); // cleared
+        assert!(!pb.holds_external_content());
 
-        // An unmarked write, as another app would leave it.
         pb.pasteboard.clearContents();
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         pb.pasteboard
