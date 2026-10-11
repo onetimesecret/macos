@@ -174,7 +174,9 @@ impl<T: Transport> Client<T> {
     pub fn conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.conceal_request(payload)?;
         let mut response = self.transport.send(request)?;
-        // The answer carries the one-time link's key: wiped once read.
+        // The answer carries the one-time link's key, so the body is
+        // wiped once read. The key also lives on in the returned
+        // `ConcealData`, a plain `String` the caller holds.
         let parsed = self.api.parse_conceal_response(&response);
         response.body.zeroize();
         parsed

@@ -144,7 +144,6 @@ fn continuous_now() -> Instant {
 /// now, and the visibility says so. What the seam kept is the half that
 /// was always true: every interval a running session observes is still
 /// charged on this clock, through the `Instant`s the store holds.
-#[must_use]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn sleep_inclusive_ns() -> u64 {
     #[cfg(target_os = "macos")]
@@ -167,7 +166,6 @@ fn sleep_inclusive_ns() -> u64 {
 /// Elsewhere: no portable sleep-inclusive clock — fall back to the
 /// process-monotonic one (the pre-existing behaviour, status quo).
 /// Scoped like its Darwin and Linux siblings.
-#[must_use]
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn sleep_inclusive_ns() -> u64 {
     static FALLBACK_BASE: OnceLock<Instant> = OnceLock::new();

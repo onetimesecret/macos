@@ -403,15 +403,18 @@ impl<C: Clock> SheetStore<C> {
         // recorded by this session, and the file's records were
         // recorded by earlier ones, so laying the file's list after the
         // live one is precisely what a `push_front` per record would
-        // have produced. Sorting on the stamp instead would rearrange a
-        // file written by a session whose wall clock stepped, which is
-        // not this call's business to correct.
+        // have produced. Sorting on the stamp instead would reorder a
+        // file written by a session whose wall clock stepped; the clamp
+        // above caps a future stamp but leaves the order alone.
         let mut merged: Vec<LedgerRecord> = self.ledger.drain(..).collect();
         // The merge is a multiset union: every copy the file and the
         // deque both hold cancels one for one, and any copy only the
         // file holds is kept. So reading one file twice, or reading a
         // file saved after this same merge, reads back as one trail
-        // rather than two, while a file that genuinely holds more copies
+        // rather than two, for every record the clamp left alone: a
+        // future stamp clamps to the clock of each read, so the same
+        // record read at two different times does not match itself.
+        // A file that genuinely holds more copies
         // of an event than the deque does keeps the surplus. The deque's
         // records are indexed by the two fields any twin must agree on,
         // so the equality test only ever weighs the handful that could

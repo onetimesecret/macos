@@ -594,7 +594,9 @@ fn attach_refused(companion: &mut Companion) -> serde_json::Value {
 }
 
 /// The one attach in flight. It clears the flag when it drops, which
-/// is on every way out of `attach`.
+/// is on every way out of `attach`. While it stands every other attach
+/// answers `busy`, for as long as the call it guards takes, a stalled
+/// one included, up to the transport's whole-call bound.
 struct AttachFlight<'a>(&'a CompanionHandle);
 
 impl<'a> AttachFlight<'a> {
@@ -1910,6 +1912,9 @@ fn maybe_grant(
     let Some(secret) = pairing::ensure_channel_secret(credentials, true) else {
         return PairingStep::Failed("keychain");
     };
+    // Not a store refusal: the grant failed to seal. It shares the
+    // `keychain` token, which predates this distinction, and the shell
+    // words both alike.
     let Some(grant) = settled.grant(&secret) else {
         return PairingStep::Failed("keychain");
     };

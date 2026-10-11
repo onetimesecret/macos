@@ -29,14 +29,18 @@ const CONNECT_PATIENCE: Duration = Duration::from_secs(15);
 const RESPONSE_PATIENCE: Duration = Duration::from_secs(60);
 /// How long a request or response body may take to move, in either
 /// direction. A deadline for the whole body, not an idle timer, so it
-/// sets a floor on throughput: `BODY_LIMIT` in five minutes is about
-/// 35 KB/s, which a slow or congested link still meets.
-const BODY_PATIENCE: Duration = Duration::from_secs(300);
+/// is also how long a socket that stops delivering mid-body stalls the
+/// call. Sized for the bodies the protocol sends rather than the cap:
+/// `relay-protocol.md` §8 pads every sealed blob to "256 bytes minimum,
+/// 64 KiB maximum bucket", so an answer of many blobs moves in two
+/// minutes at any usable rate, and the 10 MiB `BODY_LIMIT` is the case
+/// that loses on a slow link.
+const BODY_PATIENCE: Duration = Duration::from_secs(120);
 /// The whole call, end to end. Past the sum of the phases above
-/// (700 seconds), so a slow call that keeps moving inside every phase is
+/// (340 seconds), so a slow call that keeps moving inside every phase is
 /// never cut by this one; it binds only on a call stalled somewhere the
 /// phases do not see.
-const CALL_PATIENCE: Duration = Duration::from_secs(720);
+const CALL_PATIENCE: Duration = Duration::from_secs(360);
 
 /// The most of a response body read: ureq's own `read_to_vec` default
 /// (10 MiB), the cap every call had before it was read here by hand.

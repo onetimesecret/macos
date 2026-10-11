@@ -127,7 +127,10 @@ impl FileIo for RealFileIo<'_> {
     }
 
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        read_regular_file(path)
+        // At most one byte past the limit: a file swapped for a huge one
+        // between the core's size stat and this open is not read whole,
+        // and the core's own length check refuses what comes back.
+        read_regular(path, companion_core::FILE_SIZE_LIMIT as u64 + 1)
     }
 
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
@@ -171,9 +174,14 @@ impl FileIo for RealFileIo<'_> {
 /// purpose, once, at open, and the path held from then on is the
 /// resolved one.
 pub(crate) fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+    read_regular(path, u64::MAX)
+}
+
+/// The defended read, taking at most `limit` bytes.
+fn read_regular(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     use std::io::Read as _;
 
-    let mut file = open_regular_file(path)?;
+    let file = open_regular_file(path)?;
     // Sized from the open file, so the read lands in one allocation
     // rather than leaving a trail of freed partial copies. The size is
     // only a hint: a metadata read that fails sizes nothing and fails
@@ -182,11 +190,11 @@ pub(crate) fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
     let len = file
         .metadata()
         .ok()
-        .and_then(|metadata| usize::try_from(metadata.len()).ok())
+        .and_then(|metadata| usize::try_from(metadata.len().min(limit)).ok())
         .unwrap_or(0);
     let mut bytes = Vec::new();
     let _ = bytes.try_reserve_exact(len);
-    file.read_to_end(&mut bytes)?;
+    file.take(limit).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 
@@ -1846,6 +1854,21 @@ mod tests {
         let text = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
         unsafe { crate::companion_string_free(ptr) };
         text
+    }
+
+    #[test]
+    fn a_file_read_takes_no_more_than_one_byte_past_the_limit() {
+        // A file swapped for a huge one between the core's size stat and
+        // the open is not read whole; the core refuses the one byte over.
+        let dir = scratch_dir("capped-read");
+        let path = dir.join("big.txt");
+        std::fs::write(&path, vec![b'a'; companion_core::FILE_SIZE_LIMIT + 4096]).unwrap();
+        let bytes = RealFileIo::new().read(&path).unwrap();
+        assert_eq!(bytes.len(), companion_core::FILE_SIZE_LIMIT + 1);
+        let small = dir.join("small.txt");
+        std::fs::write(&small, b"short").unwrap();
+        assert_eq!(RealFileIo::new().read(&small).unwrap(), b"short");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A temp directory of this test's own, for the files it opens and
