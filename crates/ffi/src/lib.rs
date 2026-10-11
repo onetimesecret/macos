@@ -3418,7 +3418,8 @@ pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> 
 /// One turn of the engine loop, run from a background queue while
 /// sync is on: sweep the enrolled pages into the outbox, publish what
 /// the 2-second clock owes, long-poll the delta stream for up to
-/// `wait_seconds` (§8 budgets 25), walk the ballot patience, and
+/// `wait_seconds` (§8 budgets 25; a longer wait is held to 25, the
+/// relay protocol's long-poll), walk the ballot patience, and
 /// publish a committed ceremony's frame. **Blocks for up to the whole
 /// long-poll**; the core mutex is held only between round-trips, so
 /// the pad never waits on the network. Returns

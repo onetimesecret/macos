@@ -216,11 +216,19 @@ mod tests {
     }
 
     #[test]
-    fn a_patience_the_clock_cannot_add_is_not_a_panic() {
+    fn a_patience_the_clock_cannot_add_is_no_deadline_and_no_panic() {
+        // The flag goes up only after the loop has polled, so the
+        // missing deadline is consulted on the way, not skipped.
         let listener = OneShotListener::bind().unwrap();
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&abandoned);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            flag.store(true, Ordering::Relaxed);
+        });
         assert!(
             listener
-                .accept_redirect(Duration::MAX, &AtomicBool::new(true))
+                .accept_redirect(Duration::MAX, &abandoned)
                 .is_none()
         );
     }

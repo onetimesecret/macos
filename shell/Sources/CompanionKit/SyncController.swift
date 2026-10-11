@@ -175,6 +175,9 @@ public final class SyncController: ObservableObject {
     // `nonisolated(unsafe)` for deinit's sake, the model's own timer
     // convention (PageModel.swift).
     private nonisolated(unsafe) var retryTimer: Timer?
+    /// Attach refusals in a row that settled to no trouble, for the
+    /// backoff in `attachRetryDelay`.
+    private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
     private nonisolated(unsafe) var elsewhereTimer: Timer?
     /// When a peer's edit last landed on each page. The mark's whole
@@ -393,6 +396,7 @@ public final class SyncController: ObservableObject {
         pairingStage = nil
         pairingTimer?.invalidate()
         retryTimer?.invalidate()
+        quietRefusals = 0
         _ = client.syncSigninCancel()
         signinGivenUp = false
         // Nothing is arriving from anywhere now, so no page may go on
@@ -436,9 +440,13 @@ public final class SyncController: ObservableObject {
             ok: outcome.ok, reason: outcome.reason, gate: status?.gate)
         guard outcome.ok else {
             trouble = settled
-            if Self.attachRetries(after: settled) { armRetry() }
+            if Self.attachRetries(after: settled) {
+                quietRefusals = settled == nil ? quietRefusals + 1 : 0
+                armRetry(after: Self.attachRetryDelay(quietRefusals: quietRefusals))
+            }
             return
         }
+        quietRefusals = 0
         attached = true
         lastAttachPeers = outcome.peers
         trouble = Self.standing(trouble: trouble, after: settled)
@@ -608,10 +616,10 @@ public final class SyncController: ObservableObject {
 
     /// A relay that did not answer is retried on a slow clock, never a
     /// hot loop (account-auth.md §4).
-    private func armRetry() {
+    private func armRetry(after delay: TimeInterval = 30) {
         retryTimer?.invalidate()
         let mine = session
-        let timer = Timer(timeInterval: 30, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.enabled, self.session == mine else { return }
                 if self.attached { self.pump() } else { self.attach() }
@@ -959,6 +967,18 @@ public final class SyncController: ObservableObject {
     /// condition a timer clears, and is not retried.
     public nonisolated static func attachRetries(after settled: Trouble?) -> Bool {
         settled == nil || settled == .unreachable
+    }
+
+    /// How long before a refused attach is tried again. An unreachable
+    /// relay, and a first quiet refusal, wait the 30-second clock;
+    /// quiet refusals that keep coming double it to a five-minute
+    /// ceiling. A `keychain` refusal reads the Keychain again on every
+    /// try, and on the legacy file based login keychain the store falls
+    /// back to (`crates/credentials`) a read can raise a prompt, which
+    /// a flat 30-second clock would raise for as long as the app runs.
+    public nonisolated static func attachRetryDelay(quietRefusals: Int) -> TimeInterval {
+        let doublings = min(max(quietRefusals - 1, 0), 4)
+        return TimeInterval(min(30 << doublings, 300))
     }
 
     /// What an attach outcome and the core's gate together mean. The

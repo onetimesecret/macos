@@ -44,7 +44,9 @@ use crate::persist::{self, Bytes, KEY_LEN};
 pub const PUBLISH_INTERVAL_MS: u64 = 2_000;
 
 /// §8's long-poll patience, inside ordinary load-balancer idle
-/// timeouts.
+/// timeouts. Also the most a fetch asks for: the transport's first-byte
+/// patience is sized past it, so a longer `wait` would time out every
+/// quiet poll, and [`SyncSession::fetch_request`] holds it here.
 pub const LONG_POLL_WAIT_S: u32 = 25;
 
 /// §5's ballot patience: a ceremony not confirmed within this window
@@ -707,14 +709,16 @@ impl SyncSession {
     // -----------------------------------------------------------------
 
     /// `GET /channel/deltas?since=…&wait=…` — the long-poll. `None`
-    /// when no access token is held.
+    /// when no access token is held. A `wait` past
+    /// [`LONG_POLL_WAIT_S`] is held to it.
     #[must_use]
     pub fn fetch_request(&self, wait_seconds: u32) -> Option<HttpRequest> {
         let auth = self.auth()?;
-        Some(
-            self.api
-                .fetch_deltas_request(self.next_seq, wait_seconds, &auth),
-        )
+        Some(self.api.fetch_deltas_request(
+            self.next_seq,
+            wait_seconds.min(LONG_POLL_WAIT_S),
+            &auth,
+        ))
     }
 
     /// Absorb one long-poll's worth of deltas: open, unpad, decode and
@@ -1286,6 +1290,19 @@ mod tests {
 
     fn session(fingerprint: &str) -> SyncSession {
         SyncSession::new("https://relay.onetimesecret.com", keeper(), fingerprint)
+    }
+
+    #[test]
+    fn a_long_poll_never_asks_the_relay_to_wait_past_the_spec() {
+        let session = session("fp");
+        assert!(
+            session
+                .fetch_request(u32::MAX)
+                .unwrap()
+                .url
+                .ends_with("wait=25")
+        );
+        assert!(session.fetch_request(5).unwrap().url.ends_with("wait=5"));
     }
 
     /// The relay as §9 describes it, at test scale: an ordered blob

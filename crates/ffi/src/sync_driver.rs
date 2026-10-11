@@ -1245,7 +1245,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
     // abandon again at the patience, and so on at every sweep, with
     // every status field reading healthy while the channel could not
     // rotate.
-    let spent = {
+    let owes_package = {
         let Ok(guard) = handle.inner.lock() else {
             return pump_result(handle, Some("poisoned"), &events);
         };
@@ -1255,7 +1255,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
             .as_ref()
             .is_some_and(package_needs_republish)
     };
-    if committed || spent {
+    if committed || owes_package {
         let _ = attach(handle);
     }
 

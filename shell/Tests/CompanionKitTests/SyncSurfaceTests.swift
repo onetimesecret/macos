@@ -258,6 +258,18 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertFalse(SyncController.attachRetries(after: .notConfigured))
     }
 
+    func testQuietAttachRefusalsBackOffToAFiveMinuteCeiling() {
+        // An unreachable relay keeps the 30-second clock (no quiet
+        // refusals counted); quiet refusals in a row double it.
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 0), 30)
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 1), 30)
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 2), 60)
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 3), 120)
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 4), 240)
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 5), 300)
+        XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 50), 300)
+    }
+
     func testARefusedGateSaysSoAndSpareThePad() {
         XCTAssertEqual(
             SyncController.sentence(

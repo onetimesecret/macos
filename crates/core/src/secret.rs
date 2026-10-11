@@ -29,7 +29,11 @@ use zeroize::Zeroize;
 /// vector's whole capacity, spare bytes included, since those are wiped
 /// too; a vector handed in with slack wires that much more. A buffer
 /// leaked rather than dropped keeps its pages counted and locked for
-/// the life of the process.
+/// the life of the process. The count is this module's alone: it
+/// assumes nothing else in the process calls `mlock`, since releasing a
+/// page here would unlock another caller's lock on it too. Nothing does
+/// today; a dependency that wires its own pages would have to share
+/// this table.
 ///
 /// It deliberately implements **none** of `Clone`, `Copy`, `Debug`,
 /// `Display`, `Serialize`, or `Deserialize`: the buffer cannot be
