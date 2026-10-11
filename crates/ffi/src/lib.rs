@@ -3402,7 +3402,19 @@ pub unsafe extern "C" fn companion_sync_attach(handle: *mut CompanionHandle) -> 
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
-    into_c_string(sync_driver::attach(handle).to_string())
+    let answer = sync_driver::attach(handle);
+    // A refusal the shell may answer with nothing but a quiet retry on
+    // its timer leaves a trace in the core's diagnostics, so a support
+    // log tells "attached and quiet" from "refused at every try". Not
+    // `unreachable`, which the gate records, nor `busy`, which is an
+    // attach already in flight. The pump's own attach is not traced
+    // here: against a sick relay it would write a line every turn.
+    if let Some(reason) = answer.get("reason").and_then(serde_json::Value::as_str)
+        && !matches!(reason, "unreachable" | "busy")
+    {
+        diag_fault!("companion-ffi: the shell's sync attach was refused: {reason}.");
+    }
+    into_c_string(answer.to_string())
 }
 
 /// Detach from the channel: tell the relay (best effort — idle
@@ -3426,9 +3438,11 @@ pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> 
 /// `wait_seconds` (§8 budgets 25; a longer wait is held to 25, the
 /// relay protocol's long-poll), walk the ballot patience, and
 /// publish a committed ceremony's frame. **Blocks for up to the whole
-/// long-poll**, and for an attach besides on a turn that owes the relay
-/// a key package, so a stalled relay can hold one turn for the two
-/// transport bounds added together; the core mutex is held only between round-trips, so
+/// long-poll**, and for the turn's other round trips besides (a
+/// publish, an attach on a turn that owes the relay a key package, a
+/// committed ceremony's frame), each under its own transport bound, so
+/// a relay that takes connections and then stalls can hold one turn
+/// for several of those bounds end to end; the core mutex is held only between round-trips, so
 /// the pad never waits on the network. Returns
 /// `{"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, …],
 /// "state"}`, where `page` is the cross-device identity and `page_id`

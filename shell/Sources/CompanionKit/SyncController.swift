@@ -471,7 +471,12 @@ public final class SyncController: ObservableObject {
     /// for as long as sync is on and attached. The pump itself blocks
     /// for the §8 long-poll, so back-to-back turns are the intended
     /// cadence — an empty poll re-enters immediately, and delivery
-    /// latency is bounded by the peers' publish clocks.
+    /// latency is bounded by the peers' publish clocks. A turn's round
+    /// trips (a publish, the long-poll, an attach when one is owed, a
+    /// ceremony's frame) each run under their own transport bound, so
+    /// against a relay that takes connections and then stalls one turn
+    /// can hold for several of those bounds end to end, minutes rather
+    /// than seconds, and no other turn starts until it returns.
     private func pump() {
         guard enabled, attached, !pumping else { return }
         pumping = true
@@ -976,8 +981,9 @@ public final class SyncController: ObservableObject {
     /// nothing started the pump until the switch was toggled or the
     /// person signed out and in. The retry is on the same 30-second
     /// clock as an unreachable relay, and like it has no cap; unlike
-    /// it, no sentence stands, as none did before. A named trouble
-    /// (`signedOut`, `refused`, `notConfigured`), whether the gate
+    /// it, no sentence stands, as none did before; the core's
+    /// diagnostics carry each such refusal. A named trouble
+    /// (`signedOut`, `refused` and `notConfigured` among them), whether the gate
     /// named it or the core answered `not_configured` or `poisoned`
     /// (`settledTrouble`), is not a condition a timer clears, and is
     /// not retried.

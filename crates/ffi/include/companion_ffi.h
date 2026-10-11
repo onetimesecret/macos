@@ -1100,9 +1100,11 @@ bool companion_sync_detach(CompanionHandle *handle);
  * what the 2-second clock owes, long-poll the delta stream for up to
  * wait_seconds (section 8 budgets 25), walk the ballot patience, and
  * publish a committed ceremony's frame. BLOCKS for up to the whole
- * long-poll, and for an attach besides on a turn that owes the relay a
- * key package, so a stalled relay can hold one turn for the two
- * transport bounds added together; the core mutex is held only between round-trips, so the
+ * long-poll, and for the turn's other round trips besides (a publish,
+ * an attach on a turn that owes the relay a key package, a committed
+ * ceremony's frame), each under its own transport bound, so a relay
+ * that takes connections and then stalls can hold one turn for several
+ * of those bounds end to end; the core mutex is held only between round-trips, so the
  * pad never waits on the network. Returns {"ok", "reason"?, "events":
  * [{"kind", "page"?}, ...], "state"} — kinds: applied,
  * countdown_moved, terminal, rejoin_required, ceremony_proposed,
