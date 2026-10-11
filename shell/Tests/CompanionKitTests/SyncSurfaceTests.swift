@@ -243,6 +243,21 @@ final class SyncSurfaceTests: XCTestCase {
         )
     }
 
+    func testAnAttachRefusalTheGateCannotExplainIsRetried() {
+        // A locked keychain at attach time: the core answers "keychain"
+        // and the gate still reads ready, so the refusal settles to no
+        // trouble. It is retried rather than left as an enabled,
+        // unattached sync with no sentence and no timer.
+        let settled = SyncController.settledTrouble(ok: false, reason: "keychain", gate: .ready)
+        XCTAssertNil(settled)
+        XCTAssertTrue(SyncController.attachRetries(after: settled))
+        XCTAssertTrue(SyncController.attachRetries(after: .unreachable))
+        // A trouble the gate named is not a condition a timer clears.
+        XCTAssertFalse(SyncController.attachRetries(after: .signedOut))
+        XCTAssertFalse(SyncController.attachRetries(after: .refused))
+        XCTAssertFalse(SyncController.attachRetries(after: .notConfigured))
+    }
+
     func testARefusedGateSaysSoAndSpareThePad() {
         XCTAssertEqual(
             SyncController.sentence(

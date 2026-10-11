@@ -1027,6 +1027,24 @@ public struct InkEditorView: NSViewRepresentable {
             model.sealActions.stand(canSeal: sealableSelection() != nil)
         }
 
+        /// Whether a seal gesture landing in this editor has a page to
+        /// seal into: the mounted document is a page, not a file, and
+        /// the view takes edits. The three seal routes ask this first.
+        /// Without it a chord, the offer button or a drop over a file
+        /// would route to the page behind the file (the slot the
+        /// selection still names) and rewrite the file's storage under
+        /// the projection guard with a chip the file's own document
+        /// does not hold. The model refuses the same case on its side
+        /// (`PageModel.sealTarget`); this is the editor's half, which
+        /// also keeps a refused seal from clearing the clipboard or
+        /// flashing a line about a seal that did not happen.
+        var sealsHere: Bool {
+            guard let textView, let sheet = currentSheet, !sheet.isFileID,
+                  textView.isEditable
+            else { return false }
+            return true
+        }
+
         /// The selection Edit → Seal Selected Content and the context
         /// menu row would seal: non-empty, on an editable page rather
         /// than a file, and not mid-composition. Nil otherwise. The
@@ -1194,8 +1212,18 @@ public struct InkEditorView: NSViewRepresentable {
                 let kind = scanner.classify(line)
                 if case .fenceRule = kind {
                     if !wasInside {
-                        let trimmedHead = line.prefix { $0 == " " || $0 == "\t" }
-                        let afterIndent = line.dropFirst(trimmedHead.utf16.count)
+                        // The same whitespace the scanner trimmed before
+                        // it called this line a fence rule. Trimming only
+                        // spaces and tabs here let a fence indented with a
+                        // no-break space (pasted from a rich source) pass
+                        // `classify` and then fail `fenceRun`, which
+                        // returned nil for the whole document and took
+                        // every bare fence below it out of reach.
+                        let trimmedHead = line.prefix { character in
+                            character.unicodeScalars.allSatisfy(
+                                CharacterSet.whitespacesAndNewlines.contains)
+                        }
+                        let afterIndent = line.dropFirst(trimmedHead.count)
                         guard let run = InkStyle.FenceScanner.fenceRun(
                             of: afterIndent.trimmingCharacters(in: .newlines)
                         ) else { return nil }
@@ -2288,7 +2316,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// one atomic locked call. This process never sees the pasted
         /// bytes.
         func sealedPaste() {
-            guard let textView, let storage = textView.textStorage else { return }
+            guard sealsHere, let textView, let storage = textView.textStorage else { return }
             // Captured at gesture time and passed whole. The seal call
             // is synchronous on the main actor from here through the C
             // seam, so no event can move the caret between this capture
@@ -2312,7 +2340,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// the drop point (a zero-length range) with the sentinel in
         /// the same locked call.
         func sealDrop(at characterIndex: Int) -> Bool {
-            guard let textView else { return false }
+            guard sealsHere, let textView else { return false }
             textView.setSelectedRange(NSRange(location: characterIndex, length: 0))
             // Same synchronicity as the sealed paste: nothing runs
             // between this capture and the core's replace.
@@ -2326,7 +2354,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// content. A line already holding a chip refuses with an
         /// explanation; an empty line does nothing (docs/spec/04).
         func sealSelectionOrLine() {
-            guard let textView, let storage = textView.textStorage else { return }
+            guard sealsHere, let textView, let storage = textView.textStorage else { return }
             let text = storage.string as NSString
             var range = textView.selectedRange()
             guard Self.isValid(range, for: storage.length) else { return }
@@ -5016,12 +5044,20 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     // MARK: Drop-to-seal
 
+    /// An external drag seals, and only where a seal can land: over a
+    /// file, or a view that takes no edits, the drop is ordinary text
+    /// editing or nothing, and the cursor says so rather than promising
+    /// a seal the drop would then refuse.
+    private func sealsExternalDrag(_ sender: NSDraggingInfo) -> Bool {
+        isExternalDrag(sender) && coordinator?.sealsHere == true
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        isExternalDrag(sender) ? .copy : super.draggingEntered(sender)
+        sealsExternalDrag(sender) ? .copy : super.draggingEntered(sender)
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        isExternalDrag(sender) ? .copy : super.draggingUpdated(sender)
+        sealsExternalDrag(sender) ? .copy : super.draggingUpdated(sender)
     }
 
     /// Dragging content to a secrecy tool is already the "stage this"
@@ -5030,7 +5066,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// Internal drags (moving ink within the page) stay ordinary text
     /// editing.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard isExternalDrag(sender) else {
+        guard sealsExternalDrag(sender) else {
             return super.performDragOperation(sender)
         }
         let point = convert(sender.draggingLocation, from: nil)

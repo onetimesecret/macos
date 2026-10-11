@@ -436,7 +436,7 @@ public final class SyncController: ObservableObject {
             ok: outcome.ok, reason: outcome.reason, gate: status?.gate)
         guard outcome.ok else {
             trouble = settled
-            if settled == .unreachable { armRetry() }
+            if Self.attachRetries(after: settled) { armRetry() }
             return
         }
         attached = true
@@ -939,6 +939,23 @@ public final class SyncController: ObservableObject {
     {
         if trouble == .behind, verdict == nil || verdict == .unreachable { return .behind }
         return verdict
+    }
+
+    /// Whether a refused attach is tried again on the timer, from the
+    /// trouble it settled to.
+    ///
+    /// An unreachable relay retries, as it always has. So does a
+    /// refusal that settled to no trouble at all: the core refused the
+    /// attach for a reason the gate does not name (`keychain`, with the
+    /// keychain locked at that moment, or any reason this shell has no
+    /// word for) while the gate still reads ready. Left there, sync was
+    /// enabled, unattached, with no sentence standing and no timer
+    /// armed, and nothing started the pump until the switch was toggled
+    /// or the person signed out and in. A trouble the gate did name
+    /// (`signedOut`, `refused`, `notConfigured`) is not a condition a
+    /// timer clears, and is not retried.
+    public nonisolated static func attachRetries(after settled: Trouble?) -> Bool {
+        settled == nil || settled == .unreachable
     }
 
     /// What an attach outcome and the core's gate together mean. The
