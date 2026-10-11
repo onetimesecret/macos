@@ -220,7 +220,9 @@ impl KeyPackageKeeper {
 
     /// Open entropy a proposer sealed to this package. Spends the
     /// private half: `None` afterwards until a fresh mint, and `None`
-    /// for a payload not sealed to this package.
+    /// for a payload not sealed to this package. A payload too short to
+    /// carry the proposer's key is refused before the private half is
+    /// touched, and spends nothing.
     #[must_use]
     pub fn open_entropy(&mut self, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         let eph_pub = sealed.get(..32)?;
@@ -240,9 +242,10 @@ impl KeyPackageKeeper {
 /// the pending one is left alone when the standing one opens; it is
 /// still owed to the relay, and the next attach sends it. A pending
 /// package that opens is the one the roster named, so it is adopted
-/// as the standing one, published and now spent. One that refuses is
-/// spent on nothing and dropped, so no attach ever sends a package
-/// whose private half is gone.
+/// as the standing one, published and now spent. One whose try spent
+/// it on nothing is dropped, so no attach ever sends a package whose
+/// private half is gone; one the try never reached (a payload too
+/// short to try) stays where it was, still owed to the relay.
 pub fn open_proposal_entropy(
     standing: &mut KeyPackageKeeper,
     pending: &mut Option<KeyPackageKeeper>,
@@ -251,10 +254,16 @@ pub fn open_proposal_entropy(
     if let Some(entropy) = standing.open_entropy(sealed) {
         return Some(entropy);
     }
-    let mut fresh = pending.take()?;
-    let entropy = fresh.open_entropy(sealed)?;
-    fresh.mark_published();
-    *standing = fresh;
+    let fresh = pending.as_mut()?;
+    let Some(entropy) = fresh.open_entropy(sealed) else {
+        if fresh.is_spent() {
+            *pending = None;
+        }
+        return None;
+    };
+    let mut adopted = pending.take()?;
+    adopted.mark_published();
+    *standing = adopted;
     Some(entropy)
 }
 
@@ -1458,6 +1467,19 @@ mod tests {
         assert!(standing.is_spent());
         let pending = pending.expect("still waiting for the relay to take it");
         assert!(!pending.is_spent(), "never tried, so still reachable");
+    }
+
+    #[test]
+    fn a_payload_too_short_to_try_leaves_both_packages_where_they_were() {
+        // Neither key is touched, so the pending one is still owed to
+        // the relay and the pump still re-attaches for it.
+        let (pkcs8, _) = identity();
+        let mut standing = KeyPackageKeeper::mint(&pkcs8).unwrap();
+        let mut pending = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        assert!(open_proposal_entropy(&mut standing, &mut pending, b"short").is_none());
+        assert!(!standing.is_spent());
+        let pending = pending.expect("never tried, so never dropped");
+        assert!(!pending.is_spent());
     }
 
     #[test]
