@@ -65,3 +65,12 @@ panic = "unwind"
 lto = "thin"
 strip = "symbols"
 opt-level = "s"
+
+# Build scripts and proc macros run on the build host and never ship, so
+# they are left unstripped; the library that ships is stripped as above.
+# On the xcode-27 runner image dyld refused the freshly built
+# `serde_derive` proc macro ("mis-aligned LINKEDIT string pool") before
+# any workspace crate compiled, and Xcode 27's `strip` running over host
+# dylibs is the suspected cause.
+[profile.release.build-override]
+strip = false
