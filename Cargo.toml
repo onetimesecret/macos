@@ -34,9 +34,13 @@ serde_json = "1.0"
 
 [workspace.lints.rust]
 # Zeroize-on-drop is the security posture; `unsafe` would let a crate
-# sidestep it invisibly. Only `pasteboard` (and later the shell glue) may
-# carve out an allowance, arriving together with the FFI code that needs
-# it — so the unsafe surface stays auditable by crate boundary.
+# sidestep it invisibly. Denied here and allowed back only by module,
+# each allowance arriving with the platform call that needs it and a
+# SAFETY note on every use, so the unsafe surface stays auditable by
+# grep for `allow(unsafe_code)`: `core`'s `secret` (page locking),
+# `harden` (core-dump limits) and `clock` (sleep-inclusive time);
+# `credentials`' `secitem` (Security framework); `ffi` (the C seam);
+# and `pasteboard`'s macOS adapter.
 unsafe_code = "deny"
 missing_docs = "warn"
 
