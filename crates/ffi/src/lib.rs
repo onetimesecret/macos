@@ -3387,8 +3387,9 @@ pub unsafe extern "C" fn companion_sync_enrol_page(
 /// cursor. **Blocks for the round-trips** — call from a background
 /// queue. Returns `{"ok": true, "epoch", "frame_present", "peers"}`
 /// or `{"ok": false, "reason"}` (`not_configured`, `signed_out`,
-/// `keychain`, `unreachable`, `refused`, or `busy` while another
-/// attach is in flight). Free with [`companion_string_free`].
+/// `keychain`, `unreachable`, `refused`, `busy` while another attach
+/// is in flight; not exhaustive, `poisoned` and `not_attached` among
+/// the rest). Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.

@@ -5050,21 +5050,24 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     // MARK: Drop-to-seal
 
-    /// An external drag seals, and only where a seal can land. Over a
-    /// file the drop is ordinary text editing, inserting what was
-    /// dragged as the file's own plaintext; over a view that takes no
-    /// edits it is nothing, and there the cursor says so rather than
-    /// promising a seal the drop would then refuse.
+    /// An external drag seals, and only where a seal can land. Anywhere
+    /// else (over a file, or a view that takes no edits) it is refused
+    /// and the content goes back to its source: dragging onto this pad
+    /// means "stage this", and over a file the alternative was writing
+    /// what was dragged into the file as plaintext the next save puts on
+    /// disk. The cursor says so rather than promising a seal.
     private func sealsExternalDrag(_ sender: NSDraggingInfo) -> Bool {
         isExternalDrag(sender) && coordinator?.sealsHere == true
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        sealsExternalDrag(sender) ? .copy : super.draggingEntered(sender)
+        guard isExternalDrag(sender) else { return super.draggingEntered(sender) }
+        return sealsExternalDrag(sender) ? .copy : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        sealsExternalDrag(sender) ? .copy : super.draggingUpdated(sender)
+        guard isExternalDrag(sender) else { return super.draggingUpdated(sender) }
+        return sealsExternalDrag(sender) ? .copy : []
     }
 
     /// Dragging content to a secrecy tool is already the "stage this"
@@ -5073,9 +5076,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// Internal drags (moving ink within the page) stay ordinary text
     /// editing.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard sealsExternalDrag(sender) else {
+        guard isExternalDrag(sender) else {
             return super.performDragOperation(sender)
         }
+        guard sealsExternalDrag(sender) else { return false }
         let point = convert(sender.draggingLocation, from: nil)
         let index = characterIndexForInsertion(at: point)
         return coordinator?.sealDrop(at: index) ?? false

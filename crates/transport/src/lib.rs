@@ -187,8 +187,10 @@ impl Transport for UreqTransport {
             .reader()
             .read_to_end(&mut body)
             .map_err(|e| TransportError(e.to_string()))?;
-        // Moved out whole: the allocation goes to the caller, who wipes
-        // it, and the empty vector left behind holds nothing.
+        // Moved out whole, and the empty vector left behind holds
+        // nothing. The allocation goes to the caller: the sync driver's
+        // token answers and `ots-client`'s conceal answers wipe it once
+        // read; relay frames, sealed blobs, are not wiped.
         let body = std::mem::take(&mut *body);
         Ok(HttpResponse { status, body })
     }

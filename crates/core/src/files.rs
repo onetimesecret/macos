@@ -1094,16 +1094,20 @@ impl FileStore {
         // surrogate pair is policed as strictly as the document would.
         // Both copies are the file's whole text, so both are wiped on
         // the way out like every other plaintext copy this module takes,
-        // and the simulation is sized once to the most the batch can make
-        // it (a UTF-8 byte bounds a UTF-16 unit), so it never grows and no
-        // reallocation leaves an unwiped copy behind.
+        // and the simulation is sized once, in UTF-16 units, to the most
+        // the batch can make it, so it never grows and no reallocation
+        // leaves an unwiped copy behind.
         let text = Zeroizing::new(file.text());
         // Every variant named, so one added later that inserts text is
         // a compile error here rather than an undersized buffer.
-        let room = ops.iter().fold(text.len(), |room, op| match op {
-            EditOp::Insert { text: inserted, .. } => room.saturating_add(inserted.len()),
-            EditOp::Delete { .. } | EditOp::InsertChip { .. } => room,
-        });
+        let room = ops
+            .iter()
+            .fold(text.encode_utf16().count(), |room, op| match op {
+                EditOp::Insert { text: inserted, .. } => {
+                    room.saturating_add(inserted.encode_utf16().count())
+                }
+                EditOp::Delete { .. } | EditOp::InsertChip { .. } => room,
+            });
         // A batch whose room the allocator cannot meet is refused, not
         // an abort.
         let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::new());
@@ -2378,7 +2382,7 @@ fn sim_admit(sim: &mut Vec<u16>, op: &EditOp) -> bool {
             // The inserted text, in a buffer sized for it and wiped on
             // drop; an exact-size iterator lets the splice move it
             // without a temporary of its own.
-            let mut units = Zeroizing::new(Vec::with_capacity(text.len()));
+            let mut units = Zeroizing::new(Vec::with_capacity(text.encode_utf16().count()));
             units.extend(text.encode_utf16());
             sim.splice(at..at, units.iter().copied());
             true

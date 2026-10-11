@@ -1,7 +1,7 @@
 //! Request building and response interpretation — the sans-IO half —
 //! plus [`Client`], which pairs it with a transport.
 
-use zeroize::Zeroizing;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::auth::AuthStrategy;
 use crate::http::{HttpRequest, HttpResponse, Transport};
@@ -173,8 +173,11 @@ impl<T: Transport> Client<T> {
     /// [`Api::parse_conceal_response`].
     pub fn conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.conceal_request(payload)?;
-        let response = self.transport.send(request)?;
-        self.api.parse_conceal_response(&response)
+        let mut response = self.transport.send(request)?;
+        // The answer carries the one-time link's key: wiped once read.
+        let parsed = self.api.parse_conceal_response(&response);
+        response.body.zeroize();
+        parsed
     }
 
     /// Conceal via the guest route (no credentials).
@@ -184,8 +187,10 @@ impl<T: Transport> Client<T> {
     /// Same as [`Client::conceal`].
     pub fn guest_conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.guest_conceal_request(payload)?;
-        let response = self.transport.send(request)?;
-        self.api.parse_conceal_response(&response)
+        let mut response = self.transport.send(request)?;
+        let parsed = self.api.parse_conceal_response(&response);
+        response.body.zeroize();
+        parsed
     }
 }
 
