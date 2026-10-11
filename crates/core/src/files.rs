@@ -2179,9 +2179,11 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
     if before != after {
         return Ok(None);
     }
-    // Asked again of the bytes themselves, which is what a file that
-    // grew between the stat and the read answers with; the stats would
-    // disagree too, so this is the belt to that brace.
+    // Asked again of the bytes themselves. A file that grew between the
+    // stats has already been sent back for another try above, so with
+    // the stats agreeing on a size within the limit, only a reader that
+    // returned more than the stat said reaches this, as the platform
+    // reader's one byte past the limit does.
     if bytes.len() > FILE_SIZE_LIMIT {
         return Err(OpenRefusal::TooLarge {
             limit: FILE_SIZE_LIMIT,

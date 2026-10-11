@@ -251,7 +251,11 @@ impl KeyPackageKeeper {
 /// which the spent standing one makes the pump owe at once. The payload
 /// is whatever the proposal carried, and nothing checks the proposer
 /// before the try, so any holder of the channel key can impose that
-/// cost at will.
+/// cost at will. A standing package already spent refuses without a
+/// try, so the pending one is tried even when no attach carrying it
+/// ever reached the relay and no proposer could have sealed to it.
+/// `is_published` cannot tell that try from the useful one: an
+/// acceptance lost on the way back leaves the same unpublished mark.
 pub fn open_proposal_entropy(
     standing: &mut KeyPackageKeeper,
     pending: &mut Option<KeyPackageKeeper>,

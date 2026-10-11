@@ -535,6 +535,13 @@ fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
             let Some(engine) = guard.sync.engine.as_mut() else {
                 return serde_json::json!({ "ok": false, "reason": "not_attached" });
             };
+            // The pending package when one waits, which a re-attach
+            // normally has. Not always: `ensure_engine` has let the lock
+            // go, and a pump turn in between may have adopted the pending
+            // package by opening a proposal with it, which spends it. The
+            // standing one sent then is spent, and the relay may name it
+            // for a turn; the pump owes the relay a fresh package for it
+            // (`package_needs_republish`) once that ballot settles.
             let sent = engine
                 .pending_packages
                 .as_ref()

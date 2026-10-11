@@ -1048,13 +1048,15 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The selection Edit → Seal Selected Content and the context
         /// menu row would seal: non-empty, on an editable page rather
-        /// than a file, and not mid-composition. Nil otherwise. The
+        /// than a file, where the model has a seal target (no file and
+        /// no ledger showing), and not mid-composition. Nil otherwise. The
         /// chord is wider (it takes the current line when nothing is
         /// selected); the menus name a selection and offer only that.
         func sealableSelection() -> NSRange? {
             guard let textView, let storage = textView.textStorage,
                   let sheet = currentSheet, !sheet.isFileID,
-                  textView.isEditable, !textView.hasMarkedText()
+                  textView.isEditable, !textView.hasMarkedText(),
+                  model.sealTarget != nil
             else { return nil }
             let selection = textView.selectedRange()
             guard selection.location != NSNotFound, selection.length > 0,
