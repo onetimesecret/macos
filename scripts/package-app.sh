@@ -305,6 +305,7 @@ if [[ "$CONFIG" == "release" ]]; then
   # symbol every shape exports has to be visible before the absence of
   # a seam means anything.
   EXPORTS_FILE="$(mktemp -t companion-exports)"
+  TEMP_FILES+=("$EXPORTS_FILE")
   if ! nm -gU "$BIN" >"$EXPORTS_FILE"; then
     echo "nm could not inspect $BIN; refusing to package an unchecked release." >&2
     rm -f "$EXPORTS_FILE"
@@ -432,6 +433,7 @@ reserve_app_store_build_number() { # <counter file> [explicit number]
   fi
   if ((next > last)); then
     staged="$(mktemp "$counter.XXXXXX")"
+    TEMP_FILES+=("$staged")
     printf '%s\n' "$next" > "$staged"
     mv -f "$staged" "$counter"
   fi
@@ -607,6 +609,7 @@ if ((APP_STORE_MODE)); then
   fi
 
   SIGNED_ENTITLEMENTS="$(mktemp -t onetimepad-signed-entitlements)"
+  TEMP_FILES+=("$SIGNED_ENTITLEMENTS")
   if ! codesign -d --entitlements - --xml "$APP" > "$SIGNED_ENTITLEMENTS" 2>/dev/null; then
     rm -f "$SIGNED_ENTITLEMENTS"
     echo "could not read entitlements from the signed app" >&2

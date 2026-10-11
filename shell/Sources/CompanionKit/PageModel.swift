@@ -5508,8 +5508,9 @@ public final class PageModel: ObservableObject {
         return chip
     }
 
-    /// The page the three seal routes write into, or nil while nothing
-    /// may be sealed: the ledger showing, or a file.
+    /// The page the three seal routes write into, or nil while a file
+    /// shows. The ledger is not model state; the editor refuses a seal
+    /// there itself.
     ///
     /// Not `selectedPageID` on its own. The selection names a slot, and
     /// `selectFile` deliberately leaves it on the slot the person left,

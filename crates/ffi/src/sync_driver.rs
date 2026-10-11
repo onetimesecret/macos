@@ -643,7 +643,12 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
         return Err("keychain");
     };
     if let Some(engine) = guard.sync.engine.as_mut() {
-        // Re-attach: fresh package, standing session and chain.
+        // Re-attach: fresh package, standing session and chain. The
+        // assignment is destructive: the private half of the package
+        // the relay's roster names goes here, before the attach is
+        // sent, so until one lands the device opens no proposal. The
+        // pump's republish (`package_needs_republish`) is what closes
+        // that window after an attach that fails.
         engine.packages = packages;
         return Ok(());
     }
@@ -1779,7 +1784,9 @@ fn advance_pairing(
                         joined = true;
                         PairingStep::Done
                     } else {
-                        PairingStep::Failed("grant")
+                        // The grant verified; the Keychain said no, as
+                        // the granter's side reports it.
+                        PairingStep::Failed("keychain")
                     }
                 }
             }

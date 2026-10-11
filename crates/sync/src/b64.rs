@@ -55,7 +55,7 @@ pub fn decode(input: &str) -> Option<Vec<u8>> {
     // exactly four: a lone trailing character is no byte at all, and
     // padding after a whole group, short of four or past it, is none
     // an encoder wrote.
-    if tail == 1 || (pad > 0 && tail + pad != 4) {
+    if tail == 1 || (pad > 0 && (tail == 0 || tail + pad != 4)) {
         return None;
     }
     let mut out = Vec::with_capacity(trimmed.len() * 3 / 4);
@@ -137,6 +137,8 @@ mod tests {
         // takes.
         assert!(decode("=").is_none());
         assert!(decode("==").is_none());
+        assert!(decode("====").is_none());
+        assert!(decode("Zm9v====").is_none());
         assert!(decode("Zm9v=").is_none());
         assert!(decode("Zm8==").is_none());
         assert!(decode("Zg=").is_none());

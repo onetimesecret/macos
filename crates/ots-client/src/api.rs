@@ -15,7 +15,9 @@ struct ConcealEnvelope<'a> {
 }
 
 /// A writer that keeps only the count, for sizing a serialization
-/// before the one buffer it will land in is allocated.
+/// before the one buffer it will land in is allocated. The count holds
+/// only while serializing the payload twice gives the same bytes, so
+/// no field with an unordered map may join `ConcealPayload`.
 struct ByteCounter(usize);
 
 impl std::io::Write for ByteCounter {

@@ -25,7 +25,11 @@ use zeroize::Zeroize;
 /// per locked page, and `mlock` runs while it is held, so locking or
 /// dropping a buffer costs in proportion to its pages and waits on any
 /// other in progress. Locked buffers are text chips, a page or two
-/// each; images take [`SecretBuffer::new_unlocked`].
+/// each; images take [`SecretBuffer::new_unlocked`]. The lock covers a
+/// vector's whole capacity, spare bytes included, since those are wiped
+/// too; a vector handed in with slack wires that much more. A buffer
+/// leaked rather than dropped keeps its pages counted and locked for
+/// the life of the process.
 ///
 /// It deliberately implements **none** of `Clone`, `Copy`, `Debug`,
 /// `Display`, `Serialize`, or `Deserialize`: the buffer cannot be
@@ -154,9 +158,12 @@ fn page_size() -> usize {
     })
 }
 
-/// The numbers of the pages a non-empty address range touches.
+/// The numbers of the pages an address range touches; none for an
+/// empty one.
 fn pages(range: &Range<usize>) -> Range<usize> {
-    debug_assert!(!range.is_empty(), "an empty range touches no page");
+    if range.is_empty() {
+        return 0..0;
+    }
     let page = page_size();
     range.start / page..(range.end - 1) / page + 1
 }
@@ -191,6 +198,9 @@ fn unlock_pages(range: Range<usize>) {
     for page in pages(&range) {
         match counts.get_mut(&page) {
             Some(count) if *count > 1 => *count -= 1,
+            // The last buffer on the page. A page another locked buffer
+            // still touched would be counted above one, so this arm
+            // never unlocks a page anyone else holds.
             counted => {
                 debug_assert!(counted.is_some(), "unlocking a page never counted");
                 counts.remove(&page);
