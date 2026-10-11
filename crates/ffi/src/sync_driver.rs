@@ -597,6 +597,16 @@ pub(crate) fn detach(handle: &CompanionHandle) -> bool {
     true
 }
 
+/// Whether the engine's key package is spent with no ballot left to
+/// account for it: the device opened its entry on a ballot that has
+/// since committed or been abandoned, and the relay's roster still
+/// names the package that can no longer be opened. A re-attach mints
+/// and publishes a fresh one. Not while a ballot is in flight: the
+/// package was spent on that ballot, and its outcome decides.
+fn package_needs_republish(engine: &EngineState) -> bool {
+    engine.packages.is_spent() && !engine.session.ballot_in_flight()
+}
+
 /// Build the engine if none stands. Requires configuration and a
 /// sign-in; mints what pairing has not delivered — the founder path.
 fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
@@ -1181,8 +1191,24 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
 
     // A committed ceremony spent the one-shot key package (on the
     // follower side) — republish a fresh one so the next proposal can
-    // reach this device.
-    if committed {
+    // reach this device. So did a ballot this device opened its entry
+    // on and then abandoned with the rest of the room: nothing else
+    // schedules an attach after an abandonment, and without one the
+    // next proposal would be sealed to the spent package from the
+    // relay's roster, be refused here in silence, abandon again at
+    // the patience, and so on at every sweep, with every status field
+    // reading healthy while the channel could not rotate.
+    let spent = {
+        let Ok(guard) = handle.inner.lock() else {
+            return pump_result(handle, Some("poisoned"), &events);
+        };
+        guard
+            .sync
+            .engine
+            .as_ref()
+            .is_some_and(package_needs_republish)
+    };
+    if committed || spent {
         let _ = attach(handle);
     }
 
@@ -1713,13 +1739,21 @@ fn advance_pairing(
         }
         (PairingStep::JoinerWaitGrant { settled }, MailboxMessage::Grant(grant)) => {
             match settled.receive(&grant) {
-                Some(secret) if pairing::store_channel_secret(credentials, &secret) => {
-                    let _ = pairing::record_peer(
+                // The peer is recorded before the secret lands, and a
+                // record the store refuses fails the step. A secret
+                // stored beside no record would attach this device to
+                // the channel while it treated the device that granted
+                // the secret as a stranger: sealed to by no ceremony,
+                // its terminal markers refused, listed as unverified,
+                // with the shell reading "paired" all the while.
+                Some(secret)
+                    if pairing::record_peer(
                         credentials,
                         settled.peer_identity(),
                         "",
                         wall_now_ms(),
-                    );
+                    ) && pairing::store_channel_secret(credentials, &secret) =>
+                {
                     joined = true;
                     PairingStep::Done
                 }
@@ -1752,8 +1786,15 @@ fn maybe_grant(
     let Some(grant) = settled.grant(&secret) else {
         return PairingStep::Failed("keychain");
     };
+    // Recorded before the grant is queued, and a record the store
+    // refuses fails the step as the secret the store refused did two
+    // lines up: a grant sent to a device this one then does not
+    // trust would hand it the channel and keep it out of every
+    // ceremony and every terminal marker afterwards.
+    if !pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms()) {
+        return PairingStep::Failed("keychain");
+    }
     outgoing.push(MailboxMessage::Grant(grant).encode());
-    let _ = pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms());
     PairingStep::Done
 }
 
@@ -2045,6 +2086,24 @@ mod tests {
             let mut answer = String::new();
             let _ = stream.read_to_string(&mut answer);
         });
+    }
+
+    #[test]
+    fn a_spent_package_with_no_ballot_in_flight_is_owed_a_fresh_attach() {
+        let credentials = InMemoryCredentialStore::default();
+        let mut engine = attached_engine(&credentials);
+        assert!(
+            !package_needs_republish(&engine),
+            "a fresh mint owes nothing"
+        );
+        // The device opened its entry on a ballot, and the ballot has
+        // since been abandoned: no scope, a spent package.
+        assert!(engine.packages.open_entropy(&[0u8; 64]).is_none());
+        assert!(!engine.session.ballot_in_flight());
+        assert!(
+            package_needs_republish(&engine),
+            "the relay's roster names a package nobody can open"
+        );
     }
 
     #[test]

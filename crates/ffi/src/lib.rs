@@ -2197,7 +2197,10 @@ pub unsafe extern "C" fn companion_persist_restore(
     if let Some(dir) = persist::containing_dir(Path::new(path)) {
         persist::sweep_stranded_temps(dir);
     }
-    let Ok(file) = std::fs::read(path) else {
+    // Read the way the erase path opens: a FIFO planted at the name
+    // fails rather than parking this call, and the handle mutex with
+    // it, until a writer that never comes (see `persist::erase_state`).
+    let Ok(file) = files::read_regular_file(Path::new(path)) else {
         return false;
     };
     // The key is loaded only for a file whose envelope this build reads,
@@ -2540,7 +2543,7 @@ pub unsafe extern "C" fn companion_ledger_restore(
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
     };
-    let Ok(file) = std::fs::read(path) else {
+    let Ok(file) = files::read_regular_file(Path::new(path)) else {
         return false;
     };
     let Ok(mut guard) = handle.inner.lock() else {
@@ -2720,7 +2723,7 @@ pub unsafe extern "C" fn companion_connection_configure(
     let Some(json) = (unsafe { cstr(json) }) else {
         return false;
     };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
         return false;
     };
     let Some(server_url) = value.get("server_url").and_then(serde_json::Value::as_str) else {
@@ -2745,13 +2748,22 @@ pub unsafe extern "C" fn companion_connection_configure(
         share_domain: field("share_domain"),
         extid: field("extid"),
     });
-    match value.get("token").and_then(serde_json::Value::as_str) {
-        Some("") => guard.credentials.delete(TOKEN_ACCOUNT).is_ok(),
-        Some(token) => guard
-            .credentials
-            .store(TOKEN_ACCOUNT, token.as_bytes())
-            .is_ok(),
-        None => true,
+    // The token is taken out of the parsed tree rather than copied out
+    // of it, so the tree drops holding null where the token was and
+    // the one copy is the zeroizing one.
+    match value.get_mut("token").map(serde_json::Value::take) {
+        Some(serde_json::Value::String(token)) => {
+            let token = Zeroizing::new(token);
+            if token.is_empty() {
+                guard.credentials.delete(TOKEN_ACCOUNT).is_ok()
+            } else {
+                guard
+                    .credentials
+                    .store(TOKEN_ACCOUNT, token.as_bytes())
+                    .is_ok()
+            }
+        }
+        _ => true,
     }
 }
 
@@ -3172,12 +3184,15 @@ pub unsafe extern "C" fn companion_sync_signin_begin(handle: *mut CompanionHandl
 /// grant; the pad never waits on this. Returns `{"ok": true}` or
 /// `{"ok": false, "reason"}` with §5's tokens: `abandoned`,
 /// `state_mismatch`, `no_code`, `unreachable`, `refused`,
-/// `no_ceremony`, `keychain`. Every failure leaves nothing stored;
-/// retry is a fresh begin. `abandoned` covers a browser that never
-/// returned and a user who gave up, including one who gave up before
-/// this call ever took the ceremony; `no_ceremony` is left for a
-/// finish nobody began, which is a caller out of order rather than
-/// anything a user did. Free with [`companion_string_free`].
+/// `no_ceremony`, `keychain`, `not_configured`. Every failure leaves
+/// nothing stored; retry is a fresh begin. `abandoned` covers a
+/// browser that never returned and a user who gave up, including one
+/// who gave up before this call ever took the ceremony; `no_ceremony`
+/// is left for a finish nobody began, which is a caller out of order
+/// rather than anything a user did; `not_configured` is a finish with
+/// no keeper standing to take the grant, which is a ceremony begun
+/// while the sync engine already held a sign-in. Free with
+/// [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -3253,6 +3268,15 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
     // user back in behind their own gesture. Nothing is persisted.
     if abandoned.load(Ordering::Relaxed) {
         return sync_refusal("abandoned");
+    }
+    // The keeper has to be standing before anything is persisted. It
+    // is not while an engine stands, because building the engine moves
+    // it into the session, so a finish for a ceremony begun while
+    // attached has nowhere to put the grant. Refusing after the store
+    // had taken the refresh token would leave a token resting in the
+    // keychain behind a failure that promised nothing was stored.
+    if guard.sync.keeper.is_none() {
+        return sync_refusal("not_configured");
     }
     // Persist first, absorb second: a keeper holding tokens the store
     // refused would sign in for one session and silently sign out at

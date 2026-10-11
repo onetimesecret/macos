@@ -170,7 +170,7 @@ impl FileIo for RealFileIo<'_> {
 /// `O_NOFOLLOW` is deliberately not set: symlinks are followed on
 /// purpose, once, at open, and the path held from then on is the
 /// resolved one.
-fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+pub(crate) fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
     use std::io::Read as _;
 
     let mut file = open_regular_file(path)?;
@@ -1452,7 +1452,10 @@ pub unsafe extern "C" fn companion_drafts_restore(
         return false;
     };
     let path = Path::new(path);
-    let Ok(file) = std::fs::read(path) else {
+    // The same defended read a person's file gets: a FIFO planted at
+    // the name fails rather than parking this call, and the handle
+    // mutex with it, until a writer that never comes.
+    let Ok(file) = read_regular_file(path) else {
         return false;
     };
     if !file.starts_with(DRAFTS_MAGIC) {

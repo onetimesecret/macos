@@ -1016,10 +1016,13 @@ char *companion_sync_signin_begin(CompanionHandle *handle);
  * only at the edges; the pad never waits on this. Returns {"ok": true}
  * or {"ok": false, "reason"} with the section-5 tokens: "abandoned",
  * "state_mismatch", "no_code", "unreachable", "refused",
- * "no_ceremony", "busy", "keychain". Every failure leaves nothing
- * stored; retry is a fresh begin. A call made while another finish is
- * already out on the browser answers "busy" and leaves that ceremony
- * and the gate exactly as they were. "abandoned" also covers a
+ * "no_ceremony", "busy", "keychain", "not_configured". Every failure
+ * leaves nothing stored; retry is a fresh begin. A call made while
+ * another finish is already out on the browser answers "busy" and
+ * leaves that ceremony and the gate exactly as they were; one made for
+ * a ceremony begun while the sync engine already held a sign-in
+ * answers "not_configured", there being no keeper standing to take the
+ * grant. "abandoned" also covers a
  * ceremony ended by companion_sync_signin_cancel or
  * companion_sync_signout while this call was out, including one ended
  * after the redirect landed: the grant is dropped rather than

@@ -188,6 +188,15 @@ impl KeyPackageKeeper {
         &self.package
     }
 
+    /// Whether the private half has been spent. A spent package is one
+    /// no proposer can reach this device through, so the device owes
+    /// the relay a fresh one, whether the ballot that spent it
+    /// committed or was abandoned.
+    #[must_use]
+    pub fn is_spent(&self) -> bool {
+        self.private.is_none()
+    }
+
     /// Open entropy a proposer sealed to this package. Spends the
     /// private half: `None` afterwards until a fresh mint, and `None`
     /// for a payload not sealed to this package.
@@ -1115,10 +1124,24 @@ impl SyncSession {
         Some(self.api.fetch_pairing_request(since, &auth))
     }
 
+    /// Whether a ballot is in flight: proposed or joined, and neither
+    /// confirmed nor abandoned yet.
+    #[must_use]
+    pub fn ballot_in_flight(&self) -> bool {
+        self.ballot_scope.is_some()
+    }
+
     /// Abandon a ballot that outlived §5's patience: every device
     /// stays on the old GOP, and the next transition proposes again.
     /// Call on the runloop's own clock; a no-op while no ballot is in
     /// flight or the window has not lapsed.
+    ///
+    /// A device that opened its entry on the abandoned ballot has
+    /// spent its one-shot key package doing so, and nothing about the
+    /// abandonment mints another: the driver's pump asks
+    /// [`KeyPackageKeeper::is_spent`] once no ballot is in flight and
+    /// re-attaches, which is what publishes the fresh package the next
+    /// proposal has to be sealed to.
     pub fn tick(&mut self, now_ms: u64) {
         let Some((page, opened_ms)) = self.ballot_scope else {
             return;
@@ -1279,6 +1302,21 @@ mod tests {
                 .into_bytes(),
             }
         }
+    }
+
+    #[test]
+    fn opening_entropy_spends_the_package_whether_or_not_it_opens() {
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+        let mut packages = KeyPackageKeeper::mint(pkcs8.as_ref()).unwrap();
+        assert!(!packages.is_spent(), "a fresh mint is reachable");
+        // A payload nobody sealed to this package: refused, and the
+        // one-shot key is spent all the same, because ring's X25519
+        // agreement consumes it.
+        assert!(packages.open_entropy(&[0u8; 64]).is_none());
+        assert!(
+            packages.is_spent(),
+            "a spent package is owed a fresh mint, however the ballot ends"
+        );
     }
 
     #[test]
