@@ -1,19 +1,5 @@
-//! Conceal: the exit ramp, behind the seam (docs/spec/04).
-//!
-//! The one place an explicit user action sends content out. Sealed
-//! bytes travel **core → `ots-client` → transport** inside this module;
-//! the shell hands over ids and options, and gets back non-secret JSON.
-//! On success the share link lands on the clipboard and only the
-//! receipt identifier stays on the chip (doc 03 §5 — no link, no
-//! history).
-//!
-//! This half is sans-network: it builds and interprets the conceal
-//! call through any [`Transport`], so tests drive it with a mock and CI
-//! never opens a socket. The extern fns in `lib.rs` pair it with the
-//! handle's [`Wire`]: `UreqTransport`, the one real transport, in every
-//! shipping build, and under `test-util` optionally a [`StubWire`] the
-//! Swift suite installs so a conceal can be driven to the wire and
-//! read back without a socket.
+//! Conceal, the one user-initiated send (docs/spec/04). Sans-network:
+//! `lib.rs` pairs it with the handle's [`Wire`].
 
 use companion_transport::UreqTransport;
 use ots_client::{
@@ -22,24 +8,17 @@ use ots_client::{
 };
 use zeroize::Zeroizing;
 
-/// Where a conceal goes: the conceal server plus the Basic-auth
-/// username half. Non-secret — the API token never sits here; it
-/// lives in the credential store and is loaded per call.
+/// Where a conceal goes. Non-secret; the token is loaded per call.
 #[derive(Clone)]
 pub(crate) struct Connection {
-    /// Server base URL, `https://` only (the network boundary).
     pub server_url: String,
-    /// Domain the share link should live on; empty means the server's
-    /// host.
+    /// Empty means the server's host.
     pub share_domain: String,
-    /// Organization `extid` — the Basic-auth username. Empty means
-    /// guest-only.
+    /// The Basic-auth username. Empty means guest-only.
     pub extid: String,
 }
 
 impl Connection {
-    /// The share domain a payload should carry: the configured one, or
-    /// the server's own host when none is set.
     fn effective_share_domain(&self) -> String {
         if !self.share_domain.is_empty() {
             return self.share_domain.clone();
@@ -51,9 +30,7 @@ impl Connection {
     }
 }
 
-/// Options the confirmation step gathers. All optional: an unnamed TTL
-/// is [`LINK_DEFAULT_TTL_SECS`], the link's own seven days (ADR-0011
-/// section 5); the page's remaining time is not an input (ADR-0026).
+/// Options the confirmation step gathers.
 pub(crate) struct ConcealOpts {
     pub ttl_secs: Option<u64>,
     pub passphrase: Option<Zeroizing<String>>,
@@ -61,8 +38,7 @@ pub(crate) struct ConcealOpts {
 }
 
 impl ConcealOpts {
-    /// Parse the options JSON. `None` (or `{}`) is a valid, all-default
-    /// options object; malformed JSON is a refusal, not a guess.
+    /// `None` or `{}` is all defaults; malformed JSON is `None`.
     pub fn parse(json: Option<&str>) -> Option<Self> {
         let Some(json) = json else {
             return Some(Self {
@@ -75,12 +51,9 @@ impl ConcealOpts {
         if !value.is_object() {
             return None;
         }
-        // The passphrase is taken out of the parsed tree rather than
-        // copied out of it, so the tree drops holding null where the
-        // passphrase was and our one copy is the zeroizing one. A
-        // passphrase the parser had to unescape (one holding a quote, a
-        // backslash or a `\u` escape) also passed through serde_json's
-        // own scratch buffer, which is not ours to wipe.
+        // Taken, not copied, so the only copy is the zeroizing one.
+        // An unescaped passphrase also passed through serde_json's
+        // scratch buffer, which we cannot wipe.
         let passphrase = match value.get_mut("passphrase").map(serde_json::Value::take) {
             Some(serde_json::Value::String(passphrase)) if !passphrase.is_empty() => {
                 Some(Zeroizing::new(passphrase))
@@ -99,30 +72,19 @@ impl ConcealOpts {
     }
 }
 
-/// The link's own default TTL when the caller names none: exactly seven
-/// days (ADR-0011 section 5). A link's lifetime is chosen as a link's
-/// lifetime; the page it was cut from is not an input (ADR-0026), so no
-/// page clock and no page ladder is consulted here. If the server ever
-/// reports an allowed-TTL set that excludes this value, the selection
-/// rule against that list is a separate decision (ADR-0011 eject
-/// trigger), not a fallback to the page ladder.
+/// Seven days, independent of the page (ADR-0011 §5, ADR-0026).
 pub(crate) const LINK_DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
-/// The outcome the seam reports: the share link (for the clipboard,
-/// core-side) and the receipt identifier (the only thing retained).
+/// The link goes to the clipboard; only `receipt_id` is retained.
 #[derive(Debug)]
 pub(crate) struct Concealed {
     pub link: String,
     pub receipt_id: String,
 }
 
-/// One conceal call: authenticated (Basic: `extid` + token) when a
-/// token is present and an `extid` is configured, the guest route
-/// otherwise. The payload is consumed and zeroized either way; on
-/// failure nothing has left the sheet.
-// By-value on purpose: the payload (and token) are consumed here and
-// zeroize on drop when the call returns, success or failure — a
-// reference would leave the caller holding live sealed bytes longer.
+/// Authenticated when both a token and an `extid` are present, guest
+/// otherwise.
+// By value so the payload and token are wiped when this returns.
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn conceal<T: Transport>(
     conn: &Connection,
@@ -154,8 +116,6 @@ pub(crate) fn conceal<T: Transport>(
             link: share_link(conn.server_url.as_str(), &data),
             receipt_id: data.receipt.identifier,
         }),
-        // Error strings carry no secret material: transport errors are
-        // connection-level, API errors are the server's own message.
         Err(Error::Transport(e)) => Err(format!("could not reach the server: {e}")),
         Err(Error::Api { status, message }) => {
             Err(format!("the server refused ({status}): {message}"))
@@ -164,25 +124,16 @@ pub(crate) fn conceal<T: Transport>(
     }
 }
 
-/// The transport a handle sends on. One per handle, built with it:
-/// the real transport is cheap to clone (an `Arc`-shared agent), and
-/// the transport crate asks for one agent reused over building a fresh
-/// one per call. In a shipping build this is `UreqTransport` and
-/// nothing else; the `Stub` arm exists only under `test-util`
-/// (ADR-0018), installed by `companion_test_wire_stub`, so the release
-/// artifact carries one arm and the match below is a plain call.
+/// The transport a handle sends on, built once per handle. `Stub`
+/// exists only under `test-util` (ADR-0018).
 #[derive(Clone)]
 pub(crate) enum Wire {
-    /// The one real transport: TLS-only, the network boundary of doc 05.
     Real(UreqTransport),
-    /// A canned answer and a redacted record of what was asked, for
-    /// the shell suite. Never constructed outside the seam.
     #[cfg(feature = "test-util")]
     Stub(std::sync::Arc<StubWire>),
 }
 
 impl Wire {
-    /// A handle's wire as every shipping constructor builds it.
     pub(crate) fn real() -> Self {
         Self::Real(UreqTransport::new())
     }
@@ -198,29 +149,16 @@ impl Transport for Wire {
     }
 }
 
-/// A transport that answers every request from one canned response
-/// and keeps, per request, only a redacted summary: the method, the
-/// URL, whether an `Authorization` header rode along, and the
-/// non-secret fields of a conceal body. The body itself is read once
-/// for those fields and dropped, zeroizing, before `send` returns, so
-/// the record holds no payload and no passphrase and can cross the
-/// seam like any other non-secret JSON. A test seam, compiled only
-/// under `test-util` (ADR-0018).
+/// Answers every request with one canned response and keeps only a
+/// redacted summary of each, with no payload or passphrase.
 #[cfg(feature = "test-util")]
 pub(crate) struct StubWire {
-    /// `Ok(status, body)` for an HTTP answer of any status; `Err` for
-    /// a delivery failure before any status exists, the way an outage
-    /// looks to the client.
+    /// `Err` is an outage: no status at all.
     answer: Result<(u16, Vec<u8>), String>,
-    /// Every request seen, oldest first.
     seen: std::sync::Mutex<Vec<WireRecord>>,
 }
 
-/// What [`StubWire`] keeps of one request. Rendered as JSON by
-/// [`StubWire::last_json`]:
-/// `{"method", "url", "authorized", "ttl", "share_domain",
-///   "has_passphrase", "recipient"}`, the last four null or false when
-/// the body carried no conceal payload.
+/// What [`StubWire`] keeps of one request.
 #[cfg(feature = "test-util")]
 #[derive(Clone, Debug)]
 pub(crate) struct WireRecord {
@@ -235,8 +173,7 @@ pub(crate) struct WireRecord {
 
 #[cfg(feature = "test-util")]
 impl StubWire {
-    /// A stub answering with `status` and `body`. A `status` of zero
-    /// means no answer at all: every send fails as an outage.
+    /// A `status` of zero makes every send an outage.
     pub(crate) fn answering(status: u16, body: &str) -> Self {
         let answer = if status == 0 {
             Err("stubbed outage".to_owned())
@@ -249,8 +186,6 @@ impl StubWire {
         }
     }
 
-    /// The most recent request's record as JSON, or `None` before the
-    /// first send.
     pub(crate) fn last_json(&self) -> Option<String> {
         let seen = self
             .seen
@@ -270,9 +205,7 @@ impl StubWire {
         })
     }
 
-    /// The redaction: the four non-secret fields of a conceal body,
-    /// read by name, and nothing else of it. Anything unparseable is
-    /// simply an absence, never an echo.
+    /// Reads four non-secret conceal fields by name; nothing else.
     fn summarize(request: &HttpRequest) -> WireRecord {
         let body = request
             .body
@@ -321,7 +254,6 @@ mod tests {
 
     use super::*;
 
-    /// Captures the one request and returns a canned response.
     struct MockTransport {
         seen: RefCell<Option<HttpRequest>>,
         response: RefCell<Option<Result<HttpResponse, TransportError>>>,
@@ -407,6 +339,27 @@ mod tests {
     }
 
     #[test]
+    fn guest_route_when_a_token_has_no_extid() {
+        let transport = MockTransport::returning(200, OK_BODY);
+        let guest = Connection {
+            extid: String::new(),
+            ..conn()
+        };
+        conceal(
+            &guest,
+            Some(Zeroizing::new("tok".into())),
+            Zeroizing::new("p".into()),
+            &defaults(),
+            &transport,
+        )
+        .unwrap();
+        let seen = transport.seen.borrow();
+        let req = seen.as_ref().unwrap();
+        assert!(req.url.ends_with("/api/v3/guest/secret/conceal"));
+        assert!(req.header("Authorization").is_none());
+    }
+
+    #[test]
     fn payload_carries_ttl_and_derived_share_domain() {
         let transport = MockTransport::returning(200, OK_BODY);
         let opts = ConcealOpts::parse(Some(r#"{"ttl_secs": 3600}"#)).unwrap();
@@ -445,8 +398,6 @@ mod tests {
 
     #[test]
     fn ttl_defaults_to_seven_days_when_unnamed() {
-        // ADR-0011 section 5: the link default is a fixed seven days and
-        // takes no page clock as an input (ADR-0026).
         let transport = MockTransport::returning(200, OK_BODY);
         conceal(
             &conn(),

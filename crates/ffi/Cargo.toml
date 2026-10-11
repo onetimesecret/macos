@@ -9,27 +9,18 @@ repository.workspace = true
 rust-version.workspace = true
 
 [lib]
-# staticlib feeds the .xcframework (scripts/build-core.sh); cdylib lets
-# the seam be smoke-tested off macOS; rlib keeps `cargo test` natural.
+# staticlib: the .xcframework; cdylib: off-macOS smoke tests; rlib: tests.
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [lints]
 workspace = true
 
 [features]
-# Test-only surface, off by default and part of no umbrella feature
-# (ADR-0018): `companion_new_ephemeral` and any future seam of its
-# kind. The dev xcframework enables it (scripts/build-core.sh
-# --test-util) so the Swift suite can link the seams; the release
-# build omits it, and packaging fails if the symbol reaches the
-# artifact it ships.
+# Test seams only; never in a release build (ADR-0018).
 test-util = []
 
 [dependencies]
-# The one blob that has to cross the C ABI is the shell's file
-# bookmark, and it crosses as base64 in a C string because no byte
-# buffer has ever crossed this ABI (ADR-0028). Already in the workspace
-# lock by way of the transport stack: no new supply chain.
+# File bookmarks cross the C ABI as base64 strings.
 base64 = "0.22"
 companion-core = { path = "../core" }
 companion-credentials = { path = "../credentials" }
@@ -37,17 +28,11 @@ companion-pasteboard = { path = "../pasteboard" }
 companion-sync = { path = "../sync" }
 companion-transport = { path = "../transport" }
 ots-client = { path = "../ots-client" }
-# State-file encryption (ChaCha20-Poly1305, src/persist.rs). Already in
-# the tree via companion-transport → ureq → rustls: no new supply chain.
+# State-file encryption (src/persist.rs).
 ring = "0.17"
 serde_json = { workspace = true }
-# Named only to spell the `Pasteboard::write` signature the `Board`
-# backend delegates to; the bytes stay zeroizing end to end.
 zeroize = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The open flags the erase path refuses a planted symlink and a planted
-# FIFO with, spelled where their values belong rather than transcribed
-# (src/persist.rs). Already in the workspace lock by way of
-# companion-core, so this adds no new supply chain.
+# Open flags for the erase path (src/persist.rs).
 libc = "0.2"
