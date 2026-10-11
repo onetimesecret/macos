@@ -1022,7 +1022,10 @@ char *companion_sync_signin_begin(CompanionHandle *handle);
  * leaves that ceremony and the gate exactly as they were; one made for
  * a ceremony begun while the sync engine already held a sign-in
  * answers "not_configured", there being no keeper standing to take the
- * grant. "abandoned" also covers a
+ * grant. "Nothing stored" is this device's promise: by a
+ * "not_configured" finish the code has been redeemed, so the issuer
+ * holds a refresh token this device dropped, live until it expires.
+ * "abandoned" also covers a
  * ceremony ended by companion_sync_signin_cancel or
  * companion_sync_signout while this call was out, including one ended
  * after the redirect landed: the grant is dropped rather than

@@ -997,7 +997,10 @@ public final class SyncController: ObservableObject {
     /// outcome's reason is the coarser of the two: the core answers the
     /// second 401 on one attach with `signed_out`, which is exactly the
     /// case `.refused` exists to tell apart, so the gate decides and
-    /// the reason only fills in what the gate does not name.
+    /// the reason only fills in what the gate does not name. `busy` is
+    /// another attach already in flight and names no trouble at all,
+    /// so it reads as none even from a core whose gate this shell
+    /// cannot decode, and is retried rather than shown as "no server".
     public nonisolated static func settledTrouble(
         ok: Bool, reason: String?, gate: SyncGate?
     ) -> Trouble? {
@@ -1006,6 +1009,7 @@ public final class SyncController: ObservableObject {
             switch reason {
             case "signed_out": inferred = .signedOut
             case "unreachable": inferred = .unreachable
+            case "busy": inferred = nil
             default: inferred = .notConfigured
             }
         }

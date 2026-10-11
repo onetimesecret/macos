@@ -1919,10 +1919,13 @@ fn maybe_grant(
         return PairingStep::Failed("keychain");
     };
     // Recorded before the grant is queued, and a record the store
-    // refuses fails the step as the secret the store refused did two
-    // lines up: a grant sent to a device this one then does not
-    // trust would hand it the channel and keep it out of every
-    // ceremony and every terminal marker afterwards.
+    // refuses fails the step: a grant sent to a device this one then
+    // does not trust would hand it the channel and keep it out of
+    // every ceremony and every terminal marker afterwards. The
+    // failure can leave a residue. On an inviter with no channel
+    // secret yet, the one minted two lines up stays stored with no
+    // peer recorded; it is a channel of one and grants nothing, and
+    // the next ceremony reuses it.
     if !pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms()) {
         return PairingStep::Failed("keychain");
     }

@@ -256,6 +256,15 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertFalse(SyncController.attachRetries(after: .signedOut))
         XCTAssertFalse(SyncController.attachRetries(after: .refused))
         XCTAssertFalse(SyncController.attachRetries(after: .notConfigured))
+        // Another attach already in flight is no trouble, and is
+        // retried even when the core's gate cannot be decoded.
+        let busy = SyncController.settledTrouble(ok: false, reason: "busy", gate: nil)
+        XCTAssertNil(busy)
+        XCTAssertTrue(SyncController.attachRetries(after: busy))
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "busy", gate: .off),
+            .notConfigured
+        )
     }
 
     func testQuietAttachRefusalsBackOffToAFiveMinuteCeiling() {

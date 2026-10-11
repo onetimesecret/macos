@@ -251,7 +251,9 @@ impl FileConflict {
 /// `crates/ffi`, modelled on `write_private` but preserving the target
 /// file's mode rather than forcing 0600.
 pub trait FileIo {
-    /// Read the whole file.
+    /// Read the file. An implementation may stop one byte past
+    /// [`FILE_SIZE_LIMIT`] rather than read a larger file whole, so a
+    /// caller checks the length it gets back, as `read_once` does.
     ///
     /// # Errors
     /// Whatever the platform said about the read.
