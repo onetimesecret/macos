@@ -946,14 +946,17 @@ public final class SyncController: ObservableObject {
     ///
     /// An unreachable relay retries, as it always has. So does a
     /// refusal that settled to no trouble at all: the core refused the
-    /// attach for a reason the gate does not name (`keychain`, with the
-    /// keychain locked at that moment, or any reason this shell has no
-    /// word for) while the gate still reads ready. Left there, sync was
-    /// enabled, unattached, with no sentence standing and no timer
-    /// armed, and nothing started the pump until the switch was toggled
-    /// or the person signed out and in. A trouble the gate did name
-    /// (`signedOut`, `refused`, `notConfigured`) is not a condition a
-    /// timer clears, and is not retried.
+    /// attach for a reason the gate does not record (`keychain`, with
+    /// the keychain locked at that moment; `refused`, for a relay
+    /// answer other than a second 401, a `5xx` among them) while the
+    /// gate still reads ready. Left there, sync was enabled,
+    /// unattached, with no sentence standing and no timer armed, and
+    /// nothing started the pump until the switch was toggled or the
+    /// person signed out and in. The retry is on the same 30-second
+    /// clock as an unreachable relay, and like it has no cap; unlike
+    /// it, no sentence stands, as none did before. A trouble the gate
+    /// did name (`signedOut`, `refused`, `notConfigured`) is not a
+    /// condition a timer clears, and is not retried.
     public nonisolated static func attachRetries(after settled: Trouble?) -> Bool {
         settled == nil || settled == .unreachable
     }

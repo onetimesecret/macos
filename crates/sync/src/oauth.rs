@@ -154,13 +154,13 @@ impl AuthCeremony {
             return Err(SyncAuthError::StateMismatch);
         }
         let code = query_value(callback_query, "code").ok_or(SyncAuthError::NoCode)?;
-        let body = format!(
-            "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
-            *form_encode(&code),
-            *form_encode(&self.redirect_uri),
-            *form_encode(&self.client_id),
-            *form_encode(&self.verifier),
-        );
+        let body = form_body(&[
+            ("grant_type", "authorization_code"),
+            ("code", &code),
+            ("redirect_uri", &self.redirect_uri),
+            ("client_id", &self.client_id),
+            ("code_verifier", &self.verifier),
+        ]);
         Ok(token_request(&self.token_endpoint, body))
     }
 }
@@ -408,11 +408,11 @@ impl TokenKeeper {
     pub fn refresh_request(&mut self) -> Result<HttpRequest, SyncAuthError> {
         self.access = None;
         let refresh = self.refresh.as_ref().ok_or(SyncAuthError::SignedOut)?;
-        let body = format!(
-            "grant_type=refresh_token&refresh_token={}&client_id={}",
-            *form_encode(refresh),
-            *form_encode(&self.client_id),
-        );
+        let body = form_body(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh),
+            ("client_id", &self.client_id),
+        ]);
         Ok(token_request(&self.token_endpoint, body))
     }
 
@@ -464,7 +464,7 @@ impl TokenKeeper {
     }
 }
 
-fn token_request(endpoint: &str, body: String) -> HttpRequest {
+fn token_request(endpoint: &str, body: Zeroizing<Vec<u8>>) -> HttpRequest {
     HttpRequest {
         method: "POST",
         url: endpoint.into(),
@@ -472,8 +472,29 @@ fn token_request(endpoint: &str, body: String) -> HttpRequest {
             "Content-Type".into(),
             "application/x-www-form-urlencoded".into(),
         )],
-        body: Some(Zeroizing::new(body.into_bytes())),
+        body: Some(body),
     }
+}
+
+/// A form body of `pairs`, each value percent-encoded. Two of the
+/// values are the PKCE verifier and the refresh token, so the body is
+/// built in a zeroizing buffer sized to the worst case up front: it
+/// never grows, and no reallocation leaves an unwiped partial copy.
+fn form_body(pairs: &[(&str, &str)]) -> Zeroizing<Vec<u8>> {
+    let capacity = pairs
+        .iter()
+        .map(|(key, value)| key.len() + value.len() * 3 + 2)
+        .sum();
+    let mut body = Zeroizing::new(Vec::with_capacity(capacity));
+    for (key, value) in pairs {
+        if !body.is_empty() {
+            body.push(b'&');
+        }
+        body.extend_from_slice(key.as_bytes());
+        body.push(b'=');
+        body.extend_from_slice(form_encode(value).as_bytes());
+    }
+    body
 }
 
 /// Percent-encode for query/form components: unreserved characters
@@ -593,6 +614,28 @@ mod tests {
         // A malformed first value is a refusal, not a reason to read
         // a second pair with the same key.
         assert_eq!(query_value("state=%zz&state=good", "state"), None);
+    }
+
+    #[test]
+    fn a_form_body_is_built_in_the_buffer_it_starts_with() {
+        // Every byte of the token escaped: the worst case the up-front
+        // size must hold. A buffer that had grown would show a doubled
+        // capacity.
+        let body = form_body(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", "\u{e9} /"),
+        ]);
+        assert_eq!(
+            &body[..],
+            b"grant_type=refresh_token&refresh_token=%C3%A9%20%2F"
+        );
+        let worst = "grant_type".len()
+            + "refresh_token".len() * 3
+            + 2
+            + "refresh_token".len()
+            + "\u{e9} /".len() * 3
+            + 2;
+        assert_eq!(body.capacity(), worst);
     }
 
     #[test]

@@ -48,10 +48,13 @@ pub fn encode_url_nopad(input: &[u8]) -> String {
 /// refused, not guessed at.
 pub fn decode(input: &str) -> Option<Vec<u8>> {
     let trimmed = input.trim_end_matches('=');
+    let pad = input.len() - trimmed.len();
+    let tail = trimmed.len() % 4;
     // An encoder emits four characters per three bytes, two or three
-    // for a final one or two: a lone trailing character is no byte at
-    // all, and more than two pad characters pad nothing.
-    if trimmed.len() % 4 == 1 || input.len() - trimmed.len() > 2 {
+    // for a final one or two, and pads only that final group up to
+    // four: a lone trailing character is no byte at all, and padding
+    // after a whole group, or past four, pads nothing.
+    if tail == 1 || (pad > 0 && (tail == 0 || tail + pad > 4)) {
         return None;
     }
     let mut out = Vec::with_capacity(trimmed.len() * 3 / 4);
@@ -129,11 +132,19 @@ mod tests {
         // Padding past the two characters an encoder can need.
         assert!(decode("Zg=====").is_none());
         assert!(decode("Zm9v===").is_none());
+        // Padding with no group to finish, or more than finishing it
+        // takes.
+        assert!(decode("=").is_none());
+        assert!(decode("==").is_none());
+        assert!(decode("Zm9v=").is_none());
+        assert!(decode("Zm8==").is_none());
         // Non-zero leftover bits were already refused; still are.
         assert!(decode("Zh").is_none());
         assert!(decode("Zm9vB").is_none());
         // Optional padding stays optional.
         assert_eq!(decode("Zg").unwrap(), b"f");
         assert_eq!(decode("Zm8").unwrap(), b"fo");
+        assert_eq!(decode("Zg==").unwrap(), b"f");
+        assert_eq!(decode("Zm8=").unwrap(), b"fo");
     }
 }

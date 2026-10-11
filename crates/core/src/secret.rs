@@ -5,31 +5,23 @@
 //! adds page locking and makes accidental duplication a compile error.
 #![allow(unsafe_code)] // Page locking requires libc; every unsafe use below carries a SAFETY note.
 
-use std::alloc::{self, Layout};
-use std::ptr::NonNull;
-use std::sync::OnceLock;
+use std::collections::BTreeMap;
+use std::ops::Range;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use zeroize::Zeroize;
 
 /// Owns a heap allocation of plaintext bytes, locks its pages against
 /// swap, and zeroizes them on drop.
 ///
-/// The allocation is the buffer's alone: page-aligned and a whole
-/// number of pages long, so no two buffers ever share a page. That is
-/// what makes the lock a property of this buffer rather than of
-/// whatever else the allocator put beside it. `mlock` and `munlock`
-/// work on whole pages and do not count: unlocking one buffer's range
-/// unlocks every page it touches, and with ordinary allocations two
-/// short secrets routinely sit on one page, so dropping one would have
-/// left the other swappable while its `is_locked` still said otherwise.
-///
-/// The price is memory: every buffer costs at least one page, which is
-/// 16 KiB on Apple silicon, and every locked one wires that much. Text
-/// chips are the buffers locked (images take [`SecretBuffer::new_unlocked`]),
-/// and a lock the OS refuses under `RLIMIT_MEMLOCK` is reported by
-/// [`SecretBuffer::is_locked`] rather than failing the seal, so a pad
-/// holding more chips than the limit wires degrades to unlocked buffers
-/// that are still wiped on drop.
+/// `mlock` and `munlock` work on whole pages and do not count:
+/// unlocking one buffer's range unlocks every page it touches. Two
+/// short secrets routinely sit on one page, so a plain `munlock` on
+/// drop would leave the survivor swappable while its `is_locked` still
+/// said otherwise. The count the OS does not keep is kept here instead
+/// (`LOCKED_PAGES`): a page is unlocked only when the last locked
+/// buffer touching it goes, and buffers keep sharing pages, so a short
+/// chip costs its own bytes and not a page.
 ///
 /// It deliberately implements **none** of `Clone`, `Copy`, `Debug`,
 /// `Display`, `Serialize`, or `Deserialize`: the buffer cannot be
@@ -38,35 +30,19 @@ use zeroize::Zeroize;
 /// plaintext never crossing an FFI seam — is enforced where the seam is
 /// built.
 pub struct SecretBuffer {
-    /// The allocation: page-aligned, `layout.size()` bytes long, or
-    /// dangling for an empty buffer, which owns no allocation.
-    ptr: NonNull<u8>,
-    /// How many of those bytes are the secret. The rest of the last
-    /// page is zero and stays zero.
-    len: usize,
-    /// The allocation's layout, `None` for an empty buffer.
-    layout: Option<Layout>,
+    bytes: Vec<u8>,
     locked: bool,
 }
 
-// SAFETY: the buffer is the sole owner of its allocation, hands out
-// only shared slices of it (`expose`), and frees it exactly once in
-// `Drop`. Moving it to another thread moves the ownership with the
-// pointer; sharing it shares only reads.
-unsafe impl Send for SecretBuffer {}
-unsafe impl Sync for SecretBuffer {}
-
 impl SecretBuffer {
-    /// Take ownership of `bytes`, copying them into a page-aligned
-    /// allocation of their own and locking its pages against swap.
-    /// The caller's vector is wiped on the way. The allocation is never
-    /// grown or shrunk afterwards, so the locked range stays valid for
-    /// the buffer's whole life.
+    /// Take ownership of `bytes`, locking the pages of its whole
+    /// allocation against swap. The allocation is never grown or shrunk
+    /// afterwards, so the locked range stays valid for the buffer's
+    /// whole life.
     #[must_use]
     pub fn new(bytes: Vec<u8>) -> Self {
-        let mut buffer = Self::copied(bytes);
-        buffer.locked = buffer.lock_pages();
-        buffer
+        let locked = !bytes.is_empty() && lock_pages(allocation(&bytes));
+        Self { bytes, locked }
     }
 
     /// Build a buffer from UTF-8 text. The caller's `&str` is copied into
@@ -81,38 +57,11 @@ impl SecretBuffer {
     /// documented mlock exclusion for large image payloads (doc 05):
     /// wiring megabytes against swap routinely exceeds `RLIMIT_MEMLOCK`
     /// and starves the small text buffers that need the lock most. The
-    /// zeroize-on-drop guarantee is unchanged, and so is the allocation
-    /// discipline: the bytes still live in pages of their own.
+    /// zeroize-on-drop guarantee is unchanged.
     #[must_use]
     pub fn new_unlocked(bytes: Vec<u8>) -> Self {
-        Self::copied(bytes)
-    }
-
-    /// Copy `bytes` into an allocation of its own and wipe the vector
-    /// they came in. Locks nothing.
-    fn copied(mut bytes: Vec<u8>) -> Self {
-        let len = bytes.len();
-        let layout = (len > 0).then(|| page_layout(len));
-        let ptr = match layout {
-            None => NonNull::dangling(),
-            Some(layout) => {
-                // SAFETY: the layout has a non-zero size.
-                let raw = unsafe { alloc::alloc_zeroed(layout) };
-                let Some(ptr) = NonNull::new(raw) else {
-                    alloc::handle_alloc_error(layout)
-                };
-                // SAFETY: the source is valid for `len` bytes, the
-                // destination was just allocated with at least `len`
-                // bytes, and the two cannot overlap.
-                unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.as_ptr(), len) };
-                ptr
-            }
-        };
-        bytes.zeroize();
         Self {
-            ptr,
-            len,
-            layout,
+            bytes,
             locked: false,
         }
     }
@@ -120,13 +69,13 @@ impl SecretBuffer {
     /// Number of secret bytes held.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.len
+        self.bytes.len()
     }
 
     /// Whether the buffer holds no bytes.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.bytes.is_empty()
     }
 
     /// Whether the OS honoured the page lock. `false` is **not** an
@@ -143,32 +92,22 @@ impl SecretBuffer {
     /// store's deliberate exits ([`crate::SheetStore::chip_payload`]
     /// and [`crate::SheetStore::sheet_payload`]).
     pub(crate) fn expose(&self) -> &[u8] {
-        // SAFETY: `ptr` is valid for `len` bytes for as long as the
-        // buffer lives, or dangling with `len` zero, which is the one
-        // pointer a zero-length slice may be built from.
-        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
-    }
-
-    /// The whole allocation, every page of it, for the wipe.
-    fn whole_mut(&mut self) -> &mut [u8] {
-        let size = self.layout.map_or(0, |layout| layout.size());
-        // SAFETY: `ptr` is valid for `size` bytes for as long as the
-        // buffer lives, and `&mut self` is the only reference to them.
-        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), size) }
+        &self.bytes
     }
 
     /// The exact zeroization the [`Drop`] path runs, factored out so a
     /// test can observe the result on a *still-allocated* buffer (no
     /// use-after-free).
     ///
-    /// Every byte of every page is zeroed in place, which keeps the
-    /// length unchanged — so the subsequent `munlock` covers the same
-    /// range that was `mlock`ed. Idempotent: a second call is a
-    /// harmless no-op.
+    /// Every byte of the allocation is zeroed in place, the spare
+    /// capacity a vector may arrive with included, and the length is
+    /// unchanged — so the subsequent unlock covers the same range that
+    /// was locked. Idempotent: a second call is a harmless no-op.
     fn wipe(&mut self) {
-        self.whole_mut().zeroize();
+        self.bytes.as_mut_slice().zeroize();
+        self.bytes.spare_capacity_mut().zeroize();
         if self.locked {
-            self.unlock_pages();
+            unlock_pages(allocation(&self.bytes));
             self.locked = false;
         }
     }
@@ -177,13 +116,20 @@ impl SecretBuffer {
 impl Drop for SecretBuffer {
     fn drop(&mut self) {
         self.wipe();
-        if let Some(layout) = self.layout.take() {
-            // SAFETY: `ptr` came from `alloc_zeroed` with this exact
-            // layout, and `layout` is taken so nothing frees it twice.
-            unsafe { alloc::dealloc(self.ptr.as_ptr(), layout) };
-        }
     }
 }
+
+/// The address range of a vector's whole allocation, spare capacity
+/// included.
+fn allocation(bytes: &Vec<u8>) -> Range<usize> {
+    let start = bytes.as_ptr() as usize;
+    start..start + bytes.capacity()
+}
+
+/// How many live locked buffers touch each page, by page number. Taken
+/// for the whole of every lock and unlock, so a page's count and its
+/// lock never disagree.
+static LOCKED_PAGES: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
 
 /// The page size the lock works in. Asked of the OS once; 4096 where
 /// there is no OS to ask, which is also where there is no lock.
@@ -204,51 +150,67 @@ fn page_size() -> usize {
     })
 }
 
-/// A layout for `len` secret bytes: aligned to a page, rounded up to
-/// whole pages, so the allocation shares a page with nothing.
-fn page_layout(len: usize) -> Layout {
+/// The numbers of the pages a non-empty address range touches.
+fn pages(range: &Range<usize>) -> Range<usize> {
     let page = page_size();
-    let size = len
-        .div_ceil(page)
-        .checked_mul(page)
-        .expect("a secret that fits in memory rounds up to whole pages that do too");
-    Layout::from_size_align(size, page).expect("a page size is a power of two")
+    range.start / page..(range.end - 1) / page + 1
 }
 
+/// Lock the pages under a live, non-empty allocation and count them.
+/// `false` when the OS refuses, with nothing counted.
 #[cfg(unix)]
-impl SecretBuffer {
-    fn lock_pages(&self) -> bool {
-        let Some(layout) = self.layout else {
-            return false;
-        };
-        // SAFETY: `mlock` over exactly the pages of a live allocation.
-        // The pointer and length come from the allocation's own
-        // layout, so the range is valid for the duration of the call.
-        let ret = unsafe { libc::mlock(self.ptr.as_ptr().cast(), layout.size()) };
-        ret == 0
+fn lock_pages(range: Range<usize>) -> bool {
+    let mut counts = LOCKED_PAGES.lock().unwrap_or_else(PoisonError::into_inner);
+    // SAFETY: `mlock` over the exact range of a live allocation, which
+    // stays allocated for the duration of the call.
+    let ret = unsafe { libc::mlock(std::ptr::without_provenance(range.start), range.len()) };
+    if ret != 0 {
+        // A refused lock may have wired part of the range before it
+        // failed. Pages no other buffer holds are given back.
+        for page in pages(&range).filter(|page| !counts.contains_key(page)) {
+            unlock_page(page);
+        }
+        return false;
     }
+    for page in pages(&range) {
+        *counts.entry(page).or_insert(0) += 1;
+    }
+    true
+}
 
-    fn unlock_pages(&self) {
-        let Some(layout) = self.layout else {
-            return;
-        };
-        // SAFETY: `munlock` over the pages we previously `mlock`ed
-        // successfully. The allocation is still live here because
-        // `wipe` runs before deallocation.
-        unsafe {
-            let _ = libc::munlock(self.ptr.as_ptr().cast(), layout.size());
+/// Uncount the pages under an allocation [`lock_pages`] counted, and
+/// unlock each one no other locked buffer still touches.
+#[cfg(unix)]
+fn unlock_pages(range: Range<usize>) {
+    let mut counts = LOCKED_PAGES.lock().unwrap_or_else(PoisonError::into_inner);
+    for page in pages(&range) {
+        match counts.get_mut(&page) {
+            Some(count) if *count > 1 => *count -= 1,
+            _ => {
+                counts.remove(&page);
+                unlock_page(page);
+            }
         }
     }
 }
 
-#[cfg(not(unix))]
-impl SecretBuffer {
-    fn lock_pages(&self) -> bool {
-        false
+#[cfg(unix)]
+fn unlock_page(page: usize) {
+    let size = page_size();
+    // SAFETY: `munlock` reads no memory; it asks the kernel to stop
+    // wiring one whole page that a live allocation touches.
+    unsafe {
+        let _ = libc::munlock(std::ptr::without_provenance(page * size), size);
     }
-
-    fn unlock_pages(&self) {}
 }
+
+#[cfg(not(unix))]
+fn lock_pages(_range: Range<usize>) -> bool {
+    false
+}
+
+#[cfg(not(unix))]
+fn unlock_pages(_range: Range<usize>) {}
 
 #[cfg(test)]
 mod tests {
@@ -300,55 +262,47 @@ mod tests {
         assert_eq!(sb.len(), 5);
     }
 
+    #[cfg(unix)]
     #[test]
-    fn every_buffer_sits_in_pages_of_its_own() {
-        // The lock is page-granular and uncounted, so two secrets on
-        // one page would unlock each other: each allocation is aligned
-        // to a page and a whole number of pages long, and so shares a
-        // page with nothing.
+    fn a_page_two_buffers_share_is_unlocked_only_when_the_last_goes() {
+        // `munlock` does not count, so the count kept here decides. Two
+        // ranges on one page of an allocation this test owns outright,
+        // so no other test's buffer can touch that page.
         let page = page_size();
-        assert!(page.is_power_of_two());
-        let first = SecretBuffer::from_text("one short secret");
-        let second = SecretBuffer::from_text("another short secret");
-        let third = SecretBuffer::new_unlocked(vec![7u8; page + 1]);
-        for buffer in [&first, &second, &third] {
-            let start = buffer.expose().as_ptr() as usize;
-            assert_eq!(start % page, 0, "the allocation starts on a page");
-            let size = buffer.layout.unwrap().size();
-            assert_eq!(size % page, 0, "the allocation is whole pages");
-            assert!(size >= buffer.len());
-        }
-        assert_ne!(
-            first.expose().as_ptr() as usize / page,
-            second.expose().as_ptr() as usize / page,
-            "two short secrets never share a page"
+        let block = vec![0u8; 3 * page];
+        let start = (block.as_ptr() as usize).div_ceil(page) * page;
+        let first = start..start + 16;
+        let second = start + 64..start + 80;
+        let count = || LOCKED_PAGES.lock().unwrap().get(&(start / page)).copied();
+
+        assert!(
+            lock_pages(first.clone()),
+            "the test needs RLIMIT_MEMLOCK to allow one page"
         );
-        assert_eq!(third.layout.unwrap().size(), 2 * page);
-    }
-
-    #[test]
-    fn the_vector_handed_in_is_wiped_and_the_copy_is_the_secret() {
-        let handed = vec![0x5a; 40];
-        let sb = SecretBuffer::new(handed);
-        assert_eq!(sb.expose(), &[0x5a; 40][..]);
-        // Beyond the secret, the page is zero: nothing of a previous
-        // tenant of the allocator's memory is carried along.
-        let mut whole = sb;
-        let size = whole.layout.unwrap().size();
-        assert!(whole.whole_mut()[40..size].iter().all(|&b| b == 0));
-    }
-
-    #[test]
-    fn dropping_one_buffer_leaves_another_where_it_was() {
-        let kept = SecretBuffer::from_text("still here");
-        let was_locked = kept.is_locked();
-        let gone = SecretBuffer::from_text("gone soon");
-        drop(gone);
-        assert_eq!(kept.expose(), b"still here");
+        assert!(lock_pages(second.clone()));
+        assert_eq!(count(), Some(2));
+        unlock_pages(first);
         assert_eq!(
-            kept.is_locked(),
-            was_locked,
-            "another buffer's unlock cannot reach this one's pages"
+            count(),
+            Some(1),
+            "the page stays locked for the buffer still on it"
         );
+        unlock_pages(second);
+        assert_eq!(count(), None, "the last buffer off the page unlocks it");
+        drop(block);
+    }
+
+    #[test]
+    fn the_wipe_reaches_the_spare_capacity_a_vector_arrives_with() {
+        let mut handed = b"sk-live_secret-and-its-tail".to_vec();
+        handed.truncate(7);
+        let capacity = handed.capacity();
+        let mut sb = SecretBuffer::new(handed);
+        sb.wipe();
+        let tail = sb.bytes.spare_capacity_mut();
+        assert_eq!(tail.len(), capacity - 7);
+        // SAFETY: every byte of the spare capacity was written, by
+        // `to_vec` before the truncation and by the wipe after it.
+        assert!(tail.iter().all(|b| unsafe { b.assume_init_read() } == 0));
     }
 }

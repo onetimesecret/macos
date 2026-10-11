@@ -61,12 +61,11 @@ impl OneShotListener {
     #[must_use]
     pub fn accept_redirect(self, patience: Duration, abandoned: &AtomicBool) -> Option<String> {
         let began = std::time::Instant::now();
-        // A patience past what the clock can add is every patience
-        // there is, not a reason to panic in a thread holding the
-        // browser trip.
-        let deadline = began
-            .checked_add(patience)
-            .unwrap_or_else(|| began + Duration::from_secs(366 * 24 * 60 * 60));
+        // A patience past what the clock can add is no deadline at
+        // all, not a reason to panic in a thread holding the browser
+        // trip.
+        let deadline = began.checked_add(patience);
+        let lapsed = || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline);
         self.listener.set_nonblocking(true).ok()?;
         loop {
             if abandoned.load(Ordering::Relaxed) {
@@ -75,7 +74,7 @@ impl OneShotListener {
             let mut stream = match self.listener.accept() {
                 Ok((stream, _)) => stream,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if std::time::Instant::now() >= deadline {
+                    if lapsed() {
                         return None;
                     }
                     std::thread::sleep(Duration::from_millis(50));
@@ -86,7 +85,7 @@ impl OneShotListener {
             if let Some(query) = Self::serve(&mut stream) {
                 return Some(query);
             }
-            if std::time::Instant::now() >= deadline {
+            if lapsed() {
                 return None;
             }
         }
