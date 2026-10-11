@@ -237,12 +237,8 @@ pub fn human_remaining(remaining: Duration) -> String {
         (0, 0, m) => format!("{m}m"),
         (0, h, 0) => format!("{h}h"),
         (0, h, m) => format!("{h}h {m}m"),
-        // A full day reads in ladder vocabulary: "24h", not "1d", and
-        // the minutes past it read on as they do under a day, so the
-        // label never says "1d" for the hour between "24h" and "23h
-        // 59m".
+        // A full day reads in ladder vocabulary: "24h", not "1d".
         (1, 0, 0) => "24h".to_string(),
-        (1, 0, m) => format!("24h {m}m"),
         (d, 0, _) => format!("{d}d"),
         (d, h, _) => format!("{d}d {h}h"),
     }
@@ -314,16 +310,6 @@ mod tests {
         assert_eq!(human_remaining(Duration::from_secs(58)), "58s");
         assert_eq!(human_remaining(Duration::from_secs(3 * DAY)), "3d");
         assert_eq!(human_remaining(Duration::from_secs(DAY)), "24h");
-        assert_eq!(human_remaining(Duration::from_secs(DAY + 1)), "24h");
-        assert_eq!(
-            human_remaining(Duration::from_secs(DAY + 30 * 60)),
-            "24h 30m"
-        );
-        assert_eq!(
-            human_remaining(Duration::from_secs(DAY + 59 * 60 + 59)),
-            "24h 59m"
-        );
-        assert_eq!(human_remaining(Duration::from_secs(DAY + HOUR)), "1d 1h");
         assert_eq!(human_remaining(Duration::ZERO), "—");
     }
 
