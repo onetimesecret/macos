@@ -38,8 +38,9 @@
 
 use zeroize::Zeroizing;
 
+use crate::document::SheetDocument;
 use crate::files::{DraftBody, FileNotice, FileStore, line_ending_from_code};
-use crate::persist::{Reader, RestoreError, Sink, Writer, count, framed};
+use crate::persist::{Reader, RestoreError, Sink, Sizer, Writer, count, framed};
 
 /// Magic and version prefix of a plaintext drafts snapshot. Separate
 /// from the content and ledger magics so no two of the three files can
@@ -51,37 +52,68 @@ pub const MAGIC: &[u8; 8] = b"OTSDRFT1";
 /// [`crate::files::DRAFT_SNAPSHOT_LIMIT`].
 pub struct Emitted {
     /// The plaintext drafts snapshot, for the seam above to seal.
-    pub bytes: Vec<u8>,
+    /// Zeroizing, because it holds every dirty file's Loro snapshot,
+    /// which is every character typed into that file, deleted ones
+    /// included.
+    pub bytes: Zeroizing<Vec<u8>>,
     /// The files whose drafts were left out, so the shell can say so
     /// rather than let a person find out at the next launch.
     pub oversized: Vec<FileNotice>,
 }
 
 /// Serialize the open file roster and every dirty file's draft.
+///
+/// Written into one exact-size buffer by the content snapshot's own
+/// two-pass rule: a sizing walk, then the write. A buffer grown as it
+/// is written reallocates, and every reallocation copies the drafts
+/// already written and frees the old block unwiped, which would strand
+/// a person's unsaved typing in heap nothing ever scrubs.
 #[must_use]
 pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
-    let mut buf = Vec::new();
+    // Each draft is exported exactly once, out here, and both passes
+    // copy from the same bytes. The framed body below is called twice
+    // per record and has to stay a pure function of what it captures;
+    // a second export inside it could disagree in length with the
+    // first and the write would outgrow the buffer it was sized for.
     let mut oversized = Vec::new();
-    let mut out = Writer(&mut buf);
+    let bodies: Vec<DraftBody> = store
+        .files()
+        .iter()
+        .map(|file| {
+            let body = store.draft_body(file.id());
+            if matches!(body, DraftBody::Oversized)
+                && let Some(notice) = store.oversize_notice(file.id())
+            {
+                oversized.push(notice);
+            }
+            body
+        })
+        .collect();
+    let mut sizer = Sizer(0);
+    write_drafts(store, &bodies, wall_ms, &mut sizer);
+    let mut buf = Zeroizing::new(Vec::with_capacity(sizer.0));
+    write_drafts(store, &bodies, wall_ms, &mut Writer(&mut buf));
+    debug_assert_eq!(buf.len(), sizer.0, "sizing pass drifted from the write");
+    Emitted {
+        bytes: buf,
+        oversized,
+    }
+}
+
+/// One walk over the roster, into whichever sink is asked: the sizing
+/// pass and the write run this same function, so the preallocation
+/// cannot drift from what lands.
+fn write_drafts(store: &FileStore, bodies: &[DraftBody], wall_ms: u64, out: &mut dyn Sink) {
     out.raw(MAGIC);
     out.u64(wall_ms);
     out.u64(store.files().len() as u64);
-    for file in store.files() {
-        // Exported once out here rather than inside the framed body,
-        // which is called twice and must stay a pure function of what
-        // it captures.
-        let body = store.draft_body(file.id());
-        if matches!(body, DraftBody::Oversized)
-            && let Some(notice) = store.oversize_notice(file.id())
-        {
-            oversized.push(notice);
-        }
-        let snapshot = match &body {
+    for (file, body) in store.files().iter().zip(bodies) {
+        let snapshot = match body {
             DraftBody::Snapshot(bytes) => Some(bytes),
             DraftBody::None | DraftBody::Oversized | DraftBody::AlreadyDropped => None,
         };
         let witness = file.witness_or_zero();
-        framed(&mut out, |out| {
+        framed(out, |out| {
             out.bytes(file.bookmark());
             out.bytes(file.path().to_string_lossy().as_bytes());
             out.u8(u8::from(file.has_witness()));
@@ -101,10 +133,6 @@ pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
                 }
             }
         });
-    }
-    Emitted {
-        bytes: buf,
-        oversized,
     }
 }
 
@@ -203,9 +231,29 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
         return Err(Malformed);
     }
 
+    // Every draft is replayed into its own document here, before the
+    // store is touched, because the frame walk above proves only that
+    // the bytes are shaped like records. Whether a snapshot inside one
+    // reads back is the decoder's to say, and it says so per record.
+    // Were the store cleared first and the documents built as the
+    // records were pushed, the record that refused would leave the
+    // ones before it standing in a store that had already forgotten
+    // the ones after it, and the next drafts write would seal that
+    // half roster over the file that still held the rest.
+    let mut prepared = Vec::with_capacity(records.len());
+    for record in records {
+        let document = SheetDocument::new();
+        if let Some(snapshot) = &record.snapshot {
+            document.import_snapshot(snapshot)?;
+            document.forget_undo();
+        }
+        prepared.push((record, document));
+    }
+
     store.clear();
     let mut restored = 0;
-    for record in records {
+    for (record, document) in prepared {
+        let has_snapshot = record.snapshot.is_some();
         store.adopt_restored(
             record.path.into(),
             record.bookmark,
@@ -214,8 +262,9 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             record.has_bom,
             record.dirty,
             record.last_edited_ms,
-            record.snapshot.as_deref().map(Vec::as_slice),
-        )?;
+            document,
+            has_snapshot,
+        );
         restored += 1;
     }
     Ok(restored)
@@ -326,9 +375,9 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
-        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
             self.put(&path.to_string_lossy(), bytes);
-            Ok(())
+            self.stat(path)
         }
         fn stat(&self, path: &Path) -> io::Result<FileWitness> {
             if self.walled.lock().unwrap().contains(path) {
@@ -689,6 +738,36 @@ mod tests {
         assert!(back.files().is_empty());
     }
 
+    #[test]
+    fn a_record_whose_draft_will_not_import_leaves_the_store_as_it_was() {
+        // The frame walk proves the shape; whether a draft reads back
+        // is the decoder's to say, one record at a time. Here the first
+        // record is sound and the second's draft is not, which is the
+        // one order a clear-then-adopt restore gets wrong: the store
+        // would be left holding the first file alone, and the next
+        // drafts write would seal that half roster over this one.
+        let (_io, store, _clean, dirty) = seeded();
+        let crate::files::DraftBody::Snapshot(snapshot) = store.draft_body(dirty) else {
+            panic!("the dirty file carries a draft");
+        };
+        let mut bytes = emit(&store, 1).bytes.to_vec();
+        let at = bytes
+            .windows(snapshot.len())
+            .position(|window| window == snapshot.as_slice())
+            .expect("the draft is in the buffer");
+        bytes[at..at + snapshot.len()].fill(0);
+
+        let io = MemoryIo::with("/open.txt", b"already open\n");
+        let mut back = FileStore::new();
+        let open = back.open(&io, Path::new("/open.txt")).unwrap();
+        assert_eq!(restore(&mut back, &bytes, 1), Err(RestoreError::Malformed));
+        let files = back.files();
+        assert_eq!(files.len(), 1, "the refused restore touched the store");
+        assert_eq!(files[0].id(), open);
+        assert_eq!(files[0].path(), Path::new("/open.txt"));
+        assert!(!files[0].pending_hydration());
+    }
+
     // -----------------------------------------------------------------
     // The hydration: the second half of a restore, one case per branch
     // -----------------------------------------------------------------
@@ -929,7 +1008,7 @@ mod tests {
     /// The seeded pair after a chain of renames made while the app was
     /// closed: the dirty file stepped aside and the clean one took its
     /// name. Both bookmarks still resolve, each to where its file is.
-    fn chained_renames() -> (MemoryIo, Vec<u8>) {
+    fn chained_renames() -> (MemoryIo, Zeroizing<Vec<u8>>) {
         let (io, store, _clean, _dirty) = seeded();
         let bytes = emit(&store, 1_000).bytes;
         io.rename("/dirty.txt", "/old.txt");

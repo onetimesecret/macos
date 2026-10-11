@@ -265,11 +265,23 @@ pub trait FileIo {
     /// Whatever the platform said about opening or probing the file.
     fn probe_readable(&self, path: &Path) -> io::Result<()>;
     /// Write the whole file at once, atomically, preserving the mode of
-    /// the file already at the path when there is one.
+    /// the file already at the path when there is one, and answer the
+    /// witness of the file that landed.
+    ///
+    /// The witness has to be the written file's own, taken through the
+    /// descriptor that wrote it rather than by a second look at the
+    /// path afterwards. A stat of the path after the rename can meet
+    /// another writer's replacement, and a witness that describes
+    /// their generation beside a saved text that is ours would make
+    /// [`FileStore::check`] answer unchanged over a changed file, the
+    /// one thing the double stat on the read path exists to refuse.
+    /// The rename carries the device, the inode, the size and the
+    /// modification stamp across unchanged, so what the descriptor
+    /// reports before it is what the path reports after it.
     ///
     /// # Errors
     /// Whatever the platform said about the write.
-    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()>;
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness>;
     /// Take a witness of whatever is at the path right now.
     ///
     /// # Errors
@@ -1077,7 +1089,10 @@ impl FileStore {
         // Phase one: the whole batch against a simulation in exact code
         // units, so a refusal is atomic and a boundary inside a
         // surrogate pair is policed as strictly as the document would.
-        let mut sim: Vec<u16> = file.text().encode_utf16().collect();
+        // Both copies are the file's whole text, so both are wiped on
+        // the way out like every other plaintext copy this module takes.
+        let text = Zeroizing::new(file.text());
+        let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(text.encode_utf16().collect());
         for op in ops {
             if !sim_admit(&mut sim, op) {
                 return false;
@@ -1671,12 +1686,17 @@ impl FileStore {
     /// knows arrives here at once, because a half built buffer has no
     /// valid state to sit in.
     ///
-    /// `snapshot` is the buffer's Loro snapshot for a dirty file and
-    /// `None` for a clean one, whose text is on disk. A record that is
-    /// dirty and carries no snapshot is the one case that is neither:
-    /// the draft was over [`DRAFT_SNAPSHOT_LIMIT`] when the file was
-    /// written, so it was left out. That is remembered here and turned
-    /// into a notice by [`FileStore::hydrate_one`].
+    /// `document` is the buffer: a dirty file's draft replayed from its
+    /// Loro snapshot, or an empty document for a clean one, whose text
+    /// is on disk. The replay happens in the caller, before the store
+    /// is cleared, so a snapshot the decoder refuses is refused while
+    /// the store still holds what it held; by the time a record reaches
+    /// here nothing about it can fail. `has_snapshot` says whether the
+    /// record carried one. A record that is dirty and carried none is
+    /// the one case that is neither: the draft was over
+    /// [`DRAFT_SNAPSHOT_LIMIT`] when the file was written, so it was
+    /// left out. That is remembered here and turned into a notice by
+    /// [`FileStore::hydrate_one`].
     ///
     /// The buffer this leaves is not yet ready to draw: nothing has
     /// looked at the disk. It is marked pending, and
@@ -1692,13 +1712,9 @@ impl FileStore {
         has_bom: bool,
         dirty: bool,
         last_edited_ms: u64,
-        snapshot: Option<&[u8]>,
-    ) -> Result<FileId, crate::persist::RestoreError> {
-        let document = SheetDocument::new();
-        if let Some(snapshot) = snapshot {
-            document.import_snapshot(snapshot)?;
-            document.forget_undo();
-        }
+        document: SheetDocument,
+        has_snapshot: bool,
+    ) -> FileId {
         self.next_id += 1;
         let id = FileId(FILE_ID_TAG | self.next_id);
         self.files.push(OpenFile {
@@ -1725,13 +1741,13 @@ impl FileStore {
             // can stand in for the absent Take theirs generation marker.
             // Hydration derives dirtiness from the draft and disk texts.
             take_theirs_undone: false,
-            draft_dropped: dirty && snapshot.is_none(),
+            draft_dropped: dirty && !has_snapshot,
             pending_hydration: true,
             access_refused: false,
             not_found: false,
             bookmark,
         });
-        Ok(id)
+        id
     }
 
     /// The second half of a drafts restore, for every file at once:
@@ -2122,13 +2138,23 @@ const READ_ATTEMPTS: usize = 3;
 /// something to start and then reconsider.
 fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefusal> {
     let before = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
+    // The size is answered before the read, so an enormous file is
+    // refused for its size rather than after the whole of it has been
+    // pulled into memory under the caller's lock. The stat is what
+    // knows the size; the read would only find out at the end.
+    if before.size > FILE_SIZE_LIMIT as u64 {
+        return Err(OpenRefusal::TooLarge {
+            limit: FILE_SIZE_LIMIT,
+        });
+    }
     let bytes = Zeroizing::new(io.read(path).map_err(|e| OpenRefusal::Io(e.kind()))?);
     let after = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
     if before != after {
         return Ok(None);
     }
-    // The size is answered before the UTF-8 decode, so an enormous file
-    // is refused for its size rather than after a decode of it.
+    // Asked again of the bytes themselves, which is what a file that
+    // grew between the stat and the read answers with; the stats would
+    // disagree too, so this is the belt to that brace.
     if bytes.len() > FILE_SIZE_LIMIT {
         return Err(OpenRefusal::TooLarge {
             limit: FILE_SIZE_LIMIT,
@@ -2290,21 +2316,23 @@ fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
 /// Write the buffer to `path` and settle the file around what landed.
 fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result<(), SaveError> {
     let bytes = file.bytes_to_write_zeroizing();
-    if let Err(error) = io.write_atomic(path, &bytes) {
-        // Only denial at the file's current path informs its access mark.
-        // A failed Save As elsewhere says nothing about the original, and
-        // disk full, EXDEV, etc. are not evidence of missing access.
-        if path == file.path && error.kind() == io::ErrorKind::PermissionDenied {
-            file.access_refused = true;
+    let witness = match io.write_atomic(path, &bytes) {
+        Ok(witness) => witness,
+        Err(error) => {
+            // Only denial at the file's current path informs its access
+            // mark. A failed Save As elsewhere says nothing about the
+            // original, and disk full, EXDEV, etc. are not evidence of
+            // missing access.
+            if path == file.path && error.kind() == io::ErrorKind::PermissionDenied {
+                file.access_refused = true;
+            }
+            return Err(SaveError::Io(error.kind()));
         }
-        return Err(SaveError::Io(error.kind()));
-    }
-    // The witness has to describe what is on disk now, so it is taken
-    // after the write rather than predicted from the bytes. A stat that
-    // will not answer leaves the file with no witness, which reads as
-    // changed on the next check: conservative, and it costs one prompt
-    // rather than a silent overwrite.
-    file.witness = io.stat(path).ok();
+    };
+    // The witness describes the file this write landed, as the write
+    // itself reported it, rather than whatever a second look at the
+    // path would find there now: see [`FileIo::write_atomic`].
+    file.witness = Some(witness);
     file.saved_text = Some(Zeroizing::new(text_of(&file.document)));
     file.dirty = false;
     file.conflict = FileConflict::None;
@@ -2436,9 +2464,9 @@ mod tests {
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
 
-        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
             self.put(&path.to_string_lossy(), bytes);
-            Ok(())
+            self.stat(path)
         }
 
         fn stat(&self, path: &Path) -> io::Result<FileWitness> {
@@ -2502,8 +2530,8 @@ mod tests {
             Ok(self.moving.clone())
         }
 
-        fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
-            Ok(())
+        fn write_atomic(&self, path: &Path, _bytes: &[u8]) -> io::Result<FileWitness> {
+            self.stat(path)
         }
 
         fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
@@ -2533,8 +2561,8 @@ mod tests {
             Ok(Vec::new())
         }
 
-        fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
-            Ok(())
+        fn write_atomic(&self, path: &Path, _bytes: &[u8]) -> io::Result<FileWitness> {
+            self.stat(path)
         }
 
         fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
@@ -2574,7 +2602,7 @@ mod tests {
                 None => self.inner.probe_readable(path),
             }
         }
-        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
             match self.write_error.get() {
                 Some(kind) => Err(io::Error::from(kind)),
                 None => self.inner.write_atomic(path, bytes),
@@ -2583,6 +2611,101 @@ mod tests {
         fn stat(&self, path: &Path) -> io::Result<FileWitness> {
             self.inner.stat(path)
         }
+    }
+
+    /// A path whose stat claims more bytes than the limit. Its read
+    /// records whether the core went on to read it anyway.
+    #[derive(Default)]
+    struct HugeIo {
+        read_called: Cell<bool>,
+    }
+
+    impl FileIo for HugeIo {
+        fn probe_readable(&self, _path: &Path) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
+            self.read_called.set(true);
+            Ok(Vec::new())
+        }
+
+        fn write_atomic(&self, path: &Path, _bytes: &[u8]) -> io::Result<FileWitness> {
+            self.stat(path)
+        }
+
+        fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
+            Ok(FileWitness {
+                dev: 1,
+                ino: 1,
+                size: FILE_SIZE_LIMIT as u64 + 1,
+                mtime_ns: 0,
+            })
+        }
+    }
+
+    #[test]
+    fn an_oversized_file_is_refused_before_a_byte_of_it_is_read() {
+        let io = HugeIo::default();
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/huge.bin")),
+            Err(OpenRefusal::TooLarge {
+                limit: FILE_SIZE_LIMIT
+            })
+        );
+        assert!(
+            !io.read_called.get(),
+            "the stat already knew the size, so nothing was read"
+        );
+    }
+
+    /// A filesystem where another writer renames their copy over the
+    /// file in the instant after ours lands, before anything can look
+    /// at the path again.
+    struct ReplacedAfterWriteIo {
+        inner: MemoryIo,
+    }
+
+    impl FileIo for ReplacedAfterWriteIo {
+        fn probe_readable(&self, path: &Path) -> io::Result<()> {
+            self.inner.probe_readable(path)
+        }
+
+        fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+            self.inner.read(path)
+        }
+
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
+            let ours = self.inner.write_atomic(path, bytes)?;
+            self.inner
+                .put(&path.to_string_lossy(), b"theirs, a moment later");
+            Ok(ours)
+        }
+
+        fn stat(&self, path: &Path) -> io::Result<FileWitness> {
+            self.inner.stat(path)
+        }
+    }
+
+    #[test]
+    fn a_save_takes_its_witness_from_the_write_and_not_from_the_path_afterwards() {
+        let io = ReplacedAfterWriteIo {
+            inner: MemoryIo::with("/note.txt", b"body"),
+        };
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/note.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "mine ")], 1));
+        store.save(&io, id).unwrap();
+        // The witness is the file this save wrote. A stat of the path
+        // taken afterwards would have described the other writer's
+        // copy, and the next check would have answered unchanged over
+        // a file that no longer holds our text.
+        assert_eq!(
+            store.refresh_conflict(&io, id),
+            ExternalState::Changed,
+            "the other writer's copy reads as a change"
+        );
     }
 
     #[test]
