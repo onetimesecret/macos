@@ -3387,8 +3387,8 @@ pub unsafe extern "C" fn companion_sync_enrol_page(
 /// cursor. **Blocks for the round-trips** — call from a background
 /// queue. Returns `{"ok": true, "epoch", "frame_present", "peers"}`
 /// or `{"ok": false, "reason"}` (`not_configured`, `signed_out`,
-/// `keychain`, `unreachable`, `refused`). Free with
-/// [`companion_string_free`].
+/// `keychain`, `unreachable`, `refused`, or `busy` while another
+/// attach is in flight). Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -7499,6 +7499,32 @@ mod tests {
     /// the persisted sign-in, begin parks a ceremony, cancel forgets
     /// it, and sign-out deletes the one account — status telling the
     /// truth at every step.
+    #[test]
+    fn a_second_attach_while_one_is_in_flight_is_refused_as_busy() {
+        // Two attaches at once would each mint a package, and the relay
+        // keeps whichever arrives last while this device could adopt
+        // the other. The second is refused, and the first, done, lets
+        // the next one through.
+        let handle = handle();
+        unsafe {
+            (*handle).inner.lock().unwrap().sync.attaching = true;
+            let busy: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_attach(handle))).unwrap();
+            assert_eq!(busy["reason"], "busy");
+            assert!((*handle).inner.lock().unwrap().sync.attaching);
+
+            (*handle).inner.lock().unwrap().sync.attaching = false;
+            let unconfigured: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_attach(handle))).unwrap();
+            assert_eq!(unconfigured["reason"], "not_configured");
+            assert!(
+                !(*handle).inner.lock().unwrap().sync.attaching,
+                "an attach that refused still lets the next one through"
+            );
+            companion_free(handle);
+        }
+    }
+
     #[test]
     fn the_sync_routes_report_configure_begin_cancel_and_signout() {
         let credentials: Arc<dyn CredentialStore> =

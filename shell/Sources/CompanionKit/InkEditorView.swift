@@ -1224,13 +1224,19 @@ public struct InkEditorView: NSViewRepresentable {
                                 CharacterSet.whitespacesAndNewlines.contains)
                         }
                         let afterIndent = line.dropFirst(trimmedHead.count)
-                        guard let run = InkStyle.FenceScanner.fenceRun(
+                        // `classify` already called this line a fence
+                        // rule; should the two ever disagree again, the
+                        // cost is this fence, not every one below it.
+                        if let run = InkStyle.FenceScanner.fenceRun(
                             of: afterIndent.trimmingCharacters(in: .newlines)
-                        ) else { return nil }
-                        opening = run.info.isEmpty
-                            ? (paragraph, NSMaxRange(paragraph), paragraph.location
-                                + trimmedHead.utf16.count + run.length)
-                            : nil
+                        ) {
+                            opening = run.info.isEmpty
+                                ? (paragraph, NSMaxRange(paragraph), paragraph.location
+                                    + trimmedHead.utf16.count + run.length)
+                                : nil
+                        } else {
+                            opening = nil
+                        }
                     } else if let candidate = opening {
                         let body = NSRange(
                             location: candidate.bodyStart,

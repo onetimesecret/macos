@@ -441,8 +441,13 @@ public final class SyncController: ObservableObject {
         guard outcome.ok else {
             trouble = settled
             if Self.attachRetries(after: settled) {
-                quietRefusals = settled == nil ? quietRefusals + 1 : 0
-                armRetry(after: Self.attachRetryDelay(quietRefusals: quietRefusals))
+                // Only a success or turning sync off resets the count:
+                // an unreachable turn between two quiet refusals keeps
+                // its own 30 seconds and leaves the backoff standing.
+                if settled == nil { quietRefusals += 1 }
+                armRetry(
+                    after: settled == nil
+                        ? Self.attachRetryDelay(quietRefusals: quietRefusals) : 30)
             }
             return
         }

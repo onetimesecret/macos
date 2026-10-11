@@ -317,6 +317,20 @@ mod tests {
     }
 
     impl MemoryIo {
+        /// What a stat of `path` finds, the walls aside.
+        fn witness(&self, path: &Path) -> io::Result<FileWitness> {
+            let files = self.files.lock().unwrap();
+            let bytes = files
+                .get(path)
+                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+            Ok(FileWitness {
+                dev: 7,
+                ino: 11,
+                size: bytes.len() as u64,
+                mtime_ns: *self.stamps.lock().unwrap().get(path).unwrap_or(&0),
+            })
+        }
+
         fn with(path: &str, bytes: &[u8]) -> Self {
             let io = Self::default();
             io.put(path, bytes);
@@ -381,22 +395,16 @@ mod tests {
         }
         fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
             self.put(&path.to_string_lossy(), bytes);
-            self.stat(path)
+            // The witness of what was written, as the real seam takes it
+            // from the descriptor: a walled path does not refuse a write
+            // that landed.
+            self.witness(path)
         }
         fn stat(&self, path: &Path) -> io::Result<FileWitness> {
             if self.walled.lock().unwrap().contains(path) {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
-            let files = self.files.lock().unwrap();
-            let bytes = files
-                .get(path)
-                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
-            Ok(FileWitness {
-                dev: 7,
-                ino: 11,
-                size: bytes.len() as u64,
-                mtime_ns: *self.stamps.lock().unwrap().get(path).unwrap_or(&0),
-            })
+            self.witness(path)
         }
     }
 

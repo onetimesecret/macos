@@ -178,8 +178,14 @@ pub(crate) fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
     // rather than leaving a trail of freed partial copies. A size the
     // allocator cannot meet is not a reason to abort: the read then
     // grows as it goes.
+    // The size is only a hint: a metadata read that fails sizes nothing
+    // and fails nothing, as `std::fs::read` treated it.
     let mut bytes = Vec::new();
-    let len = usize::try_from(file.metadata()?.len()).unwrap_or(0);
+    let len = file
+        .metadata()
+        .ok()
+        .and_then(|metadata| usize::try_from(metadata.len()).ok())
+        .unwrap_or(0);
     let _ = bytes.try_reserve_exact(len);
     file.read_to_end(&mut bytes)?;
     Ok(bytes)

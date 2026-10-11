@@ -1077,8 +1077,8 @@ bool companion_sync_enrol_page(CompanionHandle *handle, uint64_t page,
  * the round-trips — call from a background queue. Returns
  * {"ok": true, "epoch", "frame_present", "peers"} or
  * {"ok": false, "reason"}: "not_configured", "signed_out",
- * "keychain", "unreachable", "refused". Free with
- * companion_string_free().
+ * "keychain", "unreachable", "refused", or "busy" while another
+ * attach is in flight. Free with companion_string_free().
  */
 char *companion_sync_attach(CompanionHandle *handle);
 

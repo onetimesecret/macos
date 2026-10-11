@@ -277,7 +277,10 @@ pub trait FileIo {
     /// one thing the double stat on the read path exists to refuse.
     /// The rename carries the device, the inode, the size and the
     /// modification stamp across unchanged, so what the descriptor
-    /// reports before it is what the path reports after it.
+    /// reports before it is what the path reports after it. A
+    /// descriptor that will not say (an `fstat` that fails) fails the
+    /// save before the rename, where a second stat used to let the write
+    /// land with no witness at all.
     ///
     /// # Errors
     /// Whatever the platform said about the write.
@@ -1090,9 +1093,17 @@ impl FileStore {
         // units, so a refusal is atomic and a boundary inside a
         // surrogate pair is policed as strictly as the document would.
         // Both copies are the file's whole text, so both are wiped on
-        // the way out like every other plaintext copy this module takes.
+        // the way out like every other plaintext copy this module takes,
+        // and the simulation is sized once to the most the batch can make
+        // it (a UTF-8 byte bounds a UTF-16 unit), so it never grows and no
+        // reallocation leaves an unwiped copy behind.
         let text = Zeroizing::new(file.text());
-        let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(text.encode_utf16().collect());
+        let room = ops.iter().fold(text.len(), |room, op| match op {
+            EditOp::Insert { text: inserted, .. } => room.saturating_add(inserted.len()),
+            _ => room,
+        });
+        let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::with_capacity(room));
+        sim.extend(text.encode_utf16());
         for op in ops {
             if !sim_admit(&mut sim, op) {
                 return false;
@@ -2357,8 +2368,12 @@ fn sim_admit(sim: &mut Vec<u16>, op: &EditOp) -> bool {
             if !boundary(sim, at) {
                 return false;
             }
-            let units: Vec<u16> = text.encode_utf16().collect();
-            sim.splice(at..at, units);
+            // The inserted text, in a buffer sized for it and wiped on
+            // drop; an exact-size iterator lets the splice move it
+            // without a temporary of its own.
+            let mut units = Zeroizing::new(Vec::with_capacity(text.len()));
+            units.extend(text.encode_utf16());
+            sim.splice(at..at, units.iter().copied());
             true
         }
         EditOp::Delete { pos_u16, len_u16 } => {

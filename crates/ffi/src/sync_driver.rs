@@ -142,6 +142,10 @@ pub(crate) struct SyncState {
     /// answer, whenever it comes, advances the acknowledged cursors to
     /// these and to nothing later.
     pub staged_batch: Option<StagedBatch>,
+    /// Whether an attach is in flight. Attaches are single-flight: two
+    /// at once would each mint a package, and the relay keeps whichever
+    /// request arrives last while this device could adopt the other.
+    pub attaching: bool,
     /// Where the engine's relative clock starts: monotonic, so the
     /// publish and ballot windows cannot jump with the wall clock.
     origin: Instant,
@@ -159,6 +163,7 @@ impl Default for SyncState {
             pairing: None,
             fault: None,
             staged_batch: None,
+            attaching: false,
             origin: Instant::now(),
         }
     }
@@ -499,6 +504,11 @@ type Refusal = &'static str;
 /// engine standing keeps the session and chain and republishes a
 /// fresh package, which is the move after a ceremony spends one.
 pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
+    // Declared first so it drops last, after any core lock taken below.
+    let _flight = match AttachFlight::begin(handle) {
+        Ok(flight) => flight,
+        Err(reason) => return serde_json::json!({ "ok": false, "reason": reason }),
+    };
     if let Err(reason) = ensure_engine(handle) {
         return serde_json::json!({ "ok": false, "reason": reason });
     }
@@ -578,6 +588,32 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
 /// session nobody signed out of, and wedge there: `note_reachable`
 /// deliberately will not clear `Refused`, and nothing short of a fresh
 /// ceremony or an explicit sign-out ever does.
+/// The one attach in flight. It clears the flag when it drops, which
+/// is on every way out of `attach`.
+struct AttachFlight<'a>(&'a CompanionHandle);
+
+impl<'a> AttachFlight<'a> {
+    /// `busy` while another attach is in flight.
+    fn begin(handle: &'a CompanionHandle) -> Result<Self, Refusal> {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return Err("poisoned");
+        };
+        if guard.sync.attaching {
+            return Err("busy");
+        }
+        guard.sync.attaching = true;
+        Ok(Self(handle))
+    }
+}
+
+impl Drop for AttachFlight<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.0.inner.lock() {
+            guard.sync.attaching = false;
+        }
+    }
+}
+
 fn attach_refused(companion: &mut Companion) -> serde_json::Value {
     sign_out_locked(companion);
     serde_json::json!({ "ok": false, "reason": "signed_out" })
@@ -660,6 +696,19 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Ok(mut guard) = handle.inner.lock() else {
         return Err("poisoned");
     };
+    // A re-attach with a package already waiting sends that one again.
+    // The relay may have taken it and its answer been lost, and a fresh
+    // mint would drop the private half the roster might now name; the
+    // waiting package is unspent, since nothing opens with it until it
+    // is adopted.
+    if guard
+        .sync
+        .engine
+        .as_ref()
+        .is_some_and(|engine| engine.pending_packages.is_some())
+    {
+        return Ok(());
+    }
     let Some(config) = &guard.sync.config else {
         return Err("not_configured");
     };

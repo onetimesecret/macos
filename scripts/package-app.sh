@@ -172,9 +172,11 @@ validate_signing_configuration() {
 
   local profile_plist certificate_pem certificate_der device_udid
   profile_plist="$(mktemp -t onetimepad-profile)"
+  TEMP_FILES+=("$profile_plist")
   certificate_pem="$(mktemp -t onetimepad-certificate-pem)"
+  TEMP_FILES+=("$certificate_pem")
   certificate_der="$(mktemp -t onetimepad-certificate-der)"
-  TEMP_FILES+=("$profile_plist" "$certificate_pem" "$certificate_der")
+  TEMP_FILES+=("$certificate_der")
   if ! security cms -D -i "$PROVISIONING_PROFILE" > "$profile_plist"; then
     rm -f "$profile_plist" "$certificate_pem" "$certificate_der"
     echo "could not decode $BUILD_LANE provisioning profile: $PROVISIONING_PROFILE" >&2

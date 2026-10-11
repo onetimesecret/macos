@@ -196,7 +196,10 @@ pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncA
 /// straight off the JSON into zeroizing strings. Not a
 /// `serde_json::Value`: a value tree would hold both tokens as plain
 /// strings and drop them unwiped, and the strings here are moved into
-/// their wrappers rather than copied out of anything.
+/// their wrappers rather than copied out of anything. A body naming a
+/// token field twice fails to parse, where the value tree kept the last
+/// one: the answer is refused, which signs a refresh out, but only
+/// against a server emitting JSON with duplicate names.
 #[derive(serde::Deserialize)]
 struct TokenBody {
     #[serde(default, deserialize_with = "non_empty_token")]

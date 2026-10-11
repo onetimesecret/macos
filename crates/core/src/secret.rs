@@ -5,8 +5,10 @@
 //! adds page locking and makes accidental duplication a compile error.
 #![allow(unsafe_code)] // Page locking requires libc; every unsafe use below carries a SAFETY note.
 
+#[cfg(unix)]
 use std::collections::BTreeMap;
 use std::ops::Range;
+#[cfg(unix)]
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use zeroize::Zeroize;
@@ -141,10 +143,12 @@ fn allocation(bytes: &Vec<u8>) -> Range<usize> {
 /// How many live locked buffers touch each page, by page number. Taken
 /// for the whole of every lock and unlock, so a page's count and its
 /// lock never disagree.
+#[cfg(unix)]
 static LOCKED_PAGES: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
 
 /// The page size the lock works in. Asked of the OS once; 4096 where
 /// there is no OS to ask, which is also where there is no lock.
+#[cfg(unix)]
 fn page_size() -> usize {
     static PAGE: OnceLock<usize> = OnceLock::new();
     *PAGE.get_or_init(|| {
@@ -164,6 +168,7 @@ fn page_size() -> usize {
 
 /// The numbers of the pages an address range touches; none for an
 /// empty one.
+#[cfg(unix)]
 fn pages(range: &Range<usize>) -> Range<usize> {
     if range.is_empty() {
         return 0..0;
@@ -178,7 +183,9 @@ fn pages(range: &Range<usize>) -> Range<usize> {
 fn lock_pages(range: Range<usize>) -> bool {
     let mut counts = LOCKED_PAGES.lock().unwrap_or_else(PoisonError::into_inner);
     // SAFETY: `mlock` over the exact range of a live allocation, which
-    // stays allocated for the duration of the call.
+    // stays allocated for the duration of the call. It reads no memory,
+    // so an address without provenance is all it needs; nothing in this
+    // module ever reads through one.
     let ret = unsafe { libc::mlock(std::ptr::without_provenance(range.start), range.len()) };
     if ret != 0 {
         // Should a refused lock have wired any of the range, the pages
