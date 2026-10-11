@@ -1,21 +1,12 @@
-//! Experimental source-language detection adapter (ADR-0029).
-//!
-//! The thresholds below copy an external evaluation baseline. They are not
-//! approved for shipping and remain subject to review against Companion's local
-//! corpus. A returned slug is a model result that passed this provisional gate,
-//! not proof that the input is source code.
+//! Experimental source-language detection (ADR-0029); thresholds are
+//! provisional and not approved for shipping.
 
 use companion_language_detection_policy::{
     PRODUCTION_POLICY, eligibility_rejection, ranking_rejection,
 };
 
-/// Detect a canonical Betlang source-language slug.
-///
-/// This experimental production-path API abstains for oversized or ineligible
-/// text and for rankings that do not pass the provisional confidence gate. The
-/// `20 bytes / 0.20 score / 0.20 margin` gate is an external evaluation baseline,
-/// is not approved for shipping, and remains subject to local corpus review.
-/// A returned slug is not an assurance that the input is source code.
+/// A canonical Betlang language slug, or `None` when the input or the
+/// ranking fails the provisional gate.
 pub fn detect_source_language(bytes: &[u8]) -> Option<&'static str> {
     if eligibility_rejection(bytes, PRODUCTION_POLICY).is_some() {
         return None;
@@ -67,9 +58,6 @@ mod tests {
     #[test]
     fn evidence_is_counted_in_bytes_less_ascii_whitespace() {
         use companion_language_detection_policy::count_non_whitespace;
-        // Multibyte characters count every byte, and only ASCII
-        // whitespace is left out: the same rule the evaluation harness
-        // applies through the shared policy crate.
         assert_eq!(count_non_whitespace("界界界".as_bytes()), 9);
         assert_eq!(count_non_whitespace(b" \t\r\n"), 0);
         assert_eq!(count_non_whitespace("界 界\t界\n".as_bytes()), 9);
