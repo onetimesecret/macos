@@ -1,21 +1,11 @@
 //! Device pairing: two devices trust each other directly, through their
 //! own key exchange and a short authentication string a human compares
 //! and can fail, never through the account (ADR-0021 section 3, in the
-//! relay decision background; issue #97).
-//!
-//! The ceremony, message by message, and the client's ordering and
-//! persistence rules: client protocol §9.
-//!
-//! What the joiner receives is the channel secret, the root of the GOP
-//! chain ([`crate::gop`]); the content key stays on its device
-//! (ADR-0021 section 8). Revocation removes a peer's record; what that
-//! does and does not stop is client protocol §7.9.
-//!
-//! Pairing secrets rest in the key-material credential store under
-//! their own accounts, separate from the conceal credentials: clearing
-//! pairing ([`clear_pairing`]) never touches the API token, the
-//! content halves or the ledger key, and clearing those never touches
-//! pairing.
+//! relay decision background; issue #97). The joiner receives the
+//! channel secret, never the content key (ADR-0021 section 8). Pairing
+//! secrets rest under their own key-material accounts, apart from the
+//! conceal credentials. Ceremony and rules: client protocol §9;
+//! revocation: §7.9.
 
 use companion_credentials::{CredentialError, CredentialStore};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -440,13 +430,10 @@ pub fn store_channel_secret(credentials: &dyn CredentialStore, secret: &[u8]) ->
             .is_ok()
 }
 
-/// Clear this device's pairing: the identity key, the channel secret,
-/// and the peer records — the pairing accounts, nothing else. The
-/// conceal credentials — the API token — and the content and ledger
-/// keys are other accounts and are never touched here, exactly as
-/// clearing them never touches these: sync trust and conceal trust
-/// are revoked independently (ADR-0021 section 3). Returns whether
-/// every delete was accepted.
+/// Clear this device's pairing: the identity key, the channel secret
+/// and the peer records, nothing else; sync trust and conceal trust are
+/// revoked independently (ADR-0021 section 3). True when every delete
+/// was accepted.
 #[must_use]
 pub fn clear_pairing(credentials: &dyn CredentialStore) -> bool {
     let keys = credentials.key_material_store();

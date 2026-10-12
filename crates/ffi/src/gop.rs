@@ -1,34 +1,12 @@
 //! The per GOP transport key: derived at the key frame, rotated at the
-//! ceremony, destroyed on rotation (ADR-0021 section 2, issue #95).
-//!
-//! Every delta and key frame a device publishes is sealed under the
-//! channel's current GOP key. The compaction ceremony rotates the key
-//! and every device destroys the outgoing one, so whatever ciphertext
-//! the relay retains after the boundary — by bug, by backup or by
-//! malice — is undecryptable by anyone, the devices that wrote it
-//! included. The purge is that derivation, never a promise about a
-//! server's disk (ADR-0007, ADR-0021 section 2).
-//!
-//! The key descends from the pairing ceremony's channel secret, never
-//! from the content key, so every paired device can compute it, one
-//! that has never held a page included (ADR-0021 section 8). Rotation
-//! is a chain with fresh entropy mixed in:
-//!
-//! ```text
-//! key[0]   = HKDF(salt: GOP_ROOT_SALT, ikm: channel_secret, info: GOP_KEY_INFO)
-//! key[n+1] = HKDF(salt: key[n],        ikm: entropy[n],     info: GOP_KEY_INFO)
-//! ```
-//!
-//! Salting with the outgoing key keeps a device that never held this
-//! GOP's key out of the next one. The entropy, sealed to each member's
-//! key package, keeps out a device the proposer did not name, though
-//! not the proposer itself (client protocol §7.9). A device that missed
-//! a rotation cannot derive it, and the welcome that would hand it the
-//! key is not built (client protocol §8). Registry of the info string,
-//! salt and magic: client protocol Appendix A; they live in
-//! [`crate::persist`], and the sealed payload carries its magic
-//! ([`persist::GOP_MAGIC`]) and the epoch under the AEAD's associated
-//! data.
+//! ceremony, destroyed on rotation, so ciphertext the relay keeps past
+//! a boundary opens for no one, its writers included (ADR-0007,
+//! ADR-0021 section 2, issue #95). The chain descends from the pairing
+//! ceremony's channel secret, never the content key (ADR-0021 section
+//! 8); each step salts with the outgoing key and mixes in entropy sealed
+//! to the named members, which keeps out a device that missed a
+//! rotation or was not named, though not the proposer (client protocol
+//! §7.9, §8). Formula, info string, salt and magic: Appendix A there.
 
 use companion_core::{Clock, SheetId, SheetStore};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -42,10 +20,8 @@ use crate::persist::{self, Bytes, GOP_KEY_INFO, GOP_MAGIC, GOP_ROOT_SALT, KEY_LE
 const GOP_HEADER_LEN: usize = 8 + 8;
 
 /// One channel's transport key chain: the current GOP's key and its
-/// epoch, nothing else — the outgoing key is destroyed by the rotation
-/// that supersedes it, which is the whole point. Not `Debug`, and not
-/// `Clone` for a caller to keep an outgoing key alive by accident; the
-/// key material wipes on drop.
+/// epoch, nothing else. Not `Debug` and not `Clone`, so no caller keeps
+/// an outgoing key alive by accident; the key wipes on drop.
 pub struct GopKeyChain {
     /// How many ceremonies this chain has crossed: the GOP epoch,
     /// matching [`companion_core::PageChannel`]'s count.
@@ -55,9 +31,7 @@ pub struct GopKeyChain {
 
 impl GopKeyChain {
     /// The chain at epoch zero, expanded from the pairing ceremony's
-    /// channel secret. Every paired device derives the same chain from
-    /// the same secret, which is what lets them open each other's
-    /// payloads without the relay ever holding a key. `None` only if
+    /// channel secret, the same on every paired device. `None` only if
     /// the HKDF refuses, which a 32-byte expansion cannot make it do.
     #[must_use]
     pub fn root(channel_secret: &[u8]) -> Option<Self> {
@@ -74,14 +48,9 @@ impl GopKeyChain {
         self.epoch
     }
 
-    /// Rotate at the ceremony: the incoming key is expanded from the
-    /// outgoing key and the ceremony's fresh entropy, the epoch
-    /// advances, and the outgoing key is destroyed — its buffer wiped
-    /// as it drops, so no copy remains to open what the relay
-    /// retained. Pure derivation: it cannot fail, which is what lets
-    /// the ceremony's two halves (this rotation and the document
-    /// rebuild) run as one event with no half-done state between them
-    /// ([`ceremony_commit`]).
+    /// Rotate at the ceremony: expand the incoming key from the outgoing
+    /// key and the ceremony's entropy, advance the epoch, and wipe the
+    /// outgoing key. Pure derivation; it cannot fail.
     pub fn advance(&mut self, entropy: &[u8]) {
         let prk = Salt::new(HKDF_SHA256, &self.key).extract(entropy);
         let mut next = Zeroizing::new(vec![0u8; KEY_LEN]);
@@ -98,9 +67,7 @@ impl GopKeyChain {
 
     /// Seal a delta or key frame for the relay:
     /// `magic ‖ epoch ‖ nonce ‖ ciphertext ‖ tag`, the header
-    /// authenticated as associated data so neither the version nor the
-    /// epoch can be edited without failing authentication. `None` when
-    /// the system's RNG refuses a nonce, which is a refusal to
+    /// authenticated. `None` when the RNG refuses a nonce: a refusal to
     /// publish, never a publish under a reused one.
     #[must_use]
     pub fn seal(&self, plaintext: &[u8]) -> Option<Vec<u8>> {
@@ -112,11 +79,9 @@ impl GopKeyChain {
         Some(sealed)
     }
 
-    /// Open a sealed payload from a peer. `None` for anything that was
-    /// not sealed under this chain's current key at this chain's
-    /// current epoch — a payload from behind a ceremony boundary is
-    /// just ciphertext now, which is the purge working, not an error
-    /// to recover from. The plaintext wipes on drop.
+    /// Open a sealed payload from a peer. `None` for anything not sealed
+    /// under this key at this epoch: a payload from behind a boundary is
+    /// the purge working. The plaintext wipes on drop.
     #[must_use]
     pub fn open(&self, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         let body = sealed.strip_prefix(self.header().as_slice())?;
@@ -132,10 +97,11 @@ impl GopKeyChain {
     }
 }
 
-/// The ceremony's two halves as one event: the store's rebuild runs
-/// first and is the only fallible step, so a refusal rotates nothing;
-/// the rotation cannot fail; the frame is sealed under the incoming key
-/// (client protocol §7.6). Run only on a confirmed ballot.
+/// The ceremony's two halves: the store's rebuild runs first, so its
+/// refusal rotates nothing; then the rotation, and the frame sealed
+/// under the incoming key. The seal can still refuse after the
+/// rotation; callers then move no channel (client protocol §7.6). Run
+/// only on a confirmed ballot.
 pub fn ceremony_commit<C: Clock>(
     store: &mut SheetStore<C>,
     page: SheetId,

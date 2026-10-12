@@ -13,10 +13,9 @@ header word. The hardware only checks live in
 **Governed by** [ADR-0027](../../../adr/0027-account-auth-gates-the-sync-channel.md)
 section 5, which owns the seven gate states, and
 [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md)
-section 3, which owns pairing and the short authentication string.
-Revocation has no ADR-0021 section of its own; what it does as built is
-[client protocol §7.9](client-protocol.md#79-who-may-propose). This
-document owns the words and where they appear.
+section 3, which owns pairing and the short authentication string;
+revocation as built is [client protocol §7.9](client-protocol.md#79-who-may-propose).
+This document owns the words and where they appear.
 Where it disagrees with either ADR, the ADR governs.
 
 Sync is background network in an app that has promised for its whole

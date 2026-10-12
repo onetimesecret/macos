@@ -1,12 +1,8 @@
 //! Client-side sync bookkeeping: what replicates, and the gates on it
-//! (ADR-0021, issues #100 and #101).
-//!
-//! Everything here is pure state, no IO and no crypto; the seam above
-//! this crate signs and seals these values. The rules they obey are
-//! ADR-0021 section 6 (in the relay decision background) for expiry,
-//! hold and the terminal state; how the built client applies them, and
-//! the ballot, is client protocol §6 and §7
-//! (`docs/spec/feature/sync/client-protocol.md`).
+//! (ADR-0021, issues #100 and #101). Pure state, no IO and no crypto;
+//! the seam signs and seals these values. Rules: ADR-0021 section 6 (in
+//! the relay decision background); the built client's use of them is
+//! client protocol §6 and §7.
 
 use crate::sheet::ItemId;
 
@@ -141,10 +137,9 @@ pub struct PageChannel {
     /// the epoch it was published under; only the current epoch's
     /// deltas apply.
     epoch: u64,
-    /// Whether this device has drained the channel since it last
-    /// attached: true after a fetch reaches the channel's frontier,
-    /// false the moment the connection drops. This is the register
-    /// currency the terminal gate reads.
+    /// Whether this device has drained the channel: set true when a
+    /// fetch reaches the frontier, and nothing sets it false (client
+    /// protocol §6). The register currency the terminal gate reads.
     current: bool,
     /// Whether the hold register, as last synced, holds the page.
     hold_live: bool,
@@ -170,10 +165,8 @@ impl PageChannel {
         self.epoch
     }
 
-    /// Record whether this device's view of the channel is current:
-    /// the session layer sets it true when a fetch drains the channel
-    /// to its frontier and false the moment the connection drops or a
-    /// fetch fails.
+    /// Record whether this device's view of the channel is current; the
+    /// session layer sets it true when a fetch drains to the frontier.
     pub fn set_current(&mut self, current: bool) {
         self.current = current;
     }
@@ -197,15 +190,9 @@ impl PageChannel {
     }
 
     /// The one gate on who may declare a synced page dead (ADR-0021
-    /// section 6): only a device whose view of the hold register is
-    /// current with the channel, and only while no hold stands. A
-    /// device that expired the page while offline entombs its own copy
-    /// on its own clock — that stays its right — but it may not
-    /// publish the marker, because it cannot know whether a hold it
-    /// never saw is keeping the page alive everywhere else. On
-    /// reconnecting it either learns the page died (and its silence
-    /// cost nothing) or finds it alive under a hold and rejoins at the
-    /// current key frame.
+    /// section 6): a device whose view is current, while no hold stands.
+    /// A device that expired the page offline entombs its own copy but
+    /// publishes no marker: a hold it never saw may keep the page alive.
     #[must_use]
     pub fn may_publish_terminal(&self) -> bool {
         self.current && !self.hold_live && !self.terminal

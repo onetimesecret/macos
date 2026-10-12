@@ -618,10 +618,8 @@ public struct ConcealOutcome: Codable, Hashable, Sendable {
 public struct SyncStatus: Codable, Hashable, Sendable {
     public let configured: Bool
     public let signedIn: Bool
-    /// Where the account gate stands, as the core spells it. Kept as
-    /// the raw token and read through `gate` below, so neither a core
-    /// built before the gate existed nor one a version ahead can make
-    /// the whole status fail to decode.
+    /// The account gate's raw token, read through `gate` below, so no
+    /// core version can make the whole status fail to decode.
     public let gateToken: String?
     public let signinPending: Bool
     public let attached: Bool
@@ -644,10 +642,7 @@ public struct SyncStatus: Codable, Hashable, Sendable {
 }
 
 /// The account gate's seven states (ADR-0027 §5), as the core names
-/// them. Each earns its own sentence and none of them is silent; none
-/// of them touches the pad, which keeps working with no account and no
-/// network whatever this says.
-///
+/// them; none of them touches the pad.
 public enum SyncGate: String, Codable, Hashable, Sendable {
     case off
     case signedOut = "signed_out"
@@ -718,13 +713,8 @@ public struct SyncPumpOutcome: Codable, Hashable, Sendable {
 }
 
 /// One pump event: a machine kind and, where one is concerned, the
-/// page, twice over. `page` is the cross-device identity, the only
-/// name a peer can use; `pageID` is the local id the same page answers
-/// to here, and it is nil for an event about no page and for a page
-/// this device no longer keeps. The surface uses the second: a mark
-/// saying "another device is editing this page" has to land on a page
-/// the user is looking at, and the identity alone would not say which
-/// one that is.
+/// page twice over: `page` the cross-device identity, `pageID` the
+/// local id (nil for no page, or one no longer kept here).
 public struct SyncPumpEvent: Codable, Hashable, Sendable {
     public let kind: String
     public let page: String?
@@ -1266,14 +1256,10 @@ public class CompanionClient: @unchecked Sendable {
         decodeJSON(SyncStatus.self, from: companion_sync_status_json(handle))
     }
 
-    /// Where the account gate stands, without the rest of the status:
-    /// the one word the surface needs to know whether sync may attach.
-    /// Nil when the core could not be read, which is not a state the
-    /// gate has and is therefore never mistaken for one: a gate that
-    /// could not be read has not been passed, so a caller treats nil
-    /// as "may not attach" rather than as no opinion.
-    /// `SyncStatus.gate`'s nil is the other fact, a core that named no
-    /// gate at all, and that one does mean no opinion.
+    /// Where the account gate stands, without the rest of the status.
+    /// Nil when the core could not be read: not passed, so may not
+    /// attach. `SyncStatus.gate`'s nil, a core that named none, means
+    /// no opinion.
     public func syncGate() -> SyncGate? {
         guard let ptr = companion_sync_gate(handle) else { return nil }
         defer { companion_string_free(ptr) }
@@ -1296,7 +1282,7 @@ public class CompanionClient: @unchecked Sendable {
             ?? .refused("no_ceremony")
     }
 
-    /// Forget a begun, unfinished sign-in ceremony.
+    /// End the sign-in ceremony, parked or out on the browser.
     @discardableResult
     public func syncSigninCancel() -> Bool {
         companion_sync_signin_cancel(handle)

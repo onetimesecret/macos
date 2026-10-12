@@ -208,9 +208,9 @@ failure that stops the pad from working or saving.
       attached stranger if it is still on the channel.
 - [ ] **Type on A's shared page.** Expected: B stops receiving it once
       the next ceremony runs. What B already had, B keeps.
-      Note: as built, this holds only for a ceremony B does not
-      propose; B can propose the next ceremony and stay in
-      ([client protocol §7.9](../../spec/feature/sync/client-protocol.md#79-who-may-propose)).
+      Note: as built, nothing stops B proposing the next ceremony,
+      and if it does it may stay in (interpretation, untested:
+      [client protocol §7.9](../../spec/feature/sync/client-protocol.md#79-who-may-propose)).
 - [ ] **On B, look at its own list.** Expected: A is still listed
       there, because revocation is this Mac's own trust and not a
       claim over the other machine's. Revoke A on B as well and
