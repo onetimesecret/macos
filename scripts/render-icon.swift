@@ -18,6 +18,11 @@
 // perUnit picks for every unit of zoom. `--mark` applies to all four.
 // `--composer <output-directory>` exports a transparent 1024px foreground
 // and a separate fading cast shadow for arranging in Icon Composer.
+// `--svg <rrggbb> <output.svg>` writes the saved composition flat, as a
+// vector for the websites: the icon shape in that shade under the white
+// logo mark, placed as the Composer foreground is. Logo mark only.
+// `--plate-shade <rendering.png>` prints the plate shade of an Icon
+// Composer rendering as rrggbb, which --web uses for the dark SVG.
 
 import AppKit
 
@@ -127,10 +132,13 @@ func parseSVGPath(_ d: String) -> NSBezierPath {
     return path
 }
 
-/// The mark alone: every path in the document except a full bleed
+/// The mark's paths: every path in the document except a full bleed
 /// plate, which is the artwork's background rather than its subject.
+/// Each comes twice, as the tag it was read from so the SVG export can
+/// pass the artwork's own path data through untouched, and as a bezier
+/// path in the document's coordinates with its translate applied.
 /// Fills are dropped because a style tints the motif itself.
-func loadLogoMark() -> NSBezierPath {
+func logoMarkPaths() -> [(tag: String, path: NSBezierPath)] {
     guard let svg = try? String(contentsOf: logoSVG, encoding: .utf8) else {
         fail("could not read the logo at \(logoSVG.path)")
     }
@@ -140,7 +148,7 @@ func loadLogoMark() -> NSBezierPath {
           width > 0, height > 0
     else { fail("the logo has no <svg> width and height to measure its plate against") }
 
-    let mark = NSBezierPath()
+    var paths: [(tag: String, path: NSBezierPath)] = []
     for tag in pathTags(in: svg) {
         guard let d = attribute("d", of: tag) else { continue }
         let path = parseSVGPath(d)
@@ -156,9 +164,16 @@ func loadLogoMark() -> NSBezierPath {
         }
         let box = path.cgPath.boundingBoxOfPath
         let plate = box.width >= 0.99 * width && box.height >= 0.99 * height
-        if !plate { mark.append(path) }
+        if !plate { paths.append((tag, path)) }
     }
-    guard !mark.isEmpty else { fail("the logo has no path left once its plate is dropped") }
+    guard !paths.isEmpty else { fail("the logo has no path left once its plate is dropped") }
+    return paths
+}
+
+/// The mark alone, as one path to draw.
+func loadLogoMark() -> NSBezierPath {
+    let mark = NSBezierPath()
+    for (_, path) in logoMarkPaths() { mark.append(path) }
     return mark
 }
 
@@ -297,20 +312,31 @@ func drawMaruhiPlate(_ color: NSColor, in tile: NSRect, scale: CGFloat,
 /// the vignette styles crop both alike.
 let logoFill: CGFloat = 0.88
 
+/// The logo art fitted into a square box of `box` a side centred on
+/// `center`: the scale from artwork units, and the fitted art's size
+/// and the corner nearest the origin. drawLogo and the SVG export both
+/// place the mark by it, so the vector cannot drift from the Composer
+/// foreground. Centring is symmetric, so the corner is the top left in
+/// SVG's y down and the bottom left in AppKit's y up.
+func logoFit(_ art: CGRect, box: CGFloat, center: CGPoint)
+    -> (k: CGFloat, origin: CGPoint, size: CGSize) {
+    let k = box * logoFill / max(art.width, art.height)
+    let size = CGSize(width: art.width * k, height: art.height * k)
+    return (k, CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2), size)
+}
+
 func drawLogo(_ color: NSColor, in tile: NSRect, scale: CGFloat,
               offset: NSPoint, focus: NSPoint) {
     let (mark, art) = logoMark()
     guard art.width > 0, art.height > 0 else { fail("the logo mark path is empty") }
     let box = tile.height * scale
-    let k = box * logoFill / max(art.width, art.height)
-    let width = art.width * k, height = art.height * k
-    let x = tile.midX - width / 2 + offset.x - focus.x * box
-    let y = tile.midY - height / 2 + offset.y - focus.y * box
+    let (k, origin, size) = logoFit(art, box: box, center: NSPoint(
+        x: tile.midX + offset.x - focus.x * box, y: tile.midY + offset.y - focus.y * box))
 
     // The path is in SVG coordinates, y running down, so the fit flips
     // y and lands the art's top left at the top left of the fitted box.
     let fit = NSAffineTransform()
-    fit.translateX(by: x, yBy: y + height)
+    fit.translateX(by: origin.x, yBy: origin.y + size.height)
     fit.scaleX(by: k, yBy: -k)
     fit.translateX(by: -art.minX, yBy: -art.minY)
     let path = fit.transform(mark)
@@ -738,6 +764,14 @@ func render(px: Int, style: Style, base: NSColor, mark: Mark) -> NSBitmapImageRe
     return rep
 }
 
+/// How much of Icon Composer's full canvas a mark's box spans in the
+/// saved composition. The logo's 0.88 optical fit makes its 0.80 land
+/// at 70.4% of the canvas height. The SVG export places the mark by the
+/// same number, so the vector and the glass renderings line up.
+func composerForegroundScale(for mark: Mark) -> CGFloat {
+    mark.name == "logo" ? 0.80 : markScale
+}
+
 /// Separate full-canvas foreground and cast-shadow artwork for Icon Composer.
 /// Composer supplies the background, icon mask, and foreground glass material.
 func writeComposerLayer(mark: Mark, to outDir: URL) {
@@ -749,8 +783,7 @@ func writeComposerLayer(mark: Mark, to outDir: URL) {
     // Composer layers use the full canvas; the standalone renderer's
     // 100px tile inset would shrink the foreground a second time.
     let tile = NSRect(x: 0, y: 0, width: 1024, height: 1024)
-    // The logo's 0.88 optical fit makes this 70.4% of the canvas height.
-    let foregroundScale: CGFloat = mark.name == "logo" ? 0.80 : markScale
+    let foregroundScale = composerForegroundScale(for: mark)
     mark.draw(.white, tile, foregroundScale, .zero, .zero)
     NSGraphicsContext.restoreGraphicsState()
     guard let png = rep.representation(using: .png, properties: [:]) else {
@@ -822,6 +855,152 @@ func writeComposerLayer(mark: Mark, to outDir: URL) {
     } catch {
         fail("writing \(outDir.path): \(error.localizedDescription)")
     }
+}
+
+/// A number as SVG path data: at most three decimals, none when whole.
+func svgNumber(_ value: CGFloat) -> String {
+    var text = String(format: "%.3f", value)
+    while text.hasSuffix("0") { text.removeLast() }
+    if text.hasSuffix(".") { text.removeLast() }
+    return text == "-0" ? "0" : text
+}
+
+/// The macOS icon shape as SVG path data on a square of `side`, drawn
+/// clockwise from the top edge. The corners are the continuous curve
+/// Icon Composer masks with, modelled as Figma draws a smoothed corner
+/// (two cubics around an arc) and fitted against ictool's own 1024
+/// pixel macOS rendition of the saved document: a radius of 266/1024
+/// and smoothing of 0.63 disagree with that rendering on 512 pixels
+/// (edge antialiasing), while the renderer's plain 185/824 corner
+/// disagrees on 18,404. Refit if a later Icon Composer changes the mask.
+func iconShapePath(side: CGFloat) -> String {
+    let radius = side * 266 / 1024
+    let smoothing: CGFloat = 0.63
+    func radians(_ degrees: CGFloat) -> CGFloat { degrees * .pi / 180 }
+    // The corner spans `reach` along each edge: an arc of the radius,
+    // shortened by the smoothing, with a cubic easing into it on each side.
+    let reach = min((1 + smoothing) * radius, side / 2)
+    let arcDegrees = 90 * (1 - smoothing)
+    let arc = sin(radians(arcDegrees / 2)) * radius * 2.0.squareRoot()
+    let easeDegrees = (90 - arcDegrees) / 2
+    let tangent = radius * tan(radians(easeDegrees / 2))
+    let lean = 45 * smoothing
+    let c = tangent * cos(radians(lean))
+    let d = c * tan(radians(lean))
+    let b = (reach - arc - c - d) / 3
+    // Once the clamp on reach engages, a refit with a larger radius or
+    // smoothing would leave b negative and the corner folding back on
+    // itself, which no rendering should be allowed to carry.
+    guard b >= 0 else {
+        fail("radius \(radius) and smoothing \(smoothing) leave the icon shape's corners no room on a side of \(side)")
+    }
+    let a = 2 * b
+    let n = svgNumber
+    let r = n(radius)
+    return [
+        "M \(n(side - reach)) 0",
+        "c \(n(a)) 0 \(n(a + b)) 0 \(n(a + b + c)) \(n(d))",
+        "a \(r) \(r) 0 0 1 \(n(arc)) \(n(arc))",
+        "c \(n(d)) \(n(c)) \(n(d)) \(n(b + c)) \(n(d)) \(n(a + b + c))",
+        "L \(n(side)) \(n(side - reach))",
+        "c 0 \(n(a)) 0 \(n(a + b)) \(n(-d)) \(n(a + b + c))",
+        "a \(r) \(r) 0 0 1 \(n(-arc)) \(n(arc))",
+        "c \(n(-c)) \(n(d)) \(n(-(b + c))) \(n(d)) \(n(-(a + b + c))) \(n(d))",
+        "L \(n(reach)) \(n(side))",
+        "c \(n(-a)) 0 \(n(-(a + b))) 0 \(n(-(a + b + c))) \(n(-d))",
+        "a \(r) \(r) 0 0 1 \(n(-arc)) \(n(-arc))",
+        "c \(n(-d)) \(n(-c)) \(n(-d)) \(n(-(b + c))) \(n(-d)) \(n(-(a + b + c)))",
+        "L 0 \(n(reach))",
+        "c 0 \(n(-a)) 0 \(n(-(a + b))) \(n(d)) \(n(-(a + b + c)))",
+        "a \(r) \(r) 0 0 1 \(n(arc)) \(n(-arc))",
+        "c \(n(c)) \(n(-d)) \(n(b + c)) \(n(-d)) \(n(a + b + c)) \(n(-d))",
+        "Z",
+    ].joined(separator: " ")
+}
+
+/// The saved composition as a flat vector for the websites: the icon
+/// shape in the document's fill shade under the white mark, placed as
+/// the Composer foreground layer places it, so the SVG and the glass
+/// renderings line up at any size. Glass, the automatic gradient and
+/// the cast shadow stay with the rasters; an SVG cannot carry them.
+/// The mark's path data is the brand asset's own, passed through with
+/// one fitting transform rather than re-serialised from the parser.
+func writeSVG(mark: Mark, fill: String, to url: URL) {
+    guard mark.name == "logo" else {
+        fail("--svg exports the logo mark; the \(mark.name) mark is drawn from a font and has no path to export")
+    }
+    // Only the check is wanted: the raw text goes into the SVG below, so
+    // it must be six hex digits and nothing else.
+    _ = parseShade(fill)
+    let canvas: CGFloat = 1024
+    let art = logoMark().bounds
+    guard art.width > 0, art.height > 0 else { fail("the logo mark path is empty") }
+    // The fit of drawLogo on Composer's full canvas, without the flip:
+    // SVG y already runs down, as the artwork's does.
+    let (k, origin, _) = logoFit(art, box: canvas * composerForegroundScale(for: mark),
+                                 center: CGPoint(x: canvas / 2, y: canvas / 2))
+    let x = origin.x, y = origin.y
+    let n = svgNumber
+    // The scale multiplies coordinates in the artwork's thousands, so
+    // it keeps more digits than path data needs to stay within a pixel.
+    let scale = String(format: "%.6f", k)
+    var lines = [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 \(n(canvas)) \(n(canvas))\" width=\"\(n(canvas))\" height=\"\(n(canvas))\" role=\"img\">",
+        "<title>OnetimePad</title>",
+        "<path d=\"\(iconShapePath(side: canvas))\" fill=\"#\(fill.lowercased())\"/>",
+        "<g fill=\"#ffffff\" fill-rule=\"nonzero\" transform=\"translate(\(n(x)) \(n(y))) scale(\(scale)) translate(\(n(-art.minX)) \(n(-art.minY)))\">",
+    ]
+    for (tag, _) in logoMarkPaths() {
+        guard let d = attribute("d", of: tag) else { continue }
+        let transform = attribute("transform", of: tag).map { " transform=\"\($0)\"" } ?? ""
+        lines.append("<path\(transform) d=\"\(d)\"/>")
+    }
+    lines += ["</g>", "</svg>", ""]
+    do {
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        print(url.path)
+    } catch {
+        fail("writing \(url.path): \(error.localizedDescription)")
+    }
+}
+
+/// The plate shade of a rendering as rrggbb: the per channel median of
+/// its fully opaque pixels that are not the white mark or its antialiased
+/// edge. The document carries no dark fill; Icon Composer's dark
+/// appearance supplies that plate itself, so the dark SVG reads its
+/// shade from the Dark rendition rather than inventing one. The median
+/// of the automatic gradient is its middle, which is the shade the
+/// rendering reads as.
+func printPlateShade(of url: URL) {
+    guard let data = try? Data(contentsOf: url), let image = NSBitmapImageRep(data: data),
+          let cgImage = image.cgImage else {
+        fail("could not read a rendering at \(url.path)")
+    }
+    // Sampled in sRGB, which is what a browser takes the SVG's hex to
+    // be; the renderer's own bitmaps are generic RGB and would shift it.
+    let width = cgImage.width, height = cgImage.height
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+          let pixels = context.data?.assumingMemoryBound(to: UInt8.self)
+    else { fail("could not allocate an sRGB \(width)x\(height) bitmap") }
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let stride = context.bytesPerRow
+    var channels: [[UInt8]] = [[], [], []]
+    for y in 0..<height { for x in 0..<width {
+        let i = y * stride + x * 4
+        let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3]
+        // The context stores premultiplied colour, which reads darker
+        // than the shade shown wherever a pixel is partly transparent,
+        // so only the fully opaque interior is sampled.
+        guard a == 255, min(r, g, b) < 180 else { continue }
+        channels[0].append(r); channels[1].append(g); channels[2].append(b)
+    }}
+    guard !channels[0].isEmpty else { fail("\(url.path) has no plate to sample") }
+    let median = channels.map { $0.sorted()[$0.count / 2] }
+    print(String(format: "%02x%02x%02x", median[0], median[1], median[2]))
 }
 
 func writeIconset(style: Style, base: NSColor, mark: Mark, to outDir: URL) {
@@ -1059,7 +1238,8 @@ func writeScout(base: NSColor, mark: Mark, perUnit: CGFloat, to url: URL) {
 // MARK: - Command line
 
 func parseShade(_ hex: String) -> NSColor {
-    guard hex.count == 6, let rgb = UInt32(hex, radix: 16) else {
+    // UInt32 alone would take a leading sign, as in "+dc4a2".
+    guard hex.count == 6, hex.allSatisfy(\.isHexDigit), let rgb = UInt32(hex, radix: 16) else {
         fail("shade must be six hex digits, got \"\(hex)\"")
     }
     return NSColor(
@@ -1091,6 +1271,16 @@ let (mark, arguments) = takeMark(CommandLine.arguments)
 
 if arguments.count == 3, arguments[1] == "--composer" {
     writeComposerLayer(mark: mark, to: URL(fileURLWithPath: arguments[2], isDirectory: true))
+    exit(0)
+}
+
+if arguments.count == 4, arguments[1] == "--svg" {
+    writeSVG(mark: mark, fill: arguments[2], to: URL(fileURLWithPath: arguments[3]))
+    exit(0)
+}
+
+if arguments.count == 3, arguments[1] == "--plate-shade" {
+    printPlateShade(of: URL(fileURLWithPath: arguments[2]))
     exit(0)
 }
 
@@ -1153,6 +1343,8 @@ guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
     fail("""
     usage: swift render-icon.swift [--mark <mark>] <style> <rrggbb> <output.iconset>
            swift render-icon.swift [--mark <mark>] --composer <output-directory>
+           swift render-icon.swift --mark logo --svg <rrggbb> <output.svg>
+           swift render-icon.swift --plate-shade <rendering.png>
            swift render-icon.swift [--mark <mark>] --sheet <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --shadows <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --sweep <zoom> <rrggbb> <output.png> [grid]
