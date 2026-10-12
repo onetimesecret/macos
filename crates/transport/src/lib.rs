@@ -124,8 +124,8 @@ impl Transport for UreqTransport {
             .run(http_request)
             .map_err(|e| TransportError(e.to_string()))?;
         let status = response.status().as_u16();
-        // Presized to avoid leaving unwiped partial copies on growth;
-        // capped so the server cannot choose the allocation.
+        // Presized so growth leaves no unwiped partial copies; capped so
+        // the server cannot choose the allocation. Wiped if the read fails.
         let mut body = Zeroizing::new(Vec::new());
         let expected = response.body().content_length().unwrap_or(0);
         let _ = body.try_reserve_exact(usize::try_from(expected.min(PRESIZE_LIMIT)).unwrap_or(0));

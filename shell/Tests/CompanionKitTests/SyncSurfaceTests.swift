@@ -172,6 +172,10 @@ final class SyncSurfaceTests: XCTestCase {
         // Falling behind a rotation is not on that axis: that device
         // passed the gate and is short a key.
         XCTAssertEqual(SyncController.reconciled(trouble: .behind, gate: .attached), .behind)
+        // Nor is the network: a gate still holding an unreachable turn
+        // may not take its place (surface.md §4).
+        XCTAssertEqual(SyncController.reconciled(trouble: .behind, gate: .unreachable), .behind)
+        XCTAssertEqual(SyncController.reconciled(trouble: .behind, gate: .signedOut), .signedOut)
         // A core too old or too new to name a gate leaves the shell's
         // own reading alone.
         XCTAssertEqual(SyncController.reconciled(trouble: .unreachable, gate: nil), .unreachable)
@@ -289,6 +293,36 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 4), 240)
         XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 5), 300)
         XCTAssertEqual(SyncController.attachRetryDelay(quietRefusals: 50), 300)
+    }
+
+    func testAQuietRefusalAfterAnUnreachableTurnStillBacksOff() {
+        // The gate keeps the earlier turn's unreachable until a round
+        // trip reaches the relay, so a keychain refusal on the next
+        // attach settles to .unreachable. It is retried, and the
+        // reason, not the stale gate, counts it toward the backoff.
+        let settled = SyncController.settledTrouble(
+            ok: false, reason: "keychain", gate: .unreachable)
+        XCTAssertEqual(settled, .unreachable)
+        XCTAssertTrue(SyncController.attachRetries(after: settled))
+        XCTAssertTrue(SyncController.attachBacksOff(afterRefusal: "keychain"))
+        XCTAssertTrue(SyncController.attachBacksOff(afterRefusal: "refused"))
+        // An unreachable relay keeps the flat clock, and a busy attach
+        // is another one already in flight.
+        XCTAssertFalse(SyncController.attachBacksOff(afterRefusal: "unreachable"))
+        XCTAssertFalse(SyncController.attachBacksOff(afterRefusal: "busy"))
+    }
+
+    func testAQuietAttachRefusalLeavesBehindStanding() {
+        // A rejoin_required turn reattaches, and that attach can refuse
+        // quietly. The refusal says nothing about this pad's keys.
+        for gate: SyncGate in [.ready, .unreachable] {
+            let settled = SyncController.settledTrouble(ok: false, reason: "keychain", gate: gate)
+            XCTAssertEqual(SyncController.standing(trouble: .behind, after: settled), .behind)
+        }
+        // A named trouble is the newer fact.
+        let signedOut = SyncController.settledTrouble(
+            ok: false, reason: "signed_out", gate: .signedOut)
+        XCTAssertEqual(SyncController.standing(trouble: .behind, after: signedOut), .signedOut)
     }
 
     func testARefusedGateSaysSoAndSpareThePad() {

@@ -4,13 +4,9 @@
 //! where the refresh token rests — kept out of `lib.rs` so the extern
 //! fns there stay the thin wrappers every other family is.
 //!
-//! Sign-in is account-auth.md §1 executed: the shell opens the system
-//! browser on the authorize URL this module minted, the one-shot
-//! loopback listener waits out the consent screen, and the code
-//! redeems for a grant over the caller's transport. Every failure in
-//! §5's table comes back as a stable machine token, never a sentence:
-//! the engine hands up states, and issue #102's surface owns the
-//! words.
+//! Sign-in is account-auth.md §1, every failure a machine token and
+//! never a sentence. The engine's behaviour is client protocol §2 to
+//! §9 (`docs/spec/feature/sync/client-protocol.md`).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -35,15 +31,9 @@ use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
 use crate::sync_session::{KeyPackage, KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
 use crate::{Companion, CompanionHandle};
 
-/// Where the sync refresh token rests: its own account in the
-/// key-material store (account-auth.md §3, ADR-0021 §3), beside — and
-/// never inside — the rotating content-key derivation. The
-/// key-material tier rather than the handed store, because refresh is
-/// a background act and the login keychain's ACL prompt belongs to
-/// deliberate ones (ADR-0004; `api-token` keeps that path). Deleting
-/// this account disables sync and only sync; `rotate_key_halves` and
-/// `clear_pairing` never touch it, and clearing it touches nothing of
-/// theirs.
+/// Where the sync refresh token rests: its own key-material account,
+/// beside and never inside the rotating content-key derivation
+/// (account-auth.md §3, ADR-0027).
 pub(crate) const SYNC_REFRESH_ACCOUNT: &str = "sync-oauth-refresh";
 
 /// Sync's endpoints and client identity, handed by the shell at launch
@@ -142,9 +132,8 @@ pub(crate) struct SyncState {
     /// answer, whenever it comes, advances the acknowledged cursors to
     /// these and to nothing later.
     pub staged_batch: Option<StagedBatch>,
-    /// Whether an attach is in flight. Attaches are single-flight: two
-    /// at once would each mint a package, and the relay keeps whichever
-    /// request arrives last while this device could adopt the other.
+    /// Whether an attach is in flight; attaches are single-flight
+    /// (client protocol §3, §5.5).
     pub attaching: bool,
     /// Where the engine's relative clock starts: monotonic, so the
     /// publish and ballot windows cannot jump with the wall clock.
@@ -181,15 +170,9 @@ pub(crate) struct EngineState {
     pub session: SyncSession,
     pub chain: GopKeyChain,
     pub packages: KeyPackageKeeper,
-    /// A fresh package minted for a re-attach and not yet accepted. It
-    /// replaces `packages` only when the relay takes it, so an attach
-    /// the relay refuses leaves the package the roster names, and its
-    /// private half, where they were. An attach the relay took but
-    /// whose answer never arrived leaves the roster naming this one
-    /// instead, so while it waits the pump keeps re-attaching
-    /// (`package_needs_republish`) until an acceptance is heard, and a
-    /// proposal sealed to it in the meantime still opens
-    /// (`sync_session::open_proposal_entropy`, which adopts it).
+    /// A fresh package minted for a re-attach and not yet accepted; it
+    /// replaces `packages` only when the relay takes it (client
+    /// protocol §5.2).
     pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
@@ -202,12 +185,9 @@ pub(crate) struct PageTracking {
     /// The frontier the last export left; the pristine cursor at
     /// enrolment, so the first publish carries the whole page.
     pub frontier: Vec<u8>,
-    /// The frontier the relay has acknowledged carrying. The export
-    /// cursor above moves when ops are *queued*, which is before they
-    /// are sent, so this is the position a dissolving engine rewinds
-    /// to: an edit queued into a session that died before its publish
-    /// would otherwise sit behind a cursor that moved without it, and
-    /// no later export would ever reach it (ADR-0027 §7, tenet 1).
+    /// The frontier the relay has acknowledged carrying: what a
+    /// dissolving engine rewinds to, since the export cursor moves when
+    /// ops are queued (client protocol §2; ADR-0027).
     pub acked: Vec<u8>,
     /// The deadline the last published expiry policy named.
     pub deadline_wall_ms: Option<u64>,
@@ -498,13 +478,10 @@ pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bo
 /// The reasons an attach can refuse, as machine tokens.
 type Refusal = &'static str;
 
-/// Attach to the channel, building the engine if none stands:
-/// identity and channel secret ensured (the first device to enable
-/// sync founds the channel; a joiner's secret arrives by pairing and
-/// overwrites), a fresh key package minted and published. Blocking —
-/// the caller runs it off the main thread. Re-attaching with an
-/// engine standing keeps the session and chain and republishes a
-/// fresh package, which is the move after a ceremony spends one.
+/// Attach to the channel, building the engine if none stands (the
+/// first device founds the channel secret; a joiner's arrives by
+/// pairing, client protocol §9). Blocking. Answers and package rules:
+/// client protocol §4.3 and §5.
 pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
     let _flight = match AttachFlight::begin(handle) {
         Ok(flight) => flight,
@@ -535,13 +512,9 @@ fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
             let Some(engine) = guard.sync.engine.as_mut() else {
                 return serde_json::json!({ "ok": false, "reason": "not_attached" });
             };
-            // The pending package when one waits, which a re-attach
-            // normally has. Not always: `ensure_engine` has let the lock
-            // go, and a pump turn in between may have adopted the pending
-            // package by opening a proposal with it, which spends it. The
-            // standing one sent then is spent, and the relay may name it
-            // for a turn; the pump owes the relay a fresh package for it
-            // (`package_needs_republish`) once that ballot settles.
+            // The pending package when one waits, else the standing one,
+            // which a turn since `ensure_engine` may have spent (client
+            // protocol §5.5).
             let sent = engine
                 .pending_packages
                 .as_ref()
@@ -595,15 +568,10 @@ fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
 }
 
 /// A second `401` on one attach, with a token refreshed in between:
-/// the account is refusing this client rather than the token merely
-/// having aged out, and ADR-0027 §5 says that verdict is the grant
-/// being dead. So take the sign-out path the refused refresh takes.
-///
-/// Noting the fault alone would publish a `refused` gate over a
-/// credential still resting in the keychain, answer `signed_out` for a
-/// session nobody signed out of, and wedge there: `note_reachable`
-/// deliberately will not clear `Refused`, and nothing short of a fresh
-/// ceremony or an explicit sign-out ever does.
+/// take the sign-out path a refused refresh takes, since noting the
+/// fault alone would leave a `refused` gate over a credential still
+/// resting in the keychain (client protocol §4.3; whether a second
+/// `401` may sign out at all is open, client protocol §10.2).
 fn attach_refused(companion: &mut Companion) -> serde_json::Value {
     sign_out_locked(companion);
     serde_json::json!({ "ok": false, "reason": "signed_out" })
@@ -642,9 +610,9 @@ impl Drop for AttachFlight<'_> {
     }
 }
 
-/// Detach: tell the relay (best effort — attachments age out
-/// regardless, §3) and dissolve the engine, handing the keeper back
-/// so the sign-in survives. Blocking for the one round-trip.
+/// Detach: dissolve the engine, handing the keeper back so the sign-in
+/// survives, then tell the relay, best effort (client protocol §4.9).
+/// Blocking for the one round-trip.
 pub(crate) fn detach(handle: &CompanionHandle) -> bool {
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
@@ -672,12 +640,8 @@ pub(crate) fn detach(handle: &CompanionHandle) -> bool {
     true
 }
 
-/// What an accepted attach does to the keeper. The roster now names
-/// the package sent; until here it was a mint the relay had never seen,
-/// and the one it replaces kept its private half, so a proposal sealed
-/// to that one in the meantime still opened. Matched by value: a
-/// concurrent attach may have minted again since, and its package is
-/// not the one accepted here.
+/// What an accepted attach does to the packages, matched by value
+/// against the package sent (client protocol §5.2).
 fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
     if engine
         .pending_packages
@@ -692,22 +656,9 @@ fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
     }
 }
 
-/// Whether the relay's roster names a package this device cannot open,
-/// or none of this device's, or perhaps a pending one whose acceptance
-/// was never heard, with no ballot left to account for it.
-/// The first: the device opened its entry on a ballot that has since
-/// committed or been abandoned, so the standing package is spent, and
-/// stays the standing one until an attach carrying its replacement is
-/// accepted. That attach is not sure to land: the one that follows an
-/// abandonment runs on the first pump after a wake from sleep, which is
-/// exactly when the network is not up yet. The second: the engine's
-/// own first attach never landed. Either way a re-attach sends again,
-/// one attempt per pump on the pump's own cadence, for as long as the
-/// relay is unreachable or refuses the attach: against a relay that
-/// keeps answering `5xx`, that is one small extra request per long-poll
-/// turn, the price of never leaving the roster naming a package this
-/// device cannot open. Not while a ballot is in flight: the package
-/// was spent on that ballot, and its outcome decides.
+/// Whether this device owes the relay a fresh key package: the
+/// standing one is spent or unpublished, or a pending one waits, and
+/// no ballot is in flight (client protocol §5.4).
 fn package_needs_republish(engine: &EngineState) -> bool {
     (engine.packages.is_spent()
         || !engine.packages.is_published()
@@ -727,11 +678,8 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Some(relay_url) = guard.sync.config.as_ref().map(|c| c.relay_url.clone()) else {
         return Err("not_configured");
     };
-    // A re-attach with a package already waiting sends that one again.
-    // The relay may have taken it and its answer been lost, and a fresh
-    // mint would drop the private half the roster might now name; the
-    // waiting package is unspent, since a proposal that opens with it
-    // adopts it and a try that spends it otherwise drops it.
+    // A package already waiting is resent unchanged: no Keychain read
+    // and no mint (client protocol §5.2).
     if guard
         .sync
         .engine
@@ -754,10 +702,8 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
         return Err("keychain");
     };
     if let Some(engine) = guard.sync.engine.as_mut() {
-        // Re-attach: fresh package, standing session and chain. The
-        // package waits beside the standing one until the relay takes
-        // it (`attach`), so the private half of the package the roster
-        // names is never dropped before its replacement is accepted.
+        // Re-attach: the fresh package waits as pending until the relay
+        // takes it (client protocol §5.2).
         engine.pending_packages = Some(packages);
         return Ok(());
     }
@@ -850,15 +796,9 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
             sign_out_locked(&mut guard);
             Err("signed_out")
         }
-        // The token endpoint being unwell (a 5xx, a rate limit, a
-        // mangled body) is not the grant being revoked: the refresh
-        // token stands and the next pump retries, exactly as an
-        // unreachable host would. `Unreachable` is the right state and
-        // a slightly wide word: the endpoint did answer, and it was
-        // the token endpoint rather than the relay. The gate keeps the
-        // two under one state because they mean the same thing to the
-        // user and to the retry, and the shell's sentence names no
-        // server for the same reason.
+        // ADR-0027: only `invalid_grant` signs out. An unwell token
+        // endpoint keeps the refresh token for the next turn, under the
+        // gate's one `unreachable` state (client protocol §4.2).
         Err(_) => {
             note_fault(&mut guard, GateFault::Unreachable);
             Err("unreachable")
@@ -881,14 +821,8 @@ fn sign_out_locked(companion: &mut Companion) {
 }
 
 /// One outbound sweep over the enrolled pages, under the lock and off
-/// the network: queue fresh document deltas past each cursor, the
-/// expiry policy when its deadline moved (the sum is constant while
-/// nothing touches the page, so a move is a gesture), the hold
-/// register when it changed, and the terminal marker once for a page
-/// that died here. A due ceremony — a deferred rung transition, or
-/// the proposal a terminal marker owes (§5) — rotates the channel:
-/// a ballot to the verified attached peers, or solo when the room is
-/// empty.
+/// the network: what it queues and when it rotates the channel is
+/// client protocol §3 (step 2) and §7.1.
 pub(crate) fn sweep_outbound(
     companion: &mut Companion,
     now_ms: u64,
@@ -939,10 +873,8 @@ pub(crate) fn sweep_outbound(
                     engine.session.queue_hold(*page, register);
                     tracking.hold = Some(register);
                 }
-                // A page whose transition waits on its ceremony is
-                // the rotation's target, whatever order the map walks
-                // — a live page without one is only the fallback
-                // anchor for the rotation a terminal marker owes.
+                // Client protocol §7.1: a due page is the target; a live
+                // page only anchors the rotation a marker owes.
                 if store.ceremony_due(sheet) {
                     rotate = true;
                     due_target = due_target.or(Some(*page));
@@ -951,12 +883,9 @@ pub(crate) fn sweep_outbound(
                 }
             }
             None => {
-                // The page died here. Publish its signed terminal
-                // marker once — the gate refuses until this device's
-                // view is current with the channel, and while a hold
-                // stands elsewhere — then propose the ceremony §5 says
-                // follows a marker, so the dead page's ciphertext
-                // stops opening at the earliest boundary.
+                // The page died here: publish its signed marker once,
+                // when the gate allows, then rotate (client protocol §6,
+                // §7.1).
                 if !tracking.terminal_sent
                     && let Some(marker) = signed_terminal_marker(&**credentials, *page, wall_ms)
                     && engine.session.queue_terminal(*page, &marker)
@@ -1004,13 +933,9 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
     }
 }
 
-/// Move a page's export cursor to its document's own current version
-/// without exporting anything: the move after a ceremony compacts the
-/// page. The rebuilt body travels as the sealed key frame, never as a
-/// delta — an export from the stale cursor would name peers the
-/// rebuilt document has never heard of and so republish the whole
-/// body, which a peer holding its own rebuild would merge as a second
-/// copy of the text rather than recognize as its own.
+/// Move a page's export and acknowledged cursors to its rebuilt
+/// version without exporting, and drop the page from any staged batch:
+/// the rebuild travels only as the frame (client protocol §7.6).
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
@@ -1022,32 +947,20 @@ fn settle_frontier(
         && let Some(version) = store.document_version(sheet)
     {
         tracking.frontier = version.clone();
-        // The acknowledged cursor settles with it, or a later rewind
-        // would land before the rebuild and republish the whole body
-        // as the duplicate this settling exists to prevent.
+        // The acknowledged cursor settles with it, so a rewind cannot
+        // land before the rebuild.
         tracking.acked = version;
-        // And a batch still in flight loses its claim on this page. Its
-        // record was taken before the rebuild, so honouring it when the
-        // late answer arrives would put the acknowledged cursor back
-        // behind the rebuild and undo the settling in the same breath.
-        // A cursor the ceremony has settled is no longer any batch's to
-        // move: an acknowledgement may advance one and may never lower
-        // one.
+        // A late acknowledgement may advance a settled cursor, never
+        // lower it.
         if let Some(staged) = staged.as_mut() {
             staged.cursors.remove(&page);
         }
     }
 }
 
-/// Build the publish request and record what its batch carries, in one
-/// act. The recording is the whole point: a batch sealed in one pump
-/// and answered in a later one is resent verbatim
-/// (`SyncSession::publish_request` borrows the outbox only when
-/// nothing is already in flight), so by the time the relay accepts it
-/// the live cursors may have run on past it. Advancing to the live
-/// cursor would then mark ops acknowledged that the relay was never
-/// offered, and the next dissolve would rewind to a position past
-/// them, which is the loss the rewind exists to prevent.
+/// Build the publish request and, for a newly sealed batch, record each
+/// page's export cursor; a resend keeps the first record (client
+/// protocol §4.4).
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
     let engine = companion.sync.engine.as_mut()?;
     let EngineState { session, chain, .. } = engine;
@@ -1076,17 +989,9 @@ fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::H
     Some(request)
 }
 
-/// Absorb a publish answer under the lock, and on acceptance advance
-/// each enrolled page's acknowledged cursor to the position the batch
-/// the relay just took actually carried, never to wherever the live
-/// cursor has since reached. Acknowledgement and advance are one act
-/// on purpose: two call sites doing it separately is two chances for a
-/// cursor to move past ops nobody received.
-///
-/// A refusal that drops the batch drops the record with it, leaving
-/// the acknowledged cursor where it was, so the ops the dropped batch
-/// held are exported again after the next dissolve. Restating is
-/// cheap and idempotent; losing is neither.
+/// Absorb a publish answer under the lock: acceptance advances each
+/// acknowledged cursor to what the batch carried, and a refusal that
+/// drops the batch drops its record (client protocol §4.4).
 fn absorb_publish_locked(
     companion: &mut Companion,
     response: &HttpResponse,
@@ -1111,15 +1016,9 @@ fn absorb_publish_locked(
     Some(Ok(()))
 }
 
-/// Dissolve the engine, handing back the keeper it held, and rewind
-/// every enrolled page to what the relay actually acknowledged.
-///
-/// Whatever was queued into the dying session and never sent goes back
-/// on the books: the document ops by way of the rewound cursor, and
-/// the policy, hold and terminal facts by way of forgetting what was
-/// last published, so the next sweep states them again. Restating a
-/// fact a peer already holds is idempotent; dropping one is not, and
-/// tenet 1 does not stop at the sync boundary.
+/// Dissolve the engine, handing back its keeper, and rewind every
+/// enrolled page to its acknowledged cursor, forgetting what was last
+/// published so the next sweep restates it (client protocol §2).
 pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
     // The batch dies with the session that sealed it, and so does the
     // record of what it carried.
@@ -1138,12 +1037,11 @@ pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> 
         .map(|engine| engine.session.into_keeper())
 }
 
-/// Rotate the channel at `target`: a ballot to the verified attached
-/// peers when any are in the room, the solo one-event otherwise. The
-/// attach roster admits nobody without a pairing record
-/// ([`SyncSession::ceremony_peers`]), so a revoked device is left
-/// behind by construction. True when the ceremony committed on the
-/// spot — the solo path, whose caller owes the page a settled cursor.
+/// Rotate the channel at `target`: a ballot to the verified peers, or
+/// solo when there are none (client protocol §7.2, §7.3). A revoked
+/// device is left out only of ballots this device proposes (§7.9).
+/// True when the solo path committed, whose caller owes the page a
+/// settled cursor.
 fn rotate_channel(
     store: &mut companion_core::SheetStore<companion_core::SystemClock>,
     engine: &mut EngineState,
@@ -1205,13 +1103,10 @@ fn signed_terminal_marker(
     Some(marker)
 }
 
-/// One pump: the engine loop's whole body, run from a background
-/// queue on the shell's cadence. Sweeps the enrolled pages, publishes
-/// what the 2-second clock owes, long-polls the delta stream for up
-/// to `wait_seconds`, walks the ballot patience, and publishes a
-/// committed ceremony's frame. Blocking for up to the whole
-/// long-poll; the core mutex is held only between round-trips, so
-/// the pad never waits on the network.
+/// One pump: the engine loop's whole body, in the order of client
+/// protocol §3. Blocking for up to the whole long-poll; the core mutex
+/// is held only between round-trips, so the pad never waits on the
+/// network.
 pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::Value {
     let mut events: Vec<serde_json::Value> = Vec::new();
     if let Err(reason) = ensure_access(handle) {
@@ -1311,13 +1206,8 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                                 }
                             }
                         }
-                        // A 401 here is the bearer dying under the long
-                        // poll. The session drops the access token as
-                        // it refuses, so the next pump's top refreshes
-                        // and the round is reported rather than
-                        // swallowed: a refusal nobody hears is a
-                        // silence the gate would have to fill with a
-                        // guess.
+                        // Client protocol §4.5: a 401 drops the access
+                        // token and is reported; the next turn refreshes.
                         Err(refusal) => events.push(refusal_json(&refusal)),
                     }
                 }
@@ -1325,17 +1215,8 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
         }
     }
 
-    // A committed ceremony spent the one-shot key package (on the
-    // follower side) — republish a fresh one so the next proposal can
-    // reach this device. So did a ballot this device opened its entry
-    // on and then abandoned with the rest of the room, and so does an
-    // earlier republish whose attach never landed: nothing else
-    // schedules an attach after either, and without one the next
-    // proposal would be sealed to a package from the relay's roster
-    // that this device cannot open, be refused here in silence,
-    // abandon again at the patience, and so on at every sweep, with
-    // every status field reading healthy while the channel could not
-    // rotate.
+    // Client protocol §5.4: attach when a ceremony committed this turn
+    // or a key package is owed.
     let owes_package = {
         let Ok(guard) = handle.inner.lock() else {
             return pump_result(handle, Some("poisoned"), &events);
@@ -1350,9 +1231,8 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
         let _ = attach(handle);
     }
 
-    // A committed ceremony's frame supersedes at the relay: that
-    // acceptance is the purge. Kept until a 2xx (or a 409 — a peer's
-    // copy won, equally final) so a dropped round retries next pump.
+    // Client protocol §7.8: the committed frame is kept until a 2xx or
+    // a 409, so a dropped round retries next turn.
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
             return pump_result(handle, Some("poisoned"), &events);
@@ -1442,9 +1322,7 @@ fn publish_round(
         }
         Err(refusal) => {
             if matches!(refusal, RelayRefusal::CeremonyRequired) {
-                // The §3 cap: nothing publishes until a ceremony
-                // compacts, so rotate now rather than on the next
-                // transition.
+                // Client protocol §4.4: at the cap, rotate now.
                 let now = guard.sync.now_ms();
                 let Companion {
                     store,
@@ -1679,8 +1557,7 @@ pub(crate) fn devices_json(companion: &Companion) -> serde_json::Value {
 // ---------------------------------------------------------------------
 
 /// A pairing ceremony in flight: the state machine between mailbox
-/// polls. One at a time — the mailbox holds one pairing, and so does
-/// this.
+/// polls, one at a time (client protocol §9).
 pub(crate) struct PairingState {
     /// Mailbox cursor for the next fetch.
     since: u64,
@@ -1879,20 +1756,8 @@ fn advance_pairing(
             match settled.receive(&grant) {
                 None => PairingStep::Failed("grant"),
                 Some(secret) => {
-                    // The peer is recorded before the secret lands, and a
-                    // record the store refuses fails the step. A secret
-                    // stored beside no record would attach this device to
-                    // the channel while it treated the device that granted
-                    // the secret as a stranger: sealed to by no ceremony,
-                    // its terminal markers refused, listed as unverified,
-                    // with the shell reading "paired" all the while.
-                    //
-                    // The opposite residue, a record with no secret when
-                    // the secret's write is the one refused, is a device
-                    // the person verified by its words in this very
-                    // ceremony. It grants nothing on its own: without the
-                    // secret this device is on no channel with it, and a
-                    // retried pairing records it again.
+                    // Client protocol §9: record the peer before storing
+                    // the secret; either refusal fails the step.
                     let recorded = pairing::record_peer(
                         credentials,
                         settled.peer_identity(),
@@ -1939,14 +1804,8 @@ fn maybe_grant(
     let Some(grant) = settled.grant(&secret) else {
         return PairingStep::Failed("keychain");
     };
-    // Recorded before the grant is queued, and a record the store
-    // refuses fails the step: a grant sent to a device this one then
-    // does not trust would hand it the channel and keep it out of
-    // every ceremony and every terminal marker afterwards. The
-    // failure can leave a residue. On an inviter with no channel
-    // secret yet, the one minted two lines up stays stored with no
-    // peer recorded; it is a channel of one and grants nothing, and
-    // the next ceremony reuses it.
+    // Client protocol §9: record the peer before queuing the grant; a
+    // refused record fails the step.
     if !pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms()) {
         return PairingStep::Failed("keychain");
     }
@@ -2128,12 +1987,8 @@ pub(crate) fn absorb_mailbox(companion: &mut Companion, response: &HttpResponse)
         && let Some(chain) = GopKeyChain::root(&secret)
         && let Some(engine) = companion.sync.engine.as_mut()
     {
-        // The delivered secret replaces whatever this device founded
-        // for itself: the chain re-roots at epoch zero. That is the
-        // whole story today — catching a joiner up to a channel that
-        // has already rotated is ADR-0021 Amendment 1's welcome, not
-        // yet built on either side of the wire — so a joiner landing
-        // on a rotated channel sees rejoin_required, honestly.
+        // Client protocol §8: the delivered secret re-roots the chain at
+        // epoch zero, which leaves a joiner behind on a rotated channel.
         engine.chain = chain;
     }
 }

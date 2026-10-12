@@ -1,11 +1,34 @@
-//! The per-GOP transport key (ADR-0021; relay-protocol.md §5). The root
-//! expands from the pairing channel secret, not the content key, so every
-//! paired device can derive it:
+//! The per GOP transport key: derived at the key frame, rotated at the
+//! ceremony, destroyed on rotation (ADR-0021 section 2, issue #95).
+//!
+//! Every delta and key frame a device publishes is sealed under the
+//! channel's current GOP key. The compaction ceremony rotates the key
+//! and every device destroys the outgoing one, so whatever ciphertext
+//! the relay retains after the boundary — by bug, by backup or by
+//! malice — is undecryptable by anyone, the devices that wrote it
+//! included. The purge is that derivation, never a promise about a
+//! server's disk (ADR-0007, ADR-0021 section 2).
+//!
+//! The key descends from the pairing ceremony's channel secret, never
+//! from the content key, so every paired device can compute it, one
+//! that has never held a page included (ADR-0021 section 8). Rotation
+//! is a chain with fresh entropy mixed in:
 //!
 //! ```text
 //! key[0]   = HKDF(salt: GOP_ROOT_SALT, ikm: channel_secret, info: GOP_KEY_INFO)
 //! key[n+1] = HKDF(salt: key[n],        ikm: entropy[n],     info: GOP_KEY_INFO)
 //! ```
+//!
+//! Salting with the outgoing key keeps a device that never held this
+//! GOP's key out of the next one. The entropy, sealed to each member's
+//! key package, keeps out a device the proposer did not name, though
+//! not the proposer itself (client protocol §7.9). A device that missed
+//! a rotation cannot derive it, and the welcome that would hand it the
+//! key is not built (client protocol §8). Registry of the info string,
+//! salt and magic: client protocol Appendix A; they live in
+//! [`crate::persist`], and the sealed payload carries its magic
+//! ([`persist::GOP_MAGIC`]) and the epoch under the AEAD's associated
+//! data.
 
 use companion_core::{Clock, SheetId, SheetStore};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -13,19 +36,29 @@ use zeroize::Zeroizing;
 
 use crate::persist::{self, Bytes, GOP_KEY_INFO, GOP_MAGIC, GOP_ROOT_SALT, KEY_LEN};
 
-/// `magic[8] ‖ epoch[8]`, big-endian.
+/// Length of a sealed GOP payload's authenticated header:
+/// `magic[8] ‖ epoch[8]`, big-endian like every other header in this
+/// crate.
 const GOP_HEADER_LEN: usize = 8 + 8;
 
-/// One channel's current GOP key and epoch. Deliberately neither `Debug`
-/// nor `Clone`, so nothing keeps an outgoing key alive.
+/// One channel's transport key chain: the current GOP's key and its
+/// epoch, nothing else — the outgoing key is destroyed by the rotation
+/// that supersedes it, which is the whole point. Not `Debug`, and not
+/// `Clone` for a caller to keep an outgoing key alive by accident; the
+/// key material wipes on drop.
 pub struct GopKeyChain {
-    /// Matches [`companion_core::PageChannel`]'s ceremony count.
+    /// How many ceremonies this chain has crossed: the GOP epoch,
+    /// matching [`companion_core::PageChannel`]'s count.
     epoch: u64,
     key: Zeroizing<Vec<u8>>,
 }
 
 impl GopKeyChain {
-    /// The chain at epoch zero, from the pairing channel secret.
+    /// The chain at epoch zero, expanded from the pairing ceremony's
+    /// channel secret. Every paired device derives the same chain from
+    /// the same secret, which is what lets them open each other's
+    /// payloads without the relay ever holding a key. `None` only if
+    /// the HKDF refuses, which a 32-byte expansion cannot make it do.
     #[must_use]
     pub fn root(channel_secret: &[u8]) -> Option<Self> {
         let prk = Salt::new(HKDF_SHA256, GOP_ROOT_SALT).extract(channel_secret);
@@ -35,14 +68,20 @@ impl GopKeyChain {
         Some(Self { epoch: 0, key })
     }
 
-    /// The GOP epoch of the current key.
+    /// The GOP epoch this chain's key belongs to.
     #[must_use]
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    /// Rotate to the next epoch; the outgoing key is wiped as it drops.
-    /// Infallible, so [`ceremony_commit`] has no half-done state.
+    /// Rotate at the ceremony: the incoming key is expanded from the
+    /// outgoing key and the ceremony's fresh entropy, the epoch
+    /// advances, and the outgoing key is destroyed — its buffer wiped
+    /// as it drops, so no copy remains to open what the relay
+    /// retained. Pure derivation: it cannot fail, which is what lets
+    /// the ceremony's two halves (this rotation and the document
+    /// rebuild) run as one event with no half-done state between them
+    /// ([`ceremony_commit`]).
     pub fn advance(&mut self, entropy: &[u8]) {
         let prk = Salt::new(HKDF_SHA256, &self.key).extract(entropy);
         let mut next = Zeroizing::new(vec![0u8; KEY_LEN]);
@@ -51,12 +90,18 @@ impl GopKeyChain {
             .and_then(|okm| okm.fill(&mut next))
             .is_ok();
         debug_assert!(filled, "a 32-byte HKDF expansion has no refusable input");
+        // The swap is the destruction: the outgoing key's buffer wipes
+        // as it drops.
         self.key = next;
         self.epoch += 1;
     }
 
-    /// `magic ‖ epoch ‖ nonce ‖ ciphertext ‖ tag`, header as associated
-    /// data. `None` when the RNG refuses a nonce.
+    /// Seal a delta or key frame for the relay:
+    /// `magic ‖ epoch ‖ nonce ‖ ciphertext ‖ tag`, the header
+    /// authenticated as associated data so neither the version nor the
+    /// epoch can be edited without failing authentication. `None` when
+    /// the system's RNG refuses a nonce, which is a refusal to
+    /// publish, never a publish under a reused one.
     #[must_use]
     pub fn seal(&self, plaintext: &[u8]) -> Option<Vec<u8>> {
         let header = self.header();
@@ -67,13 +112,18 @@ impl GopKeyChain {
         Some(sealed)
     }
 
-    /// `None` for anything not sealed under this key at this epoch.
+    /// Open a sealed payload from a peer. `None` for anything that was
+    /// not sealed under this chain's current key at this chain's
+    /// current epoch — a payload from behind a ceremony boundary is
+    /// just ciphertext now, which is the purge working, not an error
+    /// to recover from. The plaintext wipes on drop.
     #[must_use]
     pub fn open(&self, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         let body = sealed.strip_prefix(self.header().as_slice())?;
         persist::open_body(&self.key, &self.header(), body)
     }
 
+    /// The authenticated header at this epoch.
     fn header(&self) -> [u8; GOP_HEADER_LEN] {
         let mut header = [0u8; GOP_HEADER_LEN];
         header[..8].copy_from_slice(GOP_MAGIC);
@@ -82,9 +132,10 @@ impl GopKeyChain {
     }
 }
 
-/// Compact the page, rotate the key, and return the key frame sealed
-/// under the incoming key (relay-protocol.md §5). A refused compaction
-/// rotates nothing. Run only on a confirmed ceremony.
+/// The ceremony's two halves as one event: the store's rebuild runs
+/// first and is the only fallible step, so a refusal rotates nothing;
+/// the rotation cannot fail; the frame is sealed under the incoming key
+/// (client protocol §7.6). Run only on a confirmed ballot.
 pub fn ceremony_commit<C: Clock>(
     store: &mut SheetStore<C>,
     page: SheetId,
@@ -103,12 +154,14 @@ mod tests {
 
     use super::*;
 
+    /// A channel secret as the pairing ceremony would mint it.
     const CHANNEL_SECRET: &[u8; 32] = b"0123456789abcdef0123456789abcdef";
 
     #[test]
     fn ciphertext_sealed_under_the_outgoing_key_does_not_open_under_the_incoming() {
         let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         let sealed = chain.seal(b"a delta the relay retained").unwrap();
+        // Control: the epoch that sealed it opens it.
         assert_eq!(
             chain.open(&sealed).unwrap().as_slice(),
             b"a delta the relay retained"
@@ -121,6 +174,8 @@ mod tests {
             "the boundary must make retained ciphertext dead, not merely deleted"
         );
 
+        // And the incoming epoch's traffic is ordinary under the
+        // incoming key.
         let fresh = chain.seal(b"the next GOP's delta").unwrap();
         assert_eq!(
             chain.open(&fresh).unwrap().as_slice(),
@@ -137,6 +192,7 @@ mod tests {
             right.open(&sealed).unwrap().as_slice(),
             b"hello from the laptop"
         );
+        // Through a rotation too, given the same ceremony entropy.
         left.advance(b"entropy one");
         right.advance(b"entropy one");
         let sealed = right.seal(b"hello from the desktop").unwrap();
@@ -148,6 +204,10 @@ mod tests {
 
     #[test]
     fn a_device_excluded_from_a_ceremony_cannot_follow_the_chain() {
+        // The revocation shape (issue #97): the revoked device holds
+        // the outgoing key and the root, and still cannot derive the
+        // incoming key, because the ceremony's entropy was delivered
+        // only to the surviving devices.
         let mut surviving = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         let mut revoked = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         surviving.advance(b"entropy the revoked device never received");
@@ -158,6 +218,10 @@ mod tests {
 
     #[test]
     fn a_gop_rotation_never_touches_the_ledger_key_or_the_content_halves() {
+        // The chain's whole API takes explicit bytes and no credential
+        // store; this pins that the seam stays that way. Mint the
+        // long-lived keys first, run a rotation, and prove every
+        // stored secret is bit-for-bit where it was.
         let credentials = InMemoryCredentialStore::default();
         let ledger_before = crate::persist::ensure_ledger_key(&credentials).unwrap();
         let dir = std::env::temp_dir().join(format!("gop-rotation-{}", std::process::id()));
@@ -195,9 +259,14 @@ mod tests {
         ));
         let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
 
+        // A page not deferred to a channel refuses, and the refusal
+        // rotates nothing: no half-done state.
         assert!(ceremony_commit(&mut store, page, &mut chain, b"entropy").is_none());
         assert_eq!(chain.epoch(), 0);
 
+        // Deferred and confirmed, the one event runs both halves: the
+        // epoch advances, and the sealed frame opens under the
+        // incoming key with nothing from behind the boundary in it.
         assert!(store.set_compaction_deferred(page, true));
         let tab = store.tabs().next().unwrap().id();
         store.cycle_rung(tab).unwrap();
@@ -207,6 +276,7 @@ mod tests {
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(!contains(&frame, b"DOOMED"));
 
+        // The frame is the joinable state: a fresh store adopts it.
         let mut joiner = SheetStore::new(ManualClock::new());
         let j = joiner.new_tab().1;
         let uuid = store.sheet(page).unwrap().uuid();

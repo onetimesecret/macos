@@ -107,7 +107,9 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
     let _saved_wall = reader.u64().ok_or(Malformed)?;
     let file_count = count(&mut reader)?;
 
-    let mut records = Vec::with_capacity(file_count);
+    // Decoded whole before the store is touched. Not reserved from the
+    // untrusted `file_count`.
+    let mut records = Vec::new();
     for _ in 0..file_count {
         let mut record = reader.framed().ok_or(Malformed)?;
         let bookmark = record.bytes().ok_or(Malformed)?.to_vec();
