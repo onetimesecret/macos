@@ -2,7 +2,7 @@
 //! Every response comes back as `Ok` whatever its status; `ots-client`
 //! interprets status itself.
 
-use std::io::Read as _;
+use std::io::{self, Read};
 use std::time::Duration;
 
 use ots_client::{HttpRequest, HttpResponse, Transport, TransportError};
@@ -27,6 +27,8 @@ const BODY_LIMIT: u64 = 10 * 1024 * 1024;
 
 /// Cap on what a declared `Content-Length` may reserve up front.
 const PRESIZE_LIMIT: u64 = 64 * 1024;
+
+const READ_CHUNK: usize = 8 * 1024;
 
 /// A [`Transport`] over a pooled `ureq::Agent` (rustls). Cheap to clone;
 /// build one per process.
@@ -124,22 +126,42 @@ impl Transport for UreqTransport {
             .run(http_request)
             .map_err(|e| TransportError(e.to_string()))?;
         let status = response.status().as_u16();
-        // Presized so growth leaves no unwiped partial copies; capped so
-        // the server cannot choose the allocation. Wiped if the read fails.
-        let mut body = Zeroizing::new(Vec::new());
         let expected = response.body().content_length().unwrap_or(0);
-        let _ = body.try_reserve_exact(usize::try_from(expected.min(PRESIZE_LIMIT)).unwrap_or(0));
-        response
-            .body_mut()
-            .with_config()
-            .limit(BODY_LIMIT)
-            .reader()
-            .read_to_end(&mut body)
-            .map_err(|e| TransportError(e.to_string()))?;
+        let reserve = usize::try_from(expected.min(PRESIZE_LIMIT)).unwrap_or(0);
+        let mut reader = response.body_mut().with_config().limit(BODY_LIMIT).reader();
+        let mut body =
+            read_wiping(&mut reader, reserve).map_err(|e| TransportError(e.to_string()))?;
         // Callers that hold secrets in the body wipe it (ots-client,
         // the sync driver's token answers).
         let body = std::mem::take(&mut *body);
         Ok(HttpResponse { status, body })
+    }
+}
+
+/// Read to the end without growing an allocation in place: each growth
+/// copies into a fresh buffer and drops the old one, which wipes it (Law 0004).
+fn read_wiping(reader: &mut impl Read, reserve: usize) -> io::Result<Zeroizing<Vec<u8>>> {
+    let mut body = Zeroizing::new(Vec::new());
+    // A reservation the allocator cannot meet falls back to growth.
+    let _ = body.try_reserve_exact(reserve);
+    let mut chunk = Zeroizing::new([0u8; READ_CHUNK]);
+    loop {
+        let read = match reader.read(&mut chunk[..]) {
+            Ok(0) => return Ok(body),
+            Ok(read) => read,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        let needed = body.len() + read;
+        if needed > body.capacity() {
+            let mut grown = Zeroizing::new(Vec::new());
+            grown
+                .try_reserve_exact(needed.max(body.capacity().saturating_mul(2)))
+                .map_err(|_| io::Error::from(io::ErrorKind::OutOfMemory))?;
+            grown.extend_from_slice(&body);
+            body = grown;
+        }
+        body.extend_from_slice(&chunk[..read]);
     }
 }
 
@@ -235,5 +257,59 @@ mod tests {
         );
         let request = Api::new("https://relay.example", Box::new(NoAuth)).status_request();
         assert!(transport.send(request).unwrap_err().0.contains("allowlist"));
+    }
+
+    /// Yields `data` in `step`-byte reads after one interruption, then
+    /// ends, or fails when `fail` is set.
+    struct Trickle<'a> {
+        data: &'a [u8],
+        step: usize,
+        interrupted: bool,
+        fail: bool,
+    }
+
+    impl Read for Trickle<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            if self.data.is_empty() {
+                return if self.fail {
+                    Err(io::Error::other("cut off"))
+                } else {
+                    Ok(0)
+                };
+            }
+            let read = self.step.min(self.data.len()).min(buf.len());
+            buf[..read].copy_from_slice(&self.data[..read]);
+            self.data = &self.data[read..];
+            Ok(read)
+        }
+    }
+
+    #[test]
+    fn a_body_read_past_its_reservation_arrives_whole_and_in_order() {
+        let data: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+        let mut reader = Trickle {
+            data: &data,
+            step: 3001,
+            interrupted: false,
+            fail: false,
+        };
+        let body = read_wiping(&mut reader, 16).unwrap();
+        assert_eq!(*body, data);
+    }
+
+    #[test]
+    fn a_read_that_fails_partway_returns_the_error() {
+        let mut reader = Trickle {
+            data: b"half a token",
+            step: 4,
+            interrupted: false,
+            fail: true,
+        };
+        let err = read_wiping(&mut reader, 0).unwrap_err();
+        assert_eq!(err.to_string(), "cut off");
     }
 }
