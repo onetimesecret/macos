@@ -58,7 +58,7 @@ deleted for hygiene, announced but never decisive."
 
 | Interaction | Class | Expected behaviour | Pinned by |
 | --- | --- | --- | --- |
-| Save while no tab holds a page | rotate and reseal | Both halves rotate; tab names, rungs and order reseal under the new key with no content | `crates/ffi/src/lib.rs` `resealing_an_emptied_pad_rotates_the_halves_and_keeps_the_strip` |
+| Save while no tab holds a page | rotate and reseal | Both halves are replaced, and completion is the file half's erasure; tab names, rungs and order reseal under the new key with no content | `crates/ffi/src/lib.rs` `resealing_an_emptied_pad_rotates_the_halves_and_keeps_the_strip` |
 | A second save while the pad stays empty | rotate and reseal | Rotates again; the trigger is the state, not the transition | `crates/ffi/src/lib.rs` `a_second_write_over_a_pad_that_is_still_empty_rotates_again` |
 | The file half cannot be erased | rotate and reseal | Nothing is resealed; the call reports false and the old generation stays as it was | `crates/ffi/src/lib.rs` `a_reseal_that_could_not_touch_the_half_leaves_the_old_generation_alone` |
 | The file half is zeroed but not unlinked | rotate and reseal | Counts as erased; the reseal proceeds | `crates/ffi/src/lib.rs` `a_reseal_that_could_not_unlink_the_half_has_still_forgotten` |

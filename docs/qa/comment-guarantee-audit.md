@@ -28,7 +28,7 @@ Status values:
 | src/lib.rs | The tier is probed at most once per gate, and the degradation is announced once | `the_tier_is_probed_once_and_then_cached`; `a_probe_that_lacks_the_entitlement_degrades_and_says_so_once`; `a_real_operation_can_demote_a_gate_that_probed_clean` | covered |
 | src/lib.rs | Reads and deletes reach both keychain tiers, so an unentitled build still finds and removes what it wrote | `data_protection_items_are_invisible_to_the_login_keychain` | macOS only (ignored, run by hand) |
 | src/lib.rs | `exists` is answered from attributes only and never decrypts, so it cannot raise the ACL prompt | none | macOS only, untested |
-| src/lib.rs | Error messages never embed secret material | none | structural (Backend text is a status string) |
+| src/lib.rs | Error messages never embed secret material | none; `CredentialError::Backend` holds a `BackendFailure`, which is a status code or a `&'static str` (tightened in review; it held a `String` before) | structural |
 
 ## crates/core
 
@@ -64,13 +64,13 @@ Status values:
 | src/files.rs | A refused reload leaves the buffer as it was | `a_refused_reload_marks_a_clean_file_and_absence_is_the_other_state` (clean buffer only); `a_refused_reload_keeps_a_dirty_buffers_draft` | added (wording survives) |
 | src/files.rs | A pending (restored, unhydrated) file refuses every route that would move or write it | `a_pending_file_refuses_every_route_that_would_move_it` (in file_persist.rs) | covered |
 
-### Gaps in store.rs, document.rs and sheet.rs (no tests added here)
+### Gaps in store.rs, document.rs and sheet.rs
 
-Another agent owns tests in these files. Most of their removed guarantees are covered, for example: undo never un-seals (`a_seal_cannot_be_stepped_back`, `a_deleted_chip_leaves_no_step_that_would_stand_it_again`); a seal over a standing chip refuses (`a_range_seal_over_a_selected_chip_is_refused`); a due page is not resurrected (`cycling_or_setting_a_due_page_refuses_instead_of_resurrecting`, `pausing_a_due_page_refuses`); a peer expiry only shortens (`a_peer_expiry_can_only_shorten_and_the_hold_ignores_it`); remote refusals are whole (`a_remote_chip_the_page_does_not_own_refuses_whole`, `a_delta_missing_its_dependencies_is_refused_not_queued`); compaction sheds the old peer id (`compaction_rebuilds_under_a_fresh_peer_and_sheds_the_trail`, `no_peer_id_crosses_a_ceremony_boundary_in_a_delta`). No test was found for these:
+Another agent owns tests in these files. Most of their removed guarantees are covered, for example: undo never un-seals (`a_seal_cannot_be_stepped_back`, `a_deleted_chip_leaves_no_step_that_would_stand_it_again`); a seal over a standing chip refuses (`a_range_seal_over_a_selected_chip_is_refused`); a due page is not resurrected (`cycling_or_setting_a_due_page_refuses_instead_of_resurrecting`, `pausing_a_due_page_refuses`); a peer expiry only shortens (`a_peer_expiry_can_only_shorten_and_the_hold_ignores_it`); remote refusals are whole (`a_remote_chip_the_page_does_not_own_refuses_whole`, `a_delta_missing_its_dependencies_is_refused_not_queued`); compaction sheds the old peer id (`compaction_rebuilds_under_a_fresh_peer_and_sheds_the_trail`, `no_peer_id_crosses_a_ceremony_boundary_in_a_delta`). No test was found for these; the first gained one in review:
 
 | File | Removed claim (paraphrase) | Covering test | Status |
 | --- | --- | --- | --- |
-| src/store.rs | `sheet_payload` preallocates the whole conceal payload, so no regrowth strands sealed bytes in unwiped heap | none | none |
+| src/store.rs | `sheet_payload` preallocates the whole conceal payload, so no regrowth strands sealed bytes in unwiped heap | `the_conceal_payload_is_written_at_its_exact_size` (added in review, Law 0004) | added |
 | src/store.rs | If the document refuses a chip placement after the chip was minted, the settle reaps that chip (zeroized, with its record) and the call fails closed | none (the refusal cannot be injected) | none |
 | src/sheet.rs | The segments projection drops a sentinel whose identity matches no owned chip, so an unresolvable chip never renders | none (`a_sentinel_with_an_unreadable_mark_reads_as_ink` covers an unreadable mark, not an unowned one) | none |
 | src/document.rs | If a chip's mark cannot be applied, its sentinel is removed rather than left standing | none (the failure cannot be injected) | none |
@@ -89,7 +89,7 @@ Another agent owns tests in these files. Most of their removed guarantees are co
 | --- | --- | --- | --- |
 | src/api.rs | The guest conceal request never carries credentials | `guest_request_is_unauthenticated_on_the_guest_route` | covered |
 | src/api.rs | A requested TTL snaps down, never up | `snap_ttl_snaps_down_never_up` | covered |
-| src/api.rs | The conceal body is serialized straight into an exact-size zeroizing buffer, with no intermediate JSON tree holding the secret | none | none |
+| src/api.rs | The conceal body is serialized straight into an exact-size zeroizing buffer, with no intermediate JSON tree holding the secret | `the_conceal_body_is_written_at_its_exact_size` (added in review, Law 0004; checks the size, not the absence of a JSON tree) | added |
 | src/http.rs | Transports must enforce TLS | `refuses_a_plaintext_url_before_any_socket_opens` (crates/transport) | covered |
 
 ## crates/ffi
@@ -101,7 +101,7 @@ Another agent owns tests in these files. Most of their removed guarantees are co
 | src/conceal.rs | The stub wire's record holds no payload and no passphrase | `wire_stub_records_the_conceal_without_its_secret` (test-util) | covered |
 | src/conceal.rs, src/lib.rs | A failed conceal changes nothing: the chip stays, nothing is written to the board, nothing is recorded | `a_conceal_that_fails_leaves_the_chip_the_board_and_the_ledger_alone` (test-util) | added |
 | src/diagnostics.rs | A NUL inside a line does not truncate it at the ABI; clearing the sink returns lines to stderr | `a_message_carrying_a_nul_arrives_whole`; `a_registered_sink_takes_the_line_and_stops_taking_it_when_cleared` | covered |
-| src/diagnostics.rs | Only metadata crosses the diagnostic sink, never ink, chips or key material | none; proposed as a rule in ADR-0040, not tested | none |
+| src/diagnostics.rs | Only metadata crosses the diagnostic sink, never ink, chips or key material | none; proposed as a rule in ADR-0040, not tested; a one line restatement that survived the trim was removed in review | none |
 | src/gop.rs | Ciphertext sealed under a rotated-out key never opens under the next; an excluded device cannot follow the chain | `ciphertext_sealed_under_the_outgoing_key_does_not_open_under_the_incoming`; `a_device_excluded_from_a_ceremony_cannot_follow_the_chain` | covered |
 | src/gop.rs | A GOP rotation never touches the ledger key or the content halves; a refused ceremony rotates nothing | `a_gop_rotation_never_touches_the_ledger_key_or_the_content_halves`; `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all` | covered |
 | src/persist.rs | Only ciphertext reaches disk, and both header fields are authenticated | `the_file_never_contains_the_plaintext`; `header_fields_are_authenticated`; `tampering_anywhere_fails_authentication` | covered |
@@ -151,7 +151,7 @@ Another agent owns tests in these files. Most of their removed guarantees are co
 
 ## Contradictions
 
-None. Every added test passed against the code at 7544943 without a code change.
+None. Every added test passed against the code at 7544943 without a code change, and the two added in review passed against the code they pin.
 
 Found while writing the invariant tests in 23a0da9, not by this audit's tests, and not fixed here:
 
@@ -163,7 +163,7 @@ One observation, not a contradiction: on the save path, `ensure_file_half` treat
 ## Totals
 
 - Claims mapped: 105. That is 99 table rows plus the 6 covered claims named in the store, document and sheet summary.
-- Covered by a test from before this audit: 81 (75 table rows plus those 6).
-- Covered by a test added here: 9 claims, 9 tests.
+- Covered by a test from before this audit: 82 (76 table rows plus those 6).
+- Covered by a test added here: 11 claims, 11 tests (9 by the audit, 2 in review).
 - Structural (4), or macOS only and not run by Linux CI (2): 6.
-- No test: 9, of which 4 are in store.rs, document.rs and sheet.rs.
+- No test: 6, of which 3 are in store.rs, document.rs and sheet.rs.

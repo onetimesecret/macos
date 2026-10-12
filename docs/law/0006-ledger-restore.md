@@ -4,7 +4,7 @@ title: Ledger restore
 status: draft
 dated: 2026-10-12
 governs: Restoring the ledger file merges it into the live ledger without losing a record either side holds, and distrusts only the stamps a sane clock can judge.
-decisions: none numbered; serves ADR-0016's restore and ADR-0012's stepped-clock bound
+decisions: none numbered; serves ADR-0016's restore
 consumed-by: []
 sources:
   - docs/adr/0016-content-persists-across-restart.md (accepted)
