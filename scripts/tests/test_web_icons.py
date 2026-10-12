@@ -39,9 +39,15 @@ def logo_mark_paths():
     return [(p.get("transform"), p.get("d")) for p in paths[1:]]
 
 
-def solid_png(size=4):
-    """A tiny opaque RGBA PNG with no colour profile, standing in for an ictool export."""
-    rows = b"".join(b"\x00" + b"\xdc\x4a\x22\xff" * size for _ in range(size))
+def rendition_png(size=4):
+    """A tiny RGBA PNG with no colour profile, standing in for an ictool export.
+
+    One shade throughout, opaque in the first row and partly transparent
+    below, as a plate's antialiased edge is. Sampled premultiplied, the
+    translucent majority would pull the plate shade darker.
+    """
+    rows = b"\x00" + b"\xdc\x4a\x22\xff" * size
+    rows += b"".join(b"\x00" + b"\xdc\x4a\x22\xc8" * size for _ in range(size - 1))
 
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
@@ -98,7 +104,7 @@ class WebIconTests(unittest.TestCase):
     def mock_composer(self, skip_rendition="", xcode="27.0", with_ictool=True):
         """Stand in for the selected Xcode so failure paths need no Icon Composer."""
         fixture = self.scratch / "fixture.png"
-        fixture.write_bytes(solid_png())
+        fixture.write_bytes(rendition_png())
         self.requested = self.scratch / "renditions.log"
         self.layers_seen = self.scratch / "layers.log"
         developer = self.scratch / "Xcode.app/Contents/Developer"
