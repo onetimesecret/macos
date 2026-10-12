@@ -1,18 +1,15 @@
-//! Transport-agnostic HTTP types. The crate builds requests and parses
-//! responses; something else moves the bytes.
+//! Transport-agnostic HTTP types.
 
 use zeroize::Zeroizing;
 
-/// An HTTP request, ready for any transport. The body is zeroizing —
-/// for conceal calls it holds the secret plaintext.
+/// An HTTP request, ready for any transport.
 #[derive(Debug)]
 pub struct HttpRequest {
     /// HTTP method (`GET`, `POST`).
     pub method: &'static str,
     /// Absolute URL.
     pub url: String,
-    /// Header name/value pairs, `Authorization` included when the auth
-    /// strategy adds one.
+    /// Header name/value pairs.
     pub headers: Vec<(String, String)>,
     /// Request body; zeroized on drop.
     pub body: Option<Zeroizing<Vec<u8>>>,
@@ -47,9 +44,8 @@ pub struct HttpResponse {
     pub body: Vec<u8>,
 }
 
-/// Anything that can carry an [`HttpRequest`] to a server. Implementations
-/// must enforce TLS — the companion's network boundary is one outbound
-/// destination, TLS-only (docs/spec/05).
+/// Anything that can carry an [`HttpRequest`] to a server. Must be
+/// TLS-only (docs/spec/05).
 pub trait Transport {
     /// Send the request and return the raw response.
     ///

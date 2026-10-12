@@ -1,17 +1,5 @@
-//! Headless walkthrough of the sheet lifecycle (interaction-model
-//! rev C) — the window, in a terminal, with time under your control.
-//!
-//! ```text
-//! cargo run -p companion-core --example demo
-//! ```
-//!
-//! Pages hold ink and sealed chips. Sealing is by gesture (`seal`,
-//! `paste-seal`), never by detection; chips render as their mechanical
-//! excerpt and nothing else — there is no reveal command, at any
-//! privilege. One pausable countdown per page; the ledger keeps what
-//! happened, in metadata, never what was written. `conceal` dry-runs
-//! the v3 conceal request without a byte leaving the machine; `send` is
-//! the real thing.
+//! Headless walkthrough of the sheet lifecycle, with time under your
+//! control: `cargo run -p companion-core --example demo`.
 
 use std::io::{BufRead, Write as _};
 use std::time::Duration;
@@ -26,18 +14,14 @@ use ots_client::{Api, BasicAuth, Client, ConcealPayload, NoAuth, share_link};
 
 const DEMO_SERVER: &str = "https://eu.onetimesecret.com";
 
-/// A link's default TTL: exactly seven days (ADR-0011 section 5). The
-/// page it was cut from is not an input (ADR-0026).
+/// A link's default TTL (ADR-0011 section 5).
 const LINK_DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
-/// Keychain (or dev-store) accounts `login`/`logout` manage. Two items
-/// rather than one, so neither half is ever a full credential alone.
+/// Keychain (or dev-store) accounts `login`/`logout` manage.
 const CRED_ACCOUNT_KEY: &str = "demo-api-key";
 const CRED_ACCOUNT_SECRET: &str = "demo-api-secret";
 
 fn main() {
-    // No core dumps while secrets are held; text buffers are mlocked
-    // besides.
     companion_core::harden_process();
     let clock = ManualClock::new();
     let mut store = SheetStore::new(clock.clone());
@@ -63,7 +47,6 @@ fn main() {
         };
         let line = line.trim();
         let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
-        // Commands that need a current page resolve it once, here.
         match cmd {
             "" => {}
             "help" | "?" => help(),
@@ -187,8 +170,8 @@ fn help() {
     );
 }
 
-/// The current page, fixed up first if it expired out from under the
-/// prompt. `None` (with a nudge) when no pages exist.
+/// The current page, fixed up first if it expired; `None` with a nudge
+/// when no pages exist.
 fn page(current: &mut Option<SheetId>, store: &SheetStore<ManualClock>) -> Option<SheetId> {
     if current.and_then(|id| store.sheet(id)).is_none() {
         *current = store.sheets().next().map(Sheet::id);
@@ -266,8 +249,6 @@ fn put(pb: &mut MemoryPasteboard, text: &str) {
 }
 
 fn paste_seal(store: &mut SheetStore<ManualClock>, pb: &mut MemoryPasteboard, page: SheetId) {
-    // The ⇧⌘V route: the core reads the board itself; consent is the
-    // gesture, and what arrives is never parsed or classified.
     let Some(item) = pb.read() else {
         println!("the clipboard is empty");
         return;
@@ -297,8 +278,7 @@ fn paste_seal(store: &mut SheetStore<ManualClock>, pb: &mut MemoryPasteboard, pa
 }
 
 fn image(store: &mut SheetStore<ManualClock>, page: SheetId) {
-    // A pretend 212 KB screenshot with a PNG header — the face shows
-    // metadata only, read without opening the contents.
+    // A pretend 212 KB PNG screenshot.
     let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
     bytes.resize(212 * 1024, 0);
     match store.seal_image(page, bytes) {
@@ -332,8 +312,7 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
     }
     let now = store.now();
     let offset = store.local_offset_seconds();
-    // The tab strip, Excel-anchored in spirit. It is a walk of the
-    // slots, not of the pages: a slot holding nothing still shows.
+    // A walk of the slots, not the pages: an empty slot still shows.
     let mut strip = String::new();
     for (i, tab) in store.tabs().enumerate() {
         let marker = if tab.page().map(Sheet::id) == current {
@@ -402,8 +381,6 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
     println!("└ {gauge} ┘");
 }
 
-/// The slot a page is standing in, which is where its label and its
-/// rung live now.
 fn tab_holding(store: &SheetStore<ManualClock>, page: SheetId) -> Option<&Tab> {
     store
         .tabs()
@@ -440,8 +417,6 @@ fn copy_out(
         companion_core::ChipMeta::Text { .. } => ContentKind::Text,
         companion_core::ChipMeta::Image { .. } => ContentKind::Image,
     };
-    // Chips are sealed by definition: outbound copies always carry the
-    // `ConcealedType` mark (and the transient mark, as every write does).
     pb.write(
         bytes,
         kind,
@@ -449,8 +424,6 @@ fn copy_out(
             nspasteboard_concealed: true,
         },
     );
-    // Egress to the pasteboard is auditable: the ledger keeps the fact,
-    // never the bytes (ADR-0012).
     store.record_sent(id, DestinationClass::Clipboard);
     println!(
         "on the clipboard, marked transient + ConcealedType (clipboard managers will skip it). \
@@ -467,9 +440,7 @@ fn clear(pb: &mut MemoryPasteboard) {
     }
 }
 
-/// The slot a page stands in. The strip's gestures address the slot,
-/// the page's own gestures address the page, and this is the one place
-/// the demo turns one into the other.
+/// The slot a page stands in.
 fn slot(store: &SheetStore<ManualClock>, page: SheetId) -> Option<TabId> {
     store
         .tabs()
@@ -547,9 +518,7 @@ fn tick(
     };
     clock.advance(delta);
     let expired = store.expire_due();
-    // In the app expiry is silent — the page is simply gone at next
-    // glance, one metadata record behind it. The demo narrates for the
-    // observer's benefit.
+    // The app expires silently; the demo narrates.
     if !expired.is_empty() {
         println!(
             "(+{arg}) {} page(s) reached zero: sealed bytes zeroized, one record each.",
@@ -584,8 +553,7 @@ fn parse_duration(arg: &str) -> Option<Duration> {
     Some(Duration::from_secs(secs))
 }
 
-/// Resolve `conceal <n|page>` / `send <n|page>` into a payload without
-/// letting the demo hold plaintext longer than the call.
+/// Resolve `conceal <n|page>` / `send <n|page>` into a payload.
 fn payload_for(
     store: &SheetStore<ManualClock>,
     page: SheetId,
@@ -622,7 +590,6 @@ fn conceal(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
     let ttl = LINK_DEFAULT_TTL_SECS;
     let chars = text.chars().count();
 
-    // Build the real request through the real client — then don't send it.
     let api = Api::new(DEMO_SERVER, Box::new(NoAuth));
     let payload = ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(ttl);
     let request = api
@@ -650,12 +617,8 @@ fn conceal(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
     }
 }
 
-/// `send`'s live counterpart to `conceal`'s dry run: a real POST through
-/// the real transport (`companion-transport`), authenticated from
-/// Keychain-or-dev-store credentials when `login` has set them,
-/// otherwise the guest route. Only the receipt id is retained on the
-/// chip; the share link lands on the clipboard, not in any local
-/// history (docs/spec/05). Sealed bytes travel core → client directly.
+/// A real POST through `companion-transport`, authenticated if `login`
+/// set credentials, else the guest route.
 fn send(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
     let Some(text) = payload_for(store, page, arg) else {
         return;

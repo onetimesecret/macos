@@ -4,13 +4,7 @@ use std::sync::Once;
 
 static HARDEN: Once = Once::new();
 
-/// Harden the process for holding secrets. Currently this disables core
-/// dumps, so a crash cannot spill a locked page to disk — the companion
-/// piece to [`crate::SecretBuffer`]'s `mlock` (doc 05 security posture).
-///
-/// Idempotent and cheap: the work runs exactly once no matter how many
-/// times this is called, so shell init, FFI init, and individual tests
-/// may all call it freely.
+/// Disables core dumps for the process. Idempotent.
 pub fn harden_process() {
     HARDEN.call_once(disable_core_dumps);
 }
@@ -18,10 +12,8 @@ pub fn harden_process() {
 #[cfg(unix)]
 #[allow(unsafe_code)]
 fn disable_core_dumps() {
-    // SAFETY: `setrlimit` with a valid resource id and a well-formed
-    // `rlimit` (both fields zeroed) is a standard libc call. We pass a
-    // stack-allocated value by const pointer and ignore the result:
-    // failing to tighten the limit is best-effort hardening, never fatal.
+    // SAFETY: a valid resource id and a pointer to a live, initialised
+    // `rlimit`. The result is ignored: this hardening is best-effort.
     unsafe {
         let lim = libc::rlimit {
             rlim_cur: 0,
@@ -33,3 +25,25 @@ fn disable_core_dumps() {
 
 #[cfg(not(unix))]
 fn disable_core_dumps() {}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn hardening_leaves_no_core_dump_allowance_and_runs_twice_harmlessly() {
+        harden_process();
+        harden_process();
+        let mut lim = libc::rlimit {
+            rlim_cur: 1,
+            rlim_max: 1,
+        };
+        // SAFETY: a valid resource id and a pointer to a live `rlimit`.
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_CORE, &raw mut lim) },
+            0
+        );
+        assert_eq!((lim.rlim_cur, lim.rlim_max), (0, 0));
+    }
+}

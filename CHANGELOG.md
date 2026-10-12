@@ -582,6 +582,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anything does, must not be a thin bar running the width of the
   bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
+### Security
+
+- **A response body no longer grows in place** (Law 0004, draft;
+  `companion-transport` 0.2.1, `companion-ffi` 0.33.1). The transport
+  reserved at most 64 KiB from a declared length, or nothing when no
+  length was declared, and grew past that by reallocating, which can
+  free each smaller allocation unwiped. The conceal answer carries the
+  link key and the relay's answers carry tokens. A body now reads
+  through a zeroizing chunk; each growth copies into a fresh zeroizing
+  allocation and drops the old one, which wipes it.
+  `CredentialError::Backend` holds a status code or a string literal
+  instead of a `String` (`companion-credentials` 0.3.0).
+
 ## [0.18.0] - 2026-09-04
 
 The second tagged milestone, and the first since v0.1.0. It carries
