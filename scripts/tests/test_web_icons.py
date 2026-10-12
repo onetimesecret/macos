@@ -100,6 +100,7 @@ class WebIconTests(unittest.TestCase):
         fixture = self.scratch / "fixture.png"
         fixture.write_bytes(solid_png())
         self.requested = self.scratch / "renditions.log"
+        self.layers_seen = self.scratch / "layers.log"
         developer = self.scratch / "Xcode.app/Contents/Developer"
         developer.mkdir(parents=True, exist_ok=True)
         if with_ictool:
@@ -107,8 +108,13 @@ class WebIconTests(unittest.TestCase):
             executables.mkdir(parents=True, exist_ok=True)
             ictool = executables / "ictool"
             # The real ictool reports an unknown rendition and still exits 0.
+            # The stand-in also notes the first bytes of the document's
+            # foreground layer, so a test can see which layer it exported.
             ictool.write_text(
                 "#!/bin/bash\nset -eu\n"
+                'head -c 4 "$1/Assets/01-logo-foreground.png" | LC_ALL=C tr -dc A-Za-z'
+                f' >> {shlex.quote(str(self.layers_seen))}\n'
+                f'echo >> {shlex.quote(str(self.layers_seen))}\n'
                 'while [[ $# -gt 0 ]]; do\n'
                 '  case "$1" in\n'
                 '    --output-file) output="$2"; shift 2 ;;\n'
@@ -251,6 +257,32 @@ class WebIconTests(unittest.TestCase):
         for directory in staged:
             with self.subTest(directory=directory):
                 self.assertFalse(Path(directory).exists())
+
+    def test_update_glass_artwork_exports_the_refreshed_layers(self):
+        checkout = self.scratch_checkout()
+        assets = checkout / DOCUMENT.parent.relative_to(ROOT) / "Assets"
+        web = checkout / "artwork/web"
+        web.mkdir(parents=True)
+        layers = ("00-logo-cast-shadow.png", "01-logo-foreground.png")
+        for layer in layers:
+            (assets / layer).write_bytes(b"earlier layer")
+        for name in NAMES:
+            (web / name).write_bytes(b"earlier export")
+        result = self.run_script(
+            ["--update-glass-artwork"], self.mock_composer(), checkout / "scripts/build-icons.sh",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for layer in layers:
+            with self.subTest(layer=layer):
+                self.assertEqual(image_properties(assets / layer)["pixelWidth"], "1024")
+        # Both renditions are exported from the rewritten foreground, not the earlier one.
+        self.assertEqual(self.requested.read_text().split(), ["Default", "Dark"])
+        self.assertEqual(self.layers_seen.read_text().split(), ["PNG", "PNG"])
+        for name in NAMES:
+            with self.subTest(name=name):
+                self.assertNotEqual((web / name).read_bytes(), b"earlier export")
+        self.web = web
+        self.assert_vector_export("onetimepad-icon.svg", document_fill())
 
     def test_fill_outside_srgb_is_refused_by_name(self):
         checkout = self.scratch_checkout()
