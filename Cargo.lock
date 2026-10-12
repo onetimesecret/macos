@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "companion-credentials"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "core-foundation",
  "security-framework",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "companion-ffi"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "base64",
  "companion-core",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "companion-transport"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ots-client",
  "ureq",
