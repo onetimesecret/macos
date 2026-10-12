@@ -26,9 +26,18 @@ Start from [template.md](template.md).
 ## Scope
 
 One law owns one rule that answers most interaction questions on its own.
-The decisions in its cluster are numbered decisions from a dated record
-(`D-NN`), listed in the front matter; the law is where their shared rule and
-their shared tests live, and the record is where each decision's surface
+A law is the home for behaviour stated in detail, above all tricky or highly
+tailored logic, where an ADR is the evidence that one of several reasonable
+options was chosen. Whether something is a law does not depend on where its
+decisions were first written down or on whether its interactions are
+user-facing: a core serializer or a restore path can be governed by a law as
+much as a gesture can.
+
+A law's cluster names its sources in the front matter under `decisions`:
+numbered decisions from a dated record (`D-NN`), accepted ADR clauses or
+sections of a document an accepted ADR names, or `none numbered` when the rows
+were recovered from code and await a source. The law is where their shared
+rule and their shared tests live; the source is where each decision's surface
 detail lives. A law does not restate a decision's pixels, copy strings or
 acceptance lines; it links them.
 
@@ -40,8 +49,8 @@ one is an amendment.
 ## Metadata and status
 
 Front matter carries `id`, `title`, `status`, `dated`, `governs` (the rule
-in one sentence), `decisions` (the record ids in the cluster), `consumed-by`
-(the ADRs and records that link this law) and `sources`.
+in one sentence), `decisions` (the sources in the cluster, see Scope),
+`consumed-by` (the ADRs and records that link this law) and `sources`.
 
 Use these `status` values exactly: `draft` (proposed, do not build against),
 `accepted` (the build owes this), `superseded` (history, kept for the

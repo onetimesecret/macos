@@ -1,8 +1,5 @@
 //! Standard-alphabet base64 encoding (RFC 4648 §4), encode-only.
-//!
-//! Hand-rolled on purpose: the crate needs exactly one operation
-//! (encoding Basic-auth credentials) and a 30-line function with test
-//! vectors is easier to audit than a dependency.
+//! Hand-rolled: one operation is easier to audit than a dependency.
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -44,7 +41,6 @@ mod tests {
 
     #[test]
     fn basic_auth_shape() {
-        // The exact use-site: RFC 7617's example credentials.
         assert_eq!(
             encode(b"Aladdin:open sesame"),
             "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="

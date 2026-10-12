@@ -4,7 +4,7 @@ title: Title
 status: draft     # draft → accepted → superseded
 dated: YYYY-MM-DD
 governs: The rule in one sentence.
-decisions: D-NN, D-NN (the record ids in the cluster, with the record they come from)
+decisions: D-NN (with its record), ADR clauses or sections, or none numbered
 consumed-by:
   - docs/adr/NNNN-slug.md
   - docs/spec/design/YYYY-MMDD-record.md

@@ -1,30 +1,17 @@
-//! Wire types for the v3 API, grounded in the server's schemas
-//! (`src/schemas/api/v3/` in the onetimesecret repo).
-//!
-//! Deserialization is deliberately liberal: only the fields the
-//! companion needs are required; everything else is optional and unknown
-//! fields are ignored, so server additions never break the client.
+//! Wire types for the v3 API (onetimesecret `src/schemas/api/v3/`).
+//! Deserialization is liberal: unknown fields are ignored.
 
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 use zeroize::Zeroizing;
 
-/// Payload for `POST /api/v3/secret/conceal`. On the wire it is nested
-/// under a `secret` key (V2-inherited transport wrapper):
-///
-/// ```json
-/// { "secret": { "kind": "conceal", "secret": "…", "share_domain": "…",
-///               "ttl": 28800, "passphrase": "…", "recipient": "…" } }
-/// ```
+/// Payload for `POST /api/v3/secret/conceal`, sent nested under `secret`.
 pub struct ConcealPayload {
     /// The secret plaintext; zeroized on drop.
     pub secret: Zeroizing<String>,
     /// Domain the share link should live on.
     pub share_domain: String,
-    /// Requested TTL in seconds, sent as given. The server reports no
-    /// allowed set today, and a caller must not snap this against a
-    /// page's ladder: a link's lifetime is its own (ADR-0026).
-    /// [`crate::snap_ttl`] waits for the day the server names a set.
+    /// Requested TTL in seconds, sent as given (ADR-0026).
     pub ttl: Option<u64>,
     /// Optional passphrase gate on the secret.
     pub passphrase: Option<Zeroizing<String>>,
@@ -83,11 +70,10 @@ impl Serialize for ConcealPayload {
     }
 }
 
-/// The receipt half of a conceal response — the sender's handle. The
-/// companion keeps only [`ReceiptStub::identifier`] on the live cell.
+/// The receipt half of a conceal response: the sender's handle.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReceiptStub {
-    /// Receipt identifier (enables burn-remote for this cell alone).
+    /// Receipt identifier.
     pub identifier: String,
     /// Short display id.
     #[serde(default)]
@@ -100,7 +86,7 @@ pub struct ReceiptStub {
     pub secret_ttl: Option<u64>,
 }
 
-/// The secret half of a conceal response — the recipient's handle.
+/// The secret half of a conceal response: the recipient's handle.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SecretStub {
     /// Secret identifier.
@@ -130,8 +116,7 @@ pub struct ConcealData {
     pub share_domain: Option<String>,
 }
 
-/// Response envelope: v3 wraps single records as `{ "record": …,
-/// "details": … }`.
+/// v3's `{ "record": …, "details": … }` envelope.
 #[derive(Debug, Deserialize)]
 pub(crate) struct RecordEnvelope<T> {
     pub record: T,
@@ -142,8 +127,7 @@ pub(crate) struct RecordEnvelope<T> {
 pub enum Error {
     /// The request never completed (DNS, connect, TLS, timeout).
     Transport(crate::http::TransportError),
-    /// The server answered with a non-success status. Surface `message`
-    /// inline in the cell; content never leaves it on failure.
+    /// The server answered with a non-success status.
     Api {
         /// HTTP status code.
         status: u16,

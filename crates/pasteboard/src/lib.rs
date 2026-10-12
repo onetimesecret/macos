@@ -1,22 +1,5 @@
-//! Pasteboard adapter: the one crate that touches `NSPasteboard`.
-//!
-//! What lives here is the *contract* every implementation meets — the
-//! hygiene rules from docs/spec/05 — plus two implementations:
-//! [`MemoryPasteboard`] (tests, the demo, any non-macOS development
-//! host) and [`SystemPasteboard`] (the real `NSPasteboard`, macOS-gated;
-//! nothing else in the workspace may grow a platform dependency).
-//!
-//! Hygiene contract:
-//!
-//! - **Outbound copies are marked.** Every write carries
-//!   [`CONCEALED_TYPE`] when the content is secret-shaped, and
-//!   [`TRANSIENT_TYPE`] always — well-behaved clipboard managers skip
-//!   both.
-//! - **Inbound `ConcealedType` is respected**: reads report the flag so
-//!   the cell arrives masked.
-//! - **Clear-after-copy is change-count-guarded.** The clipboard is
-//!   cleared N seconds after a copy-out *only if it still holds our
-//!   write* — never clobbering something the user copied since.
+//! Pasteboard adapter: the one crate that touches `NSPasteboard`, and the
+//! hygiene contract of docs/spec/05 that every implementation meets.
 
 use zeroize::Zeroizing;
 
@@ -26,12 +9,10 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::SystemPasteboard;
 
-/// The nspasteboard.org convention marking secret content; clipboard
-/// managers that honour it (most do) will not record the item.
+/// The nspasteboard.org marker for secret content.
 pub const CONCEALED_TYPE: &str = "org.nspasteboard.ConcealedType";
 
-/// The nspasteboard.org convention marking short-lived content not worth
-/// recording.
+/// The nspasteboard.org marker for short-lived content.
 pub const TRANSIENT_TYPE: &str = "org.nspasteboard.TransientType";
 
 /// Content moving through the pasteboard.
@@ -48,14 +29,10 @@ pub enum PasteboardContent {
 pub struct PasteboardItem {
     /// The content.
     pub content: PasteboardContent,
-    /// True when the writer marked it `org.nspasteboard.ConcealedType` —
-    /// the cell must arrive masked.
+    /// True when the writer marked it [`CONCEALED_TYPE`].
     pub nspasteboard_concealed: bool,
-    /// Where the content came from, when the writer said so: the
-    /// `public.url` flavor, read in the same pass as the content
-    /// (ADR-0013). Treated as content by everything downstream (a URL
-    /// can carry a token), so it may reach only the sealed document,
-    /// never a ledger, a summary, or any JSON surface.
+    /// The `public.url` flavor, if declared (ADR-0013). Treat as content:
+    /// a URL can carry a token.
     pub origin_url: Option<String>,
 }
 
@@ -70,16 +47,13 @@ pub struct WriteOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChangeCount(pub u64);
 
-/// The adapter contract. One implementation per platform; the core and
-/// shell speak only this trait.
+/// The adapter contract.
 pub trait Pasteboard {
     /// Read the current item, if there is one we can represent.
     fn read(&self) -> Option<PasteboardItem>;
 
-    /// Write content (always marked [`TRANSIENT_TYPE`]; additionally
-    /// [`CONCEALED_TYPE`] per `options`). Returns the change count of
-    /// the write, for a later guarded clear. The buffer is zeroizing:
-    /// implementations consume it and let it scrub.
+    /// Write content marked [`TRANSIENT_TYPE`], and [`CONCEALED_TYPE`] per
+    /// `options`; returns the change count for a later guarded clear.
     fn write(
         &mut self,
         content: Zeroizing<Vec<u8>>,
@@ -90,17 +64,12 @@ pub trait Pasteboard {
     /// The pasteboard's current change count.
     fn change_count(&self) -> ChangeCount;
 
-    /// Clear the pasteboard **iff** it still holds the write identified
-    /// by `expected` — the clear-after-copy guard. Returns true when a
-    /// clear happened.
+    /// Clear the pasteboard iff its change count is still `expected`;
+    /// true when it cleared.
     fn clear_if_unchanged(&mut self, expected: ChangeCount) -> bool;
 
-    /// Whether the board holds content a sealed paste could take:
-    /// something representable (text or image) that is not the
-    /// companion's own transient write. Implementations answer from
-    /// type metadata alone — the content bytes are never copied into
-    /// this process just to say yes or no. Powers the summon-time
-    /// offer (ADR-0007 Amendment 1).
+    /// Whether the board holds text or an image that is not our own
+    /// transient write, from type metadata alone (ADR-0007 Amendment 1).
     fn holds_external_content(&self) -> bool;
 }
 
@@ -113,9 +82,8 @@ pub enum ContentKind {
     Image,
 }
 
-/// In-process pasteboard: test double, demo prop, and development stand-in
-/// on non-macOS hosts. Mirrors `NSPasteboard` semantics (single owner,
-/// monotonically increasing change count).
+/// In-process pasteboard with `NSPasteboard` semantics, for tests, the
+/// demo and non-macOS hosts.
 #[derive(Debug, Default)]
 pub struct MemoryPasteboard {
     item: Option<StoredItem>,
@@ -138,14 +106,12 @@ impl MemoryPasteboard {
         Self::default()
     }
 
-    /// Place external (non-companion) content, as another app would —
-    /// for exercising reads in tests and the demo.
+    /// Place content as another app would.
     pub fn put_external(&mut self, content: PasteboardContent, nspasteboard_concealed: bool) {
         self.put_external_with_origin(content, nspasteboard_concealed, None);
     }
 
-    /// [`MemoryPasteboard::put_external`] with a `public.url` origin
-    /// riding beside the content, as a browser copy would carry one.
+    /// [`MemoryPasteboard::put_external`] with a `public.url` origin.
     pub fn put_external_with_origin(
         &mut self,
         content: PasteboardContent,
@@ -166,8 +132,7 @@ impl MemoryPasteboard {
         });
     }
 
-    /// True when the current item is marked transient (companion writes
-    /// always are).
+    /// True when the current item is marked transient.
     #[must_use]
     pub fn current_is_transient(&self) -> bool {
         self.item.as_ref().is_some_and(|i| i.transient)
@@ -200,8 +165,6 @@ impl Pasteboard for MemoryPasteboard {
             kind,
             nspasteboard_concealed: options.nspasteboard_concealed,
             transient: true,
-            // The companion's own writes carry no origin: provenance
-            // belongs to content arriving, not content leaving.
             origin_url: None,
         });
         ChangeCount(self.change_count)
@@ -213,7 +176,7 @@ impl Pasteboard for MemoryPasteboard {
 
     fn clear_if_unchanged(&mut self, expected: ChangeCount) -> bool {
         if self.change_count == expected.0 {
-            self.item = None; // buffer zeroizes on drop
+            self.item = None;
             self.change_count += 1;
             true
         } else {
@@ -267,8 +230,6 @@ mod tests {
             Some("https://example.test/article?token=q")
         );
 
-        // Content without a declared origin reads back with none, and
-        // the companion's own write never invents one.
         pb.put_external(PasteboardContent::Text("plain".into()), false);
         assert!(pb.read().unwrap().origin_url.is_none());
         write_text(&mut pb, "our copy-out", true);
@@ -291,12 +252,10 @@ mod tests {
         let mut pb = MemoryPasteboard::new();
         let receipt = write_text(&mut pb, "secret", true);
 
-        // The user copied something else since — never clobber it.
         pb.put_external(PasteboardContent::Text("their stuff".into()), false);
         assert!(!pb.clear_if_unchanged(receipt));
         assert!(pb.read().is_some());
 
-        // Untouched since our write → the guarded clear proceeds.
         let receipt2 = write_text(&mut pb, "secret again", true);
         assert!(pb.clear_if_unchanged(receipt2));
         assert!(pb.read().is_none());
@@ -314,17 +273,15 @@ mod tests {
     #[test]
     fn external_content_is_offered_and_our_own_write_is_not() {
         let mut pb = MemoryPasteboard::new();
-        assert!(!pb.holds_external_content()); // empty
+        assert!(!pb.holds_external_content());
 
         pb.put_external(PasteboardContent::Text("from elsewhere".into()), false);
         assert!(pb.holds_external_content());
 
-        // Our own copy-out is transient-marked: offering to ingest it
-        // back would be a loop, not a service.
         let receipt = write_text(&mut pb, "our copy-out", true);
         assert!(!pb.holds_external_content());
 
         pb.clear_if_unchanged(receipt);
-        assert!(!pb.holds_external_content()); // cleared
+        assert!(!pb.holds_external_content());
     }
 }
