@@ -61,7 +61,8 @@ set -euo pipefail
 
 # The iconset directory of the render in progress, and any other
 # scratch directory, taken back on any exit so a render, an export or
-# iconutil failing under `set -e` leaves nothing behind in $TMPDIR.
+# iconutil failing under `set -e` leaves nothing behind in the
+# temporary directory (macOS mktemp's per user one, not $TMPDIR).
 ICONSET_DIR=""
 SCRATCH_DIRS=()
 cleanup_scratch() {

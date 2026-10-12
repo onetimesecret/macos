@@ -125,10 +125,11 @@ shade; the document has no dark fill, so the dark SVG takes the plate shade
 sampled from the Dark rendering. That plate is a near black grey with no brand
 hue, as Icon Composer draws it, so on a dark page the icon's outline all but
 disappears and the white mark is what reads; a page that needs the outline
-should set the icon on a lighter surface. `scripts/build-icons.sh --web` writes all four, and
-`--update-glass-artwork` refreshes them too. After editing the document in
-Icon Composer, run `--web` and commit the result. A website keeps its own copy
-and resizes it in its build, rather than linking to this repository.
+should set the icon on a lighter surface. `scripts/build-icons.sh --web`
+writes all four, and `--update-glass-artwork` refreshes them too. After
+editing the document in Icon Composer, run `--web` and commit the result. A
+website keeps its own copy and resizes it in its build, rather than linking to
+this repository.
 
 Signing values stay outside the checkout, one environment directory per lane,
 so every worktree reads the same ones: `dev/.env` for the dev lane,
