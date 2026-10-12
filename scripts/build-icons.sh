@@ -24,7 +24,7 @@
 #       the saved Composer document and its assets define the release icon.
 #       --composer does not update the artwork compiled by --glass.
 #   scripts/build-icons.sh --mark maruhi --composer # alternate motif
-#   scripts/build-icons.sh --update-glass-artwork # regenerate saved logo layers and glass preview
+#   scripts/build-icons.sh --update-glass-artwork # regenerate saved logo layers
 #       retains the material and appearance settings in icon.json,
 #       and refreshes the website exports as --web does.
 #   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon; directory is repo-relative
@@ -262,9 +262,6 @@ update_glass_artwork() {
   swift scripts/render-icon.swift --mark logo --composer "$OUT/composer-logo"
   cp "$OUT/composer-logo/01-logo-foreground.png" "$document/Assets/01-logo-foreground.png"
   cp "$OUT/composer-logo/00-logo-cast-shadow.png" "$document/Assets/00-logo-cast-shadow.png"
-  "$COMPOSER_TOOL" "$document" --export-image \
-    --output-file "$PWD/artwork/OnetimePad-Glass-CastShadow.png" \
-    --platform macOS --rendition Default --width 1024 --height 1024 --scale 1
   export_web_icons
 }
 
