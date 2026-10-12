@@ -3196,7 +3196,8 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
-    // Take the ceremony under the lock; the redirect wait runs off it.
+    // Take the ceremony under the lock; the redirect wait runs off it,
+    // so no summon waits minutes on the mutex.
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
             return ptr::null_mut();

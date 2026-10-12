@@ -50,7 +50,8 @@ impl GopKeyChain {
 
     /// Rotate at the ceremony: expand the incoming key from the outgoing
     /// key and the ceremony's entropy, advance the epoch, and wipe the
-    /// outgoing key. Pure derivation; it cannot fail.
+    /// outgoing key. Pure derivation; it cannot fail, and must not:
+    /// [`ceremony_commit`] runs it after the irreversible rebuild.
     pub fn advance(&mut self, entropy: &[u8]) {
         let prk = Salt::new(HKDF_SHA256, &self.key).extract(entropy);
         let mut next = Zeroizing::new(vec![0u8; KEY_LEN]);

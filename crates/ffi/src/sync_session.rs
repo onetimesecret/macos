@@ -460,7 +460,9 @@ impl SyncSession {
     }
 
     /// Every refusal passes through here: a `401` drops the access
-    /// token, the only expiry authority (account-auth.md §2).
+    /// token, the only expiry authority (account-auth.md §2). Kept, it
+    /// would be resent forever: `ensure_access` refreshes only when no
+    /// token is held.
     fn note_refusal(&mut self, refusal: RelayRefusal) -> RelayRefusal {
         if matches!(refusal, RelayRefusal::Unauthorized) {
             self.keeper.clear_access();

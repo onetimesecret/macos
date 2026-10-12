@@ -209,7 +209,8 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
         return Err("not_configured");
     };
     // One ceremony at a time, a finish out on the browser included;
-    // the way out is a cancel, never a rival listener.
+    // the way out is a cancel, never a rival listener whose redirect
+    // could supersede the winner's.
     if signin_in_flight(state) {
         return Err("busy");
     }
@@ -481,7 +482,8 @@ fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
 }
 
 /// A second `401` on one attach signs out as a refused refresh does
-/// (client protocol §4.3; open as §10.2).
+/// (client protocol §4.3; open as §10.2). Noting the fault alone would
+/// leave a refused gate, which nothing retries, over a stored credential.
 fn attach_refused(companion: &mut Companion) -> serde_json::Value {
     sign_out_locked(companion);
     serde_json::json!({ "ok": false, "reason": "signed_out" })
