@@ -89,6 +89,8 @@ public struct TimeRailView: View {
     /// caption. Longer than that truncates at the tail, which is the
     /// net rather than the plan.
     nonisolated static let width: CGFloat = 110
+
+    /// Extra room for the experimental rail's day and checkpoint sort controls.
     nonisolated static let experimentalWidth: CGFloat = 150
 
     /// Use the same measure in the view and layout disclosures; turning the
