@@ -204,6 +204,9 @@ class WebIconTests(unittest.TestCase):
         root = ElementTree.parse(self.web / name).getroot()
         self.assertEqual(root.tag, f"{SVG}svg")
         self.assertEqual(root.get("viewBox"), "0 0 1024 1024")
+        # Inlined, the SVG is one image named by its title.
+        self.assertEqual(root.get("role"), "img")
+        self.assertEqual(root.find(f"{SVG}title").text, "OnetimePad")
         plate, group = list(root.findall(f"{SVG}path")), root.find(f"{SVG}g")
         self.assertEqual(len(plate), 1)
         self.assertEqual(plate[0].get("fill"), "#" + fill)

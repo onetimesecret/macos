@@ -946,7 +946,7 @@ func writeSVG(mark: Mark, fill: String, to url: URL) {
     let scale = String(format: "%.6f", k)
     var lines = [
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 \(n(canvas)) \(n(canvas))\" width=\"\(n(canvas))\" height=\"\(n(canvas))\">",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 \(n(canvas)) \(n(canvas))\" width=\"\(n(canvas))\" height=\"\(n(canvas))\" role=\"img\">",
         "<title>OnetimePad</title>",
         "<path d=\"\(iconShapePath(side: canvas))\" fill=\"#\(fill.lowercased())\"/>",
         "<g fill=\"#ffffff\" fill-rule=\"nonzero\" transform=\"translate(\(n(x)) \(n(y))) scale(\(scale)) translate(\(n(-art.minX)) \(n(-art.minY)))\">",
