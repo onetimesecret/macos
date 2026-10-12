@@ -61,3 +61,9 @@ panic = "unwind"
 lto = "thin"
 strip = "symbols"
 opt-level = "s"
+
+[profile.release.build-override]
+# Rust 1.94.1's rust-objcopy can misalign Mach-O LINKEDIT entries, which
+# macOS 27 rejects when loading host proc-macros (rust-lang/rust#157750).
+# Keep build-time artifacts unstripped; target release settings stay above.
+strip = "none"
