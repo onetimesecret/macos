@@ -127,6 +127,17 @@ class WebIconTests(unittest.TestCase):
             f'#!/bin/bash\nexport DEVELOPER_DIR={shlex.quote(selected)}\nexec /usr/bin/swift "$@"\n'
         )
         swift.chmod(0o755)
+        # macOS mktemp prefers the per user temporary directory to
+        # TMPDIR, so the scratch directories the script makes are logged
+        # here to check that a failed export takes them back.
+        self.scratch_made = self.scratch / "mktemp.log"
+        mktemp = commands / "mktemp"
+        mktemp.write_text(
+            '#!/bin/bash\ncreated="$(/usr/bin/mktemp "$@")" || exit\n'
+            f'echo "$created" >> {shlex.quote(str(self.scratch_made))}\n'
+            'echo "$created"\n'
+        )
+        mktemp.chmod(0o755)
         return {"DEVELOPER_DIR": str(developer), "PATH": f'{commands}:{os.environ["PATH"]}'}
 
     def require_icon_composer(self):
@@ -221,6 +232,12 @@ class WebIconTests(unittest.TestCase):
         for name in NAMES:
             with self.subTest(name=name):
                 self.assertEqual((self.web / name).read_bytes(), b"earlier export")
+        # The staged Default rendition goes with the failed export.
+        staged = self.scratch_made.read_text().splitlines()
+        self.assertTrue(staged)
+        for directory in staged:
+            with self.subTest(directory=directory):
+                self.assertFalse(Path(directory).exists())
 
     def test_older_xcode_is_rejected_before_export(self):
         result = self.export(self.mock_composer(xcode="26.6"))

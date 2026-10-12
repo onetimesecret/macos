@@ -59,14 +59,16 @@
 # sheet and a logo sheet at one shade do not overwrite each other.
 set -euo pipefail
 
-# The iconset directory of the render in progress, taken back on any
-# exit so a render or iconutil failing under `set -e` leaves nothing
-# behind in $TMPDIR.
+# The iconset directory of the render in progress, and any other
+# scratch directory, taken back on any exit so a render, an export or
+# iconutil failing under `set -e` leaves nothing behind in $TMPDIR.
 ICONSET_DIR=""
-cleanup_iconset() {
+SCRATCH_DIRS=()
+cleanup_scratch() {
   [[ -z "$ICONSET_DIR" ]] || rm -rf "$ICONSET_DIR"
+  ((${#SCRATCH_DIRS[@]} == 0)) || rm -rf "${SCRATCH_DIRS[@]}"
 }
-trap cleanup_iconset EXIT
+trap cleanup_scratch EXIT
 cd "$(dirname "$0")/.."
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -232,6 +234,7 @@ export_web_icons() { # [directory]
   local destination="${1:-artwork/web}" staging rendition name shade dark_shade
   shade="$(glass_fill_shade)"
   staging="$(mktemp -d)"
+  SCRATCH_DIRS+=("$staging")
   for rendition in Default Dark; do
     case "$rendition" in
       Default) name=onetimepad-icon ;;
@@ -271,7 +274,6 @@ export_web_icons() { # [directory]
   mkdir -p "$destination"
   mv "$staging/onetimepad-icon.png" "$staging/onetimepad-icon-dark.png" \
     "$staging/onetimepad-icon.svg" "$staging/onetimepad-icon-dark.svg" "$destination/"
-  rm -rf "$staging"
 }
 
 update_glass_artwork() {
