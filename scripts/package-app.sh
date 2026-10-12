@@ -544,6 +544,16 @@ elif [[ -n "$PROVISIONING_PROFILE" ]]; then
   # was checked before any build or bundle replacement began.
   cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
   echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
+  if ((APP_STORE_MODE)); then
+    # macOS cp preserves a downloaded profile's quarantine attribute, and
+    # App Store Connect rejects a package carrying it (ITMS-91109). Only
+    # this lane builds a package for upload, so other lanes keep the copy
+    # as is. Clean the assembled bundle after the final copy, without
+    # changing the source; -s acts on symbolic links themselves, so the
+    # cleanup never reaches a link target outside the bundle.
+    echo "==> Removing quarantine attributes from $APP before signing"
+    xattr -drs com.apple.quarantine "$APP"
+  fi
   SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
   ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
 
@@ -597,6 +607,12 @@ if ((APP_STORE_MODE)); then
   fi
   if ! cmp -s "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"; then
     echo "signed app does not contain the requested provisioning profile" >&2
+    exit 1
+  fi
+  APP_XATTRS="$(xattr -rs "$APP")"
+  if grep -Eq ': com\.apple\.quarantine$' <<<"$APP_XATTRS"; then
+    echo "signed app still contains com.apple.quarantine; refusing to package it" >&2
+    grep -E ': com\.apple\.quarantine$' <<<"$APP_XATTRS" >&2
     exit 1
   fi
 
