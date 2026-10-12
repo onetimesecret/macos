@@ -3742,6 +3742,154 @@ mod tests {
     }
 
     #[test]
+    fn a_seal_over_a_range_the_page_does_not_have_takes_nothing_from_the_board() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("already sealed").as_ptr(),
+                0,
+                0,
+            ));
+            let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
+                .as_u64()
+                .unwrap();
+            let runs = format!(r#"[{{"ink": "ab"}}, {{"chip": {chip_id}}}]"#);
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(&runs).as_ptr()
+            ));
+            let before = take_json(companion_sheet_document_json(handle, sheet));
+            seed(handle, "still theirs");
+            // Past the end, then over the standing chip's sentinel.
+            for (at, len) in [(0, 99), (1, 2)] {
+                let mut cleared = true;
+                let refused =
+                    companion_sheet_seal_from_pasteboard(handle, sheet, at, len, &raw mut cleared);
+                assert!(refused.is_null(), "sealed over {at}+{len}");
+                assert!(!cleared);
+                let guard = (*handle).inner.lock().unwrap();
+                let item = guard.pasteboard.read().expect("the board was emptied");
+                assert!(
+                    matches!(item.content, PasteboardContent::Text(ref t) if t == "still theirs")
+                );
+            }
+            assert_eq!(
+                take_json(companion_sheet_document_json(handle, sheet)),
+                before
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_settings_read_answers_has_token_without_reading_the_token() {
+        #[derive(Default)]
+        struct CountsReads {
+            inner: Arc<companion_credentials::InMemoryCredentialStore>,
+            loads: Arc<std::sync::atomic::AtomicUsize>,
+        }
+        impl CredentialStore for CountsReads {
+            fn store(
+                &self,
+                a: &str,
+                s: &[u8],
+            ) -> Result<(), companion_credentials::CredentialError> {
+                self.inner.store(a, s)
+            }
+            fn load(
+                &self,
+                a: &str,
+            ) -> Result<Zeroizing<Vec<u8>>, companion_credentials::CredentialError> {
+                self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.inner.load(a)
+            }
+            fn delete(&self, a: &str) -> Result<(), companion_credentials::CredentialError> {
+                self.inner.delete(a)
+            }
+            fn exists(&self, a: &str) -> Result<bool, companion_credentials::CredentialError> {
+                self.inner.exists(a)
+            }
+            fn key_material_store(&self) -> Arc<dyn CredentialStore> {
+                self.inner.key_material_store()
+            }
+        }
+        let store = CountsReads::default();
+        let loads = Arc::clone(&store.loads);
+        let handle = handle_with(Arc::new(store));
+        unsafe {
+            assert!(companion_connection_configure(
+                handle,
+                cstring(r#"{"server_url": "https://eu.onetimesecret.com", "token": "tok_abc"}"#)
+                    .as_ptr()
+            ));
+            let shown = take_json(companion_connection_json(handle));
+            let v: serde_json::Value = serde_json::from_str(&shown).unwrap();
+            assert_eq!(v["has_token"], true);
+            assert!(!shown.contains("tok_abc"));
+            assert_eq!(loads.load(std::sync::atomic::Ordering::SeqCst), 0);
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_conceal_that_fails_leaves_the_chip_the_board_and_the_ledger_alone() {
+        let handle = handle();
+        unsafe {
+            assert!(companion_connection_configure(
+                handle,
+                cstring(r#"{"server_url": "https://eu.onetimesecret.com"}"#).as_ptr()
+            ));
+            let (_tab, sheet) = new_page(handle);
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("hunter2 hunter2").as_ptr(),
+                0,
+                0,
+            ));
+            let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
+                .as_u64()
+                .unwrap();
+            seed(handle, "still theirs");
+            let ledger_before = take_json(companion_ledger_json(handle));
+
+            for (status, body) in [(0, ""), (401, r#"{"message":"bad credentials"}"#)] {
+                assert!(companion_test_wire_stub(
+                    handle,
+                    status,
+                    cstring(body).as_ptr()
+                ));
+                for result in [
+                    take_json(companion_chip_conceal(handle, chip_id, ptr::null())),
+                    take_json(companion_sheet_conceal(handle, sheet, ptr::null())),
+                ] {
+                    let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+                    assert_eq!(v["ok"], false, "{result}");
+                }
+            }
+
+            assert_eq!(take_json(companion_ledger_json(handle)), ledger_before);
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let item = guard.pasteboard.read().expect("the board was emptied");
+                assert!(
+                    matches!(item.content, PasteboardContent::Text(ref t) if t == "still theirs")
+                );
+                assert!(guard.last_write.is_none());
+            }
+            let tabs = take_json(companion_tabs_json(handle));
+            assert!(tabs.contains("\"chip_count\":1"), "{tabs}");
+            assert!(companion_chip_copy_out(handle, chip_id));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
     fn the_offer_probe_skips_our_own_copy_out() {
         let handle = handle();
         unsafe {

@@ -3325,6 +3325,35 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_files_draft_does_not_come_back_when_it_is_reopened() {
+        let io = MemoryIo::with("/c3.txt", b"body");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/c3.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+        assert!(store.close(id));
+        let again = store.open(&io, Path::new("/c3.txt")).unwrap();
+        let file = store.file(again).unwrap();
+        assert_eq!(file.text(), "body");
+        assert!(!file.is_dirty());
+        assert_eq!(io.bytes("/c3.txt"), b"body");
+    }
+
+    #[test]
+    fn a_refused_reload_keeps_a_dirty_buffers_draft() {
+        let io = MemoryIo::with("/r3.txt", b"body");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/r3.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+        io.put("/r3.txt", &[0x66, 0xFF, 0xFE]);
+        assert_eq!(store.reload(&io, id), Err(OpenRefusal::NotUtf8));
+        io.remove("/r3.txt");
+        assert!(store.reload(&io, id).is_err());
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "draft body");
+        assert!(file.is_dirty());
+    }
+
+    #[test]
     fn opening_the_same_path_twice_hands_back_the_same_file() {
         let io = MemoryIo::with("/same.txt", b"body");
         let mut store = FileStore::new();

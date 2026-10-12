@@ -25,3 +25,25 @@ fn disable_core_dumps() {
 
 #[cfg(not(unix))]
 fn disable_core_dumps() {}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn hardening_leaves_no_core_dump_allowance_and_runs_twice_harmlessly() {
+        harden_process();
+        harden_process();
+        let mut lim = libc::rlimit {
+            rlim_cur: 1,
+            rlim_max: 1,
+        };
+        // SAFETY: a valid resource id and a pointer to a live `rlimit`.
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_CORE, &raw mut lim) },
+            0
+        );
+        assert_eq!((lim.rlim_cur, lim.rlim_max), (0, 0));
+    }
+}

@@ -2293,6 +2293,30 @@ mod tests {
         cleanup(relaunch, &dir);
     }
 
+    #[test]
+    fn a_state_file_handed_to_the_drafts_restore_is_refused_and_kept() {
+        let keys = credentials();
+        let handle = handle_with(keys.clone());
+        let dir = scratch_dir("state-as-drafts");
+        let state = dir.join("state.sealed");
+        let state_c = cstring(&state.to_string_lossy());
+        unsafe {
+            let tab = crate::companion_tab_new(handle);
+            assert_ne!(tab, 0);
+            assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
+        }
+        let sealed = std::fs::read(&state).unwrap();
+        unsafe { crate::companion_free(handle) };
+        let relaunch = handle_with(keys);
+        unsafe {
+            assert!(!companion_drafts_restore(relaunch, state_c.as_ptr()));
+            assert_eq!(roster(relaunch).as_array().unwrap().len(), 0);
+            assert_eq!(tabs(relaunch).as_array().unwrap().len(), 0);
+        }
+        assert_eq!(std::fs::read(&state).unwrap(), sealed);
+        cleanup(relaunch, &dir);
+    }
+
     unsafe fn tabs(handle: *mut CompanionHandle) -> serde_json::Value {
         let json = unsafe { take_json(crate::companion_tabs_json(handle)) };
         serde_json::from_str(&json).unwrap()

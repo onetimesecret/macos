@@ -1775,6 +1775,34 @@ mod tests {
     }
 
     #[test]
+    fn a_file_half_of_the_wrong_length_is_refused_on_restore_and_left_alone() {
+        let dir = StateDir::new();
+        let path = dir.state_path();
+        let store = InMemoryCredentialStore::default();
+        ensure_state_key(&store, &path).unwrap();
+        let keychain_half = load_key_for(&store, STATE_KEY_ACCOUNT).unwrap();
+        let half_path = file_half_path(&keychain_half, containing_dir(&path).unwrap()).unwrap();
+        std::fs::write(&half_path, [0xA5; KEY_LEN / 2]).unwrap();
+
+        assert!(load_state_key(&store, &path).is_none());
+        assert_eq!(std::fs::read(&half_path).unwrap(), [0xA5; KEY_LEN / 2]);
+        assert_eq!(dir.halves().len(), 1);
+    }
+
+    #[test]
+    fn a_keychain_that_will_not_answer_yields_no_save_key_and_no_half() {
+        let dir = StateDir::new();
+        let path = dir.state_path();
+        let store = test_stores::AnswersNothing::default();
+        assert!(ensure_state_key(&store, &path).is_none());
+        assert!(ensure_ledger_key(&store).is_none());
+        assert!(dir.halves().is_empty());
+        let behind = store.behind_the_refusal();
+        assert!(!behind.exists(STATE_KEY_ACCOUNT).unwrap());
+        assert!(!behind.exists(LEDGER_KEY_ACCOUNT).unwrap());
+    }
+
+    #[test]
     fn an_unreadable_envelope_costs_no_keychain_access() {
         let mut v1 = seal(&key(), b"staged content");
         v1[..8].copy_from_slice(b"OTSSEAL1");
