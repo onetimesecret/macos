@@ -946,7 +946,7 @@ func writeSVG(mark: Mark, fill: String, to url: URL) {
 }
 
 /// The plate shade of a rendering as rrggbb: the per channel median of
-/// its opaque pixels that are not the white mark or its antialiased
+/// its fully opaque pixels that are not the white mark or its antialiased
 /// edge. The document carries no dark fill; Icon Composer's dark
 /// appearance supplies that plate itself, so the dark SVG reads its
 /// shade from the Dark rendition rather than inventing one. The median
@@ -972,7 +972,10 @@ func printPlateShade(of url: URL) {
     for y in 0..<height { for x in 0..<width {
         let i = y * stride + x * 4
         let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3]
-        guard a > 127, min(r, g, b) < 180 else { continue }
+        // The context stores premultiplied colour, which reads darker
+        // than the shade shown wherever a pixel is partly transparent,
+        // so only the fully opaque interior is sampled.
+        guard a == 255, min(r, g, b) < 180 else { continue }
         channels[0].append(r); channels[1].append(g); channels[2].append(b)
     }}
     guard !channels[0].isEmpty else { fail("\(url.path) has no plate to sample") }
