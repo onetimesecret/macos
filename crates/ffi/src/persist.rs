@@ -590,7 +590,9 @@ pub(crate) mod test_stores {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use companion_credentials::{CredentialError, CredentialStore, InMemoryCredentialStore};
+    use companion_credentials::{
+        BackendFailure, CredentialError, CredentialStore, InMemoryCredentialStore,
+    };
     use zeroize::Zeroizing;
 
     /// An in-memory store whose `delete` always fails.
@@ -609,9 +611,9 @@ pub(crate) mod test_stores {
         }
 
         fn delete(&self, _account: &str) -> Result<(), CredentialError> {
-            Err(CredentialError::Backend(
-                "the keychain is locked; the item was not deleted".to_string(),
-            ))
+            Err(CredentialError::Backend(BackendFailure::Fixed(
+                "the keychain is locked; the item was not deleted",
+            )))
         }
 
         fn exists(&self, account: &str) -> Result<bool, CredentialError> {
@@ -643,21 +645,21 @@ pub(crate) mod test_stores {
         }
 
         fn load(&self, _account: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
-            Err(CredentialError::Backend(
-                "the keychain is locked; nothing was read".to_string(),
-            ))
+            Err(CredentialError::Backend(BackendFailure::Fixed(
+                "the keychain is locked; nothing was read",
+            )))
         }
 
         fn delete(&self, _account: &str) -> Result<(), CredentialError> {
-            Err(CredentialError::Backend(
-                "the keychain is locked; the item was not deleted".to_string(),
-            ))
+            Err(CredentialError::Backend(BackendFailure::Fixed(
+                "the keychain is locked; the item was not deleted",
+            )))
         }
 
         fn exists(&self, _account: &str) -> Result<bool, CredentialError> {
-            Err(CredentialError::Backend(
-                "the keychain is locked; it will not say".to_string(),
-            ))
+            Err(CredentialError::Backend(BackendFailure::Fixed(
+                "the keychain is locked; it will not say",
+            )))
         }
 
         fn key_material_store(&self) -> Arc<dyn CredentialStore> {
@@ -691,9 +693,9 @@ pub(crate) mod test_stores {
 
         fn refusal<T>(&self) -> Option<Result<T, CredentialError>> {
             self.locked.load(Ordering::SeqCst).then(|| {
-                Err(CredentialError::Backend(
-                    "the keychain is locked; it will not answer".to_string(),
-                ))
+                Err(CredentialError::Backend(BackendFailure::Fixed(
+                    "the keychain is locked; it will not answer",
+                )))
             })
         }
     }

@@ -9,20 +9,43 @@ use zeroize::Zeroizing;
 /// Keychain service name scoping all of this app's credential items.
 pub const SERVICE: &str = "com.onetimesecret.companion";
 
-/// Errors from a credential store. Messages never embed secret material.
+/// Errors from a credential store.
 #[derive(Debug)]
 pub enum CredentialError {
     /// No credential stored for that account.
     NotFound,
-    /// The platform backend failed; the message is backend text only.
-    Backend(String),
+    /// The platform backend failed.
+    Backend(BackendFailure),
+}
+
+/// A backend failure: a status code or a string literal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendFailure {
+    /// A Security framework `OSStatus`.
+    Status(i32),
+    /// A failure with no status.
+    Fixed(&'static str),
+}
+
+impl std::fmt::Display for BackendFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(target_os = "macos")]
+            BackendFailure::Status(status) => {
+                write!(f, "{}", security_framework::base::Error::from_code(*status))
+            }
+            #[cfg(not(target_os = "macos"))]
+            BackendFailure::Status(status) => write!(f, "OSStatus {status}"),
+            BackendFailure::Fixed(text) => f.write_str(text),
+        }
+    }
 }
 
 impl std::fmt::Display for CredentialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CredentialError::NotFound => f.write_str("credential not found"),
-            CredentialError::Backend(msg) => write!(f, "credential backend error: {msg}"),
+            CredentialError::Backend(failure) => write!(f, "credential backend error: {failure}"),
         }
     }
 }
@@ -283,7 +306,7 @@ impl CredentialStore for InMemoryCredentialStore {
 }
 
 fn poisoned() -> CredentialError {
-    CredentialError::Backend("credential store lock poisoned".to_string())
+    CredentialError::Backend(BackendFailure::Fixed("credential store lock poisoned"))
 }
 
 /// Login keychain store: generic password items scoped to a service.
@@ -308,9 +331,9 @@ impl KeychainStore {
         &self.service
     }
 
-    /// Raw status to a crate error, with the framework's own message.
+    /// Raw status to a crate error.
     fn backend(status: i32) -> CredentialError {
-        CredentialError::Backend(security_framework::base::Error::from_code(status).to_string())
+        CredentialError::Backend(BackendFailure::Status(status))
     }
 }
 
@@ -700,9 +723,9 @@ impl DataProtectionKeychainStore {
         self.gate.tier(|| secitem::probe(&self.service))
     }
 
-    /// Raw status to a crate error, with the framework's own message.
+    /// Raw status to a crate error.
     fn backend(status: i32) -> CredentialError {
-        CredentialError::Backend(security_framework::base::Error::from_code(status).to_string())
+        CredentialError::Backend(BackendFailure::Status(status))
     }
 }
 
@@ -808,6 +831,18 @@ mod tests {
         store.store("b", b"token-b").unwrap();
         assert_eq!(&*store.load("a").unwrap(), b"token-a");
         assert_eq!(&*store.load("b").unwrap(), b"token-b");
+    }
+
+    #[test]
+    fn a_backend_failure_reads_as_its_status_or_its_fixed_text() {
+        let prefix = "credential backend error: ";
+        let fixed = CredentialError::Backend(BackendFailure::Fixed("lock poisoned")).to_string();
+        assert_eq!(fixed, format!("{prefix}lock poisoned"));
+        let status = CredentialError::Backend(BackendFailure::Status(-25300)).to_string();
+        assert!(
+            status.starts_with(prefix) && status.len() > prefix.len(),
+            "{status}"
+        );
     }
 
     #[cfg(target_os = "macos")]
