@@ -256,8 +256,9 @@ may remain after an earlier failure.
 Before compiling, the script checks identity availability and the profile's
 team, explicit App ID, Keychain group, selected certificate, expiry, and profile
 class. After embedding the profile, it removes `com.apple.quarantine`
-recursively from the App Store bundle before signing. The external source
-profile is unchanged. After signing, it checks the app signature, build number,
+recursively from the App Store bundle before signing, acting on symbolic links
+themselves rather than their targets. The external source profile is
+unchanged. After signing, it checks the app signature, build number,
 embedded profile, hardened-runtime flag, sandbox/outgoing-network/incoming-network/
 app-scoped-bookmark/user-selected-file/Keychain entitlements, absence of
 quarantine attributes in the bundle, and the package signature. These are
@@ -276,13 +277,20 @@ codesign --verify --deep --strict --verbose=2 dist/OnetimePad.app
 codesign -dvvv dist/OnetimePad.app
 codesign -d --entitlements - --xml dist/OnetimePad.app
 pkgutil --check-signature dist/OnetimePad.pkg
-xattr -r dist/OnetimePad.app
+xattr -rs dist/OnetimePad.app
 ```
 
-The attribute listing must not contain `com.apple.quarantine`. If Transporter
-reports error **91109** for `embedded.provisionprofile`, a downloaded profile's
-quarantine attribute may have been copied into the app. Rerun packaging with
-the cleanup above and upload the newly generated `dist/OnetimePad.pkg`.
+The attribute listing must not contain `com.apple.quarantine`. App Store
+Connect rejects such an upload with ITMS-91109. As quoted on the
+[Apple Developer Forums](https://developer.apple.com/forums/thread/772398), the
+rejection states: “The package contains one or more files with the
+com.apple.quarantine extended file attribute” and “This attribute shouldn’t be
+included in any macOS apps distributed on TestFlight or the App Store.” In the
+same thread, Apple Developer Technical Support says the attribute “is set by
+user-level tools, like Safari, when they download a file.” `man cp` describes
+`-X` as “Do not copy Extended Attributes (EAs) or resource forks,” so a plain
+`cp` carries a downloaded profile's attribute into the app. If the rejection
+appears, rerun packaging and upload the newly generated `dist/OnetimePad.pkg`.
 Removing attributes from the source profile or app does not update an already
 created package.
 
