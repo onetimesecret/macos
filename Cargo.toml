@@ -23,16 +23,30 @@ members = [
 
 [workspace.package]
 edition = "2024"
-license = "MIT"
-repository = "https://github.com/onetimesecret/macos"
 rust-version = "1.94"
+repository = "https://github.com/onetimesecret/macos"
+license = "MIT"
 
 [workspace.dependencies]
-zeroize = "1.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+zeroize = "1.8"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+doc_markdown = "deny"
+items_after_statements = "deny"
+map_unwrap_or = "deny"
+match_same_arms = "deny"
+needless_pass_by_value = "deny"
+redundant_closure_for_method_calls = "deny"
+semicolon_if_nothing_returned = "deny"
+# Curated pedantic subset (doc 07): high signal, low ceremony.
+uninlined_format_args = "deny"
+unnested_or_patterns = "deny"
 
 [workspace.lints.rust]
+missing_docs = "warn"
 # Zeroize-on-drop is the security posture; `unsafe` would let a crate
 # sidestep it invisibly. Denied here and allowed back only by module,
 # each allowance arriving with the platform call that needs it and a
@@ -42,35 +56,18 @@ serde_json = "1.0"
 # `credentials`' `secitem` (Security framework); `ffi` (the C seam);
 # and `pasteboard`'s macOS adapter.
 unsafe_code = "deny"
-missing_docs = "warn"
-
-[workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
-# Curated pedantic subset (doc 07): high signal, low ceremony.
-uninlined_format_args = "deny"
-semicolon_if_nothing_returned = "deny"
-redundant_closure_for_method_calls = "deny"
-unnested_or_patterns = "deny"
-map_unwrap_or = "deny"
-needless_pass_by_value = "deny"
-match_same_arms = "deny"
-items_after_statements = "deny"
-doc_markdown = "deny"
 
 [profile.release]
+opt-level = "s"
+strip = "symbols"
+lto = "thin"
 # panic = "unwind" ON PURPOSE. "abort" is the usual size win, but aborting
 # skips Drop — and zeroize-on-drop *is* the security posture (doc 05).
 # Unwinding panics scrub buffers on the way down. Do not "optimize" this.
 panic = "unwind"
-lto = "thin"
-strip = "symbols"
-opt-level = "s"
 
-# Build scripts and proc macros run on the build host and never ship, so
-# they are left unstripped; the library that ships is stripped as above.
-# On the xcode-27 runner image dyld refused the freshly built
-# `serde_derive` proc macro ("mis-aligned LINKEDIT string pool") before
-# any workspace crate compiled, and Xcode 27's `strip` running over host
-# dylibs is the suspected cause.
 [profile.release.build-override]
-strip = false
+# Rust's LLVM-based stripping can misalign Mach-O LINKEDIT entries,
+# causing macOS 27 to reject host proc-macros (rust-lang/rust#157750).
+# Keep build-time artifacts unstripped; target release settings stay above.
+strip = "none"
