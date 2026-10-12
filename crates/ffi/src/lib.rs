@@ -1571,8 +1571,7 @@ fn seal_state_to(state: &Companion, path: &Path) -> bool {
 /// Rotate both content key halves and reseal the store under the new ones,
 /// for when no tab holds a page (ADR-0016). Returns false for a path that is
 /// not the content file, a half that survived erasure, or a failed write.
-/// Erasing before writing means a crash in between loses the strip layout,
-/// never a live second key.
+/// Erased before the reseal (ADR-0016 section 6).
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -1618,8 +1617,7 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
         }
         persist::Erasure::Gone => {}
     }
-    // Drafts first: a crash in the window should cost tab layout, not unsaved
-    // typing (`files::reseal_drafts_beside`).
+    // Drafts before the strip (ADR-0040).
     let drafts = files::reseal_drafts_beside(&mut guard, path);
     seal_state_to(&guard, path) && drafts
 }
@@ -1669,8 +1667,7 @@ pub unsafe extern "C" fn companion_persist_restore(
     match opened {
         persist::Opened::Refused => false,
         persist::Opened::Superseded => {
-            // Not rotated: a launch-time keychain write could prompt (ADR-0004).
-            // `the_superseded_set_predates_the_key_half_move` guards this choice.
+            // Not rotated (ADR-0041).
             if !persist::erase_state(Path::new(path)) {
                 diag_fault!(
                     "companion-ffi: a state file from a superseded format could not be dropped. \
@@ -5684,7 +5681,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Rotation follows the state, not the transition: no latch (ADR-0016).
+    /// Rotation follows the state, not the transition (ADR-0016 section 6).
     #[test]
     fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
         let credentials: Arc<dyn CredentialStore> =

@@ -30,8 +30,7 @@ use crate::diagnostics::diag_fault;
 /// The state envelope magic, also part of its associated data.
 const FILE_MAGIC: &[u8; 8] = b"OTSSEAL3";
 
-/// Envelopes this build replaced: disposed of, not refused (ADR-0016).
-/// An entry sealed after the file half moved would need a rotation too.
+/// Envelopes this build replaced: disposed of (ADR-0016), not rotated (ADR-0041).
 const SUPERSEDED_MAGICS: [&[u8; 8]; 1] = [b"OTSSEAL2"];
 
 /// The ledger envelope magic, also its associated data.

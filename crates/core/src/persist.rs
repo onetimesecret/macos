@@ -44,8 +44,7 @@ const STAMP_SLACK_S: i64 = 2;
 /// The same slack in milliseconds, for the ledger's wall stamps.
 const STAMP_SLACK_MS: u64 = 2_000;
 
-/// 2026-10-01T00:00:00Z. A wall clock below this is wrong, and the
-/// ledger's stamp clamp stands aside rather than backdate every record.
+/// 2026-10-01T00:00:00Z; below it the ledger's stamp clamp stands aside (ADR-0043).
 const WALL_CLOCK_FLOOR_MS: u64 = 1_790_812_800_000;
 
 /// A persisted Unix-second stamp, clamped to `1..=wall + STAMP_SLACK_S`.
@@ -89,8 +88,7 @@ impl<C: Clock> SheetStore<C> {
     #[must_use]
     pub fn snapshot(&self, wall_ms: u64) -> Zeroizing<Vec<u8>> {
         let now = self.clock.now();
-        // Exported once: two exports could differ in length and grow the
-        // buffer, stranding sealed bytes in freed heap.
+        // Exported once, so both passes see the same bytes (ADR-0042).
         let blobs: Vec<Zeroizing<Vec<u8>>> = self
             .sheets()
             .map(|sheet| sheet.document.export_snapshot())
@@ -196,8 +194,7 @@ impl<C: Clock> SheetStore<C> {
             });
         }
         let record_count = count(&mut reader)?;
-        // Future stamps clamp to the clock, unless the clock reads below
-        // the floor and is itself the broken party.
+        // Future stamps clamp to the clock, above the floor only (ADR-0043).
         let ceiling = if wall_ms < WALL_CLOCK_FLOOR_MS {
             u64::MAX
         } else {
@@ -217,8 +214,7 @@ impl<C: Clock> SheetStore<C> {
         // Newest first: the file's records come from earlier sessions, so
         // they go after the live ones, unsorted.
         let mut merged: Vec<LedgerRecord> = self.ledger.drain(..).collect();
-        // A multiset union: each identical pair cancels once, and the file
-        // is never deduplicated against itself.
+        // A multiset union, never deduplicated against itself (ADR-0044).
         let mut held: HashMap<(u64, ItemId), Vec<usize>> = HashMap::new();
         for (index, record) in merged.iter().enumerate() {
             held.entry((record.at_wall_ms, record.item))
