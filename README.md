@@ -118,7 +118,10 @@ for the current composition.
 
 Browsers cannot draw a `.icon` document, so the websites use
 [artwork/web](artwork/web): Icon Composer's light and dark renderings as
-1024 pixel, 8 bit sRGB PNGs. `scripts/build-icons.sh --web` writes them, and
+1024 pixel, 8 bit sRGB PNGs, and `onetimepad-icon.svg`, the same composition
+flat: the icon shape in the document's fill shade under the white mark, with
+no glass, gradient or cast shadow, for sizes and places where a raster would
+blur. `scripts/build-icons.sh --web` writes all three, and
 `--update-glass-artwork` refreshes them too. After editing the document in
 Icon Composer, run `--web` and commit the result. A website keeps its own copy
 and resizes it in its build, rather than linking to this repository.

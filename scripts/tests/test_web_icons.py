@@ -1,6 +1,8 @@
 """Exercise build-icons.sh --web, which exports the glass icon for the websites."""
 
+import json
 import os
+import re
 import shlex
 import struct
 import subprocess
@@ -9,10 +11,30 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/build-icons.sh"
-NAMES = ("onetimepad-icon.png", "onetimepad-icon-dark.png")
+DOCUMENT = ROOT / "artwork/OnetimePad-Glass.icon/icon.json"
+LOGO = ROOT / "shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg"
+RASTERS = ("onetimepad-icon.png", "onetimepad-icon-dark.png")
+VECTOR = "onetimepad-icon.svg"
+NAMES = RASTERS + (VECTOR,)
+SVG = "{http://www.w3.org/2000/svg}"
+
+
+def document_fill():
+    """The saved document's fill shade as rrggbb, converted independently of the script."""
+    fill = json.loads(DOCUMENT.read_text())["fill"]
+    value = fill.get("automatic-gradient") or fill["solid"]
+    components = value.removeprefix("extended-srgb:").split(",")
+    return "".join(f"{int(float(c) * 255 + 0.5):02x}" for c in components[:3])
+
+
+def logo_mark_paths():
+    """The brand asset's own path data, minus its full bleed plate (the first path)."""
+    paths = ElementTree.parse(LOGO).getroot().findall(f"{SVG}path")
+    return [(p.get("transform"), p.get("d")) for p in paths[1:]]
 
 
 def solid_png(size=4):
@@ -93,6 +115,17 @@ class WebIconTests(unittest.TestCase):
         xcodebuild = commands / "xcodebuild"
         xcodebuild.write_text(f'#!/bin/bash\nprintf "Xcode {xcode}\\nBuild version mock\\n"\n')
         xcodebuild.chmod(0o755)
+        # The vector export runs the real renderer, and the swift shim
+        # resolves its toolchain through DEVELOPER_DIR, so hand it the
+        # selected Xcode rather than the stand-in.
+        selected = os.environ.get("DEVELOPER_DIR") or subprocess.run(
+            ["xcode-select", "--print-path"], capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        swift = commands / "swift"
+        swift.write_text(
+            f'#!/bin/bash\nexport DEVELOPER_DIR={shlex.quote(selected)}\nexec /usr/bin/swift "$@"\n'
+        )
+        swift.chmod(0o755)
         return {"DEVELOPER_DIR": str(developer), "PATH": f'{commands}:{os.environ["PATH"]}'}
 
     def require_icon_composer(self):
@@ -119,7 +152,7 @@ class WebIconTests(unittest.TestCase):
         self.require_icon_composer()
         result = self.export()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for name in NAMES:
+        for name in RASTERS:
             with self.subTest(name=name):
                 self.assertEqual(image_properties(self.web / name), {
                     "pixelWidth": "1024",
@@ -128,14 +161,42 @@ class WebIconTests(unittest.TestCase):
                     "profile": "sRGB IEC61966-2.1",
                     "hasAlpha": "yes",
                 })
+        self.assert_vector_export()
+
+    def assert_vector_export(self):
+        """The SVG is the icon shape in the document's fill under the asset's own mark paths."""
+        root = ElementTree.parse(self.web / VECTOR).getroot()
+        self.assertEqual(root.tag, f"{SVG}svg")
+        self.assertEqual(root.get("viewBox"), "0 0 1024 1024")
+        plate, group = list(root.findall(f"{SVG}path")), root.find(f"{SVG}g")
+        self.assertEqual(len(plate), 1)
+        self.assertEqual(plate[0].get("fill"), "#" + document_fill())
+        self.assertRegex(plate[0].get("d"), r"^M [\d.]+ 0 .* Z$")
+        self.assertEqual(group.get("fill"), "#ffffff")
+        self.assertRegex(
+            group.get("transform"),
+            r"^translate\(-?[\d.]+ -?[\d.]+\) scale\([\d.]+\) translate\(-?[\d.]+ -?[\d.]+\)$",
+        )
+        self.assertEqual(
+            [(p.get("transform"), p.get("d")) for p in group.findall(f"{SVG}path")],
+            logo_mark_paths(),
+        )
+        self.assertNotIn("<image", (self.web / VECTOR).read_text())
+
+    def test_exports_a_flat_vector_in_the_document_fill(self):
+        result = self.export(self.mock_composer())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"onetimepad-icon.svg (flat, fill {document_fill()})", result.stdout)
+        self.assert_vector_export()
 
     def test_requests_both_renditions_and_converts_each(self):
         result = self.export(self.mock_composer())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.requested.read_text().split(), ["Default", "Dark"])
-        for name in NAMES:
+        for name in RASTERS:
             with self.subTest(name=name):
                 self.assertEqual(image_properties(self.web / name)["profile"], "sRGB IEC61966-2.1")
+        self.assertEqual(sorted(p.name for p in self.web.iterdir()), sorted(NAMES))
 
     def test_rendition_ictool_did_not_write_leaves_earlier_exports(self):
         self.web.mkdir()

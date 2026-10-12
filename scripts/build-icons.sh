@@ -29,8 +29,9 @@
 #       and refreshes the website exports as --web does.
 #   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon; directory is repo-relative
 #   scripts/build-icons.sh --web [directory]   # export the saved Composer icon for the websites
-#       light and dark renderings as 1024 pixel, 8 bit sRGB PNGs in
-#       artwork/web unless a repo-relative directory is given.
+#       light and dark renderings as 1024 pixel, 8 bit sRGB PNGs, and a
+#       flat SVG of the same composition in the document's fill shade,
+#       in artwork/web unless a repo-relative directory is given.
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 #   scripts/build-icons.sh --shadows [rrggbb]
@@ -177,19 +178,44 @@ find_composer_tool() { # <mode flag>
   require_refractivity_xcode "$1"
 }
 
+# The saved document's one fill shade as rrggbb, read from icon.json so
+# the vector export cannot drift from the glass renderings. Icon
+# Composer saves it as "extended-srgb:r,g,b,a" with components in 0 to 1,
+# under automatic-gradient (its gradient derived from one shade) or
+# solid. Any other fill is a composition the export does not know.
+glass_fill_shade() {
+  local document=artwork/OnetimePad-Glass.icon/icon.json key fill=
+  for key in fill.automatic-gradient fill.solid; do
+    if fill="$(plutil -extract "$key" raw -o - "$document" 2>/dev/null)"; then
+      break
+    fi
+    fill=
+  done
+  if [[ ! "$fill" =~ ^extended-srgb:[0-9.]+,[0-9.]+,[0-9.]+,[0-9.]+$ ]]; then
+    echo "could not read the glass fill: $document has no automatic-gradient or solid extended-srgb fill (got \"${fill:-nothing}\")" >&2
+    exit 1
+  fi
+  printf '%s\n' "${fill#extended-srgb:}" |
+    awk -F, '{ printf "%02x%02x%02x\n", int($1 * 255 + 0.5), int($2 * 255 + 0.5), int($3 * 255 + 0.5) }'
+}
+
 # The websites' copy of the glass icon: Icon Composer's own light and
-# dark renderings of the saved document. Browsers cannot draw a .icon
-# and an SVG cannot carry the glass, so these are rasters. ictool writes
-# 16 bit Display P3 and cwebp drops colour profiles by default, so sips
-# converts each rendering to 8 bit sRGB. Both are staged and checked
-# before either replaces the copies in the directory.
+# dark renderings of the saved document, and a flat vector of the same
+# composition. Browsers cannot draw a .icon and an SVG cannot carry the
+# glass, so the renderings are rasters. ictool writes 16 bit Display P3
+# and cwebp drops colour profiles by default, so sips converts each
+# rendering to 8 bit sRGB. The SVG is the icon shape in the document's
+# fill shade under the white mark, placed as the Composer foreground is,
+# for sizes and places where a raster would blur. All three are staged
+# and checked before any replaces the copies in the directory.
 export_web_icons() { # [directory]
   if [[ -n "$MARK_CHOSEN" ]]; then
     echo "--web exports artwork/OnetimePad-Glass.icon; --mark applies to rendered artwork only." >&2
     exit 1
   fi
   find_composer_tool --web
-  local destination="${1:-artwork/web}" staging rendition name
+  local destination="${1:-artwork/web}" staging rendition name shade
+  shade="$(glass_fill_shade)"
   staging="$(mktemp -d)"
   for rendition in Default Dark; do
     case "$rendition" in
@@ -213,8 +239,15 @@ export_web_icons() { # [directory]
       exit 1
     fi
   done
+  echo "==> Exporting $destination/onetimepad-icon.svg (flat, fill $shade)"
+  swift scripts/render-icon.swift --mark logo --svg "$shade" "$staging/onetimepad-icon.svg" >/dev/null
+  if [[ ! -s "$staging/onetimepad-icon.svg" ]]; then
+    echo "could not export web icon: render-icon.swift produced no onetimepad-icon.svg" >&2
+    exit 1
+  fi
   mkdir -p "$destination"
-  mv "$staging/onetimepad-icon.png" "$staging/onetimepad-icon-dark.png" "$destination/"
+  mv "$staging/onetimepad-icon.png" "$staging/onetimepad-icon-dark.png" \
+    "$staging/onetimepad-icon.svg" "$destination/"
   rm -rf "$staging"
 }
 
