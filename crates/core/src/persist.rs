@@ -2663,4 +2663,35 @@ mod tests {
             "the ledger preallocation must not grow either"
         );
     }
+
+    #[test]
+    fn the_block_section_is_written_at_its_exact_size() {
+        use crate::store::EditOp;
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let page = store.tabs[0].page.as_ref().unwrap();
+        assert!(encode_materialized(&page.blocks, &page.document).is_empty());
+
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "first\u{1F600}\n".into()
+                },
+                EditOp::Insert {
+                    pos_u16: 8,
+                    text: "second".into()
+                }
+            ]
+        ));
+        store.cycle_rung(slot(&store, id)).unwrap();
+        let page = store.tabs[0].page.as_ref().unwrap();
+        let section = encode_materialized(&page.blocks, &page.document);
+        assert!(
+            !section.is_empty(),
+            "the control: the ceremony froze both blocks"
+        );
+        assert_eq!(section.capacity(), section.len());
+    }
 }

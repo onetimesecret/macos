@@ -2854,6 +2854,24 @@ mod tests {
     }
 
     #[test]
+    fn the_conceal_payload_is_written_at_its_exact_size() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, &"s3cr3t \u{1F511} ".repeat(300));
+        assert!(store.sync_document(
+            id,
+            vec![
+                Segment::Ink("before\n".repeat(200)),
+                Segment::Chip(chip),
+                Segment::Ink("after".into()),
+            ]
+        ));
+        let payload = store.sheet_payload(id).unwrap();
+        assert!(payload.len() > 4000);
+        assert_eq!(payload.capacity(), payload.len());
+    }
+
+    #[test]
     fn sheet_payload_refuses_image_chips_and_unknown_sheets() {
         let (mut store, _) = store();
         let id = store.new_tab().1;

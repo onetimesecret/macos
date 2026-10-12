@@ -266,6 +266,22 @@ mod tests {
     }
 
     #[test]
+    fn the_conceal_body_is_written_at_its_exact_size() {
+        let api = Api::new("https://x.example", Box::new(NoAuth));
+        let secret = "line \"one\"\n\u{1F511} ".repeat(500);
+        let payload = ConcealPayload::new(secret, "x.example")
+            .with_ttl(3600)
+            .with_passphrase("pass\\word");
+        for req in [
+            api.conceal_request(&payload).unwrap(),
+            api.guest_conceal_request(&payload).unwrap(),
+        ] {
+            let body = req.body.as_ref().unwrap();
+            assert_eq!(body.capacity(), body.len());
+        }
+    }
+
+    #[test]
     fn success_response_parses_into_conceal_data() {
         let api = Api::new("https://x.example", Box::new(NoAuth));
         let response = HttpResponse {
