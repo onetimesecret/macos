@@ -235,6 +235,11 @@ class WebIconTests(unittest.TestCase):
         )
         self.assert_vector_export("onetimepad-icon-dark.svg", FIXTURE_SHADE)
 
+    def test_comma_decimal_locale_reads_the_same_fill(self):
+        result = self.export({**self.mock_composer(), "LC_ALL": "de_DE.UTF-8"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_vector_export("onetimepad-icon.svg", document_fill())
+
     def test_requests_both_renditions_and_converts_each(self):
         result = self.export(self.mock_composer())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

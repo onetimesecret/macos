@@ -211,8 +211,10 @@ glass_fill_shade() {
     echo "could not read the glass fill: $document has no automatic-gradient or solid extended-srgb fill (got \"${fill:-nothing}\")" >&2
     exit 1
   fi
+  # macOS awk reads decimals in the locale's notation, which turns
+  # 0.86275 into 0 under a comma decimal locale, so it runs in C.
   printf '%s\n' "${fill#extended-srgb:}" |
-    awk -F, -v document="$document" '
+    LC_ALL=C awk -F, -v document="$document" '
       $1 < 0 || $1 > 1 || $2 < 0 || $2 > 1 || $3 < 0 || $3 > 1 {
         printf "could not read the glass fill: %s,%s,%s in %s is outside sRGB, which a flat SVG shade cannot carry\n", $1, $2, $3, document > "/dev/stderr"
         exit 1
