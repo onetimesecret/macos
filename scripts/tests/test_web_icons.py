@@ -114,13 +114,15 @@ class WebIconTests(unittest.TestCase):
             executables.mkdir(parents=True, exist_ok=True)
             ictool = executables / "ictool"
             # The real ictool reports an unknown rendition and still exits 0.
-            # The stand-in also notes the first bytes of the document's
-            # foreground layer, so a test can see which layer it exported.
+            # The stand-in also notes the first bytes of both of the
+            # document's layers, so a test can see which layers it exported.
             ictool.write_text(
                 "#!/bin/bash\nset -eu\n"
-                'head -c 4 "$1/Assets/01-logo-foreground.png" | LC_ALL=C tr -dc A-Za-z'
+                'for layer in 00-logo-cast-shadow 01-logo-foreground; do\n'
+                '  head -c 4 "$1/Assets/$layer.png" | LC_ALL=C tr -dc A-Za-z'
                 f' >> {shlex.quote(str(self.layers_seen))}\n'
-                f'echo >> {shlex.quote(str(self.layers_seen))}\n'
+                f'  echo >> {shlex.quote(str(self.layers_seen))}\n'
+                'done\n'
                 'while [[ $# -gt 0 ]]; do\n'
                 '  case "$1" in\n'
                 '    --output-file) output="$2"; shift 2 ;;\n'
@@ -289,9 +291,9 @@ class WebIconTests(unittest.TestCase):
         for layer in layers:
             with self.subTest(layer=layer):
                 self.assertEqual(image_properties(assets / layer)["pixelWidth"], "1024")
-        # Both renditions are exported from the rewritten foreground, not the earlier one.
+        # Both renditions are exported from both rewritten layers, not the earlier ones.
         self.assertEqual(self.requested.read_text().split(), ["Default", "Dark"])
-        self.assertEqual(self.layers_seen.read_text().split(), ["PNG", "PNG"])
+        self.assertEqual(self.layers_seen.read_text().split(), ["PNG"] * 4)
         for name in NAMES:
             with self.subTest(name=name):
                 self.assertNotEqual((web / name).read_bytes(), b"earlier export")
