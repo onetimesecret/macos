@@ -17,16 +17,14 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ControlPayload {
     /// A ceremony proposal: entropy minted by the proposer, sealed per
-    /// surviving device to that device's static key package (§6) —
-    /// never under the current GOP key, which a just-revoked device
-    /// still holds.
+    /// named device to that device's one-shot key package, never under
+    /// the current GOP key, which a just-revoked device still holds
+    /// (client protocol §5, §7.3).
     Propose {
         /// The ballot this proposal opens.
         ballot_id: String,
-        /// The page whose transition proposed the compaction — named
-        /// on the wire so a follower joins the right ballot instead of
-        /// inferring the channel's one busy page (the #99 follow-up;
-        /// every enrolled page still compacts, §2).
+        /// The page to compact, named so a follower joins the right
+        /// ballot; only this page compacts (client protocol §7.6).
         page: String,
         /// Per-device sealed entropy, keyed by identity fingerprint.
         /// A `BTreeMap` so the encoding is deterministic.

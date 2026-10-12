@@ -945,115 +945,86 @@ char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
  *     "authorize_url": "https://…",  // required, https only
  *     "token_url": "https://…",      // required, https only
  *     "client_id": "…" }             // required, non-empty
- * Like the conceal connection this is not persisted core-side — the
- * shell re-sends it at launch — but configuring resumes the persisted
- * sign-in: the refresh token loads from its own Keychain account, so a
- * relaunch is signed in without a browser. Returns false on malformed
- * JSON, a missing field, or a non-https URL.
+ * Not persisted core-side (the shell re-sends it at launch);
+ * configuring resumes the persisted sign-in from its own Keychain
+ * account. Returns false on malformed JSON, a missing field, or a
+ * non-https URL.
  */
 bool companion_sync_configure(CompanionHandle *handle, const char *json);
 
 /*
  * Sync's standing state for Settings: {"configured", "signed_in",
  * "gate", "signin_pending", "attached", "epoch", "frame_present",
- * "enrolled", "pairing"}. Existence checks and in-memory reads only,
- * so rendering Settings never decrypts a credential, wedges on the
- * Keychain, or waits on the network.
- *
- * "attached" and a "gate" of "attached" are deliberately not the same
- * question. "attached" is the relay's answer: an attachment stands.
- * The gate additionally asks whether the next request can use it, and
- * a 401 on any route drops the access token, so the gate falls back to
- * "ready" while "attached" stays true until the refresh lands. So
- * {"attached": true, "gate": "ready"} is a legal and common pair, and
- * the gate is the one to switch on: it is the value that says whether
- * this client may attach, and "attached" is a fact about the last
- * round trip. Free with companion_string_free().
+ * "enrolled", "pairing"}, from existence checks and in-memory reads
+ * only, so it never decrypts, wedges on the Keychain or waits on the
+ * network. "attached" is the relay's last answer; the gate also asks
+ * whether the next request can use it, so {"attached": true, "gate":
+ * "ready"} is legal until a refresh lands. Switch on the gate. Free
+ * with companion_string_free().
  */
 char *companion_sync_status_json(CompanionHandle *handle);
 
 /*
  * Where the account gate stands, as one machine token (ADR-0027
  * section 5): "off", "signed_out", "signing_in", "refused",
- * "unreachable", "ready" or "attached". The same value the status
- * JSON carries as "gate", for a caller that wants the one word
- * without the rest. It says whether this client may attach to the
- * channel and nothing about content: passing this gate without
- * pairing downloads ciphertext that will not open.
+ * "unreachable", "ready" or "attached", the status JSON's "gate". It
+ * says whether this client may attach and nothing about content
+ * (ADR-0021 section 3).
  *
- * Null on a null handle or a core that could not be read at all. Null
- * is not one of the seven states and must never be softened into one:
- * a gate that could not be read has not been passed, so a caller
- * treats it as "may not attach" rather than as no opinion. That is a
- * different fact from the status JSON simply carrying no "gate" key,
- * which is a core older or newer than the caller and does mean no
- * opinion; a caller reading the gate out of the status keeps whatever
- * it already believed. Free with companion_string_free().
+ * Null on a null handle or a poisoned lock: a gate that cannot be read
+ * has not been passed, so null means may not attach. A status JSON
+ * with no "gate" key is another core version and means no opinion.
+ * Free with companion_string_free().
  */
 char *companion_sync_gate(CompanionHandle *handle);
 
 /*
  * Begin the sign-in ceremony (account-auth.md section 1): bind the
  * one-shot loopback listener, mint the PKCE material, and return
- * {"ok": true, "authorize_url"} for the shell to open in the SYSTEM
- * browser — never a web view. Then call companion_sync_signin_finish
- * from a background queue. {"ok": false, "reason"} with "busy" while a
- * ceremony already waits for its finish OR a finish is out on the
- * browser, "not_configured", "port" (the listener could not bind), or
- * "no_entropy". A second listener bound behind the first browser trip
- * would leave two sockets open on one consent screen, so a begin
- * refuses rather than superseding; companion_sync_signin_cancel is the
- * way out. Free with companion_string_free().
+ * {"ok": true, "authorize_url"} for the SYSTEM browser, never a web
+ * view; then companion_sync_signin_finish from a background queue.
+ * {"ok": false, "reason"}: "busy" while a ceremony waits or a finish
+ * is out on the browser (companion_sync_signin_cancel is the way
+ * out), "not_configured", "port" (the listener could not bind) or
+ * "no_entropy". Free with companion_string_free().
  */
 char *companion_sync_signin_begin(CompanionHandle *handle);
 
 /*
- * Finish the sign-in ceremony: wait for the browser's one redirect,
- * redeem the code, and persist the rotated refresh token in its own
- * Keychain account. BLOCKS for up to patience_ms — call from a
- * background queue; account-auth.md section 5 budgets five minutes,
- * because the user is reading a consent screen. The core mutex is held
- * only at the edges; the pad never waits on this. Returns {"ok": true}
- * or {"ok": false, "reason"} with the section-5 tokens: "abandoned",
- * "state_mismatch", "no_code", "unreachable", "refused",
- * "no_ceremony", "busy", "keychain", "not_configured". Every failure
- * leaves nothing stored; retry is a fresh begin. A call made while
- * another finish is already out on the browser answers "busy" and
- * leaves that ceremony and the gate exactly as they were; one made for
- * a ceremony begun while the sync engine already held a sign-in
- * answers "not_configured", there being no keeper standing to take the
- * grant. "Nothing stored" is this device's promise: by a
- * "not_configured" finish the code has been redeemed, so the issuer
- * holds a refresh token this device dropped, live until it expires.
- * "abandoned" also covers a
- * ceremony ended by companion_sync_signin_cancel or
- * companion_sync_signout while this call was out, including one ended
- * after the redirect landed: the grant is dropped rather than
- * persisted. A cancel that landed before this call ran leaves nothing
- * to find, and the answer is "no_ceremony": the flag went with the
- * ceremony it ended, so the surface is what remembers whose ending it
- * was. Free with companion_string_free().
+ * Finish the sign-in ceremony: wait up to patience_ms for the
+ * browser's redirect, redeem the code, exchange it, and persist the
+ * refresh token in its own Keychain account. BLOCKS for up to the
+ * whole patience: call from a background queue (account-auth.md
+ * section 5 budgets five minutes). The core mutex is held only at the
+ * edges. Returns {"ok": true} or {"ok": false, "reason"}: "abandoned"
+ * (no redirect, or a cancel or sign-out while this call was out, even
+ * after the redirect landed), "state_mismatch", "no_code",
+ * "unreachable", "refused", "no_ceremony" (none begun, or one
+ * cancelled before this call), "busy" (another finish is out; its
+ * ceremony and the gate stand), "keychain", "not_configured" (begun
+ * while the engine held the sign-in). Every failure stores nothing on
+ * this device; retry is a fresh begin. After a "not_configured" finish
+ * the issuer still holds the redeemed refresh token until it expires.
+ * Free with companion_string_free().
  */
 char *companion_sync_signin_finish(CompanionHandle *handle,
                                    uint64_t patience_ms);
 
 /*
- * Give up on the sign-in ceremony, whichever half it is in: one still
- * waiting for its finish drops with its listener, and one a finish is
- * already holding out on the browser is marked abandoned, which that
- * finish reads at every wait it has left and once more under the lock
- * that would have persisted the grant. The gate stops reading
- * "signing_in" at once. True when there was a ceremony to end.
+ * Give up on the sign-in ceremony, parked or out on the browser; the
+ * finish reads the abandon flag at every wait and once more before it
+ * persists. The gate stops saying "signing_in" at once; nothing is
+ * deleted and no request is sent. True when there was a ceremony to
+ * end.
  */
 bool companion_sync_signin_cancel(CompanionHandle *handle);
 
 /*
  * Sign sync out: drop the held tokens and delete the persisted refresh
- * token — exactly one Keychain account. The conceal token, the content
- * and ledger keys, and the pairing accounts all stand; the pad is
- * unaffected, which is the point. A sign-in ceremony still out on the
- * browser is ended with it, so a redirect landing afterwards persists
- * nothing. True when the delete was accepted.
+ * token, exactly one Keychain account; the conceal token, content and
+ * ledger keys, pairing accounts and the pad all stand (ADR-0021
+ * section 3). A ceremony out on the browser ends with it. True when
+ * the delete was accepted.
  */
 bool companion_sync_signout(CompanionHandle *handle);
 
@@ -1062,62 +1033,58 @@ bool companion_sync_signout(CompanionHandle *handle);
 /* ------------------------------------------------------------------ */
 
 /*
- * Enrol a page into the sync channel, or withdraw it — per page and
- * off by default (relay protocol section 1). Enrolling defers the
- * page's compaction to the coordinated ceremony and starts its delta
- * cursor at the beginning, so the first publish carries the whole
- * page; withdrawing returns it to solo behaviour, performing any due
- * ceremony on the spot. page is the PAGE id.
+ * Enrol a page into the sync channel, or withdraw it; per page and off
+ * by default (relay protocol section 1). Enrolling defers its
+ * compaction to the coordinated ceremony and starts its cursor at the
+ * beginning; withdrawing performs any due ceremony on the spot. page
+ * is the PAGE id.
  */
 bool companion_sync_enrol_page(CompanionHandle *handle, uint64_t page,
                                bool enrolled);
 
 /*
- * Attach to the account's channel: ensure the device identity and
- * channel secret (the first device to enable sync founds the channel;
- * a joiner's secret arrives by pairing and overwrites), mint and
- * publish a fresh key package, adopt the relay's cursor. BLOCKS for
- * the round-trips — call from a background queue. Returns
+ * Attach to the account's channel, building the engine on first use
+ * (device identity, channel secret, key package; a joiner's secret
+ * arrives by pairing). A re-attach mints a pending package unless one
+ * already waits, which it resends (client protocol sections 4.3, 5.2).
+ * BLOCKS for the round-trips: call from a background queue. Returns
  * {"ok": true, "epoch", "frame_present", "peers"} or
  * {"ok": false, "reason"}: "not_configured", "signed_out",
  * "keychain", "unreachable", "refused", "busy" while another attach
- * is in flight; not exhaustive ("poisoned" and "not_attached" among
- * the rest). Free with companion_string_free().
+ * is in flight, among others ("poisoned", "not_attached"). Free with
+ * companion_string_free().
  */
 char *companion_sync_attach(CompanionHandle *handle);
 
 /*
- * Detach: tell the relay (best effort; idle attachments age out
- * regardless) and dissolve the engine, keeping the sign-in. BLOCKS
- * briefly — call from a background queue. True when there was an
- * engine to dissolve.
+ * Detach from the channel: dissolve the engine, keeping the sign-in,
+ * and tell the relay, best effort (client protocol section 4.8).
+ * BLOCKS briefly for the one round-trip: call from a background
+ * queue. True when there was an engine to dissolve.
  */
 bool companion_sync_detach(CompanionHandle *handle);
 
 /*
- * One turn of the engine loop, run repeatedly from a background queue
- * while sync is on: sweep the enrolled pages into the outbox, publish
- * what the 2-second clock owes, long-poll the delta stream for up to
- * wait_seconds (section 8 budgets 25), walk the ballot patience, and
- * publish a committed ceremony's frame. BLOCKS for up to the whole
- * long-poll, and for the turn's other round trips besides (a publish,
- * an attach on a turn that owes the relay a key package, a committed
- * ceremony's frame), each under its own transport bound, so a relay
- * that takes connections and then stalls can hold one turn for several
- * of those bounds end to end; the core mutex is held only between round-trips, so the
- * pad never waits on the network. Returns {"ok", "reason"?, "events":
- * [{"kind", "page"?}, ...], "state"} — kinds: applied,
+ * One turn of the engine loop, from a background queue while sync is
+ * on: sweep, walk the ballot patience, publish, long-poll for up to
+ * wait_seconds (held to 25), attach after a commit or when a package
+ * is owed, publish a committed frame (client protocol section 3).
+ * BLOCKS for the long-poll and the turn's other round trips, each
+ * under its own transport bound; the core mutex is held only between
+ * them. Returns
+ * {"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, ...],
+ * "state"}: page is the cross-device identity, page_id the local id
+ * (null when no live page holds it here). Kinds: applied,
  * countdown_moved, terminal, rejoin_required, ceremony_proposed,
  * ceremony_committed, ceremony_required, epoch_conflict, unauthorized,
- * unreachable, protocol, signed_out. States, never sentences — the
- * surface owns the words. Free with companion_string_free().
+ * unreachable, protocol, signed_out. States, never sentences. Free
+ * with companion_string_free().
  */
 char *companion_sync_pump(CompanionHandle *handle, uint32_t wait_seconds);
 
 /*
- * The device list for Settings: every peer a human verified here,
- * joined with the attach roster's times, plus this device and any
- * attached-but-unverified stranger, labelled as exactly that.
+ * The device list for Settings: this device, every verified peer with
+ * its attach time, and any attached but unverified stranger, labelled.
  * {"devices": [{"fingerprint", "label", "this_device", "verified",
  * "paired_wall_ms", "attached_ms"}, ...]}. Free with
  * companion_string_free().
@@ -1152,9 +1119,8 @@ char *companion_sync_join_begin(CompanionHandle *handle);
 
 /*
  * One mailbox round of the pairing ceremony: post what is queued,
- * fetch the tail, advance, report. BLOCKS for the round-trips — call
- * from a background queue, on a timer while the enrolment sheet is
- * open. Returns {"stage", "sas"?, "reason"?}: "waiting" (keep
+ * fetch the tail, advance, report. BLOCKS for the round-trips: call
+ * from a background queue, on a timer while the sheet is open. Returns {"stage", "sas"?, "reason"?}: "waiting" (keep
  * polling), "sas" (show the six digits, ask the human, call confirm),
  * "confirmed" (this side confirmed; waiting for the peer), "done",
  * "failed", "idle" (no ceremony). Free with companion_string_free().
@@ -1163,17 +1129,15 @@ char *companion_sync_pairing_poll(CompanionHandle *handle);
 
 /*
  * The human's verdict on the short authentication string. A match
- * moves the ceremony forward; a mismatch aborts it whole with nothing
- * stored on this device — failing must always be possible. Returns
- * the stage as companion_sync_pairing_poll does. Free with
- * companion_string_free().
+ * moves the ceremony forward; a mismatch drops it whole with nothing
+ * stored on this device (ADR-0021 section 3). Returns the stage as
+ * companion_sync_pairing_poll does. Free with companion_string_free().
  */
 char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
 
 /*
- * Forget the pairing ceremony in flight, at any stage — a finished or
- * failed one whose sheet is being dismissed included. True when there
- * was one.
+ * Forget the pairing ceremony in flight, at any stage, finished and
+ * failed included. True when there was one.
  */
 bool companion_sync_pairing_cancel(CompanionHandle *handle);
 

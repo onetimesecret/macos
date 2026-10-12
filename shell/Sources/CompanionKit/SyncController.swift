@@ -1,12 +1,9 @@
 import AppKit
 import Foundation
 
-/// Where sync's endpoints come from: UserDefaults overrides first,
-/// then the conceal server's conventional OAuth paths — the account
-/// server owns sign-in (account-auth.md §1) — and no default at all
-/// for the relay, because inventing a hostname for a service that has
-/// not shipped would be a claim, not a default. A pure resolution so
-/// the rule is testable without defaults.
+/// Where sync's endpoints come from: UserDefaults overrides first, then
+/// the conceal server's OAuth paths (account-auth.md §1), and no
+/// default relay, since an invented hostname would be a claim.
 public struct SyncEndpoints: Equatable, Sendable {
     public let relayUrl: String
     public let authorizeUrl: String
@@ -44,17 +41,12 @@ public struct SyncEndpoints: Equatable, Sendable {
     }
 }
 
-/// The one word the header says about sync, beside the one it already
-/// says about the write (issue #102). The persistence word is the
-/// pattern being followed rather than a second vocabulary invented:
-/// short, lower case, absent while there is nothing to report, quiet
-/// for the states that need nothing and loud for the ones that need
-/// acting on. `help` and `spoken` travel with the word so a tooltip
-/// and VoiceOver never have to reconstruct what it meant.
+/// The one word the header says about sync, beside the persistence
+/// word and in its pattern (issue #102, surface.md §4). `help` and
+/// `spoken` travel with it for the tooltip and VoiceOver.
 public struct SyncHeaderWord: Equatable, Sendable {
-    /// How loudly the word is drawn. `quiet` is the settled state, the
-    /// way `saved` is quiet; `plain` is a state in motion; `loud` is
-    /// the ember reserved for what a user has to do something about.
+    /// How loudly the word is drawn: `quiet` settled, `plain` in
+    /// motion, `loud` for what a user has to act on.
     public enum Tone: Equatable, Sendable {
         case quiet
         case plain
@@ -67,17 +59,11 @@ public struct SyncHeaderWord: Equatable, Sendable {
     public let spoken: String
 }
 
-/// The shell's sync driver (issues #98 and #102): owns the off
-/// switch, the sign-in ceremony, the engine loop, and the pairing
-/// flow, all over the `companion_sync_*` seam. Off is the default and
-/// off is silent — a controller that is never enabled configures
-/// nothing, opens no socket, and publishes no sentence, so the app
-/// with sync off is indistinguishable from the app before sync
-/// existed.
-///
-/// Every state the engine hands up becomes a sentence exactly once,
-/// in the pure functions at the bottom, which is where the tests
-/// hold them.
+/// The shell's sync driver (issues #98 and #102): the off switch, the
+/// sign-in ceremony, the engine loop and the pairing flow over the
+/// `companion_sync_*` seam. Off is the default and silent: no socket,
+/// no sentence. Each engine state becomes a sentence once, in the pure
+/// functions at the bottom; retry rules: client protocol §3.
 @MainActor
 public final class SyncController: ObservableObject {
     /// The off switch, off by default, persisted like every setting.
@@ -103,17 +89,11 @@ public final class SyncController: ObservableObject {
     @Published public private(set) var trouble: Trouble?
     /// A failed sign-in's sentence, standing until the next attempt.
     @Published public private(set) var signinFailure: String?
-    /// The pages another device is writing on right now, by PAGE id:
-    /// a page is in this set while a peer's edit has landed on it
-    /// recently enough to still be happening (issue #102). Derived
-    /// from the ops the engine already applies, so it costs no
-    /// presence protocol and claims nothing the relay was not already
-    /// told.
+    /// The pages another device is writing on right now, by PAGE id,
+    /// derived from the ops the engine already applies (issue #102).
     @Published public private(set) var editedElsewhere: Set<UInt64> = []
-    /// Pages enrolled this session, by PAGE id. Per session on
-    /// purpose for now: page ids do not survive a relaunch, and the
-    /// durable enrolment record arrives with the cross-relaunch
-    /// wiring, not before it.
+    /// Pages enrolled this session, by PAGE id; nothing persists them
+    /// across a relaunch yet.
     @Published public private(set) var enrolledPages: Set<UInt64> = []
 
     /// What a remote change should do to the surface: the model
@@ -122,10 +102,8 @@ public final class SyncController: ObservableObject {
     public var onRemoteChange: (() -> Void)?
     /// Where the conceal server URL lives, for endpoint derivation.
     public var serverUrlProvider: () -> String = { "" }
-    /// How the authorize URL reaches a browser: the system browser,
-    /// always, and never a web view (account-auth.md §3). Named rather
-    /// than called inline so a test can walk the whole ceremony
-    /// without a consent screen opening on whoever is running it.
+    /// How the authorize URL reaches the system browser, never a web
+    /// view (account-auth.md §3); a seam so tests open no browser.
     var openAuthorizeUrl: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
     /// The degraded conditions issue #102 owes sentences for, each a
@@ -144,9 +122,7 @@ public final class SyncController: ObservableObject {
         case behind
     }
 
-    // `nonisolated` so the pure endpoint resolution above can read
-    // them without hopping to the main actor; they are immutable
-    // strings, so isolation buys nothing.
+    // `nonisolated` so the pure endpoint resolution above can read them.
     nonisolated static let enabledKey = "sync.enabled"
     nonisolated static let relayKey = "sync.relayURL"
     nonisolated static let authorizeKey = "sync.authorizeURL"
@@ -164,13 +140,9 @@ public final class SyncController: ObservableObject {
     /// until a readable device roster supplies the current count.
     private var lastAttachPeers: Int?
     private var pumping = false
-    /// Which run of the engine loop is the live one. Every detached
-    /// turn carries the session it began in, and one that comes back
-    /// after the switch went off belongs to a channel nobody is on any
-    /// more: its events, its failures and its retry are all about a
-    /// session that ended. `enabled` alone cannot tell them apart,
-    /// because turning sync off and straight back on inside one long
-    /// poll leaves it reading true for both.
+    /// Which run of the engine loop is the live one; a turn that comes
+    /// back from an earlier session is dropped, since off and on inside
+    /// one long poll leaves `enabled` true for both.
     private(set) var session: UInt64 = 0
     // `nonisolated(unsafe)` for deinit's sake, the model's own timer
     // convention (PageModel.swift).
@@ -180,10 +152,7 @@ public final class SyncController: ObservableObject {
     private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
     private nonisolated(unsafe) var elsewhereTimer: Timer?
-    /// When a peer's edit last landed on each page. The mark's whole
-    /// life is this session and this window: nothing about who is
-    /// writing elsewhere is worth keeping, and nothing about it is
-    /// written down.
+    /// When a peer's edit last landed on each page; in memory only.
     private var remoteEdits: [UInt64: Date] = [:]
     /// When the armed sweep is due. Held so a pump that changed
     /// nothing about the earliest mark leaves the timer standing.
@@ -192,9 +161,8 @@ public final class SyncController: ObservableObject {
     public init(client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults) {
         self.client = client
         self.defaults = defaults
-        // Read without side effects: an enabled flag alone starts
-        // nothing — `start()` does, after the state restore, so sync
-        // never races the pages it would publish.
+        // An enabled flag alone starts nothing; `start()` does, after
+        // the state restore, so sync never races the pages it publishes.
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? false
     }
 
@@ -217,9 +185,7 @@ public final class SyncController: ObservableObject {
         Self.sentence(enabled: enabled, status: status, trouble: trouble, peers: displayedPeers)
     }
 
-    /// Whether the standing sentence names something to act on. The
-    /// waiting states say themselves quietly; only a condition a user
-    /// has to answer earns the ember the surface reserves for those.
+    /// Whether the standing sentence names something to act on.
     public var standingSentenceIsTrouble: Bool {
         trouble != nil
     }
@@ -232,10 +198,8 @@ public final class SyncController: ObservableObject {
             enabled: enabled, status: status, trouble: trouble, peers: displayedPeers)
     }
 
-    /// Refreshed roster presence is newer than the attach response. A
-    /// roster without this device's anchor may be unavailable or from a
-    /// core that cannot supply it, so the attach answer remains the
-    /// fallback rather than being softened into zero peers.
+    /// The roster's peer count when it carries this device, else the
+    /// attach answer's, never a softened zero.
     private var displayedPeers: Int? {
         Self.currentPeers(devices: devices, attachFallback: lastAttachPeers)
     }
@@ -261,9 +225,8 @@ public final class SyncController: ObservableObject {
     // MARK: The sign-in ceremony (issue #98)
 
     /// Open the system browser on the authorize URL and wait out the
-    /// consent screen on a background task. Account-auth.md §5 budgets
-    /// five minutes; every failure comes back as a sentence and
-    /// nothing stored, with retry being this same button.
+    /// consent screen on a background task (five minutes,
+    /// account-auth.md §5); a failure is a sentence, nothing stored.
     public func signIn() {
         let client = self.client
         signinFailure = nil
@@ -275,12 +238,8 @@ public final class SyncController: ObservableObject {
         }
         openAuthorizeUrl(url)
         let mine = session
-        // Through `refreshState`, not by assigning the status: the
-        // standing trouble is still `signedOut` from the begin, and
-        // only the reconciliation clears it against the gate. Setting
-        // the status alone left the header saying "signing in" while
-        // the page went on saying signed out, for the whole of the
-        // browser trip.
+        // Through `refreshState`, so the standing `signedOut` is
+        // reconciled against the gate's `signing_in`.
         refreshState()
         Task.detached(priority: .userInitiated) {
             let outcome = client.syncSigninFinish(patienceMs: 300_000)
@@ -290,19 +249,11 @@ public final class SyncController: ObservableObject {
 
     private func settleSignin(_ outcome: SyncOutcome, session mine: UInt64) {
         // A ceremony belongs to the session that opened the browser.
-        // The switch going off ends it, so one settling here after a
-        // re-enable is answering for a trip that is over.
         guard session == mine else { return }
         status = client.syncStatus()
-        // The switch may have gone off while the browser consent was
-        // open; off means silent and detached — no attach, and no
-        // failure sentence either.
+        // Off means silent: no attach and no failure sentence.
         guard enabled else { return }
-        // The user's own decision outranks whatever this settling
-        // carries. The core drops a grant that arrives for a ceremony
-        // somebody gave up on, so a successful outcome here could only
-        // come from a core that predates that rule, and attaching on
-        // one would be signing a user in behind their own cancel.
+        // The user's give-up outranks whatever this settling carries.
         guard !signinGivenUp else {
             signinGivenUp = false
             signinFailure = Self.signinSentence(reason: "cancelled")
@@ -310,12 +261,8 @@ public final class SyncController: ObservableObject {
             return
         }
         guard outcome.ok else {
-            // A trip that never returned and a trip somebody ended come
-            // back through the same door, `abandoned`, because to the
-            // core they are one fact: no redirect arrived. The guard
-            // above is what tells them apart, and telling someone their
-            // browser never returned when they gave up on purpose would
-            // be describing them to themselves wrongly.
+            // The core says `abandoned` for both; the guard above tells
+            // a give-up from a browser that never returned.
             signinFailure = Self.signinSentence(reason: outcome.reason ?? "refused")
             return
         }
@@ -326,19 +273,14 @@ public final class SyncController: ObservableObject {
     }
 
     /// Give up on a sign-in whose browser trip is still out (ADR-0027
-    /// §5: `signing_in` owes the surface a way to give up). The core
-    /// ends the wait rather than recording a wish, so the gate leaves
-    /// `signing_in` within a poll and the blocked finish reports the
-    /// abandonment through the ordinary path.
+    /// §5); the core ends the wait and the finish reports `abandoned`.
     public func giveUpSignin() {
         signinGivenUp = client.syncSigninCancel()
         refreshState()
     }
 
-    /// Whether the surface draws the way out. It exists only while
-    /// there is a trip to end, which is the ledger clear button's
-    /// shape: a control that appears with the condition it answers and
-    /// leaves with it, rather than standing there disabled.
+    /// Whether the surface draws the way out: only while there is a
+    /// trip to end.
     public nonisolated static func showsGiveUpSignin(gate: SyncGate?, signinPending: Bool) -> Bool {
         gate == .signingIn || (gate == nil && signinPending)
     }
@@ -387,12 +329,8 @@ public final class SyncController: ObservableObject {
         let wasAttached = attached
         attached = false
         pumping = false
-        // A browser trip is part of the session, so the switch ends it
-        // too. Leaving it out would let a consent screen answered
-        // after the switch went off store a refresh token: the core
-        // persists the grant before it returns, so a shell that only
-        // declines to attach has already been signed in by the time it
-        // declines (issue #102's first criterion).
+        // The switch ends a browser trip too; the core would persist a
+        // late grant before the shell could decline it.
         trouble = nil
         signinFailure = nil
         pairingStage = nil
@@ -401,17 +339,13 @@ public final class SyncController: ObservableObject {
         quietRefusals = 0
         _ = client.syncSigninCancel()
         signinGivenUp = false
-        // Nothing is arriving from anywhere now, so no page may go on
-        // saying that something is.
+        // Nothing is arriving now, so no page says something is.
         elsewhereTimer?.invalidate()
         elsewhereTimer = nil
         elsewhereDeadline = nil
         remoteEdits = [:]
         editedElsewhere = []
-        // The enrolment mirror stays: the core keeps its enrolment
-        // across detach and re-configure, so clearing only the mirror
-        // would leave pages syncing while the menu says they don't.
-        // The menu is hidden while the switch is off either way.
+        // The enrolment mirror stays, as the core's enrolment does.
         guard wasAttached else {
             refreshState()
             return
@@ -434,8 +368,8 @@ public final class SyncController: ObservableObject {
 
     private func settleAttach(_ outcome: SyncOutcome, session mine: UInt64) {
         guard session == mine else { return }
-        // The refresh first, so the gate the settling reads is the one
-        // the attach just moved rather than the one before it.
+        // The refresh first, so the settling reads the gate the attach
+        // just moved.
         refreshState()
         guard enabled else { return }
         let settled = Self.settledTrouble(
@@ -443,17 +377,14 @@ public final class SyncController: ObservableObject {
         trouble = Self.standing(trouble: trouble, after: settled)
         guard outcome.ok else {
             if Self.attachRetries(after: settled) {
-                // Only a success or turning sync off resets the count:
-                // an unreachable turn between two quiet refusals keeps
-                // its own 30 seconds and leaves the backoff standing.
+                // Only a success or sync off resets the count.
                 let quiet = Self.attachBacksOff(afterRefusal: outcome.reason)
                 if quiet { quietRefusals += 1 }
                 armRetry(
                     after: quiet
                         ? Self.attachRetryDelay(quietRefusals: quietRefusals) : 30)
             } else {
-                // A named trouble arms no retry; whatever comes after
-                // it starts the backoff afresh.
+                // A named trouble arms no retry and resets the backoff.
                 quietRefusals = 0
             }
             return
@@ -464,16 +395,9 @@ public final class SyncController: ObservableObject {
         pump()
     }
 
-    /// One long-poll turn after another, each on a background task,
-    /// for as long as sync is on and attached. The pump itself blocks
-    /// for the §8 long-poll, so back-to-back turns are the intended
-    /// cadence — an empty poll re-enters immediately, and delivery
-    /// latency is bounded by the peers' publish clocks. A turn's round
-    /// trips (a publish, the long-poll, an attach when one is owed, a
-    /// ceremony's frame) each run under their own transport bound, so
-    /// against a relay that takes connections and then stalls one turn
-    /// can hold for several of those bounds end to end, minutes rather
-    /// than seconds, and no other turn starts until it returns.
+    /// One long-poll turn after another on a background task while sync
+    /// is on and attached; one turn at a time per session (client
+    /// protocol §3).
     private func pump() {
         guard enabled, attached, !pumping else { return }
         pumping = true
@@ -486,9 +410,7 @@ public final class SyncController: ObservableObject {
     }
 
     func settlePump(_ outcome: SyncPumpOutcome?, session mine: UInt64) {
-        // Above the flag as well as the events: a session that has
-        // ended left `pumping` clear behind it, and the turn the live
-        // session has out is the one that owns it now.
+        // Before the flag: an ended session's turn owns nothing now.
         guard session == mine else { return }
         pumping = false
         guard enabled else { return }
@@ -499,8 +421,7 @@ public final class SyncController: ObservableObject {
         }
         if let state = outcome.state {
             status = state
-            // A pump state is a status refresh. Read the roster with it
-            // so peer-dependent words do not remain pinned to attach.
+            // A pump state is a status refresh; the roster comes with it.
             devices = client.syncDevices()
         }
         var sawUnreachable = false
@@ -510,11 +431,8 @@ public final class SyncController: ObservableObject {
             switch event.kind {
             case "applied", "countdown_moved", "terminal":
                 remoteChanged = true
-                // Someone else's writing, on a page this device can
-                // name: the mark that page carries for the next while
-                // (issue #102). Only an applied edit counts: a
-                // countdown moving or a page dying elsewhere is not
-                // someone typing.
+                // Only an applied edit marks a page as written
+                // elsewhere (issue #102).
                 if event.kind == "applied", let page = event.pageID {
                     remoteEdits[page] = Date()
                 }
@@ -547,13 +465,8 @@ public final class SyncController: ObservableObject {
             trouble = Self.standing(trouble: trouble, after: .unreachable)
             armRetry()
         case .refused:
-            // The relay refused the bearer under the long poll. The
-            // core dropped the access token as it refused, so the next
-            // turn refreshes before it polls; but a 401 comes back at
-            // once rather than holding the poll open, so re-entering
-            // now would be a refresh, poll, refuse loop at the speed of
-            // the network. One turn on the slow clock instead, and the
-            // gate says what it means rather than the shell guessing.
+            // A 401 returns at once, so re-entering would loop; one turn
+            // on the slow clock, and the gate names the state.
             refreshState()
             armRetry()
         case .again:
@@ -562,11 +475,8 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    /// What a settled pump owes the next turn. Every outcome the core
-    /// can report has to be named here: one that nothing reads falls
-    /// through to re-entering the long poll at once, which for a
-    /// refusal that returns instantly is a hot loop against the relay
-    /// rather than a wait.
+    /// What a settled pump owes the next turn; an unnamed outcome would
+    /// re-enter at once, a hot loop for an instant refusal.
     public enum PumpTurn: Equatable {
         /// The credential is gone. Stop, and say so.
         case signedOut
@@ -593,11 +503,7 @@ public final class SyncController: ObservableObject {
     }
 
     /// Recompute which pages are being written elsewhere, and arm one
-    /// shot to recompute again when the oldest mark lapses.
-    ///
-    /// One timer, at the one moment the answer can change on its own,
-    /// rather than a clock ticking over a set that is empty nearly
-    /// always: the same frugality the countdown follows.
+    /// shot for when the oldest mark lapses.
     private func sweepElsewhere() {
         let now = Date()
         remoteEdits = remoteEdits.filter { now.timeIntervalSince($0.value) < Self.elsewhereWindow }
@@ -609,10 +515,7 @@ public final class SyncController: ObservableObject {
             elsewhereDeadline = nil
             return
         }
-        // A pump returns as often as the relay has anything to say,
-        // and most of those returns leave the earliest mark exactly
-        // where it was. The timer is armed for that one moment, so a
-        // deadline that did not move needs no new timer.
+        // A deadline that did not move keeps its timer.
         let deadline = oldest.addingTimeInterval(Self.elsewhereWindow)
         guard deadline != elsewhereDeadline || elsewhereTimer == nil else { return }
         elsewhereTimer?.invalidate()
@@ -659,8 +562,8 @@ public final class SyncController: ObservableObject {
         refreshState()
     }
 
-    /// Revoke a paired device: its record goes, and the next key
-    /// rotation leaves it behind.
+    /// Revoke a paired device: its record goes; only a ceremony this
+    /// device proposes leaves it out (client protocol §7.9).
     public func revoke(fingerprint: String) {
         _ = client.syncRevokePeer(fingerprint: fingerprint)
         refreshState()
@@ -748,19 +651,15 @@ public final class SyncController: ObservableObject {
     private func refreshState() {
         status = client.syncStatus()
         devices = client.syncDevices()
-        // Off is silent whatever the core says, so a controller nobody
-        // switched on publishes nothing at all.
+        // Off is silent whatever the core says.
         guard enabled else { return }
         trouble = Self.reconciled(trouble: trouble, gate: status?.gate)
     }
 
     // MARK: The sentences, pure and testable
 
-    /// The number of other devices presently represented as attached by
-    /// a readable roster. The own-device row is the validity anchor:
-    /// without it, preserve the attach response for compatibility rather
-    /// than treating an unavailable or older roster as an authoritative
-    /// zero.
+    /// Other devices attached per a readable roster; without this
+    /// device's own row, the attach answer stands rather than a zero.
     public nonisolated static func currentPeers(
         devices: [SyncDevice], attachFallback: Int?
     ) -> Int? {
@@ -768,10 +667,8 @@ public final class SyncController: ObservableObject {
         return devices.filter { !$0.thisDevice && $0.attachedMs != nil }.count
     }
 
-    /// The one standing sentence the surface may show — nil when sync
-    /// is off (off must be indistinguishable) and nil when it is quiet
-    /// and well. Every degraded state gets its own, and none of them
-    /// is silent (issue #102).
+    /// The one standing sentence the surface may show: nil when sync is
+    /// off or quiet and well; each degraded state its own (issue #102).
     public nonisolated static func sentence(
         enabled: Bool, status: SyncStatus?, trouble: Trouble?, peers: Int?
     ) -> String? {
@@ -790,10 +687,7 @@ public final class SyncController: ObservableObject {
         case nil:
             break
         }
-        // Not a degraded state, and not a silent one either: a browser
-        // is open on the user's screen waiting for them, and the app
-        // that opened it should say so rather than look idle (ADR-0027
-        // §5, `signing_in`).
+        // A browser waits on the user, so say so (ADR-0027 §5).
         if status?.gate == .signingIn {
             return "waiting on the browser to finish signing in; Settings can give up on it"
         }
@@ -865,13 +759,8 @@ public final class SyncController: ObservableObject {
                 spoken: "Reaching the relay"
             )
         case .attached:
-            // Issue #94's device: attached, and nobody awake to receive
-            // anything. Saying "synced" there would be the one cheerful
-            // lie this word could tell, and it stays a lie with nothing
-            // enrolled: a working channel is not news until another
-            // device is there to receive (D-20). The count comes from
-            // the refreshed roster when readable, with the attach answer
-            // retained as a compatibility fallback.
+            // Issue #94's device: attached with nobody awake reads
+            // waiting, never synced, enrolled pages or not (D-20).
             if peers == 0 {
                 return SyncHeaderWord(
                     text: "sync waiting",
@@ -890,11 +779,8 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    /// What gate a core too old or too new to name one would have
-    /// named, read back from the shell's own trouble. A fallback and
-    /// never an override: `headerWord` consults it only where the core
-    /// said nothing, so the gate stays the authority wherever there is
-    /// one (ADR-0027 §5).
+    /// The gate a core that named none would have named, read from the
+    /// shell's trouble; consulted only where the core said nothing.
     private nonisolated static func gateStandingIn(for trouble: Trouble?) -> SyncGate? {
         switch trouble {
         case .notConfigured: return .off
@@ -905,23 +791,12 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    /// The account axis of the standing trouble, as the core reports
-    /// it. The gate is the authority on whether this client may attach
-    /// (ADR-0027 §5), so where it names a condition, that condition
-    /// wins over whatever the shell had inferred from a refusal
-    /// string. Falling behind a key rotation is not on this axis: the
-    /// gate admitted that device and it is short a key, so `.behind`
-    /// survives a gate with nothing to report or an unreachable one
-    /// (surface.md §4).
-    ///
-    /// A nil gate here is a core that named none: one older or newer
-    /// than this shell, which the seam's optional decoding is built
-    /// for. That is no opinion, and the shell keeps whatever it
-    /// already believed. It is not the same nil as
-    /// `CompanionClient.syncGate()`'s, which is a core that could not
-    /// be read at all and means "has not been passed"; that one never
-    /// arrives here, because a core that cannot answer the gate cannot
-    /// answer the status either.
+    /// The account axis of the standing trouble: where the gate names a
+    /// condition, it wins (ADR-0027 §5). `.behind` is not on this axis
+    /// and survives a gate with nothing to report or an unreachable one
+    /// (surface.md §4). A nil gate is a core that named none and keeps
+    /// what the shell believed; `CompanionClient.syncGate()`'s nil, an
+    /// unreadable core, never arrives here.
     public nonisolated static func reconciled(trouble: Trouble?, gate: SyncGate?) -> Trouble? {
         guard let gate else { return trouble }
         switch gate {
@@ -987,16 +862,12 @@ public final class SyncController: ObservableObject {
     }
 
     /// How long a peer's edit keeps a page marked as being written
-    /// elsewhere. Long enough to cover the pauses in someone's typing
-    /// and the publish clock's own two seconds, short enough that the
-    /// mark means "now" rather than "today". A guess, and the only
-    /// number here that is one: it is the length of a pause that still
-    /// reads as the same session of writing.
+    /// elsewhere: a pause that still reads as the same session of
+    /// writing. A guess, and the only number here that is one.
     public nonisolated static let elsewhereWindow: TimeInterval = 90
 
     /// Which pages count as being written elsewhere, given when each
-    /// last took a peer's edit. Pure, so the rule is testable without
-    /// a relay or a clock that has to be waited out.
+    /// last took a peer's edit.
     public nonisolated static func editedElsewhere(
         marks: [UInt64: Date], now: Date, window: TimeInterval = elsewhereWindow
     ) -> Set<UInt64> {
@@ -1035,10 +906,7 @@ public final class SyncController: ObservableObject {
         case "busy":
             return "a sign-in is already waiting on the browser"
         case "no_ceremony":
-            // Never a server's word. The core answers this only when
-            // there was nothing to finish, so falling through to the
-            // refusal below would put a "no" in the mouth of a server
-            // that was never asked (ADR-0027 §2).
+            // Never a server's word: no server was asked (ADR-0027 §2).
             return "there was no sign-in to finish; nothing was stored"
         case "not_configured":
             return "sync has no server configured to sign in against"

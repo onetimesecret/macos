@@ -1,9 +1,9 @@
 # The relay protocol, and what the relay is allowed to hold
 
-**Status:** specified. The client is built; the server side
-(onetimesecret/onetimesecret#4303) and ADR-0021 Amendment 1's welcome
-work are not, as the [sync README](README.md) records. Where the built
-client departs from this text is listed in
+**Status:** specified. The server side (onetimesecret/onetimesecret#4303)
+is not built; the client is, except ADR-0021 Amendment 1's welcome work,
+as the [sync README](README.md) records. Where the built client departs
+from this text:
 [client protocol §10](client-protocol.md#10-known-divergences-and-gaps).
 This document is issue
 [#99](https://github.com/onetimesecret/macos/issues/99)'s deliverable:
@@ -56,10 +56,9 @@ publishes it (§5); its acceptance at epoch n+1 is what purges epoch n.
 
 This is more forgetting than a solo page gets, never less: a page
 enrolled in sync sheds its history at every channel ceremony rather
-than only at its own rung transitions. ADR-0013's
-[decision background](../document-history/decision-background.md)
-already priced an extra ceremony at "nothing this design has not
-already priced", and the
+than only at its own rung transitions. The ADR-0013
+[decision background](../document-history/decision-background.md) priced
+an extra ceremony at "nothing this design has not already priced", and the
 alternative — per-page epochs — is a per-page frame, which is the
 rejected channel-per-page model wearing a different name.
 
@@ -168,13 +167,13 @@ Rules the shapes encode:
   frame without one: the shipped client sends `{epoch, frame}` only
   and does not yet read the welcome or walk the rejoin fetch — that
   half rides the amendment's required work.
-- **How the built client answers each message**, failures and retries
-  included, is [client protocol §4](client-protocol.md#4-per-message-behaviour).
 - **Everything inside a delta blob is sealed**: the page id, the ops
   (`SheetStore::export_document_updates`), the expiry policy and hold
   register (`crates/core/src/sync.rs`), terminal markers, and the
   ceremony ballots of §5. Control and content share the stream so the
   relay cannot distinguish them.
+
+The built client's answers and key packages: [client protocol §4, §5](client-protocol.md#4-per-message-behaviour).
 
 ## 5. The ceremony on the wire
 
@@ -241,17 +240,14 @@ lands, a device on the rejoin path surfaces "behind" and stays there
 — which the shell says honestly rather than promising a recovery the
 code cannot deliver.
 
-The built client's ballot rules, and where they depart from this
-section, are [client protocol §7](client-protocol.md#7-ceremonies-and-ballots).
-Proposed, not accepted: signed propose and accept messages
-([client protocol §7.10](client-protocol.md#710-signed-ceremony-messages-proposed-not-accepted)).
-This section does not include them.
-
 **Terminal markers propose.** After publishing a page's signed terminal
 marker (ADR-0021 §6), the publisher immediately proposes a ceremony, so
 the dead page's ciphertext in the relay buffer stops being decryptable
 at the earliest boundary the channel can reach — key destruction doing
 the work deletion cannot be trusted to do.
+
+Proposed 2026-10-12, not accepted, and not part of this section: signed
+propose and accept messages ([client protocol §7.10](client-protocol.md#710-signed-ceremony-messages-proposed-not-accepted)).
 
 ## 6. Key packages
 
@@ -265,10 +261,6 @@ storing it is not escrow. Devices verify the signature against the
 identity fingerprints in their pairing records before sealing anything
 to it, so the relay substituting a key package wins ciphertext it
 cannot cause to be opened.
-
-The built client's key package lifecycle (one-shot, a standing and a
-pending package, republish) is
-[client protocol §5](client-protocol.md#5-key-packages).
 
 ## 7. Pairing over the mailbox
 

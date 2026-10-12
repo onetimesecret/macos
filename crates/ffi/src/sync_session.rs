@@ -1,21 +1,10 @@
-//! The sync session: the engine that joins the client seams the specs
-//! named — the delta seam (`SheetStore::export_document_updates` /
-//! `apply_remote_update`), the ballot machine
-//! ([`companion_core::PageChannel`]), the GOP chain ([`crate::gop`])
-//! and the key packages of relay-protocol.md §6 — to the wire shapes
-//! `companion-sync` builds (issues #98 and #99).
-//!
-//! Sans-IO like everything below it: every method either produces an
-//! [`ots_client::HttpRequest`] for the shell's transport to send, or
-//! absorbs an [`ots_client::HttpResponse`] it got back. The engine
-//! never opens a socket, so every protocol path — the 2-second publish
-//! clock, the `401` refresh, the `410` rejoin, a full two-device
-//! ceremony — is testable offline, which is how the tests below run
-//! it.
-//!
-//! What the engine enforces rather than trusts the relay for, rule by
-//! rule, is `docs/spec/feature/sync/client-protocol.md` (client protocol
-//! §3 to §7).
+//! The sync session: the sans-IO engine joining the delta seam, the
+//! ballot machine ([`companion_core::PageChannel`]), the GOP chain
+//! ([`crate::gop`]) and the key packages to `companion-sync`'s wire
+//! shapes (issues #98 and #99). Every method builds an
+//! [`ots_client::HttpRequest`] or absorbs an [`ots_client::HttpResponse`],
+//! so every path runs offline in the tests. Rules: client protocol §3
+//! to §7.
 
 use std::collections::HashMap;
 
@@ -149,9 +138,9 @@ pub struct KeyPackageKeeper {
 }
 
 impl KeyPackageKeeper {
-    /// Mint a fresh static key and sign it with the device identity
-    /// (`crates/ffi/src/pairing.rs`'s PKCS#8 Ed25519 key). `None` when
-    /// the RNG or the identity key refuses.
+    /// Mint a fresh one-shot X25519 key and sign it with the device
+    /// identity (`pairing.rs`'s PKCS#8 Ed25519 key). `None` when the RNG
+    /// or the identity key refuses.
     #[must_use]
     pub fn mint(identity_pkcs8: &[u8]) -> Option<Self> {
         let rng = SystemRandom::new();
@@ -305,10 +294,8 @@ pub struct CeremonyPeer {
     pub package: KeyPackage,
 }
 
-/// The engine. One per channel (which is one per account, ADR-0021
-/// §1); generic over the store's clock like the store itself, and
-/// driven by whoever owns the runloop: every method either builds a
-/// request or absorbs a response.
+/// The engine, one per channel (one per account, ADR-0021 §1), driven
+/// by whoever owns the runloop.
 pub struct SyncSession {
     api: RelayApi,
     keeper: TokenKeeper,
@@ -322,12 +309,8 @@ pub struct SyncSession {
     /// A publish batch built and not yet acknowledged, kept so a `401`
     /// can retry the one request after a refresh.
     in_flight: Option<Vec<Vec<u8>>>,
-    /// Which batch that is: a counter bumped once per seal, so a
-    /// caller can tell a fresh batch from a resend of the same one
-    /// without reading a byte of ciphertext. What the caller does with
-    /// it is remember what the batch carried
-    /// (`sync_driver::stage_publish`), which is the only honest thing
-    /// to advance a cursor to when the answer arrives.
+    /// Which batch that is: bumped once per seal, so a caller tells a
+    /// fresh batch from a resend (`sync_driver::stage_publish`).
     in_flight_id: u64,
     last_publish_ms: Option<u64>,
     /// The proposer's minted entropy while its ballot is in flight.
@@ -345,10 +328,8 @@ pub struct SyncSession {
     attach: Option<AttachSnapshot>,
 }
 
-/// What an attach answer leaves behind: the channel position the
-/// relay reported, and the roster of peers with the key package each
-/// published (the #99 follow-up) — the raw material for
-/// [`SyncSession::ceremony_peers`] and issue #102's device list.
+/// What an attach answer leaves behind: the channel position and the
+/// roster of peers with their key packages.
 struct AttachSnapshot {
     epoch: u64,
     frame_present: bool,
@@ -399,11 +380,8 @@ impl SyncSession {
         self.keeper.signed_in()
     }
 
-    /// Whether a live access token is held. A `401` from any route
-    /// drops it ([`SyncSession::note_refusal`]), so this goes false the
-    /// moment the relay refuses the bearer and true again when the
-    /// refresh lands, which is what keeps the gate from reporting an
-    /// attachment the next request cannot use.
+    /// Whether a live access token is held; a `401` from any route
+    /// drops it ([`SyncSession::note_refusal`]) until the refresh lands.
     #[must_use]
     pub fn has_access(&self) -> bool {
         self.keeper.access().is_some()
@@ -420,9 +398,7 @@ impl SyncSession {
         self.keeper.access().map(BearerAuth::new)
     }
 
-    /// The refresh request to run before anything else when no access
-    /// token is held — waking from days of sleep lands here, which is
-    /// the intended path.
+    /// The refresh request to run first when no access token is held.
     ///
     /// # Errors
     ///
@@ -483,11 +459,10 @@ impl SyncSession {
         Ok(())
     }
 
-    /// Every refusal passes through here on its way out: a `401`
-    /// means the relay pronounced the held access token dead, and the
-    /// keeper must drop it or every recovery path would rebuild the
-    /// same request around the same stale bearer (§2: the `401` is
-    /// the only expiry authority).
+    /// Every refusal passes through here: a `401` drops the access
+    /// token, the only expiry authority (account-auth.md §2). Kept, it
+    /// would be resent forever: `ensure_access` refreshes only when no
+    /// token is held.
     fn note_refusal(&mut self, refusal: RelayRefusal) -> RelayRefusal {
         if matches!(refusal, RelayRefusal::Unauthorized) {
             self.keeper.clear_access();
@@ -501,35 +476,28 @@ impl SyncSession {
         self.attach.is_some()
     }
 
-    /// Which publish batch is in flight, or `None` when none is. The
-    /// identity is what matters: an unchanged one across two calls
-    /// means the same sealed blobs went out twice, so whatever the
-    /// caller recorded about the first send still describes the
-    /// second.
+    /// Which publish batch is in flight, if any; the same id across two
+    /// calls means the same sealed blobs went out twice.
     #[must_use]
     pub fn in_flight_batch(&self) -> Option<u64> {
         self.in_flight.is_some().then_some(self.in_flight_id)
     }
 
-    /// The channel epoch the last attach reported. The chain, not this
-    /// echo, is what opens anything; a skew shows up as `409`/`410` or
-    /// blobs that refuse to open.
+    /// The channel epoch the last attach reported; the chain, not this
+    /// echo, opens anything.
     #[must_use]
     pub fn attach_epoch(&self) -> Option<u64> {
         self.attach.as_ref().map(|attach| attach.epoch)
     }
 
-    /// Whether the relay held a key frame at the last attach — the
-    /// difference between "rejoin has something to adopt" and issue
-    /// #94's device waiting with no peer awake.
+    /// Whether the relay held a key frame at the last attach.
     #[must_use]
     pub fn frame_present(&self) -> Option<bool> {
         self.attach.as_ref().map(|attach| attach.frame_present)
     }
 
-    /// The peers the last attach reported, key packages included.
-    /// Attach-list truth, not device trust: pairing records decide who
-    /// anything is ever sealed to ([`SyncSession::ceremony_peers`]).
+    /// The peers the last attach reported, key packages included:
+    /// attach-list truth, not device trust.
     #[must_use]
     pub fn attach_roster(&self) -> &[PeerAttachment] {
         self.attach
@@ -593,12 +561,9 @@ impl SyncSession {
         });
     }
 
-    /// Queue a signed terminal marker — gated by
-    /// [`PageChannel::may_publish_terminal`]: a device whose view is
-    /// not current, or that sees a live hold, keeps quiet (false, and
-    /// nothing queued). A queued marker notes the page terminal
-    /// locally at once; §5's follow-up ceremony proposal is the
-    /// caller's next move.
+    /// Queue a signed terminal marker if
+    /// [`PageChannel::may_publish_terminal`] allows (false otherwise,
+    /// nothing queued); a queued marker notes the page terminal here.
     pub fn queue_terminal(&mut self, page: ItemId, marker: &[u8]) -> bool {
         let channel = self.channels.entry(page).or_default();
         if !channel.may_publish_terminal() {
@@ -622,11 +587,9 @@ impl SyncSession {
                 .is_none_or(|last| now_ms.saturating_sub(last) >= PUBLISH_INTERVAL_MS)
     }
 
-    /// `POST /channel/deltas`: seal and pad everything queued since
-    /// the last tick under the current GOP key, one request. `None`
-    /// when the clock says wait, nothing is queued, a seal refuses
-    /// (the RNG declining a nonce is a refusal to publish), or no
-    /// access token is held.
+    /// `POST /channel/deltas`: pad and seal everything queued under the
+    /// current GOP key, one request. `None` when the clock says wait,
+    /// nothing is queued, a seal refuses, or no access token is held.
     #[must_use]
     pub fn publish_request(
         &mut self,
@@ -636,11 +599,8 @@ impl SyncSession {
         self.publish_request_sealed_with(now_ms, chain.epoch(), |plaintext| chain.seal(plaintext))
     }
 
-    /// [`SyncSession::publish_request`] with the seal handed in rather
-    /// than taken from the chain. The indirection earns its keep in
-    /// the tests: a refusal is the system RNG declining a nonce, which
-    /// no test can coax out of a real chain, and the refusal path is
-    /// precisely the one where a queued edit is easiest to lose.
+    /// [`SyncSession::publish_request`] with the seal handed in, so the
+    /// tests can make it refuse.
     fn publish_request_sealed_with(
         &mut self,
         now_ms: u64,
@@ -652,12 +612,8 @@ impl SyncSession {
         }
         let auth = self.auth()?;
         if self.in_flight.is_none() {
-            // The outbox is borrowed, never drained: a refusal is a
-            // "try again later", so the queue must survive it whole.
-            // Draining would not — the iterator is dropped at the
-            // first `None`, and a dropped `Drain` takes the entire
-            // range with it, so one declined nonce would cost every
-            // edit queued behind it.
+            // Borrowed, never drained: a dropped `Drain` would take the
+            // whole queue with one declined nonce.
             let blobs = self
                 .outbox
                 .iter()
@@ -673,8 +629,9 @@ impl SyncSession {
         Some(self.api.publish_deltas_request(epoch, blobs, &auth))
     }
 
-    /// Absorb the publish answer; what each status does to the batch is
-    /// client protocol §4.4.
+    /// Absorb the publish answer: a 2xx clears the batch, a `401` keeps
+    /// it and reopens the clock, a `409` or `410` drops it, anything else
+    /// keeps it (client protocol §4.4).
     ///
     /// # Errors
     ///
@@ -1112,9 +1069,7 @@ impl SyncSession {
     }
 
     /// Abandon a ballot that outlived its patience on this device's
-    /// clock; a no-op while no ballot is in flight or the window has
-    /// not lapsed. A package spent on it stays spent, and the pump
-    /// republishes (client protocol §7.7, §5.4).
+    /// clock; a spent package stays spent (client protocol §7.7, §5.4).
     pub fn tick(&mut self, now_ms: u64) {
         let Some((page, opened_ms)) = self.ballot_scope else {
             return;
@@ -1180,19 +1135,15 @@ impl SyncSession {
     }
 }
 
-/// The sheet currently holding `page`'s cross-device identity. The
-/// store owns the translation, since it owns both names; this is the
-/// spelling the session layer reads it by.
+/// The sheet currently holding `page`'s cross-device identity.
 pub(crate) fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
     store.sheet_id_of(page)
 }
 
-/// Whether `marker` is a well-formed terminal claim for `page` under
-/// one of the `trusted` Ed25519 identity public keys. The claim is
-/// `page_id(16) ‖ wall_ms(8)` and the signature covers exactly those
-/// bytes (the mint is the driver's `signed_terminal_marker`); binding
-/// the id inside the signature to the envelope's page keeps a real
-/// signature from being replayed against a different page.
+/// Whether `marker` is a well-formed terminal claim for `page` under one
+/// of the `trusted` identity keys: `page_id(16) ‖ wall_ms(8)`, signed
+/// under [`TERMINAL_SIGN_CONTEXT`]. Matching the signed id to the
+/// envelope's page stops a real signature replaying against another.
 fn marker_trusted(marker: &[u8], page: ItemId, trusted: &[Vec<u8>]) -> bool {
     const CLAIM_LEN: usize = 16 + 8;
     const SIG_LEN: usize = 64;
@@ -1292,9 +1243,8 @@ mod tests {
         let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
         let mut packages = KeyPackageKeeper::mint(pkcs8.as_ref()).unwrap();
         assert!(!packages.is_spent(), "a fresh mint is reachable");
-        // A payload nobody sealed to this package: refused, and the
-        // one-shot key is spent all the same, because ring's X25519
-        // agreement consumes it.
+        // A payload nobody sealed to this package refuses and still
+        // spends the one-shot key.
         assert!(packages.open_entropy(&[0u8; 64]).is_none());
         assert!(
             packages.is_spent(),
@@ -1434,9 +1384,7 @@ mod tests {
         session.queue_ops(page, b"first");
         session.queue_ops(page, b"second");
 
-        // The RNG declines a nonce. No request goes out — and, the
-        // property that matters, nothing is thrown away: a refusal to
-        // publish is a "later", not a loss.
+        // The RNG declines a nonce: no request, and nothing lost.
         assert!(
             session
                 .publish_request_sealed_with(0, chain.epoch(), |_| None)
@@ -1467,10 +1415,8 @@ mod tests {
             session.absorb_publish(&unauthorized).unwrap_err(),
             RelayRefusal::Unauthorized
         );
-        // The 401 pronounced the access token dead — the keeper drops
-        // it, so nothing publishes until a refresh lands. The batch
-        // itself survives for the retry, and the retry does not wait
-        // out the publish clock: it is the same round, not a new one.
+        // The 401 drops the access token; the batch survives, and the
+        // retry does not wait out the publish clock.
         assert!(
             session.publish_request(1, &chain).is_none(),
             "no publish rides a token the relay refused"
@@ -1542,10 +1488,8 @@ mod tests {
         let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
         let mut relay = FakeRelay::default();
 
-        // A writes on after B adopted the frame, and publishes only
-        // what B has not seen. Publishing the adopted frame's own
-        // operations instead would be an echo rather than an arrival,
-        // and B would rightly report nothing.
+        // A writes on after B adopted the frame and publishes only what
+        // B has not seen.
         let adopted = store_b.document_version(page_b).unwrap();
         assert!(store_a.apply_ops(
             page_a,
@@ -1573,11 +1517,7 @@ mod tests {
             .unwrap();
         assert!(events.contains(&SyncEvent::Applied(uuid)));
 
-        // The same batch served a second time is the echo every device
-        // fetches back from a stream with no author in it. It applies
-        // to nothing and must be reported as nothing: an event here
-        // would tell the surface that a peer is writing on a page
-        // nobody has touched (issue #102).
+        // The same batch served again is an echo and reports nothing.
         let echo = b
             .absorb_deltas(
                 &relay.serve_fetch(0),
@@ -1596,10 +1536,8 @@ mod tests {
             "operations already held are not an arrival"
         );
 
-        // Draining to the frontier made B's view current: the terminal
-        // gate opens. A fresh session that never drained stays quiet.
-        // The marker is the driver's mint: page id, wall stamp, and
-        // the identity's signature over exactly those bytes.
+        // Draining made B's view current, so the terminal gate opens; a
+        // session that never drained stays quiet.
         let signer = Ed25519KeyPair::from_pkcs8(&pkcs8_b).unwrap();
         let mut marker = uuid.as_bytes().to_vec();
         marker.extend_from_slice(&7_000_u64.to_be_bytes());
@@ -1609,9 +1547,7 @@ mod tests {
         let mut never_drained = session("fp-c");
         assert!(!never_drained.queue_terminal(uuid, &marker));
 
-        // B's marker kills the page on A only under B's trusted
-        // identity: the same blob served to a device that does not
-        // trust the signer refuses it, and the page lives on there.
+        // B's marker kills the page on A only under B's trusted identity.
         let request = b.publish_request(0, &chain_b).unwrap();
         b.absorb_publish(&relay.accept_publish(&request)).unwrap();
         let (pkcs8_a, _) = identity();
@@ -1649,14 +1585,8 @@ mod tests {
 
     #[test]
     fn a_peers_delete_only_batch_is_still_an_arrival() {
-        // The frontier check asks whether the document moved, and a
-        // deletion is the move a "did anything change" test most often
-        // swallows: nothing was added, the batch can be shorter than
-        // the one that inserted the text, and a length or a byte count
-        // would read it as nothing happening. What must hold is that
-        // `document_version` advances for a delete exactly as it does
-        // for an insert, so the mark a page carries when someone else
-        // is writing on it appears for a peer erasing a line too.
+        // A deletion must advance `document_version` as an insert does,
+        // so a peer erasing a line still reads as an arrival.
         let clock = ManualClock::new();
         let mut store_a = SheetStore::new(clock.clone());
         let page_a = store_a.new_tab().1;
@@ -1864,9 +1794,7 @@ mod tests {
         assert_eq!(chain_a.epoch(), 1);
         assert_eq!(chain_b.epoch(), 1);
 
-        // The proposer's frame is sealed under the incoming key: B's
-        // advanced chain opens it, and nothing from behind the
-        // boundary survives in it.
+        // The proposer's frame is sealed under the incoming key.
         let frame = a.take_frame().unwrap();
         let opened = chain_b.open(&frame).unwrap();
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
@@ -1949,10 +1877,8 @@ mod tests {
         let request = a.publish_request(0, &chain_a).unwrap();
         a.absorb_publish(&relay.accept_publish(&request)).unwrap();
 
-        // B drains the proposal for a page it does not hold: it stays
-        // out — no acceptance queued, so the ballot will fail — and
-        // the one-shot key package is not spent on a ballot it could
-        // never commit.
+        // B stays out of a proposal for a page it does not hold, and
+        // its package is not spent.
         b.absorb_deltas(
             &relay.serve_fetch(0),
             &mut store_b,

@@ -2275,22 +2275,17 @@ fn conceal_error(message: &str) -> *mut c_char {
 // Sync sign-in (issue #98): account auth for the relay channel
 // ---------------------------------------------------------------------------
 
-/// A `{"ok": false, "reason"}` result. Reasons are the stable machine
-/// tokens of `account-auth.md` §5 — the shell maps them to issue
-/// #102's sentences; nothing here is user-facing prose, and nothing
-/// here carries secret material.
+/// A `{"ok": false, "reason"}` result: a machine token of
+/// `account-auth.md` §5, never prose and never secret.
 fn sync_refusal(reason: &str) -> *mut c_char {
     into_c_string(serde_json::json!({ "ok": false, "reason": reason }).to_string())
 }
 
 /// Configure sync's endpoints and client identity: JSON
 /// `{"relay_url", "authorize_url", "token_url", "client_id"}`, all
-/// required, the three URLs refused unless `https://` (the network
-/// boundary, answered before a socket could open). Like the conceal
-/// connection this is not persisted core-side — the shell re-sends it
-/// at launch — but configuring resumes the persisted sign-in: the
-/// token keeper loads the refresh token from its own Keychain account,
-/// so a relaunch is signed in without a browser. Returns whether the
+/// required, the three URLs refused unless `https://`. Not persisted
+/// core-side (the shell re-sends it at launch); configuring resumes the
+/// persisted sign-in from its own Keychain account. Returns whether the
 /// configuration was accepted.
 ///
 /// # Safety
@@ -2312,19 +2307,19 @@ pub unsafe extern "C" fn companion_sync_configure(
     };
     guard.sync.keeper = Some(sync_driver::keeper_for(&config, &*guard.credentials));
     guard.sync.config = Some(config);
-    // A fresh configuration is a fresh start: whatever the last one's
-    // endpoints refused says nothing about these.
+    // A fresh configuration forgets the last one's faults.
     sync_driver::clear_fault(&mut guard);
     true
 }
 
-/// Sync's standing state for the Settings surface:
-/// `{"configured", "signed_in", "gate", "signin_pending", "attached",
-/// "epoch", "frame_present", "enrolled", "pairing"}`. Existence
-/// checks and in-memory reads only — rendering Settings must never
-/// decrypt a credential, wedge on the Keychain, or wait on the
-/// network, the `companion_connection_json` rule. Free with
-/// [`companion_string_free`].
+/// Sync's standing state for Settings: `{"configured", "signed_in",
+/// "gate", "signin_pending", "attached", "epoch", "frame_present",
+/// "enrolled", "pairing"}`, from existence checks and in-memory reads
+/// only, so it never decrypts, wedges on the Keychain or waits on the
+/// network. `"attached"` is the relay's last answer; the gate also asks
+/// whether the next request can use it, so `{"attached": true, "gate":
+/// "ready"}` is legal until a refresh lands. Switch on the gate. Free
+/// with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2341,15 +2336,13 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
 
 /// Where the account gate stands, as one machine token (ADR-0027 §5):
 /// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
-/// `ready` or `attached`. The same value the status JSON carries as
-/// `gate`, for a caller that wants the one word without the rest, and
-/// the only thing in the seam that answers "may this client attach".
-/// It answers nothing about content: a client past this gate and past
-/// no pairing downloads ciphertext it cannot open (ADR-0021 §3).
+/// `ready` or `attached`, the status JSON's `gate`. It says whether this
+/// client may attach and nothing about content (ADR-0021 §3).
 ///
-/// A null handle or a poisoned lock returns null rather than a state,
-/// because a gate that cannot be read has not been passed. Free with
-/// [`companion_string_free`].
+/// Null on a null handle or a poisoned lock: a gate that cannot be read
+/// has not been passed, so null means may not attach. A status JSON
+/// with no `gate` key is another core version and means no opinion.
+/// Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2366,10 +2359,11 @@ pub unsafe extern "C" fn companion_sync_gate(handle: *mut CompanionHandle) -> *m
 
 /// Begin the sign-in ceremony (account-auth.md §1): bind the one-shot
 /// loopback listener, mint the PKCE material, and return
-/// `{"ok": true, "authorize_url"}` for the shell to open in the
-/// system browser — never a web view. The ceremony then waits for
-/// [`companion_sync_signin_finish`]; a second begin while one waits
-/// answers `{"ok": false, "reason": "busy"}`.
+/// `{"ok": true, "authorize_url"}` for the system browser, never a web
+/// view; then [`companion_sync_signin_finish`]. `{"ok": false,
+/// "reason"}`: `busy` while a ceremony waits or a finish is out on the
+/// browser (a cancel is the way out), `not_configured`, `port` or
+/// `no_entropy`. Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2390,26 +2384,20 @@ pub unsafe extern "C" fn companion_sync_signin_begin(handle: *mut CompanionHandl
 }
 
 /// Finish the sign-in ceremony: wait up to `patience_ms` for the
-/// browser's one redirect, redeem the code, exchange it, and persist
-/// the rotated refresh token in its own Keychain account.
-/// **Blocks for up to the whole patience** — call from a background
-/// queue, never the main thread; account-auth.md §5 budgets five
-/// minutes, because the user is reading a consent screen. The core
-/// mutex is held only to take the pending ceremony and to absorb the
-/// grant; the pad never waits on this. Returns `{"ok": true}` or
-/// `{"ok": false, "reason"}` with §5's tokens: `abandoned`,
-/// `state_mismatch`, `no_code`, `unreachable`, `refused`,
-/// `no_ceremony`, `keychain`, `not_configured`. Every failure leaves
-/// nothing stored; retry is a fresh begin. `abandoned` covers a
-/// browser that never returned and a user who gave up, including one
-/// who gave up before this call ever took the ceremony; `no_ceremony`
-/// is left for a finish nobody began, which is a caller out of order
-/// rather than anything a user did; `not_configured` is a finish with
-/// no keeper standing to take the grant, which is a ceremony begun
-/// while the sync engine already held a sign-in. "Nothing stored" is
-/// this device's promise: by a `not_configured` finish the code has
-/// been redeemed, so the issuer holds a refresh token this device
-/// dropped, live until it expires. Free with [`companion_string_free`].
+/// browser's redirect, redeem the code, exchange it, and persist the
+/// refresh token in its own Keychain account. **Blocks for up to the
+/// whole patience**: call from a background queue (account-auth.md §5
+/// budgets five minutes). The core mutex is held only at the edges.
+/// Returns `{"ok": true}` or `{"ok": false, "reason"}`: `abandoned` (no
+/// redirect, or a cancel or sign-out while this call was out, even
+/// after the redirect landed), `state_mismatch`, `no_code`,
+/// `unreachable`, `refused`, `no_ceremony` (none begun, or one
+/// cancelled before this call), `busy` (another finish is out; its
+/// ceremony and the gate stand), `keychain`, `not_configured` (begun
+/// while the engine held the sign-in). Every failure stores nothing on
+/// this device; retry is a fresh begin. After a `not_configured` finish
+/// the issuer still holds the redeemed refresh token until it expires.
+/// Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2421,19 +2409,14 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
-    // Under the lock: take the ceremony and build the bounded
-    // transport, then let go — the redirect wait must not block a
-    // summon.
+    // Take the ceremony under the lock; the redirect wait runs off it,
+    // so no summon waits minutes on the mutex.
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
             return ptr::null_mut();
         };
-        // A finish already out on the browser trip owns the ceremony
-        // and the gate that reports it. A second call must not empty
-        // that state on its way to saying it found nothing: doing so
-        // put the gate back to `signed_out` in the middle of a consent
-        // screen, which is the reading this whole state exists to
-        // prevent.
+        // A finish already out on the browser owns the ceremony and
+        // the gate; a second call leaves both alone.
         if guard.sync.awaiting_redirect.is_some() {
             return sync_refusal("busy");
         }
@@ -2443,25 +2426,15 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
             .as_ref()
             .map(sync_driver::SyncConfig::transport);
         let staged = guard.sync.pending_signin.take().zip(transport);
-        // The ceremony leaves the state for the length of the browser
-        // trip, and this is what keeps the gate reporting `signing_in`
-        // meanwhile: a user reading a consent screen has left the
-        // signed-out state, whatever the emptied slot suggests. The
-        // state holds that ceremony's own abandon flag, so a sign-out
-        // or a cancel can end a trip it cannot otherwise reach.
+        // Keeps the gate at `signing_in` for the trip, and lets a
+        // cancel or sign-out reach the ceremony through its flag.
         if let Some((pending, _)) = staged.as_ref() {
             guard.sync.awaiting_redirect = Some(Arc::clone(&pending.abandoned));
         }
         staged
     };
     let Some((pending, transport)) = staged else {
-        // Nothing to finish, and nothing more this can honestly say:
-        // the flag a cancel raises belongs to the ceremony it ended,
-        // and that ceremony is gone. The surface keeps the difference
-        // between a trip somebody gave up on and a call that found
-        // nothing, and `no_ceremony` has a sentence of its own so that
-        // a call no server ever heard is never spelled as a refusal
-        // (ADR-0027 §2: silence is never a no).
+        // Nothing to finish; never spelled as a refusal (ADR-0027 §2).
         return sync_refusal("no_ceremony");
     };
     let abandoned = Arc::clone(&pending.abandoned);
@@ -2479,25 +2452,17 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         return ptr::null_mut();
     };
     sync_driver::release_redirect(&mut guard.sync, &abandoned);
-    // The last read, and the one under the lock that commits: a
-    // sign-out or a cancel that landed while the exchange was in the
-    // air ended this ceremony, and a grant absorbed now would sign the
-    // user back in behind their own gesture. Nothing is persisted.
+    // The last read, under the lock that commits: a cancel or sign-out
+    // during the exchange persists nothing.
     if abandoned.load(Ordering::Relaxed) {
         return sync_refusal("abandoned");
     }
-    // The keeper has to be standing before anything is persisted. It
-    // is not while an engine stands, because building the engine moves
-    // it into the session, so a finish for a ceremony begun while
-    // attached has nowhere to put the grant. Refusing after the store
-    // had taken the refresh token would leave a token resting in the
-    // keychain behind a failure that promised nothing was stored.
+    // Checked before the store: while an engine stands the keeper is
+    // in its session and the grant has nowhere to go.
     if guard.sync.keeper.is_none() {
         return sync_refusal("not_configured");
     }
-    // Persist first, absorb second: a keeper holding tokens the store
-    // refused would sign in for one session and silently sign out at
-    // relaunch.
+    // Persist first, absorb second, so a refused store signs nothing in.
     if !sync_driver::store_refresh(&*guard.credentials, &grant.refresh) {
         diag_fault!("the credential store refused the sync refresh token; sync stays signed out");
         return sync_refusal("keychain");
@@ -2506,24 +2471,16 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         return sync_refusal("not_configured");
     };
     let _rotated = keeper.absorb(grant);
-    // A grant in hand retires every earlier refusal: the gate reads
-    // from what stands now, not from what the last token met.
+    // A grant retires every earlier refusal.
     sync_driver::clear_fault(&mut guard);
     into_c_string(serde_json::json!({ "ok": true }).to_string())
 }
 
-/// Give up on the sign-in ceremony, whichever half it is in: a begun
-/// ceremony still waiting for its finish drops with its listener, and
-/// one a finish is already holding out on the browser is marked
-/// abandoned, which the finish reads at every wait it has left and
-/// once more under the lock that would have persisted the grant. The
-/// gate stops saying `signing_in` at once. Nothing is deleted and no
-/// request is sent: the ceremony simply never happened.
-///
-/// True when there was something to give up: a ceremony waiting for
-/// its finish, a finish waiting on the browser, or both. False means
-/// nothing was in flight, which is the answer a surface uses to stop
-/// drawing the way out.
+/// Give up on the sign-in ceremony, parked or out on the browser; the
+/// finish reads the abandon flag at every wait and once more before it
+/// persists. The gate stops saying `signing_in` at once; nothing is
+/// deleted and no request is sent. True when there was a ceremony to
+/// end.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2538,11 +2495,11 @@ pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHand
     sync_driver::abandon_signin(&mut guard.sync)
 }
 
-/// Sign sync out: drop the held tokens and delete the persisted
-/// refresh token — exactly one account; the conceal token, the content
-/// and ledger keys, and the pairing accounts all stand (ADR-0021 §3).
-/// The pad is unaffected, which is the whole point. True when the
-/// delete was accepted.
+/// Sign sync out: drop the held tokens and delete the persisted refresh
+/// token, exactly one Keychain account; the conceal token, content and
+/// ledger keys, pairing accounts and the pad all stand (ADR-0021 §3). A
+/// ceremony out on the browser ends with it. True when the delete was
+/// accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2554,14 +2511,10 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    // A ceremony out on the browser must not outlive the gesture that
-    // said no account here: without this, a redirect landing a minute
-    // later persisted a grant the user had just deleted.
+    // A ceremony out on the browser ends with the sign-out.
     sync_driver::abandon_signin(&mut guard.sync);
     let _ = sync_driver::dissolve_engine(&mut guard);
-    // The user's own sign-out is not a refusal: the gate reads
-    // `signed_out`, and re-enrolling is a choice rather than a
-    // recovery.
+    // The user's own sign-out is not a refusal: the gate reads `signed_out`.
     sync_driver::clear_fault(&mut guard);
     if let Some(config) = &guard.sync.config {
         guard.sync.keeper = Some(companion_sync::TokenKeeper::new(
@@ -2573,12 +2526,11 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
     sync_driver::clear_refresh(&*guard.credentials)
 }
 
-/// Enrol a page into the sync channel, or withdraw it — per page and
-/// off by default (relay protocol §1). Enrolling defers the page's
-/// compaction to the coordinated ceremony and starts its delta cursor
-/// at the beginning, so the first publish carries the whole page;
-/// withdrawing returns it to solo behaviour, performing any due
-/// ceremony on the spot. `page` is the PAGE id.
+/// Enrol a page into the sync channel, or withdraw it; per page and off
+/// by default (relay protocol §1). Enrolling defers its compaction to
+/// the coordinated ceremony and starts its cursor at the beginning;
+/// withdrawing performs any due ceremony on the spot. `page` is the
+/// PAGE id.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2597,16 +2549,16 @@ pub unsafe extern "C" fn companion_sync_enrol_page(
     sync_driver::enrol_page(&mut guard, SheetId::from_raw(page), enrolled)
 }
 
-/// Attach to the account's channel: ensure the device identity and
-/// channel secret (the first device to enable sync founds the
-/// channel; a joiner's secret arrives by pairing and overwrites),
-/// mint and publish a fresh key package, and adopt the relay's
-/// cursor. **Blocks for the round-trips** — call from a background
-/// queue. Returns `{"ok": true, "epoch", "frame_present", "peers"}`
-/// or `{"ok": false, "reason"}` (`not_configured`, `signed_out`,
+/// Attach to the account's channel, building the engine on first use
+/// (device identity, channel secret, key package; a joiner's secret
+/// arrives by pairing). A re-attach mints a pending package unless one
+/// already waits, which it resends (client protocol §4.3, §5.2).
+/// **Blocks for the round-trips**: call from a background queue.
+/// Returns `{"ok": true, "epoch", "frame_present", "peers"}` or
+/// `{"ok": false, "reason"}`: `not_configured`, `signed_out`,
 /// `keychain`, `unreachable`, `refused`, `busy` while another attach
-/// is in flight; not exhaustive, `poisoned` and `not_attached` among
-/// the rest). Free with [`companion_string_free`].
+/// is in flight, among others (`poisoned`, `not_attached`). Free with
+/// [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2616,12 +2568,8 @@ pub unsafe extern "C" fn companion_sync_attach(handle: *mut CompanionHandle) -> 
         return ptr::null_mut();
     };
     let answer = sync_driver::attach(handle);
-    // A refusal the shell may answer with nothing but a quiet retry on
-    // its timer leaves a trace in the core's diagnostics, so a support
-    // log tells "attached and quiet" from "refused at every try". Not
-    // `unreachable`, which the gate records, nor `busy`, which is an
-    // attach already in flight. The pump's own attach is not traced
-    // here: against a sick relay it would write a line every turn.
+    // Trace a refusal the shell may retry quietly; `unreachable` is in
+    // the gate, `busy` is a flight, and the pump's attach is untraced.
     if let Some(reason) = answer.get("reason").and_then(serde_json::Value::as_str)
         && !matches!(reason, "unreachable" | "busy")
     {
@@ -2630,10 +2578,10 @@ pub unsafe extern "C" fn companion_sync_attach(handle: *mut CompanionHandle) -> 
     into_c_string(answer.to_string())
 }
 
-/// Detach from the channel: tell the relay (best effort — idle
-/// attachments age out regardless) and dissolve the engine, keeping
-/// the sign-in. **Blocks briefly** for the one round-trip — call from
-/// a background queue. True when there was an engine to dissolve.
+/// Detach from the channel: dissolve the engine, keeping the sign-in,
+/// and tell the relay, best effort (client protocol §4.8). **Blocks
+/// briefly** for the one round-trip: call from a background queue.
+/// True when there was an engine to dissolve.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2645,27 +2593,19 @@ pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> 
     sync_driver::detach(handle)
 }
 
-/// One turn of the engine loop, run from a background queue while
-/// sync is on: sweep the enrolled pages into the outbox, publish what
-/// the 2-second clock owes, long-poll the delta stream for up to
-/// `wait_seconds` (§8 budgets 25; a longer wait is held to 25, the
-/// relay protocol's long-poll), walk the ballot patience, and
-/// publish a committed ceremony's frame. **Blocks for up to the whole
-/// long-poll**, and for the turn's other round trips besides (a
-/// publish, an attach on a turn that owes the relay a key package, a
-/// committed ceremony's frame), each under its own transport bound, so
-/// a relay that takes connections and then stalls can hold one turn
-/// for several of those bounds end to end; the core mutex is held only between round-trips, so
-/// the pad never waits on the network. Returns
-/// `{"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, …],
-/// "state"}`, where `page` is the cross-device identity and `page_id`
-/// the local id the same page answers to on this device (null when no
-/// live page holds that identity here). Event kinds: `applied`,
-/// `countdown_moved`, `terminal`,
-/// `rejoin_required`, `ceremony_proposed`, `ceremony_committed`,
-/// `ceremony_required`, `epoch_conflict`, `unauthorized`,
-/// `unreachable`, `protocol`, `signed_out`. States, never sentences —
-/// the surface owns the words (issue #102). Free with
+/// One turn of the engine loop, from a background queue while sync is
+/// on: sweep, walk the ballot patience, publish, long-poll for up to
+/// `wait_seconds` (held to 25), attach after a commit or when a package
+/// is owed, publish a committed frame (client protocol §3). **Blocks
+/// for the long-poll and the turn's other round trips**, each under its
+/// own transport bound; the core mutex is held only between them. Returns `{"ok",
+/// "reason"?, "events": [{"kind", "page"?, "page_id"?}, …], "state"}`:
+/// `page` is the cross-device identity, `page_id` the local id (null
+/// when no live page holds it here). Kinds: `applied`,
+/// `countdown_moved`, `terminal`, `rejoin_required`,
+/// `ceremony_proposed`, `ceremony_committed`, `ceremony_required`,
+/// `epoch_conflict`, `unauthorized`, `unreachable`, `protocol`,
+/// `signed_out`. States, never sentences. Free with
 /// [`companion_string_free`].
 ///
 /// # Safety
@@ -2681,10 +2621,8 @@ pub unsafe extern "C" fn companion_sync_pump(
     into_c_string(sync_driver::pump(handle, wait_seconds).to_string())
 }
 
-/// The device list for Settings: every peer a human verified here
-/// (fingerprint, label, when paired), joined with the attach
-/// roster's attach times, plus this device and any
-/// attached-but-unverified stranger, labelled as exactly that.
+/// The device list for Settings: this device, every verified peer with
+/// its attach time, and any attached but unverified stranger, labelled.
 /// `{"devices": [{"fingerprint", "label", "this_device", "verified",
 /// "paired_wall_ms", "attached_ms"}, …]}`. Free with
 /// [`companion_string_free`].
@@ -2771,9 +2709,8 @@ pub unsafe extern "C" fn companion_sync_join_begin(handle: *mut CompanionHandle)
 }
 
 /// One mailbox round of the pairing ceremony: post what is queued,
-/// fetch the tail, advance, and report. **Blocks for the
-/// round-trips** — call from a background queue, on a timer while the
-/// enrolment sheet is open. Returns `{"stage", "sas"?, "reason"?}`:
+/// fetch the tail, advance, and report. **Blocks for the round-trips**:
+/// call from a background queue, on a timer while the sheet is open. Returns `{"stage", "sas"?, "reason"?}`:
 /// `waiting` (keep polling), `sas` (show the six digits; call
 /// confirm), `confirmed` (this human confirmed; waiting for the
 /// peer), `done`, `failed`, `idle` (no ceremony). Free with
@@ -2790,11 +2727,9 @@ pub unsafe extern "C" fn companion_sync_pairing_poll(handle: *mut CompanionHandl
 }
 
 /// The human's verdict on the short authentication string. A match
-/// moves the ceremony forward (the joiner posts its acceptance; the
-/// inviter grants once the acceptance also verified); a mismatch
-/// aborts the whole ceremony with nothing stored on this device —
-/// failing must always be possible (ADR-0021 §3). Returns the stage
-/// as [`companion_sync_pairing_poll`] does. Free with
+/// moves the ceremony forward; a mismatch drops it whole with nothing
+/// stored on this device (ADR-0021 §3). Returns the stage as
+/// [`companion_sync_pairing_poll`] does. Free with
 /// [`companion_string_free`].
 ///
 /// # Safety
@@ -2813,9 +2748,8 @@ pub unsafe extern "C" fn companion_sync_pairing_confirm(
     into_c_string(sync_driver::pairing_confirm(&mut guard, matched).to_string())
 }
 
-/// Forget the pairing ceremony in flight, at any stage — including a
-/// finished or failed one whose sheet is being dismissed. True when
-/// there was one.
+/// Forget the pairing ceremony in flight, at any stage, finished and
+/// failed included. True when there was one.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
