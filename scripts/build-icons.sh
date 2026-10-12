@@ -194,9 +194,11 @@ find_composer_tool() { # <mode flag>
 
 # The saved document's one fill shade as rrggbb, read from icon.json so
 # the vector export cannot drift from the glass renderings. Icon
-# Composer saves it as "extended-srgb:r,g,b,a" with components in 0 to 1,
-# under automatic-gradient (its gradient derived from one shade) or
-# solid. Any other fill is a composition the export does not know.
+# Composer saves it as "extended-srgb:r,g,b,a" under automatic-gradient
+# (its gradient derived from one shade) or solid. Any other fill is a
+# composition the export does not know. Extended sRGB carries wide gamut
+# colour as components below 0 or above 1, which a hex shade cannot
+# hold, so such a fill is refused by name rather than clipped.
 glass_fill_shade() {
   local document=artwork/OnetimePad-Glass.icon/icon.json key fill=
   for key in fill.automatic-gradient fill.solid; do
@@ -205,12 +207,17 @@ glass_fill_shade() {
     fi
     fill=
   done
-  if [[ ! "$fill" =~ ^extended-srgb:[0-9.]+,[0-9.]+,[0-9.]+,[0-9.]+$ ]]; then
+  if [[ ! "$fill" =~ ^extended-srgb:-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,[0-9.]+$ ]]; then
     echo "could not read the glass fill: $document has no automatic-gradient or solid extended-srgb fill (got \"${fill:-nothing}\")" >&2
     exit 1
   fi
   printf '%s\n' "${fill#extended-srgb:}" |
-    awk -F, '{ printf "%02x%02x%02x\n", int($1 * 255 + 0.5), int($2 * 255 + 0.5), int($3 * 255 + 0.5) }'
+    awk -F, -v document="$document" '
+      $1 < 0 || $1 > 1 || $2 < 0 || $2 > 1 || $3 < 0 || $3 > 1 {
+        printf "could not read the glass fill: %s,%s,%s in %s is outside sRGB, which a flat SVG shade cannot carry\n", $1, $2, $3, document > "/dev/stderr"
+        exit 1
+      }
+      { printf "%02x%02x%02x\n", int($1 * 255 + 0.5), int($2 * 255 + 0.5), int($3 * 255 + 0.5) }'
 }
 
 # The websites' copy of the glass icon: Icon Composer's own light and

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import struct
 import subprocess
 import sys
@@ -73,14 +74,26 @@ class WebIconTests(unittest.TestCase):
         self.scratch = Path(scratch.name)
         self.web = self.scratch / "web"
 
-    def export(self, env=None, *leading):
+    def run_script(self, arguments, env=None, script=SCRIPT):
         return subprocess.run(
-            [str(SCRIPT), *leading, "--web", str(self.web)],
+            [str(script), *arguments],
             env={**os.environ, **(env or {})},
             capture_output=True,
             text=True,
             timeout=120,
         )
+
+    def export(self, env=None, *leading):
+        return self.run_script([*leading, "--web", str(self.web)], env)
+
+    def scratch_checkout(self):
+        """A copy of what the script reads and writes, for tests that change the document."""
+        checkout = self.scratch / "checkout"
+        for relative in ("scripts/build-icons.sh", "scripts/render-icon.swift", LOGO.relative_to(ROOT)):
+            (checkout / relative).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, checkout / relative)
+        shutil.copytree(DOCUMENT.parent, checkout / DOCUMENT.parent.relative_to(ROOT))
+        return checkout
 
     def mock_composer(self, skip_rendition="", xcode="27.0", with_ictool=True):
         """Stand in for the selected Xcode so failure paths need no Icon Composer."""
@@ -238,6 +251,19 @@ class WebIconTests(unittest.TestCase):
         for directory in staged:
             with self.subTest(directory=directory):
                 self.assertFalse(Path(directory).exists())
+
+    def test_fill_outside_srgb_is_refused_by_name(self):
+        checkout = self.scratch_checkout()
+        document = checkout / DOCUMENT.relative_to(ROOT)
+        saved = json.loads(document.read_text())
+        key = "automatic-gradient" if "automatic-gradient" in saved["fill"] else "solid"
+        saved["fill"] = {key: "extended-srgb:1.07000,-0.02000,0.13333,1.00000"}
+        document.write_text(json.dumps(saved))
+        result = self.run_script(["--web", str(self.web)], self.mock_composer(), checkout / "scripts/build-icons.sh")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("1.07000,-0.02000,0.13333 in artwork/OnetimePad-Glass.icon/icon.json is outside sRGB", result.stderr)
+        self.assertFalse(self.requested.exists())
+        self.assertFalse(self.web.exists())
 
     def test_older_xcode_is_rejected_before_export(self):
         result = self.export(self.mock_composer(xcode="26.6"))
