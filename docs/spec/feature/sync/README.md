@@ -17,6 +17,9 @@ This directory holds the milestone's written specifications:
 - [relay-protocol.md](relay-protocol.md) — the channel model, message
   set, storage contract, ceremony wire shape, batching and padding, and
   the interface the server side implements (issue #99).
+- [client-protocol.md](client-protocol.md): the client as built
+  (state, turn order, per-message failure handling, key packages,
+  ballots) and where it departs from the specs. Draft, not accepted.
 - [account-auth.md](account-auth.md) — the OAuth flow that gates the
   relay channel, token lifetimes for an app that sleeps for days, and
   the sync/conceal credential separation (issue #98).

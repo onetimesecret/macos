@@ -1125,10 +1125,11 @@ char *companion_sync_pump(CompanionHandle *handle, uint32_t wait_seconds);
 char *companion_sync_devices_json(CompanionHandle *handle);
 
 /*
- * Revoke a paired peer by fingerprint: its record goes, nothing is
- * ever sealed to it again, and the chain leaves it behind at the next
- * ceremony at the latest. True when the fingerprint was recorded and
- * the removal stored.
+ * Revoke a paired peer by fingerprint: its record goes, so this device
+ * seals nothing new to it and honours none of its markers. It starts
+ * no ceremony, and the peer keeps the current key until a ceremony
+ * that leaves it out commits (client protocol section 7.9). True when
+ * the fingerprint was recorded and the removal stored.
  */
 bool companion_sync_revoke_peer(CompanionHandle *handle,
                                 const char *fingerprint);

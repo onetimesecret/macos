@@ -13,22 +13,21 @@ use zeroize::Zeroizing;
 
 use crate::b64;
 
-/// A refusal from the relay, each one a protocol answer with a client
-/// move attached — none of them is an error to log and forget.
+/// A refusal from the relay, each one a protocol answer. What the
+/// client does with each, per message, is client protocol §4
+/// (`docs/spec/feature/sync/client-protocol.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelayRefusal {
-    /// `401`: the access token no longer satisfies the relay. The one
-    /// authority on expiry (account-auth.md §2) — refresh and retry
-    /// the one request.
+    /// `401`: the access token no longer satisfies the relay, the one
+    /// authority on expiry (account-auth.md §2).
     Unauthorized,
-    /// `409`: the epoch offered is not exactly current+1 (publish), or
-    /// not current (deltas). Fetch, catch up, retry or rejoin.
+    /// `409`: the epoch offered is not exactly current+1 (frame), or
+    /// not current (deltas).
     EpochConflict,
-    /// `410 rejoin`: `since` predates the buffer. Drop the stale copy
-    /// and adopt the current frame — the whole recovery story.
+    /// `410 rejoin`: `since` predates the buffer.
     Rejoin,
-    /// `413 ceremony_required`: the §3 cap; nothing publishes until a
-    /// ceremony compacts the channel.
+    /// `413 ceremony_required`: the delta buffer is at its cap
+    /// (relay-protocol.md §3).
     CeremonyRequired,
     /// Anything else the protocol does not name, status attached.
     Protocol(u16),

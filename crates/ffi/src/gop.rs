@@ -9,45 +9,26 @@
 //! included. The purge is that derivation, never a promise about a
 //! server's disk (ADR-0007, ADR-0021 section 2).
 //!
-//! The key's lineage is deliberate, and it answers the question issue
-//! #95 opens with. It descends from the **pairing ceremony's channel
-//! secret** (issue #97), not from the content key: the content key
-//! never leaves its device (ADR-0021 section 8) and rests half in a
-//! `ThisDeviceOnly` keychain item precisely so that no durable key
-//! rides iCloud Keychain (ADR-0016 section 3), while the transport key
-//! must be computable by every paired device — including one that has
-//! never held a page, which is exactly the enrolling laptop of
-//! ADR-0021 section 5. So the root expands from the channel secret,
-//! and the channel secret travels only through pairing.
-//!
-//! Rotation is a chain with fresh entropy mixed in:
+//! The key descends from the pairing ceremony's channel secret, never
+//! from the content key, so every paired device can compute it, one
+//! that has never held a page included (ADR-0021 section 8). Rotation
+//! is a chain with fresh entropy mixed in:
 //!
 //! ```text
 //! key[0]   = HKDF(salt: GOP_ROOT_SALT, ikm: channel_secret, info: GOP_KEY_INFO)
 //! key[n+1] = HKDF(salt: key[n],        ikm: entropy[n],     info: GOP_KEY_INFO)
 //! ```
 //!
-//! Both inputs are load-bearing. Salting with the outgoing key means a
-//! device that never held this GOP's key cannot follow the chain into
-//! the next one, so a joiner learns the epoch it joins and nothing
-//! behind it — the external-commit property of ADR-0021 section 5.
-//! Mixing ceremony-fresh entropy — minted by the proposer, delivered to
-//! each surviving device sealed under its pairing secrets, never
-//! plaintext through the relay — means a device excluded from the
-//! ceremony (a revoked one, issue #97) cannot follow the chain forward
-//! even though it holds the outgoing key. And HKDF's one-wayness means
-//! the incoming key discloses neither input, so destroying the
-//! outgoing key is final. A device that learns of a rotation it did
-//! not perform — it slept through the ceremony and the entropy is gone
-//! — is behind the boundary for good, and its recovery is the join
-//! path: rejoin at the current key frame with a key delivered by
-//! pairing, never a derivation from what it kept.
-//!
-//! The info string and salt live beside the other two versioned info
-//! strings in [`crate::persist`], which is where the derivation
-//! discipline for this crate is documented; the sealed payload
-//! envelope carries its own magic ([`persist::GOP_MAGIC`]) and the
-//! GOP epoch, both under the AEAD's associated data.
+//! Salting with the outgoing key keeps a device that never held this
+//! GOP's key out of the next one. The entropy, sealed to each member's
+//! key package, keeps out a device the proposer did not name, though
+//! not the proposer itself (client protocol §7.9). A device that missed
+//! a rotation cannot derive it, and the welcome that would hand it the
+//! key is not built (client protocol §8). Registry of the info string,
+//! salt and magic: client protocol Appendix A; they live in
+//! [`crate::persist`], and the sealed payload carries its magic
+//! ([`persist::GOP_MAGIC`]) and the epoch under the AEAD's associated
+//! data.
 
 use companion_core::{Clock, SheetId, SheetStore};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -151,25 +132,10 @@ impl GopKeyChain {
     }
 }
 
-/// The ceremony's two halves as one event (ADR-0021 section 2, issues
-/// #95 and #101): rebuild the document and rotate the transport key,
-/// in an order that leaves no half-done state. The store's half runs
-/// first and is the only fallible step — an unknown or undeferred page
-/// returns `None` with the chain untouched, so a refused ceremony
-/// rotates nothing. The rotation that follows is pure derivation and
-/// cannot fail. The fresh key frame is sealed under the **incoming**
-/// key and returned for publication to the relay, where it supersedes
-/// its predecessor (ADR-0021 section 5); the outgoing key is already
-/// gone by then, destroyed by the advance.
-///
-/// The caller runs this only on a ceremony every attached device
-/// confirmed ([`companion_core::PageChannel::ceremony_confirmed`]),
-/// with the entropy the proposer minted for it. Should the seal itself
-/// refuse (the RNG declining a nonce), both halves have still
-/// happened; the frame is re-sealable from the store
-/// ([`SheetStore::export_document_updates`] from an empty frontier, or
-/// the next publish), so the refusal costs a retry, never a split
-/// state.
+/// The ceremony's two halves as one event: the store's rebuild runs
+/// first and is the only fallible step, so a refusal rotates nothing;
+/// the rotation cannot fail; the frame is sealed under the incoming key
+/// (client protocol §7.6). Run only on a confirmed ballot.
 pub fn ceremony_commit<C: Clock>(
     store: &mut SheetStore<C>,
     page: SheetId,

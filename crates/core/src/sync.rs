@@ -1,50 +1,20 @@
 //! Client-side sync bookkeeping: what replicates, and the gates on it
 //! (ADR-0021, issues #100 and #101).
 //!
-//! Everything here is pure state, no IO and no crypto: the protocol
-//! (issue #99) moves these values between devices inside sealed
-//! envelopes, and the seam above this crate signs and seals them. What
-//! this module owns is the rules the values obey:
-//!
-//! - **The expiry policy replicates, never the deadline** (ADR-0021
-//!   section 6). [`ExpiryPolicy`] is the wall-clock pair each device
-//!   computes its own deadline from; `Instant`s never travel
-//!   ([`crate::clock`]).
-//! - **The minimum wins.** [`SheetStore::observe_peer_expiry`] can
-//!   shorten a page's life and can never extend one, the same
-//!   direction the restart gap already enforces.
-//! - **The hold is the user's instruction, not a clock candidate.**
-//!   [`HoldRegister`] replicates the pause machine's state, and a live
-//!   hold suspends the countdown on every device exactly as it
-//!   suspends it locally.
-//! - **Expiry is an absorbing terminal state.** [`TerminalMarker`]
-//!   names a dead page; [`PageChannel`] refuses every later delta for
-//!   it, and [`PageChannel::may_publish_terminal`] is the one gate on
-//!   who may declare the death: a device whose view of the hold
-//!   register is not current with the channel entombs its own copy and
-//!   keeps quiet.
-//! - **The ceremony is proposed, accepted, and confirmed** (issue
-//!   #101). [`CeremonyBallot`] counts the confirmations, and a ballot
-//!   that never fills leaves every device on the old GOP rather than
-//!   splitting them across a boundary.
-//!
-//! [`SheetStore::observe_peer_expiry`]: crate::store::SheetStore::observe_peer_expiry
+//! Everything here is pure state, no IO and no crypto; the seam above
+//! this crate signs and seals these values. The rules they obey are
+//! ADR-0021 section 6 (in the relay decision background) for expiry,
+//! hold and the terminal state; how the built client applies them, and
+//! the ballot, is client protocol §6 and §7
+//! (`docs/spec/feature/sync/client-protocol.md`).
 
 use crate::sheet::ItemId;
 
 /// What a device publishes for a page's expiry: the policy, never the
 /// deadline (ADR-0021 section 6). Both halves are wall-clock values,
-/// because the calendar is the only clock two machines share; each
-/// receiver computes its own deadline from the sum on its own clock,
-/// skew accepted, Signal's disappearing-messages model.
-///
-/// The anchor is the moment the countdown last (re)started: a page's
-/// creation, or a deliberate rung gesture, which is the exception
-/// class ADR-0016 section 4 already grants. A publish therefore reads
-/// the pair off the live countdown — anchor now, ttl the remaining
-/// life — and the sum, [`ExpiryPolicy::deadline_wall_ms`], is what the
-/// minimum rule compares; for a page nothing has touched it equals
-/// `created_wall_ms + ttl_ms` exactly.
+/// read off the live countdown, and each receiver computes its own
+/// deadline from their sum, [`ExpiryPolicy::deadline_wall_ms`] (client
+/// protocol §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpiryPolicy {
     /// Unix epoch milliseconds at the moment the countdown this policy
@@ -65,12 +35,10 @@ impl ExpiryPolicy {
     }
 }
 
-/// The pause machine's state as it replicates (ADR-0021 section 6):
-/// one register per page, last write on the channel's logical clock
-/// wins, and a live hold suspends the countdown everywhere. The
-/// register carries the machine's *state*, never the press, so two
-/// devices pressing independently converge on whichever state the
-/// channel ordered last rather than double-counting gestures.
+/// The pause machine's state as it replicates, one register per page:
+/// the state, never the press, applied in stream order, and a live hold
+/// suspends the countdown everywhere (ADR-0021 section 6; client
+/// protocol §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoldRegister {
     /// No hold stands; the countdown runs.
@@ -125,14 +93,12 @@ pub enum DeltaAdmission {
 }
 
 /// One proposed compaction ceremony: who must confirm, and who has.
-/// The rule it enforces is issue #101's: a ceremony proposed and not
-/// confirmed by **every** attached device leaves every device on the
-/// old GOP, so the boundary either moves for everyone or moves for no
-/// one.
+/// A ballot that does not fill leaves this device on the old GOP;
+/// whom it names is the caller's choice (client protocol §7.3, §7.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CeremonyBallot {
-    /// The devices attached to the channel when the ceremony was
-    /// proposed, the proposer included. Every one of them must accept.
+    /// The devices the proposal names, the proposer included (client
+    /// protocol §7.3). Every one of them must accept.
     attached: Vec<ItemId>,
     /// The devices that have accepted so far.
     accepted: Vec<ItemId>,
@@ -258,10 +224,10 @@ impl PageChannel {
         self.terminal
     }
 
-    /// Propose a ceremony to the devices attached right now, the
-    /// proposer included. Returns whether a ballot opened: a second
-    /// proposal while one is in flight is refused rather than stacked,
-    /// and a terminal page holds no ceremonies at all.
+    /// Open a ballot naming `attached`, the proposer included. Returns
+    /// whether a ballot opened: a second proposal while one is in
+    /// flight is refused rather than stacked, and a terminal page holds
+    /// no ceremonies at all.
     pub fn propose_ceremony(&mut self, attached: &[ItemId]) -> bool {
         if self.terminal || self.ballot.is_some() || attached.is_empty() {
             return false;
@@ -282,9 +248,9 @@ impl PageChannel {
             .is_some_and(|ballot| ballot.accept(device))
     }
 
-    /// Whether the ceremony in flight is confirmed by every attached
-    /// device — the moment, and the only moment, the two halves of the
-    /// event may run: rotate the GOP key and rebuild the document
+    /// Whether every device the ballot names has accepted: the moment,
+    /// and the only moment, the two halves of the event may run:
+    /// rotate the GOP key and rebuild the document
     /// ([`SheetStore::perform_ceremony`]), then call
     /// [`PageChannel::complete_ceremony`].
     ///

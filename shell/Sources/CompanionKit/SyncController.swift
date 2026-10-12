@@ -809,19 +809,7 @@ public final class SyncController: ObservableObject {
 
     /// The header's word for where sync stands, driven by the gate the
     /// core reports (ADR-0027 §5) and by nothing the shell inferred.
-    ///
-    /// Three rules, all inherited from the persistence word rather than
-    /// invented here. Nothing shows while there is nothing to report,
-    /// so a user who never turned sync on sees a header identical to
-    /// the one before sync existed. The settled state is quiet, the way
-    /// `saved` is quiet, because a working channel is not news. And the
-    /// two states a user has to act on are loud, the way `save failed`
-    /// is loud.
-    ///
-    /// `off` earns no word even with the switch on, which happens when
-    /// no relay is configured: the ADR gives that state nothing to say
-    /// here, and the page's standing sentence says the whole of it in a
-    /// place with room for the reason.
+    /// The words, tones and the `off` rule are surface.md §4.
     public nonisolated static func headerWord(
         enabled: Bool, status: SyncStatus?, trouble: Trouble?, peers: Int?
     ) -> SyncHeaderWord? {
@@ -946,20 +934,9 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    /// What a turn's own verdict does to the standing trouble.
-    ///
-    /// Falling behind a key rotation is not a network condition, and no
-    /// network condition may stand in for it. Letting an unreachable
-    /// blip overwrite `.behind` erases it for good: the next good turn
-    /// clears the unreachable it left behind, and the header then says
-    /// `synced` for a pad that is still short the channel's key. So
-    /// `.behind` outlives a blip and a quiet turn alike and only a
-    /// rejoin ends it, which is the precedence the header word already
-    /// gives it over the gate's own good news.
-    ///
-    /// Everything else is the newer fact and wins, the account axis
-    /// included: a pad that is behind and signed out has a sign-in to
-    /// do first, and rejoining is on the far side of it.
+    /// What a turn's own verdict does to the standing trouble:
+    /// `.behind` outlives an unreachable blip and a quiet turn, and
+    /// every other verdict is the newer fact and wins (surface.md §4).
     public nonisolated static func standing(trouble: Trouble?, after verdict: Trouble?) -> Trouble?
     {
         if trouble == .behind, verdict == nil || verdict == .unreachable { return .behind }
@@ -967,70 +944,33 @@ public final class SyncController: ObservableObject {
     }
 
     /// Whether a refused attach is tried again on the timer, from the
-    /// trouble it settled to.
-    ///
-    /// An unreachable relay retries, as it always has. So does a
-    /// refusal that settled to no trouble at all: the core refused the
-    /// attach for a reason the gate does not record (the core's
-    /// `keychain` reason, with the keychain locked at that moment, or
-    /// its `refused` reason, for a relay answer other than a second
-    /// 401, a `5xx` among them) while the gate still reads ready. Left
-    /// there, sync was enabled, unattached, with no sentence standing
-    /// and no timer armed, and nothing started the pump until the
-    /// switch was toggled or the person signed out and in. The retry
-    /// starts on the same 30-second clock as an unreachable relay and
-    /// backs off (`attachBacksOff`, `attachRetryDelay`), and like it
-    /// has no cap on tries; unlike it, no sentence stands, as none did
-    /// before; the core's diagnostics carry each such refusal. A named
-    /// trouble (`Trouble.signedOut`, `Trouble.refused` and
-    /// `Trouble.notConfigured` among them), whether the gate named it
-    /// or the core answered `not_configured` or `poisoned`
-    /// (`settledTrouble`), is not a condition a timer clears, and is
-    /// not retried.
+    /// trouble it settled to: no trouble, or `.unreachable`, is
+    /// retried with no cap; a named trouble is not (client protocol
+    /// §4.3).
     public nonisolated static func attachRetries(after settled: Trouble?) -> Bool {
         settled == nil || settled == .unreachable
     }
 
-    /// How long before a refused attach is tried again. An unreachable
-    /// relay, and a first quiet refusal, wait the 30-second clock;
-    /// quiet refusals that keep coming double it to a five-minute
-    /// ceiling. A `keychain` refusal reads the Keychain again on every
-    /// try, and on the legacy file based login keychain the store falls
-    /// back to (`crates/credentials`) a read can raise a prompt, which
-    /// a flat 30-second clock would raise for as long as the app runs.
+    /// How long before a refused attach is tried again: 30 seconds,
+    /// doubling per quiet refusal to 300 (client protocol §3, §4.3). A
+    /// `keychain` refusal reads the Keychain on every try, and a read
+    /// can raise a prompt.
     public nonisolated static func attachRetryDelay(quietRefusals: Int) -> TimeInterval {
         let doublings = min(max(quietRefusals - 1, 0), 4)
         return TimeInterval(min(30 << doublings, 300))
     }
 
     /// Whether a retried attach refusal counts toward that backoff,
-    /// read from the core's reason rather than the trouble it settled
-    /// to. The gate keeps an earlier turn's `unreachable` until a round
-    /// trip reaches the relay, and a re-attach mints its package from
-    /// the Keychain before it touches the network, so a `keychain`
-    /// refusal after an unreachable turn settles to `.unreachable`.
-    /// Read from that, it would retry on the flat clock and read the
-    /// Keychain every 30 seconds. Only `unreachable` itself keeps the
-    /// flat clock; `busy` is another attach already in flight, not a
-    /// refusal the backoff is for.
+    /// read from the core's reason, since the gate can still show an
+    /// earlier turn's `unreachable`: every reason but `unreachable` and
+    /// `busy` counts (client protocol §4.3).
     public nonisolated static func attachBacksOff(afterRefusal reason: String?) -> Bool {
         reason != "unreachable" && reason != "busy"
     }
 
-    /// What an attach outcome and the core's gate together mean. The
-    /// outcome's reason is the coarser of the two: the core answers the
-    /// second 401 on one attach with `signed_out`, which is exactly the
-    /// case `.refused` exists to tell apart, so the gate decides and
-    /// the reason only fills in what the gate does not name.
-    ///
-    /// A reason this shell does not name reads as no trouble, so even
-    /// from a core whose gate this shell cannot decode the refusal is
-    /// retried rather than shown as "no server": `busy` (another attach
-    /// already in flight), `keychain`, `refused`, `not_attached`, and
-    /// whatever a newer core adds to a list the header does not close.
-    /// `poisoned` keeps the not-configured reading it always had: a
-    /// core in that state answers nothing until the app relaunches, and
-    /// no timer clears it.
+    /// What an attach outcome and the core's gate together mean: the
+    /// gate decides where it names a condition, and a reason this shell
+    /// does not name reads as no trouble (client protocol §4.3).
     public nonisolated static func settledTrouble(
         ok: Bool, reason: String?, gate: SyncGate?
     ) -> Trouble? {
@@ -1063,19 +1003,9 @@ public final class SyncController: ObservableObject {
         Set(marks.filter { now.timeIntervalSince($0.value) < window }.keys)
     }
 
-    /// When the channel last saw a device, in the words its row shows
-    /// (issue #102's device list). The stamp is the attach time the
-    /// relay reported for that peer, which is the one piece of
-    /// metadata ADR-0021 §4 admits the relay may hold, so this says
-    /// "seen" rather than "active": it is when the device joined the
-    /// channel, not when it last typed anything.
-    ///
-    /// Coarse on purpose. A device list is read to answer "is my
-    /// laptop on this channel, and roughly since when", and a stamp to
-    /// the second would be a precision the number does not have, since the
-    /// roster is refreshed when this Mac attaches, so it ages between
-    /// attaches. A future stamp is a clock disagreeing across two
-    /// machines, not a device seen tomorrow, so it reads as just now.
+    /// When the channel last saw a device, in the words its row shows:
+    /// the attach time the relay reported for that peer, coarse, with a
+    /// future stamp read as just now (surface.md §3).
     public nonisolated static func lastSeen(attachedWallMs: UInt64?, nowWallMs: UInt64) -> String {
         guard let attachedWallMs else { return "not seen on this channel" }
         let elapsed = nowWallMs > attachedWallMs ? nowWallMs - attachedWallMs : 0

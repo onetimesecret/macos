@@ -3489,10 +3489,11 @@ pub unsafe extern "C" fn companion_sync_devices_json(handle: *mut CompanionHandl
     into_c_string(sync_driver::devices_json(&guard).to_string())
 }
 
-/// Revoke a paired peer by fingerprint: its record goes, nothing is
-/// ever sealed to it again, and the chain leaves it behind at the
-/// next ceremony at the latest (ADR-0021 §2). True when the
-/// fingerprint was recorded and the removal stored.
+/// Revoke a paired peer by fingerprint: its record goes, so this
+/// device seals nothing new to it and honours none of its markers. It
+/// starts no ceremony, and the peer keeps the current key until a
+/// ceremony that leaves it out commits (client protocol §7.9). True
+/// when the fingerprint was recorded and the removal stored.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `fingerprint` a valid,

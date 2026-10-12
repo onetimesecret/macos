@@ -1343,8 +1343,9 @@ public class CompanionClient: @unchecked Sendable {
         decodeJSON(SyncDeviceList.self, from: companion_sync_devices_json(handle))?.devices ?? []
     }
 
-    /// Revoke a paired peer: nothing is ever sealed to it again, and
-    /// the chain leaves it behind at the next ceremony at the latest.
+    /// Revoke a paired peer: this device seals nothing new to it and
+    /// starts no ceremony; the peer keeps the current key until a
+    /// ceremony that leaves it out commits (client protocol §7.9).
     @discardableResult
     public func syncRevokePeer(fingerprint: String) -> Bool {
         fingerprint.withCString { companion_sync_revoke_peer(handle, $0) }

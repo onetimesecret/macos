@@ -13,13 +13,9 @@
 //! ceremony — is testable offline, which is how the tests below run
 //! it.
 //!
-//! What the engine enforces from the specs, rather than trusts the
-//! relay for: deltas seal before they queue and open only under the
-//! current epoch's key; every sealed blob pads to its §8 bucket;
-//! publishes coalesce on the publish clock, never on keystrokes; the
-//! server's `401` — never a local clock — decides token refresh; and a
-//! ballot either confirms for every attached device or leaves everyone
-//! on the old GOP.
+//! What the engine enforces rather than trusts the relay for, rule by
+//! rule, is `docs/spec/feature/sync/client-protocol.md` (client protocol
+//! §3 to §7).
 
 use std::collections::HashMap;
 
@@ -53,12 +49,9 @@ pub const LONG_POLL_WAIT_S: u32 = 25;
 /// is abandoned, every device staying on the old GOP.
 pub const BALLOT_PATIENCE_MS: u64 = 60_000;
 
-/// Versioned signing context for key packages: the identity key signs
-/// `context ‖ x25519_pub`, never the bare 32 bytes — a bare 32-byte
-/// signature payload is exactly the shape of a pairing transcript
-/// hash, and the mailbox publishes transcript signatures in the
-/// clear, so an uncontexted package signature could be forged from
-/// one.
+/// Versioned signing context for key packages (client protocol
+/// Appendix A): the identity key signs `context ‖ x25519_pub`, never
+/// the bare 32 bytes, which share a pairing transcript hash's shape.
 const KEY_PACKAGE_SIGN_CONTEXT: &[u8] = b"ots-companion-key-package-v1";
 
 /// Versioned signing context for terminal markers: the identity key
@@ -76,10 +69,9 @@ const ENTROPY_MAGIC: &[u8; 8] = b"OTSENTR1";
 // Key packages (relay-protocol.md §6)
 // ---------------------------------------------------------------------
 
-/// A device's key package: a static X25519 public key signed by its
-/// Ed25519 identity key — the MLS-welcome shape at one-channel scale.
-/// Public material; the relay storing it is not escrow. Wire form is
-/// `x25519_pub(32) ‖ signature(64)`.
+/// A device's key package: a one-shot X25519 public key signed by its
+/// Ed25519 identity key. Public material. Wire form
+/// `x25519_pub(32) ‖ signature(64)` (client protocol §5.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyPackage {
     x25519_pub: Vec<u8>,
@@ -120,10 +112,8 @@ impl KeyPackage {
     }
 
     /// Seal ceremony entropy to this package: ephemeral X25519 against
-    /// the package's static key, HKDF to an AEAD key, sealed with the
-    /// versioned magic as associated data. Never under the current GOP
-    /// key, which a just-revoked device still holds (§5). Wire form is
-    /// `eph_pub(32) ‖ aead body`.
+    /// its key, HKDF to an AEAD key, the versioned magic as associated
+    /// data. Wire form `eph_pub(32) ‖ aead body` (client protocol §5.1).
     #[must_use]
     pub fn seal_entropy(&self, entropy: &[u8]) -> Option<Vec<u8>> {
         let rng = SystemRandom::new();
@@ -147,19 +137,14 @@ fn wrap_key_from(shared: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     Some(key)
 }
 
-/// The private half of this device's current key package. One-shot by
-/// construction (ring's X25519 keys agree once and are consumed):
-/// opening one sealed entropy spends it, and [`KeyPackageKeeper::mint`]
-/// runs again before the next attach publishes a fresh package. A
-/// restart also loses it — the key never persists — which lands the
-/// device on the rejoin path, the recovery §4 already owns.
+/// The private half of this device's current key package: one-shot
+/// (ring's X25519 keys agree once and are consumed) and never
+/// persisted. Lifecycle: client protocol §5.2.
 pub struct KeyPackageKeeper {
     private: Option<agreement::EphemeralPrivateKey>,
     package: KeyPackage,
-    /// Whether an attach carrying this package has been accepted by the
-    /// relay. A mint is not a publication: the package reaches a
-    /// proposer only through the relay's roster, and an attach that
-    /// never landed leaves the roster naming whatever came before.
+    /// Whether the relay accepted an attach carrying this package; a
+    /// mint is not a publication (client protocol §5.2).
     published: bool,
 }
 
@@ -196,10 +181,8 @@ impl KeyPackageKeeper {
         &self.package
     }
 
-    /// Whether the private half has been spent. A spent package is one
-    /// no proposer can reach this device through, so the device owes
-    /// the relay a fresh one, whether the ballot that spent it
-    /// committed or was abandoned.
+    /// Whether the private half has been spent; a spent package is owed
+    /// a replacement (client protocol §5.4).
     #[must_use]
     pub fn is_spent(&self) -> bool {
         self.private.is_none()
@@ -211,19 +194,14 @@ impl KeyPackageKeeper {
     }
 
     /// Whether the relay has accepted an attach carrying this package.
-    /// An unpublished package is as unreachable as a spent one: the
-    /// roster a proposer seals to still names its predecessor.
     #[must_use]
     pub fn is_published(&self) -> bool {
         self.published
     }
 
-    /// Open entropy a proposer sealed to this package. Spends the
-    /// private half: `None` afterwards until a fresh mint, and `None`
-    /// for a payload not sealed to this package. A payload too short to
-    /// carry the proposer's key and a sealed body could never open, so
-    /// it is refused before the private half is touched, and spends
-    /// nothing.
+    /// Open entropy a proposer sealed to this package, spending the
+    /// private half whether or not it opens. A payload too short to
+    /// open is refused first and spends nothing (client protocol §5.3).
     #[must_use]
     pub fn open_entropy(&mut self, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         let eph_pub = sealed.get(..32)?;
@@ -238,28 +216,9 @@ impl KeyPackageKeeper {
     }
 }
 
-/// Open a proposal's entropy with whichever of this device's packages
-/// the relay's roster named when the proposer sealed it: the standing
-/// one, or a pending one whose attach the relay took though its answer
-/// was lost (`EngineState::pending_packages` in `sync_driver`). Each
-/// try spends the package it tries, so the standing one goes first and
-/// the pending one is left alone when the standing one opens; it is
-/// still owed to the relay, and the next attach sends it. A pending
-/// package that opens is the one the roster named, so it is adopted
-/// as the standing one, published and now spent. One whose try spent
-/// it on nothing is dropped, so no attach ever sends a package whose
-/// private half is gone; one the try never reached (a payload too
-/// short to try) stays where it was, still owed to the relay. The cost
-/// of trying both: a payload neither opens spends both, so the device
-/// joins no ballot until the next attach publishes a fresh package,
-/// which the spent standing one makes the pump owe at once. The payload
-/// is whatever the proposal carried, and nothing checks the proposer
-/// before the try, so any holder of the channel key can impose that
-/// cost at will. A standing package already spent refuses without a
-/// try, so the pending one is tried even when no attach carrying it
-/// ever reached the relay and no proposer could have sealed to it.
-/// `is_published` cannot tell that try from the useful one: an
-/// acceptance lost on the way back leaves the same unpublished mark.
+/// Open a proposal's entropy with the standing package, then the
+/// pending one, adopting a pending package that opens and dropping one
+/// spent on nothing. Rules and cost: client protocol §5.3 and §7.9.
 pub fn open_proposal_entropy(
     standing: &mut KeyPackageKeeper,
     pending: &mut Option<KeyPackageKeeper>,
@@ -419,12 +378,10 @@ impl SyncSession {
         }
     }
 
-    /// The sealed key frame the last committed ceremony produced,
-    /// once: the caller sends it with
-    /// [`SyncSession::publish_frame_request`], whose acceptance at the
-    /// relay is the purge. Every confirmed device holds one; §5 has
-    /// the proposer publish it, and a non-proposer's copy simply goes
-    /// unused (re-sealable from the store either way).
+    /// The sealed key frame the last committed ceremony produced, once,
+    /// for [`SyncSession::publish_frame_request`]. Every committing
+    /// device holds one, and the driver publishes it whoever proposed
+    /// (client protocol §7.8).
     #[must_use]
     pub fn take_frame(&mut self) -> Option<Vec<u8>> {
         self.pending_frame.take()
@@ -502,13 +459,9 @@ impl SyncSession {
         )
     }
 
-    /// Absorb the attach answer: adopt the relay's cursor on a first
-    /// attach, and keep where the channel stands and who else is on
-    /// it. A re-attach — the fresh-package republish after a ceremony
-    /// — keeps the live cursor: adopting the relay's tail mid-stream
-    /// would skip whatever peers published since the last drain, and
-    /// a skipped CRDT batch leaves every later delta refused for its
-    /// missing history.
+    /// Absorb the attach answer: the first attach adopts the relay's
+    /// cursor, a re-attach keeps the live one so no published batch is
+    /// skipped, and both replace the roster (client protocol §4.3).
     ///
     /// # Errors
     ///
@@ -585,12 +538,8 @@ impl SyncSession {
     }
 
     /// The ceremony peers this device may seal entropy to: the attach
-    /// roster filtered through the pairing records. `identities` maps
-    /// fingerprint → Ed25519 identity public key from those records; a
-    /// roster entry with no record, or whose package fails its
-    /// identity's signature, is dropped — a relay that substitutes a
-    /// package wins ciphertext nobody will cause to be opened, and a
-    /// revoked device drops out by having no record left.
+    /// roster filtered through the pairing records, `identities` mapping
+    /// fingerprint to identity public key (client protocol §7.3).
     #[must_use]
     pub fn ceremony_peers(&self, identities: &[(String, Vec<u8>)]) -> Vec<CeremonyPeer> {
         self.attach_roster()
@@ -724,13 +673,8 @@ impl SyncSession {
         Some(self.api.publish_deltas_request(epoch, blobs, &auth))
     }
 
-    /// Absorb the publish answer. `Ok` clears the batch; a `401`
-    /// keeps it for one retry after refresh — and reopens the publish
-    /// clock, because that retry is the same round, not a new
-    /// publish; a `409` or `410` drops it — the epoch moved
-    /// underneath, and pre-ceremony history is dropped, never merged;
-    /// a `413` keeps the batch and tells the caller to propose a
-    /// ceremony.
+    /// Absorb the publish answer; what each status does to the batch is
+    /// client protocol §4.4.
     ///
     /// # Errors
     ///
@@ -770,16 +714,10 @@ impl SyncSession {
         ))
     }
 
-    /// Absorb one long-poll's worth of deltas: open, unpad, decode and
-    /// dispatch each blob to the seam it belongs to. A blob that does
-    /// not open is skipped — sealed under another epoch, it is just
-    /// ciphertext now, which is the purge working. `trusted` is the
-    /// Ed25519 identity public keys whose terminal markers this
-    /// device honors: its own and its paired peers' — a marker signed
-    /// by nobody on that list kills nothing. Returns the events the
-    /// shell reacts to; a `410` comes back as
-    /// [`SyncEvent::RejoinRequired`] rather than an error, because it
-    /// is the protocol's whole recovery story, not a failure.
+    /// Absorb one long poll's worth of deltas, dispatching each blob
+    /// that opens; `trusted` holds the identity keys whose terminal
+    /// markers count, and a `410` comes back as
+    /// [`SyncEvent::RejoinRequired`]. Client protocol §4.5 and §6.
     ///
     /// # Errors
     ///
@@ -825,16 +763,9 @@ impl SyncSession {
                 &mut events,
             );
         }
-        // A batch sealed at an epoch ahead of this chain means the
-        // channel rotated past this device: blobs it cannot open, the
-        // spec's second rejoin trigger (relay-protocol.md §5).
-        // Checked after the loop, so a commit inside this very batch
-        // that advanced the chain still counts as caught up — and
-        // strictly "ahead", because a relay still serving the old
-        // epoch while this device's own frame is en route is behind
-        // us, not the other way around. The currency flags stay
-        // unset, keeping the terminal gate closed on a view that was
-        // discarded unread.
+        // Client protocol §4.5: a batch epoch above the chain's, checked
+        // after the loop so a commit in this batch counts, is a rejoin,
+        // and the currency flags stay unset.
         if batch.epoch > chain.epoch() {
             events.push(SyncEvent::RejoinRequired);
             return Ok(events);
@@ -871,14 +802,9 @@ impl SyncSession {
                         let Some(sheet_id) = sheet_of(store, page) else {
                             return;
                         };
-                        // A device fetches back the blobs it published
-                        // itself: the delta stream is one stream and,
-                        // the relay being blind, carries no author to
-                        // filter on. Re-importing one's own operations
-                        // moves nothing, so the frontier is what tells
-                        // an arrival from an echo. Only an arrival is
-                        // news, and only an arrival is another device
-                        // writing (issue #102).
+                        // An import that leaves the frontier unmoved is
+                        // this device's own echo, not an arrival
+                        // (surface.md §6; client protocol §6).
                         let before = store.document_version(sheet_id);
                         if store.apply_remote_update(sheet_id, &ops.0).is_ok()
                             && store.document_version(sheet_id) != before
@@ -929,13 +855,8 @@ impl SyncSession {
                 let Some(page) = page_from_wire(&page) else {
                     return;
                 };
-                // Terminal is absorbing and destructive, so the
-                // signature minted at publish is checked here before
-                // anything dies: the claim must be exactly the page
-                // id and wall stamp, name the page the envelope
-                // names, and verify under a trusted identity. A
-                // revoked device's record is gone from that list,
-                // which is what the signature exists for.
+                // Client protocol §6: a marker counts only if it names
+                // this page and verifies under a trusted identity.
                 if !marker_trusted(&marker.0, page, trusted) {
                     return;
                 }
@@ -966,28 +887,21 @@ impl SyncSession {
                 page,
                 entropy_sealed,
             } => {
-                // A publish comes back around on the stream: this
-                // device's own proposal, or one already joined, is not
-                // consumed twice — and never spends the one-shot key
-                // package on its own echo.
+                // Client protocol §7.4: an own echo or a ballot already
+                // held is not consumed twice, and spends no package.
                 let already_held = |held: &Option<(String, Zeroizing<Vec<u8>>)>| {
                     held.as_ref().is_some_and(|(id, _)| *id == ballot_id)
                 };
                 if already_held(&self.proposed_entropy) || already_held(&self.received_entropy) {
                     return;
                 }
-                // One ballot at a time channel-wide (§5): a second
-                // proposal while one is in flight goes unanswered, and
-                // the unconfirmed ballot abandons on its patience.
+                // One ballot at a time (client protocol §7.4): a second
+                // proposal goes unanswered.
                 if self.ballot_scope.is_some() {
                     return;
                 }
-                // The proposal names its page on the wire (the #99
-                // follow-up). Resolve everything before the one-shot
-                // key is spent: a device that cannot join — an unknown
-                // wire id, a page it does not hold, a page already
-                // terminal — stays out at no cost, never accepts, and
-                // the ballot fails as §5's all-attached rule requires.
+                // Resolve everything before the one-shot key is spent:
+                // a device that cannot join stays out at no cost.
                 let Some(page) = page_from_wire(&page) else {
                     return;
                 };
@@ -999,9 +913,8 @@ impl SyncSession {
                 {
                     return;
                 }
-                // Open this device's entry; a proposal not naming us is
-                // a ballot we cannot join (attached after the proposal:
-                // stay out, the rule is attachment at proposal time).
+                // Open this device's entry; a proposal not naming it is
+                // a ballot it cannot join.
                 let Some(sealed) = entropy_sealed.get(&self.device_fingerprint) else {
                     return;
                 };
@@ -1011,9 +924,8 @@ impl SyncSession {
                     );
                     return;
                 };
-                // Mirror the proposer's ballot: every named device must
-                // accept. Ours queues now; the proposer's own accept
-                // arrives on the stream like anyone's.
+                // Members mirror the proposal's map (client protocol
+                // §7.3); every named device must accept.
                 let attached: Vec<ItemId> =
                     entropy_sealed.keys().map(|fp| ballot_token(fp)).collect();
                 let channel = self.channels.entry(page).or_default();
@@ -1022,12 +934,8 @@ impl SyncSession {
                 }
                 self.ballot_scope = Some((page, now_ms));
                 self.received_entropy = Some((ballot_id.clone(), entropy));
-                // Queue the acceptance; it is *counted* only when it
-                // comes back on the stream. The relay totally orders
-                // the delta stream, so every device sees the same
-                // acceptance set in the same order and commits at the
-                // same stream position — nobody advances the epoch
-                // while an acceptance of theirs is still unpublished.
+                // Queue the acceptance; it counts only when it comes
+                // back on the stream (client protocol §7.5).
                 self.outbox.push(DeltaEnvelope::Control {
                     payload: ControlPayload::Accept {
                         ballot_id,
@@ -1070,11 +978,9 @@ impl SyncSession {
                         crate::gop::ceremony_commit(store, sheet_id, chain, &entropy)
                         && channel.complete_ceremony()
                     {
-                        // The chain is channel-wide: every page's
-                        // channel adopts the new epoch, exactly as
-                        // the solo ceremony does — a channel left at
-                        // the old number would refuse every later
-                        // delta for its page as a spurious rejoin.
+                        // Client protocol §7.6: the chain is
+                        // channel-wide, so every existing page channel
+                        // adopts the new epoch.
                         for other in self.channels.values_mut() {
                             other.rejoin_at_epoch(chain.epoch());
                         }
@@ -1091,12 +997,11 @@ impl SyncSession {
     // Ceremonies (relay-protocol.md §5)
     // -----------------------------------------------------------------
 
-    /// Propose a compaction ceremony for `page` to the devices
-    /// attached right now: mint the entropy, seal it per device to
-    /// each verified key package — this device's own included — and
-    /// queue the proposal. False when a ballot is already in flight,
-    /// the page is terminal, a seal refuses, or the peer list is
-    /// empty.
+    /// Propose a ceremony for `page`: mint entropy, seal it to this
+    /// device's package and each peer's, and queue the proposal with
+    /// this device's accept (client protocol §7.3). False when a ballot
+    /// is already in flight, the page is terminal, a seal refuses, or
+    /// the peer list is empty.
     pub fn propose_ceremony(
         &mut self,
         page: ItemId,
@@ -1138,9 +1043,8 @@ impl SyncSession {
                 entropy_sealed,
             },
         });
-        // The proposer's own acceptance rides the stream like
-        // anyone's, and is counted only off the stream (see the
-        // dispatch): every device commits at the same stream position.
+        // Counted only off the stream, like anyone's (client protocol
+        // §7.5).
         self.outbox.push(DeltaEnvelope::Control {
             payload: ControlPayload::Accept {
                 ballot_id,
@@ -1150,14 +1054,10 @@ impl SyncSession {
         true
     }
 
-    /// A ceremony with an empty room: no verified peer is attached,
-    /// and a due boundary must not wait on one. Compact, advance,
-    /// reseal — the one event, ballot-free because §5's all-attached
-    /// set is this device alone — and stage the frame exactly as a
-    /// confirmed ballot would; its publication at the relay is still
-    /// the purge. Every channel adopts the new epoch, since the chain
-    /// is channel-wide. False when a ballot is in flight, the page is
-    /// unknown or not deferred, or the RNG refuses.
+    /// A ceremony with no verified peer in the room: compact, advance
+    /// and stage the frame at once, every page channel adopting the new
+    /// epoch (client protocol §7.2). False when a ballot is in flight,
+    /// the page is unknown or not deferred, or the RNG refuses.
     pub fn solo_ceremony<C: Clock>(
         &mut self,
         page: ItemId,
@@ -1211,17 +1111,10 @@ impl SyncSession {
         self.ballot_scope.is_some()
     }
 
-    /// Abandon a ballot that outlived §5's patience: every device
-    /// stays on the old GOP, and the next transition proposes again.
-    /// Call on the runloop's own clock; a no-op while no ballot is in
-    /// flight or the window has not lapsed.
-    ///
-    /// A device that opened its entry on the abandoned ballot has
-    /// spent its one-shot key package doing so, and nothing about the
-    /// abandonment mints another: the driver's pump asks
-    /// [`KeyPackageKeeper::is_spent`] once no ballot is in flight and
-    /// re-attaches, which is what publishes the fresh package the next
-    /// proposal has to be sealed to.
+    /// Abandon a ballot that outlived its patience on this device's
+    /// clock; a no-op while no ballot is in flight or the window has
+    /// not lapsed. A package spent on it stays spent, and the pump
+    /// republishes (client protocol §7.7, §5.4).
     pub fn tick(&mut self, now_ms: u64) {
         let Some((page, opened_ms)) = self.ballot_scope else {
             return;
@@ -1259,12 +1152,9 @@ impl SyncSession {
     }
 
     /// Absorb the frame on the rejoin path: open it under the current
-    /// chain and adopt it onto `sheet_id` (a fresh page — the caller
-    /// dropped the stale copy first, per ADR-0021 §5). A frame the
-    /// chain cannot open means this device's key is behind the
-    /// channel's epoch and the sealed entropy is gone with the purge:
-    /// re-enrolment (pairing again) is the honest answer, and `false`
-    /// says so.
+    /// chain and adopt it onto the fresh page `sheet_id`. False when
+    /// the chain cannot open it. Nothing calls this yet (client
+    /// protocol §8).
     pub fn absorb_frame<C: Clock>(
         &mut self,
         response: &HttpResponse,
