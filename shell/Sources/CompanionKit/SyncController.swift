@@ -440,8 +440,8 @@ public final class SyncController: ObservableObject {
         guard enabled else { return }
         let settled = Self.settledTrouble(
             ok: outcome.ok, reason: outcome.reason, gate: status?.gate)
+        trouble = Self.standing(trouble: trouble, after: settled)
         guard outcome.ok else {
-            trouble = settled
             if Self.attachRetries(after: settled) {
                 // Only a success or turning sync off resets the count:
                 // an unreachable turn between two quiet refusals keeps
@@ -461,7 +461,6 @@ public final class SyncController: ObservableObject {
         quietRefusals = 0
         attached = true
         lastAttachPeers = outcome.peers
-        trouble = Self.standing(trouble: trouble, after: settled)
         pump()
     }
 
@@ -912,7 +911,8 @@ public final class SyncController: ObservableObject {
     /// wins over whatever the shell had inferred from a refusal
     /// string. Falling behind a key rotation is not on this axis: the
     /// gate admitted that device and it is short a key, so `.behind`
-    /// survives a gate with nothing to report.
+    /// survives a gate with nothing to report or an unreachable one
+    /// (surface.md §4).
     ///
     /// A nil gate here is a core that named none: one older or newer
     /// than this shell, which the seam's optional decoding is built
@@ -928,7 +928,7 @@ public final class SyncController: ObservableObject {
         case .off: return .notConfigured
         case .signedOut: return .signedOut
         case .refused: return .refused
-        case .unreachable: return .unreachable
+        case .unreachable: return trouble == .behind ? .behind : .unreachable
         case .signingIn, .ready, .attached:
             return trouble == .behind ? .behind : nil
         }
