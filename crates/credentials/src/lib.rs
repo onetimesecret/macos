@@ -314,7 +314,7 @@ impl KeychainStore {
     }
 }
 
-/// Every call names the default keychain, never the search list (ADR-0046).
+/// Every call names the default keychain, never the search list (ADR-0041).
 #[cfg(target_os = "macos")]
 impl CredentialStore for KeychainStore {
     fn store(&self, account: &str, secret: &[u8]) -> Result<(), CredentialError> {
@@ -351,7 +351,7 @@ impl CredentialStore for KeychainStore {
     }
 }
 
-/// Raw `SecItem` access to a named keychain, returning raw `OSStatus` (ADR-0046).
+/// Raw `SecItem` access to a named keychain, returning raw `OSStatus` (ADR-0041).
 #[cfg(target_os = "macos")]
 mod secitem {
     #![allow(unsafe_code)]

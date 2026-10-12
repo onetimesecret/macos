@@ -25,7 +25,7 @@ pub struct Emitted {
 }
 
 /// Serialize the open file roster and every dirty file's draft.
-/// Sized first, then written into one exact buffer (ADR-0042).
+/// Sized first, then written into one exact buffer (Law 0004).
 #[must_use]
 pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
     // Exported once, here: the framed body runs twice and must be pure.
@@ -336,7 +336,7 @@ mod tests {
     fn the_drafts_buffer_is_written_at_its_exact_size() {
         let (_io, store, _clean, _dirty) = seeded();
         let bytes = emit(&store, 1_000).bytes;
-        assert_eq!(bytes.capacity(), bytes.len(), "ADR-0042");
+        assert_eq!(bytes.capacity(), bytes.len(), "Law 0004");
     }
 
     #[test]

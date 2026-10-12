@@ -2,7 +2,7 @@
 documentation_status: draft # needs-review | reviewed | stale
 ---
 
-# ADR-0045: Core diagnostics go to a shell-registered sink
+# ADR-0040: Core diagnostics go to a shell-registered sink
 
 - **Status:** proposed
 - **Date:** 2026-10-12

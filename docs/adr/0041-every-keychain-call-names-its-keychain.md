@@ -2,7 +2,7 @@
 documentation_status: draft # needs-review | reviewed | stale
 ---
 
-# ADR-0046: Every keychain call names its keychain
+# ADR-0041: Every keychain call names its keychain
 
 - **Status:** proposed
 - **Date:** 2026-10-12
@@ -34,7 +34,8 @@ explicitly clears state." Section 6 of the
 [persistence decision background](../plans/trustworthy-persistence-decision-background.md#6-key-rotation-once-bootmismatch-is-gone)
 now makes the rotation rest on the file half: "The keychain half is then
 deleted for hygiene, announced but never decisive." A failed keychain delete
-therefore no longer refuses a rotation by itself, but it still leaves the old
+therefore no longer refuses a rotation by itself
+([Law 0005](../law/0005-content-key-rotation.md)), but it still leaves the old
 keychain half behind and still fails other deletes, such as removing the API
 token.
 

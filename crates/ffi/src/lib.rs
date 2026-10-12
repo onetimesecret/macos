@@ -1617,7 +1617,7 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
         }
         persist::Erasure::Gone => {}
     }
-    // Drafts before the strip (ADR-0040).
+    // Drafts before the strip (Law 0005).
     let drafts = files::reseal_drafts_beside(&mut guard, path);
     seal_state_to(&guard, path) && drafts
 }
@@ -1667,7 +1667,7 @@ pub unsafe extern "C" fn companion_persist_restore(
     match opened {
         persist::Opened::Refused => false,
         persist::Opened::Superseded => {
-            // Not rotated (ADR-0041).
+            // Not rotated (Law 0005).
             if !persist::erase_state(Path::new(path)) {
                 diag_fault!(
                     "companion-ffi: a state file from a superseded format could not be dropped. \

@@ -1295,7 +1295,7 @@ pub unsafe extern "C" fn companion_drafts_erase(
 }
 
 /// Reseal the drafts beside `state_path` under the new key, before the state
-/// file (ADR-0040). Writes nothing when there is no drafts file and no open file.
+/// file (Law 0005). Writes nothing when there is no drafts file and no open file.
 pub(crate) fn reseal_drafts_beside(state: &mut Companion, state_path: &Path) -> bool {
     let Some(path) = drafts_path_beside(state_path) else {
         return true;

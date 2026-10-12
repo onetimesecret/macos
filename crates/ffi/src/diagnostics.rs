@@ -1,4 +1,4 @@
-//! Routes core diagnostics to a shell-registered sink (ADR-0045).
+//! Routes core diagnostics to a shell-registered sink (ADR-0040).
 //! Metadata only: never ink, a chip, or key material.
 
 use std::ffi::{CString, c_char, c_int};
