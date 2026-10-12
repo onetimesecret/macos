@@ -45,7 +45,10 @@ impl OneShotListener {
     /// the ephemeral port) is answered `404` and does not consume the
     /// ceremony: only the `/callback` redirect or the deadline ends
     /// the wait. The listener is consumed either way: one redirect,
-    /// then gone.
+    /// then gone. A `/callback` carrying the wrong `state` does end
+    /// it, and the ceremony then aborts with nothing stored, which is
+    /// the row docs/spec/feature/sync/account-auth.md §5 prescribes
+    /// for a redirect with the wrong state.
     ///
     /// `abandoned` is the user's own way out. Five minutes is the
     /// right patience for someone reading a consent screen and the
@@ -57,7 +60,12 @@ impl OneShotListener {
     /// offering none (ADR-0027 §5, `signing_in`).
     #[must_use]
     pub fn accept_redirect(self, patience: Duration, abandoned: &AtomicBool) -> Option<String> {
-        let deadline = std::time::Instant::now() + patience;
+        let began = std::time::Instant::now();
+        // A patience past what the clock can add is no deadline at
+        // all, not a reason to panic in a thread holding the browser
+        // trip.
+        let deadline = began.checked_add(patience);
+        let lapsed = || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline);
         self.listener.set_nonblocking(true).ok()?;
         loop {
             if abandoned.load(Ordering::Relaxed) {
@@ -66,7 +74,7 @@ impl OneShotListener {
             let mut stream = match self.listener.accept() {
                 Ok((stream, _)) => stream,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if std::time::Instant::now() >= deadline {
+                    if lapsed() {
                         return None;
                     }
                     std::thread::sleep(Duration::from_millis(50));
@@ -77,7 +85,7 @@ impl OneShotListener {
             if let Some(query) = Self::serve(&mut stream) {
                 return Some(query);
             }
-            if std::time::Instant::now() >= deadline {
+            if lapsed() {
                 return None;
             }
         }
@@ -205,6 +213,24 @@ mod tests {
         assert_eq!(query, "code=abc&state=xyz");
         let answer = browser.join().unwrap();
         assert!(answer.starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn a_patience_the_clock_cannot_add_is_no_deadline_and_no_panic() {
+        // The flag goes up only after the loop has polled, so the
+        // missing deadline is consulted on the way, not skipped.
+        let listener = OneShotListener::bind().unwrap();
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&abandoned);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            flag.store(true, Ordering::Relaxed);
+        });
+        assert!(
+            listener
+                .accept_redirect(Duration::MAX, &abandoned)
+                .is_none()
+        );
     }
 
     #[test]

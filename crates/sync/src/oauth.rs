@@ -116,9 +116,9 @@ impl AuthCeremony {
         let redirect_uri = format!("http://127.0.0.1:{port}/callback");
         let url = format!(
             "{authorize_endpoint}?response_type=code&client_id={}&redirect_uri={}&code_challenge={challenge}&code_challenge_method=S256&state={state}&scope={}",
-            form_encode(client_id),
-            form_encode(&redirect_uri),
-            form_encode(SYNC_SCOPE),
+            *form_encode(client_id),
+            *form_encode(&redirect_uri),
+            *form_encode(SYNC_SCOPE),
         );
         Ok((
             Self {
@@ -154,13 +154,13 @@ impl AuthCeremony {
             return Err(SyncAuthError::StateMismatch);
         }
         let code = query_value(callback_query, "code").ok_or(SyncAuthError::NoCode)?;
-        let body = format!(
-            "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
-            form_encode(&code),
-            form_encode(&self.redirect_uri),
-            form_encode(&self.client_id),
-            form_encode(&self.verifier),
-        );
+        let body = form_body(&[
+            ("grant_type", "authorization_code"),
+            ("code", &code),
+            ("redirect_uri", &self.redirect_uri),
+            ("client_id", &self.client_id),
+            ("code_verifier", &self.verifier),
+        ]);
         Ok(token_request(&self.token_endpoint, body))
     }
 }
@@ -185,21 +185,118 @@ pub struct TokenGrant {
 /// the keychain would answer "signed in" forever while every refresh
 /// failed.
 pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncAuthError> {
-    if !(200..300).contains(&response.status) {
-        return Err(SyncAuthError::Refused(response.status));
-    }
-    let value: serde_json::Value = serde_json::from_slice(&response.body)
-        .map_err(|_| SyncAuthError::Refused(response.status))?;
-    let token = |key: &str| {
-        value
-            .get(key)
-            .and_then(serde_json::Value::as_str)
-            .filter(|token| !token.is_empty())
-            .map(|token| Zeroizing::new(token.to_owned()))
-    };
-    match (token("access_token"), token("refresh_token")) {
+    let body = TokenBody::parse(response)?;
+    match (body.access_token, body.refresh_token) {
         (Some(access), Some(refresh)) => Ok(TokenGrant { access, refresh }),
         _ => Err(SyncAuthError::Refused(response.status)),
+    }
+}
+
+/// The two fields of a token endpoint answer this crate reads, taken
+/// straight off the JSON into zeroizing strings. Not a
+/// `serde_json::Value`: a value tree would hold both tokens as plain
+/// strings and drop them unwiped, and the strings here are moved into
+/// their wrappers rather than copied out of anything. That holds for
+/// our copies only: a token the parser had to unescape also passed
+/// through `serde_json`'s own scratch buffer, which is not ours to wipe,
+/// though a base64url or JWT token carries no escapes. A body naming a
+/// token field twice fails to parse, where the value tree kept the last
+/// one: the answer is refused, which signs a refresh out, but only
+/// against a server emitting JSON with duplicate names.
+#[derive(serde::Deserialize)]
+struct TokenBody {
+    #[serde(default, deserialize_with = "non_empty_token")]
+    access_token: Option<Zeroizing<String>>,
+    #[serde(default, deserialize_with = "non_empty_token")]
+    refresh_token: Option<Zeroizing<String>>,
+}
+
+impl TokenBody {
+    fn parse(response: &HttpResponse) -> Result<Self, SyncAuthError> {
+        if !(200..300).contains(&response.status) {
+            return Err(SyncAuthError::Refused(response.status));
+        }
+        serde_json::from_slice(&response.body).map_err(|_| SyncAuthError::Refused(response.status))
+    }
+}
+
+/// A token field: a string moved into its wrapper, or `None` for an
+/// absent, null, empty, or non-string value. An empty string is a
+/// missing token (see [`parse_token_response`]), and a value of some
+/// other type is not a token this crate would carry. Not an error
+/// either: `Option<String>` alone would refuse the whole answer over a
+/// field of the wrong type, and a refresh answer with a usable access
+/// token and a malformed rotation is an answer whose rotation is
+/// absent, the reading this crate took before the field was parsed
+/// straight into its wrapper.
+fn non_empty_token<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Zeroizing<String>>, D::Error> {
+    let token = deserializer.deserialize_any(TokenField)?;
+    Ok(token.filter(|token| !token.is_empty()))
+}
+
+/// Takes a string as a token and any other JSON value as no token,
+/// draining arrays and objects so the rest of the body still parses.
+struct TokenField;
+
+impl<'de> serde::de::Visitor<'de> for TokenField {
+    type Value = Option<Zeroizing<String>>;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a token string, or any value standing for none")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(Some(Zeroizing::new(value.to_owned())))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(Some(Zeroizing::new(value)))
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+        Ok(None)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while map
+            .next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?
+            .is_some()
+        {}
+        Ok(None)
     }
 }
 
@@ -222,20 +319,11 @@ pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncA
 fn parse_refresh_response(
     response: &HttpResponse,
 ) -> Result<(Zeroizing<String>, Option<Zeroizing<String>>), SyncAuthError> {
-    if !(200..300).contains(&response.status) {
-        return Err(SyncAuthError::Refused(response.status));
-    }
-    let value: serde_json::Value = serde_json::from_slice(&response.body)
-        .map_err(|_| SyncAuthError::Refused(response.status))?;
-    let token = |key: &str| {
-        value
-            .get(key)
-            .and_then(serde_json::Value::as_str)
-            .filter(|token| !token.is_empty())
-            .map(|token| Zeroizing::new(token.to_owned()))
-    };
-    let access = token("access_token").ok_or(SyncAuthError::Refused(response.status))?;
-    Ok((access, token("refresh_token")))
+    let body = TokenBody::parse(response)?;
+    let access = body
+        .access_token
+        .ok_or(SyncAuthError::Refused(response.status))?;
+    Ok((access, body.refresh_token))
 }
 
 /// Whether the token endpoint said *this grant is dead* rather than
@@ -326,11 +414,11 @@ impl TokenKeeper {
     pub fn refresh_request(&mut self) -> Result<HttpRequest, SyncAuthError> {
         self.access = None;
         let refresh = self.refresh.as_ref().ok_or(SyncAuthError::SignedOut)?;
-        let body = format!(
-            "grant_type=refresh_token&refresh_token={}&client_id={}",
-            form_encode(refresh),
-            form_encode(&self.client_id),
-        );
+        let body = form_body(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh),
+            ("client_id", &self.client_id),
+        ]);
         Ok(token_request(&self.token_endpoint, body))
     }
 
@@ -382,7 +470,7 @@ impl TokenKeeper {
     }
 }
 
-fn token_request(endpoint: &str, body: String) -> HttpRequest {
+fn token_request(endpoint: &str, body: Zeroizing<Vec<u8>>) -> HttpRequest {
     HttpRequest {
         method: "POST",
         url: endpoint.into(),
@@ -390,32 +478,76 @@ fn token_request(endpoint: &str, body: String) -> HttpRequest {
             "Content-Type".into(),
             "application/x-www-form-urlencoded".into(),
         )],
-        body: Some(Zeroizing::new(body.into_bytes())),
+        body: Some(body),
     }
 }
 
+/// A form body of `pairs`, each value percent-encoded. Two of the
+/// values are the PKCE verifier and the refresh token, so the body is
+/// built in a zeroizing buffer sized to the worst case up front: it
+/// never grows, and no reallocation leaves an unwiped partial copy.
+fn form_body(pairs: &[(&str, &str)]) -> Zeroizing<Vec<u8>> {
+    let capacity = pairs
+        .iter()
+        .map(|(key, value)| (key.len() + value.len()) * 3 + 2)
+        .sum();
+    let mut body = Zeroizing::new(Vec::with_capacity(capacity));
+    for (key, value) in pairs {
+        // Keys are written as they are: they are literals of unreserved
+        // characters. The capacity counts them at the worst case all
+        // the same, so a key that broke the rule could not outgrow the
+        // buffer in a release build, where the assertion is gone.
+        debug_assert!(
+            key.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b)),
+            "a form key needs no encoding"
+        );
+        if !body.is_empty() {
+            body.push(b'&');
+        }
+        body.extend_from_slice(key.as_bytes());
+        body.push(b'=');
+        body.extend_from_slice(form_encode(value).as_bytes());
+    }
+    body
+}
+
 /// Percent-encode for query/form components: unreserved characters
-/// (RFC 3986 §2.3) pass, everything else is `%XX`.
-fn form_encode(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
+/// (RFC 3986 §2.3) pass, everything else is `%XX`. Zeroizing because
+/// two of its inputs are the PKCE verifier and the refresh token, and
+/// an encoding of either is the secret in a thin disguise. Sized to
+/// the worst case up front, so the buffer never grows and leaves a
+/// partial copy behind.
+fn form_encode(input: &str) -> Zeroizing<String> {
+    let mut out = Zeroizing::new(String::with_capacity(input.len() * 3));
     for byte in input.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
                 out.push(byte as char);
             }
-            _ => out.push_str(&format!("%{byte:02X}")),
+            _ => {
+                out.push('%');
+                out.push(HEX_UPPER[usize::from(byte >> 4)] as char);
+                out.push(HEX_UPPER[usize::from(byte & 0x0F)] as char);
+            }
         }
     }
     out
 }
 
-/// The value for `key` in a query string, percent-decoded. `None` on
-/// absence or malformed percent escapes.
+const HEX_UPPER: &[u8; 16] = b"0123456789ABCDEF";
+
+/// The value for `key` in a query string, percent-decoded: the first
+/// pair carrying the key decides. `None` on absence, or when that
+/// value carries a malformed percent escape; a later pair with the
+/// same key is not consulted, so a broken first value cannot be
+/// stepped over to reach a second.
 fn query_value(query: &str, key: &str) -> Option<String> {
-    query.split('&').find_map(|pair| {
-        let (k, v) = pair.split_once('=')?;
-        (k == key).then(|| percent_decode(v))?
-    })
+    let (_, value) = query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| *k == key)?;
+    percent_decode(value)
 }
 
 fn percent_decode(input: &str) -> Option<String> {
@@ -424,7 +556,13 @@ fn percent_decode(input: &str) -> Option<String> {
     while let Some(byte) = bytes.next() {
         match byte {
             b'%' => {
+                // Exactly two hex digits. `from_str_radix` alone would
+                // also take a leading sign, so `%+F` must be refused
+                // here rather than read as `0x0F`.
                 let hex = [bytes.next()?, bytes.next()?];
+                if !hex.iter().all(u8::is_ascii_hexdigit) {
+                    return None;
+                }
                 let hex = std::str::from_utf8(&hex).ok()?;
                 out.push(u8::from_str_radix(hex, 16).ok()?);
             }
@@ -450,11 +588,75 @@ mod tests {
     }
 
     #[test]
+    fn a_token_field_of_the_wrong_type_reads_as_absent_not_as_a_refusal() {
+        let answer = |body: &str| HttpResponse {
+            status: 200,
+            body: body.as_bytes().to_vec(),
+        };
+        // A refresh answer whose rotation is malformed still carries a
+        // usable access token: the rotation reads as declined.
+        for rotation in ["123", "true", "[1, \"x\"]", "{\"a\": [1]}", "null", "\"\""] {
+            let body = format!(r#"{{"access_token":"at-2","refresh_token":{rotation},"x":1}}"#);
+            let (access, rotated) = parse_refresh_response(&answer(&body)).unwrap();
+            assert_eq!(access.as_str(), "at-2", "{rotation}");
+            assert!(rotated.is_none(), "{rotation}");
+        }
+        // A grant still needs both tokens as strings.
+        assert!(
+            parse_token_response(&answer(r#"{"access_token":"a","refresh_token":7}"#)).is_err()
+        );
+        assert!(
+            parse_token_response(&answer(r#"{"access_token":7,"refresh_token":"r"}"#)).is_err()
+        );
+        let grant =
+            parse_token_response(&answer(r#"{"access_token":"a","refresh_token":"r"}"#)).unwrap();
+        assert_eq!((grant.access.as_str(), grant.refresh.as_str()), ("a", "r"));
+    }
+
+    #[test]
+    fn a_query_value_is_decoded_strictly_and_the_first_pair_decides() {
+        assert_eq!(
+            query_value("a=1&state=x%20y", "state").as_deref(),
+            Some("x y")
+        );
+        assert_eq!(query_value("a=1", "state"), None);
+        // Exactly two hex digits: a sign is not one, however
+        // `from_str_radix` feels about it.
+        assert_eq!(percent_decode("%+F"), None);
+        assert_eq!(percent_decode("%4"), None);
+        assert_eq!(percent_decode("%4G"), None);
+        assert_eq!(percent_decode("%41").as_deref(), Some("A"));
+        // A malformed first value is a refusal, not a reason to read
+        // a second pair with the same key.
+        assert_eq!(query_value("state=%zz&state=good", "state"), None);
+    }
+
+    #[test]
+    fn a_form_body_is_built_in_the_buffer_it_starts_with() {
+        // Every byte of the token escaped: the worst case the up-front
+        // size must hold. A buffer that had grown would show a doubled
+        // capacity.
+        let body = form_body(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", "\u{e9} /"),
+        ]);
+        assert_eq!(
+            &body[..],
+            b"grant_type=refresh_token&refresh_token=%C3%A9%20%2F"
+        );
+        let worst = ("grant_type".len() + "refresh_token".len()) * 3
+            + 2
+            + ("refresh_token".len() + "\u{e9} /".len()) * 3
+            + 2;
+        assert_eq!(body.capacity(), worst);
+    }
+
+    #[test]
     fn authorize_url_carries_s256_and_exact_loopback_redirect() {
         let (ceremony, url) = ceremony();
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("response_type=code"));
-        assert!(url.contains(&form_encode("http://127.0.0.1:49152/callback")));
+        assert!(url.contains(form_encode("http://127.0.0.1:49152/callback").as_str()));
         assert_eq!(ceremony.redirect_uri(), "http://127.0.0.1:49152/callback");
         // The challenge is derived, never the verifier itself.
         assert!(!url.contains("code_verifier"));

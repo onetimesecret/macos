@@ -65,15 +65,15 @@ mod tests {
     }
 
     #[test]
-    fn evidence_count_matches_the_evaluation_harness() {
-        let unicode = "界界界界界界界".as_bytes();
-        assert_eq!(
-            unicode
-                .iter()
-                .filter(|byte| !byte.is_ascii_whitespace())
-                .count(),
-            unicode.len()
-        );
+    fn evidence_is_counted_in_bytes_less_ascii_whitespace() {
+        use companion_language_detection_policy::count_non_whitespace;
+        // Multibyte characters count every byte, and only ASCII
+        // whitespace is left out: the same rule the evaluation harness
+        // applies through the shared policy crate.
+        assert_eq!(count_non_whitespace("界界界".as_bytes()), 9);
+        assert_eq!(count_non_whitespace(b" \t\r\n"), 0);
+        assert_eq!(count_non_whitespace("界 界\t界\n".as_bytes()), 9);
+        assert_eq!(count_non_whitespace("a\u{a0}b".as_bytes()), 4);
     }
 
     #[test]

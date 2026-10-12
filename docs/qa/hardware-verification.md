@@ -76,6 +76,10 @@ both and note any divergence in feel, not just function:
       *general clipboard is untouched* (`pbpaste` before/after
       matches). The core read the drag pasteboard itself —
       `companion_sheet_seal_from_drag` — no byte transited Swift.
+- [ ] **Drag over a file or the ledger:** with a file or the ledger
+      showing, drag text from another app onto it. The cursor shows no
+      copy badge and the drop puts nothing in the file. Then drop a
+      Finder file there and record whether it opens or is refused.
 - [ ] **Image drag:** drop an image; confirm the app's behaviour
       (accept-and-seal or refuse) matches the spec's current text-first
       posture, and nothing crashes or renders raw data.
@@ -231,6 +235,12 @@ front` names it) and leave this window visible but not key.
       the one the mint paths make worth re-checking, since they now ask
       for focus where they used not to; the ask is refused for an
       unkeyed surface, and the refusal is what this line is about.
+- [ ] Launch without activating (`open -g` on the bundle, or as a login
+      item) while another app is frontmost and no Keychain prompt is
+      due: the pad comes up without taking the keys or the menu bar,
+      and `lsappinfo front` is unchanged. Then a first launch that
+      shows the Keychain introduction: once it is dismissed, the editor
+      window is key and the menu bar is the pad's.
 
 ## §G — File-close decision and editor keys
 

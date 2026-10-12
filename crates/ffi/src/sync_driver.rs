@@ -1,16 +1,7 @@
-//! The driver behind the `companion_sync_*` routes: what the sign-in
-//! ceremony and (with issue #102's wiring) the sync engine need from
-//! the process — configuration, the loopback listener's lifetime, and
-//! where the refresh token rests — kept out of `lib.rs` so the extern
-//! fns there stay the thin wrappers every other family is.
-//!
-//! Sign-in is account-auth.md §1 executed: the shell opens the system
-//! browser on the authorize URL this module minted, the one-shot
-//! loopback listener waits out the consent screen, and the code
-//! redeems for a grant over the caller's transport. Every failure in
-//! §5's table comes back as a stable machine token, never a sentence:
-//! the engine hands up states, and issue #102's surface owns the
-//! words.
+//! The driver behind the `companion_sync_*` routes: configuration, the
+//! sign-in ceremony (account-auth.md §1), the engine and pairing, kept
+//! out of `lib.rs` so its extern fns stay thin. Failures are machine
+//! tokens; the engine is client protocol §2 to §9.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -25,31 +16,23 @@ use companion_sync::oauth::{AuthCeremony, SyncAuthError, TokenGrant, parse_token
 use companion_sync::relay::RelayRefusal;
 use ots_client::{HttpResponse, Transport};
 use ring::signature::Ed25519KeyPair;
+use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
 
 use crate::diagnostics::diag_fault;
 use crate::gop::GopKeyChain;
 use crate::pairing::{self, MailboxMessage};
 use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
-use crate::sync_session::{KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
+use crate::sync_session::{KeyPackage, KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
 use crate::{Companion, CompanionHandle};
 
-/// Where the sync refresh token rests: its own account in the
-/// key-material store (account-auth.md §3, ADR-0021 §3), beside — and
-/// never inside — the rotating content-key derivation. The
-/// key-material tier rather than the handed store, because refresh is
-/// a background act and the login keychain's ACL prompt belongs to
-/// deliberate ones (ADR-0004; `api-token` keeps that path). Deleting
-/// this account disables sync and only sync; `rotate_key_halves` and
-/// `clear_pairing` never touch it, and clearing it touches nothing of
-/// theirs.
+/// Where the sync refresh token rests: its own key-material account,
+/// beside and never inside the rotating content-key derivation
+/// (account-auth.md §3, ADR-0027).
 pub(crate) const SYNC_REFRESH_ACCOUNT: &str = "sync-oauth-refresh";
 
-/// Sync's endpoints and client identity, handed by the shell at launch
-/// like the conceal connection — never persisted core-side, and never
-/// secret. The authorize and token endpoints live on the account
-/// server (OAuth is onetimesecret's capability, issue #98); the relay
-/// is the allowlist's second and last entry.
+/// Sync's endpoints and client identity, handed by the shell at launch;
+/// never persisted core-side and never secret.
 pub(crate) struct SyncConfig {
     /// The relay's base URL, `https://` only.
     pub relay_url: String,
@@ -63,9 +46,7 @@ pub(crate) struct SyncConfig {
 
 impl SyncConfig {
     /// Parse the configure JSON: all four fields required, the three
-    /// URLs refused unless `https://` — the network boundary answered
-    /// before a socket could open, as `companion_connection_configure`
-    /// answers it for the conceal server.
+    /// URLs refused unless `https://`.
     pub(crate) fn parse(json: &str) -> Option<Self> {
         let value: serde_json::Value = serde_json::from_str(json).ok()?;
         let field = |name: &str| Some(value.get(name)?.as_str()?.to_owned());
@@ -79,9 +60,8 @@ impl SyncConfig {
         (!config.client_id.is_empty()).then_some(config)
     }
 
-    /// The transport for every request this driver sends: bounded to
-    /// the account server (the token endpoint's host) and the relay —
-    /// doc 05's two destinations, structural rather than assumed.
+    /// The transport for every request this driver sends, bounded to
+    /// the token endpoint's host and the relay (doc 05).
     pub(crate) fn transport(&self) -> companion_transport::UreqTransport {
         companion_transport::UreqTransport::bounded(
             host_of(&self.token_url),
@@ -98,49 +78,36 @@ fn host_of(url: &str) -> &str {
     &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())]
 }
 
-/// Everything sync holds behind the handle. Default is all-off: a
-/// handle that never configures sync is bit-for-bit today's app
-/// (issue #102's first criterion).
+/// Everything sync holds behind the handle; the default is all-off, so
+/// an unconfigured handle is the app without sync.
 pub(crate) struct SyncState {
     /// Endpoints and client id; `None` until the shell configures.
     pub config: Option<SyncConfig>,
     /// The token keeper, built at configure from the persisted refresh
-    /// token — a relaunch resumes signed in without a browser. Moves
-    /// into the session at attach and comes back at detach.
+    /// token; it moves into the session at attach and back at detach.
     pub keeper: Option<TokenKeeper>,
-    /// A sign-in ceremony begun and not yet finished: the PKCE state
-    /// and the bound listener, waiting for the finish call to take
-    /// them off-lock and block on the redirect.
+    /// A sign-in ceremony begun and waiting for its finish.
     pub pending_signin: Option<PendingSignin>,
-    /// The abandon flag of the ceremony a finish call is holding
-    /// off-lock, blocked on the browser's one redirect. The ceremony
-    /// is out of the state above for as long as this stands, so
-    /// without it the minutes a user spends on a consent screen would
-    /// read as signed out, which is a state the app has already left
-    /// (ADR-0027 §5). It holds the flag rather than a bare bool so
-    /// that a stale finish returning can be told from the one that
-    /// owns the trip now, and so that a sign-out or a cancel can end
-    /// a ceremony it cannot reach.
+    /// The abandon flag of the ceremony a finish is holding off-lock on
+    /// the browser: the gate reads `signing_in` while it stands, and a
+    /// cancel or sign-out ends the trip through it.
     pub awaiting_redirect: Option<Arc<AtomicBool>>,
     /// The attached engine: session, chain, and key packages. `None`
     /// while sync is off or detached.
     pub engine: Option<EngineState>,
-    /// The pages the user shares to this channel, with the cursor and
-    /// last-published policy state per page. Enrolment is per page and
-    /// off by default (relay protocol §1).
+    /// The enrolled pages and their cursors (client protocol §2).
     pub enrolled: BTreeMap<ItemId, PageTracking>,
     /// A pairing ceremony in flight over the relay mailbox.
     pub pairing: Option<PairingState>,
-    /// What the last attempt to use the account credential met, which
-    /// is what tells a server that said no from a server that said
-    /// nothing (ADR-0027 §5). In memory only, and cleared by any round
-    /// trip that succeeds.
+    /// What the last use of the account credential met (ADR-0027 §5);
+    /// in memory, cleared by any round trip that succeeds.
     pub fault: Option<GateFault>,
-    /// What the publish batch now in flight carries: each enrolled
-    /// page's export cursor as it stood when the batch was sealed. The
-    /// answer, whenever it comes, advances the acknowledged cursors to
-    /// these and to nothing later.
+    /// Each page's export cursor when the in-flight batch was sealed:
+    /// what its acceptance acknowledges (client protocol §4.4).
     pub staged_batch: Option<StagedBatch>,
+    /// Whether an attach is in flight; attaches are single-flight
+    /// (client protocol §3, §5.5).
+    pub attaching: bool,
     /// Where the engine's relative clock starts: monotonic, so the
     /// publish and ballot windows cannot jump with the wall clock.
     origin: Instant,
@@ -158,6 +125,7 @@ impl Default for SyncState {
             pairing: None,
             fault: None,
             staged_batch: None,
+            attaching: false,
             origin: Instant::now(),
         }
     }
@@ -175,6 +143,10 @@ pub(crate) struct EngineState {
     pub session: SyncSession,
     pub chain: GopKeyChain,
     pub packages: KeyPackageKeeper,
+    /// A fresh package minted for a re-attach and not yet accepted; it
+    /// replaces `packages` only when the relay takes it (client
+    /// protocol §5.2).
+    pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
     pub unpublished_frame: Option<Vec<u8>>,
@@ -186,19 +158,15 @@ pub(crate) struct PageTracking {
     /// The frontier the last export left; the pristine cursor at
     /// enrolment, so the first publish carries the whole page.
     pub frontier: Vec<u8>,
-    /// The frontier the relay has acknowledged carrying. The export
-    /// cursor above moves when ops are *queued*, which is before they
-    /// are sent, so this is the position a dissolving engine rewinds
-    /// to: an edit queued into a session that died before its publish
-    /// would otherwise sit behind a cursor that moved without it, and
-    /// no later export would ever reach it (ADR-0027 §7, tenet 1).
+    /// The frontier the relay has acknowledged carrying: what a
+    /// dissolving engine rewinds to, since the export cursor moves when
+    /// ops are queued (client protocol §2; ADR-0027).
     pub acked: Vec<u8>,
     /// The deadline the last published expiry policy named.
     pub deadline_wall_ms: Option<u64>,
     /// The hold register as last published.
     pub hold: Option<HoldRegister>,
-    /// Whether this device already published the page's terminal
-    /// marker.
+    /// Whether this device already queued the page's terminal marker.
     pub terminal_sent: bool,
 }
 
@@ -216,14 +184,10 @@ impl PageTracking {
     }
 }
 
-/// A publish batch in flight, and the cursors it carries: one entry
-/// per page enrolled when the batch was sealed. Pages enrolled after
-/// the seal are simply absent, which is right, since the batch carries
-/// nothing of theirs.
+/// A publish batch in flight and the cursors it carries, one per page
+/// enrolled when it was sealed.
 pub(crate) struct StagedBatch {
-    /// The session's own name for the batch
-    /// ([`SyncSession::in_flight_batch`]), so a resend is recognized
-    /// as the same one rather than recorded afresh.
+    /// [`SyncSession::in_flight_batch`], so a resend keeps this record.
     pub id: u64,
     pub cursors: BTreeMap<ItemId, Vec<u8>>,
 }
@@ -233,32 +197,20 @@ pub(crate) struct StagedBatch {
 pub(crate) struct PendingSignin {
     pub ceremony: AuthCeremony,
     pub listener: OneShotListener,
-    /// Raised when this ceremony must not complete: the user gave up,
-    /// or signed sync out while the browser trip was still out. The
-    /// finish clones it before it lets go of the lock, which is the
-    /// only way to reach a ceremony that is no longer in the state,
-    /// and it belongs to this ceremony alone so that yesterday's
-    /// surrender cannot end today's trip.
+    /// Raised by a cancel or sign-out; this ceremony's own, so it never
+    /// ends a later trip.
     pub abandoned: Arc<AtomicBool>,
 }
 
 /// Begin the sign-in ceremony: bind the loopback listener, mint the
-/// PKCE material, and hand back the authorize URL for the shell to
-/// open in the system browser. The pending ceremony parks in `state`
-/// until the finish or a cancel.
+/// PKCE material, and return the authorize URL for the system browser.
 pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str> {
     let Some(config) = &state.config else {
         return Err("not_configured");
     };
-    // Busy covers both halves of a ceremony in flight: one waiting for
-    // its finish, and one a finish is already holding out on the
-    // browser. Binding a second listener behind the first would leave
-    // two sockets open on one consent screen and let the loser's
-    // return quietly supersede the winner's. Superseding the first
-    // deliberately was the alternative; refusing is chosen because the
-    // user has a browser tab open and a way to give up, and a control
-    // that ends things is a better answer than one that silently
-    // starts a rival (ADR-0027 §5).
+    // One ceremony at a time, a finish out on the browser included;
+    // the way out is a cancel, never a rival listener whose redirect
+    // could supersede the winner's.
     if signin_in_flight(state) {
         return Err("busy");
     }
@@ -280,12 +232,8 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
     Ok(authorize_url)
 }
 
-/// End whichever sign-in ceremony stands: the one parked waiting for
-/// its finish, the one a finish is holding out on the browser, or
-/// both. Dropping the pending one closes its listener; raising the
-/// flag is the only thing that reaches a ceremony already off-lock,
-/// and it is read at every wait the finish has left. True when there
-/// was something to end.
+/// End whichever sign-in ceremony stands, parked or out on the browser,
+/// by raising its flag. True when there was something to end.
 pub(crate) fn abandon_signin(state: &mut SyncState) -> bool {
     let mut ended = false;
     if let Some(pending) = state.pending_signin.take() {
@@ -299,10 +247,8 @@ pub(crate) fn abandon_signin(state: &mut SyncState) -> bool {
     ended
 }
 
-/// Let go of the browser trip, but only when the state still names the
-/// ceremony this finish took. A cancel or a sign-out may have ended
-/// the trip and a newer begin may already own the slot, and a stale
-/// finish unwinding must not clear a state that stopped being its.
+/// Let go of the browser trip only if the state still names this
+/// finish's ceremony, so a stale finish never clears a newer one.
 pub(crate) fn release_redirect(state: &mut SyncState, mine: &Arc<AtomicBool>) {
     if state
         .awaiting_redirect
@@ -313,40 +259,17 @@ pub(crate) fn release_redirect(state: &mut SyncState, mine: &Arc<AtomicBool>) {
     }
 }
 
-/// Finish the ceremony: block on the one redirect (minutes of
-/// patience — the user is reading a consent screen), redeem the code,
-/// and exchange it for the grant. Runs with no lock held; the caller
-/// took `pending` out first. Every failure is a §5 row as a machine
-/// token: `abandoned` (the browser never returned, or the user gave up
-/// on it), `state_mismatch`, `no_code`, `unreachable`, `refused`, and
-/// all of them leave nothing stored, with retry being a fresh begin.
-///
-/// `abandoned` is the ceremony's own flag, raised by a cancel or a
-/// sign-out. A user who closed the consent tab and came back to the
-/// app is told `abandoned` at once rather than after the patience runs
-/// out, and the two arrive by the same door because they are the same
-/// fact: no redirect is coming.
-///
-/// The flag is read at every wait, because the ceremony has three and
-/// only the first is the browser's. The listener watches it while it
-/// polls, so a cancel ends the trip within a poll rather than at the
-/// end of the patience. The exchange that follows a landed redirect is
-/// a network round trip of its own, seconds wide, and a give-up during
-/// those seconds has to be as final as one during the consent screen.
-/// So a grant that arrives for a ceremony nobody is waiting for any
-/// more is never parsed, and the caller that would have stored it
-/// never sees it.
+/// Finish the ceremony with no lock held: wait for the redirect, redeem
+/// the code and exchange it. Failures (`abandoned`, `state_mismatch`,
+/// `no_code`, `unreachable`, `refused`) store nothing. The abandon flag
+/// is read at each of the three waits, so a cancel or sign-out ends the
+/// trip where it stands and a late grant is never parsed.
 pub(crate) fn signin_finish<T: Transport>(
     pending: PendingSignin,
     patience: Duration,
     transport: &T,
 ) -> Result<TokenGrant, &'static str> {
     let abandoned = Arc::clone(&pending.abandoned);
-    // Three waits, three reads. A ceremony ended while the browser trip
-    // is out has to stop at whichever of them it is standing in, and
-    // the last one matters most: the redirect lands, the exchange is
-    // seconds of real network, and a grant absorbed after a sign-out
-    // would sign the user back in behind their own gesture.
     if abandoned.load(Ordering::Relaxed) {
         return Err("abandoned");
     }
@@ -364,17 +287,19 @@ pub(crate) fn signin_finish<T: Transport>(
             SyncAuthError::NoCode => "no_code",
             _ => "refused",
         })?;
-    let response = transport.send(request).map_err(|_| "unreachable")?;
+    let mut response = transport.send(request).map_err(|_| "unreachable")?;
     if abandoned.load(Ordering::Relaxed) {
+        response.body.zeroize();
         return Err("abandoned");
     }
-    parse_token_response(&response).map_err(|_| "refused")
+    // The body carried both tokens; the grant holds them now.
+    let grant = parse_token_response(&response).map_err(|_| "refused");
+    response.body.zeroize();
+    grant
 }
 
-/// The keeper for a configuration, resuming from the persisted
-/// refresh token: `Some` inside means a relaunch signed in without a
-/// browser, `None` means first-run signed-out until the ceremony
-/// grants.
+/// The keeper for a configuration, resuming from the persisted refresh
+/// token if one rests.
 pub(crate) fn keeper_for(config: &SyncConfig, credentials: &dyn CredentialStore) -> TokenKeeper {
     TokenKeeper::new(
         &config.token_url,
@@ -430,14 +355,11 @@ pub(crate) fn signed_in(credentials: &dyn CredentialStore) -> bool {
 // ---------------------------------------------------------------------
 
 /// Tolerance under which a re-read expiry deadline counts as the one
-/// already published: `anchor + remaining` is constant while nothing
-/// touches the page, modulo the milliseconds the two clock reads
-/// straddle.
+/// already published, absorbing the clock reads' straddle.
 const DEADLINE_JITTER_MS: u64 = 1_000;
 
-/// Unix epoch milliseconds, for the wall stamps peers read (pairing
-/// times, terminal markers). Never an input to expiry math — that
-/// stays the store's clock discipline.
+/// Unix epoch milliseconds for wall stamps peers read; never an input
+/// to expiry math.
 fn wall_now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -446,11 +368,8 @@ fn wall_now_ms() -> u64 {
         })
 }
 
-/// Enrol a page into the channel, or withdraw it. Enrolling defers
-/// its compaction to the coordinated ceremony and starts its cursor
-/// at the pristine frontier, so the first publish carries the whole
-/// page; withdrawing returns it to solo behaviour, performing any due
-/// ceremony on the spot (`SheetStore::set_compaction_deferred`).
+/// Enrol a page into the channel, or withdraw it, which performs any due
+/// ceremony on the spot (client protocol §2).
 pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bool) -> bool {
     let Some(page) = companion
         .store
@@ -478,14 +397,19 @@ pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bo
 /// The reasons an attach can refuse, as machine tokens.
 type Refusal = &'static str;
 
-/// Attach to the channel, building the engine if none stands:
-/// identity and channel secret ensured (the first device to enable
-/// sync founds the channel; a joiner's secret arrives by pairing and
-/// overwrites), a fresh key package minted and published. Blocking —
-/// the caller runs it off the main thread. Re-attaching with an
-/// engine standing keeps the session and chain and republishes a
-/// fresh package, which is the move after a ceremony spends one.
+/// Attach to the channel, building the engine if none stands. Blocking.
+/// Answers and package rules: client protocol §4.3 and §5.
 pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
+    let _flight = match AttachFlight::begin(handle) {
+        Ok(flight) => flight,
+        Err(reason) => return serde_json::json!({ "ok": false, "reason": reason }),
+    };
+    attach_in_flight(handle)
+}
+
+/// The attach itself, under an [`AttachFlight`]; its own function so
+/// every guard here is released before the flight's drop re-locks.
+fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
     if let Err(reason) = ensure_engine(handle) {
         return serde_json::json!({ "ok": false, "reason": reason });
     }
@@ -503,12 +427,21 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
             let Some(engine) = guard.sync.engine.as_mut() else {
                 return serde_json::json!({ "ok": false, "reason": "not_attached" });
             };
+            // The pending package when one waits, else the standing one
+            // (client protocol §5.5).
+            let sent = engine
+                .pending_packages
+                .as_ref()
+                .unwrap_or(&engine.packages)
+                .package()
+                .clone();
             engine
                 .session
-                .attach_request(&engine.packages.package().clone())
+                .attach_request(&sent)
                 .zip(transport)
+                .map(|(request, transport)| (request, transport, sent))
         };
-        let Some((request, transport)) = staged else {
+        let Some((request, transport, sent)) = staged else {
             return serde_json::json!({ "ok": false, "reason": "signed_out" });
         };
         let Ok(response) = transport.send(request) else {
@@ -525,6 +458,7 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
         };
         match engine.session.absorb_attach(&response) {
             Ok(()) => {
+                adopt_accepted(engine, &sent);
                 let answer = serde_json::json!({
                     "ok": true,
                     "epoch": engine.session.attach_epoch(),
@@ -547,24 +481,48 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
     serde_json::json!({ "ok": false, "reason": "refused" })
 }
 
-/// A second `401` on one attach, with a token refreshed in between:
-/// the account is refusing this client rather than the token merely
-/// having aged out, and ADR-0027 §5 says that verdict is the grant
-/// being dead. So take the sign-out path the refused refresh takes.
-///
-/// Noting the fault alone would publish a `refused` gate over a
-/// credential still resting in the keychain, answer `signed_out` for a
-/// session nobody signed out of, and wedge there: `note_reachable`
-/// deliberately will not clear `Refused`, and nothing short of a fresh
-/// ceremony or an explicit sign-out ever does.
+/// A second `401` on one attach signs out as a refused refresh does
+/// (client protocol §4.3; open as §10.2). Noting the fault alone would
+/// leave a refused gate, which nothing retries, over a stored credential.
 fn attach_refused(companion: &mut Companion) -> serde_json::Value {
     sign_out_locked(companion);
     serde_json::json!({ "ok": false, "reason": "signed_out" })
 }
 
-/// Detach: tell the relay (best effort — attachments age out
-/// regardless, §3) and dissolve the engine, handing the keeper back
-/// so the sign-in survives. Blocking for the one round-trip.
+/// The one attach in flight; every other attach answers `busy` until
+/// it drops. One attach can make up to four sequential bounded calls
+/// (two refreshes, two attaches), so that is how long `busy` can last.
+struct AttachFlight<'a>(&'a CompanionHandle);
+
+impl<'a> AttachFlight<'a> {
+    /// `busy` while another attach is in flight.
+    fn begin(handle: &'a CompanionHandle) -> Result<Self, Refusal> {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return Err("poisoned");
+        };
+        if guard.sync.attaching {
+            return Err("busy");
+        }
+        guard.sync.attaching = true;
+        Ok(Self(handle))
+    }
+}
+
+impl Drop for AttachFlight<'_> {
+    fn drop(&mut self) {
+        // Cleared through a poisoned lock too, so the flag never
+        // outlives the attach that raised it.
+        let mut guard = self
+            .0
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.sync.attaching = false;
+    }
+}
+
+/// Detach: dissolve the engine, keep the sign-in, and tell the relay,
+/// best effort (client protocol §4.8). Blocking for one round-trip.
 pub(crate) fn detach(handle: &CompanionHandle) -> bool {
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
@@ -592,16 +550,51 @@ pub(crate) fn detach(handle: &CompanionHandle) -> bool {
     true
 }
 
-/// Build the engine if none stands. Requires configuration and a
-/// sign-in; mints what pairing has not delivered — the founder path.
+/// What an accepted attach does to the packages, matched by value
+/// against the package sent (client protocol §5.2).
+fn adopt_accepted(engine: &mut EngineState, sent: &KeyPackage) {
+    if engine
+        .pending_packages
+        .as_ref()
+        .is_some_and(|pending| pending.package() == sent)
+        && let Some(fresh) = engine.pending_packages.take()
+    {
+        engine.packages = fresh;
+    }
+    if engine.packages.package() == sent {
+        engine.packages.mark_published();
+    }
+}
+
+/// Whether this device owes the relay a fresh key package: the
+/// standing one is spent or unpublished, or a pending one waits, and
+/// no ballot is in flight (client protocol §5.4).
+fn package_needs_republish(engine: &EngineState) -> bool {
+    (engine.packages.is_spent()
+        || !engine.packages.is_published()
+        || engine.pending_packages.is_some())
+        && !engine.session.ballot_in_flight()
+}
+
+/// Build the engine if none stands, minting what pairing has not
+/// delivered (the founder path). Needs configuration and a sign-in.
 fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Ok(mut guard) = handle.inner.lock() else {
         return Err("poisoned");
     };
-    let Some(config) = &guard.sync.config else {
+    let Some(relay_url) = guard.sync.config.as_ref().map(|c| c.relay_url.clone()) else {
         return Err("not_configured");
     };
-    let relay_url = config.relay_url.clone();
+    // A package already waiting is resent unchanged: no Keychain read
+    // and no mint (client protocol §5.2).
+    if guard
+        .sync
+        .engine
+        .as_ref()
+        .is_some_and(|engine| engine.pending_packages.is_some())
+    {
+        return Ok(());
+    }
     let credentials = &*guard.credentials;
     let Some(pkcs8) = pairing::ensure_device_identity(credentials) else {
         return Err("keychain");
@@ -616,8 +609,9 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
         return Err("keychain");
     };
     if let Some(engine) = guard.sync.engine.as_mut() {
-        // Re-attach: fresh package, standing session and chain.
-        engine.packages = packages;
+        // Re-attach: the fresh package waits as pending until the relay
+        // takes it (client protocol §5.2).
+        engine.pending_packages = Some(packages);
         return Ok(());
     }
     let Some(keeper) = guard.sync.keeper.take() else {
@@ -636,16 +630,14 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
         session,
         chain,
         packages,
+        pending_packages: None,
         unpublished_frame: None,
     });
     Ok(())
 }
 
-/// Make sure an access token is held, refreshing over the wire if
-/// not. `Err("signed_out")` performs the sign-out: the persisted
-/// refresh token is deleted and the engine dissolved, because a
-/// refused refresh means re-enrolment is the only way back
-/// (account-auth.md §2).
+/// Make sure an access token is held, refreshing if not; a refused
+/// refresh signs out (account-auth.md §2, client protocol §4.2).
 fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
@@ -672,23 +664,26 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
         }
     };
     let (request, transport) = staged;
-    let Ok(response) = transport.send(request) else {
+    let Ok(mut response) = transport.send(request) else {
         if let Ok(mut guard) = handle.inner.lock() {
             note_fault(&mut guard, GateFault::Unreachable);
         }
         return Err("unreachable");
     };
     let Ok(mut guard) = handle.inner.lock() else {
+        response.body.zeroize();
         return Err("poisoned");
     };
     let Some(engine) = guard.sync.engine.as_mut() else {
+        response.body.zeroize();
         return Err("not_attached");
     };
-    match engine.session.absorb_refresh(&response) {
-        // A rotation is a new durable secret and has to land before it
-        // is used; a server that declined to rotate leaves the resting
-        // token correct, so there is nothing to write and no reason to
-        // touch the keychain (ADR-0027 §2).
+    // The body carried the tokens; it is wiped whichever way this goes.
+    let absorbed = engine.session.absorb_refresh(&response);
+    response.body.zeroize();
+    match absorbed {
+        // A rotated token lands before use; none means nothing to
+        // write (ADR-0027 §2).
         Ok(rotated) => {
             if let Some(rotated) = rotated
                 && !store_refresh(&*guard.credentials, &rotated)
@@ -702,15 +697,8 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
             sign_out_locked(&mut guard);
             Err("signed_out")
         }
-        // The token endpoint being unwell (a 5xx, a rate limit, a
-        // mangled body) is not the grant being revoked: the refresh
-        // token stands and the next pump retries, exactly as an
-        // unreachable host would. `Unreachable` is the right state and
-        // a slightly wide word: the endpoint did answer, and it was
-        // the token endpoint rather than the relay. The gate keeps the
-        // two under one state because they mean the same thing to the
-        // user and to the retry, and the shell's sentence names no
-        // server for the same reason.
+        // Only `invalid_grant` signs out; anything else keeps the token
+        // under `unreachable` (client protocol §4.2).
         Err(_) => {
             note_fault(&mut guard, GateFault::Unreachable);
             Err("unreachable")
@@ -718,13 +706,11 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
     }
 }
 
-/// The sign-out that a refused refresh performs: delete the persisted
-/// token, dissolve the engine, and leave a signed-out keeper so
-/// status tells the truth. The pad is unaffected.
+/// The sign-out a refused refresh performs: delete the persisted token,
+/// dissolve the engine, leave a signed-out keeper. The pad is untouched.
 fn sign_out_locked(companion: &mut Companion) {
     let _ = clear_refresh(&*companion.credentials);
-    // The dissolve rewinds what the relay never acknowledged, so the
-    // account's refusal costs the peers a delay and never an edit.
+    // The dissolve rewinds what the relay never acknowledged.
     let _ = dissolve_engine(companion);
     companion.sync.fault = Some(GateFault::Refused);
     if let Some(config) = &companion.sync.config {
@@ -732,15 +718,9 @@ fn sign_out_locked(companion: &mut Companion) {
     }
 }
 
-/// One outbound sweep over the enrolled pages, under the lock and off
-/// the network: queue fresh document deltas past each cursor, the
-/// expiry policy when its deadline moved (the sum is constant while
-/// nothing touches the page, so a move is a gesture), the hold
-/// register when it changed, and the terminal marker once for a page
-/// that died here. A due ceremony — a deferred rung transition, or
-/// the proposal a terminal marker owes (§5) — rotates the channel:
-/// a ballot to the verified attached peers, or solo when the room is
-/// empty.
+/// One outbound sweep, under the lock and off the network: queue each
+/// page's new ops, moved deadline or hold, or a dead page's marker, then
+/// rotate when a page is due (client protocol §3 step 2, §7.1).
 pub(crate) fn sweep_outbound(
     companion: &mut Companion,
     now_ms: u64,
@@ -791,10 +771,8 @@ pub(crate) fn sweep_outbound(
                     engine.session.queue_hold(*page, register);
                     tracking.hold = Some(register);
                 }
-                // A page whose transition waits on its ceremony is
-                // the rotation's target, whatever order the map walks
-                // — a live page without one is only the fallback
-                // anchor for the rotation a terminal marker owes.
+                // Client protocol §7.1: a due page is the target; a live
+                // page only anchors the rotation a marker owes.
                 if store.ceremony_due(sheet) {
                     rotate = true;
                     due_target = due_target.or(Some(*page));
@@ -803,12 +781,8 @@ pub(crate) fn sweep_outbound(
                 }
             }
             None => {
-                // The page died here. Publish its signed terminal
-                // marker once — the gate refuses until this device's
-                // view is current with the channel, and while a hold
-                // stands elsewhere — then propose the ceremony §5 says
-                // follows a marker, so the dead page's ciphertext
-                // stops opening at the earliest boundary.
+                // The page died here: sign its marker every sweep until
+                // it queues, once per engine, then rotate (§6, §7.1).
                 if !tracking.terminal_sent
                     && let Some(marker) = signed_terminal_marker(&**credentials, *page, wall_ms)
                     && engine.session.queue_terminal(*page, &marker)
@@ -827,11 +801,8 @@ pub(crate) fn sweep_outbound(
     }
 }
 
-/// Whether a re-read hold register is a new fact rather than the one
-/// already published. Any change of shape or substance counts, but
-/// `until_wall_ms` — recomputed as wall-now-plus-remaining on every
-/// read — is allowed the same clock-straddle jitter the expiry
-/// deadline is, or a held page would republish its hold every sweep.
+/// Whether a re-read hold register is a new fact. `until_wall_ms` is
+/// recomputed on every read, so it gets the deadline's jitter.
 fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
     match (last, next) {
         (Some(HoldRegister::Released), HoldRegister::Released) => false,
@@ -856,13 +827,9 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
     }
 }
 
-/// Move a page's export cursor to its document's own current version
-/// without exporting anything: the move after a ceremony compacts the
-/// page. The rebuilt body travels as the sealed key frame, never as a
-/// delta — an export from the stale cursor would name peers the
-/// rebuilt document has never heard of and so republish the whole
-/// body, which a peer holding its own rebuild would merge as a second
-/// copy of the text rather than recognize as its own.
+/// Move a page's export and acknowledged cursors to its rebuilt
+/// version without exporting, and drop the page from any staged batch:
+/// the rebuild travels only as the frame (client protocol §7.6).
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
@@ -874,32 +841,17 @@ fn settle_frontier(
         && let Some(version) = store.document_version(sheet)
     {
         tracking.frontier = version.clone();
-        // The acknowledged cursor settles with it, or a later rewind
-        // would land before the rebuild and republish the whole body
-        // as the duplicate this settling exists to prevent.
         tracking.acked = version;
-        // And a batch still in flight loses its claim on this page. Its
-        // record was taken before the rebuild, so honouring it when the
-        // late answer arrives would put the acknowledged cursor back
-        // behind the rebuild and undo the settling in the same breath.
-        // A cursor the ceremony has settled is no longer any batch's to
-        // move: an acknowledgement may advance one and may never lower
-        // one.
+        // A late acknowledgement must not lower a settled cursor.
         if let Some(staged) = staged.as_mut() {
             staged.cursors.remove(&page);
         }
     }
 }
 
-/// Build the publish request and record what its batch carries, in one
-/// act. The recording is the whole point: a batch sealed in one pump
-/// and answered in a later one is resent verbatim
-/// (`SyncSession::publish_request` borrows the outbox only when
-/// nothing is already in flight), so by the time the relay accepts it
-/// the live cursors may have run on past it. Advancing to the live
-/// cursor would then mark ops acknowledged that the relay was never
-/// offered, and the next dissolve would rewind to a position past
-/// them, which is the loss the rewind exists to prevent.
+/// Build the publish request and, for a newly sealed batch, record each
+/// page's export cursor; a resend keeps the first record (client
+/// protocol §4.4).
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
     let engine = companion.sync.engine.as_mut()?;
     let EngineState { session, chain, .. } = engine;
@@ -913,8 +865,7 @@ fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::H
     if let Some(id) = batch
         && !known
     {
-        // A batch this call sealed: what it carries is each page's
-        // cursor as it stands right now, before any later sweep.
+        // A batch this call sealed carries each cursor as it stands now.
         companion.sync.staged_batch = Some(StagedBatch {
             id,
             cursors: companion
@@ -928,17 +879,9 @@ fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::H
     Some(request)
 }
 
-/// Absorb a publish answer under the lock, and on acceptance advance
-/// each enrolled page's acknowledged cursor to the position the batch
-/// the relay just took actually carried, never to wherever the live
-/// cursor has since reached. Acknowledgement and advance are one act
-/// on purpose: two call sites doing it separately is two chances for a
-/// cursor to move past ops nobody received.
-///
-/// A refusal that drops the batch drops the record with it, leaving
-/// the acknowledged cursor where it was, so the ops the dropped batch
-/// held are exported again after the next dissolve. Restating is
-/// cheap and idempotent; losing is neither.
+/// Absorb a publish answer under the lock: acceptance advances each
+/// acknowledged cursor to what the batch carried, and a refusal that
+/// drops the batch drops its record (client protocol §4.4).
 fn absorb_publish_locked(
     companion: &mut Companion,
     response: &HttpResponse,
@@ -963,18 +906,10 @@ fn absorb_publish_locked(
     Some(Ok(()))
 }
 
-/// Dissolve the engine, handing back the keeper it held, and rewind
-/// every enrolled page to what the relay actually acknowledged.
-///
-/// Whatever was queued into the dying session and never sent goes back
-/// on the books: the document ops by way of the rewound cursor, and
-/// the policy, hold and terminal facts by way of forgetting what was
-/// last published, so the next sweep states them again. Restating a
-/// fact a peer already holds is idempotent; dropping one is not, and
-/// tenet 1 does not stop at the sync boundary.
+/// Dissolve the engine, handing back its keeper, and rewind every page
+/// to its acknowledged cursor (client protocol §2).
 pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
-    // The batch dies with the session that sealed it, and so does the
-    // record of what it carried.
+    // The batch and its record die with the session that sealed it.
     companion.sync.staged_batch = None;
     for tracking in companion.sync.enrolled.values_mut() {
         tracking.frontier = tracking.acked.clone();
@@ -990,12 +925,9 @@ pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> 
         .map(|engine| engine.session.into_keeper())
 }
 
-/// Rotate the channel at `target`: a ballot to the verified attached
-/// peers when any are in the room, the solo one-event otherwise. The
-/// attach roster admits nobody without a pairing record
-/// ([`SyncSession::ceremony_peers`]), so a revoked device is left
-/// behind by construction. True when the ceremony committed on the
-/// spot — the solo path, whose caller owes the page a settled cursor.
+/// Rotate the channel at `target`: a ballot to the verified peers, or
+/// solo when there are none (client protocol §7.2, §7.3, §7.9). True
+/// when the solo path committed and the page owes a settled cursor.
 fn rotate_channel(
     store: &mut companion_core::SheetStore<companion_core::SystemClock>,
     engine: &mut EngineState,
@@ -1010,8 +942,6 @@ fn rotate_channel(
         .collect();
     let peers = engine.session.ceremony_peers(&identities);
     let page = crate::sync_session::page_wire_id(target);
-    // The same two names every other event carries: the identity the
-    // peers know the page by, and the local id this surface does.
     let page_id = sheet_of(store, target).map(SheetId::raw);
     if peers.is_empty() {
         if engine
@@ -1037,9 +967,8 @@ fn rotate_channel(
     false
 }
 
-/// A terminal marker this device may publish: the page id and the
-/// wall stamp, signed by the device identity — the seam owns the
-/// signature, the core owns the claim (`companion_core::TerminalMarker`).
+/// A terminal marker: the page id and wall stamp, signed by the device
+/// identity (`companion_core::TerminalMarker`).
 fn signed_terminal_marker(
     credentials: &dyn CredentialStore,
     page: ItemId,
@@ -1057,13 +986,9 @@ fn signed_terminal_marker(
     Some(marker)
 }
 
-/// One pump: the engine loop's whole body, run from a background
-/// queue on the shell's cadence. Sweeps the enrolled pages, publishes
-/// what the 2-second clock owes, long-polls the delta stream for up
-/// to `wait_seconds`, walks the ballot patience, and publishes a
-/// committed ceremony's frame. Blocking for up to the whole
-/// long-poll; the core mutex is held only between round-trips, so
-/// the pad never waits on the network.
+/// One pump in client protocol §3's order: refresh, sweep and publish,
+/// the long-poll fetch, an owed attach, the frame PUT. Blocking; the
+/// core mutex is held only between round trips.
 pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::Value {
     let mut events: Vec<serde_json::Value> = Vec::new();
     if let Err(reason) = ensure_access(handle) {
@@ -1116,8 +1041,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                 let Ok(mut guard) = handle.inner.lock() else {
                     return pump_result(handle, Some("poisoned"), &events);
                 };
-                // The relay answered, whatever it said: the gate's
-                // account axis has nothing to report.
+                // The relay answered, whatever it said.
                 note_reachable(&mut guard);
                 let now = guard.sync.now_ms();
                 let Companion {
@@ -1132,17 +1056,24 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                         session,
                         chain,
                         packages,
+                        pending_packages,
                         ..
                     } = engine;
-                    match session.absorb_deltas(&response, store, chain, packages, &trusted, now) {
+                    match session.absorb_deltas(
+                        &response,
+                        store,
+                        chain,
+                        packages,
+                        pending_packages,
+                        &trusted,
+                        now,
+                    ) {
                         Ok(absorbed) => {
                             committed = absorbed
                                 .iter()
                                 .any(|event| matches!(event, SyncEvent::CeremonyCommitted(_)));
                             events.extend(absorbed.iter().map(|event| event_json(event, store)));
-                            // A drained commit compacted the page here;
-                            // its cursor settles so the rebuild travels
-                            // only as the frame.
+                            // A drained commit settles the page's cursor.
                             for event in &absorbed {
                                 if let SyncEvent::CeremonyCommitted(page) = event {
                                     settle_frontier(
@@ -1154,13 +1085,8 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                                 }
                             }
                         }
-                        // A 401 here is the bearer dying under the long
-                        // poll. The session drops the access token as
-                        // it refuses, so the next pump's top refreshes
-                        // and the round is reported rather than
-                        // swallowed: a refusal nobody hears is a
-                        // silence the gate would have to fill with a
-                        // guess.
+                        // Client protocol §4.5: a 401 drops the access
+                        // token and is reported; the next turn refreshes.
                         Err(refusal) => events.push(refusal_json(&refusal)),
                     }
                 }
@@ -1168,16 +1094,24 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
         }
     }
 
-    // A committed ceremony spent the one-shot key package (on the
-    // follower side) — republish a fresh one so the next proposal can
-    // reach this device.
-    if committed {
+    // Client protocol §5.4: attach when a ceremony committed this turn
+    // or a key package is owed.
+    let owes_package = {
+        let Ok(guard) = handle.inner.lock() else {
+            return pump_result(handle, Some("poisoned"), &events);
+        };
+        guard
+            .sync
+            .engine
+            .as_ref()
+            .is_some_and(package_needs_republish)
+    };
+    if committed || owes_package {
         let _ = attach(handle);
     }
 
-    // A committed ceremony's frame supersedes at the relay: that
-    // acceptance is the purge. Kept until a 2xx (or a 409 — a peer's
-    // copy won, equally final) so a dropped round retries next pump.
+    // Client protocol §7.8: the committed frame is kept until a 2xx or
+    // a 409, so a dropped round retries next turn.
     let staged = {
         let Ok(mut guard) = handle.inner.lock() else {
             return pump_result(handle, Some("poisoned"), &events);
@@ -1240,15 +1174,12 @@ fn publish_round(
             if ensure_access(handle).is_err() {
                 return;
             }
-            // The batch is still in flight; rebuild its request at the
-            // now-refreshed auth and send the one retry §2 allows.
+            // The one retry, the same batch at the refreshed auth.
             let staged = {
                 let Ok(mut guard) = handle.inner.lock() else {
                     return;
                 };
                 let now = guard.sync.now_ms();
-                // The same batch, so the record of what it carries
-                // stands: `stage_publish` recognizes the resend.
                 stage_publish(&mut guard, now)
             };
             let Some(rebuilt) = staged else {
@@ -1267,9 +1198,7 @@ fn publish_round(
         }
         Err(refusal) => {
             if matches!(refusal, RelayRefusal::CeremonyRequired) {
-                // The §3 cap: nothing publishes until a ceremony
-                // compacts, so rotate now rather than on the next
-                // transition.
+                // Client protocol §4.4: at the cap, rotate now.
                 let now = guard.sync.now_ms();
                 let Companion {
                     store,
@@ -1291,14 +1220,8 @@ fn publish_round(
     }
 }
 
-/// One event as the shell reads it. The `page` is the cross-device
-/// identity, which is the only name a peer can use; `page_id` is the
-/// local id the same page answers to here, so a surface can say which
-/// of its own pages an event is about without ever holding a table of
-/// identities. It is null for an event about no page and for a page
-/// this device no longer keeps, and issue #102's "another device is
-/// editing this page" is what wants it: without the translation the
-/// shell would know that something arrived and not where to say so.
+/// One event as the shell reads it: `page` is the cross-device identity,
+/// `page_id` the local id (null for no page or one no longer kept here).
 fn event_json(
     event: &SyncEvent,
     store: &companion_core::SheetStore<companion_core::SystemClock>,
@@ -1355,11 +1278,8 @@ fn pump_result(
     })
 }
 
-/// Note that a round trip reached its host. That answers the network
-/// question and only the network question: a refusal stands until the
-/// user signs in again, because re-enrolment is the only way back from
-/// one (ADR-0027 §2) and a reachable server is not a server that
-/// changed its mind.
+/// Note that a round trip reached its host: clears `unreachable` only,
+/// since a refusal stands until the user signs in again (ADR-0027 §2).
 fn note_reachable(companion: &mut Companion) {
     if companion.sync.fault == Some(GateFault::Unreachable) {
         companion.sync.fault = None;
@@ -1374,16 +1294,14 @@ fn note_fault(companion: &mut Companion, fault: GateFault) {
     }
 }
 
-/// Forget every fault: the ceremony granted, the shell reconfigured,
-/// or the user signed out on purpose. Each is a fresh start the last
-/// refusal has nothing to say about.
+/// Forget every fault: a granted ceremony, a reconfigure, or a
+/// deliberate sign-out starts fresh.
 pub(crate) fn clear_fault(companion: &mut Companion) {
     companion.sync.fault = None;
 }
 
-/// Where the account gate stands, as the one value the shell reads
-/// (ADR-0027 §5). Existence checks and in-memory reads only, like
-/// every other field of the status.
+/// Where the account gate stands (ADR-0027 §5), from existence checks
+/// and in-memory reads only.
 pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
     let sync = &companion.sync;
     gate(GateInputs {
@@ -1391,10 +1309,8 @@ pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
         signin_pending: signin_in_flight(sync),
         credential: credential_rests(companion),
         fault: sync.fault,
-        // An attachment the next request cannot use is not one to
-        // report: a `401` on any route drops the access token, so the
-        // gate falls back to `ready` until the refresh lands rather
-        // than reading `attached` with a dead bearer.
+        // A `401` drops the access token, so this reads `ready` until
+        // the refresh lands.
         attached: sync
             .engine
             .as_ref()
@@ -1402,9 +1318,8 @@ pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
     })
 }
 
-/// Whether a sign-in ceremony is in flight at all: minted and waiting
-/// for its finish, or taken by a finish that is blocked on the
-/// browser. The two are one state to anyone outside this module.
+/// Whether a sign-in ceremony is in flight, parked or out on the
+/// browser; one state outside this module.
 pub(crate) fn signin_in_flight(sync: &SyncState) -> bool {
     sync.pending_signin.is_some() || sync.awaiting_redirect.is_some()
 }
@@ -1424,9 +1339,8 @@ fn credential_rests(companion: &Companion) -> bool {
     )
 }
 
-/// Sync's standing state: existence checks and in-memory reads only,
-/// so rendering Settings never decrypts a credential or waits on the
-/// network.
+/// Sync's standing state, from existence checks and in-memory reads
+/// only, so rendering Settings never decrypts or waits.
 pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
     let sync = &companion.sync;
     let signed_in = credential_rests(companion);
@@ -1443,10 +1357,8 @@ pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
     })
 }
 
-/// The device list: every peer a human verified here, joined with the
-/// attach roster's times, plus this device and any attached-but-
-/// unverified stranger — attach-list truth and pairing truth, each
-/// labelled as what it is.
+/// The device list: this device, every verified peer with its attach
+/// time, and any attached but unverified stranger, each labelled.
 pub(crate) fn devices_json(companion: &Companion) -> serde_json::Value {
     let records = pairing::peer_records(&*companion.credentials);
     let roster = companion
@@ -1504,8 +1416,7 @@ pub(crate) fn devices_json(companion: &Companion) -> serde_json::Value {
 // ---------------------------------------------------------------------
 
 /// A pairing ceremony in flight: the state machine between mailbox
-/// polls. One at a time — the mailbox holds one pairing, and so does
-/// this.
+/// polls, one at a time (client protocol §9).
 pub(crate) struct PairingState {
     /// Mailbox cursor for the next fetch.
     since: u64,
@@ -1563,12 +1474,8 @@ fn stage_word(step: &PairingStep) -> &'static str {
 }
 
 fn stage_json(flow: &PairingState) -> serde_json::Value {
-    // A ceremony that still owes a post is not done, whatever the step
-    // says. The shell stops polling at `done`, and the poll is the only
-    // thing that drains the queue, so a grant reported done here would
-    // sit in the queue forever and the other device would wait for it
-    // just as long. `confirmed` is the honest word for the interval:
-    // settled on this side, waiting on the other.
+    // A ceremony that still owes a post reads `confirmed`, not `done`:
+    // the shell stops polling at `done`, and only the poll drains.
     let stage = if matches!(flow.step, PairingStep::Done) && !flow.outgoing.is_empty() {
         "confirmed"
     } else {
@@ -1635,10 +1542,8 @@ fn pairing_begin(companion: &mut Companion, inviter: bool) -> Result<(), Refusal
     Ok(())
 }
 
-/// Advance the machine with one mailbox message. Unexpected kinds —
-/// this device's own posts echoed back included — change nothing.
-/// Returns whether a grant just landed (the joiner's chain must then
-/// re-root from the delivered secret).
+/// Advance the machine with one mailbox message; unexpected kinds,
+/// echoes included, change nothing. True when a grant just landed.
 fn advance_pairing(
     flow: &mut PairingState,
     message: MailboxMessage,
@@ -1702,17 +1607,23 @@ fn advance_pairing(
         }
         (PairingStep::JoinerWaitGrant { settled }, MailboxMessage::Grant(grant)) => {
             match settled.receive(&grant) {
-                Some(secret) if pairing::store_channel_secret(credentials, &secret) => {
-                    let _ = pairing::record_peer(
+                None => PairingStep::Failed("grant"),
+                Some(secret) => {
+                    // Client protocol §9: record the peer before storing
+                    // the secret; either refusal fails the step.
+                    let recorded = pairing::record_peer(
                         credentials,
                         settled.peer_identity(),
                         "",
                         wall_now_ms(),
                     );
-                    joined = true;
-                    PairingStep::Done
+                    if recorded && pairing::store_channel_secret(credentials, &secret) {
+                        joined = true;
+                        PairingStep::Done
+                    } else {
+                        PairingStep::Failed("keychain")
+                    }
                 }
-                _ => PairingStep::Failed("grant"),
             }
         }
         (step, _) => step,
@@ -1738,24 +1649,28 @@ fn maybe_grant(
     let Some(secret) = pairing::ensure_channel_secret(credentials, true) else {
         return PairingStep::Failed("keychain");
     };
+    // A grant that fails to seal shares the `keychain` token.
     let Some(grant) = settled.grant(&secret) else {
         return PairingStep::Failed("keychain");
     };
+    // Client protocol §9: record the peer before queuing the grant; a
+    // refused record fails the step.
+    if !pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms()) {
+        return PairingStep::Failed("keychain");
+    }
     outgoing.push(MailboxMessage::Grant(grant).encode());
-    let _ = pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms());
     PairingStep::Done
 }
 
-/// The human's verdict on the SAS. A mismatch aborts the whole
-/// ceremony — both sides walk away with nothing stored, which is the
-/// property the pairing tests pin.
+/// The human's verdict on the SAS; a mismatch drops this side's
+/// ceremony whole, with nothing stored.
 pub(crate) fn pairing_confirm(companion: &mut Companion, matched: bool) -> serde_json::Value {
     let Some(mut flow) = companion.sync.pairing.take() else {
         return serde_json::json!({ "stage": "idle" });
     };
     if !matched {
-        // Dropped whole: the ceremony state, the queued posts, all of
-        // it. The peer times out on its own patience.
+        // The peer keeps polling until cancelled; there is no client
+        // deadline (client protocol §10.22).
         return serde_json::json!({ "stage": "failed", "reason": "mismatch" });
     }
     let step = std::mem::replace(&mut flow.step, PairingStep::Failed("torn"));
@@ -1788,10 +1703,9 @@ pub(crate) fn pairing_confirm(companion: &mut Companion, matched: bool) -> serde
     stage
 }
 
-/// Post the queued messages, one at a time, until the queue empties or
-/// the wire declines; a transport failure leaves the rest queued for
-/// the next poll. `Err` carries the stage the round should report
-/// instead of going on.
+/// Post the queued messages in order until the queue empties or the
+/// wire declines, leaving the rest queued. `Err` carries the stage to
+/// report instead, `signed_out` when no request can be built.
 fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
     loop {
         let staged = {
@@ -1820,12 +1734,8 @@ fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
             }
             Some(Some((sent, request, transport))) => match transport.send(request) {
                 Ok(response) if (200..300).contains(&response.status) => {
-                    // The head is removed only if it is still the
-                    // message this round posted: the lock was released
-                    // for the send, and a cancel, a fresh ceremony, or
-                    // a concurrent poll may have moved the queue —
-                    // blind removal would drop someone else's message
-                    // or panic on an emptied one.
+                    // Remove the head only if it is still this post;
+                    // the queue may have moved while unlocked.
                     if let Ok(mut guard) = handle.inner.lock()
                         && let Some(flow) = guard.sync.pairing.as_mut()
                         && flow.outgoing.first() == Some(&sent)
@@ -1839,10 +1749,8 @@ fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
     }
 }
 
-/// One mailbox round: drain the queued posts, fetch the tail, advance
-/// the machine, and report the stage. Blocking for the round-trips —
-/// background queue only. The shell polls this while its enrolment
-/// sheet is open.
+/// One mailbox round: drain, fetch the tail, advance, drain again, and
+/// report the stage. Blocking (client protocol §4.7).
 pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
     match ensure_access(handle) {
         Ok(()) => {}
@@ -1876,10 +1784,7 @@ pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
     {
         absorb_mailbox(&mut guard, &response);
     }
-    // Advancing may have queued a post of its own — the grant the
-    // inviter owes the moment the acceptance lands. Drain again so it
-    // goes out in this same round rather than waiting on a next poll
-    // that the reported stage might well talk the shell out of.
+    // Advancing may have queued the grant; send it this round.
     if let Err(stage) = drain_outgoing(handle) {
         return stage;
     }
@@ -1893,10 +1798,8 @@ pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
         .map_or(serde_json::json!({ "stage": "idle" }), stage_json)
 }
 
-/// Absorb one mailbox answer: `{"messages": […], "next_seq"}` (§7's
-/// answer shape), each entry one wire message; unknown shapes are
-/// skipped, never guessed at. A grant landing re-roots the chain from
-/// the delivered secret.
+/// Absorb one mailbox answer (relay protocol §7), skipping unknown
+/// shapes; a landed grant re-roots the chain.
 pub(crate) fn absorb_mailbox(companion: &mut Companion, response: &HttpResponse) {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(&response.body) else {
         return;
@@ -1920,12 +1823,8 @@ pub(crate) fn absorb_mailbox(companion: &mut Companion, response: &HttpResponse)
         && let Some(chain) = GopKeyChain::root(&secret)
         && let Some(engine) = companion.sync.engine.as_mut()
     {
-        // The delivered secret replaces whatever this device founded
-        // for itself: the chain re-roots at epoch zero. That is the
-        // whole story today — catching a joiner up to a channel that
-        // has already rotated is ADR-0021 Amendment 1's welcome, not
-        // yet built on either side of the wire — so a joiner landing
-        // on a rotated channel sees rejoin_required, honestly.
+        // Client protocol §8: the delivered secret re-roots the chain at
+        // epoch zero, which leaves a joiner behind on a rotated channel.
         engine.chain = chain;
     }
 }
@@ -1962,9 +1861,7 @@ mod tests {
             }
         }
 
-        /// A token endpoint that ends the ceremony while it answers:
-        /// the exchange succeeds and the grant is worthless, which is
-        /// the window a single flag read at the listener misses.
+        /// A token endpoint that ends the ceremony while it answers.
         fn raising(mut self, flag: Arc<AtomicBool>) -> Self {
             self.raises = Some(flag);
             self
@@ -1984,11 +1881,8 @@ mod tests {
         }
     }
 
-    /// A token endpoint that answers only once the caller has given up:
-    /// it raises the flag itself and then grants, which is the window
-    /// between a redirect landing and a grant arriving, held open on
-    /// purpose. Seconds wide in life, since it is a real exchange over
-    /// a real network.
+    /// A token endpoint that raises the abandon flag itself and then
+    /// grants: the window between a landed redirect and the grant.
     struct SurrenderingTransport {
         abandoned: Arc<AtomicBool>,
     }
@@ -2034,6 +1928,41 @@ mod tests {
             let mut answer = String::new();
             let _ = stream.read_to_string(&mut answer);
         });
+    }
+
+    #[test]
+    fn a_spent_package_with_no_ballot_in_flight_is_owed_a_fresh_attach() {
+        let credentials = InMemoryCredentialStore::default();
+        let mut engine = attached_engine(&credentials);
+        assert!(
+            !package_needs_republish(&engine),
+            "a published, unspent package owes nothing"
+        );
+        // The device opened its entry on a ballot, and the ballot has
+        // since been abandoned: no scope, a spent package.
+        assert!(engine.packages.open_entropy(&[0u8; 64]).is_none());
+        assert!(!engine.session.ballot_in_flight());
+        assert!(
+            package_needs_republish(&engine),
+            "the relay's roster names a package nobody can open"
+        );
+    }
+
+    #[test]
+    fn a_fresh_package_whose_attach_never_landed_is_owed_another() {
+        // An attach that failed before sending leaves an unspent package
+        // the relay has never seen.
+        let credentials = InMemoryCredentialStore::default();
+        let mut engine = attached_engine(&credentials);
+        let pkcs8 = pairing::ensure_device_identity(&credentials).unwrap();
+        engine.packages = KeyPackageKeeper::mint(&pkcs8).unwrap();
+        assert!(!engine.packages.is_spent());
+        assert!(
+            package_needs_republish(&engine),
+            "a mint the relay never accepted is not reachable"
+        );
+        engine.packages.mark_published();
+        assert!(!package_needs_republish(&engine));
     }
 
     #[test]
@@ -2110,9 +2039,7 @@ mod tests {
         let authorize_url = signin_begin(&mut state).unwrap();
         let pending = state.pending_signin.take().unwrap();
         browser_returns(&authorize_url, pending.listener.port(), None);
-        // The window the redirect opens: the code is in hand and the
-        // token exchange is seconds of real network. A sign-out
-        // landing here must still leave nothing to persist.
+        // A sign-out between the redirect and the grant persists nothing.
         let transport = MockTransport::granting().raising(Arc::clone(&pending.abandoned));
 
         let refused = signin_finish(pending, Duration::from_secs(5), &transport);
@@ -2192,9 +2119,7 @@ mod tests {
             "and this device's, which is the one a surface can point at"
         );
 
-        // A page this device does not hold: the event still tells the
-        // shell something happened, and says honestly that it happened
-        // nowhere it can show.
+        // A page this device does not hold has no local id.
         let stranger = event_json(&SyncEvent::Applied(ItemId::random()), &store);
         assert_eq!(stranger["page_id"], serde_json::Value::Null);
 
@@ -2216,8 +2141,7 @@ mod tests {
         });
         let transport = MockTransport::granting();
         let began = Instant::now();
-        // The patience a real consent screen gets. Only the give-up
-        // can explain an answer that arrives in this test's lifetime.
+        // A consent screen's patience; only the give-up answers sooner.
         let refused = signin_finish(pending, Duration::from_secs(300), &transport);
         assert_eq!(refused.err(), Some("abandoned"));
         assert!(began.elapsed() < Duration::from_secs(10));
@@ -2229,11 +2153,7 @@ mod tests {
 
     #[test]
     fn a_give_up_during_the_exchange_stores_nothing() {
-        // The window the first give-up missed. The redirect lands, so
-        // the listener is past caring about the flag, and the code is
-        // then exchanged over the network, which takes seconds. A user
-        // pressing the way out during those seconds was told nothing
-        // was stored while a token was on its way to the Keychain.
+        // The redirect lands and the give-up comes during the exchange.
         let credentials = InMemoryCredentialStore::default();
         let mut state = configured();
         let authorize_url = signin_begin(&mut state).unwrap();
@@ -2255,9 +2175,7 @@ mod tests {
         );
     }
 
-    /// Whether anything ever landed in the sync refresh account. The
-    /// finish is the only writer, so an empty account is the whole
-    /// assertion.
+    /// Whether anything ever landed in the sync refresh account.
     fn store_refresh_was_called(credentials: &InMemoryCredentialStore) -> bool {
         load_refresh(credentials).is_some()
     }
@@ -2340,6 +2258,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_re_attach_keeps_the_standing_package_until_the_relay_takes_its_replacement() {
+        let credentials = InMemoryCredentialStore::default();
+        let mut engine = attached_engine(&credentials);
+        let standing = engine.packages.package().clone();
+        let pkcs8 = pairing::ensure_device_identity(&credentials).unwrap();
+
+        // A re-attach mints beside the standing package; the pump still
+        // owes an attach, since the answer may have been lost.
+        engine.pending_packages = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        let sent = engine.pending_packages.as_ref().unwrap().package().clone();
+        assert_eq!(engine.packages.package(), &standing);
+        assert!(engine.packages.is_published());
+        assert!(package_needs_republish(&engine));
+
+        // A concurrent re-attach minted again while the first was in
+        // flight: the first's acceptance is not the second's.
+        let first = sent.clone();
+        engine.pending_packages = Some(KeyPackageKeeper::mint(&pkcs8).unwrap());
+        adopt_accepted(&mut engine, &first);
+        assert_eq!(engine.packages.package(), &standing);
+        assert!(engine.pending_packages.is_some());
+
+        // The acceptance of the package that waits swaps it in.
+        let sent = engine.pending_packages.as_ref().unwrap().package().clone();
+        adopt_accepted(&mut engine, &sent);
+        assert_eq!(engine.packages.package(), &sent);
+        assert!(engine.packages.is_published());
+        assert!(engine.pending_packages.is_none());
+        assert!(!package_needs_republish(&engine));
+    }
+
     fn attached_engine(credentials: &dyn CredentialStore) -> EngineState {
         let pkcs8 = pairing::ensure_device_identity(credentials).unwrap();
         let secret = pairing::ensure_channel_secret(credentials, true).unwrap();
@@ -2348,6 +2298,10 @@ mod tests {
             access: Zeroizing::new("at".into()),
             refresh: Zeroizing::new("rt".into()),
         });
+        // Attached, as the name says: the relay has accepted this
+        // engine's package.
+        let mut packages = KeyPackageKeeper::mint(&pkcs8).unwrap();
+        packages.mark_published();
         EngineState {
             session: SyncSession::new(
                 "https://relay.example",
@@ -2355,7 +2309,8 @@ mod tests {
                 &pairing::device_fingerprint(credentials).unwrap(),
             ),
             chain: GopKeyChain::root(&secret).unwrap(),
-            packages: KeyPackageKeeper::mint(&pkcs8).unwrap(),
+            packages,
+            pending_packages: None,
             unpublished_frame: None,
         }
     }
@@ -2455,9 +2410,7 @@ mod tests {
             "nothing was acknowledged, so the cursor rewinds the whole way"
         );
 
-        // Signed in again and attached again: the edit that was queued
-        // and never sent is owed again, rather than sitting behind a
-        // cursor that moved without it (ADR-0027 §7).
+        // Signed in and attached again, the unsent edit is owed again.
         companion.sync.engine = Some(attached_engine(&*credentials));
         sweep_outbound(&mut companion, 10_000, &mut events);
         assert_eq!(
@@ -2567,9 +2520,7 @@ mod tests {
         companion.sync.engine = Some(engine);
         assert_eq!(gate_of(&companion), SyncGate::Attached);
 
-        // The relay refused the bearer mid poll. The attachment still
-        // stands and the next request cannot use it, so the gate says
-        // ready until the refresh lands rather than claiming health.
+        // A refused bearer mid poll reads `ready` until the refresh.
         companion
             .sync
             .engine
@@ -2639,21 +2590,15 @@ mod tests {
         let page = inked_page(&mut companion, "an ordinary page");
         assert!(enrol_page(&mut companion, page, true));
 
-        // The snapshot is what the state file seals. A credential in it
-        // would rest under the rotating content key, which ADR-0027 §4
-        // refuses: a rotation would sign the user out, and a copied
-        // state file would carry the account with it.
+        // The sealed snapshot carries no credential (ADR-0027 §4).
         let snapshot = companion.store.snapshot(1_700_000_000_000);
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(
             !contains(&snapshot, secret.as_bytes()),
             "the refresh token has no business in the content store"
         );
-        // It rests in the key material tier instead, which is where
-        // the ledger key and the keychain content half rest. The
-        // in-memory store under test answers both tiers with one map,
-        // so this pins the account the driver reads and writes, and the
-        // tier split is the real store's own (`key_material_store`).
+        // It rests in the key material account instead; the tier split
+        // is the real store's own (`key_material_store`).
         assert!(load_refresh(&*credentials).is_some());
         assert!(
             credentials
@@ -2686,9 +2631,7 @@ mod tests {
         assert!(stage_publish(&mut companion, 0).is_some());
         let before_rebuild = companion.sync.enrolled[&uuid].frontier.clone();
 
-        // A due transition rotates the channel while that batch is
-        // still out. The rebuilt body travels as the sealed frame, and
-        // both cursors settle at the rebuild.
+        // A rotation while that batch is out settles both cursors.
         let tab = companion.store.tabs().next().unwrap().id();
         companion.store.cycle_rung(tab).unwrap();
         sweep_outbound(&mut companion, 4_000, &mut events);
@@ -2696,9 +2639,7 @@ mod tests {
         assert_ne!(rebuilt, before_rebuild, "the ceremony rebuilt the page");
         assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
 
-        // The lost answer arrives. It may not restore the cursor the
-        // rebuild replaced: the batch it acknowledges belongs to a
-        // document identity this page no longer has.
+        // The late answer may not restore the replaced cursor.
         assert_eq!(
             absorb_publish_locked(&mut companion, &accepted()),
             Some(Ok(()))
@@ -2708,9 +2649,7 @@ mod tests {
             "an acknowledged cursor never moves backwards"
         );
 
-        // So the dissolve rewinds to the rebuild, and the next sweep
-        // owes no text: an export from before the rebuild would reach a
-        // peer as a second copy of the body rather than as its own.
+        // So the dissolve rewinds to the rebuild and owes no text.
         sign_out_locked(&mut companion);
         companion.sync.engine = Some(attached_engine(&*credentials));
         sweep_outbound(&mut companion, 10_000, &mut events);
@@ -2737,9 +2676,8 @@ mod tests {
         assert!(stage_publish(&mut companion, 0).is_some());
         let carried = companion.sync.enrolled[&uuid].frontier.clone();
 
-        // Pump two: a second edit sweeps to V2 and queues behind the
-        // batch, which is resent verbatim and accepted. Only V1 ever
-        // reached the relay, so only V1 may count as acknowledged.
+        // Pump two: V2 queues behind the resent batch; only V1 is
+        // acknowledged.
         assert!(companion.store.apply_ops(
             page,
             &[companion_core::EditOp::Insert {
@@ -2760,9 +2698,7 @@ mod tests {
             "the relay took the first batch, and only the first batch"
         );
 
-        // The refused refresh that follows dissolves the engine, and
-        // the second edit has to survive it: it is in no batch the
-        // relay ever answered.
+        // The second edit survives the refused refresh's dissolve.
         sign_out_locked(&mut companion);
         assert_eq!(companion.sync.enrolled[&uuid].frontier, carried);
         companion.sync.engine = Some(attached_engine(&*credentials));
@@ -2799,10 +2735,7 @@ mod tests {
             "the rewind stops at the last acknowledgement"
         );
 
-        // The re-attached sweep restates the expiry and hold facts,
-        // which are idempotent, and owes the peers no text: an
-        // acknowledged body republished from a stale cursor is the
-        // duplicate merge the settled cursor exists to prevent.
+        // The re-attached sweep restates expiry and hold, and no text.
         companion.sync.engine = Some(attached_engine(&*credentials));
         sweep_outbound(&mut companion, 10_000, &mut events);
         assert_eq!(companion.sync.enrolled[&uuid].frontier, published);
@@ -2839,12 +2772,8 @@ mod tests {
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(!contains(&opened, b"DOOMED"));
 
-        // The rebuilt body travels only as that frame. The cursor
-        // settled at the rebuilt document's own version, so once the
-        // pre-ceremony batch drains, the next sweep owes nothing — an
-        // unsettled cursor would republish the whole rebuild as a
-        // delta, which a peer holding its own rebuild would merge as
-        // a second copy of the text.
+        // The rebuild travels only as that frame; once the earlier batch
+        // drains, the next sweep owes nothing.
         let EngineState { session, chain, .. } = engine;
         let _ = session.publish_request(0, chain).unwrap();
         session
@@ -2876,9 +2805,7 @@ mod tests {
                 }],
             ));
         }
-        // Make the due page the one the enrolment map iterates last,
-        // so an order-blind target would have settled on the calm
-        // page and compacted the wrong one, looping the rotation.
+        // The due page iterates last, so an order-blind target fails.
         let uuid =
             |companion: &Companion, sheet: SheetId| companion.store.sheet(sheet).unwrap().uuid();
         let (due_tab, due_page) = if uuid(&companion, page_a) > uuid(&companion, page_b) {
@@ -2911,18 +2838,14 @@ mod tests {
         assert!(enrol_page(&mut companion, page, true));
         assert!(companion.store.discard_page(page));
 
-        // The first sweep keeps quiet: the channel view is not
-        // current, and a device that has drained nothing may not kill
-        // a page for everyone.
+        // No marker before the channel view is current.
         let mut events = Vec::new();
         sweep_outbound(&mut companion, 0, &mut events);
         let engine = companion.sync.engine.as_mut().unwrap();
         assert!(!engine.session.publish_due(0), "the gate held");
 
-        // One drain — even empty — makes the view current; the next
-        // sweep publishes the marker and asks for the ceremony §5
-        // owes. With an empty room, that rotation has no live page to
-        // compact, so the epoch stands until one exists.
+        // One drain makes the view current; the marker queues, and with
+        // no live page to compact the epoch stands.
         let empty = HttpResponse {
             status: 200,
             body: br#"{"epoch":0,"blobs":[],"next_seq":0}"#.to_vec(),
@@ -2934,10 +2857,11 @@ mod tests {
                 session,
                 chain,
                 packages,
+                pending_packages,
                 ..
             } = engine;
             session
-                .absorb_deltas(&empty, store, chain, packages, &[], 0)
+                .absorb_deltas(&empty, store, chain, packages, pending_packages, &[], 0)
                 .unwrap();
         }
         sweep_outbound(&mut companion, 2_000, &mut events);
@@ -2967,12 +2891,8 @@ mod tests {
         stage_json(companion.sync.pairing.as_ref().unwrap())
     }
 
-    /// The shell's poll loop in miniature: a round posts whatever the
-    /// ceremony has queued, and the shell stops its timer for good
-    /// once the stage reads `done` or `failed`
-    /// (`SyncController.swift`). Tests that reach past the stage word
-    /// and drain `outgoing` by hand cannot see a post stranded behind
-    /// a premature `done`, which is the whole failure this models.
+    /// The shell's poll loop in miniature: post what is queued, and stop
+    /// for good at `done` or `failed`, as `SyncController.swift` does.
     fn poll_round(companion: &mut Companion) -> Vec<serde_json::Value> {
         let stage = stage_of(companion);
         if stage["stage"] == "done" || stage["stage"] == "failed" {
@@ -3076,9 +2996,8 @@ mod tests {
         let posts = poll_round(&mut a);
         absorb_mailbox(&mut b, &mailbox_response(&posts, 3));
 
-        // The joiner's acceptance arrives first, so the inviter's tap
-        // on Match queues the grant in the same breath as it settles
-        // the step.
+        // The acceptance arrives first, so the inviter's tap queues the
+        // grant.
         pairing_confirm(&mut b, true);
         let posts = poll_round(&mut b);
         absorb_mailbox(&mut a, &mailbox_response(&posts, 4));
@@ -3112,9 +3031,7 @@ mod tests {
         let posts = poll_round(&mut a);
         absorb_mailbox(&mut b, &mailbox_response(&posts, 3));
 
-        // This time the inviter's human confirms before the acceptance
-        // travels, so it is the acceptance's arrival mid-round — not
-        // the tap — that queues the grant.
+        // The tap comes first, so the acceptance's arrival queues it.
         pairing_confirm(&mut a, true);
         pairing_confirm(&mut b, true);
         let posts = poll_round(&mut b);

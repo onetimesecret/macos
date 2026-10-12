@@ -1,11 +1,35 @@
 //! Request building and response interpretation — the sans-IO half —
 //! plus [`Client`], which pairs it with a transport.
 
-use zeroize::Zeroizing;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::auth::AuthStrategy;
 use crate::http::{HttpRequest, HttpResponse, Transport};
 use crate::types::{ConcealData, ConcealPayload, Error, RecordEnvelope};
+
+/// The conceal request body: the payload under the `secret` key the
+/// v2-inherited transport expects, serialized in place.
+#[derive(serde::Serialize)]
+struct ConcealEnvelope<'a> {
+    secret: &'a ConcealPayload,
+}
+
+/// A writer that keeps only the count, for sizing a serialization
+/// before the one buffer it will land in is allocated. The count holds
+/// only while serializing the payload twice gives the same bytes, so
+/// no field with an unordered map may join `ConcealPayload`.
+struct ByteCounter(usize);
+
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// Builds v3 API requests and interprets responses. Does no networking:
 /// pair with a [`Transport`] via [`Client`], or drive it by hand.
@@ -70,8 +94,20 @@ impl Api {
         authenticated: bool,
     ) -> Result<HttpRequest, Error> {
         // V2-inherited transport wrapper: params nest under "secret".
-        let body = serde_json::to_vec(&serde_json::json!({ "secret": payload }))
-            .map_err(|e| Error::Decode(e.to_string()))?;
+        //
+        // Serialized straight from the payload, never through an
+        // intermediate `serde_json::Value`: that tree would hold the
+        // secret and the passphrase as plain strings of its own and
+        // drop them unwiped. Sized by a counting pass first and then
+        // written once into a zeroizing buffer of exactly that size,
+        // so the buffer never grows and strands a partial copy of the
+        // plaintext in freed heap.
+        let envelope = ConcealEnvelope { secret: payload };
+        let mut counter = ByteCounter(0);
+        serde_json::to_writer(&mut counter, &envelope).map_err(|e| Error::Decode(e.to_string()))?;
+        let mut body = Zeroizing::new(Vec::with_capacity(counter.0));
+        serde_json::to_writer(&mut *body, &envelope).map_err(|e| Error::Decode(e.to_string()))?;
+        debug_assert_eq!(body.len(), counter.0, "sizing pass drifted from the write");
         let mut req = HttpRequest::new("POST", format!("{}{path}", self.base_url));
         req.headers
             .push(("Content-Type".into(), "application/json".into()));
@@ -80,7 +116,7 @@ impl Api {
         if authenticated {
             self.auth.apply(&mut req);
         }
-        req.body = Some(Zeroizing::new(body));
+        req.body = Some(body);
         Ok(req)
     }
 
@@ -137,8 +173,13 @@ impl<T: Transport> Client<T> {
     /// [`Api::parse_conceal_response`].
     pub fn conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.conceal_request(payload)?;
-        let response = self.transport.send(request)?;
-        self.api.parse_conceal_response(&response)
+        let mut response = self.transport.send(request)?;
+        // The answer carries the one-time link's key, so the body is
+        // wiped once read. The key also lives on in the returned
+        // `ConcealData`, a plain `String` the caller holds.
+        let parsed = self.api.parse_conceal_response(&response);
+        response.body.zeroize();
+        parsed
     }
 
     /// Conceal via the guest route (no credentials).
@@ -148,8 +189,10 @@ impl<T: Transport> Client<T> {
     /// Same as [`Client::conceal`].
     pub fn guest_conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.guest_conceal_request(payload)?;
-        let response = self.transport.send(request)?;
-        self.api.parse_conceal_response(&response)
+        let mut response = self.transport.send(request)?;
+        let parsed = self.api.parse_conceal_response(&response);
+        response.body.zeroize();
+        parsed
     }
 }
 

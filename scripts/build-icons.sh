@@ -58,6 +58,15 @@
 # Sheets and scouts name the mark in their output file, so a maruhi
 # sheet and a logo sheet at one shade do not overwrite each other.
 set -euo pipefail
+
+# The iconset directory of the render in progress, taken back on any
+# exit so a render or iconutil failing under `set -e` leaves nothing
+# behind in $TMPDIR.
+ICONSET_DIR=""
+cleanup_iconset() {
+  [[ -z "$ICONSET_DIR" ]] || rm -rf "$ICONSET_DIR"
+}
+trap cleanup_iconset EXIT
 cd "$(dirname "$0")/.."
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -98,10 +107,12 @@ build_icon() { # <app name> <style> <rrggbb shade>
   local name="$1" style="$2" shade="$3" icns="$OUT/$1.icns"
   echo "==> Rendering $icns ($MARK, $style, #$shade)"
   local iconset
-  iconset="$(mktemp -d)/$name.iconset"
-  swift scripts/render-icon.swift "${MARK_FLAG[@]}" "$style" "$shade" "$iconset"
+  ICONSET_DIR="$(mktemp -d)"
+  iconset="$ICONSET_DIR/$name.iconset"
+  swift scripts/render-icon.swift ${MARK_FLAG[@]+"${MARK_FLAG[@]}"} "$style" "$shade" "$iconset"
   iconutil -c icns "$iconset" -o "$icns"
-  rm -rf "$(dirname "$iconset")"
+  rm -rf "$ICONSET_DIR"
+  ICONSET_DIR=""
   # What produced this icon, which the icns itself cannot say. Without
   # it an ad-hoc render would sit there passing for the standard icon
   # until something else went stale.
@@ -111,13 +122,13 @@ build_icon() { # <app name> <style> <rrggbb shade>
 build_sheet() { # <rrggbb shade>
   local shade="$1" png="$OUT/contact-sheet-$MARK-$1.png"
   echo "==> Rendering $png"
-  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --sheet "$shade" "$png"
+  swift scripts/render-icon.swift ${MARK_FLAG[@]+"${MARK_FLAG[@]}"} --sheet "$shade" "$png"
 }
 
 build_shadows() { # [rrggbb shade]
   local shade="${1:-0f766e}" png="$OUT/shadows-$MARK-${1:-0f766e}.png"
   echo "==> Rendering $png"
-  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --shadows "$shade" "$png"
+  swift scripts/render-icon.swift ${MARK_FLAG[@]+"${MARK_FLAG[@]}"} --shadows "$shade" "$png"
 }
 
 build_sweep() { # <zoom> [rrggbb shade] [grid]
@@ -129,13 +140,13 @@ build_sweep() { # <zoom> [rrggbb shade] [grid]
   esac
   local png="$OUT/sweep-$MARK-z$zoom-$shade.png"
   echo "==> Rendering $png (${grid}x${grid})"
-  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --sweep "$zoom" "$shade" "$png" "$grid"
+  swift scripts/render-icon.swift ${MARK_FLAG[@]+"${MARK_FLAG[@]}"} --sweep "$zoom" "$shade" "$png" "$grid"
 }
 
 build_scout() { # [rrggbb shade] [perUnit]
   local shade="${1:-0f766e}" per="${2:-4}" png="$OUT/scout-$MARK-${1:-0f766e}.png"
   echo "==> Rendering $png ($per picks per unit of zoom)"
-  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --scout "$shade" "$png" "$per"
+  swift scripts/render-icon.swift ${MARK_FLAG[@]+"${MARK_FLAG[@]}"} --scout "$shade" "$png" "$per"
 }
 
 # The brand art, which the app ships as a resource and this script
@@ -346,7 +357,7 @@ case $# in
           MARK=logo
           MARK_FLAG=(--mark logo)
         fi
-        swift scripts/render-icon.swift "${MARK_FLAG[@]}" --composer "$OUT/composer-$MARK"
+        swift scripts/render-icon.swift ${MARK_FLAG[@]+"${MARK_FLAG[@]}"} --composer "$OUT/composer-$MARK"
         ;;
       --glass)
         build_glass_icon

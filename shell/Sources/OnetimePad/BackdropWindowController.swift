@@ -238,11 +238,23 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// Launch: restore the pages and fit the primary screen. An enabled
     /// panel takes its resting place; a disabled panel remains ordered
     /// out until the preference changes.
+    ///
+    /// Neither path hands an activation back. There is no activation of
+    /// ours to return at launch: a person's launch activates the app
+    /// moments after this returns and a login item never does, so the
+    /// app is normally not active here at all. The one time it is, the
+    /// Keychain introduction's modal activated it, and that activation
+    /// is the one the launch replay (`BackdropApp`'s
+    /// `applicationDidFinishLaunching`) is holding to route to the
+    /// editor window once this returns. Resting with the default
+    /// hand-back would deactivate the app under that replay, and a
+    /// first launch would end with the previous app's menu bar back,
+    /// the resting card behind everything, and no editor window.
     func show() {
         model.start()
         fitToScreen()
         if model.ambientPanelEnabled {
-            apply(model.stance)
+            apply(model.stance, handBackActivation: false)
         } else {
             applyPanelEnabled(false, handBackActivation: false)
         }

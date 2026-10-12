@@ -651,6 +651,13 @@ fn work_buffer(plaintext: &[u8]) -> Zeroizing<Vec<u8>> {
     buffer
 }
 
+/// The shortest body [`open_body`] could ever open: a nonce and a tag
+/// around an empty plaintext.
+#[must_use]
+pub(crate) fn sealed_body_floor() -> usize {
+    NONCE_LEN + CHACHA20_POLY1305.tag_len()
+}
+
 /// Open `nonce ‖ ciphertext ‖ tag` back into its plaintext snapshot,
 /// authenticated against `aad`. The returned buffer wipes on drop;
 /// `None` for anything that was not sealed under this key with these

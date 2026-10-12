@@ -127,10 +127,14 @@ impl FileIo for RealFileIo<'_> {
     }
 
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        read_regular_file(path)
+        // At most one byte past the limit: a file swapped for a huge one
+        // between the core's size stat and this open is read no further
+        // than that, which is still the limit's worth of memory, and the
+        // core's own length check refuses what comes back.
+        read_regular(path, companion_core::FILE_SIZE_LIMIT as u64 + 1)
     }
 
-    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
         write_atomic_preserving_mode(path, bytes, self.staging_dir)
     }
 
@@ -170,12 +174,28 @@ impl FileIo for RealFileIo<'_> {
 /// `O_NOFOLLOW` is deliberately not set: symlinks are followed on
 /// purpose, once, at open, and the path held from then on is the
 /// resolved one.
-fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+pub(crate) fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+    read_regular(path, u64::MAX)
+}
+
+/// The defended read, taking at most `limit` bytes.
+fn read_regular(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     use std::io::Read as _;
 
-    let mut file = open_regular_file(path)?;
+    let file = open_regular_file(path)?;
+    // Sized from the open file, so the read lands in one allocation
+    // rather than leaving a trail of freed partial copies. The size is
+    // only a hint: a metadata read that fails sizes nothing and fails
+    // nothing, as `std::fs::read` treated it, and a size the allocator
+    // cannot meet leaves the read to grow as it goes.
+    let len = file
+        .metadata()
+        .ok()
+        .and_then(|metadata| usize::try_from(metadata.len().min(limit)).ok())
+        .unwrap_or(0);
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    let _ = bytes.try_reserve_exact(len);
+    file.take(limit).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 
@@ -231,7 +251,12 @@ fn witness_of(metadata: &std::fs::Metadata) -> io::Result<FileWitness> {
 /// A temp file, opened create-new so nothing planted at the name is
 /// followed or truncated, written, fsynced, renamed onto the target,
 /// then the target's directory fsynced. Either the whole new text is at
-/// the path or the old one still is.
+/// the path or the old one still is. The witness answered is the temp
+/// file's own, read through its descriptor after the fsync and before
+/// the rename: the rename carries the inode and its stamps across
+/// unchanged, and a stat of the path afterwards could meet a file
+/// somebody else had already renamed over ours (see
+/// [`FileIo::write_atomic`]).
 ///
 /// The temp file is made in `staging_dir` when there is one and beside
 /// the target when there is not. Nothing else differs between the two:
@@ -246,7 +271,7 @@ fn write_atomic_preserving_mode(
     path: &Path,
     bytes: &[u8],
     staging_dir: Option<&Path>,
-) -> io::Result<()> {
+) -> io::Result<FileWitness> {
     use std::io::Write as _;
 
     let dir = persist::containing_dir(path)
@@ -307,12 +332,17 @@ fn write_atomic_preserving_mode(
         };
         let landed = carry_identity(&file, existing.as_ref(), dir)
             .and_then(|()| file.write_all(bytes))
-            .and_then(|()| file.sync_all());
+            .and_then(|()| file.sync_all())
+            .and_then(|()| file.metadata())
+            .and_then(|metadata| witness_of(&metadata));
         drop(file);
-        if let Err(error) = landed {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(error);
-        }
+        let witness = match landed {
+            Ok(witness) => witness,
+            Err(error) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(error);
+            }
+        };
         // The one step that touches the target. A staging directory on
         // another volume fails here, as does a target the process holds
         // no grant on, and either way the temp file is taken back so
@@ -328,7 +358,7 @@ fn write_atomic_preserving_mode(
         if let Ok(handle) = std::fs::File::open(dir) {
             let _ = handle.sync_all();
         }
-        return Ok(());
+        return Ok(witness);
     }
     Err(last)
 }
@@ -1387,9 +1417,10 @@ pub(crate) fn seal_drafts_to(
     let wall_ms = wall_now_ms()?;
     let key = persist::ensure_state_key(state.credentials.as_ref(), path)?;
     let emitted = file_persist::emit(&state.files, wall_ms);
-    // The buffer holds a person's unsaved typing, so it is wiped on the
-    // way out whatever happens to the write.
-    let plaintext = Zeroizing::new(emitted.bytes);
+    // The buffer holds a person's unsaved typing. The core hands it
+    // over already zeroizing, so it is wiped on the way out whatever
+    // happens to the write.
+    let plaintext = emitted.bytes;
     let sealed = persist::seal_body(&key, DRAFTS_MAGIC, &plaintext)?;
     let mut file = Vec::with_capacity(DRAFTS_MAGIC.len() + sealed.len());
     file.extend_from_slice(DRAFTS_MAGIC);
@@ -1441,7 +1472,10 @@ pub unsafe extern "C" fn companion_drafts_restore(
         return false;
     };
     let path = Path::new(path);
-    let Ok(file) = std::fs::read(path) else {
+    // The same defended read a person's file gets: a FIFO planted at
+    // the name fails rather than parking this call, and the handle
+    // mutex with it, until a writer that never comes.
+    let Ok(file) = read_regular_file(path) else {
         return false;
     };
     if !file.starts_with(DRAFTS_MAGIC) {
@@ -1821,6 +1855,21 @@ mod tests {
         let text = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
         unsafe { crate::companion_string_free(ptr) };
         text
+    }
+
+    #[test]
+    fn a_file_read_takes_no_more_than_one_byte_past_the_limit() {
+        // A file swapped for a huge one between the core's size stat and
+        // the open is not read whole; the core refuses the one byte over.
+        let dir = scratch_dir("capped-read");
+        let path = dir.join("big.txt");
+        std::fs::write(&path, vec![b'a'; companion_core::FILE_SIZE_LIMIT + 4096]).unwrap();
+        let bytes = RealFileIo::new().read(&path).unwrap();
+        assert_eq!(bytes.len(), companion_core::FILE_SIZE_LIMIT + 1);
+        let small = dir.join("small.txt");
+        std::fs::write(&small, b"short").unwrap();
+        assert_eq!(RealFileIo::new().read(&small).unwrap(), b"short");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A temp directory of this test's own, for the files it opens and

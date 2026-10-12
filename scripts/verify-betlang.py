@@ -10,7 +10,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-import tomllib
+# tomllib arrived in 3.11. build-core.sh runs this verifier before every
+# core build, on whatever python3 is first in PATH, and the Command Line
+# Tools interpreter on macOS through 15 is 3.9: without this check that
+# machine dies on the import with a traceback instead of a sentence.
+if sys.version_info < (3, 11):
+    sys.stderr.write(
+        "verify-betlang.py needs Python 3.11 or later (for tomllib); "
+        f"this is {sys.version.split()[0]} at {sys.executable}. "
+        "Install a newer python3 (Homebrew's python@3.12, for one) and "
+        "put it first in PATH.\n"
+    )
+    sys.exit(2)
+
+import tomllib  # noqa: E402
 
 EXPECTED_VERSION = "0.1.1"
 EXPECTED_REQUIREMENT = "=0.1.1"

@@ -1686,8 +1686,15 @@ public final class PageModel: ObservableObject {
         if client.emptiness()?.hasNoTabs == true {
             newTab()
         }
+        // `refresh()` seats the selection: the strip's rule lands it on
+        // the first live slot, and the day mode's rule then lets it
+        // fall to the newest visible page. Nothing is written over it
+        // here. A launch that reset it to the first strip slot undid
+        // that fall whenever the first slot held no page, which is
+        // every morning after an overnight expiry: the rail lit no
+        // node, the roll parked the editor, and nothing reconciled
+        // again until the next edit or expiry happened along.
         refresh()
-        selection = navigationTabs.first?.id
         if pads.isEnabled { restorePadSelection() }
         // The third sealed file, after the pages and after the
         // selection settles. It is licensed by nothing: a state file
@@ -5486,7 +5493,7 @@ public final class PageModel: ObservableObject {
     /// the board is the failure this route exists to prevent.
     public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
             flash("nothing to seal")
@@ -5499,6 +5506,24 @@ public final class PageModel: ObservableObject {
                 ? "sealed; the clipboard is clear"
                 : "sealed, but the clipboard changed mid-take and was left untouched")
         return chip
+    }
+
+    /// The page the three seal routes write into, or nil while a file
+    /// or the ledger shows, the same pair `canExpandPage` refuses.
+    ///
+    /// Not `selectedPageID` on its own. The selection names a slot, and
+    /// `selectFile` deliberately leaves it on the slot the person left,
+    /// so while a file is the active target `selectedPageID` is still
+    /// the page behind the file. A seal routed on it would delete the
+    /// captured range from that hidden page and stand a chip there,
+    /// clear the clipboard, and leave the file's storage showing a chip
+    /// the file's own document does not hold. A file is never a seal
+    /// target (ADR-0028): the menu's `sealableSelection` already says
+    /// so, and the chord, the offer button and the drop take the same
+    /// answer from here.
+    public var sealTarget: UInt64? {
+        guard selectedFile == nil, !showingLedger else { return nil }
+        return selectedPageID
     }
 
     /// An `NSRange` as the seam's `u32` pair, refused rather than
@@ -5546,7 +5571,7 @@ public final class PageModel: ObservableObject {
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
         if chip == nil { flash("nothing to seal") } else { markDirty() }
         return chip
@@ -5558,7 +5583,7 @@ public final class PageModel: ObservableObject {
     /// to match rather than performing an edit of its own.
     public func sealText(_ text: String, replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealText(sheet: sheet, text, at: at, length: length)
         if chip != nil { markDirty() }
         return chip
