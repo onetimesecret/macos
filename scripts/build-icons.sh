@@ -30,8 +30,9 @@
 #   scripts/build-icons.sh --glass [directory] # compile the saved Composer icon; directory is repo-relative
 #   scripts/build-icons.sh --web [directory]   # export the saved Composer icon for the websites
 #       light and dark renderings as 1024 pixel, 8 bit sRGB PNGs, and a
-#       flat SVG of the same composition in the document's fill shade,
-#       in artwork/web unless a repo-relative directory is given.
+#       flat SVG of each (light in the document's fill shade, dark in
+#       the Dark rendition's plate shade), in artwork/web unless a
+#       repo-relative directory is given.
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 #   scripts/build-icons.sh --shadows [rrggbb]
@@ -200,21 +201,24 @@ glass_fill_shade() {
 }
 
 # The websites' copy of the glass icon: Icon Composer's own light and
-# dark renderings of the saved document, and a flat vector of the same
-# composition. Browsers cannot draw a .icon and an SVG cannot carry the
-# glass, so the renderings are rasters. ictool writes 16 bit Display P3
-# and cwebp drops colour profiles by default, so sips converts each
-# rendering to 8 bit sRGB. The SVG is the icon shape in the document's
-# fill shade under the white mark, placed as the Composer foreground is,
-# for sizes and places where a raster would blur. All three are staged
-# and checked before any replaces the copies in the directory.
+# dark renderings of the saved document, and a flat vector of each.
+# Browsers cannot draw a .icon and an SVG cannot carry the glass, so the
+# renderings are rasters. ictool writes 16 bit Display P3 and cwebp
+# drops colour profiles by default, so sips converts each rendering to
+# 8 bit sRGB. Each SVG is the icon shape in one shade under the white
+# mark, placed as the Composer foreground is, for sizes and places
+# where a raster would blur. The light shade is the document's fill;
+# the document has no dark fill, Composer's dark appearance supplies
+# that plate, so the dark shade is sampled from the Dark rendition. All
+# four are staged and checked before any replaces the copies in the
+# directory.
 export_web_icons() { # [directory]
   if [[ -n "$MARK_CHOSEN" ]]; then
     echo "--web exports artwork/OnetimePad-Glass.icon; --mark applies to rendered artwork only." >&2
     exit 1
   fi
   find_composer_tool --web
-  local destination="${1:-artwork/web}" staging rendition name shade
+  local destination="${1:-artwork/web}" staging rendition name shade dark_shade
   shade="$(glass_fill_shade)"
   staging="$(mktemp -d)"
   for rendition in Default Dark; do
@@ -239,15 +243,23 @@ export_web_icons() { # [directory]
       exit 1
     fi
   done
-  echo "==> Exporting $destination/onetimepad-icon.svg (flat, fill $shade)"
-  swift scripts/render-icon.swift --mark logo --svg "$shade" "$staging/onetimepad-icon.svg" >/dev/null
-  if [[ ! -s "$staging/onetimepad-icon.svg" ]]; then
-    echo "could not export web icon: render-icon.swift produced no onetimepad-icon.svg" >&2
-    exit 1
-  fi
+  dark_shade="$(swift scripts/render-icon.swift --plate-shade "$staging/onetimepad-icon-dark.png")"
+  local svg_shade source
+  for name in onetimepad-icon onetimepad-icon-dark; do
+    case "$name" in
+      onetimepad-icon) svg_shade="$shade"; source="icon.json" ;;
+      onetimepad-icon-dark) svg_shade="$dark_shade"; source="the Dark rendition" ;;
+    esac
+    echo "==> Exporting $destination/$name.svg (flat, fill $svg_shade from $source)"
+    swift scripts/render-icon.swift --mark logo --svg "$svg_shade" "$staging/$name.svg" >/dev/null
+    if [[ ! -s "$staging/$name.svg" ]]; then
+      echo "could not export web icon: render-icon.swift produced no $name.svg" >&2
+      exit 1
+    fi
+  done
   mkdir -p "$destination"
   mv "$staging/onetimepad-icon.png" "$staging/onetimepad-icon-dark.png" \
-    "$staging/onetimepad-icon.svg" "$destination/"
+    "$staging/onetimepad-icon.svg" "$staging/onetimepad-icon-dark.svg" "$destination/"
   rm -rf "$staging"
 }
 

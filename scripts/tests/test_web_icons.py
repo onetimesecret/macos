@@ -18,8 +18,9 @@ SCRIPT = ROOT / "scripts/build-icons.sh"
 DOCUMENT = ROOT / "artwork/OnetimePad-Glass.icon/icon.json"
 LOGO = ROOT / "shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg"
 RASTERS = ("onetimepad-icon.png", "onetimepad-icon-dark.png")
-VECTOR = "onetimepad-icon.svg"
-NAMES = RASTERS + (VECTOR,)
+VECTORS = ("onetimepad-icon.svg", "onetimepad-icon-dark.svg")
+NAMES = RASTERS + VECTORS
+FIXTURE_SHADE = "dc4a22"
 SVG = "{http://www.w3.org/2000/svg}"
 
 
@@ -161,16 +162,21 @@ class WebIconTests(unittest.TestCase):
                     "profile": "sRGB IEC61966-2.1",
                     "hasAlpha": "yes",
                 })
-        self.assert_vector_export()
+        self.assert_vector_export("onetimepad-icon.svg", document_fill())
+        # The dark plate is Composer's, sampled from its rendition: a dark grey.
+        dark = ElementTree.parse(self.web / "onetimepad-icon-dark.svg").getroot()
+        fill = dark.find(f"{SVG}path").get("fill")
+        self.assertTrue(all(int(fill[i:i + 2], 16) < 0x40 for i in (1, 3, 5)), fill)
+        self.assert_vector_export("onetimepad-icon-dark.svg", fill[1:])
 
-    def assert_vector_export(self):
-        """The SVG is the icon shape in the document's fill under the asset's own mark paths."""
-        root = ElementTree.parse(self.web / VECTOR).getroot()
+    def assert_vector_export(self, name, fill):
+        """The SVG is the icon shape in one fill under the asset's own mark paths."""
+        root = ElementTree.parse(self.web / name).getroot()
         self.assertEqual(root.tag, f"{SVG}svg")
         self.assertEqual(root.get("viewBox"), "0 0 1024 1024")
         plate, group = list(root.findall(f"{SVG}path")), root.find(f"{SVG}g")
         self.assertEqual(len(plate), 1)
-        self.assertEqual(plate[0].get("fill"), "#" + document_fill())
+        self.assertEqual(plate[0].get("fill"), "#" + fill)
         self.assertRegex(plate[0].get("d"), r"^M [\d.]+ 0 .* Z$")
         self.assertEqual(group.get("fill"), "#ffffff")
         self.assertRegex(
@@ -181,13 +187,20 @@ class WebIconTests(unittest.TestCase):
             [(p.get("transform"), p.get("d")) for p in group.findall(f"{SVG}path")],
             logo_mark_paths(),
         )
-        self.assertNotIn("<image", (self.web / VECTOR).read_text())
+        self.assertNotIn("<image", (self.web / name).read_text())
 
-    def test_exports_a_flat_vector_in_the_document_fill(self):
+    def test_exports_flat_vectors_in_the_document_and_rendition_fills(self):
         result = self.export(self.mock_composer())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(f"onetimepad-icon.svg (flat, fill {document_fill()})", result.stdout)
-        self.assert_vector_export()
+        self.assertIn(f"onetimepad-icon.svg (flat, fill {document_fill()} from icon.json)", result.stdout)
+        self.assert_vector_export("onetimepad-icon.svg", document_fill())
+        # The stand-in ictool renders every rendition as the solid fixture,
+        # so the dark SVG sampling the Dark rendition gets the fixture's shade.
+        self.assertIn(
+            f"onetimepad-icon-dark.svg (flat, fill {FIXTURE_SHADE} from the Dark rendition)",
+            result.stdout,
+        )
+        self.assert_vector_export("onetimepad-icon-dark.svg", FIXTURE_SHADE)
 
     def test_requests_both_renditions_and_converts_each(self):
         result = self.export(self.mock_composer())

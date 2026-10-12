@@ -945,6 +945,41 @@ func writeSVG(mark: Mark, fill: String, to url: URL) {
     }
 }
 
+/// The plate shade of a rendering as rrggbb: the per channel median of
+/// its opaque pixels that are not the white mark or its antialiased
+/// edge. The document carries no dark fill; Icon Composer's dark
+/// appearance supplies that plate itself, so the dark SVG reads its
+/// shade from the Dark rendition rather than inventing one. The median
+/// of the automatic gradient is its middle, which is the shade the
+/// rendering reads as.
+func printPlateShade(of url: URL) {
+    guard let data = try? Data(contentsOf: url), let image = NSBitmapImageRep(data: data),
+          let cgImage = image.cgImage else {
+        fail("could not read a rendering at \(url.path)")
+    }
+    // Sampled in sRGB, which is what a browser takes the SVG's hex to
+    // be; the renderer's own bitmaps are generic RGB and would shift it.
+    let width = cgImage.width, height = cgImage.height
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+          let pixels = context.data?.assumingMemoryBound(to: UInt8.self)
+    else { fail("could not allocate an sRGB \(width)x\(height) bitmap") }
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let stride = context.bytesPerRow
+    var channels: [[UInt8]] = [[], [], []]
+    for y in 0..<height { for x in 0..<width {
+        let i = y * stride + x * 4
+        let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3]
+        guard a > 127, min(r, g, b) < 180 else { continue }
+        channels[0].append(r); channels[1].append(g); channels[2].append(b)
+    }}
+    guard !channels[0].isEmpty else { fail("\(url.path) has no plate to sample") }
+    let median = channels.map { $0.sorted()[$0.count / 2] }
+    print(String(format: "%02x%02x%02x", median[0], median[1], median[2]))
+}
+
 func writeIconset(style: Style, base: NSColor, mark: Mark, to outDir: URL) {
     // iconutil's expected members: each point size at 1x and 2x,
     // sharing pixel renderings where they coincide.
@@ -1217,6 +1252,11 @@ if arguments.count == 3, arguments[1] == "--composer" {
 
 if arguments.count == 4, arguments[1] == "--svg" {
     writeSVG(mark: mark, fill: arguments[2], to: URL(fileURLWithPath: arguments[3]))
+    exit(0)
+}
+
+if arguments.count == 3, arguments[1] == "--plate-shade" {
+    printPlateShade(of: URL(fileURLWithPath: arguments[2]))
     exit(0)
 }
 
