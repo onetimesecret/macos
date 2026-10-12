@@ -1,6 +1,11 @@
 # The relay protocol, and what the relay is allowed to hold
 
-**Status:** specified, not built. This document is issue
+**Status:** specified. The server side (onetimesecret/onetimesecret#4303)
+is not built; the client is, except ADR-0021 Amendment 1's welcome work,
+as the [sync README](README.md) records. Where the built client departs
+from this text:
+[client protocol §10](client-protocol.md#10-known-divergences-and-gaps).
+This document is issue
 [#99](https://github.com/onetimesecret/macos/issues/99)'s deliverable:
 the protocol written down before it is implemented, with the storage
 contract as a numbered section ADR-0021 can cite. The client seams it
@@ -51,8 +56,9 @@ publishes it (§5); its acceptance at epoch n+1 is what purges epoch n.
 
 This is more forgetting than a solo page gets, never less: a page
 enrolled in sync sheds its history at every channel ceremony rather
-than only at its own rung transitions. ADR-0013 already priced extra
-ceremonies at "nothing this design has not already priced", and the
+than only at its own rung transitions. The ADR-0013
+[decision background](../document-history/decision-background.md) priced
+an extra ceremony at "nothing this design has not already priced", and the
 alternative — per-page epochs — is a per-page frame, which is the
 rejected channel-per-page model wearing a different name.
 
@@ -167,6 +173,8 @@ Rules the shapes encode:
   ceremony ballots of §5. Control and content share the stream so the
   relay cannot distinguish them.
 
+The built client's answers and key packages: [client protocol §4, §5](client-protocol.md#4-per-message-behaviour).
+
 ## 5. The ceremony on the wire
 
 A proposal is a sealed control payload in the delta stream:
@@ -237,6 +245,9 @@ marker (ADR-0021 §6), the publisher immediately proposes a ceremony, so
 the dead page's ciphertext in the relay buffer stops being decryptable
 at the earliest boundary the channel can reach — key destruction doing
 the work deletion cannot be trusted to do.
+
+Proposed 2026-10-12, not accepted, and not part of this section: signed
+propose and accept messages ([client protocol §7.10](client-protocol.md#710-signed-ceremony-messages-proposed-not-accepted)).
 
 ## 6. Key packages
 

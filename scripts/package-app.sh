@@ -50,6 +50,16 @@
 # --app-store), the reproducible pre-signature artifact ADR-0012
 # publishes.
 set -euo pipefail
+
+# Every temp file this script makes is named here the moment it is
+# made, and taken back on any exit: a handled error already removed
+# its own, but a tool failing under `set -e` between the make and the
+# remove used to leave the file behind in $TMPDIR.
+TEMP_FILES=()
+cleanup_temp_files() {
+  rm -f ${TEMP_FILES[@]+"${TEMP_FILES[@]}"}
+}
+trap cleanup_temp_files EXIT
 cd "$(dirname "$0")/.."
 
 source scripts/build-lanes.sh
@@ -162,8 +172,11 @@ validate_signing_configuration() {
 
   local profile_plist certificate_pem certificate_der device_udid
   profile_plist="$(mktemp -t onetimepad-profile)"
+  TEMP_FILES+=("$profile_plist")
   certificate_pem="$(mktemp -t onetimepad-certificate-pem)"
+  TEMP_FILES+=("$certificate_pem")
   certificate_der="$(mktemp -t onetimepad-certificate-der)"
+  TEMP_FILES+=("$certificate_der")
   if ! security cms -D -i "$PROVISIONING_PROFILE" > "$profile_plist"; then
     rm -f "$profile_plist" "$certificate_pem" "$certificate_der"
     echo "could not decode $BUILD_LANE provisioning profile: $PROVISIONING_PROFILE" >&2
@@ -294,6 +307,7 @@ if [[ "$CONFIG" == "release" ]]; then
   # symbol every shape exports has to be visible before the absence of
   # a seam means anything.
   EXPORTS_FILE="$(mktemp -t companion-exports)"
+  TEMP_FILES+=("$EXPORTS_FILE")
   if ! nm -gU "$BIN" >"$EXPORTS_FILE"; then
     echo "nm could not inspect $BIN; refusing to package an unchecked release." >&2
     rm -f "$EXPORTS_FILE"
@@ -421,12 +435,19 @@ reserve_app_store_build_number() { # <counter file> [explicit number]
   fi
   if ((next > last)); then
     staged="$(mktemp "$counter.XXXXXX")"
+    TEMP_FILES+=("$staged")
     printf '%s\n' "$next" > "$staged"
     mv -f "$staged" "$counter"
   fi
   exec 9>&-
   APP_STORE_BUILD_NUMBER=$next
 }
+
+# Whether the tree the build came from is one the repo can reproduce. A
+# modified tracked file and an untracked new one both say no: a source
+# file nobody has added yet builds into the binary just the same. Asked
+# once, so the two stamps below name the same tree.
+TREE_DIRTY="$(git status --porcelain --untracked-files=normal 2>/dev/null || true)"
 
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
@@ -442,20 +463,20 @@ else
   # answer: the SHA alone would claim a build the repo cannot reproduce.
   # Outside a git checkout the plain version stands.
   if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
-    git diff --quiet HEAD 2>/dev/null || SHA="$SHA.dirty"
+    [[ -z "$TREE_DIRTY" ]] || SHA="$SHA.dirty"
     plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
   fi
 fi
 
 # Stamp provenance independently of the App Store's numeric build counter.
-# A dirty tree stays visible in reports from locally packaged builds.
+# A dirty tree stays visible in reports from locally packaged builds, and
+# it is the same dirty tree CFBundleVersion names: one predicate, so the
+# About box and the diagnostics report cannot disagree about a build.
 plutil -replace OnetimePadBuildLane -string "$BUILD_LANE" "$APP/Contents/Info.plist"
 SOURCE_REVISION="unknown"
 if RESOLVED_REVISION="$(git rev-parse HEAD 2>/dev/null)"; then
   SOURCE_REVISION="$RESOLVED_REVISION"
-  if [[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
-    SOURCE_REVISION="$SOURCE_REVISION.dirty"
-  fi
+  [[ -z "$TREE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
 fi
 plutil -replace OnetimePadSourceRevision -string "$SOURCE_REVISION" "$APP/Contents/Info.plist"
 
@@ -537,6 +558,7 @@ elif [[ -n "$PROVISIONING_PROFILE" ]]; then
   ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
 
   SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
+  TEMP_FILES+=("$SIGN_ENTITLEMENTS")
   sed -e "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" \
       -e "s/@BUNDLE_IDENTIFIER@/${SIGNED_BUNDLE_ID}/g" \
       scripts/Companion.entitlements > "$SIGN_ENTITLEMENTS"
@@ -605,6 +627,7 @@ if ((APP_STORE_MODE)); then
   fi
 
   SIGNED_ENTITLEMENTS="$(mktemp -t onetimepad-signed-entitlements)"
+  TEMP_FILES+=("$SIGNED_ENTITLEMENTS")
   if ! codesign -d --entitlements - --xml "$APP" > "$SIGNED_ENTITLEMENTS" 2>/dev/null; then
     rm -f "$SIGNED_ENTITLEMENTS"
     echo "could not read entitlements from the signed app" >&2

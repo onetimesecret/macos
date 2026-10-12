@@ -212,6 +212,30 @@ final class PadModelTests: XCTestCase {
         XCTAssertNotNil(model.pendingFileClose)
     }
 
+    func testASealWhileAFileIsShowingDoesNotReachThePageBehindIt() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("seal-over-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("notes.txt")
+        try "on disk".write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        XCTAssertNotNil(model.selectedFile)
+        // The selection still names the slot the person left, so the
+        // page is still "selected" by that reading. It is not a seal
+        // target while the file is what the editor shows.
+        XCTAssertEqual(model.selectedPageID, page)
+        XCTAssertNil(model.sealTarget)
+        XCTAssertNil(model.sealText("private", replacing: NSRange(location: 0, length: 0)))
+        XCTAssertNil(model.sealDrag(replacing: NSRange(location: 0, length: 0)))
+        XCTAssertNil(model.sealPasteboard(replacing: NSRange(location: 0, length: 0)))
+        XCTAssertEqual(model.storage(for: page).string, "", "the hidden page took no chip")
+    }
+
     func testPadNavigationDismissesConcealForPagesAndChips() throws {
         for useChip in [false, true] {
             let model = isolatedModel(defaults: try defaults())

@@ -475,10 +475,11 @@ struct BackdropRootView: View {
         }
     }
 
-    /// Forward every dropped URL to the shared file-open path. The core
-    /// evaluates each item by its contents, not its suffix or declared type.
+    /// Forward every dropped file URL to the shared file-open path. The
+    /// core evaluates each item by its contents, not its suffix or declared
+    /// type.
     ///
-    /// It answers true whenever anything was dropped, including files the
+    /// It answers true whenever a file was dropped, including files the
     /// core refuses with a notice. Answering false would give the item back
     /// to whatever is underneath the card.
     private func openDropped(_ urls: [URL]) -> Bool {
@@ -486,10 +487,20 @@ struct BackdropRootView: View {
     }
 
     /// The testable part of drop handling: no suffix or type classification,
-    /// only forwarding every URL in order to the caller's file-open path.
+    /// only forwarding every file URL in order to the caller's file-open
+    /// path.
+    ///
+    /// Only file URLs. The drop takes `URL` items so that a file dragged
+    /// from the Finder arrives as a value, but a link dragged out of a
+    /// browser or a mail arrives the same way, and a web link is not a
+    /// file: its path component names nothing on this disk, or worse,
+    /// names something (`https://example.com/etc/hosts` has the path
+    /// `/etc/hosts`). A drop with no file in it is answered false, so the
+    /// item goes back to whatever is underneath the card.
     static func forwardDroppedURLs(_ urls: [URL], openFile: (URL) -> Void) -> Bool {
-        guard !urls.isEmpty else { return false }
-        for url in urls {
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { return false }
+        for url in files {
             openFile(url)
         }
         return true

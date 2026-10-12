@@ -16,3 +16,4 @@ ots-client = { path = "../ots-client" }
 # default-features off: skip gzip/cookies/charset — a single small JSON
 # POST doesn't need them, and the frugality budget (doc 05) says no.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+zeroize = { workspace = true }

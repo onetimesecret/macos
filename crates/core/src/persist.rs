@@ -137,6 +137,16 @@ const MAX_SPAN_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 /// one second ahead of the clock that judges it.
 const STAMP_SLACK_S: i64 = 2;
 
+/// The same slack in milliseconds, for the ledger's wall stamps.
+const STAMP_SLACK_MS: u64 = 2_000;
+
+/// 2026-10-01T00:00:00Z. A wall clock reading earlier than this is
+/// wrong, not early: no build that runs this code was made before it.
+/// The ledger's stamp clamp stands aside below it, because clamping to
+/// a clock that reads 1970 would backdate every record, and the first
+/// correct clock after that would evict the whole trail.
+const WALL_CLOCK_FLOOR_MS: u64 = 1_790_812_800_000;
+
 /// A persisted Unix-second stamp, clamped into the sane range on the
 /// way in: positive, and no later than the wall clock plus
 /// [`STAMP_SLACK_S`]. A stamp is trusted arithmetic downstream, so a
@@ -357,10 +367,32 @@ impl<C: Clock> SheetStore<C> {
             });
         }
         let record_count = count(&mut reader)?;
+        // A stamp is what retention keys on, so a stamp from the future
+        // is clamped to the clock on the way in, as the content
+        // snapshot's materialized stamps are. Left as written, a record
+        // stamped by a wall clock that was years ahead would sit inside
+        // the 90-day window for as long as the stamp stayed ahead of
+        // the clock that judges it, and be re-persisted under the
+        // long-lived key every write. ADR-0012 accepts "a metadata
+        // record living slightly too long or dying slightly early" from
+        // a stepped clock; years is not slightly. A clock below
+        // `WALL_CLOCK_FLOOR_MS` is the broken party, and clamping to it
+        // would fail the other way by as much, so the stamps are left
+        // as written for that load. The creation stamp clamps with the
+        // rest, so a clamped record's row reads as created at about the
+        // load rather than at the future date it was written with.
+        let ceiling = if wall_ms < WALL_CLOCK_FLOOR_MS {
+            u64::MAX
+        } else {
+            wall_ms.saturating_add(STAMP_SLACK_MS)
+        };
         let mut loaded = Vec::new();
         for _ in 0..record_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            loaded.push(read_record(&mut record)?);
+            let mut record = read_record(&mut record)?;
+            record.at_wall_ms = record.at_wall_ms.min(ceiling);
+            record.item_created_wall_ms = record.item_created_wall_ms.min(ceiling);
+            loaded.push(record);
         }
         if !reader.done() {
             return Err(RestoreError::Malformed);
@@ -373,15 +405,18 @@ impl<C: Clock> SheetStore<C> {
         // recorded by this session, and the file's records were
         // recorded by earlier ones, so laying the file's list after the
         // live one is precisely what a `push_front` per record would
-        // have produced. Sorting on the stamp instead would rearrange a
-        // file written by a session whose wall clock stepped, which is
-        // not this call's business to correct.
+        // have produced. Sorting on the stamp instead would reorder a
+        // file written by a session whose wall clock stepped; the clamp
+        // above caps a future stamp but leaves the order alone.
         let mut merged: Vec<LedgerRecord> = self.ledger.drain(..).collect();
         // The merge is a multiset union: every copy the file and the
         // deque both hold cancels one for one, and any copy only the
         // file holds is kept. So reading one file twice, or reading a
         // file saved after this same merge, reads back as one trail
-        // rather than two, while a file that genuinely holds more copies
+        // rather than two, for every record the clamp left alone: a
+        // future stamp clamps to the clock of each read, so the same
+        // record read at two different times does not match itself.
+        // A file that genuinely holds more copies
         // of an event than the deque does keeps the surplus. The deque's
         // records are indexed by the two fields any twin must agree on,
         // so the equality test only ever weighs the handful that could
@@ -1900,7 +1935,7 @@ mod tests {
         let expected: Vec<LedgerRecord> = original.ledger().cloned().collect();
 
         let mut revived = store_on(clock.clone());
-        let restored = revived.restore_ledger(&ledger, 0).unwrap();
+        let restored = revived.restore_ledger(&ledger, clock.wall_ms()).unwrap();
         assert_eq!(restored, expected.len());
         let records: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         assert_eq!(records, expected);
@@ -1910,7 +1945,7 @@ mod tests {
         // A ledger restore leaves the strip alone, in both directions.
         assert!(revived.has_no_tabs());
         assert_eq!(
-            revived.restore_ledger(&original.snapshot(0), 0),
+            revived.restore_ledger(&original.snapshot(0), clock.wall_ms()),
             Err(RestoreError::UnknownFormat),
             "a content snapshot is not a ledger snapshot"
         );
@@ -1940,7 +1975,7 @@ mod tests {
         let overnight: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         assert_eq!(overnight.len(), 2, "the page was created, then it died");
 
-        let kept = revived.restore_ledger(&file, 0).unwrap();
+        let kept = revived.restore_ledger(&file, clock.wall_ms()).unwrap();
         assert_eq!(kept, overnight.len() + earlier.len());
         let records: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         assert_eq!(
@@ -1951,7 +1986,10 @@ mod tests {
 
         // The same file twice is the same trail: nothing already in
         // hand is taken from it a second time.
-        assert_eq!(revived.restore_ledger(&file, 0).unwrap(), kept);
+        assert_eq!(
+            revived.restore_ledger(&file, clock.wall_ms()).unwrap(),
+            kept
+        );
         assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), records);
     }
 
@@ -1986,14 +2024,15 @@ mod tests {
         // surplus, spending its single live twin and keeping the other,
         // the way a multiset union does.
         let item = ItemId::random();
-        let r = ledger_record(item, 1_800_000_000_000);
+        let now = 1_800_000_000_000;
+        let r = ledger_record(item, now);
         let one = ledger_file(std::slice::from_ref(&r));
         let two = ledger_file(&[r.clone(), r.clone()]);
 
         let (mut store, _) = store();
-        assert_eq!(store.restore_ledger(&one, 0).unwrap(), 1);
+        assert_eq!(store.restore_ledger(&one, now).unwrap(), 1);
         assert_eq!(
-            store.restore_ledger(&two, 0).unwrap(),
+            store.restore_ledger(&two, now).unwrap(),
             2,
             "the surplus copy the deque lacked was kept, not deduplicated away"
         );
@@ -2002,6 +2041,60 @@ mod tests {
             records,
             vec![r.clone(), r],
             "both copies survived the union"
+        );
+    }
+
+    #[test]
+    fn a_future_stamped_ledger_record_is_clamped_to_the_clock_on_load() {
+        // A record stamped by a wall clock that was a year ahead. Left
+        // as written it would sit inside the retention window for as
+        // long as the stamp stayed ahead of the clock judging it, and
+        // be written back under the long-lived key on every save.
+        let now = 1_800_000_000_000;
+        let year = 365 * 24 * 60 * 60 * 1000;
+        let ahead = ledger_record(ItemId::random(), now + year);
+        let file = ledger_file(std::slice::from_ref(&ahead));
+
+        let (mut revived, _) = store();
+        assert_eq!(revived.restore_ledger(&file, now).unwrap(), 1);
+        let record = revived.ledger().next().unwrap().clone();
+        assert!(
+            record.at_wall_ms() <= now + STAMP_SLACK_MS,
+            "the stamp was clamped to the clock: {}",
+            record.at_wall_ms()
+        );
+        assert!(record.item_created_wall_ms() <= now + STAMP_SLACK_MS);
+
+        // And from there it ages out on the ordinary schedule, counted
+        // from the clamped stamp rather than from the one it claimed.
+        let clamped = ledger_file(std::slice::from_ref(&record));
+        let (mut later, _) = store();
+        let past_window = record.at_wall_ms() + crate::ledger::LEDGER_RETENTION_MS + 1;
+        assert_eq!(later.restore_ledger(&clamped, past_window).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_clock_that_reads_before_the_floor_leaves_ledger_stamps_alone() {
+        // A launch before the clock is set reads 1970. Clamped to it,
+        // every record would be backdated, and the next load under a
+        // correct clock would evict the lot as 56 years old.
+        let stamped = 1_800_000_000_000;
+        let record = ledger_record(ItemId::random(), stamped);
+        let file = ledger_file(std::slice::from_ref(&record));
+
+        let (mut revived, _) = store();
+        assert_eq!(revived.restore_ledger(&file, 5_000).unwrap(), 1);
+        let kept = revived.ledger().next().unwrap().clone();
+        assert_eq!(kept.at_wall_ms(), stamped);
+
+        let (mut corrected, _) = store();
+        let rewritten = ledger_file(std::slice::from_ref(&kept));
+        assert_eq!(
+            corrected
+                .restore_ledger(&rewritten, stamped + 1_000)
+                .unwrap(),
+            1,
+            "the record survives the clock coming right"
         );
     }
 
@@ -2507,7 +2600,7 @@ mod tests {
 
         let mut revived = store_on(clock.clone());
         assert_eq!(
-            revived.restore_ledger(&extended, 0).unwrap(),
+            revived.restore_ledger(&extended, clock.wall_ms()).unwrap(),
             expected.len()
         );
         assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), expected);

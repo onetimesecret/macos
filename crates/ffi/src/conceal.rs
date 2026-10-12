@@ -71,17 +71,25 @@ impl ConcealOpts {
                 recipient: None,
             });
         };
-        let value: serde_json::Value = serde_json::from_str(json).ok()?;
+        let mut value: serde_json::Value = serde_json::from_str(json).ok()?;
         if !value.is_object() {
             return None;
         }
+        // The passphrase is taken out of the parsed tree rather than
+        // copied out of it, so the tree drops holding null where the
+        // passphrase was and our one copy is the zeroizing one. A
+        // passphrase the parser had to unescape (one holding a quote, a
+        // backslash or a `\u` escape) also passed through serde_json's
+        // own scratch buffer, which is not ours to wipe.
+        let passphrase = match value.get_mut("passphrase").map(serde_json::Value::take) {
+            Some(serde_json::Value::String(passphrase)) if !passphrase.is_empty() => {
+                Some(Zeroizing::new(passphrase))
+            }
+            _ => None,
+        };
         Some(Self {
             ttl_secs: value.get("ttl_secs").and_then(serde_json::Value::as_u64),
-            passphrase: value
-                .get("passphrase")
-                .and_then(serde_json::Value::as_str)
-                .filter(|s| !s.is_empty())
-                .map(|s| Zeroizing::new(s.to_owned())),
+            passphrase,
             recipient: value
                 .get("recipient")
                 .and_then(serde_json::Value::as_str)
