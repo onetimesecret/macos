@@ -21,6 +21,8 @@
 // `--svg <rrggbb> <output.svg>` writes the saved composition flat, as a
 // vector for the websites: the icon shape in that shade under the white
 // logo mark, placed as the Composer foreground is. Logo mark only.
+// `--plate-shade <rendering.png>` prints the plate shade of an Icon
+// Composer rendering as rrggbb, which --web uses for the dark SVG.
 
 import AppKit
 
@@ -1333,6 +1335,7 @@ guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
     usage: swift render-icon.swift [--mark <mark>] <style> <rrggbb> <output.iconset>
            swift render-icon.swift [--mark <mark>] --composer <output-directory>
            swift render-icon.swift --mark logo --svg <rrggbb> <output.svg>
+           swift render-icon.swift --plate-shade <rendering.png>
            swift render-icon.swift [--mark <mark>] --sheet <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --shadows <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --sweep <zoom> <rrggbb> <output.png> [grid]
