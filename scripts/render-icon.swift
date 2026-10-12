@@ -310,20 +310,31 @@ func drawMaruhiPlate(_ color: NSColor, in tile: NSRect, scale: CGFloat,
 /// the vignette styles crop both alike.
 let logoFill: CGFloat = 0.88
 
+/// The logo art fitted into a square box of `box` a side centred on
+/// `center`: the scale from artwork units, and the fitted art's size
+/// and the corner nearest the origin. drawLogo and the SVG export both
+/// place the mark by it, so the vector cannot drift from the Composer
+/// foreground. Centring is symmetric, so the corner is the top left in
+/// SVG's y down and the bottom left in AppKit's y up.
+func logoFit(_ art: CGRect, box: CGFloat, center: CGPoint)
+    -> (k: CGFloat, origin: CGPoint, size: CGSize) {
+    let k = box * logoFill / max(art.width, art.height)
+    let size = CGSize(width: art.width * k, height: art.height * k)
+    return (k, CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2), size)
+}
+
 func drawLogo(_ color: NSColor, in tile: NSRect, scale: CGFloat,
               offset: NSPoint, focus: NSPoint) {
     let (mark, art) = logoMark()
     guard art.width > 0, art.height > 0 else { fail("the logo mark path is empty") }
     let box = tile.height * scale
-    let k = box * logoFill / max(art.width, art.height)
-    let width = art.width * k, height = art.height * k
-    let x = tile.midX - width / 2 + offset.x - focus.x * box
-    let y = tile.midY - height / 2 + offset.y - focus.y * box
+    let (k, origin, size) = logoFit(art, box: box, center: NSPoint(
+        x: tile.midX + offset.x - focus.x * box, y: tile.midY + offset.y - focus.y * box))
 
     // The path is in SVG coordinates, y running down, so the fit flips
     // y and lands the art's top left at the top left of the fitted box.
     let fit = NSAffineTransform()
-    fit.translateX(by: x, yBy: y + height)
+    fit.translateX(by: origin.x, yBy: origin.y + size.height)
     fit.scaleX(by: k, yBy: -k)
     fit.translateX(by: -art.minX, yBy: -art.minY)
     let path = fit.transform(mark)
@@ -916,10 +927,9 @@ func writeSVG(mark: Mark, fill: String, to url: URL) {
     guard art.width > 0, art.height > 0 else { fail("the logo mark path is empty") }
     // The fit of drawLogo on Composer's full canvas, without the flip:
     // SVG y already runs down, as the artwork's does.
-    let box = canvas * composerForegroundScale(for: mark)
-    let k = box * logoFill / max(art.width, art.height)
-    let x = canvas / 2 - art.width * k / 2
-    let y = canvas / 2 - art.height * k / 2
+    let (k, origin, _) = logoFit(art, box: canvas * composerForegroundScale(for: mark),
+                                 center: CGPoint(x: canvas / 2, y: canvas / 2))
+    let x = origin.x, y = origin.y
     let n = svgNumber
     // The scale multiplies coordinates in the artwork's thousands, so
     // it keeps more digits than path data needs to stay within a pixel.
