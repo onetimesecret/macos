@@ -888,6 +888,12 @@ func iconShapePath(side: CGFloat) -> String {
     let c = tangent * cos(radians(lean))
     let d = c * tan(radians(lean))
     let b = (reach - arc - c - d) / 3
+    // Once the clamp on reach engages, a refit with a larger radius or
+    // smoothing would leave b negative and the corner folding back on
+    // itself, which no rendering should be allowed to carry.
+    guard b >= 0 else {
+        fail("radius \(radius) and smoothing \(smoothing) leave the icon shape's corners no room on a side of \(side)")
+    }
     let a = 2 * b
     let n = svgNumber
     let r = n(radius)
