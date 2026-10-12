@@ -825,6 +825,30 @@ impl SheetDocument {
         Some(change.timestamp)
     }
 
+    /// Counts local commits from now on whose diff carries a chip mark on a retain (test-only).
+    #[cfg(test)]
+    pub(crate) fn count_mark_only_chip_writes(&self) -> Arc<std::sync::atomic::AtomicUsize> {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sink = Arc::clone(&count);
+        self.doc
+            .subscribe_root(Arc::new(move |event| {
+                if event.triggered_by != loro::EventTriggerKind::Local {
+                    return;
+                }
+                let marked_retain = event.events.iter().any(|container| {
+                    matches!(&container.diff, Diff::Text(deltas) if deltas.iter().any(|delta| {
+                        matches!(delta, TextDelta::Retain { attributes: Some(attributes), .. }
+                            if attributes.contains_key(CHIP_MARK))
+                    }))
+                });
+                if marked_retain {
+                    sink.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            }))
+            .detach();
+        count
+    }
+
     /// Commit message of the body's first character (test-only).
     #[cfg(test)]
     pub(crate) fn first_change_message(&self) -> Option<String> {
@@ -868,9 +892,7 @@ fn chips_of(body: &LoroText) -> Vec<ItemId> {
         .collect()
 }
 
-/// The push hook reads the body inside Loro's event callback. Sound only
-/// because loro 1.13.9's `emit_events` drops the state lock first
-/// (src/loro.rs:853); re-check on any loro bump, or it deadlocks.
+/// The push hook reads the body in Loro's callback; relies on loro 1.13.9 `emit_events` unlocking first.
 struct UndoBinding {
     undo: UndoManager,
     caret: Arc<Mutex<Option<usize>>>,
@@ -1013,9 +1035,7 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     }
 }
 
-/// Where a local change began, in scalars: the retain before the first
-/// insert or delete. Treats a mark-only retain as a retain; safe while the
-/// chip mark is only written with its sentinel.
+/// Where a local change began, in scalars: the retain before the first insert or delete.
 fn change_start(event: &DiffEvent) -> Option<usize> {
     for container in &event.events {
         let Diff::Text(deltas) = &container.diff else {
@@ -1626,6 +1646,53 @@ mod tests {
         let mirror = SheetDocument::new();
         mirror.import_update(&delta, &[]).unwrap();
         assert_eq!(mirror.runs(), source.runs());
+    }
+
+    #[test]
+    fn a_mark_only_retain_does_not_move_the_change_start() {
+        let doc = SheetDocument::new();
+        doc.insert(0, "hello world").unwrap();
+        doc.commit(None);
+        let mark_only = doc.count_mark_only_chip_writes();
+        let starts = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&starts);
+        let _subscription = doc.doc.subscribe_root(Arc::new(move |event| {
+            sink.lock().unwrap().push(change_start(&event));
+        }));
+
+        doc.body.mark_utf16(1..3, CHIP_MARK, "mark only").unwrap();
+        doc.commit(None);
+        doc.body.mark_utf16(6..8, CHIP_MARK, "mark beside").unwrap();
+        doc.insert(9, "!").unwrap();
+        doc.commit(None);
+
+        assert_eq!(*starts.lock().unwrap(), vec![None, Some(9)]);
+        assert_eq!(mark_only.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_undo_push_hook_reads_the_body_without_deadlocking() {
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut doc = SheetDocument::new();
+            doc.insert(0, "base").unwrap();
+            doc.commit(None);
+            doc.forget_undo();
+            doc.insert(4, " more").unwrap();
+            // The push hook takes a cursor from inside Loro's event callback.
+            doc.commit_edit(EditIntent::Typing, None);
+            let undone = doc.undo();
+            let _ = done.send((undone, doc.restored_caret()));
+        });
+        match finished.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(outcome) => assert_eq!(outcome, (true, Some(4))),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("the undo push hook deadlocked inside Loro's event callback")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("the undo push thread panicked")
+            }
+        }
     }
 
     fn rand_peer(not: u64) -> u64 {

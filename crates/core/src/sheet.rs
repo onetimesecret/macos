@@ -344,13 +344,11 @@ impl Sheet {
     /// Re-take anchors, or rebuild the index with fresh identities when it no
     /// longer describes the body. Every mutation path ends here.
     pub(crate) fn settle_blocks(&mut self) {
-        // Mend a trailing empty paragraph first, or the index looks stale and the
-        // page gets fresh identities for ending on a newline.
+        // Before the check: narration reads widths, so it cannot open the trailing block.
         self.blocks.reopen_trailing_block(&self.document);
         if self.blocks.matches(&self.document) {
             self.blocks.retake_anchors(&self.document);
         } else {
-            // The floor is the page's stamp, so it survives the rebuild.
             let floor = self.blocks.compaction_frontier();
             self.blocks = BlockIndex::for_document(&self.document);
             self.blocks.note_compaction(floor);
@@ -1248,6 +1246,44 @@ mod tests {
         let metas = sheet.blocks_meta();
         assert_eq!(metas[0].modified_s, Some(36_000));
         assert_eq!(metas[1].modified_s, None);
+    }
+
+    #[test]
+    fn settling_a_delete_that_ends_on_a_newline_keeps_every_block_name() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.document.insert(0, "one\ntwo\nthree").unwrap();
+        sheet.blocks.note_insert(0, "one\ntwo\nthree");
+        sheet.document.commit(None);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+        let pasted = sheet.blocks.ids();
+        assert_eq!(pasted.len(), 1);
+
+        sheet.document.delete(8, 5).unwrap();
+        sheet.blocks.note_delete(8, 5);
+        sheet.document.commit(None);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+
+        let settled = sheet.blocks.ids();
+        assert_eq!(settled.len(), 2, "the trailing paragraph is a block");
+        assert_eq!(settled[0], pasted[0], "no fresh identities for a newline");
+    }
+
+    #[test]
+    fn the_compaction_floor_survives_a_block_index_rebuild() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.blocks.note_compaction(Some(39_600));
+        let before = sheet.blocks.ids();
+
+        // Unnarrated, so the settle has to rebuild the index.
+        sheet.document.insert(0, "one\ntwo").unwrap();
+        sheet.document.commit(None);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+
+        assert_ne!(sheet.blocks.ids()[0], before[0], "the index was rebuilt");
+        assert_eq!(sheet.blocks.compaction_frontier(), Some(39_600));
     }
 
     /// A page with nothing in it, born at `created_wall_ms`.

@@ -715,9 +715,7 @@ impl<C: Clock> SheetStore<C> {
         } else {
             sheet.document.commit_edit(intent, None);
         }
-        // A standing sentinel must not be undoable: undo would zeroize
-        // the chip and its redo would be gone. Cleared after the commit,
-        // which is when the step is pushed.
+        // After the commit, which pushes the step an undo would use to zeroize the chip.
         if ops.iter().any(|op| matches!(op, EditOp::InsertChip { .. })) {
             sheet.document.forget_undo();
         }
@@ -4556,6 +4554,114 @@ mod tests {
         assert!(!store.undo(id));
         assert_eq!(body(&store, id), "\u{FFFC}");
         assert_eq!(store.sheet(id).unwrap().chips().count(), 1);
+    }
+
+    #[test]
+    fn undo_after_a_drag_that_carries_a_chip_leaves_the_chip_standing() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "ab cd".into(),
+            }],
+        ));
+        let chip = store.seal_text_at(id, "dragged", 3, 2).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 4,
+                text: " ef".into(),
+            }],
+        ));
+        assert!(store.can_undo(id));
+
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 3,
+                    len_u16: 1,
+                },
+                EditOp::InsertChip { pos_u16: 0, chip },
+            ],
+        ));
+        assert_eq!(body(&store, id), "\u{FFFC}ab  ef");
+
+        assert!(!store.undo(id));
+        assert!(!store.redo(id));
+        assert_eq!(body(&store, id), "\u{FFFC}ab  ef");
+        assert_eq!(&**store.copy_out_chip(chip).unwrap().0, b"dragged");
+        assert!(!events(&store).contains(&LedgerEvent::Discarded));
+    }
+
+    #[test]
+    fn every_store_path_that_writes_a_chip_mark_stands_its_sentinel_in_the_same_change() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let mark_only = store
+            .sheet(id)
+            .unwrap()
+            .document
+            .count_mark_only_chip_writes();
+        let orphans =
+            |_: &SheetStore<ManualClock>| mark_only.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "one two".into(),
+            }],
+        ));
+        let sealed = store.seal_text_at(id, "sealed in place", 4, 3).unwrap();
+        assert_eq!(orphans(&store), 0, "seal");
+        assert!(!store.can_undo(id));
+
+        let stood = store.seal_text(id, "stood by op").unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 4,
+                    len_u16: 1,
+                },
+                EditOp::InsertChip {
+                    pos_u16: 0,
+                    chip: sealed,
+                },
+                EditOp::InsertChip {
+                    pos_u16: 1,
+                    chip: stood,
+                },
+            ],
+        ));
+        assert_eq!(orphans(&store), 0, "op path");
+        assert!(!store.can_undo(id));
+
+        assert!(store.sync_document(
+            id,
+            vec![
+                Segment::Ink("x".into()),
+                Segment::Chip(stood),
+                Segment::Chip(sealed),
+            ],
+        ));
+        assert_eq!(orphans(&store), 0, "wholesale restate");
+        assert!(!store.can_undo(id));
+
+        assert!(store.set_compaction_deferred(id, true));
+        // Compaction re-types every chip in a single commit on a fresh document.
+        assert!(store.perform_ceremony(id).is_some());
+        assert!(!store.can_undo(id));
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[
+                Segment::Ink("x".into()),
+                Segment::Chip(stood),
+                Segment::Chip(sealed),
+            ]
+        );
     }
 
     #[test]
