@@ -923,6 +923,8 @@ func writeSVG(mark: Mark, fill: String, to url: URL) {
     guard mark.name == "logo" else {
         fail("--svg exports the logo mark; the \(mark.name) mark is drawn from a font and has no path to export")
     }
+    // Only the check is wanted: the raw text goes into the SVG below, so
+    // it must be six hex digits and nothing else.
     _ = parseShade(fill)
     let canvas: CGFloat = 1024
     let art = logoMark().bounds
@@ -1230,7 +1232,8 @@ func writeScout(base: NSColor, mark: Mark, perUnit: CGFloat, to url: URL) {
 // MARK: - Command line
 
 func parseShade(_ hex: String) -> NSColor {
-    guard hex.count == 6, let rgb = UInt32(hex, radix: 16) else {
+    // UInt32 alone would take a leading sign, as in "+dc4a2".
+    guard hex.count == 6, hex.allSatisfy(\.isHexDigit), let rgb = UInt32(hex, radix: 16) else {
         fail("shade must be six hex digits, got \"\(hex)\"")
     }
     return NSColor(

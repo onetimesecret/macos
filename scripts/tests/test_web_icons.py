@@ -284,6 +284,16 @@ class WebIconTests(unittest.TestCase):
         self.web = web
         self.assert_vector_export("onetimepad-icon.svg", document_fill())
 
+    def test_signed_shade_never_reaches_the_svg(self):
+        output = self.scratch / "signed.svg"
+        result = subprocess.run(
+            ["swift", str(ROOT / "scripts/render-icon.swift"), "--mark", "logo", "--svg", "+dc4a2", str(output)],
+            capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('shade must be six hex digits, got "+dc4a2"', result.stderr)
+        self.assertFalse(output.exists())
+
     def test_fill_outside_srgb_is_refused_by_name(self):
         checkout = self.scratch_checkout()
         document = checkout / DOCUMENT.relative_to(ROOT)
