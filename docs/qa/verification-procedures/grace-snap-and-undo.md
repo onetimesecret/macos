@@ -65,7 +65,7 @@ The snap must be on. Settings, the section headed "A rung names a
 duration; this lets the deadline land where the clock does"
 (`shell/Sources/CompanionKit/SettingsSections.swift:122`), toggle
 "Round a page's deadline up to the hour, or to midnight". It defaults
-to on (`shell/Sources/CompanionKit/PageModel.swift:1414`) and is
+to on (`shell/Sources/CompanionKit/PageModel.swift:1486`) and is
 carried to the core by `companion_set_grace_snap`
 (`crates/ffi/src/lib.rs:2214`).
 
@@ -102,9 +102,9 @@ carried to the core by `companion_set_grace_snap`
   (`crates/core/src/document.rs:130`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:749`),
   `companion_sheet_undo` (`crates/ffi/src/lib.rs:948`) and
-  `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:4343`).
+  `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:5906`).
   `canUndo` is what greys the Edit menu
-  (`shell/Sources/CompanionKit/PageModel.swift:364`).
+  (`shell/Sources/CompanionKit/PageModel.swift:391`).
 - Undo **does not survive a relaunch, by design**. Every construction
   path binds a fresh stack to a freshly minted peer
   (`crates/core/src/document.rs:156`, and the comment at
@@ -322,7 +322,7 @@ the comment at `crates/core/src/document.rs:189`),
 `SheetDocument::import_snapshot`
 (`crates/core/src/document.rs:398`), `SheetStore::can_undo`
 (`crates/core/src/store.rs:775`) and the Edit menu binding at
-`shell/Sources/CompanionKit/PageModel.swift:4383`.
+`shell/Sources/CompanionKit/PageModel.swift:5946`.
 
 No clock work in this case, so it can be run first, on an honest
 machine.
