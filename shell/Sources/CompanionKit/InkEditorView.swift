@@ -765,7 +765,10 @@ public struct InkEditorView: NSViewRepresentable {
             if textView.isEditable != editable {
                 invalidateOrdinaryPasteMeasurement()
             }
-            if !editable { keepNaming() }
+            if !editable {
+                keepNaming()
+                closeNote()
+            }
             textView.isEditable = editable
             refreshLanguageActionAvailability()
         }
@@ -1492,6 +1495,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard model.admits(.activeEditor, from: surface) else { return }
             invalidateOrdinaryPasteMeasurement()
             keepNaming()
+            closeNote()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             // The one-layout-manager-per-storage invariant rests on this
@@ -1549,6 +1553,7 @@ public struct InkEditorView: NSViewRepresentable {
         func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
             guard currentSheet != nil, let outgoing = textView.textStorage else { return }
             keepNaming()
+            closeNote()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             let vacant = NSTextStorage()
@@ -2048,9 +2053,12 @@ public struct InkEditorView: NSViewRepresentable {
             // declines to emit still moves the page under that reading.
             generation &+= 1
             structuralStyleNeedsRebuild = true
-            if nameEditor?.isOpen == true {
-                // On the next turn: the object may have moved or gone, and the field follows.
-                DispatchQueue.main.async { [weak self] in self?.followNaming() }
+            if nameEditor?.isOpen == true || noteEditor?.isOpen == true {
+                // On the next turn: the object may have moved or gone, and its field or note follows.
+                DispatchQueue.main.async { [weak self] in
+                    self?.followNaming()
+                    self?.followNote()
+                }
             }
             if let sheet = currentSheet {
                 // Display-only inferred labels belong to the old character
@@ -2457,6 +2465,8 @@ public struct InkEditorView: NSViewRepresentable {
             case createLink
             case name
             case rename
+            case note
+            case editNote
             case remove
 
             var title: String {
@@ -2467,6 +2477,8 @@ public struct InkEditorView: NSViewRepresentable {
                 case .createLink: "Create one-time link…"
                 case .name: "Name…"
                 case .rename: "Rename…"
+                case .note: "Note…"
+                case .editNote: "Edit note…"
                 case .remove: "Remove protected content"
                 }
             }
@@ -2475,15 +2487,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// The object's menu in D-41's order as ADR-0042 extends it, nil
         /// marking a separator: the copies and the link, the object's own
         /// words, then the removal set apart.
-        static func chipMenuItems(named: Bool) -> [ChipMenuItem?] {
+        static func chipMenuItems(named: Bool, hasNote: Bool) -> [ChipMenuItem?] {
             (named ? [.copyName] : []) + [.copyDecrypted]
                 + (named ? [.copyNameValue] : [])
-                + [.createLink, nil, named ? .rename : .name, nil, .remove]
+                + [.createLink, nil, named ? .rename : .name, hasNote ? .editNote : .note, nil, .remove]
         }
 
         /// The menu's titles, pinned by a test rather than read off a screen.
-        static func chipMenuTitles(named: Bool) -> [String?] {
-            chipMenuItems(named: named).map { $0?.title }
+        static func chipMenuTitles(named: Bool, hasNote: Bool) -> [String?] {
+            chipMenuItems(named: named, hasNote: hasNote).map { $0?.title }
         }
 
         /// A plain click on a chip selects the whole object and never
@@ -2564,7 +2576,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// stage removal is a separate call).
         func appendChipItems(to menu: NSMenu, at charIndex: Int) {
             guard let attachment = chipAttachment(at: charIndex) else { return }
-            for entry in Self.chipMenuItems(named: attachment.info.name != nil) {
+            for entry in Self.chipMenuItems(
+                named: attachment.info.name != nil, hasNote: attachment.info.hasNote)
+            {
                 guard let entry else {
                     menu.addItem(.separator())
                     continue
@@ -2596,6 +2610,8 @@ public struct InkEditorView: NSViewRepresentable {
                     item.representedObject = attachment.info.chipId as NSNumber
                 case .name, .rename:
                     item.action = #selector(nameChip(_:))
+                case .note, .editNote:
+                    item.action = #selector(openChipNote(_:))
                 case .remove:
                     // The separator and verb carry the destructive meaning;
                     // leave menu text styling to AppKit.
@@ -2712,6 +2728,39 @@ public struct InkEditorView: NSViewRepresentable {
             beginNaming(at: index)
         }
 
+        @objc private func openChipNote(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            beginNote(at: index)
+        }
+
+        // MARK: The note, in a popover over the page (Law 0001)
+
+        /// The popover a sealed object's note is written in, made on first use.
+        private(set) var noteEditor: SealedNoteEditor?
+
+        /// Opens the note of the block at `index`, on an editable page.
+        func beginNote(at index: Int) {
+            guard let textView, textView.isEditable, let sheet = currentSheet, !sheet.isFileID
+            else { return }
+            keepNaming()
+            let editor = noteEditor ?? SealedNoteEditor(model: model)
+            noteEditor = editor
+            editor.pageView = textView
+            editor.open(chipAt: index, sheet: sheet)
+        }
+
+        /// Closes an open note when its page goes from under it.
+        func closeNote() {
+            guard let noteEditor else { return }
+            noteEditor.close(returningKeys: noteEditor.holdsKeys)
+        }
+
+        /// Stands an open note under its object again after the page moved.
+        func followNote() {
+            guard let noteEditor, noteEditor.isOpen else { return }
+            noteEditor.follow()
+        }
+
         // MARK: The name, in its seat (Law 0007)
 
         /// The field a sealed object's name is typed into, made on first use.
@@ -2720,6 +2769,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// Opens the name field over the block at `index`, on an editable page.
         func beginNaming(at index: Int) {
             guard let textView, let sheet = currentSheet, !sheet.isFileID else { return }
+            closeNote()
             let editor = nameEditor ?? SealedNameEditor(model: model)
             nameEditor = editor
             editor.textView = textView
@@ -4282,9 +4332,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         return found
     }
 
-    /// Whether this page's own name field holds the keys, so the page's
-    /// chords stand aside for it.
+    /// Whether this page's own name field, or a sealed object's note, holds
+    /// the keys, so the page's chords stand aside for it.
     var yieldsKeys: Bool {
+        if window?.firstResponder is NoteTextView { return true }
         guard let editor = window?.firstResponder as? NSTextView, editor !== self,
               editor.isFieldEditor, let field = editor.delegate as? NSView
         else { return false }
@@ -4424,6 +4475,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         isEditable || super.acceptsFirstMouse(for: event)
     }
 
+    /// How far past the doorway's word a click still opens the note.
+    static let doorwaySlop: CGFloat = 3
+
     /// What a primary click on a sealed block does past its actions seat
     /// (Law 0001, ADR-0042 points 2 and 3).
     enum ChipClick: Equatable {
@@ -4433,6 +4487,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case copy(SealedBlockLayout.Zone)
         /// The name field, from a double click (Law 0007).
         case openName
+        /// The note, from a click on the seat's `note` (Law 0001).
+        case openNote
         /// A later click on a zone that acted on its first.
         case ignore
     }
@@ -4440,11 +4496,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// Pure, so the rule is an assertion. A named row opens the field only
     /// from the name zone; an unnamed one from anywhere on its row.
     nonisolated static func chipClick(
-        named: Bool, zone: SealedBlockLayout.Zone?, inRow: Bool, clickCount: Int,
-        modifierFlags: NSEvent.ModifierFlags
+        named: Bool, zone: SealedBlockLayout.Zone?, inRow: Bool, onDoorway: Bool = false,
+        clickCount: Int, modifierFlags: NSEvent.ModifierFlags
     ) -> ChipClick {
         guard modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
         else { return .select }
+        if onDoorway { return clickCount == 1 ? .openNote : .ignore }
         guard named else {
             guard inRow, clickCount >= 2 else { return .select }
             return clickCount == 2 ? .openName : .ignore
@@ -4488,17 +4545,23 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return
         }
         let frame = chipFrame(at: index)
+        let cell = chipCell(at: index)
         switch Self.chipClick(
-            named: chipCell(at: index)?.info.name != nil,
+            named: cell?.info.name != nil,
             zone: chipZone(at: point, chipAt: index),
             inRow: frame.map { SealedBlockCell.contentLayout(in: $0).rowBand.contains(point) }
                 ?? false,
+            onDoorway: frame.flatMap { cell?.doorwayRect(in: $0) }.map {
+                $0.insetBy(dx: -Self.doorwaySlop, dy: -Self.doorwaySlop).contains(point)
+            } ?? false,
             clickCount: event.clickCount, modifierFlags: event.modifierFlags)
         {
         case .copy(let zone):
             if coordinator.copy(zone, chipAt: index) { beginCopyBeat(zone, at: index) }
         case .openName:
             coordinator.beginNaming(at: index)
+        case .openNote:
+            coordinator.beginNote(at: index)
         case .ignore:
             return
         case .select:
@@ -4642,6 +4705,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         super.layout()
         coordinator?.refitBlockLabels()
         coordinator?.followNaming()
+        coordinator?.followNote()
     }
 
     /// TextKit's attachment sizing callback is explicitly nonisolated,
@@ -5462,13 +5526,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     @MainActor
     private var metadata: NSAttributedString {
-        NSAttributedString(
-            string: Self.displayedSizeClass(info.sizeLabel),
-            attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        )
+        Self.seatString(Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: info.hasNote))
     }
 
     /// The current core returns this closed vocabulary. Refuse to draw
@@ -5494,14 +5552,49 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// The seat's word for the beat after a zone's copy.
     nonisolated static let copiedWords = "copied"
 
+    /// The word in the seat that opens the note, once one exists (ADR-0042 point 8).
+    nonisolated static let doorwayWord = "note"
+
+    /// The seat at rest: the size class first, then the note's doorway.
+    nonisolated static func restingSeat(sizeLabel: String, hasNote: Bool) -> String {
+        displayedSizeClass(sizeLabel) + (hasNote ? " · \(doorwayWord)" : "")
+    }
+
     /// What the seat reads: the beat's word, a hovered zone's words, or
-    /// the size class at rest.
+    /// the seat at rest.
     nonisolated static func seatText(
-        sizeLabel: String, hovered: SealedBlockLayout.Zone?, copied: Bool
+        sizeLabel: String, hasNote: Bool = false, hovered: SealedBlockLayout.Zone?, copied: Bool
     ) -> String {
         if copied { return copiedWords }
         if let hovered { return seatWords(for: hovered) }
-        return displayedSizeClass(sizeLabel)
+        return restingSeat(sizeLabel: sizeLabel, hasNote: hasNote)
+    }
+
+    /// Where `note` stands in the resting seat of a block drawn at
+    /// `cellFrame`; nil without a note.
+    @MainActor
+    func doorwayRect(in cellFrame: NSRect) -> NSRect? {
+        guard info.hasNote else { return nil }
+        let seat = Self.seatString(Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: true))
+        let word = Self.seatString(Self.doorwayWord).size()
+        let origin = Self.contentLayout(in: cellFrame).metadataOrigin(width: seat.size().width)
+        return NSRect(
+            x: origin.x + seat.size().width - word.width, y: origin.y,
+            width: word.width, height: word.height)
+    }
+
+    /// The doorway's rule: 0.8 points, 2.5 under the word's baseline.
+    @MainActor
+    private func drawDoorwayRule(in cellFrame: NSRect) {
+        guard let word = doorwayRect(in: cellFrame) else { return }
+        let font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let y = word.minY + font.ascender + 2.5
+        let rule = NSBezierPath()
+        rule.move(to: NSPoint(x: word.minX, y: y))
+        rule.line(to: NSPoint(x: word.maxX, y: y))
+        rule.lineWidth = 0.8
+        NSColor.tertiaryLabelColor.setStroke()
+        rule.stroke()
     }
 
     /// A long name keeps this many characters and an ellipsis before
@@ -5587,7 +5680,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor
     static var widestSeatWidth: CGFloat {
         let words = SealedBlockLayout.Zone.allCases.map(seatWords(for:))
-            + [copiedWords, "size unknown"]
+            + [copiedWords, restingSeat(sizeLabel: "size unknown", hasNote: true)]
         return words.map { seatString($0).size().width }.max() ?? 0
     }
 
@@ -5933,6 +6026,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
                 height: excerptLine.size().height
             ))
             metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
+            drawDoorwayRule(in: cellFrame)
             return
         }
         if editingWidth == nil {
@@ -5941,10 +6035,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
         row.name.draw(at: row.geometry.name.origin)
         row.equals.draw(at: row.geometry.equals.origin)
         row.value.draw(at: row.geometry.value.origin)
+        let hovered = editingWidth == nil ? zone : nil
+        let copied = editingWidth == nil && beat != nil
         let seat = Self.seatString(Self.seatText(
-            sizeLabel: info.sizeLabel, hovered: editingWidth == nil ? zone : nil,
-            copied: editingWidth == nil && beat != nil))
+            sizeLabel: info.sizeLabel, hasNote: info.hasNote, hovered: hovered, copied: copied))
         seat.draw(at: layout.metadataOrigin(width: seat.size().width))
+        if hovered == nil, !copied { drawDoorwayRule(in: cellFrame) }
     }
 
     /// The hovered zone's pill, and the beat's ember over the zone it

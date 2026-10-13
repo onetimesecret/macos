@@ -357,6 +357,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A sealed object's note opens in a popover over the page** (app
+  0.31.0; Law 0001, ADR-0042, ADR-0043, issue #246). *Note…* on an
+  object with no note, *Edit note…* on one with a note, or a click on
+  `note` in the block's seat opens it. The seat reads `small · note`,
+  the size class first, once the note holds anything but whitespace.
+  The popover hangs under the block at the block's measure, its arrow
+  under the doorway, or across the card's content width when the block
+  is narrower than 320 points, headed `NOTE · <name>` or `NOTE`. It
+  holds a writing surface in the page's face whose ⌘Z and ⇧⌘Z step the
+  note's own undo and never the page's, and the page's caret, ink and
+  undo are as they were when it closes. The diagonal arrows or ⇧Esc
+  grow it to the card's content area and back, and Esc contracts an
+  expanded note before it closes one. A click elsewhere, the page
+  changing or going read only, the object leaving the page and opening
+  the name field all close it. It stands in the page's own window
+  rather than in a window of its own. The keymap binds `shift-escape`
+  to the new `note::ToggleExpanded`.
+
 - **A sealed object is named in its own seat** (app 0.30.0; Law 0007,
   ADR-0042, issue #245). *Name…* on an unnamed object, *Rename…* on a
   named one, a double click on an unnamed object's bottom row or on a

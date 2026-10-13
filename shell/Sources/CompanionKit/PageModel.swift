@@ -5700,6 +5700,47 @@ public final class PageModel: ObservableObject {
         return true
     }
 
+    // MARK: A sealed object's note (ADR-0043 point 4), keyed by chip, never by page
+
+    /// The note's text as the core holds it; empty without a note.
+    public func noteText(chip: UInt64) -> String {
+        client.noteRuns(chip: chip).reduce(into: "") { text, run in
+            if case .ink(let ink) = run { text += ink }
+        }
+    }
+
+    /// One edit to the note; false means the core refused it whole.
+    @discardableResult
+    public func applyNoteOps(
+        chip: UInt64, json: String, intent: EditorEditIntent, selection: EditorEditSelection?
+    ) -> Bool {
+        guard client.applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        else { return false }
+        markDirty()
+        return true
+    }
+
+    /// One step of the note's own stack, which the page's ⌘Z never reaches.
+    public func stepNote(chip: UInt64, back: Bool) -> StepOutcome {
+        let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
+        guard let outcome, outcome.applied else { return .nothing }
+        markDirty()
+        return StepOutcome(applied: true, selection: outcome.selection)
+    }
+
+    public func canStepNote(chip: UInt64, back: Bool) -> Bool {
+        back ? client.canUndoNote(chip: chip) : client.canRedoNote(chip: chip)
+    }
+
+    public func noteStepName(chip: UInt64, back: Bool) -> String? {
+        back ? client.undoNoteActionName(chip: chip) : client.redoNoteActionName(chip: chip)
+    }
+
+    /// Ends the note's coalescing run, as leaving the note does.
+    public func finishNoteEditingGroup(chip: UInt64) {
+        _ = client.finishNoteEditingGroup(chip: chip)
+    }
+
     /// The line after *Copy name* (ADR-0042 point 8).
     public static let copiedNameLine = "copied the name."
 

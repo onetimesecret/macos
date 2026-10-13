@@ -75,7 +75,8 @@ final class SealedCapsuleTests: XCTestCase {
             named.items.map { $0.isSeparatorItem ? nil : $0.title },
             [
                 "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
-                "Create one-time link…", nil, "Rename…", nil, "Remove protected content",
+                "Create one-time link…", nil, "Rename…", "Note…", nil,
+                "Remove protected content",
             ])
         for item in named.items where !item.isSeparatorItem {
             XCTAssertNotNil(item.action, "\(item.title) does nothing")

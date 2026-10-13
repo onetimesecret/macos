@@ -183,3 +183,9 @@ cite the narrowed D-40 and the extended D-41.
   the value; `=` is never cut, and the row leaves room for the seat's
   widest words, so a hover moves nothing. A zone's click copies and
   leaves the selection as it was.
+- 2026-10-13: Issue #246 sets the popover's minimum width at 320
+  points, the constant `NotePopoverLayout.minimumWidth`; a block
+  narrower than that puts the note across the card's content width, 8
+  points in from each edge, the margin the expanded note keeps too. The
+  popover stands inside the card's own window, over the page, rather
+  than in a window of its own.

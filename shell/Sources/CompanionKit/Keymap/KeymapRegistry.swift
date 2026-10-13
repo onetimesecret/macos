@@ -76,7 +76,7 @@ extension PageModel {
             // and the flash cannot disagree about what just happened.
             if showsTimeUnits { flash(Self.wrapIsFixedNotice) } else { toggleWrap() }
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted,
-            .editorDetectCodeLanguage, .editorUndo, .editorRedo:
+            .editorDetectCodeLanguage, .editorUndo, .editorRedo, .noteToggleExpanded:
             // The page's own text view answers these: the seal, copy
             // decrypted and language gestures act on its selection, and
             // undo has to place a caret after the core moves the
