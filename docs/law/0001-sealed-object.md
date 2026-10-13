@@ -23,7 +23,11 @@ sources:
   - crates/core/src/note.rs (the note's own document and undo)
   - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections; the name and note routes)
   - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt, ChipInfo.name, ChipInfo.hasNote)
-  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the chip menu, the seal commands)
+  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands)
+  - shell/Sources/CompanionKit/SealedBlockLayout.swift (the named row's zones, pill and allotment)
+  - shell/Sources/CompanionKit/SealedNameField.swift (the name's field)
+  - shell/Sources/CompanionKit/SealedNotePopover.swift (`NotePopoverLayout.minimumWidth`, the note's popover and writing surface)
+  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes)
   - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
 
@@ -138,7 +142,7 @@ without a test says what it is owed by.
 | click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | the zone and its seat: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`; the double click: the same press test, and `SealedNameFieldTests.swift` `testADoubleClickOpensTheFieldOnlyWhereTheRuleSays` |
 | click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | `SealedBlockTests.swift` `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects` |
 | click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | the core's write: `store.rs` `name_value_is_composed_raw_at_its_exact_size`, `name_value_refuses_an_unnamed_an_image_and_an_unknown_chip`; `lib.rs` `copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed`, `copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing`, `a_name_value_copy_and_a_copy_out_retire_each_others_receipts`, `a_name_value_copy_records_one_sent_and_no_name`; the zone: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects` |
-| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; owed: issue 246 (the popover), issue 247 (the fragment) |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; the popover: `SealedNoteTests.swift` `testThePopoverHangsUnderTheBlockAtTheBlocksMeasure`, `testANarrowBlockPutsTheNoteAcrossTheContentWidth`, `testExpandedTheNoteCoversTheContentAndWithoutRoomBelowItStandsAbove`, `testTheMenusVerbOpensTheNoteInThePagesOwnWindow`, `testTheDoorwayOpensTheNoteAndEscClosesIt`, `testTheArrowsAndShiftEscExpandAndContractAndEscContracts`, `testTheNoteClosesWhenItsSeatGoes`, `testTheObjectLeavingThePageClosesItsNote`, `testANoteEditLeavesThePagesCaretAndUndoAlone`, `testNoNoteRouteRunsAModalSession`; on the raised card and under a real pointer, owed: hand check, [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md); owed: issue 247 (the fragment) |
 
 ### Sealed-fragment representation
 
@@ -214,8 +218,11 @@ layout, and so does the pill under a hovered zone, whose geometry
 [ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md) fixes.
 The excerpt is pinned by `store.rs` `sealed_chips_carry_the_mechanical_face`;
 the block's geometry by `SealedBlockTests` (issue 169, closed); the name,
-the zones and the pill by `SealedBlockTests` (issue 244); the doorway is
-owed by issue 246.
+the zones and the pill by `SealedBlockTests` (issue 244); the doorway by
+`SealedNoteTests.testTheSeatOpensADoorwayOnceANoteExists` and
+`testTheDoorwayFollowsTheNotesInk` (issue 246). What a real pointer and
+display show is owed to the [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md)
+procedure.
 
 Fixed details the rows rely on:
 
@@ -265,11 +272,12 @@ Fixed details the rows rely on:
   and acts on exactly one selected object; the removal follows a
   separator, uses AppKit's standard menu styling, and stays structural
   and undoable (D-41 of the 2026-0915 stream navigator record, extended
-  by ADR-0042). *Copy name*, *Copy name=value, decrypted* and *Name…* or
-  *Rename…* are pinned by `DocumentOpsTests.testTheChipMenuOffersPlaintextByName`
-  and `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`,
-  and the name's verb by `SealedNameFieldTests.testTheMenusVerbOpensTheField`;
-  *Note…* or *Edit note…* is owed by issue 246.
+  by ADR-0042). The four new items, in both variants, are pinned by
+  `DocumentOpsTests.testTheChipMenuOffersPlaintextByName` and
+  `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`;
+  the name's verb by `SealedNameFieldTests.testTheMenusVerbOpensTheField`
+  and the note's by `SealedNoteTests.testTheMenusVerbOpensTheNoteInThePagesOwnWindow`
+  and `testTheDoorwayOpensTheNoteAndEscClosesIt`.
 
 ## What the rule forbids
 
@@ -381,8 +389,15 @@ seat words and beat, and the block's label), `SealedCapsuleTests` (the
 zones' clicks and routes, hover by point, both menus, the face changed
 in place), `SealedNameFieldTests` (the name's field, per Law 0007),
 `ModalSessionTests.testRenameNeverRunsAModalSession` (naming stays
-dialog free), `SealedObjectSeamTests` (the name, `name=value` and note
-wrappers over the live core).
+dialog free), `SealedNoteTests` (the doorway, the popover's placement,
+its open, expand, contract and close routes, and its edits on the
+note's own routes), `BundledKeymapTests` (`shift-escape`),
+`SealedObjectSeamTests` (the name, `name=value` and note wrappers over
+the live core).
+
+By hand: the [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md)
+procedure, for the zones under a real pointer, the beat on a display
+and the note on the raised card. It has not been run.
 
 Tests that pin the contradicting build and are rewritten when issue 170
 lands (removal detaches, undo reattaches): `store.rs`
@@ -396,10 +411,11 @@ lands (removal detaches, undo reattaches): `store.rs`
 
 Owed: issue 170 (the versioned sealed-fragment model, atomic multi-object
 detach/reattach/clone, lifecycle resolution, the lazy decrypted drag and
-their tests as named in the rows); issues 246 and 247 (the note's
-surface and the fragment, as named in the rows). Issues 169 (`SealedBlockTests`) and 172 (the
+their tests as named in the rows); issue 247 (the name and note in the
+fragment, as named in the rows); a first run of the sealed zones and
+note procedure. Issues 169 (`SealedBlockTests`) and 172 (the
 interrupting dialogs) are closed; D-14 is strict and the seal, remove,
-copy decrypted and naming paths must stay dialog free.
+copy decrypted, naming and note paths must stay dialog free.
 
 ## Amendments
 
@@ -500,3 +516,12 @@ copy decrypted and naming paths must stay dialog free.
   rows. *Name…* and *Rename…* are pinned with the menu, the shell
   acceptance list names the new suites, and the owed list drops issue
   245.
+- 2026-10-13: Note amendment (issue 246). The note's row cites
+  `SealedNoteTests` for the popover, its placement on a narrow card at
+  ADR-0042's recorded minimum, its routes in and out and its edits on
+  the note's own routes, and the sealed zones and note procedure for
+  what a real pointer and the raised card show; it stays owed to issue
+  247 for the fragment. The presentation invariants pin the doorway,
+  the menu pins all four new items, the shell acceptance list names the
+  new suite and the procedure, and the owed list keeps issue 247 and
+  the procedure's first run.
