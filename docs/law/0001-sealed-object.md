@@ -126,6 +126,11 @@ without a test says what it is owed by.
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
 | copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
+| name the object (*Name…*, *Rename…*, a double click on the bottom row) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; a named object's bottom row reads `NAME=excerpt` | owed: no issue yet (2026-10-13 amendment) |
+| click the name's glyph run | ambient observation | copies the name; the size class's seat reads `copies the name` while hovered | owed: no issue yet |
+| click the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above; the seat reads `copies the value, decrypted` before the click | owed: no issue yet |
+| click the `=` between | declassification/egress | copies `NAME=<plaintext>` by the same route; the seat reads `copies name=value, decrypted` before the click | owed: no issue yet |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | owed: no issue yet |
 
 ### Sealed-fragment representation
 
@@ -357,3 +362,17 @@ dialog free).
   plain click selects the object without opening the menu. This amendment
   supersedes the clear-interval and plain-click statements in the preceding
   2026-09-15 entry; its remaining decisions stand.
+- 2026-10-13: Name and note amendment. The maintainer affirmed the
+  [name and note proposal](../mockups/sealed-name-and-note.md): a sealed
+  object may carry a typed name and a note, both page-owned ink stored
+  with the object core-side and carried in the sealed fragment's envelope
+  as two optional text fields, never in the ledger and never payload. The
+  name is edited per [Law 0007](0007-edit-in-place.md). A named object's
+  bottom row has three pointer zones (name, `=`, value); the two that copy
+  plaintext are handles in D-29's sense, a named declassification on the
+  object itself with the consequence written in the size class's seat
+  before the click. D-40 is narrowed to the rest of the block: a plain
+  click outside the bottom row still only selects. D-41's menu gains
+  *Copy name*, *Copy name=value, decrypted*, *Name…* or *Rename…* and
+  *Note…* or *Edit note…*, in that record's order. Five contract rows are
+  added above, all owed.
