@@ -447,9 +447,8 @@ final class SealedNoteTests: XCTestCase {
 
     // MARK: The page's own surface (ADR-0045)
 
-    /// The same ink reads the same in the note as on the page: headings,
-    /// list items, links and fences, by font, colour and link. A click on
-    /// a link goes to the coordinator's handler, the page's (ADR-0023).
+    /// The same ink reads the same in the note as on the page, by font, colour
+    /// and link, and a link's click goes to the page's handler (ADR-0023).
     func testTheNoteWearsThePagesFace() throws {
         let page = try makePage()
         let ink = "# Rotate\n- monthly\nsee https://example.com/keys\n```swift\nlet key = 1\n```\n"
@@ -507,9 +506,8 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(pageInk(page), inkBefore, "the note's list reached the page")
     }
 
-    /// A bare fence in the note takes a language for its display alone,
-    /// kept by the note's surface and never by a page; a selection wraps
-    /// into a fence on the note's own routes.
+    /// A bare fence's display language is the note's and no page's; a
+    /// selection wraps into a fence on the note's own routes.
     func testChooseLanguageActsOnTheNoteAndItsLabelIsTheNotesOwn() throws {
         let page = try makePage()
         page.coordinator.beginNote(at: 3)
@@ -562,9 +560,8 @@ final class SealedNoteTests: XCTestCase {
         }.count, 1, "a seal from the note stood on the page")
     }
 
-    /// No object stands in a note: a batch that carries one is refused by
-    /// the core and the note's text is restated; the page's object, dragged
-    /// over the note, finds nowhere to land.
+    /// No object stands in a note: a batch carrying one is refused and the
+    /// note restated, and the page's object finds nowhere to land in it.
     func testNoObjectStandsInANote() throws {
         let page = try makePage()
         page.coordinator.beginNote(at: 3)
@@ -608,9 +605,8 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(editor.textView.textContainerInset, NSSize(width: 4, height: 4))
     }
 
-    /// While the note holds the keys the Edit menu's actions reach the note
-    /// and not the page, and the menu shows what the note can do: Choose
-    /// Language in a bare fence, and no seal over a selection (ADR-0046).
+    /// While the note holds the keys the Edit menu's actions reach the note,
+    /// not the page, and the menu shows what the note can do (ADR-0046).
     func testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys() throws {
         let page = try makePage()
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))

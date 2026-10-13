@@ -133,9 +133,8 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(name(of: pad, in: model), "Otto")
     }
 
-    /// A keystroke over a still refused draft leaves a notice standing in
-    /// front of the refusal, with its action, and the line comes back on
-    /// the refusal the draft now earns.
+    /// A keystroke over a still refused draft leaves a notice in front of the
+    /// refusal with its action; the line comes back on the draft's refusal.
     func testAKeystrokeUnderAFlashLeavesTheFlashStanding() throws {
         let (model, pad) = try padModel()
         var rename = PadRename()
@@ -161,9 +160,8 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNil(model.notice)
     }
 
-    /// The pad list, hung under the picker, ends above the line under the
-    /// page on a short card, so a refusal said there stays in sight with
-    /// the list open (Law 0007, Refusing; D-14).
+    /// On a short card the pad list ends above the line under the page, so a
+    /// refusal said there stays in sight (Law 0007, Refusing; D-14).
     func testThePadListEndsAboveTheLineUnderThePage() {
         let tallest = PadListLayout.tallest
         XCTAssertEqual(PadListLayout.maxHeight(rowBottom: nil, lineTop: 400), tallest)

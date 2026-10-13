@@ -172,9 +172,8 @@ final class NotePopoverView: NSView {
     }
 }
 
-/// Opens, places and closes one sealed object's note over the page. The note
-/// is written on the page's own surface, whose coordinator edits and steps
-/// it on the note's routes, keyed by chip (ADR-0043 point 4, ADR-0045).
+/// Opens, places and closes one sealed object's note over the page, written
+/// on the page's own surface over the note's chip keyed routes (ADR-0045).
 @MainActor
 final class SealedNoteEditor: NSObject {
     let model: PageModel

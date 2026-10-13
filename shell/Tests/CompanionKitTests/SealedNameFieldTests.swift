@@ -367,11 +367,8 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertEqual(editor.field.stringValue, "KEPT")
     }
 
-    /// The Edit menu's items find the field's chain, which passes the page
-    /// by: its Undo, Redo, Seal Selected Content and the language items,
-    /// Choose Language among them, cannot reach the page under a draft,
-    /// and Undo reaches the window's own, which steps the field's typing.
-    /// The menu greys the page's items while the field holds the keys.
+    /// The Edit menu's actions find the field's chain, which passes the page
+    /// by, Undo reaching the window's own; the menu greys the page's items.
     func testThePagesMenuActionsStandAsideForTheField() throws {
         let page = try makePage()
         let window = NSWindow(

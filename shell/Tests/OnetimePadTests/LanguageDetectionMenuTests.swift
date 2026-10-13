@@ -37,8 +37,7 @@ final class LanguageDetectionMenuTests: XCTestCase {
     }
 
     /// An editor's choice goes down the responder chain with its language,
-    /// to whichever surface holds the keys, never to the page directly
-    /// (ADR-0046); a file's goes to its render mode.
+    /// never to the page directly (ADR-0046); a file's goes to its mode.
     @MainActor
     func testAChoiceGoesDownTheChainOrToTheFile() throws {
         var sent: [(Selector, String?)] = []

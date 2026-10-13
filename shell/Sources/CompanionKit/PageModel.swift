@@ -5112,10 +5112,8 @@ public final class PageModel: ObservableObject {
     /// The generation at which the held line was last put on screen.
     private var heldGeneration: Int?
 
-    /// Says `message` under the page with no dwell, for a refusal that
-    /// stands while a field stays open (Law 0007, Refusing; D-14). Given
-    /// the hold that stands, it changes that line's words instead, and a
-    /// flash in front keeps its dwell and its action.
+    /// Holds `message` under the page while a field stays open (Law 0007,
+    /// Refusing; D-14); given the standing hold, it changes that hold's words.
     @discardableResult
     public func holdNotice(
         _ message: String, tone: NoticeTone = .actionable, replacing standing: NoticeHold? = nil

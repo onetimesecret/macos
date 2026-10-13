@@ -325,9 +325,8 @@ enum PadNameDraft {
     }
 }
 
-/// How tall the pad list may stand, hung under the picker, so that it ends
-/// above the line under the page where a pad name's refusal is said
-/// (Law 0007, Refusing; D-14).
+/// How tall the pad list may stand under the picker to end above the line
+/// where a pad name's refusal is said (Law 0007, Refusing; D-14).
 enum PadListLayout {
     /// The list's height on a card with room to spare.
     static let tallest: CGFloat = 620

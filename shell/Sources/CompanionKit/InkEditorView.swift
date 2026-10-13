@@ -240,9 +240,8 @@ public struct InkEditorView: NSViewRepresentable {
         return textView
     }
 
-    /// The writing surface over `storage`, wired to `coordinator`: the
-    /// page's editor and a sealed object's note are built by this one call
-    /// (ADR-0045), so the two cannot quietly stop agreeing on what ink is.
+    /// The writing surface over `storage`, wired to `coordinator`; the page's
+    /// editor and a sealed object's note are both built here (ADR-0045).
     @MainActor
     static func makeSurface(over storage: NSTextStorage, coordinator: Coordinator) -> InkTextView {
         let layoutManager = InkLayoutManager()
@@ -523,8 +522,8 @@ public struct InkEditorView: NSViewRepresentable {
         @preconcurrency NSTextStorageDelegate {
         let model: PageModel
         weak var textView: InkTextView?
-        /// The page or file under the editor; always nil on a note's surface,
-        /// so every page only path stands aside there (ADR-0045).
+        /// The page or file under the editor, or nil on a note's surface,
+        /// whose page only paths key on it (ADR-0045).
         var currentSheet: UInt64?
         /// The note this surface writes, by its object's chip, while one is open.
         private(set) var noteChip: UInt64?
@@ -1087,9 +1086,8 @@ public struct InkEditorView: NSViewRepresentable {
             PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
         }
 
-        /// The Edit menu's language and seal items, as the surface holding the
-        /// keys can answer them (ADR-0046). A note speaks only while it holds
-        /// them; the page says nothing is available while a field does.
+        /// The Edit menu's language and seal items as the key holder can answer
+        /// them (ADR-0046); under a field the page offers none.
         func refreshLanguageActionAvailability() {
             if writesNote, textView?.answersChords != true { return }
             if let textView, !textView.answersChords {
@@ -4509,9 +4507,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         return holder !== self
     }
 
-    /// Whether this surface's chords and Edit menu actions are its own to
-    /// answer: a note's only while it holds the keys, the page's unless
-    /// another text view does (ADR-0046).
+    /// Whether this surface answers its chords and Edit menu: a note while it
+    /// holds the keys, the page unless another text view does (ADR-0046).
     var answersChords: Bool {
         guard coordinator?.writesNote == true else { return !yieldsKeys }
         return window?.firstResponder === self && !keysHeldInAnotherWindow

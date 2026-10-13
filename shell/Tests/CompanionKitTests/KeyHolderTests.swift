@@ -3,10 +3,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// Whoever holds the keys answers the page's chords and Edit menu
-/// (ADR-0046, Law 0007's Drafting), shown with a plain field in the page's
-/// window: the shape the strip's, the slot rail's and the pad cell's
-/// SwiftUI fields edit through, which the runner cannot drive.
+/// Whoever holds the keys answers the page's chords and Edit menu (ADR-0046),
+/// shown with a plain field, the shape the SwiftUI rename fields edit through.
 @MainActor
 final class KeyHolderTests: XCTestCase {
     private struct Page {
