@@ -87,24 +87,44 @@ final class SealedCapsuleTests: XCTestCase {
 
     // MARK: The named row's zones (Law 0001, ADR-0042 points 2, 3 and 8)
 
-    /// Stands a face carrying `name` in for the chip at `index`, as a
-    /// restate does, so no op crosses for it.
+    /// Names the chip at `index` core-side and stands its new face in.
     private func name(
         _ textView: InkTextView, chipAt index: Int, model: PageModel, as name: String
     ) {
-        guard let storage = textView.textStorage,
-              let face = (storage.attribute(.attachment, at: index, effectiveRange: nil)
-                as? ChipAttachment)?.info
+        guard let face = textView.chipCell(at: index)?.info,
+              let sheet = textView.coordinator?.currentSheet
         else { return XCTFail("no chip at \(index)") }
         XCTAssertTrue(model.coreClient.setChipName(name, chip: face.chipId))
-        let named = ChipInfo(
-            chipId: face.chipId, kind: face.kind, excerpt: face.excerpt,
-            sizeLabel: face.sizeLabel, concealed: face.concealed, name: name)
-        model.applyingProjection {
-            storage.replaceCharacters(
-                in: NSRange(location: index, length: 1),
-                with: InkEditorView.Coordinator.chipString(named))
-        }
+        model.restateChipFace(face.chipId, sheet: sheet)
+    }
+
+    /// A new face is stood in where the block stands: the same attachment
+    /// and cell, the core's face, and no op crossing for it.
+    func testAChipsFaceChangesInPlace() throws {
+        let model = try makeModel()
+        let coordinator = InkEditorView.Coordinator(model: model)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        let attachment = try XCTUnwrap(coordinator.chipAttachment(at: 3))
+        let cell = try XCTUnwrap(textView.chipCell(at: 3))
+        var emitted: [[DocumentEditOp]] = []
+        coordinator.onEmit = { emitted.append($0) }
+
+        name(textView, chipAt: 3, model: model, as: "  DB_PASSWORD ")
+
+        XCTAssertTrue(coordinator.chipAttachment(at: 3) === attachment, "the page was restated")
+        XCTAssertTrue(textView.chipCell(at: 3) === cell)
+        XCTAssertEqual(attachment.info.name, "DB_PASSWORD", "the face is not the core's")
+        XCTAssertEqual(cell.info.name, "DB_PASSWORD")
+        XCTAssertTrue(emitted.isEmpty, "a face change crossed the seam as an edit")
+        model.restateChipFace(4_242, sheet: page)
+        XCTAssertEqual(attachment.info.name, "DB_PASSWORD", "an unknown chip moved a face")
     }
 
     /// A first click on a zone copies; a later click of the same press

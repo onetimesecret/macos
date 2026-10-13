@@ -5251,7 +5251,11 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 /// carrying only the chip's id and mechanical face. There is no
 /// affordance — and no data — to reveal what it stands for.
 final class ChipAttachment: NSTextAttachment {
-    let info: ChipInfo
+    /// The face the block draws; a name or note changes it in place.
+    @MainActor
+    var info: ChipInfo {
+        didSet { (attachmentCell as? SealedBlockCell)?.info = info }
+    }
 
     @MainActor
     init(info: ChipInfo) {
@@ -5287,7 +5291,8 @@ final class ChipAttachment: NSTextAttachment {
 /// size metadata above its mechanical excerpt. It is deliberately a
 /// bordered rectangle rather than a pill or button (D-27).
 final class SealedBlockCell: NSTextAttachmentCell {
-    let info: ChipInfo
+    @MainActor
+    var info: ChipInfo
 
     #if DEBUG
     /// Test-only record of the frame handed to the drawing path.

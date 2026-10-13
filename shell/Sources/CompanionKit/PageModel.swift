@@ -3233,6 +3233,27 @@ public final class PageModel: ObservableObject {
         quietRenderings[id] = nil
     }
 
+    /// Stands the core's face for `chip` in for the one its block on page
+    /// `sheet` draws, without restating the page around it.
+    func restateChipFace(_ chip: UInt64, sheet: UInt64) {
+        let face = client.documentRuns(sheet: sheet).lazy.compactMap { run -> ChipInfo? in
+            if case .chip(let info) = run, info.chipId == chip { return info }
+            return nil
+        }.first
+        guard let face, let storage = storages[sheet] else { return }
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.enumerateAttribute(.attachment, in: whole) { value, range, stop in
+            guard let attachment = value as? ChipAttachment, attachment.info.chipId == chip
+            else { return }
+            attachment.info = face
+            for manager in storage.layoutManagers {
+                manager.invalidateDisplay(forCharacterRange: range)
+            }
+            stop.pointee = true
+        }
+        invalidateQuietRendering(for: sheet)
+    }
+
     /// Snapshot of the fence-language labels a page carries in its
     /// presentation state, keyed by the paragraph location of each
     /// bare fence's opening rule. Read by both the mounted editor's
