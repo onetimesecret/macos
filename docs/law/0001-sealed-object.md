@@ -133,9 +133,9 @@ without a test says what it is owed by.
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
 | copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
-| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | the core's name, its rule and its refusal: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`, `a_name_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_name`; `lib.rs` `chip_json_carries_the_name`, `the_name_routes_judge_by_one_rule_and_fail_closed` ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)); owed: issue 245 (the field), issue 247 (the fragment) |
+| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | the core's name, its rule and its refusal: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`, `a_name_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_name`; `lib.rs` `chip_json_carries_the_name`, `the_name_routes_judge_by_one_rule_and_fail_closed` ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)); the field and the redrawn row: `SealedNameFieldTests.swift` `testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight`, `testReturnNamesTheObjectAndRedrawsItsBlock`, `testARefusalKeepsTheFieldAndTheLine`, with the rest of the field's rows in Law 0007; owed: issue 247 (the fragment) |
 | pointer over an unnamed object's bottom row | structural editing | no zones until the object is named: no pill, no seat words, and a click selects as anywhere on the block (D-40) | `SealedBlockTests.swift` `testTheDrawnRowAtAWideAndANarrowMeasure`; `SealedCapsuleTests.swift` `testHoverFindsTheZoneUnderThePointer` |
-| click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | the zone and its seat: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`; owed: issue 245 (the double click) |
+| click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | the zone and its seat: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`; the double click: the same press test, and `SealedNameFieldTests.swift` `testADoubleClickOpensTheFieldOnlyWhereTheRuleSays` |
 | click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | `SealedBlockTests.swift` `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects` |
 | click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | the core's write: `store.rs` `name_value_is_composed_raw_at_its_exact_size`, `name_value_refuses_an_unnamed_an_image_and_an_unknown_chip`; `lib.rs` `copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed`, `copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing`, `a_name_value_copy_and_a_copy_out_retire_each_others_receipts`, `a_name_value_copy_records_one_sent_and_no_name`; the zone: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects` |
 | the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; owed: issue 246 (the popover), issue 247 (the fragment) |
@@ -265,11 +265,11 @@ Fixed details the rows rely on:
   and acts on exactly one selected object; the removal follows a
   separator, uses AppKit's standard menu styling, and stays structural
   and undoable (D-41 of the 2026-0915 stream navigator record, extended
-  by ADR-0042). *Copy name* and *Copy name=value, decrypted* are pinned
-  by `DocumentOpsTests.testTheChipMenuOffersPlaintextByName` and
-  `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`;
-  *Name…* or *Rename…* is owed by issue 245 and *Note…* or *Edit note…*
-  by issue 246.
+  by ADR-0042). *Copy name*, *Copy name=value, decrypted* and *Name…* or
+  *Rename…* are pinned by `DocumentOpsTests.testTheChipMenuOffersPlaintextByName`
+  and `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`,
+  and the name's verb by `SealedNameFieldTests.testTheMenusVerbOpensTheField`;
+  *Note…* or *Edit note…* is owed by issue 246.
 
 ## What the rule forbids
 
@@ -378,9 +378,11 @@ pin chip expiry or lifecycle),
 `PageModelPreviewRenderingTests.testChipAttachmentSurvivesEveryScope`,
 `SealedBlockTests` (the block's geometry; the named row, its zones, pill,
 seat words and beat, and the block's label), `SealedCapsuleTests` (the
-zones' clicks and routes, hover by point, both menus),
-`SealedObjectSeamTests` (the name, `name=value` and note wrappers over
-the live core).
+zones' clicks and routes, hover by point, both menus, the face changed
+in place), `SealedNameFieldTests` (the name's field, per Law 0007),
+`ModalSessionTests.testRenameNeverRunsAModalSession` (naming stays
+dialog free), `SealedObjectSeamTests` (the name, `name=value` and note
+wrappers over the live core).
 
 Tests that pin the contradicting build and are rewritten when issue 170
 lands (removal detaches, undo reattaches): `store.rs`
@@ -394,8 +396,8 @@ lands (removal detaches, undo reattaches): `store.rs`
 
 Owed: issue 170 (the versioned sealed-fragment model, atomic multi-object
 detach/reattach/clone, lifecycle resolution, the lazy decrypted drag and
-their tests as named in the rows); issues 245 to 247 (the name's field,
-the note's surface and the fragment, as named in the rows). Issues 169 (`SealedBlockTests`) and 172 (the
+their tests as named in the rows); issues 246 and 247 (the note's
+surface and the fragment, as named in the rows). Issues 169 (`SealedBlockTests`) and 172 (the
 interrupting dialogs) are closed; D-14 is strict and the seal, remove,
 copy decrypted and naming paths must stay dialog free.
 
@@ -492,3 +494,9 @@ copy decrypted and naming paths must stay dialog free.
   `SealedCapsuleTests`; the name zone's double click stays owed to issue
   245. The presentation invariants and the menu say which parts are
   pinned and which are owed, and the owed list drops issue 244.
+- 2026-10-13: Name field amendment (issue 245). The naming row and the
+  name zone's row cite `SealedNameFieldTests` and the zone press test for
+  the field and the double click, and Law 0007 carries the field's own
+  rows. *Name…* and *Rename…* are pinned with the menu, the shell
+  acceptance list names the new suites, and the owed list drops issue
+  245.

@@ -18,7 +18,8 @@ sources:
   - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `opensRename`, `keyboardToReturn`, `words`, `seat`, `drawsTitle`)
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
   - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the cell's field; `PadPickerRoutes`, the list's routes; `PadNameDraft`; `nameEditor`, now the create sheet alone)
-  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `holdNotice`, `releaseNotice`)
+  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`, `holdNotice`, `releaseNotice`)
+  - shell/Sources/CompanionKit/SealedNameField.swift (`ChipRename`, the sealed name field's state; `SealedNameEditor`, its AppKit field)
   - docs/adr/0017-durable-tabs-expiring-pages.md (a tab's name outlives its pages)
   - docs/qa/verification-procedures/rename-in-place.md (the hand checks the runner cannot make)
 ---
@@ -135,8 +136,8 @@ without a test says what it is owed by.
 | the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip and the slot rail call; the SwiftUI field's focus and its selection on focus, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheCellRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenamePadOpensTheCellOverTheOpenListAndRaisesNoSheet`, `testNewPadShutsTheListAndKeepsAnOpenFieldsName`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` and `PadPickerRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one; another notice stands in front of the line for its own dwell and gives it back | `PadPickerTests.swift` `testARefusalKeepsBothTheFieldAndTheLine`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; `NoticeHoldTests.swift` `testAHeldLineOutlastsTheDwellAndGoesWhenReleased`, `testAHeldLineComesBackWhenAFlashInFrontOfItEnds`, `testTheModelsClearsPutAHeldLineBack`; the SwiftUI field keeping its keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
-| a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | the core's setter: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `chip_json_carries_the_name`; owed: issue 245 (the field); Law 0001's 2026-10-13 amendment |
-| a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | the core's refusal and its codes: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `the_name_routes_judge_by_one_rule_and_fail_closed`; `SealedObjectSeamTests.swift` `testTheRefusalIsTheCoresRule`, `testANameRidesTheFaceAndABlankDraftClearsIt`; owed: issue 245 (the field and its line) |
+| a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | the core's setter: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `chip_json_carries_the_name`; the field: `SealedNameFieldTests.swift` `testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight`, `testTheMenusVerbOpensTheField`, `testADoubleClickOpensTheFieldOnlyWhereTheRuleSays`, `testAReadOnlyPageOpensNoField`, `testReturnNamesTheObjectAndRedrawsItsBlock`, `testEscapeFocusLossAndAnUntouchedReturnKeepAndAnEmptyReturnClears`, `testTheEndingsAreTabRenamesOutcomes`, `testTheObjectOrItsPageLeavingKeepsTheName`, `testThePagesChordsStandAsideForTheField`; `SealedCapsuleTests.swift` `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection` (the name zone's double click through `mouseDown`); the double click's timing and the keys in a real key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | the core's refusal and its codes: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `the_name_routes_judge_by_one_rule_and_fail_closed`; `SealedObjectSeamTests.swift` `testTheRefusalIsTheCoresRule`, `testANameRidesTheFaceAndABlankDraftClearsIt`; the field and its line: `SealedNameFieldTests.swift` `testARefusalKeepsTheFieldAndTheLine`, `testTheRefusalsWordsAreTheFieldsOwn`; `NoticeHoldTests.swift` (the held line); the field keeping the keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 
 ## What the rule forbids
 
@@ -183,12 +184,15 @@ tests in the row for a click on the gutter's time),
 `StreamNavigatorTests.testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage`,
 `PadPickerTests` (the seven pad cell tests in the rows above and
 `testAFieldMovedToAnotherCellOutlivesTheFocusLossOfTheOneItLeft`),
-`NoticeHoldTests`.
+`NoticeHoldTests`, `SealedNameFieldTests` (the sealed name's field, its
+endings and its refusal),
+`SealedCapsuleTests.testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`.
 
 By hand: the [rename in place](../qa/verification-procedures/rename-in-place.md)
 procedure, for what the runner cannot drive: the SwiftUI fields' focus
-and selection, the pad cell's Return and Escape, and the gutter's field
-in a real key window. It has not been run.
+and selection, the pad cell's Return and Escape, the gutter's field in
+a real key window, and the sealed name's double click and keys. It has
+not been run.
 
 Core and seam: a tab's name belongs to the tab and outlives its pages
 (ADR-0017); `companion_tab_set_title` (`crates/ffi/src/lib.rs`) carries
@@ -202,9 +206,7 @@ typed ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md
 Tests that pin the contradicting build and are rewritten when the owed
 rows land: none.
 
-Owed: the sealed object's name field (issue 245, over the core's setter
-and refusal, built under issue 241); a first run of the rename in place
-procedure.
+Owed: a first run of the rename in place procedure.
 
 ## Amendments
 
@@ -247,3 +249,9 @@ procedure.
   [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md),
   and stay owed for the field. Acceptance names the one rule the setter
   and the handle free judge share.
+- 2026-10-13: Sealed name amendment (issue 245). The sealed object's
+  field is built: its opening row and its refusing row cite
+  `SealedNameFieldTests` and the zone press test, and the rename in
+  place procedure gains the double click's and the keys' checks, which
+  both rows cite as owed. The owed list keeps only the procedure's
+  first run, and the sources name `ChipRename` and `SealedNameEditor`.
