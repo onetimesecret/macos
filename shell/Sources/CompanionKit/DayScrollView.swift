@@ -1886,7 +1886,8 @@ final class DayHeaderView: NSView {
         let draft = Self.seat(source: titleSource, title: summaryTitle, time: words.time)
         titleBeforeRename = draft
         tabBeingRenamed = tab
-        responderBeforeRename = window?.firstResponder
+        responderBeforeRename = Self.keyboardToReturn(
+            holder: window?.firstResponder, page: dayStack?.editor)
         // The field opens in the time's seat and the time slides right.
         titleField.stringValue = draft
         titleField.isHidden = false
@@ -1958,6 +1959,13 @@ final class DayHeaderView: NSView {
         place()
         updateAccessibilityLabel()
         needsDisplay = true
+    }
+
+    /// Who takes the keys when the field ends. A field editor is lent to
+    /// another field, which this opening ends, so the page takes them.
+    static func keyboardToReturn(holder: NSResponder?, page: NSResponder?) -> NSResponder? {
+        if let lent = holder as? NSTextView, lent.isFieldEditor { return page }
+        return holder
     }
 
     /// The keyboard back to whoever held it before the rename, or to

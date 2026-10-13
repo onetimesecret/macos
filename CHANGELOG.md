@@ -604,6 +604,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A gutter label's field gives the keys back to the page** (app
+  0.28.1; Law 0007, issue #248). A click on one page's time while
+  another field held the keys, such as a second page's time or the slot
+  rail's rename, remembered the window's shared field editor as the
+  place to return to. After Escape or Return the keys then stayed in
+  the gutter or went nowhere. The field now returns them to the page.
+
 - **An untouched tab rename no longer freezes an old title** (app
   0.27.1; Law 0007, issue #250). The strip's and the slot rail's field
   judged its draft against the tab's title as it read when the field

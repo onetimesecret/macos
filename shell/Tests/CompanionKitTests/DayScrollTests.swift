@@ -1364,6 +1364,42 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(headers[1].reading, headers[1].timeText, "the time does not stand alone again")
     }
 
+    /// A field opened while another gutter's field holds the keys gives
+    /// them back to the page on Escape and on Return, never to the window's
+    /// field editor, which the first field was borrowing (Law 0007, Keeping).
+    func testAFieldOpenedOverAnotherGivesTheKeysBackToThePage() async throws {
+        let model = try makeModel()
+        try page(in: model, saying: "first")
+        let second = try page(in: model, saying: "second")
+        let endings = [
+            #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.insertNewline(_:)),
+        ]
+        for ending in endings {
+            let roll = try mountRoll(model: model)
+            roll.stack.update(projection: model.timeUnits, selectedPage: second, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            XCTAssertTrue(roll.window.makeFirstResponder(editor))
+            let headers = roll.stack.laidOut.map(\.header)
+            XCTAssertEqual(headers.count, 2)
+            for header in headers {
+                let time = header.timeFrame
+                try click(header, at: NSPoint(x: time.midX, y: time.midY), in: roll)
+                await settle()
+            }
+            XCTAssertFalse(headers[0].isRenaming, "the first field outlived the second's opening")
+            XCTAssertTrue(headers[1].isRenaming, "a click on the second time opened nothing")
+            let fieldEditor = try XCTUnwrap(roll.window.firstResponder as? NSTextView)
+            XCTAssertTrue(fieldEditor.isFieldEditor)
+
+            fieldEditor.doCommand(by: ending)
+            await settle()
+            XCTAssertFalse(headers[1].isRenaming, "\(ending) left the field open")
+            XCTAssertTrue(
+                roll.window.firstResponder === editor,
+                "\(ending) left the keys with \(String(describing: roll.window.firstResponder))")
+        }
+    }
+
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {
         let model = try makeModel()
         model.newPage()
