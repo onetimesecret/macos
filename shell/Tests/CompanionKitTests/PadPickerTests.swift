@@ -189,9 +189,7 @@ final class PadPickerTests: XCTestCase {
 
         var body: some View {
             GeometryReader { proxy in
-                Color.clear
-                    .onAppear { report(lineTop, proxy.frame(in: .global).maxY) }
-                    .onChange(of: lineTop) { report($0, proxy.frame(in: .global).maxY) }
+                Color.clear.task(id: lineTop) { report(lineTop, proxy.frame(in: .global).maxY) }
             }
             .frame(height: 40)
         }

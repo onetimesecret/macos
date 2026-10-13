@@ -1062,6 +1062,12 @@ public final class PageModel: ObservableObject {
     /// What Edit → Seal Selected Content reads as the selection moves.
     public let sealActions = SealActionAvailability()
 
+    /// The keys moved where the editor cannot see them, as into a field in
+    /// another window: the Edit menu asks the editor again (ADR-0046).
+    func editorKeysMayHaveMoved() {
+        (activeEditor as? InkTextView)?.coordinator?.keysMoved()
+    }
+
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
     public var onHandBackKeys: (() -> Void)?

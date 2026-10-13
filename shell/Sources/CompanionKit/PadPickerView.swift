@@ -198,7 +198,9 @@ private struct PadPickerCell: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 if renaming {
-                    PadNameField(draft: $draft, commit: commitRename, keep: keepRename)
+                    PadNameField(
+                        draft: $draft, commit: commitRename, keep: keepRename,
+                        keysMoved: model.editorKeysMayHaveMoved)
                     trailingMarks
                 } else {
                     Button(action: select) {
@@ -291,6 +293,8 @@ private struct PadNameField: View {
     @Binding var draft: String
     let commit: () -> Void
     let keep: () -> Void
+    /// The field is in the list's own window, where the page sees no keys move.
+    let keysMoved: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -302,6 +306,7 @@ private struct PadNameField: View {
             .onExitCommand(perform: keep)
             .onChange(of: focused) { now in
                 if now { TabRename.selectWholeDraft() } else { keep() }
+                keysMoved()
             }
             // On the next turn, once the field is in the popover's window.
             .onAppear { DispatchQueue.main.async { focused = true } }

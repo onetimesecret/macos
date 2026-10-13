@@ -23,6 +23,8 @@ final class KeyHolderTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let model = isolatedModel(defaults: defaults)
+        // A seal that wrongly reached the page would take the clipboard.
+        XCTAssertTrue(model.coreClient.useMemoryPasteboardForTests())
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
