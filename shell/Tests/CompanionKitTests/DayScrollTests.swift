@@ -496,6 +496,8 @@ final class DayScrollTests: XCTestCase {
         let fields = header.subviews.compactMap { $0 as? NSTextField }
         let title = try XCTUnwrap(fields.first { $0.stringValue == "named page" })
         let expected = header.accessibilityLabel()
+        XCTAssertTrue(
+            fields.contains { !$0.isHidden && $0.frame == header.timeFrame }, "the time is not among the hits")
 
         for field in fields where !field.isHidden {
             let local = NSPoint(x: field.frame.midX, y: field.frame.midY)
@@ -510,6 +512,11 @@ final class DayScrollTests: XCTestCase {
         let screen = roll.window.convertPoint(toScreen: header.convert(local, to: nil))
         let target = try XCTUnwrap(header.accessibilityHitTest(screen) as? NSView)
         XCTAssertTrue(target === title, "the editable name lost its accessibility target")
+        let time = header.timeFrame
+        XCTAssertGreaterThanOrEqual(time.minX, title.frame.maxX, "the time did not slide right of the field")
+        let beside = roll.window.convertPoint(toScreen: header.convert(NSPoint(x: time.midX, y: time.midY), to: nil))
+        let timeTarget = try XCTUnwrap(header.accessibilityHitTest(beside) as? NSView)
+        XCTAssertTrue(timeTarget === header, "the time beside the open field lost the composed header")
         header.endRename(committed: false)
     }
 
@@ -1298,9 +1305,8 @@ final class DayScrollTests: XCTestCase {
         hit.mouseDown(with: event)
     }
 
-    /// A click on the gutter's time opens the field in the time's seat on
-    /// the time, selected whole, and the time slides to its right; a click
-    /// on the day still focuses the page (Law 0007, issue #248).
+    /// A click on the time opens the field on the time, selected whole, and
+    /// the time slides right; a click on the day focuses the page (Law 0007).
     func testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses() async throws {
         let model = try makeModel()
         let selected = try page(in: model, saying: "first line\nsecond line")
@@ -1335,9 +1341,8 @@ final class DayScrollTests: XCTestCase {
         XCTAssertTrue(roll.window.firstResponder === editor, "a click on the day did not focus the page")
     }
 
-    /// A named gutter reads the day, the name and the time, in that order
-    /// on screen; a later page on the day reads the name and the time.
-    /// An empty Return gives the seat back to the time.
+    /// A named gutter reads the day, the name and the time on screen, a later
+    /// page the name and the time; an empty Return gives the seat back.
     func testANamedGutterReadsTheDayTheNameAndTheTime() throws {
         let model = try makeModel()
         _ = try page(in: model, saying: "one")
@@ -1364,9 +1369,90 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(headers[1].reading, headers[1].timeText, "the time does not stand alone again")
     }
 
-    /// A field opened while another gutter's field holds the keys gives
-    /// them back to the page on Escape and on Return, never to the window's
-    /// field editor, which the first field was borrowing (Law 0007, Keeping).
+    /// A typed name stands in the time's seat, so a click on it or on the
+    /// time beside it opens the field on the name (Law 0007, the gutter's row).
+    func testAClickOnATypedNameOrItsTimeOpensTheFieldOnTheName() async throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "writing")
+        model.renameTab(try XCTUnwrap(model.selection), to: "Deploy notes")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let name = try XCTUnwrap(
+            header.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Deploy notes" })
+        let time = header.timeFrame
+
+        for point in [NSPoint(x: name.frame.midX, y: name.frame.midY), NSPoint(x: time.midX, y: time.midY)] {
+            XCTAssertTrue(roll.window.makeFirstResponder(editor))
+            try click(header, at: point, in: roll)
+            await settle()
+            XCTAssertTrue(header.isRenaming, "a click at \(point) did not open the field")
+            XCTAssertEqual(header.renameDraft, "Deploy notes", "the field did not open on the name")
+            let fieldEditor = try XCTUnwrap(roll.window.firstResponder as? NSTextView)
+            fieldEditor.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+            await settle()
+            XCTAssertFalse(header.isRenaming)
+            XCTAssertEqual(header.reading, "today · Deploy notes · \(header.timeText)")
+        }
+    }
+
+    /// A long name on a narrow card gives way before the time, which keeps
+    /// its whole width inside the gutter, at rest and with the field open.
+    func testALongNameOnANarrowGutterLeavesTheTimeWhole() throws {
+        let model = try makeModel()
+        _ = try page(in: model, saying: "writing")
+        let tab = try XCTUnwrap(model.selection)
+        model.renameTab(tab, to: String(repeating: "Deploy notes ", count: 6))
+        let summary = try XCTUnwrap(model.tabs.first { $0.id == tab })
+        let long = summary.title
+        let header = DayHeaderView(model: model)
+        header.show(
+            words: DayHeaderView.words(spokenLabel: "today", stamp: "13:00"),
+            spokenLabel: "today", mark: .none, summary: summary)
+        let name = try XCTUnwrap(
+            header.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == long })
+
+        func laidOut(width: CGFloat) -> (time: NSRect, name: NSRect) {
+            header.frame = NSRect(x: 0, y: 0, width: width, height: DayHeaderView.gutterHeight)
+            header.place()
+            return (header.timeFrame, name.frame)
+        }
+        let wide = laidOut(width: 2_000)
+        XCTAssertGreaterThan(wide.time.width, 0)
+        for renaming in [false, true] {
+            if renaming { header.beginRename() }
+            let narrow = laidOut(width: 240)
+            XCTAssertEqual(narrow.time.width, wide.time.width, accuracy: 0.5, "the time was clipped")
+            XCTAssertLessThanOrEqual(narrow.time.maxX, header.bounds.maxX, "the time left the gutter")
+            XCTAssertLessThan(narrow.name.width, wide.name.width, "the name did not give way")
+            XCTAssertLessThanOrEqual(narrow.name.maxX, narrow.time.minX, "the name ran over the time")
+        }
+        header.endRename(committed: false)
+    }
+
+    /// The label is the slot's name, which outlives its page (ADR-0017),
+    /// so a page minted into a labelled empty slot reads the label.
+    func testAPageMintedIntoALabelledSlotReadsTheSlotsLabel() throws {
+        let model = try makeModel()
+        _ = try page(in: model, saying: "first")
+        let tab = try XCTUnwrap(model.selection)
+        model.renameTab(tab, to: "Deploy notes")
+        model.coreClient.ageForTests(byMs: 8 * 24 * 60 * 60 * 1_000)
+        model.coreClient.expireDue()
+        model.refresh()
+        XCTAssertNil(model.selectedPageID, "the page outlived its clock")
+
+        model.select(tab)
+        let minted = try XCTUnwrap(model.selectedPageID, "selecting the empty slot minted nothing")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: minted, readOnly: false)
+        let header = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == minted }?.header)
+        XCTAssertEqual(header.reading, "today · Deploy notes · \(header.timeText)")
+    }
+
+    /// A field opened while another field holds the keys gives them back to
+    /// the page on Escape and Return, not to the lent field editor (Law 0007).
     func testAFieldOpenedOverAnotherGivesTheKeysBackToThePage() async throws {
         let model = try makeModel()
         try page(in: model, saying: "first")
