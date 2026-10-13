@@ -1685,10 +1685,10 @@ final class DayHeaderView: NSView {
         toppedUp = summary?.holdToppedUp ?? false
         pageID = summary?.pageID
         spokenRemainingLabel = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
+        summaryTitle = summary?.title ?? ""
         // Not while a draft is in the field: this pass runs every
         // second, and the title it would write is the one the rename
         // is there to replace.
-        summaryTitle = summary?.title ?? ""
         if titleBeforeRename == nil {
             titleField.stringValue = summaryTitle
         }
