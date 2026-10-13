@@ -61,6 +61,15 @@ extension CompanionClient {
         body.withCString { companion_test_wire_stub(rawHandleForTests, status, $0) }
     }
 
+    /// Give the core a pasteboard in process memory
+    /// (`companion_test_memory_pasteboard`, gated with the seams above),
+    /// so this client's copies stay off the clipboard of whoever runs the
+    /// suite. A test that copies decrypted contents calls it first.
+    @discardableResult
+    func useMemoryPasteboardForTests() -> Bool {
+        companion_test_memory_pasteboard(rawHandleForTests)
+    }
+
     /// The most recent request the stubbed wire saw
     /// (`companion_test_wire_last_json`): a summary the core made at
     /// send time from the non-secret fields of the body, which it then

@@ -1,10 +1,11 @@
+import AppKit
 import XCTest
 
 @testable import CompanionKit
 
 /// A sealed object's name across the seam (ADR-0043), against the live
 /// core through an ephemeral handle. Nothing here persists; the one
-/// name=value copy is cleared by the guarded clear it arms.
+/// name=value copy goes to a board in process memory.
 final class SealedObjectSeamTests: XCTestCase {
     private func sealedChip(
         _ client: CompanionClient, _ text: String = "hunter2"
@@ -57,6 +58,8 @@ final class SealedObjectSeamTests: XCTestCase {
 
     func testANameValueCopyIsRefusedUnnamedAndClearsLikeACopyOut() throws {
         let client = CompanionClient.ephemeral(tag: #function)
+        let board = NSPasteboard.general.changeCount
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
         let (_, chip) = try sealedChip(client)
         XCTAssertFalse(client.copyNameValue(chip: chip.chipId), "an unnamed object")
         XCTAssertFalse(client.clearClipboardIfOurs(), "the refusal wrote nothing of ours")
@@ -68,6 +71,8 @@ final class SealedObjectSeamTests: XCTestCase {
         let sent = client.ledger().filter { $0.event == "sent" }
         XCTAssertEqual(sent.map(\.destination), ["clipboard"])
         XCTAssertFalse(sent.contains { $0.title.contains("API_KEY") })
+        XCTAssertEqual(
+            NSPasteboard.general.changeCount, board, "the copy reached the general pasteboard")
     }
 
     private func noteText(_ client: CompanionClient, chip: UInt64) -> String {
