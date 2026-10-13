@@ -83,6 +83,15 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the page is unchanged. **Fail:** the note reads as plain text, the
       list does not continue, a plain click opens the link, or the paste
       lands on the page.
+- [ ] **VoiceOver reads the block inside the page.** Turn VoiceOver on
+      (⌘F5), put the caret in a page holding a sealed block named
+      `MY_API_KEY` and an unnamed one, and move the VoiceOver cursor
+      through the page's text with VO-Right and the arrow keys.
+      **Pass:** on each block VoiceOver says `sealed content`, then the
+      name where there is one, then the size class, as
+      `sealed content, MY_API_KEY, small`, and never the block's
+      plaintext or excerpt. **Fail:** VoiceOver says nothing on the
+      block, reads an attachment character, or reads its contents.
 - [ ] **A named image.** Copy an image in Preview and press ⇧⌘V on the
       page, then choose the block's *Name…*, type `LOGO` and press
       Return, then move the pointer across `=` and
@@ -107,4 +116,5 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | scrolling and a narrow card | | |
 | | | a drop from another app | | |
 | | | the page's own surface in the note | | |
+| | | VoiceOver reads the block inside the page | | record the macOS version |
 | | | a named image | | |

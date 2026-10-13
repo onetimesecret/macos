@@ -61,6 +61,15 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       pad can take clears the line, and Return renames. **Fail:** the
       field closes, the keys leave it, or the line cannot be seen
       beside the list.
+- [ ] **Pad cell, the line on a short card.** Make five pads, raise the
+      card and drag its bottom edge up to its least height, then open
+      the pad list, choose *Rename pad…* on the last pad, delete the
+      name and press Return. Repeat in the editor window at its least
+      height. **Pass:** the list ends above the line under the page and
+      scrolls to the pad's cell, and "Enter a pad name." stays readable
+      under it while the field is open (Law 0007, Refusing; D-14).
+      **Fail:** the list covers the line, or the cell cannot be
+      scrolled to.
 - [ ] **Pad cell, Escape.** Open the field, type a new name and press
       Escape. **Pass:** the pad keeps its old name. Record whether the
       list stays open or closes; either keeps the name. **Fail:** the
@@ -110,6 +119,7 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | strip, the field selects whole | | |
 | | | pad cell, opening | | |
 | | | pad cell, an empty Return | | |
+| | | pad cell, the line on a short card | | record the card and the editor window |
 | | | pad cell, Escape | | record whether the list stayed open |
 | | | the page's keys stand aside for every field | | record each of the three fields |
 | | | sealed name, the double click | | |

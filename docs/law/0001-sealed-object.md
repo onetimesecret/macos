@@ -401,8 +401,9 @@ own routes, the page's own surface in it and what stands aside there),
 the live core).
 
 By hand: the [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md)
-procedure, for the zones under a real pointer, the beat on a display
-and the note on the raised card. It has not been run.
+procedure, for the zones under a real pointer, the beat on a display,
+the note on the raised card and VoiceOver naming a block inside the
+page by `SealedBlockCell`'s label. It has not been run.
 
 Tests that pin the contradicting build and are rewritten when issue 170
 lands (removal detaches, undo reattaches): `store.rs`
@@ -572,3 +573,6 @@ copy decrypted, naming and note paths must stay dialog free.
   gives the Edit menu to whoever holds the keys. The note's row cites
   the test that the menu's actions reach the note and not the page while
   the note holds the keys, and that the menu offers no seal there.
+- 2026-10-13: VoiceOver amendment. The by hand paragraph adds the
+  procedure's check that VoiceOver names a block inside the page by its
+  cell's label, which `SealedBlockTests` pins only as a string.
