@@ -135,8 +135,8 @@ without a test says what it is owed by.
 | the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip and the slot rail call; the SwiftUI field's focus and its selection on focus, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheCellRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenamePadOpensTheCellOverTheOpenListAndRaisesNoSheet`, `testNewPadShutsTheListAndKeepsAnOpenFieldsName`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` and `PadPickerRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one; another notice stands in front of the line for its own dwell and gives it back | `PadPickerTests.swift` `testARefusalKeepsBothTheFieldAndTheLine`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; `NoticeHoldTests.swift` `testAHeldLineOutlastsTheDwellAndGoesWhenReleased`, `testAHeldLineComesBackWhenAFlashInFrontOfItEnds`, `testTheModelsClearsPutAHeldLineBack`; the SwiftUI field keeping its keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
-| a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | owed: issue 245 (the field), issue 241 (the core's setter); Law 0001's 2026-10-13 amendment |
-| a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | owed: issue 241 (the core's refusal), issue 245 (the field) |
+| a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | the core's setter: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `chip_json_carries_the_name`; owed: issue 245 (the field); Law 0001's 2026-10-13 amendment |
+| a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | the core's refusal and its codes: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `the_name_routes_judge_by_one_rule_and_fail_closed`; `SealedObjectSeamTests.swift` `testTheRefusalIsTheCoresRule`, `testANameRidesTheFaceAndABlankDraftClearsIt`; owed: issue 245 (the field and its line) |
 
 ## What the rule forbids
 
@@ -193,15 +193,18 @@ in a real key window. It has not been run.
 Core and seam: a tab's name belongs to the tab and outlives its pages
 (ADR-0017); `companion_tab_set_title` (`crates/ffi/src/lib.rs`) carries
 it, capped core-side. The pad's
-goes through the catalog (`PadCatalogTests`). The sealed object's is owed
-with Law 0001's amendment, refused core-side outside ADR-0042's charset
-(issue 241).
+goes through the catalog (`PadCatalogTests`). The sealed object's is
+judged by `judge_name` (`crates/core/src/sheet.rs`), which
+`companion_chip_set_name` refuses by and `companion_chip_name_refusal`
+answers with, so a field can say why a draft will not take while it is
+typed ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)).
 
 Tests that pin the contradicting build and are rewritten when the owed
 rows land: none.
 
-Owed: the sealed object's name field (issue 245, over issue 241's
-setter); a first run of the rename in place procedure.
+Owed: the sealed object's name field (issue 245, over the core's setter
+and refusal, built under issue 241); a first run of the rename in place
+procedure.
 
 ## Amendments
 
@@ -239,3 +242,8 @@ setter); a first run of the rename in place procedure.
   rename in place procedure as owed, and the pad rows cite the
   `PadPickerRoutes` and held line tests. "a name is page-owned text"
   under Acceptance becomes the tab's own name.
+- 2026-10-13: Core amendment (issue 241). The sealed name's two rows
+  cite the core and seam tests of its setter and refusal, recorded in
+  [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md),
+  and stay owed for the field. Acceptance names the one rule the setter
+  and the handle free judge share.

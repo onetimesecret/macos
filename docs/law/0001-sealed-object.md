@@ -18,10 +18,11 @@ sources:
   - docs/spec/design/04-interaction-model.md
   - docs/adr/0009-chip-deletion-deliberate-final.md (proposed removal constraint superseded by D-30)
   - docs/adr/0012-framing-threat-boundary-and-persistence-model.md (egress and clear discipline)
-  - crates/core/src/sheet.rs (one clock per sheet, no per chip timers)
-  - crates/core/src/store.rs (seal, copy out, delete, sync)
-  - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections)
-  - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt)
+  - crates/core/src/sheet.rs (one clock per sheet, no per chip timers; `judge_name`, the name's rule)
+  - crates/core/src/store.rs (seal, copy out, delete, sync; `set_chip_name`, `copy_out_name_value`, the note's routes)
+  - crates/core/src/note.rs (the note's own document and undo)
+  - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections; the name and note routes)
+  - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt, ChipInfo.name, ChipInfo.hasNote)
   - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the chip menu, the seal commands)
   - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
@@ -132,12 +133,12 @@ without a test says what it is owed by.
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
 | copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
-| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | owed: issue 241 (the core's name), issue 245 (the field), issue 247 (the fragment) |
+| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | the core's name, its rule and its refusal: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`, `a_name_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_name`; `lib.rs` `chip_json_carries_the_name`, `the_name_routes_judge_by_one_rule_and_fail_closed` ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)); owed: issue 245 (the field), issue 247 (the fragment) |
 | pointer over an unnamed object's bottom row | structural editing | no zones until the object is named: no pill, no seat words, and a click selects as anywhere on the block (D-40) | owed: issue 244 |
 | click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | owed: issue 244 (the zone), issue 245 (the double click) |
 | click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | owed: issue 244 |
-| click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | owed: issue 242 (the core's write), issue 244 (the zone) |
-| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | owed: issue 243 (the core's note), issue 246 (the popover), issue 247 (the fragment) |
+| click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | the core's write: `store.rs` `name_value_is_composed_raw_at_its_exact_size`, `name_value_refuses_an_unnamed_an_image_and_an_unknown_chip`; `lib.rs` `copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed`, `copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing`, `a_name_value_copy_and_a_copy_out_retire_each_others_receipts`, `a_name_value_copy_records_one_sent_and_no_name`; owed: issue 244 (the zone) |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; owed: issue 246 (the popover), issue 247 (the fragment) |
 
 ### Sealed-fragment representation
 
@@ -186,8 +187,12 @@ resolve as unavailable rather than being guessed expired.
   pinned by `store.rs`
   `a_sealed_chip_is_content_free_in_the_ledger_from_the_moment_it_exists`
   and `a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger`. Nor does
-  it contain the object's name or note; the tests are owed by issues 241
-  and 243.
+  it contain the object's name or note, pinned by `store.rs`
+  `a_named_chip_is_content_free_in_the_ledger` and
+  `note_edits_leave_the_ledger_unchanged` and by `lib.rs`
+  `a_name_and_a_note_reach_no_ledger_record_and_no_other_output`. Neither
+  is payload: `store.rs` `a_name_and_a_note_are_never_payload` reads both
+  conceal payloads.
 - OnetimePad does not write decrypted drag data to the general pasteboard.
   Apple's [`NSPasteboard` documentation](https://developer.apple.com/documentation/appkit/nspasteboard/)
   says, "The drag pasteboard is used to
@@ -312,9 +317,41 @@ Core (`crates/core/src/store.rs`, `cargo test -p companion-core`):
 `a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger`,
 `a_conceal_marks_the_chip_and_keeps_only_the_receipt`,
 `sheet_payload_inlines_chips_in_document_order`,
-`sync_rejects_foreign_and_duplicate_chips`.
+`sync_rejects_foreign_and_duplicate_chips`; for the name and note
+(ADR-0043), `a_named_chip_is_content_free_in_the_ledger`,
+`a_name_survives_a_snapshot_round_trip`,
+`after_the_page_expires_the_snapshot_holds_no_name`,
+`a_name_outside_the_charset_is_refused_and_an_empty_one_clears`,
+`name_value_is_composed_raw_at_its_exact_size`,
+`name_value_refuses_an_unnamed_an_image_and_an_unknown_chip`,
+`a_note_survives_a_snapshot_round_trip`,
+`after_the_page_expires_the_snapshot_holds_no_note`,
+`undo_inside_the_note_is_separate_from_the_pages_undo`,
+`note_edits_leave_the_ledger_unchanged`,
+`a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`,
+`a_note_of_only_whitespace_opens_no_doorway`,
+`a_name_and_a_note_are_never_payload`. The chip record's trailing
+fields (`crates/core/src/persist.rs`):
+`a_chip_written_before_names_existed_restores_unnamed`,
+`a_written_name_comes_back_and_one_the_rule_refuses_is_dropped`,
+`an_unknown_name_flag_is_malformed_and_the_store_is_untouched`,
+`a_chip_written_before_notes_existed_keeps_its_name_and_has_no_note`,
+`a_written_note_comes_back_beside_its_name`,
+`an_unknown_note_flag_is_malformed_and_the_store_is_untouched`, and
+`snapshot_size_is_exact` over a named chip with a note.
 
-Seam (`crates/ffi/src/lib.rs`): `the_clear_interval_is_the_core_constant`.
+Seam (`crates/ffi/src/lib.rs`): `the_clear_interval_is_the_core_constant`,
+`sealed_bytes_never_appear_in_any_output`, `chip_json_carries_the_name`,
+`the_name_routes_judge_by_one_rule_and_fail_closed`,
+`a_name_reaches_no_ledger_record`,
+`copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed`,
+`copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing`,
+`a_name_value_copy_and_a_copy_out_retire_each_others_receipts`,
+`a_name_value_copy_records_one_sent_and_no_name`,
+`note_routes_edit_the_note_and_leave_the_page_alone`,
+`the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`,
+`the_note_routes_fail_closed`,
+`a_name_and_a_note_reach_no_ledger_record_and_no_other_output`.
 
 Shell (`shell/Tests/CompanionKitTests`, `scripts/test-shell.sh`):
 `DocumentOpsTests` (`testAClickOnAChipSelectsItWhole`,
@@ -334,7 +371,8 @@ Shell (`shell/Tests/CompanionKitTests`, `scripts/test-shell.sh`):
 (conceal-draft reconciliation after the target chip disappears; it does not
 pin chip expiry or lifecycle),
 `PageModelPreviewRenderingTests.testChipAttachmentSurvivesEveryScope`,
-`SealedBlockTests` (the block's geometry).
+`SealedBlockTests` (the block's geometry), `SealedObjectSeamTests` (the
+name, `name=value` and note wrappers over the live core).
 
 Tests that pin the contradicting build and are rewritten when issue 170
 lands (removal detaches, undo reattaches): `store.rs`
@@ -348,8 +386,8 @@ lands (removal detaches, undo reattaches): `store.rs`
 
 Owed: issue 170 (the versioned sealed-fragment model, atomic multi-object
 detach/reattach/clone, lifecycle resolution, the lazy decrypted drag and
-their tests as named in the rows); issues 241 to 247 (the name and note,
-as named in the rows). Issues 169 (`SealedBlockTests`) and 172 (the
+their tests as named in the rows); issues 244 to 247 (the name's and
+note's surfaces and the fragment, as named in the rows). Issues 169 (`SealedBlockTests`) and 172 (the
 interrupting dialogs) are closed; D-14 is strict and the seal, remove,
 copy decrypted and naming paths must stay dialog free.
 
@@ -430,3 +468,12 @@ copy decrypted and naming paths must stay dialog free.
   menu shows the four new items. Every row the name and note added points
   at its issue in epic 252. The owed list drops the closed issues 169 and
   172, and the shell list names `SealedBlockTests`.
+- 2026-10-13: Core amendment (issues 241, 242 and 243).
+  [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)
+  records where the name and note live, how they persist and what crosses
+  the FFI. The naming row, the `=` zone's row and the note's row cite the
+  core and seam tests for their core halves and stay owed for the
+  surfaces and the fragment. The ledger invariant names the tests that
+  keep the name and note out of it, and a test that keeps both out of the
+  conceal payloads. The acceptance lists and sources follow; the owed list
+  keeps issues 244 to 247.
