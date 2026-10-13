@@ -1495,8 +1495,8 @@ final class DayHeaderView: NSView {
 
     // MARK: What a header says
 
-    /// The checkpoint belongs to the content area. Its passive labels
-    /// share the focus click; an inline rename keeps its own text input.
+    /// The checkpoint belongs to the content area: the day and the rule
+    /// focus the page, and the time's seat opens the rename field.
     override var needsPanelToBecomeKey: Bool {
         dayStack?.needsPanelToBecomeKey ?? false
     }
@@ -1555,9 +1555,8 @@ final class DayHeaderView: NSView {
         if dayStack?.focusEditor(on: pageID) != true { super.mouseDown(with: event) }
     }
 
-    /// Whether a click here lands in the time's seat: on the time, or on
-    /// the typed name that took its place. The day and the gutter's
-    /// empty run still focus the page (Law 0007, issue #248).
+    /// Whether a click lands in the time's seat, on the time or on a typed
+    /// name standing in it; elsewhere the click focuses the page (Law 0007).
     private func opensRename(at point: NSPoint) -> Bool {
         guard tab != nil, titleBeforeRename == nil else { return false }
         if !timeField.stringValue.isEmpty, timeField.frame.contains(point) { return true }
@@ -1739,7 +1738,6 @@ final class DayHeaderView: NSView {
         dayField.frame = NSRect(x: x, y: top + 3, width: dayWidth, height: labelHeight)
         if dayWidth > 0 { x += dayWidth + Self.gap }
         if !titleField.isHidden {
-            // A name truncates before the time does, so the time keeps its seat.
             let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width + Self.gap
             let room = bounds.width - x - timeWidth - remainingWidth - Self.margin * 2
             let wanted = titleField.frame.width + (titleField.isEditable ? Self.caretRoom : 0)
@@ -1873,14 +1871,8 @@ final class DayHeaderView: NSView {
 
     // MARK: The rename, in place
 
-    /// The seat becomes a field where it stands (D-14, Law 0007): the
-    /// field opens on what the seat showed, a typed name or the time,
-    /// selected whole, and gives the keyboard back when the draft is
-    /// committed or let go of.
-    ///
-    /// Internal, with `endRename` and `renameDraft`, so the roll's
-    /// tests can drive a rename without a window's field editor and
-    /// pin that no modal session is entered on the way.
+    /// The seat becomes a field where it stands, on what the seat showed,
+    /// selected whole (D-14, Law 0007); internal so the tests can drive it.
     func beginRename() {
         guard let tab, titleBeforeRename == nil else { return }
         let draft = Self.seat(source: titleSource, title: summaryTitle, time: words.time)

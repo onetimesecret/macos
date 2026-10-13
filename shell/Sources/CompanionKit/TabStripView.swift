@@ -619,9 +619,8 @@ struct SheetTab: View {
             .help("Return renames the tab; escape leaves it as it was")
     }
 
-    /// Ends the rename one way or the other, judged against the title
-    /// the field opened on. The field going away drops its focus and
-    /// reports a second ending, which `end` answers with nil.
+    /// Ends the rename, judged against the title the field opened on; the
+    /// focus loss that follows a Return is a second ending `end` ignores.
     private func endRename(committed: Bool) {
         if case .rename(let name)? = rename.end(committed: committed) {
             model.renameTab(sheet.id, to: name)
