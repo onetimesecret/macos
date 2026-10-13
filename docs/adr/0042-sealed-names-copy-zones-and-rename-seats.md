@@ -93,8 +93,8 @@ Adopt issue #240's eight recommendations as stated.
      at its bottom right with `⇧esc` beside them.
    - **The page's line.** After the value or `=` zone, D-42's
      confirmation as it stands; the mockup says "the page's line reads as
-     it does today". The mockup gives no line for *Copy name*; the list
-     after the menu settles it.
+     it does today". The mockup gives no line for *Copy name* (open
+     question 1).
    - **Menu.** Law 0001's amendment names the four items; the mockup
      gives their order:
 
@@ -113,18 +113,6 @@ Adopt issue #240's eight recommendations as stated.
      Unnamed, *Copy name* and *Copy name=value, decrypted* are absent and
      *Name…* stands for *Rename…*. Without a note, *Note…* stands for
      *Edit note…*.
-
-   Four details the mockup does not give are decided here, not taken
-   from it:
-
-   - **The line after *Copy name*.** `copied the name.`, with no clear
-     armed, since the name is ambient ink.
-   - **The ember beat's length.** One second, then the row rests. Under
-     Reduce Motion the stroke and tint come and go without a fade (D-10).
-   - **The popover's minimum width**, point 7's threshold. One named
-     constant in the shell. Issue #246 sets its value and records it in
-     this record's history, and its test of point 7 reads the constant.
-   - **An unnamed object's note header.** `NOTE` alone.
 
 Copying the value or `name=value` is ADR-0012's copy decrypted egress,
 written core-side with its ledger record and guarded clear; the count
@@ -162,6 +150,21 @@ cite the narrowed D-40 and the extended D-41.
 - The pad list stops closing on activation, so a second click can reach
   a cell; reopen point 5.
 
+## Open questions
+
+1. The line after *Copy name*. The mockup gives none. Recommendation:
+   `copied the name.`, with no clear armed, since the name is ambient
+   ink.
+2. The ember beat's length. The mockup says "for a beat".
+   Recommendation: one second, then the row rests; under Reduce Motion it
+   comes and goes without a fade (D-10).
+3. The note popover's minimum width, point 7's threshold. The mockup
+   draws the popover at the block's measure and names no minimum.
+   Recommendation: one constant in the shell, which issue #246's test of
+   point 7 reads.
+4. The header of an unnamed object's note. Recommendation: `NOTE`
+   alone.
+
 ## Decision history
 
 - 2026-10-13: Accepted, adopting issue #240's eight recommendations as
@@ -169,27 +172,8 @@ cite the narrowed D-40 and the extended D-41.
   successor carry dated notes at D-40 and D-41, and the 2026-0915 UI/UX
   record at D-10, D-27 and section 3's menu. Laws 0001 and 0007 cite this
   record.
-- 2026-10-13: The four open questions it was accepted with are settled
-  by adopting the recommendation each carried. They now stand after
-  point 8's menu, and the Open questions section is removed. The
-  popover's minimum width still awaits its value from issue #246.
-- 2026-10-13: Issue #244 builds point 8's row, zones, pill and beat, and
-  settles what the drawing leaves open. The light appearance's pill is
-  `#E4E4E9` and its ember tint `#F8DED5`; the ember stroke is the same
-  in both. The beat fades in and out over 0.15 s at each end of its
-  second, and Reduce Motion drops both fades. A zone answers in the
-  block's lower half, across its run. A row too long for the block
-  cuts the name first, down to four characters and an ellipsis, then
-  the value; `=` is never cut, and the row leaves room for the seat's
-  widest words, so a hover moves nothing. A zone's click copies and
-  leaves the selection as it was.
-- 2026-10-13: Issue #246 sets the popover's minimum width at 320
-  points, the constant `NotePopoverLayout.minimumWidth`; a block
-  narrower than that puts the note across the card's content width, 8
-  points in from each edge, the margin the expanded note keeps too. The
-  popover stands inside the card's own window, over the page, rather
-  than in a window of its own.
-- 2026-10-13: A zone acts on a click only once the seat has named it
-  under the pointer, as the Consequences require. A window not holding
-  the keys shows no hover, so the click that brings it forward finds no
-  zone and selects the block; the next click acts.
+- 2026-10-13: The four open questions are settled, each by its
+  recommendation, in
+  [ADR-0044](0044-sealed-row-and-note-details.md), which also records
+  what issues #244 and #246 settled of points 7 and 8. Edits that had
+  written those into this record's Decision and history are taken back.
