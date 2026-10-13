@@ -144,30 +144,53 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(name(of: scratch, in: model), scratch.name)
     }
 
-    func testAPadRenameAttachesNoSheetAndRunsNoModalSession() throws {
+    /// The list's *Rename pad…* route: the field opens in the cell over the
+    /// open list, and no step raises the create sheet or a modal session.
+    func testRenamePadOpensTheCellOverTheOpenListAndRaisesNoSheet() throws {
         let (model, pad) = try padModel()
         var ends = 0
         let token = NotificationCenter.default.addObserver(
             forName: ModalSession.didEndNotification, object: nil, queue: nil
         ) { _ in MainActor.assumeIsolated { ends += 1 } }
         defer { NotificationCenter.default.removeObserver(token) }
-        func noSheetNoModal(_ moment: String) {
+        var routes = PadPickerRoutes()
+        routes.listOpen = true
+        func inTheCell(_ moment: String) {
+            XCTAssertTrue(routes.listOpen, "the list closed \(moment)")
+            XCTAssertFalse(routes.creating, "the sheet came up \(moment)")
             XCTAssertFalse(ModalSession.isRunning, "a modal session ran \(moment)")
-            XCTAssertTrue(
-                (NSApp?.windows ?? []).allSatisfy { $0.attachedSheet == nil },
-                "a sheet was attached \(moment)")
         }
 
-        var rename = PadRename()
-        rename.open(pad, in: model)
-        noSheetNoModal("on opening")
-        rename.edit("", in: model)
-        rename.commit(in: model)
-        noSheetNoModal("on a refusal")
-        rename.edit("Payroll", in: model)
-        rename.commit(in: model)
-        noSheetNoModal("on a commit")
+        routes.beginRename(pad, in: model)
+        XCTAssertEqual(routes.rename.pad, pad.id, "the field did not open in the pad's cell")
+        inTheCell("on opening")
+        routes.rename.edit("", in: model)
+        routes.rename.commit(in: model)
+        inTheCell("on a refusal")
+        routes.rename.edit("Payroll", in: model)
+        routes.rename.commit(in: model)
+        inTheCell("on a commit")
+        XCTAssertEqual(name(of: pad, in: model), "Payroll")
         XCTAssertEqual(ends, 0)
+    }
+
+    /// *New pad…* is the one route to the sheet, and it shuts the list,
+    /// keeping the name under any field that was open.
+    func testNewPadShutsTheListAndKeepsAnOpenFieldsName() throws {
+        let (model, pad) = try padModel()
+        var routes = PadPickerRoutes()
+        routes.listOpen = true
+        routes.beginRename(pad, in: model)
+        routes.rename.edit("", in: model)
+        routes.rename.commit(in: model)
+        XCTAssertNotNil(model.notice)
+
+        routes.beginCreating(in: model)
+        XCTAssertTrue(routes.creating)
+        XCTAssertFalse(routes.listOpen)
+        XCTAssertFalse(routes.rename.isOpen, "the field outlived the list")
+        XCTAssertNil(model.notice, "the refusal outlived its field")
+        XCTAssertEqual(name(of: pad, in: model), "Otto")
     }
 
     func testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay() {
