@@ -4288,8 +4288,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         let timer = Timer(
             timeInterval: reduceMotion ? SealedBlockCell.beatDuration : 1.0 / 30,
             repeats: !reduceMotion
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advanceCopyBeat() }
+        ) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            MainActor.assumeIsolated { self.advanceCopyBeat() }
         }
         RunLoop.main.add(timer, forMode: .common)
         copyBeatTimer = timer
