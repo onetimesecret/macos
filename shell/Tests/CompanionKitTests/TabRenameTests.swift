@@ -2,10 +2,11 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The rename's decisions (D-14, issue #172), pinned apart from the two
+/// The rename's decisions (D-14, issue #172), pinned apart from the
 /// fields that ask them. The strip's field is SwiftUI and cannot be
-/// driven under the runner; the gutter's can, and `ModalSessionTests`
-/// drives it. What both fields agree on is here.
+/// driven under the runner, so its state lives in `TabRename.Field`,
+/// which the strip and the slot rail call and these tests drive; the
+/// gutter's field can be driven, and `ModalSessionTests` drives it.
 final class TabRenameTests: XCTestCase {
     func testReturnOverANewNameRenames() {
         XCTAssertEqual(
@@ -40,5 +41,51 @@ final class TabRenameTests: XCTestCase {
         XCTAssertEqual(
             TabRename.outcome(draft: " notes ", current: "notes", committed: true), .keep,
             "and spaces around the current title change nothing")
+    }
+
+    // MARK: The strip's and the slot rail's field (issue #250)
+
+    func testTheFieldOpensOnTheCurrentTitle() {
+        var field = TabRename.Field()
+        XCTAssertFalse(field.isOpen)
+        field.open(on: "deploy notes")
+        XCTAssertTrue(field.isOpen)
+        XCTAssertEqual(field.draft, "deploy notes")
+        XCTAssertEqual(field.opened, "deploy notes")
+
+        field.draft = "payr"
+        field.open(on: "a later title")
+        XCTAssertEqual(field.draft, "payr", "a second opening wrote over the draft")
+        XCTAssertEqual(field.opened, "deploy notes")
+    }
+
+    func testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn() {
+        // The derived title moves while the field is open; judged against
+        // the new title, the untouched draft would freeze into a name.
+        var field = TabRename.Field()
+        field.open(on: "deploy notes")
+        let titleNow = "deploy notes, and more"
+        XCTAssertNotEqual(field.draft, titleNow)
+        XCTAssertEqual(field.end(committed: true), .keep)
+        XCTAssertFalse(field.isOpen)
+
+        field.open(on: "deploy notes")
+        field.draft = "Payroll"
+        XCTAssertEqual(field.end(committed: true), .rename("Payroll"))
+    }
+
+    func testTheFieldKeepsTheTitleOnEscapeAndEndsOnce() {
+        var field = TabRename.Field()
+        field.open(on: "deploy notes")
+        field.draft = "Payroll"
+        XCTAssertEqual(field.end(committed: false), .keep)
+        XCTAssertNil(
+            field.end(committed: false),
+            "the focus loss that follows the field going away ended it a second time")
+
+        field.open(on: "deploy notes")
+        field.draft = "Payroll"
+        XCTAssertEqual(field.end(committed: true), .rename("Payroll"))
+        XCTAssertNil(field.end(committed: false), "a focus loss after Return undid nothing, and said so")
     }
 }

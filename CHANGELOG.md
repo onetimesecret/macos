@@ -591,6 +591,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anything does, must not be a thin bar running the width of the
   bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
+### Fixed
+
+- **An untouched tab rename no longer freezes an old title** (app
+  0.27.1; Law 0007, issue #250). The strip's and the slot rail's field
+  judged its draft against the tab's title as it read when the field
+  closed, so a title that derived anew while the field was open turned
+  an untouched Return into a rename to the old text. The field now
+  judges against the title it opened on, and selects its draft whole
+  when it takes the keyboard.
+
 ### Security
 
 - **A response body no longer grows in place** (Law 0004, draft;

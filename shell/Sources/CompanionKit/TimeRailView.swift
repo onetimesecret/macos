@@ -1003,9 +1003,10 @@ private struct SlotRailRow: View {
     let endReorder: () -> Void
 
     @State private var hovering = false
-    @State private var renaming = false
-    @State private var renameDraft = ""
+    @State private var rename = TabRename.Field()
     @FocusState private var renameFocused: Bool
+
+    private var renaming: Bool { rename.isOpen }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -1096,30 +1097,26 @@ private struct SlotRailRow: View {
     }
 
     private func beginRename() {
-        renameDraft = sheet.title
-        renaming = true
+        rename.open(on: sheet.title)
     }
 
     private var renameField: some View {
-        TextField("", text: $renameDraft)
+        TextField("", text: $rename.draft)
             .textFieldStyle(.plain)
             .font(.system(.caption, design: .monospaced))
             .focused($renameFocused)
             .onSubmit { endRename(committed: true) }
             .onExitCommand { endRename(committed: false) }
             .onChange(of: renameFocused) { focused in
-                if !focused { endRename(committed: false) }
+                if focused { TabRename.selectWholeDraft() } else { endRename(committed: false) }
             }
             .onAppear { DispatchQueue.main.async { renameFocused = true } }
             .accessibilityLabel(Text("Tab name"))
     }
 
     private func endRename(committed: Bool) {
-        guard renaming else { return }
-        renaming = false
-        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
-        case .rename(let name): model.renameTab(sheet.id, to: name)
-        case .keep: break
+        if case .rename(let name)? = rename.end(committed: committed) {
+            model.renameTab(sheet.id, to: name)
         }
     }
 

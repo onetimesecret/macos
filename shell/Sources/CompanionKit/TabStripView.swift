@@ -350,6 +350,18 @@ private struct TimeUnitBottomTab: View {
     }
 }
 
+extension TabRename {
+    /// Selects the whole draft once a SwiftUI field holds the keyboard
+    /// (Law 0007, Opening); anything but a field editor is left alone.
+    @MainActor static func selectWholeDraft() {
+        DispatchQueue.main.async {
+            guard let editor = NSApp?.keyWindow?.firstResponder as? NSTextView,
+                  editor.isFieldEditor else { return }
+            editor.selectAll(nil)
+        }
+    }
+}
+
 /// One tab: live title, its own gauge, ⏸ while held, ✕ on hover. A
 /// slot holding no page draws a dashed rule where the gauge goes and
 /// says so out loud, because there is no clock to render and the tab
@@ -383,9 +395,10 @@ struct SheetTab: View {
     /// field in the tab's own seat, holding the draft, and the field
     /// goes away when the draft is committed or let go of. The draft
     /// is the field's, not the model's, until return is pressed.
-    @State private var renaming = false
-    @State private var renameDraft = ""
+    @State private var rename = TabRename.Field()
     @FocusState private var renameFocused: Bool
+
+    private var renaming: Bool { rename.isOpen }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -577,8 +590,7 @@ struct SheetTab: View {
     /// #79) through their own field, and the two agree on what an
     /// ending means through `TabRename`, so one rule is stated once.
     private func beginRename() {
-        renameDraft = sheet.title
-        renaming = true
+        rename.open(on: sheet.title)
     }
 
     /// The field, focused as it appears. Return commits and escape
@@ -587,7 +599,7 @@ struct SheetTab: View {
     /// answered. The keyboard map's own escape rests the surface, and
     /// that lands here as the focus leaving, which is the same cancel.
     private var renameField: some View {
-        TextField("", text: $renameDraft)
+        TextField("", text: $rename.draft)
             .textFieldStyle(.plain)
             .font(.system(.caption, design: .monospaced))
             .frame(minWidth: 48)
@@ -595,7 +607,7 @@ struct SheetTab: View {
             .onSubmit { endRename(committed: true) }
             .onExitCommand { endRename(committed: false) }
             .onChange(of: renameFocused) { focused in
-                if !focused { endRename(committed: false) }
+                if focused { TabRename.selectWholeDraft() } else { endRename(committed: false) }
             }
             .onAppear {
                 // Asked for on the next turn, once the field is in the
@@ -607,17 +619,12 @@ struct SheetTab: View {
             .help("Return renames the tab; escape leaves it as it was")
     }
 
-    /// Ends the rename one way or the other. The guard makes the field
-    /// going away, which drops its focus and would otherwise report a
-    /// second ending, a no-op.
+    /// Ends the rename one way or the other, judged against the title
+    /// the field opened on. The field going away drops its focus and
+    /// reports a second ending, which `end` answers with nil.
     private func endRename(committed: Bool) {
-        guard renaming else { return }
-        renaming = false
-        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
-        case .rename(let name):
+        if case .rename(let name)? = rename.end(committed: committed) {
             model.renameTab(sheet.id, to: name)
-        case .keep:
-            break
         }
     }
 
