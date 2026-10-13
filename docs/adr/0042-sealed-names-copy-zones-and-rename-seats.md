@@ -189,3 +189,7 @@ cite the narrowed D-40 and the extended D-41.
   points in from each edge, the margin the expanded note keeps too. The
   popover stands inside the card's own window, over the page, rather
   than in a window of its own.
+- 2026-10-13: A zone acts on a click only once the seat has named it
+  under the pointer, as the Consequences require. A window not holding
+  the keys shows no hover, so the click that brings it forward finds no
+  zone and selects the block; the next click acts.
