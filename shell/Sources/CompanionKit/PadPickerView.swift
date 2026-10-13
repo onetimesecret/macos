@@ -346,11 +346,11 @@ struct PadRename {
     /// The pad whose cell holds the field, or nil while it is shut.
     private(set) var pad: UUID?
     /// The refusal standing in the line under the page, if one is.
-    private var refusal: PageModel.NoticeHold?
+    private var refusal = PageModel.HeldRefusal()
 
     var draft: String { field.draft }
     var isOpen: Bool { pad != nil }
-    var isRefusing: Bool { refusal != nil }
+    var isRefusing: Bool { refusal.isStanding }
 
     /// Opens in `entry`'s cell on its name; a field open on another pad keeps.
     mutating func open(_ entry: PadEntry, in model: PageModel) {
@@ -365,11 +365,11 @@ struct PadRename {
     mutating func edit(_ draft: String, in model: PageModel) {
         guard isOpen else { return }
         field.draft = draft
-        guard refusal != nil else { return }
+        guard refusal.isStanding else { return }
         if let message = PadNameDraft.validationMessage(draft) {
-            refuse(message, in: model)
+            refusal.say(message, in: model)
         } else {
-            release(in: model)
+            refusal.release(in: model)
         }
     }
 
@@ -381,10 +381,10 @@ struct PadRename {
             draft: field.draft, current: opened, committed: true
         ) else { return keep(in: model) }
         if let message = PadNameDraft.validationMessage(name) {
-            return refuse(message, in: model)
+            return refusal.say(message, in: model)
         }
         guard model.renamePad(pad, to: name) else {
-            return refuse(CompanionL10n.string("pad.name.failed"), in: model)
+            return refusal.say(CompanionL10n.string("pad.name.failed"), in: model)
         }
         shut(in: model)
     }
@@ -396,20 +396,10 @@ struct PadRename {
         shut(in: model)
     }
 
-    private mutating func refuse(_ message: String, in model: PageModel) {
-        guard refusal == nil || model.notice != message else { return }
-        refusal = model.holdNotice(message)
-    }
-
-    private mutating func release(in model: PageModel) {
-        if let refusal { model.releaseNotice(refusal) }
-        refusal = nil
-    }
-
     private mutating func shut(in model: PageModel) {
         _ = field.end(committed: false)
         pad = nil
-        release(in: model)
+        refusal.release(in: model)
     }
 }
 

@@ -50,6 +50,42 @@ final class NoticeHoldTests: XCTestCase {
         XCTAssertNil(model.notice)
     }
 
+    /// Holding the standing line again, on the same words or new ones,
+    /// leaves a flash in front of it with its dwell and its action.
+    func testAReHoldUnderAFlashLeavesTheFlashAndItsAction() throws {
+        let model = try model()
+        let hold = model.holdNotice("Enter a pad name.")
+        var retried = 0
+        model.flash(
+            "autosave refused", tone: .actionable,
+            action: PageModel.NoticeAction(label: "Retry") { retried += 1 })
+
+        XCTAssertEqual(model.holdNotice("Enter a pad name.", replacing: hold), hold)
+        XCTAssertEqual(model.notice, "autosave refused", "the same words cut the flash")
+        XCTAssertNotNil(model.noticeAction, "the same words took the flash's action")
+
+        XCTAssertEqual(model.holdNotice("Use 80 characters or fewer.", replacing: hold), hold)
+        XCTAssertEqual(model.notice, "autosave refused", "new words cut the flash")
+        XCTAssertNotNil(model.noticeAction, "new words took the flash's action")
+
+        model.performNoticeAction()
+        XCTAssertEqual(retried, 1)
+        XCTAssertEqual(model.notice, "Use 80 characters or fewer.", "the line came back on old words")
+        model.releaseNotice(hold)
+        XCTAssertNil(model.notice)
+    }
+
+    /// With nothing in front of it, a held line takes its new words at once.
+    func testAReHoldOnScreenChangesTheWordsInPlace() throws {
+        let model = try model()
+        let hold = model.holdNotice("Enter a pad name.")
+        XCTAssertEqual(model.holdNotice("Use 80 characters or fewer.", replacing: hold), hold)
+        XCTAssertEqual(model.notice, "Use 80 characters or fewer.")
+        XCTAssertEqual(model.noticeTone, .actionable)
+        model.releaseNotice(hold)
+        XCTAssertNil(model.notice, "the hold the words moved to outlived its release")
+    }
+
     /// The model's own clears, a new page and a closed tab among them, put
     /// a held line back rather than leave the open field's refusal unsaid.
     func testTheModelsClearsPutAHeldLineBack() throws {

@@ -132,6 +132,34 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(name(of: pad, in: model), "Otto")
     }
 
+    /// A keystroke over a still refused draft leaves a notice standing in
+    /// front of the refusal, with its action, and the line comes back on
+    /// the refusal the draft now earns.
+    func testAKeystrokeUnderAFlashLeavesTheFlashStanding() throws {
+        let (model, pad) = try padModel()
+        var rename = PadRename()
+        rename.open(pad, in: model)
+        rename.edit("", in: model)
+        rename.commit(in: model)
+        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.empty"))
+        model.flash(
+            "autosave refused", tone: .actionable,
+            action: PageModel.NoticeAction(label: "Retry") {})
+
+        rename.edit(" ", in: model)
+        XCTAssertEqual(model.notice, "autosave refused", "the same refusal cut the flash")
+        XCTAssertNotNil(model.noticeAction, "the same refusal took the flash's Retry")
+        rename.edit(String(repeating: "o", count: 81), in: model)
+        XCTAssertEqual(model.notice, "autosave refused", "a new refusal cut the flash")
+        XCTAssertNotNil(model.noticeAction, "a new refusal took the flash's Retry")
+
+        model.performNoticeAction()
+        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.long"))
+        XCTAssertTrue(rename.isOpen)
+        rename.edit("Payroll", in: model)
+        XCTAssertNil(model.notice)
+    }
+
     func testANameTheCatalogRefusesIsSaidWithTheFieldOpen() throws {
         let (model, _) = try padModel()
         let scratch = try XCTUnwrap(model.pads.entries.first { $0.isScratch })

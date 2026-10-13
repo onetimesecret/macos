@@ -708,6 +708,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Typing over a refused name leaves another notice standing** (app
+  0.31.5; Law 0007, issues #245 and #249). While a pad name or a sealed
+  name was refused and another notice stood in front of the refusal,
+  such as an autosave refusal with Retry, each keystroke that left the
+  draft refused took that notice and its button down at once. The
+  refusal now changes its words in place: a notice in front keeps its
+  few seconds and its button, and the line comes back on the refusal
+  the draft earns.
+
 - **A named image offers no `name=value` copy** (app 0.31.4; ADR-0044,
   issue #244). A sealed image could be named, and its row then offered
   an `=` zone whose seat read `copies name=value, decrypted`, and its

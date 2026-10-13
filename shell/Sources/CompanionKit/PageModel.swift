@@ -5098,9 +5098,21 @@ public final class PageModel: ObservableObject {
     private var heldGeneration: Int?
 
     /// Says `message` under the page with no dwell, for a refusal that
-    /// stands while a field stays open (Law 0007, Refusing; D-14).
+    /// stands while a field stays open (Law 0007, Refusing; D-14). Given
+    /// the hold that stands, it changes that line's words instead, and a
+    /// flash in front keeps its dwell and its action.
     @discardableResult
-    public func holdNotice(_ message: String, tone: NoticeTone = .actionable) -> NoticeHold {
+    public func holdNotice(
+        _ message: String, tone: NoticeTone = .actionable, replacing standing: NoticeHold? = nil
+    ) -> NoticeHold {
+        if let standing, held?.hold == standing {
+            held = (standing, message, tone)
+            if heldGeneration == noticeGeneration {
+                notice = message
+                noticeTone = tone
+            }
+            return standing
+        }
         holdSerial += 1
         let hold = NoticeHold(serial: holdSerial)
         held = (hold, message, tone)
@@ -5132,6 +5144,28 @@ public final class PageModel: ObservableObject {
         notice = held.message
         noticeTone = held.tone
         heldGeneration = noticeGeneration
+    }
+
+    /// A field's refusal in the line under the page (Law 0007, Refusing),
+    /// held once and given new words only when they change.
+    @MainActor
+    struct HeldRefusal {
+        private var hold: NoticeHold?
+        private var message: String?
+
+        var isStanding: Bool { hold != nil }
+
+        mutating func say(_ message: String, in model: PageModel) {
+            guard hold == nil || message != self.message else { return }
+            hold = model.holdNotice(message, replacing: hold)
+            self.message = message
+        }
+
+        mutating func release(in model: PageModel) {
+            if let hold { model.releaseNotice(hold) }
+            hold = nil
+            message = nil
+        }
     }
 
     /// The notice's button was pressed: run it, and take the line down

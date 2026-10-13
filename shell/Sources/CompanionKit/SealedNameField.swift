@@ -9,11 +9,11 @@ struct ChipRename {
     private(set) var chip: UInt64?
     private(set) var sheet: UInt64?
     /// The refusal standing in the line under the page, if one is.
-    private var refusal: PageModel.NoticeHold?
+    private var refusal = PageModel.HeldRefusal()
 
     var draft: String { field.draft }
     var isOpen: Bool { chip != nil }
-    var isRefusing: Bool { refusal != nil }
+    var isRefusing: Bool { refusal.isStanding }
 
     /// Opens on the object's name, or on nothing when it has none; a field
     /// open over another object keeps that one's name.
@@ -30,11 +30,11 @@ struct ChipRename {
     mutating func edit(_ draft: String, in model: PageModel) {
         guard isOpen else { return }
         field.draft = draft
-        guard refusal != nil else { return }
+        guard refusal.isStanding else { return }
         if let refused = CompanionClient.chipNameRefusal(TabRename.name(from: draft)) {
-            refuse(Self.words(for: refused), in: model)
+            refusal.say(Self.words(for: refused), in: model)
         } else {
-            release(in: model)
+            refusal.release(in: model)
         }
     }
 
@@ -51,7 +51,7 @@ struct ChipRename {
             return true
         }
         if let refused = CompanionClient.chipNameRefusal(name) {
-            refuse(Self.words(for: refused), in: model)
+            refusal.say(Self.words(for: refused), in: model)
             return false
         }
         // Past the rule, the core refuses only an object no longer there.
@@ -75,21 +75,11 @@ struct ChipRename {
         }
     }
 
-    private mutating func refuse(_ message: String, in model: PageModel) {
-        guard refusal == nil || model.notice != message else { return }
-        refusal = model.holdNotice(message)
-    }
-
-    private mutating func release(in model: PageModel) {
-        if let refusal { model.releaseNotice(refusal) }
-        refusal = nil
-    }
-
     private mutating func shut(in model: PageModel) {
         _ = field.end(committed: false)
         chip = nil
         sheet = nil
-        release(in: model)
+        refusal.release(in: model)
     }
 }
 

@@ -234,7 +234,10 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertEqual(page.model.notice, "a passing line")
 
         editor.draft = String(repeating: "A", count: 65)
-        XCTAssertEqual(page.model.notice, ChipRename.words(for: .tooLong))
+        XCTAssertEqual(page.model.notice, "a passing line", "a new refusal cut the line in front")
+        waitUntil(page.model.$notice, description: "the line came back on the new refusal") {
+            $0 == ChipRename.words(for: .tooLong)
+        }
         editor.draft = "MY_KEY"
         XCTAssertFalse(editor.rename.isRefusing)
         XCTAssertNil(page.model.notice, "the line outlived its refusal")
