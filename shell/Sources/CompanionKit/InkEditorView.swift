@@ -4479,6 +4479,16 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// How far past the doorway's word a click still opens the note.
     static let doorwaySlop: CGFloat = 3
 
+    /// The zone a click acts on: the one under it, once the seat has named
+    /// it under the pointer, and otherwise none (Law 0001, ADR-0042 point 8).
+    nonisolated static func actingZone(
+        pointed: SealedBlockLayout.Zone?, index: Int,
+        hoveredIndex: Int?, hoveredZone: SealedBlockLayout.Zone?
+    ) -> SealedBlockLayout.Zone? {
+        guard let pointed, hoveredIndex == index, hoveredZone == pointed else { return nil }
+        return pointed
+    }
+
     /// What a primary click on a sealed block does past its actions seat
     /// (Law 0001, ADR-0042 points 2 and 3).
     enum ChipClick: Equatable {
@@ -4549,7 +4559,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         let cell = chipCell(at: index)
         switch Self.chipClick(
             named: cell?.info.name != nil,
-            zone: chipZone(at: point, chipAt: index),
+            zone: Self.actingZone(
+                pointed: chipZone(at: point, chipAt: index), index: index,
+                hoveredIndex: hoveredChipIndex, hoveredZone: hoveredZone),
             inRow: frame.map { SealedBlockCell.contentLayout(in: $0).rowBand.contains(point) }
                 ?? false,
             onDoorway: frame.flatMap { cell?.doorwayRect(in: $0) }.map {

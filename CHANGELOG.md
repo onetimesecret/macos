@@ -697,6 +697,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A zone copies only after its seat has said what it copies** (app
+  0.31.1; Law 0001, ADR-0042, issue #244). The pill and the seat's
+  words follow the pointer only in the window that holds the keys, so
+  the click that brought another window forward copied a named
+  object's value with nothing said first. That click now selects the
+  block, and the next one, with the seat's words showing, copies.
+
 - **A pad name's refusal stays while its field is open** (app 0.28.2;
   Law 0007, issue #249). Any other notice replaced the refusal and
   cleared the line 4 s later, and a new page, a closed tab, a seal or

@@ -155,6 +155,33 @@ final class SealedCapsuleTests: XCTestCase {
             .select, "an unnamed row's click selects as the block does")
     }
 
+    /// A zone acts only once the seat has named it under the pointer: a
+    /// press that arrives first, as an activating click on a window that
+    /// shows no hover does, finds no zone and selects.
+    func testAZoneActsOnlyOnceTheSeatHasNamedIt() {
+        XCTAssertEqual(
+            InkTextView.actingZone(pointed: .value, index: 3, hoveredIndex: 3, hoveredZone: .value),
+            .value)
+        XCTAssertNil(
+            InkTextView.actingZone(pointed: .value, index: 3, hoveredIndex: nil, hoveredZone: nil),
+            "a press the seat never named copied")
+        XCTAssertNil(
+            InkTextView.actingZone(pointed: .value, index: 3, hoveredIndex: 3, hoveredZone: .name),
+            "the seat named another zone")
+        XCTAssertNil(
+            InkTextView.actingZone(pointed: .equals, index: 3, hoveredIndex: 5, hoveredZone: .equals),
+            "the seat that named it was another block's")
+        XCTAssertNil(
+            InkTextView.actingZone(pointed: nil, index: 3, hoveredIndex: 3, hoveredZone: .name))
+        XCTAssertEqual(
+            InkTextView.chipClick(
+                named: true,
+                zone: InkTextView.actingZone(
+                    pointed: .value, index: 3, hoveredIndex: nil, hoveredZone: nil),
+                inRow: true, clickCount: 1, modifierFlags: []),
+            .select)
+    }
+
     /// A client that counts the two decrypted copies and answers yes
     /// without writing the pasteboard, so each route can be told apart.
     private final class CopyCountingClient: CompanionClient, @unchecked Sendable {
@@ -272,7 +299,11 @@ final class SealedCapsuleTests: XCTestCase {
         let frame = try XCTUnwrap(textView.chipFrame(at: 3))
         let row = try XCTUnwrap(textView.chipCell(at: 3)?.namedRow(in: frame)).geometry
 
+        // The pointer arrives before it presses, so the seat names the zone first.
         func press(_ point: NSPoint, clicks: Int) throws {
+            textView.hoverRefreshInput = (
+                window.convertPoint(toScreen: textView.convert(point, to: nil)), true, true)
+            textView.refreshHover()
             let event = try XCTUnwrap(NSEvent.mouseEvent(
                 with: .leftMouseDown, location: textView.convert(point, to: nil),
                 modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
