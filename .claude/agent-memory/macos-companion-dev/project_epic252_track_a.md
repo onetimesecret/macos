@@ -29,6 +29,9 @@ for review fixes; shell only.
   A field holds its refusal through `PageModel.HeldRefusal`, which
   re-holds only on new words via `holdNotice(_:replacing:)`, so a
   keystroke never cuts a flash in front (fixed 2026-10-13, app 0.31.5).
+- The pad list's popover height is `PadListLayout.maxHeight`, fed by
+  `PageStatusStack`'s top through `keepsThePadListAboveTheNoticeLine()`
+  on both roots; a root without it leaves the list 620 points tall.
 - A pad cell's ending passes its pad id to `PadRename.keep`, because the
   cell a field left loses focus after the field has moved to another.
 
