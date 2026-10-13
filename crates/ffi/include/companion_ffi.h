@@ -359,7 +359,8 @@ bool companion_store_emptiness(CompanionHandle *handle,
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label (a size
  *   class, "tiny" through "huge", never a count), concealed (bool),
- *   name (the typed name, or null; ADR-0043).
+ *   name (the typed name, or null; ADR-0043), has_note (bool, true
+ *   while the note holds anything but whitespace).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -535,7 +536,8 @@ bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
  * after companion_persist_restore(): a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
  * sits, the chip object carrying the same non-secret face the seal
- * routes return (chip_id, kind, excerpt, size_label, concealed, name). Ink
+ * routes return (chip_id, kind, excerpt, size_label, concealed, name,
+ * has_note). The note's own text is never here. Ink
  * renders anyway; a chip crosses as its face, never its bytes. Free
  * with companion_string_free(). Null for an unknown page.
  */
@@ -626,6 +628,70 @@ uint32_t companion_chip_name_refusal(const char *draft);
  */
 bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
                              const char *name);
+
+/* ------------------------------------------------------------------ */
+/* A sealed object's note (ADR-0043)                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The note is ink of its own beside the object: a document that holds
+ * no chips, with an undo stack of its own and no clock. It goes with
+ * its chip, at expiry, discard, close or removal, and no ledger record
+ * names it. These routes take a CHIP id and mirror the file routes; no
+ * page route reaches the note and no note route reaches a page, so the
+ * page's undo and the note's never cross.
+ */
+
+/*
+ * The note as document runs: [] without one, else [{"ink": text}], the
+ * shape companion_file_runs_json() answers. Null for an unknown chip.
+ * Free with companion_string_free().
+ */
+char *companion_chip_note_runs_json(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Apply an edit batch to the note, with the TextKit gesture and
+ * selections companion_sheet_apply_ops_with_intent() takes. Whole or not
+ * at all; a chip op is refused, since sealed objects do not nest. The
+ * first accepted batch makes the note.
+ */
+bool companion_chip_note_apply_ops_with_intent(CompanionHandle *handle,
+                                               uint64_t chip,
+                                               const char *json,
+                                               uint32_t intent,
+                                               uint32_t before_location,
+                                               uint32_t before_length,
+                                               uint32_t after_location,
+                                               uint32_t after_length);
+
+/*
+ * End the note's typing run without an undo item; UINT32_MAX twice for
+ * no selection. False for an unknown chip or a half-given selection.
+ */
+bool companion_chip_note_finish_editing_group(CompanionHandle *handle,
+                                              uint64_t chip, uint32_t location,
+                                              uint32_t length);
+
+/* Whether the note has a step of its own waiting in either direction. */
+bool companion_chip_note_can_undo(CompanionHandle *handle, uint64_t chip);
+bool companion_chip_note_can_redo(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Content-free label for the note's next step in either direction. Null
+ * when none waits. Free a non-null result with companion_string_free().
+ */
+char *companion_chip_note_undo_action_name(CompanionHandle *handle,
+                                           uint64_t chip);
+char *companion_chip_note_redo_action_name(CompanionHandle *handle,
+                                           uint64_t chip);
+
+/*
+ * Take back the note's last step, or put it back. Both return the
+ * StepOutcome the file routes below describe, or null for an unknown
+ * chip. Free with companion_string_free().
+ */
+char *companion_chip_note_undo(CompanionHandle *handle, uint64_t chip);
+char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);
 
 /*
  * Clear the pasteboard iff it still holds our last copy-out (change-

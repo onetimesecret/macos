@@ -1252,6 +1252,234 @@ pub unsafe extern "C" fn companion_chip_set_name(
         .is_ok()
 }
 
+// ---- A sealed object's note: its own document, keyed by chip (ADR-0043) ----
+
+/// The note as document runs: `[]` without one, else `[{"ink": text}]`. Null
+/// for an unknown chip. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_runs_json(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let Some(text) = guard.store.note_text(ChipId::from_raw(chip)) else {
+        return ptr::null_mut();
+    };
+    let runs: Vec<serde_json::Value> = if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![serde_json::json!({ "ink": text.as_str() })]
+    };
+    match serde_json::to_string(&runs) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Apply an edit batch to the note with its `TextKit` gesture, whole or not at
+/// all, as [`companion_sheet_apply_ops_with_intent`] does a page's. A chip op is
+/// refused; the first accepted batch makes the note.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_apply_ops_with_intent(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    json: *const c_char,
+    intent: u32,
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
+) -> bool {
+    let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    let Some(selection) =
+        edit_selection(before_location, before_length, after_location, after_length)
+    else {
+        return false;
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(ops) = parse_ops(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .apply_note_ops(ChipId::from_raw(chip), &ops, intent, selection)
+}
+
+/// End the note's typing run without an undo item; `u32::MAX` twice for no
+/// selection. False for an unknown chip or a half-given selection.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_finish_editing_group(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    location: u32,
+    length: u32,
+) -> bool {
+    let selection = match (location, length) {
+        (u32::MAX, u32::MAX) => None,
+        (u32::MAX, _) | (_, u32::MAX) => return false,
+        (location_u16, length_u16) => Some(TextSelection {
+            location_u16,
+            length_u16,
+        }),
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .finish_note_editing_group(ChipId::from_raw(chip), selection)
+}
+
+/// Whether the note has a step of its own to take back; false for an
+/// unknown chip. The page's stack is [`companion_sheet_can_undo`]'s.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_can_undo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.note_can_undo(ChipId::from_raw(chip))
+}
+
+/// Whether the note has a step of its own to put back.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_can_redo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.note_can_redo(ChipId::from_raw(chip))
+}
+
+/// Content-free label for the note's next Undo; null when none waits.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_undo_action_name(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_action_name(handle, chip, true) }
+}
+
+/// Content-free label for the note's next Redo; null when none waits.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_redo_action_name(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_action_name(handle, chip, false) }
+}
+
+/// # Safety
+/// As the two callers above.
+unsafe fn note_action_name(handle: *mut CompanionHandle, chip: u64, undo: bool) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let chip = ChipId::from_raw(chip);
+    let name = if undo {
+        guard.store.note_undo_action_name(chip)
+    } else {
+        guard.store.note_redo_action_name(chip)
+    };
+    name.map_or(ptr::null_mut(), |value| into_c_string(value.to_string()))
+}
+
+/// Take back the note's last step, never the page's. Returns a `StepOutcome`,
+/// null for an unknown chip. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_undo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_step(handle, chip, true) }
+}
+
+/// Put back the step [`companion_chip_note_undo`] took, on the same terms.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_redo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_step(handle, chip, false) }
+}
+
+/// # Safety
+/// As the two callers above.
+unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let chip = ChipId::from_raw(chip);
+    let outcome = if back {
+        guard.store.undo_note(chip)
+    } else {
+        guard.store.redo_note(chip)
+    };
+    outcome.map_or(ptr::null_mut(), step_outcome_json)
+}
+
 /// Clear the pasteboard only if it still holds our last copy-out. Returns
 /// whether a clear happened.
 ///
@@ -2928,6 +3156,7 @@ fn chip_face(chip: &SealedChip) -> serde_json::Value {
         "size_label": chip.size_label(),
         "concealed": chip.conceal().is_some(),
         "name": chip.name(),
+        "has_note": chip.has_note(),
     })
 }
 
@@ -4169,6 +4398,251 @@ mod tests {
             assert!(ledger.contains("\"sent\""), "the control: {ledger}");
             assert!(!ledger.contains("PAGER_ROTA_KEY"), "{ledger}");
             assert!(!ledger.contains("ROTA"), "{ledger}");
+            companion_free(handle);
+        }
+    }
+
+    unsafe fn note_runs(handle: *mut CompanionHandle, chip: u64) -> String {
+        unsafe { take_json(companion_chip_note_runs_json(handle, chip)) }
+    }
+
+    unsafe fn note_ops(handle: *mut CompanionHandle, chip: u64, json: &str, intent: u32) -> bool {
+        unsafe {
+            companion_chip_note_apply_ops_with_intent(
+                handle,
+                chip,
+                cstring(json).as_ptr(),
+                intent,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+            )
+        }
+    }
+
+    unsafe fn note_step_json(p: *mut c_char) -> serde_json::Value {
+        serde_json::from_str(&unsafe { take_json(p) }).unwrap()
+    }
+
+    #[test]
+    fn note_routes_edit_the_note_and_leave_the_page_alone() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            assert_eq!(note_runs(handle, chip), "[]");
+            assert!(page.contains("\"has_note\":false"), "{page}");
+            assert!(!companion_chip_note_can_undo(handle, chip));
+
+            assert!(note_ops(
+                handle,
+                chip,
+                "[{\"ins\": {\"at\": 0, \"text\": \"rotate \u{1F511} on friday\"}}]",
+                0
+            ));
+            assert_eq!(
+                note_runs(handle, chip),
+                "[{\"ink\":\"rotate \u{1F511} on friday\"}]"
+            );
+            let after = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(after.contains("\"has_note\":true"), "{after}");
+            assert!(!after.contains("friday"), "the note rode the page: {after}");
+            assert_eq!(
+                after.replace("\"has_note\":true", "\"has_note\":false"),
+                page,
+                "a note edit moved the page"
+            );
+
+            assert!(companion_chip_note_can_undo(handle, chip));
+            assert_eq!(
+                take_json(companion_chip_note_undo_action_name(handle, chip)),
+                "Typing"
+            );
+            assert!(companion_chip_note_redo_action_name(handle, chip).is_null());
+            let step = note_step_json(companion_chip_note_undo(handle, chip));
+            assert_eq!(step["applied"], true, "{step}");
+            assert_eq!(note_runs(handle, chip), "[]");
+            assert!(companion_chip_note_can_redo(handle, chip));
+            let step = note_step_json(companion_chip_note_redo(handle, chip));
+            assert_eq!(step["applied"], true, "{step}");
+            assert!(note_runs(handle, chip).contains("friday"));
+            assert!(companion_chip_note_finish_editing_group(
+                handle,
+                chip,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(companion_chip_note_finish_editing_group(handle, chip, 2, 0));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_note_and_the_page_keep_separate_undo_stacks_across_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let typed = r#"[{"ins": {"at": 1, "text": " page ink"}}]"#;
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(typed).as_ptr()
+            ));
+            assert!(note_ops(
+                handle,
+                chip,
+                r#"[{"ins": {"at": 0, "text": "note ink"}}]"#,
+                0
+            ));
+
+            assert!(companion_sheet_undo(handle, sheet));
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!page.contains("page ink"), "{page}");
+            assert!(
+                note_runs(handle, chip).contains("note ink"),
+                "the page's undo reached the note"
+            );
+            assert!(companion_chip_note_can_undo(handle, chip));
+
+            assert!(companion_sheet_redo(handle, sheet));
+            let step = note_step_json(companion_chip_note_undo(handle, chip));
+            assert_eq!(step["applied"], true);
+            assert_eq!(note_runs(handle, chip), "[]");
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(
+                page.contains("page ink"),
+                "the note's undo reached the page: {page}"
+            );
+            assert!(companion_sheet_can_undo(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_note_routes_fail_closed() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            let (_other_sheet, other) = sealed_chip(handle, "another");
+            let ins = r#"[{"ins": {"at": 0, "text": "x"}}]"#;
+            for bad in [
+                format!(r#"[{{"chip": {{"at": 0, "id": {other}}}}}]"#),
+                r#"[{"del": {"at": 3, "len": 1}}]"#.to_string(),
+                "not json".to_string(),
+            ] {
+                assert!(!note_ops(handle, chip, &bad, 0), "{bad}");
+            }
+            assert!(!note_ops(handle, chip, ins, 99), "an unknown intent");
+            assert!(!companion_chip_note_apply_ops_with_intent(
+                handle,
+                chip,
+                cstring(ins).as_ptr(),
+                0,
+                0,
+                u32::MAX,
+                0,
+                0
+            ));
+            assert!(!companion_chip_note_apply_ops_with_intent(
+                handle,
+                chip,
+                ptr::null(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert_eq!(note_runs(handle, chip), "[]", "a refusal wrote the note");
+            assert!(!companion_chip_note_finish_editing_group(
+                handle,
+                chip,
+                u32::MAX,
+                0
+            ));
+
+            assert!(!note_ops(handle, 4_242, ins, 0));
+            assert!(companion_chip_note_runs_json(handle, 4_242).is_null());
+            assert!(!companion_chip_note_finish_editing_group(
+                handle,
+                4_242,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(!companion_chip_note_can_undo(handle, 4_242));
+            assert!(!companion_chip_note_can_redo(handle, 4_242));
+            assert!(companion_chip_note_undo_action_name(handle, 4_242).is_null());
+            assert!(companion_chip_note_undo(handle, 4_242).is_null());
+            assert!(companion_chip_note_redo(handle, 4_242).is_null());
+
+            assert!(!note_ops(ptr::null_mut(), chip, ins, 0));
+            assert!(companion_chip_note_runs_json(ptr::null_mut(), chip).is_null());
+            assert!(companion_chip_note_undo(ptr::null_mut(), chip).is_null());
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_note_reaches_no_ledger_record_and_no_other_output() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let before = take_json(companion_ledger_json(handle));
+            let note = "Wq9Fj Zx7Kp Marmot Burrow";
+            assert!(note_ops(
+                handle,
+                chip,
+                &format!(r#"[{{"ins": {{"at": 0, "text": "{note}"}}}}]"#),
+                2
+            ));
+            let _ = note_step_json(companion_chip_note_undo(handle, chip));
+            let _ = note_step_json(companion_chip_note_redo(handle, chip));
+            assert_eq!(
+                take_json(companion_ledger_json(handle)),
+                before,
+                "a note edit recorded something"
+            );
+            for (name, output) in [
+                ("summaries", take_json(companion_tabs_json(handle))),
+                (
+                    "document",
+                    take_json(companion_sheet_document_json(handle, sheet)),
+                ),
+                ("meta", take_json(companion_sheet_meta_json(handle, sheet))),
+                (
+                    "blocks",
+                    take_json(companion_sheet_blocks_json(handle, sheet)),
+                ),
+            ] {
+                assert!(
+                    !output.contains("Marmot"),
+                    "{name} carried the note: {output}"
+                );
+            }
+            assert!(note_runs(handle, chip).contains("Marmot"), "the control");
+
+            let tab = (*handle)
+                .inner
+                .lock()
+                .unwrap()
+                .store
+                .tabs()
+                .next()
+                .unwrap()
+                .id()
+                .raw();
+            assert!(companion_tab_close(handle, tab));
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(
+                ledger.contains("\"expired\"") || ledger.contains("\"discarded\""),
+                "{ledger}"
+            );
+            assert!(!ledger.contains("Marmot"), "{ledger}");
+            assert!(
+                companion_chip_note_runs_json(handle, chip).is_null(),
+                "the note outlived its page"
+            );
             companion_free(handle);
         }
     }
@@ -6692,6 +7166,16 @@ mod tests {
                 cstring("API_KEY").as_ptr()
             ));
             assert!(!companion_chip_copy_name_value(ptr::null_mut(), 1));
+            assert!(companion_chip_note_runs_json(ptr::null_mut(), 1).is_null());
+            assert!(!companion_chip_note_can_undo(ptr::null_mut(), 1));
+            assert!(!companion_chip_note_can_redo(ptr::null_mut(), 1));
+            assert!(companion_chip_note_redo_action_name(ptr::null_mut(), 1).is_null());
+            assert!(!companion_chip_note_finish_editing_group(
+                ptr::null_mut(),
+                1,
+                u32::MAX,
+                u32::MAX
+            ));
             assert!(!companion_tab_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
             assert!(

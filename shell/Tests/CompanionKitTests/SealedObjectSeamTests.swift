@@ -70,6 +70,63 @@ final class SealedObjectSeamTests: XCTestCase {
         XCTAssertFalse(sent.contains { $0.title.contains("API_KEY") })
     }
 
+    private func noteText(_ client: CompanionClient, chip: UInt64) -> String {
+        client.noteRuns(chip: chip).reduce(into: "") { text, run in
+            if case .ink(let ink) = run { text += ink }
+        }
+    }
+
+    private func pageInk(_ client: CompanionClient, sheet: UInt64) -> String {
+        client.documentRuns(sheet: sheet).reduce(into: "") { text, run in
+            if case .ink(let ink) = run { text += ink }
+        }
+    }
+
+    func testANoteKeepsItsOwnInkAndItsOwnUndo() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (sheet, chip) = try sealedChip(client)
+        XCTAssertTrue(client.applyOps(sheet: sheet, json: #"[{"ins":{"at":1,"text":" page ink"}}]"#))
+        XCTAssertEqual(noteText(client, chip: chip.chipId), "")
+        XCTAssertFalse(chip.hasNote)
+
+        XCTAssertTrue(
+            client.applyNoteOps(
+                chip: chip.chipId, json: #"[{"ins":{"at":0,"text":"note ink"}}]"#))
+        XCTAssertEqual(noteText(client, chip: chip.chipId), "note ink")
+        XCTAssertEqual(face(client, sheet: sheet)?.hasNote, true)
+        XCTAssertEqual(pageInk(client, sheet: sheet), " page ink", "the note rode the page")
+        XCTAssertEqual(client.undoNoteActionName(chip: chip.chipId), "Typing")
+
+        XCTAssertEqual(client.undoNote(chip: chip.chipId)?.applied, true)
+        XCTAssertEqual(noteText(client, chip: chip.chipId), "")
+        XCTAssertEqual(pageInk(client, sheet: sheet), " page ink", "the note's undo reached the page")
+        XCTAssertTrue(client.canUndo(sheet: sheet), "the page's step still waits")
+        XCTAssertTrue(client.canRedoNote(chip: chip.chipId))
+
+        XCTAssertTrue(client.undo(sheet: sheet))
+        XCTAssertEqual(pageInk(client, sheet: sheet), "")
+        XCTAssertEqual(client.redoNote(chip: chip.chipId)?.applied, true)
+        XCTAssertEqual(noteText(client, chip: chip.chipId), "note ink")
+        XCTAssertTrue(client.finishNoteEditingGroup(chip: chip.chipId))
+
+        let chipOp = #"[{"chip":{"at":0,"id":\#(chip.chipId)}}]"#
+        XCTAssertFalse(client.applyNoteOps(chip: chip.chipId, json: chipOp), "objects do not nest")
+        XCTAssertFalse(client.applyNoteOps(chip: 4_242, json: #"[{"ins":{"at":0,"text":"x"}}]"#))
+        XCTAssertNil(client.undoNote(chip: 4_242))
+    }
+
+    func testANoteNeverReachesTheLedger() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (_, chip) = try sealedChip(client)
+        let before = client.ledger()
+        XCTAssertTrue(
+            client.applyNoteOps(
+                chip: chip.chipId, json: #"[{"ins":{"at":0,"text":"Marmot Burrow"}}]"#,
+                intent: .paste))
+        XCTAssertEqual(client.undoNote(chip: chip.chipId)?.applied, true)
+        XCTAssertEqual(client.ledger(), before, "a note edit recorded something")
+    }
+
     func testANameNeverReachesTheLedger() throws {
         let client = CompanionClient.ephemeral(tag: #function)
         let (_, chip) = try sealedChip(client)

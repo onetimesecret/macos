@@ -463,16 +463,20 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     public let concealed: Bool
     /// The typed name beside the object; nil until one is given (ADR-0043).
     public let name: String?
+    /// Whether the note holds anything but whitespace: the block's
+    /// doorway. The note's text is read with `noteRuns(chip:)`.
+    public let hasNote: Bool
 
     enum CodingKeys: String, CodingKey {
         case kind, excerpt, concealed, name
         case chipId = "chip_id"
         case sizeLabel = "size_label"
+        case hasNote = "has_note"
     }
 
     init(
         chipId: UInt64, kind: String, excerpt: String, sizeLabel: String, concealed: Bool,
-        name: String? = nil
+        name: String? = nil, hasNote: Bool = false
     ) {
         self.chipId = chipId
         self.kind = kind
@@ -480,6 +484,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
         self.sizeLabel = sizeLabel
         self.concealed = concealed
         self.name = name
+        self.hasNote = hasNote
     }
 }
 
@@ -1158,6 +1163,65 @@ public class CompanionClient: @unchecked Sendable {
     /// number (D-29, D-32).
     public static func clipboardClearSeconds() -> UInt32 {
         companion_clipboard_clear_seconds()
+    }
+
+    // MARK: A sealed object's note (ADR-0043)
+
+    /// The note's runs, in the shape a page's and a file's arrive in;
+    /// empty without a note, and for an unknown chip.
+    public func noteRuns(chip: UInt64) -> [RestoredRun] {
+        decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip)) ?? []
+    }
+
+    /// Apply an edit batch to the note. False means it was refused whole
+    /// and nothing moved; a batch with a chip op is refused.
+    @discardableResult
+    public func applyNoteOps(
+        chip: UInt64,
+        json: String,
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
+    ) -> Bool {
+        guard let wire = editSelectionWire(selection) else { return false }
+        return json.withCString {
+            companion_chip_note_apply_ops_with_intent(
+                handle, chip, $0, intent.rawValue, wire.0, wire.1, wire.2, wire.3)
+        }
+    }
+
+    /// End the note's coalescing run without creating an undo item.
+    @discardableResult
+    public func finishNoteEditingGroup(chip: UInt64, selection: NSRange? = nil) -> Bool {
+        guard let wire = selectionWire(selection) else { return false }
+        return companion_chip_note_finish_editing_group(handle, chip, wire.0, wire.1)
+    }
+
+    /// Take back the note's own last step.
+    public func undoNote(chip: UInt64) -> StepOutcome? {
+        decodeJSON(StepOutcome.self, from: companion_chip_note_undo(handle, chip))
+    }
+
+    /// Put back the step `undoNote(chip:)` took.
+    public func redoNote(chip: UInt64) -> StepOutcome? {
+        decodeJSON(StepOutcome.self, from: companion_chip_note_redo(handle, chip))
+    }
+
+    /// Whether the note has a step of its own waiting in either direction.
+    public func canUndoNote(chip: UInt64) -> Bool {
+        companion_chip_note_can_undo(handle, chip)
+    }
+
+    public func canRedoNote(chip: UInt64) -> Bool {
+        companion_chip_note_can_redo(handle, chip)
+    }
+
+    /// Content-free label for the note's next step in either direction.
+    public func undoNoteActionName(chip: UInt64) -> String? {
+        ownedString(from: companion_chip_note_undo_action_name(handle, chip))
+    }
+
+    public func redoNoteActionName(chip: UInt64) -> String? {
+        ownedString(from: companion_chip_note_redo_action_name(handle, chip))
     }
 
     // MARK: Time

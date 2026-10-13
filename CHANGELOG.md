@@ -357,6 +357,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A sealed object can carry a note, in the core** (Law 0001, ADR-0043,
+  issue #243; `companion-core` 0.28.0, `companion-ffi` 0.36.0). The
+  note is ink of its own beside the object, with its own undo: undoing
+  in the note never touches the page, and undoing the page never
+  touches the note. It holds no sealed object. Nine routes keyed by the
+  chip, `companion_chip_note_runs_json` through `companion_chip_note_redo`,
+  read and edit it the way the file routes read and edit a file. The
+  chip's face carries `has_note`, true while the note holds anything but
+  whitespace. The note has no clock of its own and no ledger record: it
+  goes with its object, when the page expires or the object is removed.
+  It is written as text after the name in the chip's record, so the
+  format's version does not change, and its undo starts empty after a
+  relaunch. An older build drops it at its next save, as it drops the
+  name. No popover shows it yet (issue #246).
+
 - **The core copies `NAME=value` for a named sealed object** (Law 0001,
   ADR-0043, issue #242; `companion-core` 0.27.0, `companion-ffi`
   0.35.0). `companion_chip_copy_name_value` puts the name, `=` and the
