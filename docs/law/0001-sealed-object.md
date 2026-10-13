@@ -115,9 +115,9 @@ without a test says what it is owed by.
 
 | Interaction | Class | Expected behaviour | Pinned by |
 | --- | --- | --- | --- |
-| arrow keys | ambient observation | the caret crosses the object as one indivisible unit | held by AppKit, a chip is one attachment character; no direct test, owed: no issue yet |
+| arrow keys | ambient observation | the caret crosses the object as one indivisible unit | a chip is one attachment character: `SealedCapsuleTests.swift` `testTheCaretCrossesAnObjectAsOneUnitBothWays` |
 | click, on an unnamed object or outside a named object's bottom row | structural editing | selects the whole object; never places a caret inside it | `DocumentOpsTests.swift` `testAClickOnAChipSelectsItWhole`; off a zone or with a modifier the click takes that path: `SealedCapsuleTests.swift` `testAZoneActsOnTheFirstClickAndAClickOffItSelects` |
-| shift selection | structural editing | includes the whole object or none of it | held by AppKit; no direct test, owed: no issue yet |
+| shift selection | structural editing | includes the whole object or none of it | `SealedCapsuleTests.swift` `testAShiftSelectionHoldsTheWholeObjectOrNoneOfIt` |
 | select all | structural editing | includes each object structurally, not its payload | no direct test; owed: issue 170 |
 | copy, object or mixed selection | structural editing | writes one versioned sealed fragment preserving ordered ink runs and UUID references; the public representation preserves the ink and substitutes one size-class placeholder per reference; neither representation contains payload or ciphertext | owed: issue 170 (`DocumentOpsTests` for ordered mixed and multi-chip selections) |
 | cut | structural editing | writes the same fragment, then detaches every referenced object in one core transaction; all selected objects appear together in the app's clipboard slot and retain the page's clock | owed: issue 170 (`store.rs` atomic multi-chip detach coverage) |
@@ -389,7 +389,8 @@ pin chip expiry or lifecycle),
 `SealedBlockTests` (the block's geometry; the named row, its zones, pill,
 seat words and beat, and the block's label), `SealedCapsuleTests` (the
 zones' clicks and routes, hover by point, both menus, the face changed
-in place), `SealedNameFieldTests` (the name's field, per Law 0007),
+in place, the caret and a shift selection crossing an object whole),
+`SealedNameFieldTests` (the name's field, per Law 0007),
 `ModalSessionTests.testRenameNeverRunsAModalSession` (naming stays
 dialog free), `SealedNoteTests` (the doorway, the popover's placement,
 its open, expand, contract and close routes, and its edits on the
@@ -550,3 +551,9 @@ copy decrypted, naming and note paths must stay dialog free.
   and its tests no longer read as pinning it: the page's own surface is
   owed to issue 246, with what the note lacks named, and the owed list
   names issue 246 again.
+- 2026-10-13: Caret amendment. The arrow keys row and the shift
+  selection row said AppKit held them and owed a test to no issue.
+  Each now cites its direct test in `SealedCapsuleTests`: one arrow
+  press takes the caret over an object either way, and every shift
+  extension holds an object whole or leaves it out. The backspace
+  beside it row stays owed.
