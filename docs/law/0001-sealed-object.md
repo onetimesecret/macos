@@ -4,7 +4,7 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8; ADR-0044
+decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8; ADR-0044; ADR-0045
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the name's charset, the bottom row's zones, the note popover on a narrow card)
@@ -12,6 +12,7 @@ consumed-by:
 sources:
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points the name and note amendment left open)
   - docs/adr/0044-sealed-row-and-note-details.md (ADR-0042's open questions settled; the row's and the note's details; a named object that is not text; no drop from elsewhere into the note or the name field)
+  - docs/adr/0045-the-note-is-written-on-the-pages-surface.md (the note on the page's own surface, routed by document; what stands aside in a note)
   - docs/law/0007-edit-in-place.md (the name's field)
   - the maintainer's sealed object model, 2026-09-15
   - docs/spec/design/2026-0915-ui-ux-decisions.md, section 3
@@ -24,11 +25,11 @@ sources:
   - crates/core/src/note.rs (the note's own document and undo)
   - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections; the name and note routes)
   - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt, ChipInfo.name, ChipInfo.hasNote)
-  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands)
+  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands; `makeSurface`, the page's and the note's one writing surface)
   - shell/Sources/CompanionKit/SealedBlockLayout.swift (the named row's zones, pill and allotment)
   - shell/Sources/CompanionKit/SealedNameField.swift (the name's field)
-  - shell/Sources/CompanionKit/SealedNotePopover.swift (`NotePopoverLayout.minimumWidth`, the note's popover and writing surface)
-  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes)
+  - shell/Sources/CompanionKit/SealedNotePopover.swift (`NotePopoverLayout.minimumWidth`, the note's popover)
+  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes; `InkDocument`, the routes by document)
   - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
 
@@ -143,7 +144,7 @@ without a test says what it is owed by.
 | click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | the zone and its seat: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`; the double click: the same press test, and `SealedNameFieldTests.swift` `testADoubleClickOpensTheFieldOnlyWhereTheRuleSays` |
 | click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | `SealedBlockTests.swift` `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects`, `testAZoneActsOnlyOnceTheSeatHasNamedIt` |
 | click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click; on an object that is not text the `=` is no zone, since the core composes `NAME=value` for text alone ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)) | the core's write: `store.rs` `name_value_is_composed_raw_at_its_exact_size`, `name_value_refuses_an_unnamed_an_image_and_an_unknown_chip`; `lib.rs` `copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed`, `copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing`, `a_name_value_copy_and_a_copy_out_retire_each_others_receipts`, `a_name_value_copy_records_one_sent_and_no_name`; the zone: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testANamedImagesEqualsIsNoZone`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects`, `testAZoneActsOnlyOnceTheSeatHasNamedIt` |
-| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; a drop from elsewhere lands nowhere in it, since no seal can stand in a note ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)), and once closed its view holds none of its ink; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; the popover: `SealedNoteTests.swift` `testThePopoverHangsUnderTheBlockAtTheBlocksMeasure`, `testANarrowBlockPutsTheNoteAcrossTheContentWidth`, `testExpandedTheNoteCoversTheContentAndWithoutRoomBelowItStandsAbove`, `testTheMenusVerbOpensTheNoteInThePagesOwnWindow`, `testTheDoorwayOpensTheNoteAndEscClosesIt`, `testTheArrowsAndShiftEscExpandAndContractAndEscContracts`, `testTheNoteClosesWhenItsSeatGoes`, `testTheObjectLeavingThePageClosesItsNote`, `testANoteEditLeavesThePagesCaretAndUndoAlone`, `testNoNoteRouteRunsAModalSession`, `testTheNoteTakesNoDropFromElsewhere`, `testAClosedNoteLeavesNoInkInTheShell`; on the raised card and under a real pointer, owed: hand check, [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md); the page's own surface, owed: issue 246 (the note has the page's base face, its undo chords on the note's own stack and plain paste, but not the page's markdown face, list continuation per ADR-0024, ⌘-click links per ADR-0023 or code fences); owed: issue 247 (the fragment) |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; a drop from elsewhere lands nowhere in it, since no seal can stand in a note ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)), and once closed its view holds none of its ink; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; the popover: `SealedNoteTests.swift` `testThePopoverHangsUnderTheBlockAtTheBlocksMeasure`, `testANarrowBlockPutsTheNoteAcrossTheContentWidth`, `testExpandedTheNoteCoversTheContentAndWithoutRoomBelowItStandsAbove`, `testTheMenusVerbOpensTheNoteInThePagesOwnWindow`, `testTheDoorwayOpensTheNoteAndEscClosesIt`, `testTheArrowsAndShiftEscExpandAndContractAndEscContracts`, `testTheNoteClosesWhenItsSeatGoes`, `testTheObjectLeavingThePageClosesItsNote`, `testANoteEditLeavesThePagesCaretAndUndoAlone`, `testNoNoteRouteRunsAModalSession`, `testTheNoteTakesNoDropFromElsewhere`, `testAClosedNoteLeavesNoInkInTheShell`; the page's own surface ([ADR-0045](../adr/0045-the-note-is-written-on-the-pages-surface.md)): `SealedNoteTests.swift` `testTheNoteWearsThePagesFace`, `testANoteContinuesAndNestsAListAsThePageDoes`, `testChooseLanguageActsOnTheNoteAndItsLabelIsTheNotesOwn`, and what stands aside in it, `testNoSealLandsInANote`, `testNoObjectStandsInANote`, `testANoteShowsNoBlockStampsAndAsksNoPageForThem`, `testTheWrapToggleStandsAsideInANote`; on the raised card and under a real pointer, and a click and a ⌘-click on a note's link, owed: hand check, [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md); owed: issue 247 (the fragment) |
 
 ### Sealed-fragment representation
 
@@ -393,8 +394,9 @@ in place, the caret and a shift selection crossing an object whole),
 `SealedNameFieldTests` (the name's field, per Law 0007),
 `ModalSessionTests.testRenameNeverRunsAModalSession` (naming stays
 dialog free), `SealedNoteTests` (the doorway, the popover's placement,
-its open, expand, contract and close routes, and its edits on the
-note's own routes), `BundledKeymapTests` (`shift-escape`),
+its open, expand, contract and close routes, its edits on the note's
+own routes, the page's own surface in it and what stands aside there),
+`BundledKeymapTests` (`shift-escape`),
 `SealedObjectSeamTests` (the name, `name=value` and note wrappers over
 the live core).
 
@@ -414,8 +416,7 @@ lands (removal detaches, undo reattaches): `store.rs`
 
 Owed: issue 170 (the versioned sealed-fragment model, atomic multi-object
 detach/reattach/clone, lifecycle resolution, the lazy decrypted drag and
-their tests as named in the rows); issue 246 (the page's own surface in
-the note, as named in its row); issue 247 (the name and note in the
+their tests as named in the rows); issue 247 (the name and note in the
 fragment, as named in the rows); a first run of the sealed zones and
 note procedure. Issues 169 (`SealedBlockTests`) and 172 (the
 interrupting dialogs) are closed; D-14 is strict and the seal, remove,
@@ -557,3 +558,12 @@ copy decrypted, naming and note paths must stay dialog free.
   press takes the caret over an object either way, and every shift
   extension holds an object whole or leaves it out. The backspace
   beside it row stays owed.
+- 2026-10-13: Note's own surface amendment (issue 246).
+  [ADR-0045](../adr/0045-the-note-is-written-on-the-pages-surface.md)
+  puts the note on the page's own surface, routed by document, and names
+  what stands aside in it. The note's row replaces the owed clause of
+  the preceding note surface amendment with the tests of the page's face,
+  lists, links and fences in the note and of the seals, objects, block
+  stamps and wrap toggle that stand aside, and adds a click and a
+  ⌘-click on a note's link to the procedure's checks. The cluster, the sources and
+  the acceptance list name ADR-0045, and the owed list drops issue 246.

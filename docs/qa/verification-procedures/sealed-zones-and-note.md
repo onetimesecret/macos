@@ -70,6 +70,19 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the page becomes a sealed block (ADR-0044). **Fail:** the word
       appears in the note or the field, or the drop on the page lands
       as plain ink.
+- [ ] **The page's own surface in the note.** Open a note and type
+      `# Rotate`, Return, `- monthly`, Return, then
+      `see https://example.com`, then a fence with ```` ```swift ````,
+      a line of Swift and ```` ``` ````. Click the URL, then ⌘-click it.
+      Copy a word in TextEdit and choose Edit, Paste Without Detection.
+      **Pass:** the heading, the list's marker, the link and the fence's
+      slab and colours read as the same lines would on the page; the
+      Return after `- monthly` starts `- `; the plain click puts the
+      caret in the URL and the ⌘-click opens it in the browser
+      (ADR-0023, ADR-0045); the word lands in the note at its caret and
+      the page is unchanged. **Fail:** the note reads as plain text, the
+      list does not continue, a plain click opens the link, or the paste
+      lands on the page.
 - [ ] **A named image.** Copy an image in Preview and press ⇧⌘V on the
       page, then choose the block's *Name…*, type `LOGO` and press
       Return, then move the pointer across `=` and
@@ -93,4 +106,5 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | the note's undo is its own | | |
 | | | scrolling and a narrow card | | |
 | | | a drop from another app | | |
+| | | the page's own surface in the note | | |
 | | | a named image | | |
