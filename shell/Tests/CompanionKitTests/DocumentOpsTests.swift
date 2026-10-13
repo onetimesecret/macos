@@ -506,9 +506,10 @@ final class DocumentOpsWiringTests: XCTestCase {
     }
 
     func testTheChipMenuOffersPlaintextByName() throws {
+        // D-41's order; nil is a separator.
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles,
-            ["Copy decrypted contents", "Create one-time link…", "Remove protected content"])
+            InkEditorView.Coordinator.chipMenuTitles(),
+            ["Copy decrypted contents", "Create one-time link…", nil, "Remove protected content"])
         makeEditor()
         textView.insertText(
             "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -521,6 +522,10 @@ final class DocumentOpsWiringTests: XCTestCase {
         // unrelated contract.
         let menu = NSMenu()
         coordinator.appendChipItems(to: menu, at: 3)
+        XCTAssertEqual(
+            menu.items.map { $0.isSeparatorItem ? nil : $0.title },
+            InkEditorView.Coordinator.chipMenuTitles(),
+            "the built menu is not the order the titles pin")
         let copy = try XCTUnwrap(
             menu.items.first { $0.title == "Copy decrypted contents" })
         let link = try XCTUnwrap(

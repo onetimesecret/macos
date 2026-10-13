@@ -2442,14 +2442,31 @@ public struct InkEditorView: NSViewRepresentable {
 
         // MARK: Chip actions: a click selects, a secondary click offers actions, never content
 
-        /// The chip's menu, in order (D-29): the two egresses, then the
-        /// removal set apart. Lifted so the titles are pinned by a test
-        /// rather than read off a screen.
-        static let chipMenuTitles = [
-            "Copy decrypted contents",
-            "Create one-time link…",
-            "Remove protected content",
-        ]
+        /// One item of the object's menu.
+        enum ChipMenuItem: Equatable {
+            case copyDecrypted
+            case createLink
+            case remove
+
+            var title: String {
+                switch self {
+                case .copyDecrypted: "Copy decrypted contents"
+                case .createLink: "Create one-time link…"
+                case .remove: "Remove protected content"
+                }
+            }
+        }
+
+        /// The object's menu in D-41's order, nil marking a separator:
+        /// the two egresses, then the removal set apart.
+        static func chipMenuItems() -> [ChipMenuItem?] {
+            [.copyDecrypted, .createLink, nil, .remove]
+        }
+
+        /// The menu's titles, pinned by a test rather than read off a screen.
+        static func chipMenuTitles() -> [String?] {
+            chipMenuItems().map { $0?.title }
+        }
 
         /// A plain click on a chip selects the whole object and never
         /// places a caret inside it (D-28). It does not also perform an
@@ -2478,7 +2495,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// menu query and the explicit routes that pop it up directly.
         func chipMenu(at charIndex: Int) -> NSMenu? {
             let menu = NSMenu()
-            // The object's menu is the three items and nothing the text
+            // The object's menu is its own items and nothing the text
             // system would append to a text view's menu (D-41).
             menu.allowsContextMenuPlugIns = false
             appendChipItems(to: menu, at: charIndex)
@@ -2515,57 +2532,53 @@ public struct InkEditorView: NSViewRepresentable {
             return index
         }
 
-        /// The chip's three actions, appended to `menu` for the chip
-        /// standing at `charIndex`: the egresses first, a separator,
-        /// then the removal, which keeps today's behaviour of deleting
-        /// the sentinel whole (the two stage removal is a separate
-        /// call).
+        /// The chip standing at `charIndex` in the mounted page, if one does.
+        func chipAttachment(at charIndex: Int) -> ChipAttachment? {
+            guard let storage = textView?.textStorage, charIndex >= 0, charIndex < storage.length
+            else { return nil }
+            return storage.attribute(.attachment, at: charIndex, effectiveRange: nil)
+                as? ChipAttachment
+        }
+
+        /// The chip's actions, appended to `menu` for the chip standing
+        /// at `charIndex` in `chipMenuItems`' order. The removal keeps
+        /// today's behaviour of deleting the sentinel whole (the two
+        /// stage removal is a separate call).
         func appendChipItems(to menu: NSMenu, at charIndex: Int) {
-            guard let storage = textView?.textStorage, charIndex < storage.length,
-                  let attachment = storage.attribute(.attachment, at: charIndex, effectiveRange: nil)
-                    as? ChipAttachment
-            else { return }
-            let chipID = attachment.info.chipId
-            let copy = NSMenuItem(
-                title: Self.chipMenuTitles[0],
-                action: #selector(copyOutChip(_:)),
-                keyEquivalent: ""
-            )
-            copy.target = self
-            // The item carries the object's place rather than its id,
-            // so the action can read the block's own size class off
-            // the storage for the confirmation line.
-            copy.representedObject = charIndex as NSNumber
-            // The chord beside the verb is the keymap's, the way every
-            // tooltip names its chord: a keymap that moved
-            // `chip::CopyDecrypted` moves this, and one that unbound it
-            // leaves the verb alone. Display only; the page's text view
-            // dispatches the chord itself, so the menu item advertises
-            // and never claims.
-            if let chord = model.keymap.hintKeystroke(for: .chipCopyDecrypted) {
-                copy.keyEquivalent = chord.menuKeyEquivalent
-                copy.keyEquivalentModifierMask = chord.menuModifierMask
+            guard let attachment = chipAttachment(at: charIndex) else { return }
+            for entry in Self.chipMenuItems() {
+                guard let entry else {
+                    menu.addItem(.separator())
+                    continue
+                }
+                let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
+                item.target = self
+                // Each item carries the object's place rather than its id,
+                // so its action reads the block's own face off the storage.
+                item.representedObject = charIndex as NSNumber
+                switch entry {
+                case .copyDecrypted:
+                    item.action = #selector(copyOutChip(_:))
+                    // The chord beside the verb is the keymap's, the way
+                    // every tooltip names its chord: a keymap that moved
+                    // `chip::CopyDecrypted` moves this, and one that
+                    // unbound it leaves the verb alone. Display only; the
+                    // page's text view dispatches the chord itself, so the
+                    // menu item advertises and never claims.
+                    if let chord = model.keymap.hintKeystroke(for: .chipCopyDecrypted) {
+                        item.keyEquivalent = chord.menuKeyEquivalent
+                        item.keyEquivalentModifierMask = chord.menuModifierMask
+                    }
+                case .createLink:
+                    item.action = #selector(concealChip(_:))
+                    item.representedObject = attachment.info.chipId as NSNumber
+                case .remove:
+                    // The separator and verb carry the destructive meaning;
+                    // leave menu text styling to AppKit.
+                    item.action = #selector(removeChip(_:))
+                }
+                menu.addItem(item)
             }
-            menu.addItem(copy)
-            let conceal = NSMenuItem(
-                title: Self.chipMenuTitles[1],
-                action: #selector(concealChip(_:)),
-                keyEquivalent: ""
-            )
-            conceal.target = self
-            conceal.representedObject = chipID as NSNumber
-            menu.addItem(conceal)
-            menu.addItem(.separator())
-            let remove = NSMenuItem(
-                title: Self.chipMenuTitles[2],
-                action: #selector(removeChip(_:)),
-                keyEquivalent: ""
-            )
-            remove.target = self
-            remove.representedObject = charIndex as NSNumber
-            // The separator and verb carry the destructive meaning;
-            // leave menu text styling to AppKit.
-            menu.addItem(remove)
         }
 
         /// The chip standing at the selection, when the selection is
@@ -2586,10 +2599,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// Copy the chip at `index` back out through the core, and say
         /// so with the block's own size class in the line.
         func copyOutChip(at index: Int) {
-            guard let storage = textView?.textStorage, index < storage.length,
-                  let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
-                    as? ChipAttachment
-            else { return }
+            guard let attachment = chipAttachment(at: index) else { return }
             model.copyOutChip(
                 attachment.info.chipId,
                 size: SealedBlockCell.displayedSizeClass(attachment.info.sizeLabel)
