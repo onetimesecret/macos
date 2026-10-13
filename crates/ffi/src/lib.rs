@@ -4584,11 +4584,16 @@ mod tests {
     }
 
     #[test]
-    fn a_note_reaches_no_ledger_record_and_no_other_output() {
+    fn a_name_and_a_note_reach_no_ledger_record_and_no_other_output() {
         let handle = handle();
         unsafe {
             let (sheet, chip) = sealed_chip(handle, "hunter2");
             let before = take_json(companion_ledger_json(handle));
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("WHARF_LANTERN_KEY").as_ptr()
+            ));
             let note = "Wq9Fj Zx7Kp Marmot Burrow";
             assert!(note_ops(
                 handle,
@@ -4601,14 +4606,10 @@ mod tests {
             assert_eq!(
                 take_json(companion_ledger_json(handle)),
                 before,
-                "a note edit recorded something"
+                "a name or a note edit recorded something"
             );
             for (name, output) in [
                 ("summaries", take_json(companion_tabs_json(handle))),
-                (
-                    "document",
-                    take_json(companion_sheet_document_json(handle, sheet)),
-                ),
                 ("meta", take_json(companion_sheet_meta_json(handle, sheet))),
                 (
                     "blocks",
@@ -4616,10 +4617,16 @@ mod tests {
                 ),
             ] {
                 assert!(
-                    !output.contains("Marmot"),
-                    "{name} carried the note: {output}"
+                    !output.contains("Marmot") && !output.contains("LANTERN"),
+                    "{name} carried the name or the note: {output}"
                 );
             }
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!document.contains("Marmot"), "{document}");
+            assert!(
+                document.contains("WHARF_LANTERN_KEY"),
+                "the control: the face carries the name"
+            );
             assert!(note_runs(handle, chip).contains("Marmot"), "the control");
 
             let tab = (*handle)
@@ -4639,6 +4646,7 @@ mod tests {
                 "{ledger}"
             );
             assert!(!ledger.contains("Marmot"), "{ledger}");
+            assert!(!ledger.contains("LANTERN"), "{ledger}");
             assert!(
                 companion_chip_note_runs_json(handle, chip).is_null(),
                 "the note outlived its page"
