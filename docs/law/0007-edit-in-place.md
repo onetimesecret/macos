@@ -15,10 +15,12 @@ sources:
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
   - docs/spec/design/2026-0916-rail-redundancy.md, D-44 and D-46 (the gutter's time and typed name)
   - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending; `TabRename.Field`, the SwiftUI fields' state)
-  - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `words`, `seat`, `drawsTitle`)
+  - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `opensRename`, `keyboardToReturn`, `words`, `seat`, `drawsTitle`)
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
-  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the cell's field; `PadNameDraft`; `nameEditor`, now the create sheet alone)
-  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `holdNotice`)
+  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the cell's field; `PadPickerRoutes`, the list's routes; `PadNameDraft`; `nameEditor`, now the create sheet alone)
+  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `holdNotice`, `releaseNotice`)
+  - docs/adr/0017-durable-tabs-expiring-pages.md (a tab's name outlives its pages)
+  - docs/qa/verification-procedures/rename-in-place.md (the hand checks the runner cannot make)
 ---
 
 # Law 0007: Edit in place
@@ -75,7 +77,8 @@ the first tenet (the app is furniture, never interrupts) forbids.
   label's current text, selected whole, and the keyboard moves to it. The
   ways in, per seat: a menu verb (*Rename page…*, *Rename tab…*, *Rename
   pad…*, *Name…* or *Rename…* on a sealed object); a single click where the
-  seat has no other click (the gutter's time); a double click where the
+  seat has no other click (the gutter's time, or the typed name that took
+  its seat); a double click where the
   single click is taken (an unnamed sealed object's bottom row, whose
   click selects; a named one's name zone, whose click copies the name).
   Where the double click is already a gesture (the strip, where it holds
@@ -128,10 +131,10 @@ without a test says what it is owed by.
 | the gutter's hit target while open | opening | the field, not the composed header, takes the click | `DayScrollTests.swift` `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename` |
 | the gutter at rest | showing | the day once, then the time; only a typed name is drawn | `DayScrollProjectionTests.swift` `testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone`, `testTheGutterDrawsOnlyATypedName`; `DayScrollTests.swift` `testAGutterDrawsATypedNameAndNoGauge`; `StreamNavigatorTests.swift` `testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage` |
 | the gutter's menu | opening | *Rename page…* opens the field in the gutter | `DayScrollTests.swift` `testTheDayGutterOffersTheSameVerbsAsTheStrip` |
-| a click on the gutter's time | opening | opens the field in the time's seat; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41` | `DayScrollTests.swift` `testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`, `testANamedGutterReadsTheDayTheNameAndTheTime`; `DayScrollProjectionTests.swift` `testAnUnnamedGuttersDraftIsTheTime` |
-| the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip and the slot rail call; the SwiftUI field's focus and selection are checked by hand |
-| the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheCellRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testAPadRenameAttachesNoSheetAndRunsNoModalSession`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` |
-| a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one | `PadPickerTests.swift` `testARefusalKeepsBothTheFieldAndTheLine`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; `NoticeHoldTests.swift` `testAHeldLineOutlastsTheDwellAndGoesWhenReleased` |
+| a click on the gutter's time, or on the typed name standing in its seat | opening | opens the field in the time's seat on what the seat showed; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41`; a long name gives way before the time does; Return and Escape give the keys back to the page. The name is the slot's (ADR-0017: "Tab identity, order, name, and keyboard position survive every Page that lived in the slot"), so a page minted into a named empty slot reads the name | `DayScrollTests.swift` `testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`, `testANamedGutterReadsTheDayTheNameAndTheTime`, `testAClickOnATypedNameOrItsTimeOpensTheFieldOnTheName`, `testALongNameOnANarrowGutterLeavesTheTimeWhole`, `testAFieldOpenedOverAnotherGivesTheKeysBackToThePage`, `testAPageMintedIntoALabelledSlotReadsTheSlotsLabel`; `DayScrollProjectionTests.swift` `testAnUnnamedGuttersDraftIsTheTime`; in a real key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip and the slot rail call; the SwiftUI field's focus and its selection on focus, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheCellRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenamePadOpensTheCellOverTheOpenListAndRaisesNoSheet`, `testNewPadShutsTheListAndKeepsAnOpenFieldsName`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` and `PadPickerRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one; another notice stands in front of the line for its own dwell and gives it back | `PadPickerTests.swift` `testARefusalKeepsBothTheFieldAndTheLine`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; `NoticeHoldTests.swift` `testAHeldLineOutlastsTheDwellAndGoesWhenReleased`, `testAHeldLineComesBackWhenAFlashInFrontOfItEnds`, `testTheModelsClearsPutAHeldLineBack`; the SwiftUI field keeping its keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | owed: issue 245 (the field), issue 241 (the core's setter); Law 0001's 2026-10-13 amendment |
 | a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | owed: issue 241 (the core's refusal), issue 245 (the field) |
 
@@ -139,7 +142,9 @@ without a test says what it is owed by.
 
 - A sheet, alert, panel or popover whose purpose is to take a name.
 - A field that moves the label, reflows its neighbours or hides the
-  default the name sits beside.
+  default the name sits beside. The one neighbour that moves is that
+  default, which follows the draft to its right, as the gutter's time
+  does while the user types.
 - A Return that freezes an untouched default into a typed name.
 - A focus loss that commits.
 - A periodic pass that writes a label over an open draft.
@@ -171,18 +176,23 @@ outcome tests and the three `TabRename.Field` tests),
 `testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement`,
 `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename`,
 `testAGutterDrawsATypedNameAndNoGauge`,
-`testTheDayGutterOffersTheSameVerbsAsTheStrip`,
-`testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`,
-`testANamedGutterReadsTheDayTheNameAndTheTime`),
+`testTheDayGutterOffersTheSameVerbsAsTheStrip` and the six gutter click
+tests in the row for a click on the gutter's time),
 `DayScrollProjectionTests` (the two gutter tests above and
 `testAnUnnamedGuttersDraftIsTheTime`),
 `StreamNavigatorTests.testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage`,
-`PadPickerTests` (the six pad cell tests in the rows above and
+`PadPickerTests` (the seven pad cell tests in the rows above and
 `testAFieldMovedToAnotherCellOutlivesTheFocusLossOfTheOneItLeft`),
 `NoticeHoldTests`.
 
-Core and seam: a name is page-owned text; `companion_tab_set_title`
-(`crates/ffi/src/lib.rs`) carries the tab's, capped core-side. The pad's
+By hand: the [rename in place](../qa/verification-procedures/rename-in-place.md)
+procedure, for what the runner cannot drive: the SwiftUI fields' focus
+and selection, the pad cell's Return and Escape, and the gutter's field
+in a real key window. It has not been run.
+
+Core and seam: a tab's name belongs to the tab and outlives its pages
+(ADR-0017); `companion_tab_set_title` (`crates/ffi/src/lib.rs`) carries
+it, capped core-side. The pad's
 goes through the catalog (`PadCatalogTests`). The sealed object's is owed
 with Law 0001's amendment, refused core-side outside ADR-0042's charset
 (issue 241).
@@ -191,7 +201,7 @@ Tests that pin the contradicting build and are rewritten when the owed
 rows land: none.
 
 Owed: the sealed object's name field (issue 245, over issue 241's
-setter).
+setter); a first run of the rename in place procedure.
 
 ## Amendments
 
@@ -218,3 +228,14 @@ setter).
   cell's fields are SwiftUI and are not driven under the runner, so
   their state lives in `TabRename.Field` and `PadRename`, which the
   fields call and the tests drive. The sources list follows the code.
+- 2026-10-13: Review amendment (issues 248, 249, 250). The Opening
+  class and the gutter's row name the typed name as part of the time's
+  seat, since a click on it opens the field as a click on the time
+  does, and the row records that the name is the slot's, so a page
+  minted into a named empty slot reads it (ADR-0017). The forbidden
+  list lets the default beside a name follow the draft to its right,
+  which the gutter's row already required. The strip's and the pad
+  list's rows no longer claim a hand check nobody made: they cite the
+  rename in place procedure as owed, and the pad rows cite the
+  `PadPickerRoutes` and held line tests. "a name is page-owned text"
+  under Acceptance becomes the tab's own name.

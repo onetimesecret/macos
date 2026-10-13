@@ -362,9 +362,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time, selected whole, and the time moves to the field's right. A
   labelled gutter reads the day, the label and then the time, as
   `today · Deploy notes · 13:00`; a later page on the same day reads
-  `Rotate keys · 13:41`. Return over an untouched draft changes nothing,
-  an empty Return drops the label, and a click on the day still focuses
-  the page. *Rename page…* opens the same field on the same draft.
+  `Rotate keys · 13:41`. A click on the label opens the field on the
+  label, as does a click on the time beside it. Return over an untouched
+  draft changes nothing, an empty Return drops the label, and a click on
+  the day still focuses the page. *Rename page…* opens the same field on
+  the same draft. The label belongs to the tab, so a page opened later
+  in the same tab carries it.
 
 - **The Help menu exports diagnostics and sends reviewed feedback**
   (app 0.26.0). **Copy Diagnostic Summary** copies a summary: version,
