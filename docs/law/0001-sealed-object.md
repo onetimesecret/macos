@@ -4,10 +4,13 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5)
+decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
+  - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the name's charset, the bottom row's zones, the note popover on a narrow card)
 sources:
+  - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points the name and note amendment left open)
+  - docs/law/0007-edit-in-place.md (the name's field)
   - the maintainer's sealed object model, 2026-09-15
   - docs/spec/design/2026-0915-ui-ux-decisions.md, section 3
   - docs/spec/feature/sealed-content/sealed-content.md (historical design note upstream of this law)
@@ -104,7 +107,7 @@ without a test says what it is owed by.
 | Interaction | Class | Expected behaviour | Pinned by |
 | --- | --- | --- | --- |
 | arrow keys | ambient observation | the caret crosses the object as one indivisible unit | held by AppKit, a chip is one attachment character; no direct test, owed: no issue yet |
-| click | structural editing | selects the whole object; never places a caret inside it | `DocumentOpsTests.swift` `testAClickOnAChipSelectsItWhole` |
+| click, on an unnamed object or outside a named object's bottom row | structural editing | selects the whole object; never places a caret inside it | `DocumentOpsTests.swift` `testAClickOnAChipSelectsItWhole` |
 | shift selection | structural editing | includes the whole object or none of it | held by AppKit; no direct test, owed: no issue yet |
 | select all | structural editing | includes each object structurally, not its payload | no direct test; owed: issue 170 |
 | copy, object or mixed selection | structural editing | writes one versioned sealed fragment preserving ordered ink runs and UUID references; the public representation preserves the ink and substitutes one size-class placeholder per reference; neither representation contains payload or ciphertext | owed: issue 170 (`DocumentOpsTests` for ordered mixed and multi-chip selections) |
@@ -126,11 +129,12 @@ without a test says what it is owed by.
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
 | copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
-| name the object (*Name…*, *Rename…*, a double click on the bottom row) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; a named object's bottom row reads `NAME=excerpt` | owed: no issue yet (2026-10-13 amendment) |
-| click the name's glyph run | ambient observation | copies the name; the size class's seat reads `copies the name` while hovered | owed: no issue yet |
-| click the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above; the seat reads `copies the value, decrypted` before the click | owed: no issue yet |
-| click the `=` between | declassification/egress | copies `NAME=<plaintext>` by the same route; the seat reads `copies name=value, decrypted` before the click | owed: no issue yet |
-| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | owed: no issue yet |
+| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | owed: no issue yet (2026-10-13 amendment) |
+| pointer over an unnamed object's bottom row | structural editing | no zones until the object is named: no pill, no seat words, and a click selects as anywhere on the block (D-40) | owed: issue 244 |
+| click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | owed: no issue yet |
+| click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | owed: no issue yet |
+| click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | owed: no issue yet |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | owed: no issue yet |
 
 ### Sealed-fragment representation
 
@@ -376,3 +380,15 @@ dialog free).
   *Copy name*, *Copy name=value, decrypted*, *Name…* or *Rename…* and
   *Note…* or *Edit note…*, in that record's order. Five contract rows are
   added above, all owed.
+- 2026-10-13: ADR-0042 amendment.
+  [ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
+  settles what the name and note amendment left open, and is where this
+  law cites the narrowed D-40 and the extended D-41. The name is 1 to 64
+  characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, refused core-side.
+  An unnamed object's bottom row has no zones, so D-40 holds for the
+  whole of an unnamed block. On a named row only the name zone's double
+  click opens the field; the value and `=` zones act on the first click
+  and ignore the clicks after it. `name=value` copies the value raw. On a
+  card narrower than the popover's minimum, the note takes the card's
+  full content width. The click row and the five rows of the preceding
+  entry change; one row is added.
