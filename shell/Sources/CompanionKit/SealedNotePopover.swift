@@ -1,10 +1,10 @@
 import AppKit
 
-/// Where a sealed object's note stands over the page (Law 0001, ADR-0042
-/// points 7 and 8), in the overlay's flipped space; pure so the rule is an assertion.
+/// Where a sealed object's note stands over the page (Law 0001, ADR-0042 points 7
+/// and 8, ADR-0044 point 3), in the overlay's flipped space; pure so the rule is an assertion.
 enum NotePopoverLayout {
-    /// The popover's least width, ADR-0042 point 7's threshold: a block
-    /// narrower than this puts the note across the card's content width.
+    /// The popover's least width, ADR-0042 point 7's threshold, set in ADR-0044 point 1:
+    /// a block narrower than this puts the note across the card's content width.
     static let minimumWidth: CGFloat = 320
     static let height: CGFloat = 176
     /// The least height the note keeps when neither side of the block has room.

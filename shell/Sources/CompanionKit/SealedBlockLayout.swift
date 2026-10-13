@@ -122,7 +122,7 @@ enum SealedBlockLayout {
     }
 
     /// How wide a named row's name and value may be drawn in `available` points:
-    /// the name gives way first, down to `nameFloor`, then the value (ADR-0042).
+    /// the name gives way first, down to `nameFloor`, then the value (ADR-0044).
     static func rowAllotment(
         available: CGFloat, name: CGFloat, equals: CGFloat, value: CGFloat,
         nameFloor: CGFloat

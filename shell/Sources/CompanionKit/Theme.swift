@@ -36,7 +36,7 @@ extension NSColor {
     public static let emberText = NSColor.appearanceAware(light: 0xB0361A, dark: 0xF5865F)
 
     /// A named sealed row's hover pill and its ember beat's tint; the
-    /// dark shades are ADR-0042's drawing, the light ones its history's.
+    /// dark shades are ADR-0042's drawing, the light ones ADR-0044's.
     static let sealedZonePill = NSColor.appearanceAware(light: 0xE4E4E9, dark: 0x3B3B40)
     static let sealedZoneEmberTint = NSColor.appearanceAware(light: 0xF8DED5, dark: 0x4A2F27)
 

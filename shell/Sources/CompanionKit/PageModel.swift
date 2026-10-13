@@ -5741,7 +5741,7 @@ public final class PageModel: ObservableObject {
         _ = client.finishNoteEditingGroup(chip: chip)
     }
 
-    /// The line after *Copy name* (ADR-0042 point 8).
+    /// The line after *Copy name* (ADR-0044 point 1).
     public static let copiedNameLine = "copied the name."
 
     /// Copy a sealed object's name, which is ambient ink (Law 0001), to

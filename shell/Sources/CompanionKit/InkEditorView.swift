@@ -4481,7 +4481,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     static let doorwaySlop: CGFloat = 3
 
     /// The zone a click acts on: the one under it, once the seat has named
-    /// it under the pointer, and otherwise none (Law 0001, ADR-0042 point 8).
+    /// it under the pointer, and otherwise none (Law 0001, ADR-0044 point 2).
     nonisolated static func actingZone(
         pointed: SealedBlockLayout.Zone?, index: Int,
         hoveredIndex: Int?, hoveredZone: SealedBlockLayout.Zone?
@@ -5953,9 +5953,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
             editingWidth: nil, zone: nil, beat: nil)
     }
 
-    /// How long a zone wears ember after its copy (ADR-0042 point 8).
+    /// How long a zone wears ember after its copy (ADR-0044 point 1).
     nonisolated static let beatDuration: TimeInterval = 1
-    /// The fade at each end of the beat, which Reduce Motion drops.
+    /// The fade at each end of the beat, which Reduce Motion drops (ADR-0044 point 2).
     nonisolated static let beatFade: TimeInterval = 0.15
 
     /// How strongly the beat is drawn `elapsed` seconds after the copy,
