@@ -26,6 +26,9 @@ for review fixes; shell only.
   it back, and every model clear goes through `clearNotice`, which
   returns to it. Never write `notice = nil` inside PageModel. #245's
   sealed name field needs exactly this; do not build a second mechanism.
+  A field holds its refusal through `PageModel.HeldRefusal`, which
+  re-holds only on new words via `holdNotice(_:replacing:)`, so a
+  keystroke never cuts a flash in front (fixed 2026-10-13, app 0.31.5).
 - A pad cell's ending passes its pad id to `PadRename.keep`, because the
   cell a field left loses focus after the field has moved to another.
 
