@@ -283,7 +283,7 @@ Validation covers:
 
 ### Cross-field behavior
 
-Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:634-636`, `shell/Sources/CompanionKit/InkEditorView.swift:786-790`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
+Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:651-653`, `shell/Sources/CompanionKit/InkEditorView.swift:810-812`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
 
 ### Connection validation
 
