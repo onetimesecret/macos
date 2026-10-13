@@ -357,6 +357,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A sealed object can carry a typed name, in the core** (Law 0001,
+  ADR-0043, issue #241; `companion-core` 0.26.0, `companion-ffi`
+  0.34.0). `companion_chip_set_name` names a chip, or clears its name
+  given a blank draft. `companion_chip_name_refusal` judges a draft by
+  the same rule without a handle: at most 64 characters of
+  `[A-Za-z_][A-Za-z0-9_]*`, the charset judged first (ADR-0042). The
+  chip's face carries `name`, null when unnamed, on the seal routes and
+  in `companion_sheet_document_json`; no ledger record carries it. The
+  name is a trailing field of the chip's record in the sealed state
+  file, so the format's version does not change, and an older build
+  that opens the file restores the chip without its name and drops the
+  name at its next save. No field to type a name into exists yet (issue
+  #245).
+
 - **A click on a page's time in the gutter labels it** (app 0.27.0;
   Law 0007, issue #248). The field opens where the time stood, on the
   time, selected whole, and the time moves to the field's right. A

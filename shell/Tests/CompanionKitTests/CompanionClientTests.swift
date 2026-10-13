@@ -169,7 +169,8 @@ final class CompanionClientTests: XCTestCase {
             "kind": "text",
             "excerpt": "ghp_4kQ9…5jK7a",
             "size_label": "40 ch",
-            "concealed": false
+            "concealed": false,
+            "name": "GH_TOKEN"
         }
         """
         let chip = try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8))
@@ -177,6 +178,10 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertEqual(chip.kind, "text")
         XCTAssertEqual(chip.excerpt, "ghp_4kQ9…5jK7a")
         XCTAssertEqual(chip.sizeLabel, "40 ch")
+        XCTAssertEqual(chip.name, "GH_TOKEN")
+
+        let unnamed = json.replacingOccurrences(of: "\"GH_TOKEN\"", with: "null")
+        XCTAssertNil(try JSONDecoder().decode(ChipInfo.self, from: Data(unnamed.utf8)).name)
     }
 
     func testLedgerDecoding() throws {

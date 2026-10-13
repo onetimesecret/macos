@@ -461,12 +461,36 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     public let excerpt: String
     public let sizeLabel: String
     public let concealed: Bool
+    /// The typed name beside the object; nil until one is given (ADR-0043).
+    public let name: String?
 
     enum CodingKeys: String, CodingKey {
-        case kind, excerpt, concealed
+        case kind, excerpt, concealed, name
         case chipId = "chip_id"
         case sizeLabel = "size_label"
     }
+
+    init(
+        chipId: UInt64, kind: String, excerpt: String, sizeLabel: String, concealed: Bool,
+        name: String? = nil
+    ) {
+        self.chipId = chipId
+        self.kind = kind
+        self.excerpt = excerpt
+        self.sizeLabel = sizeLabel
+        self.concealed = concealed
+        self.name = name
+    }
+}
+
+/// Why the core would refuse a draft sealed name (ADR-0042 point 1,
+/// ADR-0043). The rule is the core's alone; the words for each case
+/// are the name field's.
+public enum ChipNameRefusal: UInt32, Sendable {
+    /// Longer than 64 characters once trimmed.
+    case tooLong = 1
+    /// Outside `[A-Za-z_][A-Za-z0-9_]*`, which is judged first.
+    case outsideCharset = 2
 }
 
 /// One line of the audit trail: what the app did with one item,
@@ -1090,6 +1114,27 @@ public class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func deleteChip(id: UInt64) -> Bool {
         companion_chip_delete(handle, id)
+    }
+
+    /// Name a sealed object, or clear its name with a blank draft. False
+    /// for an unknown chip or a draft `chipNameRefusal` refuses, and the
+    /// name is then as it was. Records nothing in the ledger.
+    @discardableResult
+    public func setChipName(_ name: String, chip: UInt64) -> Bool {
+        // A C string ends at an interior NUL, so the core would take less than was typed.
+        guard !name.contains("\0") else { return false }
+        return name.withCString { companion_chip_set_name(handle, chip, $0) }
+    }
+
+    /// Why the core would refuse `draft` as a sealed name, or nil when it
+    /// would take it (a blank draft clears). Handle free, so a field can
+    /// ask on every keystroke.
+    public static func chipNameRefusal(_ draft: String) -> ChipNameRefusal? {
+        guard !draft.contains("\0") else { return .outsideCharset }
+        let code = draft.withCString { companion_chip_name_refusal($0) }
+        guard code != 0 else { return nil }
+        // An unknown code is still a refusal, never a name taken.
+        return ChipNameRefusal(rawValue: code) ?? .outsideCharset
     }
 
     /// Change-count-guarded clear of our own last copy-out.

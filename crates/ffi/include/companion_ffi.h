@@ -358,7 +358,8 @@ bool companion_store_emptiness(CompanionHandle *handle,
  * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label (a size
- *   class, "tiny" through "huge", never a count), concealed (bool).
+ *   class, "tiny" through "huge", never a count), concealed (bool),
+ *   name (the typed name, or null; ADR-0043).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -534,7 +535,7 @@ bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
  * after companion_persist_restore(): a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
  * sits, the chip object carrying the same non-secret face the seal
- * routes return (chip_id, kind, excerpt, size_label, concealed). Ink
+ * routes return (chip_id, kind, excerpt, size_label, concealed, name). Ink
  * renders anyway; a chip crosses as its face, never its bytes. Free
  * with companion_string_free(). Null for an unknown page.
  */
@@ -590,6 +591,27 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
  * there is no resurrection path). Returns whether it existed.
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Judge a draft sealed name by the rule companion_chip_set_name()
+ * refuses with (ADR-0042 point 1, ADR-0043). The draft is trimmed. 0
+ * takes it, and an empty draft is taken as clearing the name; 1 is
+ * longer than 64 characters; 2 is outside [A-Za-z_][A-Za-z0-9_]*,
+ * which is judged first. Null and non-UTF-8 answer 2. Stateless and
+ * handle free, so the shell can judge a draft as it is typed; the
+ * words for each code are the shell's.
+ */
+uint32_t companion_chip_name_refusal(const char *draft);
+
+/*
+ * Name a sealed object, or clear its name with an empty or blank draft.
+ * The name is page-owned ink beside the object: it rides the chip's
+ * face as "name" and reaches no ledger record. Returns false for an
+ * unknown chip or a draft companion_chip_name_refusal() refuses, and
+ * the name is then as it was.
+ */
+bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
+                             const char *name);
 
 /*
  * Clear the pasteboard iff it still holds our last copy-out (change-

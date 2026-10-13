@@ -36,8 +36,9 @@ use ots_client::Transport as _;
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
-    LedgerEvent, RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore, SystemClock,
-    TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, local_day,
+    LedgerEvent, NameRefusal, RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore,
+    SystemClock, TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, judge_name,
+    local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1189,6 +1190,51 @@ pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chi
         return false;
     };
     guard.store.delete_chip(ChipId::from_raw(chip))
+}
+
+/// Judge a draft sealed name without a handle (ADR-0043): 0 takes it, an
+/// empty draft clearing; 1 is too long; 2 is outside the charset, as are null
+/// and non-UTF-8.
+///
+/// # Safety
+/// `draft` must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u32 {
+    let Some(draft) = (unsafe { cstr(draft) }) else {
+        return 2;
+    };
+    match judge_name(draft) {
+        Ok(_) => 0,
+        Err(NameRefusal::TooLong) => 1,
+        Err(NameRefusal::OutsideCharset | NameRefusal::UnknownChip) => 2,
+    }
+}
+
+/// Name a sealed object, or clear its name with a blank draft (ADR-0043).
+/// False for an unknown chip or a refused draft; the name is then unchanged.
+///
+/// # Safety
+/// `handle` must be a valid handle. `name` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_set_name(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    name: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(name) = (unsafe { cstr(name) }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .set_chip_name(ChipId::from_raw(chip), name)
+        .is_ok()
 }
 
 /// Clear the pasteboard only if it still holds our last copy-out. Returns
@@ -2837,6 +2883,7 @@ fn chip_face(chip: &SealedChip) -> serde_json::Value {
         "excerpt": chip.excerpt(),
         "size_label": chip.size_label(),
         "concealed": chip.conceal().is_some(),
+        "name": chip.name(),
     })
 }
 
@@ -3453,12 +3500,26 @@ mod tests {
             assert!(!sheets.contains("n0ts3cr3t"), "{sheets}");
             assert!(sheets.contains("\"chip_count\":2"), "{sheets}");
 
+            // A named chip's face carries the name and still not the bytes.
+            let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
+                .as_u64()
+                .unwrap();
+            assert!(companion_chip_set_name(
+                handle,
+                chip_id,
+                cstring("GH_TOKEN").as_ptr()
+            ));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(doc.contains("\"name\":\"GH_TOKEN\""), "{doc}");
+            assert!(!doc.contains("n0ts3cr3t"), "{doc}");
+
             // After death the ledger holds metadata only.
             assert!(companion_tab_close(handle, tab));
             let ledger = take_json(companion_ledger_json(handle));
             assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
             assert!(!ledger.contains("tombstone"), "{ledger}");
             assert!(!ledger.contains("excerpt"), "{ledger}");
+            assert!(!ledger.contains("GH_TOKEN"), "{ledger}");
 
             companion_free(handle);
         }
@@ -3929,6 +3990,141 @@ mod tests {
                 "already cleared"
             );
 
+            companion_free(handle);
+        }
+    }
+
+    /// A chip sealed onto a fresh page, with its sentinel placed.
+    unsafe fn sealed_chip(handle: *mut CompanionHandle, text: &str) -> (u64, u64) {
+        let (_tab, sheet) = unsafe { new_page(handle) };
+        let chip = unsafe {
+            take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(text).as_ptr(),
+                0,
+                0,
+            ))
+        };
+        let chip: serde_json::Value = serde_json::from_str(&chip).unwrap();
+        (sheet, chip["chip_id"].as_u64().unwrap())
+    }
+
+    #[test]
+    fn chip_json_carries_the_name() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let face = |handle: *mut CompanionHandle| -> serde_json::Value {
+                let guard = (*handle).inner.lock().unwrap();
+                let json = take_json(chip_json(
+                    &guard.store,
+                    SheetId::from_raw(sheet),
+                    ChipId::from_raw(chip),
+                ));
+                serde_json::from_str(&json).unwrap()
+            };
+            let document = |handle: *mut CompanionHandle| -> serde_json::Value {
+                let runs: serde_json::Value =
+                    serde_json::from_str(&take_json(companion_sheet_document_json(handle, sheet)))
+                        .unwrap();
+                runs[0]["chip"].clone()
+            };
+            assert_eq!(face(handle)["name"], serde_json::Value::Null);
+            assert_eq!(document(handle)["name"], serde_json::Value::Null);
+
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("  DB_PASSWORD ").as_ptr()
+            ));
+            assert_eq!(face(handle)["name"], "DB_PASSWORD");
+            assert_eq!(document(handle)["name"], "DB_PASSWORD");
+            assert_eq!(
+                face(handle),
+                document(handle),
+                "the seal routes and the document send one face"
+            );
+
+            assert!(!companion_chip_set_name(
+                handle,
+                chip,
+                cstring("db.password").as_ptr()
+            ));
+            assert_eq!(face(handle)["name"], "DB_PASSWORD", "a refusal kept it");
+            assert!(companion_chip_set_name(handle, chip, cstring("").as_ptr()));
+            assert_eq!(face(handle)["name"], serde_json::Value::Null);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_name_routes_judge_by_one_rule_and_fail_closed() {
+        unsafe {
+            for (draft, code) in [
+                ("API_KEY", 0),
+                ("  _x9  ", 0),
+                ("", 0),
+                ("   ", 0),
+                (&"A".repeat(64)[..], 0),
+                (&"A".repeat(65)[..], 1),
+                ("my.key", 2),
+                ("9lives", 2),
+                ("two words", 2),
+                (&format!("{}-", "A".repeat(70))[..], 2),
+            ] {
+                assert_eq!(
+                    companion_chip_name_refusal(cstring(draft).as_ptr()),
+                    code,
+                    "{draft:?}"
+                );
+            }
+            assert_eq!(companion_chip_name_refusal(ptr::null()), 2);
+            let not_utf8 = [0xC3u8, 0x28, 0];
+            assert_eq!(companion_chip_name_refusal(not_utf8.as_ptr().cast()), 2);
+
+            let handle = handle();
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            let name = cstring("API_KEY");
+            assert!(!companion_chip_set_name(
+                ptr::null_mut(),
+                chip,
+                name.as_ptr()
+            ));
+            assert!(!companion_chip_set_name(handle, chip, ptr::null()));
+            assert!(!companion_chip_set_name(handle, 4_242, name.as_ptr()));
+            assert!(!companion_chip_set_name(
+                handle,
+                chip,
+                cstring(&"A".repeat(65)).as_ptr()
+            ));
+            assert!(companion_chip_set_name(handle, chip, name.as_ptr()));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_reaches_no_ledger_record() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            let before = take_json(companion_ledger_json(handle));
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("PAGER_ROTA_KEY").as_ptr()
+            ));
+            assert_eq!(
+                take_json(companion_ledger_json(handle)),
+                before,
+                "naming recorded something"
+            );
+            assert!(companion_chip_copy_out(handle, chip));
+            assert!(companion_chip_delete(handle, chip));
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(ledger.contains("\"sent\""), "the control: {ledger}");
+            assert!(!ledger.contains("PAGER_ROTA_KEY"), "{ledger}");
+            assert!(!ledger.contains("ROTA"), "{ledger}");
             companion_free(handle);
         }
     }
@@ -6299,6 +6495,11 @@ mod tests {
             assert!(!companion_tab_close(ptr::null_mut(), 1));
             assert!(!companion_chip_copy_out(ptr::null_mut(), 1));
             assert!(!companion_chip_delete(ptr::null_mut(), 1));
+            assert!(!companion_chip_set_name(
+                ptr::null_mut(),
+                1,
+                cstring("API_KEY").as_ptr()
+            ));
             assert!(!companion_tab_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
             assert!(
