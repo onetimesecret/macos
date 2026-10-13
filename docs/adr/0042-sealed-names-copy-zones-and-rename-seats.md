@@ -173,3 +173,13 @@ cite the narrowed D-40 and the extended D-41.
   by adopting the recommendation each carried. They now stand after
   point 8's menu, and the Open questions section is removed. The
   popover's minimum width still awaits its value from issue #246.
+- 2026-10-13: Issue #244 builds point 8's row, zones, pill and beat, and
+  settles what the drawing leaves open. The light appearance's pill is
+  `#E4E4E9` and its ember tint `#F8DED5`; the ember stroke is the same
+  in both. The beat fades in and out over 0.15 s at each end of its
+  second, and Reduce Motion drops both fades. A zone answers in the
+  block's lower half, across its run. A row too long for the block
+  cuts the name first, down to four characters and an ellipsis, then
+  the value; `=` is never cut, and the row leaves room for the seat's
+  widest words, so a hover moves nothing. A zone's click copies and
+  leaves the selection as it was.
