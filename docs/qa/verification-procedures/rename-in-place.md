@@ -1,11 +1,13 @@
 # Rename in place: the SwiftUI fields and the keyboard's way back
 
 **Applies to:** OnetimePad, panel and editor window; the gutter
-(Timeline), the strip (Tabs) and the pad list.
+(Timeline), the strip (Tabs), the pad list and a sealed object's name.
 **Raised by:** review of epic 252 Track A (issues #248, #249, #250) on
-`feature/editing-seals`, 2026-10-13.
-**Governs:** [Law 0007](../../law/0007-edit-in-place.md), whose strip
-and pad rows cite this procedure for what the runner cannot drive.
+`feature/editing-seals`, 2026-10-13; the sealed name's checks by issue
+#245.
+**Governs:** [Law 0007](../../law/0007-edit-in-place.md), whose strip,
+pad and sealed name rows cite this procedure for what the runner
+cannot drive.
 **Owner:** delano.
 **Status:** open. Not yet run on hardware.
 
@@ -18,8 +20,10 @@ focus, and what a popover does around them happen inside SwiftUI and
 AppKit, and the test runner turns no event loop for them. The gutter's
 field is AppKit and is driven by `DayScrollTests`; the checks below
 that touch it are about a real key window, which the tests do not
-have. The slot rail is not drawn by any layout since ADR-0037, so it
-has no check here.
+have. A sealed object's name field is AppKit too, driven by
+`SealedNameFieldTests`; its checks are the double click's timing and
+the keys in a real key window. The slot rail is not drawn by any
+layout since ADR-0037, so it has no check here.
 
 Quit any running instance first (`swift build` re-signs in place and
 SIGKILLs a live one), then `scripts/dev.sh`.
@@ -61,6 +65,26 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       Escape. **Pass:** the pad keeps its old name. Record whether the
       list stays open or closes; either keeps the name. **Fail:** the
       new name is saved.
+- [ ] **Sealed name, the double click.** Seal a line with ⌘↩, then
+      double click the block's bottom row. **Pass:** a field opens where
+      a name would stand, placeholder `NAME`, with the keys in it and
+      the excerpt to its right. Type `MY_API_KEY` and press Return: the
+      row reads `MY_API_KEY=<excerpt>`. Click the name once: the line
+      reads `copied the name.`. Double click the name: the field opens
+      on the name, selected whole. Double click the excerpt: the line
+      says the decrypted contents were copied, once, and no field
+      opens. **Fail:** a first click opens the field, a double click on
+      the excerpt opens it or copies twice, or the draft is not
+      selected.
+- [ ] **Sealed name, a refusal and the keys.** Open the field, type
+      `my.key` and press Return. **Pass:** the line under the page asks
+      for letters A to Z, digits and underscores, the field stays open
+      with the keys in it, and ⌘Z changes nothing on the page; typing
+      `MY_KEY` clears the line and Return names the object. Then open
+      the field again, press Escape and type a character. **Pass:** the
+      name is unchanged and the character lands in the page. **Fail:**
+      the field closes on the refusal, the page steps back, or the
+      character goes nowhere.
 
 ## Results
 
@@ -75,3 +99,5 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | pad cell, opening | | |
 | | | pad cell, an empty Return | | |
 | | | pad cell, Escape | | record whether the list stayed open |
+| | | sealed name, the double click | | |
+| | | sealed name, a refusal and the keys | | |
