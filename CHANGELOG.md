@@ -697,6 +697,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Edit menu leaves the page alone while a sealed name is typed**
+  (app 0.31.2; Law 0007, issue #245). The name's field stood inside
+  the page's text view, so the menu's Undo and Redo, which ⌘Z and ⇧⌘Z
+  reach once the page's own chords stand aside, stepped the page back
+  under the draft, and Seal Selected Content, Detect Code Language and
+  Paste Without Detection acted on the page too. The menu now passes
+  the page by: Undo and Redo reach the window, as they do from any
+  other text field, and the other three do nothing until the field
+  closes.
+
 - **A zone copies only after its seat has said what it copies** (app
   0.31.1; Law 0001, ADR-0042, issue #244). The pill and the seat's
   words follow the pointer only in the window that holds the keys, so

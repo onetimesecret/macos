@@ -150,6 +150,8 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
             attributes: [.font: InkStyle.chipNameFont, .foregroundColor: NSColor.tertiaryLabelColor])
         field.stringValue = rename.draft
         if field.superview !== textView { textView.addSubview(field) }
+        // The page's menu actions must not answer for the draft (Law 0007, Drafting).
+        field.nextResponder = textView.nextResponder
         field.isHidden = false
         follow()
         textView.window?.makeFirstResponder(field)
