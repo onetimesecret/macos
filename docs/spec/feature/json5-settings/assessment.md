@@ -58,9 +58,9 @@ ADR-0011 requires boundary snapping to be a persisted setting in the local form 
 
 Primary source locations:
 
-- `shell/Sources/CompanionKit/PageModel.swift:709-961`
-- `shell/Sources/CompanionKit/PageModel.swift:1432-1508`
-- `shell/Sources/CompanionKit/PageModel.swift:6274-6311`
+- `shell/Sources/CompanionKit/PageModel.swift:719-971`
+- `shell/Sources/CompanionKit/PageModel.swift:1448-1524`
+- `shell/Sources/CompanionKit/PageModel.swift:6374-6411`
 - `shell/Sources/CompanionKit/SyncController.swift:4-43`
 - `shell/Sources/CompanionKit/SyncController.swift:83-91`
 - `shell/Sources/CompanionKit/SyncController.swift:147-208`
@@ -106,7 +106,7 @@ Verified persisted candidates are:
 | `restingPinned` | `BackdropModel` | Current backdrop pinning behavior |
 | `backdrop.geometry` | `BackdropGeometry` | Existing encoded shape includes a legacy decoding path |
 
-`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:709-717`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
+`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:719-727`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
 
 ## Persistence boundary
 
@@ -283,11 +283,11 @@ Validation covers:
 
 ### Cross-field behavior
 
-Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:651-653`, `shell/Sources/CompanionKit/InkEditorView.swift:810-812`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
+Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:693-695`, `shell/Sources/CompanionKit/InkEditorView.swift:852-854`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
 
 ### Connection validation
 
-Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6276-6292`.
+Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6376-6392`.
 
 The API token and non-secret connection fields require a defined transaction outcome when one persistence operation succeeds and the other fails.
 
