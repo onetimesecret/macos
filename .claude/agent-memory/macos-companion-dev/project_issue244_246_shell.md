@@ -1,11 +1,13 @@
 ---
 name: issue244-246-sealed-shell
-description: Epic 252 Track B shell (#244 zones, #245 name field, #246 note popover) built 2026-10-13 on feature/editing-seals; where the seams are, why the note is not an NSPopover, and the test traps
+description: Epic 252 Track B shell (#244 zones, #245 name field, #246 note popover) built 2026-10-13 on feature/editing-seals; the note runs the page's InkTextView routed by InkDocument (ADR-0045), one answersChords predicate gives chords and Edit menu to the key holder (ADR-0046), and the test traps
 metadata:
   type: project
 ---
 
-Built 2026-10-13, app 0.29.0 to 0.31.1, shell only (no FFI change).
+Built 2026-10-13, app 0.29.0 to 0.31.1, shell only (no FFI change);
+phase 3 leftovers 0.31.5 to 0.32.3 (held refusal, note surface, key
+holder, pad list height).
 
 - Zones: `SealedBlockLayout.NamedRow` and `rowAllotment` are pure; the
   cell's `namedRow(in:editingWidth:)` measures. A click acts on a zone
@@ -19,11 +21,20 @@ Built 2026-10-13, app 0.29.0 to 0.31.1, shell only (no FFI change).
   churn the card's key status, skip its capture exclusion and could not
   take ADR-0042's 10 point radius or expand to the card. Minimum width
   320 (`NotePopoverLayout.minimumWidth`, in ADR-0042's history).
-  `NoteTextView` is a plain NSTextView with the page's face and the
-  note's own undo; it has no markdown restyle or list automation.
+  Since phase 3 (ADR-0045) the note's surface IS an `InkTextView`, built
+  by `InkEditorView.makeSurface` with its own `Coordinator`; the
+  coordinator edits `InkDocument` (`.sheet` or `.note(chip:)`) and
+  `PageModel.applyOps(to:)`/`stepEdit`/`canStepEdit`/`editStepName`/
+  `finishEditingGroup(_:)` route it. A note's coordinator never holds a
+  `currentSheet`, so page only paths (seals, chips, block stamps, view
+  state) stand aside by their existing guards; `writesNote` gates the
+  rest (Esc, ⇧Esc, ⌥Z, inset). `NoteTextView` is gone.
 - `InkTextView.performKeyEquivalent` runs for every view in the window,
-  first responder or not, so `yieldsKeys` must decline while the name
-  field's editor or a `NoteTextView` holds the keys.
+  first responder or not. Since ADR-0046 one predicate decides:
+  `answersChords` (page: no other `NSTextView` first responder here or in
+  another key window; note: it is first responder). The page's Edit menu
+  actions and `refreshLanguageActionAvailability` consult it too, and
+  Choose Language goes down the chain with a `CodeLanguageChoice`.
 - Review fixes (same day, app 0.31.2 to 0.31.4, ffi 0.37.0): the name
   field is a subview of the page, so `begin` sets its `nextResponder` to
   the page's own; otherwise the Edit menu's nil-targeted undo:, seal and
@@ -44,6 +55,16 @@ Built 2026-10-13, app 0.29.0 to 0.31.1, shell only (no FFI change).
 **Why:** these choices are not visible from the tickets, and the
 hardware checks (docs/qa/verification-procedures/sealed-zones-and-note.md,
 rename-in-place.md) have not been run.
+
+Phase 3 traps (2026-10-13): never call `Coordinator.textView(_:clickedOnLink:at:)`
+in a test, since in a full run `NSApp.currentEvent` can be a stale event
+and a ⌘ in its flags would open a real URL; an `NSWindow` made in a test
+needs `isReleasedWhenClosed = false` before `close()`, or the run hangs
+on the over release; a shift extension over a block also takes the
+space after it (same place on screen), so assert the object whole, not
+a range; `answerer(of:in:)` and `pageMenuActions` are shared in
+`ResponderChain.swift`; any test that sends ⇧⌘V or a seal must give its
+client `useMemoryPasteboardForTests()` first, in case the page answers.
 
 **How to apply:** test traps: a zone press test must hover first
 (`hoverRefreshInput` then `refreshHover`); never synthesize a press that
