@@ -427,8 +427,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   elsewhere on the block still selects it, and an unnamed block has no
   zones. A long name gives way before the value. The object's menu
   gains *Copy name* and *Copy name=value, decrypted* on a named
-  object, and VoiceOver hears the name with the block. Nothing names
-  an object yet (issue #245).
+  object, and VoiceOver hears the name with the block.
 
 - **A sealed object can carry a note, in the core** (Law 0001, ADR-0043,
   issue #243; `companion-core` 0.28.0, `companion-ffi` 0.36.0). The
@@ -443,7 +442,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It is written as text after the name in the chip's record, so the
   format's version does not change, and its undo starts empty after a
   relaunch. An older build drops it at its next save, as it drops the
-  name. No popover shows it yet (issue #246).
+  name.
 
 - **The core copies `NAME=value` for a named sealed object** (Law 0001,
   ADR-0043, issue #242; `companion-core` 0.27.0, `companion-ffi`
@@ -453,8 +452,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transient and concealed, cleared after the core's interval only if
   the clipboard still holds that write, and one `sent` record that does
   not carry the name. It refuses an unnamed object and an image. The
-  buffer is allocated at its final size. Nothing in the app offers it
-  yet (issue #244).
+  buffer is allocated at its final size.
 
 - **A sealed object can carry a typed name, in the core** (Law 0001,
   ADR-0043, issue #241; `companion-core` 0.26.0, `companion-ffi`
@@ -467,8 +465,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name is a trailing field of the chip's record in the sealed state
   file, so the format's version does not change, and an older build
   that opens the file restores the chip without its name and drops the
-  name at its next save. No field to type a name into exists yet (issue
-  #245).
+  name at its next save.
 
 - **A click on a page's time in the gutter labels it** (app 0.27.0;
   Law 0007, issue #248). The field opens where the time stood, on the
