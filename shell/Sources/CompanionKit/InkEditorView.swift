@@ -2487,15 +2487,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// The object's menu in D-41's order as ADR-0042 extends it, nil
         /// marking a separator: the copies and the link, the object's own
         /// words, then the removal set apart.
-        static func chipMenuItems(named: Bool, hasNote: Bool) -> [ChipMenuItem?] {
+        static func chipMenuItems(named: Bool, hasNote: Bool, kind: String) -> [ChipMenuItem?] {
             (named ? [.copyName] : []) + [.copyDecrypted]
-                + (named ? [.copyNameValue] : [])
+                + (named && SealedBlockLayout.copiesNameValue(kind: kind) ? [.copyNameValue] : [])
                 + [.createLink, nil, named ? .rename : .name, hasNote ? .editNote : .note, nil, .remove]
         }
 
         /// The menu's titles, pinned by a test rather than read off a screen.
-        static func chipMenuTitles(named: Bool, hasNote: Bool) -> [String?] {
-            chipMenuItems(named: named, hasNote: hasNote).map { $0?.title }
+        static func chipMenuTitles(named: Bool, hasNote: Bool, kind: String) -> [String?] {
+            chipMenuItems(named: named, hasNote: hasNote, kind: kind).map { $0?.title }
         }
 
         /// A plain click on a chip selects the whole object and never
@@ -2577,7 +2577,8 @@ public struct InkEditorView: NSViewRepresentable {
         func appendChipItems(to menu: NSMenu, at charIndex: Int) {
             guard let attachment = chipAttachment(at: charIndex) else { return }
             for entry in Self.chipMenuItems(
-                named: attachment.info.name != nil, hasNote: attachment.info.hasNote)
+                named: attachment.info.name != nil, hasNote: attachment.info.hasNote,
+                kind: attachment.info.kind)
             {
                 guard let entry else {
                     menu.addItem(.separator())
@@ -5673,7 +5674,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
                 nameWidth: editingWidth ?? fittedName.size().width,
                 equalsWidth: equals.size().width,
                 valueWidth: fittedValue.size().width,
-                height: wholeValue.size().height
+                height: wholeValue.size().height,
+                copiesNameValue: SealedBlockLayout.copiesNameValue(kind: info.kind)
             )
         )
     }
@@ -5766,13 +5768,15 @@ final class SealedBlockCell: NSTextAttachmentCell {
         /// A named row's three runs end to end from the leading edge, at
         /// the widths they are drawn at.
         func namedRow(
-            nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat
+            nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat,
+            copiesNameValue: Bool
         ) -> SealedBlockLayout.NamedRow {
             let name = NSRect(x: left, y: bottomRowY, width: nameWidth, height: height)
             let equals = NSRect(x: name.maxX, y: bottomRowY, width: equalsWidth, height: height)
             let value = NSRect(x: equals.maxX, y: bottomRowY, width: valueWidth, height: height)
             return SealedBlockLayout.NamedRow(
-                name: name, equals: equals, value: value, band: rowBand, metrics: metrics)
+                name: name, equals: equals, value: value, band: rowBand, metrics: metrics,
+                copiesNameValue: copiesNameValue)
         }
 
         /// Where the excerpt is drawn and where its tail is cut: the

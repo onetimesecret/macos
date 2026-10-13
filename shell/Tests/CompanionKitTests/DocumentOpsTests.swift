@@ -508,24 +508,31 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testTheChipMenuOffersPlaintextByName() throws {
         // D-41's order as ADR-0042 extends it; nil is a separator.
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false),
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
             [
                 "Copy decrypted contents", "Create one-time link…", nil, "Name…", "Note…", nil,
                 "Remove protected content",
             ])
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: true),
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: true, kind: "text"),
             [
                 "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
                 "Create one-time link…", nil, "Rename…", "Edit note…", nil,
                 "Remove protected content",
             ])
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false)[5...6],
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "text")[5...6],
             ["Rename…", "Note…"])
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true)[3...4],
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true, kind: "text")[3...4],
             ["Name…", "Edit note…"])
+        // The core composes `NAME=value` for text alone (ADR-0043 point 7).
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "image"),
+            [
+                "Copy name", "Copy decrypted contents", "Create one-time link…", nil, "Rename…",
+                "Note…", nil, "Remove protected content",
+            ])
         makeEditor()
         textView.insertText(
             "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -540,7 +547,7 @@ final class DocumentOpsWiringTests: XCTestCase {
         coordinator.appendChipItems(to: menu, at: 3)
         XCTAssertEqual(
             menu.items.map { $0.isSeparatorItem ? nil : $0.title },
-            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false),
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
             "an unnamed object's menu is not the unnamed order")
         let copy = try XCTUnwrap(
             menu.items.first { $0.title == "Copy decrypted contents" })

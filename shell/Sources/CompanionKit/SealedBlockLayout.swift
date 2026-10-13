@@ -72,6 +72,12 @@ enum SealedBlockLayout {
         case value
     }
 
+    /// Whether an object of `kind` copies `NAME=value`: text alone, as
+    /// the core composes it (ADR-0043 point 7, ADR-0044).
+    static func copiesNameValue(kind: String) -> Bool {
+        kind == "text"
+    }
+
     /// Where a named row's three runs stand and what the pointer finds
     /// there, in the coordinates the block is drawn in.
     struct NamedRow: Equatable, Sendable {
@@ -81,13 +87,17 @@ enum SealedBlockLayout {
         /// The band a zone answers in: the block's lower half.
         let band: CGRect
         let metrics: Metrics
+        /// Whether `=` is a zone; false on an object that copies no `NAME=value`.
+        let copiesNameValue: Bool
 
         /// The name and value zones are their runs; the `=` zone is its
         /// glyph and `equalsSlop` either side, taken from those runs.
         func zone(at point: CGPoint) -> Zone? {
             guard point.y >= band.minY, point.y < band.maxY else { return nil }
             let slop = metrics.equalsSlop
-            if point.x >= equals.minX - slop, point.x < equals.maxX + slop { return .equals }
+            if copiesNameValue, point.x >= equals.minX - slop, point.x < equals.maxX + slop {
+                return .equals
+            }
             if point.x >= name.minX, point.x < name.maxX { return .name }
             if point.x >= value.minX, point.x < value.maxX { return .value }
             return nil

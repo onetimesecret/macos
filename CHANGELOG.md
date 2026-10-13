@@ -697,6 +697,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A named image offers no `name=value` copy** (app 0.31.4; ADR-0044,
+  issue #244). A sealed image could be named, and its row then offered
+  an `=` zone whose seat read `copies name=value, decrypted`, and its
+  menu *Copy name=value, decrypted*, though the core composes
+  `NAME=value` for text alone. Both did nothing when clicked. An image's
+  row still reads `NAME=excerpt`, but its `=` is not a zone and the
+  item is gone; its name and contents copy as before.
+
 - **A closed note, or a shut name field, holds none of its text**
   (Law 0001, ADR-0043, issues #245 and #246). The note's view kept the
   last note's text after it closed, past its object's removal and its

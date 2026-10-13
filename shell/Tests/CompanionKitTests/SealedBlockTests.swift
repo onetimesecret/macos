@@ -404,7 +404,8 @@ final class SealedBlockTests: XCTestCase {
     func testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide() {
         let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.blockHeight)
         let layout = SealedBlockCell.contentLayout(in: frame)
-        let row = layout.namedRow(nameWidth: 66, equalsWidth: 6, valueWidth: 99, height: 14)
+        let row = layout.namedRow(
+            nameWidth: 66, equalsWidth: 6, valueWidth: 99, height: 14, copiesNameValue: true)
         let y = row.name.midY
 
         XCTAssertEqual(row.name.minX, layout.left)
@@ -431,7 +432,8 @@ final class SealedBlockTests: XCTestCase {
     func testThePillRunsPastItsRunAndOverTheEqualsSpansTheLine() {
         let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.blockHeight)
         let row = SealedBlockCell.contentLayout(in: frame)
-            .namedRow(nameWidth: 66, equalsWidth: 6, valueWidth: 99, height: 14)
+            .namedRow(
+                nameWidth: 66, equalsWidth: 6, valueWidth: 99, height: 14, copiesNameValue: true)
 
         let name = row.pill(for: .name)
         XCTAssertEqual(name.minX, row.name.minX - 3)
@@ -499,6 +501,33 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertNil(
             SealedBlockCell(info: chip()).namedRow(in: wideFrame),
             "an unnamed row has no zones")
+    }
+
+    /// A named image's row reads `NAME=excerpt`, but its `=` is no zone,
+    /// since the core composes `NAME=value` for text alone (ADR-0043 point 7).
+    func testANamedImagesEqualsIsNoZone() throws {
+        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.blockHeight)
+        let image = ChipInfo(
+            chipId: 8, kind: "image", excerpt: "PNG image", sizeLabel: "small",
+            concealed: false, name: "LOGO")
+        let row = try XCTUnwrap(SealedBlockCell(info: image).namedRow(in: frame))
+        XCTAssertEqual(row.name.string + row.equals.string + row.value.string, "LOGO=PNG image")
+        let geometry = row.geometry
+        let y = geometry.name.midY
+        for x in stride(from: geometry.name.minX, to: geometry.value.maxX, by: 0.5) {
+            XCTAssertNotEqual(geometry.zone(at: NSPoint(x: x, y: y)), .equals, "at \(x)")
+        }
+        XCTAssertNil(geometry.zone(at: NSPoint(x: geometry.equals.midX, y: y)))
+        XCTAssertEqual(geometry.zone(at: NSPoint(x: geometry.name.maxX - 1, y: y)), .name)
+        XCTAssertEqual(geometry.zone(at: NSPoint(x: geometry.value.minX + 1, y: y)), .value)
+
+        let text = try XCTUnwrap(SealedBlockCell(info: named("LOGO")).namedRow(in: frame))
+        XCTAssertEqual(
+            text.geometry.zone(at: NSPoint(x: text.geometry.equals.midX, y: y)), .equals,
+            "the control: a text object's `=`")
+        XCTAssertTrue(SealedBlockLayout.copiesNameValue(kind: "text"))
+        XCTAssertFalse(SealedBlockLayout.copiesNameValue(kind: "image"))
+        XCTAssertFalse(SealedBlockLayout.copiesNameValue(kind: "a kind not yet made"))
     }
 
     /// The seat says what a click on the hovered zone does, before the
