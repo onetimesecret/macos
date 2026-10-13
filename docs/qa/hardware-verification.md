@@ -371,7 +371,16 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   page after Escape and Return, the strip's field selects its title
   whole, and the pad cell's field opens without a sheet, keeps its keys
   and its refusal line over an empty Return, and keeps the name on
-  Escape (issues #248, #249, #250). Not an ADR-0016 case.
+  Escape (issues #248, #249, #250); a sealed object's name field opens
+  by its double click and keeps its keys over a refusal (issue #245).
+  Not an ADR-0016 case.
+
+- [`sealed-zones-and-note.md`](verification-procedures/sealed-zones-and-note.md).
+  Owner: delano. A named sealed row's zones under a real pointer, the
+  ember beat with Reduce Motion on and off, and the note on the raised
+  card: a press in it leaves the card raised, ⇧Esc and Esc expand,
+  contract and close it, its ⌘Z stays its own, and it follows its block
+  as the page scrolls (issues #244, #246). Not an ADR-0016 case.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally
