@@ -37,9 +37,9 @@ trimmed draft to the model; Escape, the keyboard going elsewhere and the
 slot being reassigned under the field all leave the name as it was. An
 empty Return is a commit that clears the typed name and lets the default
 stand again; a seat with no default, a pad's, refuses it. No sheet, alert
-or panel is involved at any step. Where the
-seat shows a default beside the name, the default keeps showing to the
-right of the text once a name is typed.
+or panel is involved at any step. Where the seat shows a default beside
+the name, the default keeps showing to the right of the text once a name
+is typed.
 
 ## Why this rule
 
@@ -128,11 +128,11 @@ without a test says what it is owed by.
 | the gutter's hit target while open | opening | the field, not the composed header, takes the click | `DayScrollTests.swift` `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename` |
 | the gutter at rest | showing | the day once, then the time; only a typed name is drawn | `DayScrollProjectionTests.swift` `testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone`, `testTheGutterDrawsOnlyATypedName`; `DayScrollTests.swift` `testAGutterDrawsATypedNameAndNoGauge`; `StreamNavigatorTests.swift` `testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage` |
 | the gutter's menu | opening | *Rename page…* opens the field in the gutter | `DayScrollTests.swift` `testTheDayGutterOffersTheSameVerbsAsTheStrip` |
-| a click on the gutter's time | opening | opens the field in the time's seat; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41` | owed: no issue yet; `DayHeaderView.dayText` and `place` change |
-| the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | outcomes through `TabRename` (rows above); the field itself: owed, no issue yet |
-| the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | owed: no issue yet; the contradicting build is `PadPickerView.nameEditor` |
-| a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one | owed: no issue yet; `PadNameDraft.validationMessage` supplies the words |
-| a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | owed: no issue yet; Law 0001's 2026-10-13 amendment |
+| a click on the gutter's time | opening | opens the field in the time's seat; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41` | owed: issue 248; `DayHeaderView.dayText` and `place` change |
+| the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | outcomes through `TabRename` (rows above); the field itself: owed, issue 250 |
+| the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | owed: issue 249; the contradicting build is `PadPickerView.nameEditor` |
+| a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one | owed: issue 249; `PadNameDraft.validationMessage` supplies the words |
+| a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | owed: issue 245 (the field), issue 241 (the core's setter); Law 0001's 2026-10-13 amendment |
 | a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | owed: issue 241 (the core's refusal), issue 245 (the field) |
 
 ## What the rule forbids
@@ -177,14 +177,16 @@ outcome tests), `ModalSessionTests.testRenameNeverRunsAModalSession`,
 Core and seam: a name is page-owned text; `companion_tab_set_title`
 (`crates/ffi/src/lib.rs`) carries the tab's, capped core-side. The pad's
 goes through the catalog (`PadCatalogTests`). The sealed object's is owed
-with Law 0001's amendment, refused core-side outside ADR-0042's charset.
+with Law 0001's amendment, refused core-side outside ADR-0042's charset
+(issue 241).
 
 Tests that pin the contradicting build and are rewritten when the owed
 rows land: none named; `PadPickerView.nameEditor` has no test of its own.
 
-Owed: the gutter's click and the time to the right; the pad cell's field
-and the sheet's removal; the sealed object's name field; a test for the
-strip's field.
+Owed: the gutter's click and the time to the right (issue 248); the pad
+cell's field, the sheet's removal and the refusal line that stays while
+the field is open (issue 249); the sealed object's name field (issue 245,
+over issue 241's setter); a test for the strip's field (issue 250).
 
 ## Amendments
 
@@ -203,3 +205,5 @@ strip's field.
   name's charset is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case
   kept, refused core-side. The paragraph under the rule, the Opening,
   Committing and Refusing classes and four rows change; one row is added.
+- 2026-10-13: Rows amendment (issue 251). Every owed row, and the owed
+  list under the tests, points at its issue in epic 252.

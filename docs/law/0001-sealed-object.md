@@ -47,8 +47,9 @@ The model combines two established patterns:
    a token or an embedded file in a rich text editor. It is one position,
    one unit, never a run of characters.
 2. **Explicit declassification**: the shell never receives the sealed
-   payload from the core. It may hold visible ink before sealing and the
-   policy-approved mechanical excerpt afterward. Named egress operations
+   payload from the core. It may hold visible ink before sealing, and the
+   policy-approved mechanical excerpt and the object's name and note
+   afterward. Named egress operations
    write the complete payload core-side (ADR-0012 Amendment 1).
 
 The rule serves the first tenet (losing work is unforgivable, even here) by
@@ -58,25 +59,26 @@ plaintext only: the mechanical excerpt, head…tail of at most 24 plaintext
 characters, computed by the core (`text_face` in `crates/core/src/sheet.rs`).
 The algorithm counts Rust `char` values and is deliberately not
 grapheme-aware; the result only has to be recognised by the person who pasted
-it (D-27). There
+it (D-27). A name and a note, once typed, are page-owned ink beside the
+object, never payload (2026-10-13 amendment). There
 is no reveal affordance at any privilege, so no label may imply one (D-08).
 
 ## Operation classes
 
 Every interaction involving a sealed item belongs to one of five classes:
 
-- **Ambient observation**: caret movement, find, word count and public
-  fallback representations inspect the document without reading a sealed
-  payload. The object remains one opaque unit.
+- **Ambient observation**: caret movement, find, word count, copying an
+  object's name and public fallback representations inspect the document
+  without reading a sealed payload. The object remains one opaque unit.
 - **Structural editing**: move, select, reference-only copy, cut, in-app
   paste, clone and remove-from-page act on document structure. Removal
   detaches rather than destroys and remains undoable (D-30).
 - **Classification**: sealing turns visible ink into a sealed object. It is
   one-way in the editor: ⌘Z does not restore the plaintext (D-30).
-- **Declassification/egress**: copy decrypted contents, decrypted drag,
-  promotion to a one-time link and plaintext export send the complete
-  payload through a named consequence. Payload writes remain core-side
-  (D-29, D-32).
+- **Declassification/egress**: copy decrypted contents (from the menu, the
+  value zone or `name=value`), decrypted drag, promotion to a one-time
+  link and plaintext export send the complete payload through a named
+  consequence. Payload writes remain core-side (D-29, D-32).
 - **Destruction/lifecycle**: page expiry and explicit burn destroy payload
   bytes and are not undoable (D-33).
 
@@ -129,23 +131,25 @@ without a test says what it is owed by.
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
 | copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
-| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | owed: no issue yet (2026-10-13 amendment) |
+| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | owed: issue 241 (the core's name), issue 245 (the field), issue 247 (the fragment) |
 | pointer over an unnamed object's bottom row | structural editing | no zones until the object is named: no pill, no seat words, and a click selects as anywhere on the block (D-40) | owed: issue 244 |
-| click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | owed: no issue yet |
-| click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | owed: no issue yet |
-| click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | owed: no issue yet |
-| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | owed: no issue yet |
+| click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | owed: issue 244 (the zone), issue 245 (the double click) |
+| click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | owed: issue 244 |
+| click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click | owed: issue 242 (the core's write), issue 244 (the zone) |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | owed: issue 243 (the core's note), issue 246 (the popover), issue 247 (the fragment) |
 
 ### Sealed-fragment representation
 
 The private type is `com.onetimesecret.onetimepad.sealed-fragment` with the
 `.debug` suffix on development builds. Its envelope is versioned and contains
 an ordered sequence of only two node kinds: visible ink runs and sealed-object
-UUID references. A one-object copy is a one-reference fragment. The envelope
-never contains a sealed payload or ciphertext.
+UUID references. A reference may carry the object's name and note as two
+optional text fields, both ink. A one-object copy is a one-reference
+fragment. The envelope never contains a sealed payload or ciphertext.
 
 Copy, cut, paste and clone preserve node order for a selection such as
-`ink → object A → ink → object B → ink`. Multi-object detach, reattach and
+`ink → object A → ink → object B → ink`, and carry each object's name and
+note with it. Multi-object detach, reattach and
 clone are core transactions: an unexpected failure commits none of the
 structural or payload-state changes. Resolution to an expired, burned or
 unavailable placeholder is an expected paste result, not a partial failure.
@@ -175,11 +179,14 @@ resolve as unavailable rather than being guessed expired.
 - The shell never receives a sealed payload from the core. Swift may hold
   visible ink before classification and the mechanical excerpt afterward;
   `ChipInfo.excerpt` and `companion_sheet_document_json` make that residual
-  explicit. Complete payload egress remains core-side.
+  explicit. Swift may also hold the object's name and note, which are ink
+  and never payload. Complete payload egress remains core-side.
 - A sealed object's ledger record contains no payload or excerpt. This is
   pinned by `store.rs`
   `a_sealed_chip_is_content_free_in_the_ledger_from_the_moment_it_exists`
-  and `a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger`.
+  and `a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger`. Nor does
+  it contain the object's name or note; the tests are owed by issues 241
+  and 243.
 - OnetimePad does not write decrypted drag data to the general pasteboard.
   Apple's [`NSPasteboard` documentation](https://developer.apple.com/documentation/appkit/nspasteboard/)
   says, "The drag pasteboard is used to
@@ -192,18 +199,25 @@ resolve as unavailable rather than being guessed expired.
 
 The block is full measure, with an 8 px radius, hairline border and 8 by 12
 padding. It shows the tracked `SEALED CONTENT` label, the mechanical excerpt
-and the size class as metadata; it has no pressable body. Handles appear on
-hover or selection without changing layout. The excerpt is pinned by
-`store.rs` `sealed_chips_carry_the_mechanical_face`; geometry and handles are
-owed by issue 169 (`SealedBlockTests`).
+and the size class as metadata. Once named, the bottom row reads
+`NAME=excerpt`; once a note exists, the metadata reads `<size class> · note`.
+Its body does not press, except a named object's bottom row, whose three
+copy zones copy (the rows above); an unnamed object's body does not press
+at all. Handles appear on hover or selection without changing
+layout, and so does the pill under a hovered zone, whose geometry
+[ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md) fixes.
+The excerpt is pinned by `store.rs` `sealed_chips_carry_the_mechanical_face`;
+the block's geometry by `SealedBlockTests` (issue 169, closed); the name,
+the zones and the doorway are owed by issues 244 and 246.
 
 Fixed details the rows rely on:
 
 - The private pasteboard type is
   `com.onetimesecret.onetimepad.sealed-fragment`, with the `.debug` suffix
   on development builds so development and production cannot resolve each
-  other's references. It carries a version and ordered ink/UUID nodes.
-  Never the payload, never ciphertext (D-31).
+  other's references. It carries a version and ordered ink/UUID nodes,
+  each UUID node with the object's name and note as two optional text
+  fields. Never the payload, never ciphertext (D-31).
 - The plain text placeholder is `[sealed content · <size class>]`, a size
   class from `SizeClass` (`crates/core/src/ledger.rs`), never a count.
 - Three complete-payload egress points, all core-side writes: copy
@@ -211,7 +225,10 @@ Fixed details the rows rely on:
   recommended path into a form field because OnetimePad does not put its
   decrypted data on the general pasteboard; copy decrypted does and is the
   riskier fallback. No claim is made about third-party observation,
-  clipboard history or erasure of drag-pasteboard data.
+  clipboard history or erasure of drag-pasteboard data. Copying the value
+  zone or `name=value` is copy decrypted: the core composes
+  `NAME=<plaintext>` and writes it by the same route, so the count stays
+  three (ADR-0042). Copying the name is ambient observation, not egress.
 - Copy-out arms a change-count-guarded clear attempt after the core's
   60-second constant (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`),
   read through `companion_clipboard_clear_seconds`. The general pasteboard
@@ -221,19 +238,27 @@ Fixed details the rows rely on:
 - Time belongs to the page. A detached object takes its page's clock; there
   is no per chip TTL (`sheet.rs` forbids per chip timers; maintainer
   decision 2026-08-07; D-33).
-- The object's menu, in the copy register of D-15:
+- The object's menu, in the copy register of D-15, named and with a note:
 
   ```text
-  Copy decrypted contents        ⇧⌘C
+  Copy name
+  Copy decrypted contents              ⇧⌘C
+  Copy name=value, decrypted
   Create one-time link…
+  ────────────────────────
+  Rename…
+  Edit note…
   ────────────────────────
   Remove protected content
   ```
 
-  The chord is the keymap's (`chip::CopyDecrypted`) and acts on exactly
-  one selected object; the removal follows a separator, uses AppKit's
-  standard menu styling, and stays structural and undoable (D-41 of the
-  2026-0915 stream navigator record).
+  Unnamed, *Copy name* and *Copy name=value, decrypted* are absent and
+  *Name…* stands for *Rename…*; without a note, *Note…* stands for *Edit
+  note…* (ADR-0042). The chord is the keymap's (`chip::CopyDecrypted`)
+  and acts on exactly one selected object; the removal follows a
+  separator, uses AppKit's standard menu styling, and stays structural
+  and undoable (D-41 of the 2026-0915 stream navigator record, extended
+  by ADR-0042). The four new items are owed by issue 244.
 
 ## What the rule forbids
 
@@ -307,7 +332,8 @@ Shell (`shell/Tests/CompanionKitTests`, `scripts/test-shell.sh`):
 `FocusLawTests.testAChipWhosePageExpiredClearsTheDraftEvenWhileOthersRemain`
 (conceal-draft reconciliation after the target chip disappears; it does not
 pin chip expiry or lifecycle),
-`PageModelPreviewRenderingTests.testChipAttachmentSurvivesEveryScope`.
+`PageModelPreviewRenderingTests.testChipAttachmentSurvivesEveryScope`,
+`SealedBlockTests` (the block's geometry).
 
 Tests that pin the contradicting build and are rewritten when issue 170
 lands (removal detaches, undo reattaches): `store.rs`
@@ -319,12 +345,12 @@ lands (removal detaches, undo reattaches): `store.rs`
 `burning_a_chip_takes_the_stack_with_it`; `DocumentOpsTests`
 `testAnUndoResurrectingADeadChipIsStrippedSilently`.
 
-Owed: issue 169 (`SealedBlockTests`), issue 170 (the versioned
-sealed-fragment model, atomic multi-object detach/reattach/clone, lifecycle
-resolution, the lazy decrypted drag and their tests as named in the rows),
-issue 172 (the four interrupting dialogs; none is on a sealed path,
-but D-14 is strict and the seal, remove and copy decrypted paths must stay
-dialog free).
+Owed: issue 170 (the versioned sealed-fragment model, atomic multi-object
+detach/reattach/clone, lifecycle resolution, the lazy decrypted drag and
+their tests as named in the rows); issues 241 to 247 (the name and note,
+as named in the rows). Issues 169 (`SealedBlockTests`) and 172 (the
+interrupting dialogs) are closed; D-14 is strict and the seal, remove,
+copy decrypted and naming paths must stay dialog free.
 
 ## Amendments
 
@@ -392,3 +418,14 @@ dialog free).
   card narrower than the popover's minimum, the note takes the card's
   full content width. The click row and the five rows of the preceding
   entry change; one row is added.
+- 2026-10-13: Body amendment (issue 251). The body now agrees with the
+  name and note amendment: the rule's explanation names the name and note
+  as ink; the ambient and egress classes place copying the name, the
+  value zone and `name=value`; the fragment's references carry the two
+  optional text fields; the shell and the ledger invariants say what
+  Swift may hold and what the ledger never does; the presentation
+  invariants let a named object's bottom row press; the egress list puts
+  `name=value` under copy decrypted, so the count stays three; and the
+  menu shows the four new items. Every row the name and note added points
+  at its issue in epic 252. The owed list drops the closed issues 169 and
+  172, and the shell list names `SealedBlockTests`.
