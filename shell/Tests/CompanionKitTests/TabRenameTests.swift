@@ -2,11 +2,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The rename's decisions (D-14, issue #172), pinned apart from the
-/// fields that ask them. The strip's field is SwiftUI and cannot be
-/// driven under the runner, so its state lives in `TabRename.Field`,
-/// which the strip and the slot rail call and these tests drive; the
-/// gutter's field can be driven, and `ModalSessionTests` drives it.
+/// The rename's decisions (D-14, issue #172), apart from the fields that ask
+/// them, and `TabRename.Field`, the state the strip's SwiftUI field runs on.
 final class TabRenameTests: XCTestCase {
     func testReturnOverANewNameRenames() {
         XCTAssertEqual(
@@ -59,13 +56,9 @@ final class TabRenameTests: XCTestCase {
         XCTAssertEqual(field.opened, "deploy notes")
     }
 
-    func testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn() {
-        // The derived title moves while the field is open; judged against
-        // the new title, the untouched draft would freeze into a name.
+    func testTheFieldsReturnKeepsAnUntouchedDraftAndRenamesAChangedOne() {
         var field = TabRename.Field()
         field.open(on: "deploy notes")
-        let titleNow = "deploy notes, and more"
-        XCTAssertNotEqual(field.draft, titleNow)
         XCTAssertEqual(field.end(committed: true), .keep)
         XCTAssertFalse(field.isOpen)
 
