@@ -5056,6 +5056,30 @@ public final class PageModel: ObservableObject {
         }
     }
 
+    /// A line `holdNotice` put up, which only its own release takes down.
+    public struct NoticeHold: Equatable, Sendable {
+        fileprivate let generation: Int
+    }
+
+    /// Says `message` under the page with no dwell, for a refusal that
+    /// stands while a field stays open (Law 0007, Refusing; D-14).
+    @discardableResult
+    public func holdNotice(_ message: String, tone: NoticeTone = .actionable) -> NoticeHold {
+        notice = message
+        noticeTone = tone
+        noticeAction = nil
+        noticeGeneration += 1
+        return NoticeHold(generation: noticeGeneration)
+    }
+
+    /// Takes a held line down, unless a newer notice has replaced it.
+    public func releaseNotice(_ hold: NoticeHold) {
+        guard noticeGeneration == hold.generation else { return }
+        noticeGeneration += 1
+        notice = nil
+        noticeAction = nil
+    }
+
     /// The notice's button was pressed: run it, and take the line down
     /// with it, since what it offered has been done.
     public func performNoticeAction() {
