@@ -697,6 +697,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A drop on a sealed object's note or name field lands nowhere**
+  (app 0.31.3; ADR-0044, issues #245 and #246). Text dragged from
+  another app onto an open note, or onto the name field, went into it
+  as plain text, and the note's went to the core as the note's ink,
+  where the same drop on the page would have been sealed. Both now take
+  only a drag of their own text, as the page takes nothing over a file.
+
 - **The Edit menu leaves the page alone while a sealed name is typed**
   (app 0.31.2; Law 0007, issue #245). The name's field stood inside
   the page's text view, so the menu's Undo and Redo, which ⌘Z and ⇧⌘Z

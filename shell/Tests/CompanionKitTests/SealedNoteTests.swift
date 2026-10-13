@@ -368,6 +368,33 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(page.model.noteText(chip: page.chip), "")
     }
 
+    /// A drag from elsewhere finds nowhere to land in the note, since a
+    /// seal cannot stand in it (ADR-0043 point 3); a drag of the note's own
+    /// ink still moves it.
+    func testTheNoteTakesNoDropFromElsewhere() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("kept", into: editor)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.declareTypes([.string], owner: nil)
+        board.setString("hunter2", forType: .string)
+        let point = editor.textView.convert(NSPoint(x: 8, y: 8), to: nil)
+
+        let own = DraggingInfoStub(
+            pasteboard: board, source: editor.textView, location: point, window: page.window)
+        XCTAssertNotEqual(editor.textView.draggingEntered(own), [], "the control: its own drag")
+
+        let other = DraggingInfoStub(
+            pasteboard: board, source: nil, location: point, window: page.window)
+        XCTAssertEqual(editor.textView.draggingEntered(other), [])
+        XCTAssertEqual(editor.textView.draggingUpdated(other), [])
+        XCTAssertFalse(editor.textView.performDragOperation(other))
+        XCTAssertEqual(editor.textView.string, "kept")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "kept")
+    }
+
     /// A named object's note is headed with its name.
     func testANamedObjectsNoteIsHeadedWithItsName() throws {
         let page = try makePage()

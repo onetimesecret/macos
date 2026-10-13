@@ -306,6 +306,32 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertTrue(window.firstResponder === page.textView, "the keys did not come back")
     }
 
+    /// A drag from elsewhere finds nowhere to land in the field, since a
+    /// seal cannot stand in a name; the draft is as it was.
+    func testTheFieldTakesNoDropFromElsewhere() throws {
+        let page = try makePage()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = page.scroll
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "KEPT"
+        let fieldEditor = try XCTUnwrap(editor.field.currentEditor() as? NSTextView)
+        XCTAssertTrue(fieldEditor.allowsUndo, "the field's typing has no undo")
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.declareTypes([.string], owner: nil)
+        board.setString("hunter2", forType: .string)
+        let other = DraggingInfoStub(
+            pasteboard: board, source: nil,
+            location: fieldEditor.convert(NSPoint(x: 2, y: 2), to: nil), window: window)
+        XCTAssertEqual(fieldEditor.draggingEntered(other), [])
+        XCTAssertEqual(fieldEditor.draggingUpdated(other), [])
+        XCTAssertFalse(fieldEditor.performDragOperation(other))
+        XCTAssertEqual(editor.field.stringValue, "KEPT")
+    }
+
     /// The responder a nil-targeted `action` reaches from the window's
     /// first responder, as the Edit menu's items find their target.
     private func answerer(of action: Selector, in window: NSWindow) -> NSResponder? {

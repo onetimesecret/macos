@@ -93,8 +93,26 @@ struct ChipRename {
     }
 }
 
+/// The name field's cell, which edits through a field editor of its own
+/// that takes no drop from elsewhere (ADR-0044).
+final class SealedNameFieldCell: NSTextFieldCell {
+    private let editor: NSTextView = {
+        let editor = OwnDragsOnlyTextView()
+        editor.isFieldEditor = true
+        editor.allowsUndo = true
+        return editor
+    }()
+
+    override func fieldEditor(for controlView: NSView) -> NSTextView? { editor }
+}
+
 /// The field laid over a sealed block's name seat in the page's text view.
 final class SealedNameField: NSTextField {
+    override class var cellClass: AnyClass? {
+        get { SealedNameFieldCell.self }
+        set {}
+    }
+
     /// The outline and fill the drawing gives the field (ADR-0042 point 8).
     override func draw(_ dirtyRect: NSRect) {
         let metrics = SealedBlockLayout.metrics(containerWidth: bounds.width)

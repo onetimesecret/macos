@@ -172,9 +172,29 @@ final class NotePopoverView: NSView {
     }
 }
 
+/// A text view that takes only drags of its own ink: a drop from elsewhere
+/// is the page's to seal, and no seal can stand here (ADR-0044).
+class OwnDragsOnlyTextView: NSTextView {
+    private func isOwn(_ sender: NSDraggingInfo) -> Bool {
+        (sender.draggingSource as? NSView) === self
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isOwn(sender) ? super.draggingEntered(sender) : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isOwn(sender) ? super.draggingUpdated(sender) : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isOwn(sender) && super.performDragOperation(sender)
+    }
+}
+
 /// The note's writing surface: the page's face, the keymap's undo chords
 /// on the note's own stack, plain paste, and ink only.
-final class NoteTextView: NSTextView {
+final class NoteTextView: OwnDragsOnlyTextView {
     weak var editor: SealedNoteEditor?
     /// The gesture behind the edit in flight, when it is not typing.
     var pendingIntent: EditorEditIntent?
