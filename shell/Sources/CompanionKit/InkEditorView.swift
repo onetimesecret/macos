@@ -194,11 +194,6 @@ public struct InkEditorView: NSViewRepresentable {
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
     ) -> InkTextView? {
         guard model.admits(.activeEditor, from: coordinator.surface) else { return nil }
-        let layoutManager = InkLayoutManager()
-        let container = InkTextContainer(size: NSSize(
-            width: 0, height: CGFloat.greatestFiniteMagnitude
-        ))
-        container.widthTracksTextView = true
         let storage = model.storage(for: sheetID)
         // The page's storage outlives any one editor instance, the
         // ledger and the empty state unmount the editor, even though
@@ -209,6 +204,52 @@ public struct InkEditorView: NSViewRepresentable {
         // building this editor before it dismantles the one it
         // replaces. Exactly one manager drives this storage.
         Coordinator.shedLayoutManagers(from: storage, keeping: nil)
+        let textView = makeSurface(over: storage, coordinator: coordinator)
+        textView.textContainerInset = NSSize(
+            width: 12, height: Coordinator.topInset
+        )
+        coordinator.currentSheet = sheetID
+        coordinator.appliedTypeface = InkStyle.typeface
+        coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
+        coordinator.appliedPreviewRendering = model.previewRendering
+        coordinator.appliedLanguageDetection = model.languageDetectionEnabled
+        coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
+        coordinator.restyle()
+        // The caret is the page's wherever the page is mounted, so the
+        // building seats it and every mount gets it: the page in its
+        // own scroller and the roll alike. Only when one was kept. A
+        // page nobody has left yet keeps the fresh view's caret, and
+        // the building stays silent about a selection it did not move.
+        if model.viewStates.carets[sheetID] != nil {
+            coordinator.restoreCaret(textView: textView, for: sheetID)
+        }
+        // The editor and the sealed paste route, which the summon-time
+        // offer's button takes so the chip lands at the caret and
+        // consent stays a gesture aimed at this page.
+        coordinator.announce(textView)
+        // One line per editor built. Two windows share this model
+        // (ADR-0033), and how many editors stand over it is a claim to
+        // check in the log stream rather than by eye: a transfer of
+        // ownership must produce exactly one of these, from the window
+        // that now owns. A later one with no transfer before it is the
+        // owner's own rebuild after the ledger or an empty slot.
+        // Mechanics only, never the page.
+        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+            .info("editor=built")
+        coordinator.refreshLanguageActionAvailability()
+        return textView
+    }
+
+    /// The writing surface over `storage`, wired to `coordinator`: the
+    /// page's editor and a sealed object's note are built by this one call
+    /// (ADR-0045), so the two cannot quietly stop agreeing on what ink is.
+    @MainActor
+    static func makeSurface(over storage: NSTextStorage, coordinator: Coordinator) -> InkTextView {
+        let layoutManager = InkLayoutManager()
+        let container = InkTextContainer(size: NSSize(
+            width: 0, height: CGFloat.greatestFiniteMagnitude
+        ))
+        container.widthTracksTextView = true
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
         // Only the mounted page's storage carries the coordinator as
@@ -251,9 +292,6 @@ public struct InkEditorView: NSViewRepresentable {
         // plain click edits (⌘-click is the opening gesture).
         textView.linkTextAttributes = [:]
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(
-            width: 12, height: Coordinator.topInset
-        )
         textView.typingAttributes = [
             .font: InkStyle.baseFont,
             .foregroundColor: NSColor.labelColor,
@@ -261,35 +299,6 @@ public struct InkEditorView: NSViewRepresentable {
         textView.delegate = coordinator
         textView.coordinator = coordinator
         coordinator.textView = textView
-        coordinator.currentSheet = sheetID
-        coordinator.appliedTypeface = InkStyle.typeface
-        coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
-        coordinator.appliedPreviewRendering = model.previewRendering
-        coordinator.appliedLanguageDetection = model.languageDetectionEnabled
-        coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
-        coordinator.restyle()
-        // The caret is the page's wherever the page is mounted, so the
-        // building seats it and every mount gets it: the page in its
-        // own scroller and the roll alike. Only when one was kept. A
-        // page nobody has left yet keeps the fresh view's caret, and
-        // the building stays silent about a selection it did not move.
-        if model.viewStates.carets[sheetID] != nil {
-            coordinator.restoreCaret(textView: textView, for: sheetID)
-        }
-        // The editor and the sealed paste route, which the summon-time
-        // offer's button takes so the chip lands at the caret and
-        // consent stays a gesture aimed at this page.
-        coordinator.announce(textView)
-        // One line per editor built. Two windows share this model
-        // (ADR-0033), and how many editors stand over it is a claim to
-        // check in the log stream rather than by eye: a transfer of
-        // ownership must produce exactly one of these, from the window
-        // that now owns. A later one with no transfer before it is the
-        // owner's own rebuild after the ledger or an empty slot.
-        // Mechanics only, never the page.
-        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
-            .info("editor=built")
-        coordinator.refreshLanguageActionAvailability()
         return textView
     }
 
@@ -514,7 +523,24 @@ public struct InkEditorView: NSViewRepresentable {
         @preconcurrency NSTextStorageDelegate {
         let model: PageModel
         weak var textView: InkTextView?
+        /// The page or file under the editor; always nil on a note's surface,
+        /// so every page only path stands aside there (ADR-0045).
         var currentSheet: UInt64?
+        /// The note this surface writes, by its object's chip, while one is open.
+        private(set) var noteChip: UInt64?
+        /// The popover that holds this surface when it is a note's, not the page's.
+        weak var noteHost: SealedNoteEditor?
+        /// A note's display only fence labels, which last as long as it stays open.
+        private var noteFenceLanguages: [Int: String] = [:]
+
+        /// What the surface's ink edits: the open note, or the mounted page or file.
+        var document: InkDocument? {
+            if let noteChip { return .note(chip: noteChip) }
+            return currentSheet.map(InkDocument.sheet)
+        }
+
+        /// Whether this is a note's surface rather than the page's.
+        var writesNote: Bool { noteHost != nil }
 
         /// Which content window this coordinator's mount stands in
         /// (ADR-0033), named on every presentation write it makes so
@@ -661,7 +687,7 @@ public struct InkEditorView: NSViewRepresentable {
         func observeOrdinaryPaste(payload data: Data) {
             invalidateOrdinaryPasteMeasurement()
             let started = ContinuousClock.now
-            guard let documentID = currentSheet, let textView else { return }
+            guard let documentID = detectionKey, let textView else { return }
             let selection = textView.selectedRange()
             let request = LanguageDetectionRequest(
                 documentID: documentID,
@@ -739,8 +765,8 @@ public struct InkEditorView: NSViewRepresentable {
             pendingAutomaticPaste = nil
             deferredPlainAutomaticPaste = nil
             languageDetectionService.invalidate()
-            guard currentSheet == pending.documentID,
-                  let textView, model.activeEditor === textView,
+            guard detectionKey == pending.documentID,
+                  let textView, isLiveSurface(textView),
                   textView.isEditable, !textView.hasMarkedText(),
                   let storage = textView.textStorage
             else {
@@ -781,8 +807,8 @@ public struct InkEditorView: NSViewRepresentable {
 
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
-            if !selectionChangeIsIncidental, let sheet = currentSheet, let textView {
-                model.finishEditingGroup(sheet: sheet, selection: textView.selectedRange())
+            if !selectionChangeIsIncidental, let document, let textView {
+                model.finishEditingGroup(document, selection: textView.selectedRange())
             }
             refreshLanguageActionAvailability()
             if refreshBlockMetadataFocus() {
@@ -792,7 +818,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
             guard pendingOrdinaryPasteRequestID == context.requestID,
-                  currentSheet == context.documentID,
+                  detectionKey == context.documentID,
                   UInt64(generation) == context.revision,
                   let textView,
                   textView.isEditable,
@@ -822,7 +848,7 @@ public struct InkEditorView: NSViewRepresentable {
             pendingManualRequestID = nil
             languageSuggestion = nil
             languageDetectionService.invalidate()
-            guard let documentID = currentSheet else { return false }
+            guard let documentID = detectionKey else { return false }
             let selection = destination.replacementRange
             let request = LanguageDetectionRequest(
                 documentID: documentID,
@@ -864,7 +890,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard !structuralStyleNeedsRebuild,
                   let textView, let storage = textView.textStorage,
                   textView.isEditable, !textView.hasMarkedText(),
-                  let sheet = currentSheet
+                  document != nil
             else { return nil }
             let selection = textView.selectedRange()
             guard selection.location != NSNotFound,
@@ -874,7 +900,7 @@ public struct InkEditorView: NSViewRepresentable {
             let intersectsFence = rangeIntersectsFence(selection)
             let inContainer = rangeIntersectsContainer(selection, in: storage.string)
             let intersectsAttachment = rangeIntersectsAttachment(selection, in: storage)
-            let markdownCapable = isMarkdownCapable(sheet: sheet)
+            let markdownCapable = isMarkdownCapable
             let destination = PasteDestinationContext(
                 documentText: storage.string,
                 replacementRange: selection,
@@ -937,8 +963,45 @@ public struct InkEditorView: NSViewRepresentable {
             return false
         }
 
-        private func isMarkdownCapable(sheet: UInt64) -> Bool {
-            !sheet.isFileID || model.fileRenderMode(for: sheet) == .markdown
+        /// A page and a note read as markdown; a file only in its markdown mode.
+        private var isMarkdownCapable: Bool {
+            guard case .sheet(let sheet) = document else { return document != nil }
+            return !sheet.isFileID || model.fileRenderMode(for: sheet) == .markdown
+        }
+
+        /// The id a language detection request carries: the sheet's, or the
+        /// note's chip; a surface only ever compares it with its own.
+        private var detectionKey: UInt64? { noteChip ?? currentSheet }
+
+        /// The display only fence labels of the document under the surface.
+        private func fenceLanguages() -> [Int: String] {
+            switch document {
+            case .sheet(let sheet): model.fenceRenderingLanguages(for: sheet)
+            case .note: noteFenceLanguages
+            case nil: [:]
+            }
+        }
+
+        private func setFenceLanguage(_ language: String, at paragraphLocation: Int) {
+            switch document {
+            case .sheet(let sheet):
+                model.setFenceRenderingLanguage(language, sheet: sheet, at: paragraphLocation)
+            case .note: noteFenceLanguages[paragraphLocation] = language
+            case nil: break
+            }
+        }
+
+        private func clearFenceLanguages() {
+            switch document {
+            case .sheet(let sheet): model.clearFenceRenderingLanguages(for: sheet)
+            case .note: noteFenceLanguages = [:]
+            case nil: break
+            }
+        }
+
+        /// Whether `textView` is still the surface a captured paste was for.
+        private func isLiveSurface(_ textView: InkTextView) -> Bool {
+            writesNote ? noteChip != nil : model.activeEditor === textView
         }
 
         private func isCurrentAutomaticPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -947,7 +1010,7 @@ public struct InkEditorView: NSViewRepresentable {
                   pendingAutomaticPaste.requestID == context.requestID,
                   pendingAutomaticPaste.documentID == context.documentID,
                   pendingAutomaticPaste.revision == context.revision,
-                  currentSheet == context.documentID,
+                  detectionKey == context.documentID,
                   UInt64(generation) == context.revision,
                   let textView, textView.isEditable, !textView.hasMarkedText()
             else { return false }
@@ -1013,7 +1076,7 @@ public struct InkEditorView: NSViewRepresentable {
             let selectionIsEmpty: Bool?
             if PageModel.languageDetectionFeaturesAvailable,
                let textView, let storage = textView.textStorage,
-               currentSheet != nil, textView.isEditable, !textView.hasMarkedText()
+               document != nil, textView.isEditable, !textView.hasMarkedText()
             {
                 let selection = textView.selectedRange()
                 selectionIsEmpty = selection.location != NSNotFound
@@ -1149,7 +1212,7 @@ public struct InkEditorView: NSViewRepresentable {
                   context.documentID == target.documentID,
                   context.revision == target.revision,
                   context.targetRange == target.detectionRange,
-                  currentSheet == target.documentID,
+                  detectionKey == target.documentID,
                   UInt64(generation) == target.revision,
                   let textView, textView.isEditable, !textView.hasMarkedText(),
                   textView.selectedRange() == target.selectionSnapshot
@@ -1159,7 +1222,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         private func manualLanguageTarget() -> ManualLanguageTarget? {
             guard let textView, let storage = textView.textStorage,
-                  let documentID = currentSheet, textView.isEditable,
+                  let documentID = detectionKey, textView.isEditable,
                   !textView.hasMarkedText()
             else { return nil }
             let selection = textView.selectedRange()
@@ -1167,7 +1230,7 @@ public struct InkEditorView: NSViewRepresentable {
                 let destination = PasteDestinationContext(
                     documentText: storage.string,
                     replacementRange: selection,
-                    isMarkdownCapable: isMarkdownCapable(sheet: documentID),
+                    isMarkdownCapable: isMarkdownCapable,
                     intersectsCodeFence: rangeIntersectsFence(selection),
                     isInListOrQuoteContainer: rangeIntersectsContainer(
                         selection, in: storage.string
@@ -1282,7 +1345,7 @@ public struct InkEditorView: NSViewRepresentable {
                 let destination = PasteDestinationContext(
                     documentText: text,
                     replacementRange: suggestion.target.detectionRange,
-                    isMarkdownCapable: isMarkdownCapable(sheet: suggestion.target.documentID),
+                    isMarkdownCapable: isMarkdownCapable,
                     intersectsCodeFence: rangeIntersectsFence(
                         suggestion.target.detectionRange
                     ),
@@ -1308,11 +1371,7 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             case .bareFence(let opening, _, let insertion):
                 if displayOnly {
-                    model.setFenceRenderingLanguage(
-                        suggestion.language,
-                        sheet: suggestion.target.documentID,
-                        at: opening.location
-                    )
+                    setFenceLanguage(suggestion.language, at: opening.location)
                     restyle()
                 } else {
                     languageSuggestion = nil
@@ -1956,7 +2015,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// should be built as though it could.
         func step(back: Bool) {
             invalidateOrdinaryPasteMeasurement()
-            guard let sheet = currentSheet, let textView else { return }
+            guard let document, let textView else { return }
             // The gate lives here rather than only at the callers. Both
             // routes that exist today check it before they arrive, and
             // that is still worth keeping at the chord, which has to
@@ -1975,8 +2034,10 @@ public struct InkEditorView: NSViewRepresentable {
             // what every other editor on the machine does with ⌘Z
             // mid-conversion.
             InkEditorView.discardComposition(in: textView)
-            let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
+            let outcome = model.stepEdit(document, back: back)
             guard outcome.applied else { return }
+            // The model restates a page's storage; a note's is the surface's own.
+            if case .note = document { restateNote() }
             // The model rebuilt the storage from the core's runs, which
             // are plain text carrying the base font and nothing else,
             // so the page arrives here stripped of every attribute the
@@ -2060,27 +2121,25 @@ public struct InkEditorView: NSViewRepresentable {
                     self?.followNote()
                 }
             }
-            if let sheet = currentSheet {
-                // Display-only inferred labels belong to the old character
-                // projection and cannot survive a projection rewrite.
-                model.clearFenceRenderingLanguages(for: sheet)
-            }
+            // Display-only inferred labels belong to the old character
+            // projection and cannot survive a projection rewrite.
+            clearFenceLanguages()
             abandonAutomaticConversionForEditorChange()
             if model.isApplyingProjection {
                 let changedGeneration = generation
-                let changedSheet = currentSheet
+                let changedDocument = document
                 DispatchQueue.main.async { [weak self, weak storage] in
                     guard let self, let storage,
                           self.structuralStyleNeedsRebuild,
                           self.generation == changedGeneration,
-                          self.currentSheet == changedSheet,
+                          self.document == changedDocument,
                           self.textView?.textStorage === storage
                     else { return }
                     self.restyle()
                 }
                 return
             }
-            guard let sheet = currentSheet else { return }
+            guard let document else { return }
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
                 // Composition in flight: the span grows and shrinks
                 // with each marked replacement, and nothing crosses the
@@ -2092,7 +2151,7 @@ public struct InkEditorView: NSViewRepresentable {
                 // This edit resolved the composition (a commit's final
                 // replacement, or the removal a cancel performs).
                 imeComposition?.spanLength += delta
-                finishComposition(in: storage, sheet: sheet)
+                finishComposition(in: storage, document: document)
                 return
             }
             let ops = Self.editOps(
@@ -2107,7 +2166,7 @@ public struct InkEditorView: NSViewRepresentable {
                 after: editSelectionAfter
                     ?? NSRange(location: NSMaxRange(editedRange), length: 0)
             )
-            emit(ops, sheet: sheet, selection: selection)
+            emit(ops, document: document, selection: selection)
         }
 
         /// A composition is starting: remember what the span it will
@@ -2129,7 +2188,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// its pre-composition baseline. Equal means an abandoned
         /// composition (Esc), and an abandoned composition must
         /// produce zero ops; different commits the minimal replace.
-        func finishComposition(in storage: NSTextStorage, sheet: UInt64) {
+        func finishComposition(in storage: NSTextStorage, document: InkDocument) {
             guard let ime = imeComposition else { return }
             imeComposition = nil
             let text = storage.string as NSString
@@ -2137,7 +2196,12 @@ public struct InkEditorView: NSViewRepresentable {
             guard NSMaxRange(span) <= text.length else {
                 // The span outran the storage, so there is nothing trustworthy to
                 // diff, so fall back to the recovery mirror.
-                model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
+                switch document {
+                case .sheet(let sheet):
+                    model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
+                case .note:
+                    restateNoteNextTurn()
+                }
                 return
             }
             let final = text.substring(with: span)
@@ -2148,7 +2212,7 @@ public struct InkEditorView: NSViewRepresentable {
             )
             emit(
                 Self.minimalReplace(at: ime.location, old: ime.baseline, new: final),
-                sheet: sheet,
+                document: document,
                 selection: EditorEditSelection(before: ime.selectionBefore, after: after)
             )
         }
@@ -2160,9 +2224,9 @@ public struct InkEditorView: NSViewRepresentable {
             guard imeComposition != nil,
                   let textView, !textView.hasMarkedText(),
                   let storage = textView.textStorage,
-                  let sheet = currentSheet
+                  let document
             else { return }
-            finishComposition(in: storage, sheet: sheet)
+            finishComposition(in: storage, document: document)
         }
 
         /// The outermost TextKit action currently producing storage edits.
@@ -2208,17 +2272,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// no-op is not an operation.
         private func emit(
             _ ops: [DocumentEditOp],
-            sheet: UInt64,
+            document: InkDocument,
             selection: EditorEditSelection
         ) {
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
             let intent = editIntentInFlight ?? Self.inferredIntent(for: ops)
-            model.applyOps(
-                sheet: sheet,
-                opsJSON: json,
-                intent: intent,
-                selection: selection
-            )
+            let accepted = model.applyOps(
+                to: document, json: json, intent: intent, selection: selection)
+            // The model restates a refused page or file; a note is restated here.
+            if !accepted, case .note = document { restateNoteNextTurn() }
             onEmit?(ops)
         }
 
@@ -2762,6 +2824,57 @@ public struct InkEditorView: NSViewRepresentable {
             noteEditor.follow()
         }
 
+        // MARK: A note's own surface, over the note's routes (ADR-0045)
+
+        /// Puts the note of `chip` under this surface, its text from the core.
+        func loadNote(chip: UInt64) {
+            unloadNote()
+            noteChip = chip
+            restateNote()
+        }
+
+        /// Takes the note away; its edits are already the core's, and the
+        /// surface keeps none of its ink.
+        func unloadNote() {
+            guard let chip = noteChip else { return }
+            // A composition settles on the note it was typed in, as a page swap's does.
+            if let textView { InkEditorView.discardComposition(in: textView) }
+            invalidateOrdinaryPasteMeasurement()
+            noteChip = nil
+            noteFenceLanguages = [:]
+            fenceRegions = []
+            (textView?.layoutManager as? InkLayoutManager)?.fenceRegions = []
+            if let storage = textView?.textStorage {
+                model.applyingProjection {
+                    storage.replaceCharacters(
+                        in: NSRange(location: 0, length: storage.length), with: "")
+                }
+            }
+            model.finishNoteEditingGroup(chip: chip)
+        }
+
+        /// The note's text from the core, with no edit crossing for it.
+        private func restateNote() {
+            guard let noteChip, let storage = textView?.textStorage else { return }
+            let text = model.noteText(chip: noteChip)
+            model.applyingProjection {
+                storage.setAttributedString(NSAttributedString(
+                    string: text,
+                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]))
+            }
+            restyle()
+        }
+
+        /// A refused batch: the core's text again, once the storage has
+        /// finished processing the edit it refused.
+        private func restateNoteNextTurn() {
+            guard let chip = noteChip else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.noteChip == chip else { return }
+                self.restateNote()
+            }
+        }
+
         // MARK: The name, in its seat (Law 0007)
 
         /// The field a sealed object's name is typed into, made on first use.
@@ -2822,7 +2935,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// blocks receive trailing-edge affordances without
         /// touching how it edits.
         func restyle() {
-            guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            guard let storage = textView?.textStorage, let document else { return }
             defer { textView?.refreshHover() }
             // Locations are storage offsets. Any structural restyle may
             // move the hovered block underneath a fixed offset, so leave
@@ -2832,58 +2945,73 @@ public struct InkEditorView: NSViewRepresentable {
             // pages still need the Markdown walk's classifications and fence ranges
             // for editing and paste safety, but neither result is rendered.
             if model.previewRendering == .never {
-                restylePlainFile(
-                    storage, sheet: sheet,
-                    preservingMarkdownStructure: !sheet.isFileID
-                )
+                restylePlainFile(storage, preservingMarkdownStructure: file == nil)
                 return
             }
-            if sheet.isFileID {
-                switch model.fileRenderMode(for: sheet) {
+            if let file {
+                switch model.fileRenderMode(for: file) {
                 case .plainText:
-                    restylePlainFile(storage, sheet: sheet)
+                    restylePlainFile(storage)
                     return
                 case .source(let language):
-                    restyleSourceFile(storage, sheet: sheet, language: language)
+                    restyleSourceFile(storage, language: language)
                     return
                 case .markdown:
                     break
                 }
             }
-            // A file gets no block stamps, and the route is not merely
-            // skipped for dull values: `blocks(sheet:)` is a
-            // companion_sheet_* route, and a tagged id reaching it is
-            // refused core-side. Asking anyway would spend a refused
-            // call on every keystroke. A file's document does carry
-            // change timestamps, because it is a SheetDocument like any
-            // other, but they describe when this process happened to
-            // read the file rather than when a person wrote a
-            // paragraph, so there is nothing true to show
-            // (decisions.md item 15).
-            let metas = sheet.isFileID ? [] : model.coreClient.blocks(sheet: sheet)
             let (regions, displays, kinds) = Self.applyMarkdownStyling(
-                to: storage, sheet: sheet, blockMetas: metas,
+                to: storage, blockMetas: blockMetas(),
                 syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
+                fenceRenderingLanguages: fenceLanguages(),
+                renderBlockLabels: !writesNote
             )
             blockDisplays = displays
             fenceRegions = regions
             lineKinds = kinds
             lineKindsStamp = generation
-            lineKindsSheet = sheet
+            lineKindsDocument = document
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = fenceRegions
                 textView?.needsDisplay = true
             }
-            // Block metadata rides the first line instead of taking a row
-            // above it, so the page keeps its ordinary top inset regardless
-            // of which blocks have been edited.
-            if let textView, textView.textContainerInset.height != Self.topInset {
-                textView.textContainerInset.height = Self.topInset
-            }
+            keepPageInset()
             _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
+        }
+
+        /// The file under the surface, when the document is one.
+        private var file: UInt64? {
+            guard case .sheet(let sheet) = document, sheet.isFileID else { return nil }
+            return sheet
+        }
+
+        /// The page's block stamps; a file and a note show none (ADR-0045).
+        ///
+        /// A file gets no block stamps, and the route is not merely
+        /// skipped for dull values: `blocks(sheet:)` is a
+        /// companion_sheet_* route, and a tagged id reaching it is
+        /// refused core-side. Asking anyway would spend a refused
+        /// call on every keystroke. A file's document does carry
+        /// change timestamps, because it is a SheetDocument like any
+        /// other, but they describe when this process happened to
+        /// read the file rather than when a person wrote a
+        /// paragraph, so there is nothing true to show
+        /// (decisions.md item 15). A note's chip id is not a page id.
+        private func blockMetas() -> [BlockInfo] {
+            guard case .sheet(let sheet) = document, !sheet.isFileID else { return [] }
+            return model.coreClient.blocks(sheet: sheet)
+        }
+
+        /// Block metadata rides the first line instead of taking a row
+        /// above it, so the page keeps its ordinary top inset regardless
+        /// of which blocks have been edited. A note keeps its own.
+        private func keepPageInset() {
+            guard !writesNote, let textView,
+                  textView.textContainerInset.height != Self.topInset
+            else { return }
+            textView.textContainerInset.height = Self.topInset
         }
 
         /// The pure part of `restyle()`: walk the storage block by block
@@ -2894,7 +3022,6 @@ public struct InkEditorView: NSViewRepresentable {
         /// same as the mounted editor would over its live one.
         static func applyMarkdownStyling(
             to storage: NSTextStorage,
-            sheet: UInt64,
             blockMetas: [BlockInfo],
             syntaxHighlightingEnabled: Bool,
             fenceRenderingLanguages: [Int: String],
@@ -3075,17 +3202,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// as literal characters. Markdown-capable pages may retain a structural
         /// reading for editor behavior while using this same visual profile.
         private func restylePlainFile(
-            _ storage: NSTextStorage, sheet: UInt64,
-            preservingMarkdownStructure: Bool = false
+            _ storage: NSTextStorage, preservingMarkdownStructure: Bool = false
         ) {
             let text = storage.string as NSString
             let full = NSRange(location: 0, length: storage.length)
             let structure = preservingMarkdownStructure
                 ? Self.applyMarkdownStyling(
-                    to: storage, sheet: sheet,
-                    blockMetas: model.coreClient.blocks(sheet: sheet),
+                    to: storage, blockMetas: blockMetas(),
                     syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                    fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet),
+                    fenceRenderingLanguages: fenceLanguages(),
                     renderBlockLabels: false
                 )
                 : nil
@@ -3107,7 +3232,7 @@ public struct InkEditorView: NSViewRepresentable {
             lineKinds = structure?.lineKinds
                 ?? (text.length == 0 ? [] : [(range: full, kind: .body)])
             lineKindsStamp = generation
-            lineKindsSheet = sheet
+            lineKindsDocument = document
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 // The ranges remain available to the editor's behavior gates, but
@@ -3115,9 +3240,7 @@ public struct InkEditorView: NSViewRepresentable {
                 layoutManager.fenceRegions = []
                 textView?.needsDisplay = true
             }
-            if textView?.textContainerInset.height != Self.topInset {
-                textView?.textContainerInset.height = Self.topInset
-            }
+            keepPageInset()
             _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
@@ -3125,7 +3248,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// Source mode tokenizes the complete buffer as code. No Markdown
         /// scanner runs here, so `#`, lists, links, and fence markers retain
         /// their literal source meaning.
-        private func restyleSourceFile(_ storage: NSTextStorage, sheet: UInt64, language: String) {
+        private func restyleSourceFile(_ storage: NSTextStorage, language: String) {
             let text = storage.string as NSString
             var tokenizer = CodeInk.Tokenizer(
                 language: CodeInk.renderingLanguage(ofInfoString: language)
@@ -3164,15 +3287,13 @@ public struct InkEditorView: NSViewRepresentable {
             fenceRegions = []
             lineKinds = paragraphs.map { (range: $0, kind: .code(language: language)) }
             lineKindsStamp = generation
-            lineKindsSheet = sheet
+            lineKindsDocument = document
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = []
                 textView?.needsDisplay = true
             }
-            if textView?.textContainerInset.height != Self.topInset {
-                textView?.textContainerInset.height = Self.topInset
-            }
+            keepPageInset()
             _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
@@ -3448,7 +3569,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// so any edit since retires the reading.
         private var generation = 0
         private var lineKindsStamp = -1
-        private var lineKindsSheet: UInt64?
+        private var lineKindsDocument: InkDocument?
 
         /// The classification of the paragraph beginning exactly at
         /// `location`, or nil when the walk has nothing trustworthy to
@@ -3457,7 +3578,7 @@ public struct InkEditorView: NSViewRepresentable {
         func classifiedKind(ofParagraphAt location: Int) -> InkStyle.LineKind? {
             guard textView?.textStorage != nil,
                   generation == lineKindsStamp,
-                  let sheet = currentSheet, sheet == lineKindsSheet
+                  let document, document == lineKindsDocument
             else { return nil }
             return lineKinds.first { $0.range.location == location }?.kind
         }
@@ -3711,7 +3832,7 @@ public struct InkEditorView: NSViewRepresentable {
             func layOutBlockLabels(forMetas metas: [BlockInfo]) {
                 guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
                 let (_, displays, _) = Self.applyMarkdownStyling(
-                    to: storage, sheet: sheet, blockMetas: metas,
+                    to: storage, blockMetas: metas,
                     syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
                     fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
                 )
@@ -4199,7 +4320,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// is the card, `NSWindow` the editor window.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, let model = coordinator?.model else { return }
+        guard let window, let model = coordinator?.model, coordinator?.writesNote == false
+        else { return }
         let surface = String(describing: type(of: window))
         Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
             .info("editor=mounted window=\(surface, privacy: .public)")
@@ -4342,6 +4464,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
               editor.isFieldEditor, let field = editor.delegate as? NSView
         else { return false }
         return field.isDescendant(of: self)
+    }
+
+    /// Whether this surface's chords are its own to answer: a note's only
+    /// while it holds the keys, the page's unless something else does.
+    var answersChords: Bool {
+        guard coordinator?.writesNote == true else { return !yieldsKeys }
+        return window?.firstResponder === self
     }
 
     /// The sealed block's cell standing at `index`, if one does.
@@ -4761,7 +4890,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// through `keyDown` below, which fires only while this page holds
     /// the keyboard.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if !yieldsKeys, let command = editorCommand(for: event),
+        if answersChords, let command = editorCommand(for: event),
            command.modifiers.contains(.command), dispatch(command.id) {
             return true
         }
@@ -4808,16 +4937,15 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// its two items while the editor is first responder. A native field
     /// editor answers the same selectors through AppKit's own validation.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        guard let sheet = coordinator?.currentSheet, let model = coordinator?.model else {
+        guard let document = coordinator?.document, let model = coordinator?.model else {
             return super.validateMenuItem(item)
         }
         switch item.action {
-        case #selector(undo(_:)):
-            item.title = model.undoActionName(sheet: sheet).map { "Undo \($0)" } ?? "Undo"
-            return isEditable && model.canUndoEdit(sheet: sheet)
-        case #selector(redo(_:)):
-            item.title = model.redoActionName(sheet: sheet).map { "Redo \($0)" } ?? "Redo"
-            return isEditable && model.canRedoEdit(sheet: sheet)
+        case #selector(undo(_:)), #selector(redo(_:)):
+            let back = item.action == #selector(undo(_:))
+            let verb = back ? "Undo" : "Redo"
+            item.title = model.editStepName(document, back: back).map { "\(verb) \($0)" } ?? verb
+            return isEditable && model.canStepEdit(document, back: back)
         case #selector(detectCodeLanguage(_:)):
             return canDetectCodeLanguage
         case #selector(pasteWithoutDetection(_:)):
@@ -4931,6 +5059,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             // would have had it.
             guard isEditable else { return false }
             coordinator.step(back: command == .editorUndo)
+        case .noteToggleExpanded:
+            guard let note = coordinator.noteHost else { return false }
+            note.toggleExpanded()
+        case .editorToggleWrap where coordinator.writesNote:
+            // A note always wraps; the page's setting is not the note's to flip.
+            return false
         default:
             return coordinator.model.perform(command)
         }
@@ -5372,9 +5506,18 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
     }
 
-    /// Esc hands the keyboard back (docs/spec/04, the focus law).
+    /// Esc hands the keyboard back (docs/spec/04, the focus law); in a note
+    /// it contracts an expanded note and closes one that is not.
     override func cancelOperation(_ sender: Any?) {
+        if let note = coordinator?.noteHost { return note.escape() }
         coordinator?.model.escape()
+    }
+
+    /// A note given up closes, on the next turn, once the keys have landed.
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { coordinator?.noteHost?.keysMayHaveLeft() }
+        return resigned
     }
 
     // MARK: Drop-to-seal

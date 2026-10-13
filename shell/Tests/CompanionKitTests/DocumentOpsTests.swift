@@ -691,7 +691,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testOnlyEditedBlocksProduceAnAffordance() {
         let storage = NSTextStorage(string: "first\nsecond")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "first", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "second", createdS: 2_000, modifiedS: 3_000, paragraphs: 1),
@@ -713,7 +713,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testAnAffordanceSkipsItsBlockLeadingBlankLine() {
         let storage = NSTextStorage(string: "alpha\n\nbeta words")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "beta", createdS: 2_000, modifiedS: 3_000, paragraphs: 2),
@@ -732,7 +732,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testAFenceCoalescesToOneEditedAffordance() {
         let storage = NSTextStorage(string: "```\ncode\n```")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "open", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "body", createdS: 2_000, modifiedS: 2_000, paragraphs: 1),
@@ -748,7 +748,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testCaretFocusCoversTheCompleteLogicalBlock() {
         let storage = NSTextStorage(string: "first\nsecond")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "paste", createdS: 1_000, modifiedS: 3_000, paragraphs: 2)
             ],
@@ -968,7 +968,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testTheAccessibilityLabelKeepsBothStampsInFull() {
         let storage = NSTextStorage(string: "first\nsecond")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "first", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "second", createdS: 2_000, modifiedS: 300_000, paragraphs: 1),

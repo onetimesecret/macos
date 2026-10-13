@@ -22,6 +22,13 @@ public enum EditorEditIntent: UInt32, Sendable {
     case composition = 6
 }
 
+/// What a writing surface edits: a page or file by its sheet id, or a
+/// sealed object's note by its chip id, a counter that overlaps page ids.
+public enum InkDocument: Hashable, Sendable {
+    case sheet(UInt64)
+    case note(chip: UInt64)
+}
+
 /// The TextKit selection on both sides of one editor action.
 public struct EditorEditSelection: Equatable, Sendable {
     public let before: NSRange
@@ -3197,7 +3204,6 @@ public final class PageModel: ObservableObject {
             let scratch = NSTextStorage(attributedString: rendered)
             let (regions, _, _) = InkEditorView.Coordinator.applyMarkdownStyling(
                 to: scratch,
-                sheet: id,
                 blockMetas: [],
                 syntaxHighlightingEnabled: syntaxHighlightingEnabled,
                 fenceRenderingLanguages: fenceRenderingLanguages(for: id),
@@ -5856,13 +5862,15 @@ public final class PageModel: ObservableObject {
     /// wholesale rewrite every offset a step holds describes nothing.
     ///
     /// `intent` tells the core which editing gesture produced the batch. The
-    /// core owns the grouping rules and both undo stacks.
+    /// core owns the grouping rules and both undo stacks. True when the
+    /// core took the batch; a refused one has already been restated.
+    @discardableResult
     public func applyOps(
         sheet: UInt64,
         opsJSON: String,
         intent: EditorEditIntent = .typing,
         selection: EditorEditSelection? = nil
-    ) {
+    ) -> Bool {
         // Files route first, on the tag and nothing else. A file has no
         // quiet rendering on the roll, no chips to reap, and its
         // dirtiness is the file's own rather than the sealed store's,
@@ -5877,7 +5885,7 @@ public final class PageModel: ObservableObject {
                 logger.error("the core rejected a file edit batch; restating the file whole")
                 restateStorage(sheet: sheet)
             }
-            return
+            return accepted
         }
         let accepted = client.applyOps(
             sheet: sheet, json: opsJSON, intent: intent, selection: selection)
@@ -5897,6 +5905,55 @@ public final class PageModel: ObservableObject {
         #if DEBUG
         assertProjectionParity(sheet: sheet)
         #endif
+        return accepted
+    }
+
+    // MARK: One route per document a writing surface edits (ADR-0045)
+
+    /// One batch to the page, file or note `document` names. False when the
+    /// core refused it; a page or file is restated here, a note by its surface.
+    @discardableResult
+    public func applyOps(
+        to document: InkDocument, json: String, intent: EditorEditIntent,
+        selection: EditorEditSelection?
+    ) -> Bool {
+        switch document {
+        case .sheet(let sheet):
+            applyOps(sheet: sheet, opsJSON: json, intent: intent, selection: selection)
+        case .note(let chip):
+            applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        }
+    }
+
+    /// One step of `document`'s own stack, the way ⌘Z or ⇧⌘Z asks for it.
+    @discardableResult
+    public func stepEdit(_ document: InkDocument, back: Bool) -> StepOutcome {
+        switch document {
+        case .sheet(let sheet): back ? undoEdit(sheet: sheet) : redoEdit(sheet: sheet)
+        case .note(let chip): stepNote(chip: chip, back: back)
+        }
+    }
+
+    public func canStepEdit(_ document: InkDocument, back: Bool) -> Bool {
+        switch document {
+        case .sheet(let sheet): back ? canUndoEdit(sheet: sheet) : canRedoEdit(sheet: sheet)
+        case .note(let chip): canStepNote(chip: chip, back: back)
+        }
+    }
+
+    public func editStepName(_ document: InkDocument, back: Bool) -> String? {
+        switch document {
+        case .sheet(let sheet): back ? undoActionName(sheet: sheet) : redoActionName(sheet: sheet)
+        case .note(let chip): noteStepName(chip: chip, back: back)
+        }
+    }
+
+    /// Ends `document`'s coalescing run; a note's takes no selection.
+    public func finishEditingGroup(_ document: InkDocument, selection: NSRange?) {
+        switch document {
+        case .sheet(let sheet): finishEditingGroup(sheet: sheet, selection: selection)
+        case .note(let chip): finishNoteEditingGroup(chip: chip)
+        }
     }
 
     /// End the current coalescing run without creating an undo item.
