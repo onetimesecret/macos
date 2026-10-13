@@ -4,7 +4,7 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 points 1, 3, 5 and 6
+decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 points 1, 3, 5 and 6; ADR-0046
 consumed-by:
   - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the sealed name's charset, the double click seats, the empty pad name)
@@ -12,13 +12,15 @@ consumed-by:
 sources:
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points this law left open)
+  - docs/adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md (the page's chords and Edit menu stand aside for any field holding the keys)
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
   - docs/spec/design/2026-0916-rail-redundancy.md, D-44 and D-46 (the gutter's time and typed name)
   - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending; `TabRename.Field`, the SwiftUI fields' state)
   - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `opensRename`, `keyboardToReturn`, `words`, `seat`, `drawsTitle`)
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
   - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the cell's field; `PadPickerRoutes`, the list's routes; `PadNameDraft`; `nameEditor`, now the create sheet alone)
-  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`, `holdNotice`, `releaseNotice`)
+  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`, `holdNotice`, `releaseNotice`, `HeldRefusal`)
+  - shell/Sources/CompanionKit/InkEditorView.swift (`InkTextView.answersChords`, whether the page's chords and Edit menu actions are its own to answer)
   - shell/Sources/CompanionKit/SealedNameField.swift (`ChipRename`, the sealed name field's state; `SealedNameEditor`, its AppKit field)
   - docs/adr/0017-durable-tabs-expiring-pages.md (a tab's name outlives its pages)
   - docs/qa/verification-procedures/rename-in-place.md (the hand checks the runner cannot make)
@@ -128,6 +130,7 @@ without a test says what it is owed by.
 | Escape, or the keyboard leaving | keeping | the seat shows what it showed before | `TabRenameTests.swift` `testEscapeAndFocusLossKeepWhateverTheDraftSays` |
 | any opening | opening | no modal session is entered on the way in or out | `ModalSessionTests.swift` `testRenameNeverRunsAModalSession` |
 | the draft while open | drafting | VoiceOver hears the draft, not the label it replaced | `DayScrollTests.swift` `testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft` |
+| a chord or an Edit menu item while any seat's field holds the keys | drafting | it acts on the field or on nothing, never on the page: the page's chords, its Undo, Redo, seal and language items stand aside, and the menu greys the page's items until the field closes ([ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)) | the gutter: `DayScrollTests.swift` `testTheGuttersFieldTakesThePagesChordsAndMenuAway`; the sealed name: `SealedNameFieldTests.swift` `testThePagesChordsStandAsideForTheField`, `testThePagesMenuActionsStandAsideForTheField`; any field in the page's window, the shape the strip's and the pad cell's SwiftUI fields edit through: `KeyHolderTests.swift` `testAFieldHoldingTheKeysTakesThePagesChordsAndMenuAway`; Choose Language sent down the responder chain: `LanguageDetectionMenuTests.swift` `testAChoiceGoesDownTheChainOrToTheFile`; the strip's and the pad cell's own fields, and the pad cell's popover as the key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | the slot reassigned under the field | keeping | the field ends without renaming the replacement | `DayScrollTests.swift` `testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement` |
 | the gutter's hit target while open | opening | the field, not the composed header, takes the click | `DayScrollTests.swift` `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename` |
 | the gutter at rest | showing | the day once, then the time; only a typed name is drawn | `DayScrollProjectionTests.swift` `testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone`, `testTheGutterDrawsOnlyATypedName`; `DayScrollTests.swift` `testAGutterDrawsATypedNameAndNoGauge`; `StreamNavigatorTests.swift` `testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage` |
@@ -177,8 +180,10 @@ outcome tests and the three `TabRename.Field` tests),
 `testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement`,
 `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename`,
 `testAGutterDrawsATypedNameAndNoGauge`,
-`testTheDayGutterOffersTheSameVerbsAsTheStrip` and the six gutter click
-tests in the row for a click on the gutter's time),
+`testTheDayGutterOffersTheSameVerbsAsTheStrip`, the six gutter click
+tests in the row for a click on the gutter's time and
+`testTheGuttersFieldTakesThePagesChordsAndMenuAway`),
+`KeyHolderTests.testAFieldHoldingTheKeysTakesThePagesChordsAndMenuAway`,
 `DayScrollProjectionTests` (the two gutter tests above and
 `testAnUnnamedGuttersDraftIsTheTime`),
 `StreamNavigatorTests.testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage`,
@@ -187,12 +192,15 @@ tests in the row for a click on the gutter's time),
 `NoticeHoldTests`, `SealedNameFieldTests` (the sealed name's field, its
 endings and its refusal),
 `SealedCapsuleTests.testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`.
+App (`shell/Tests/OnetimePadTests`):
+`LanguageDetectionMenuTests.testAChoiceGoesDownTheChainOrToTheFile`.
 
 By hand: the [rename in place](../qa/verification-procedures/rename-in-place.md)
 procedure, for what the runner cannot drive: the SwiftUI fields' focus
 and selection, the pad cell's Return and Escape, the gutter's field in
-a real key window, and the sealed name's double click and keys. It has
-not been run.
+a real key window, the sealed name's double click and keys, and the
+page's chords and Edit menu standing aside for every field. It has not
+been run.
 
 Core and seam: a tab's name belongs to the tab and outlives its pages
 (ADR-0017); `companion_tab_set_title` (`crates/ffi/src/lib.rs`) carries
@@ -276,3 +284,14 @@ Owed: a first run of the rename in place procedure.
   it never moved and could not fail for: `TabRename.Field.end` takes no
   title to judge against but the one it opened on. The test is renamed
   for what it pins, and the row names that signature.
+- 2026-10-13: Key holder amendment (epic 252).
+  [ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)
+  makes the page's chords and Edit menu stand aside for any field that
+  holds the keys, where they had stood aside for the sealed name's field
+  alone: ⌘Z under a gutter label's draft stepped the page, and Choose
+  Language acted on the page whatever held the keys. One row is added
+  for Drafting, citing the gutter's, the sealed name's and a plain
+  field's tests and the menu's, with the SwiftUI fields and the pad
+  cell's popover owed to the procedure, which gains the check. The
+  cluster, the sources and the acceptance lists follow, and the sources
+  name `HeldRefusal`, the refusal both fields hold.

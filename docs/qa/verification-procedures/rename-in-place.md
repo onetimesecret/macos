@@ -65,6 +65,17 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       Escape. **Pass:** the pad keeps its old name. Record whether the
       list stays open or closes; either keeps the name. **Fail:** the
       new name is saved.
+- [ ] **The page's keys stand aside for every field.** On a page, type
+      `let key = 1` and select it. Open in
+      turn the gutter's field (*Timeline*), the strip's field (*Tabs*)
+      and a pad cell's field, and in each type two letters, press ⌘Z,
+      ⇧⌘V and ⌘↩, then open the Edit menu. **Pass:** ⌘Z takes back the
+      field's letters and nothing on the page; ⇧⌘V and ⌘↩ seal nothing;
+      in the Edit menu Seal Selected Content, Detect Code Language,
+      Choose Language and Paste Without Detection are greyed while the
+      field holds the keys, and come back once it closes (ADR-0046).
+      **Fail:** the page steps back or seals, or a greyed item is
+      enabled and acts on the page.
 - [ ] **Sealed name, the double click.** Seal a line with ⌘↩, then
       double click the block's bottom row. **Pass:** a field opens where
       a name would stand, placeholder `NAME`, with the keys in it and
@@ -100,5 +111,6 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | pad cell, opening | | |
 | | | pad cell, an empty Return | | |
 | | | pad cell, Escape | | record whether the list stayed open |
+| | | the page's keys stand aside for every field | | record each of the three fields |
 | | | sealed name, the double click | | |
 | | | sealed name, a refusal and the keys | | |
