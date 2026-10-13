@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A sealed object's note is written on the page's own surface** (app
+  0.32.0; Law 0001, ADR-0045, issue #246). The note reads and types as
+  the page does: headings, lists that continue on Return and nest on
+  Tab, links that a ⌘-click opens and a plain click edits, code fences
+  with their colours, and Detect Code Language, Choose Language and
+  Paste Without Detection acting on the note. Its undo stays its own.
+  No seal lands in a note, by chord, menu or drop; no sealed object
+  stands in one; it shows no block stamps; and ⌥Z leaves the page's
+  wrap setting alone there, since a note always wraps. A language
+  chosen for a bare fence's colours in a note lasts until the note
+  closes.
+
 - **A pad is renamed in its own cell** (app 0.28.0; Law 0007, issue
   #249). *Rename pad…* turns the pad's name into a field where it
   stands, on the name, selected whole, and the list stays open. Return

@@ -172,109 +172,11 @@ final class NotePopoverView: NSView {
     }
 }
 
-/// A text view that takes only drags of its own ink: a drop from elsewhere
-/// is the page's to seal, and no seal can stand here (ADR-0044).
-class OwnDragsOnlyTextView: NSTextView {
-    private func isOwn(_ sender: NSDraggingInfo) -> Bool {
-        (sender.draggingSource as? NSView) === self
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        isOwn(sender) ? super.draggingEntered(sender) : []
-    }
-
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        isOwn(sender) ? super.draggingUpdated(sender) : []
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        isOwn(sender) && super.performDragOperation(sender)
-    }
-}
-
-/// The note's writing surface: the page's face, the keymap's undo chords
-/// on the note's own stack, plain paste, and ink only.
-final class NoteTextView: OwnDragsOnlyTextView {
-    weak var editor: SealedNoteEditor?
-    /// The gesture behind the edit in flight, when it is not typing.
-    var pendingIntent: EditorEditIntent?
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === self, let command = editor?.command(for: event)
-        else { return super.performKeyEquivalent(with: event) }
-        switch command {
-        case .editorUndo, .editorRedo:
-            editor?.step(back: command == .editorUndo)
-            return true
-        case .clipboardSeal, .clipboardSealSelection:
-            // Sealed objects do not nest (ADR-0043 point 3); the page must not take it either.
-            return true
-        default:
-            return super.performKeyEquivalent(with: event)
-        }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if editor?.command(for: event) == .noteToggleExpanded {
-            editor?.toggleExpanded()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    /// Esc contracts an expanded note and closes one that is not.
-    override func cancelOperation(_ sender: Any?) {
-        editor?.escape()
-    }
-
-    @objc func undo(_ sender: Any?) {
-        editor?.step(back: true)
-    }
-
-    @objc func redo(_ sender: Any?) {
-        editor?.step(back: false)
-    }
-
-    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        switch item.action {
-        case #selector(undo(_:)), #selector(redo(_:)):
-            let back = item.action == #selector(undo(_:))
-            let verb = back ? "Undo" : "Redo"
-            item.title = editor?.stepName(back: back).map { "\(verb) \($0)" } ?? verb
-            return editor?.canStep(back: back) ?? false
-        default:
-            return super.validateMenuItem(item)
-        }
-    }
-
-    override func paste(_ sender: Any?) {
-        pendingIntent = .paste
-        defer { pendingIntent = nil }
-        pasteAsPlainText(sender)
-    }
-
-    override func cut(_ sender: Any?) {
-        pendingIntent = .cut
-        defer { pendingIntent = nil }
-        super.cut(sender)
-    }
-
-    override func resignFirstResponder() -> Bool {
-        let resigned = super.resignFirstResponder()
-        if resigned { editor?.keysMayHaveLeft() }
-        return resigned
-    }
-
-    override func unmarkText() {
-        super.unmarkText()
-        editor?.sync()
-    }
-}
-
-/// Opens, places, edits and closes one sealed object's note over the page;
-/// its edits and steps go to the note's routes, keyed by chip (ADR-0043 point 4).
+/// Opens, places and closes one sealed object's note over the page. The note
+/// is written on the page's own surface, whose coordinator edits and steps
+/// it on the note's routes, keyed by chip (ADR-0043 point 4, ADR-0045).
 @MainActor
-final class SealedNoteEditor: NSObject, NSTextViewDelegate {
+final class SealedNoteEditor: NSObject {
     let model: PageModel
     weak var pageView: InkTextView?
     private(set) var chip: UInt64?
@@ -282,11 +184,11 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
     private(set) var isExpanded = false
     let overlay = NoteOverlayView()
     let popover = NotePopoverView()
-    let textView: NoteTextView
-    /// The note's text as the core last took it.
-    private var synced = ""
-    private var selectionBefore: NSRange?
-    private var restating = false
+    /// The note's own coordinator and surface; the storage is held here,
+    /// since a TextKit 1 view does not keep its own.
+    let coordinator: InkEditorView.Coordinator
+    let storage = NSTextStorage()
+    let textView: InkTextView
     // nonisolated(unsafe): deinit is nonisolated and the tokens are not Sendable;
     // every other touch is on the main actor.
     private nonisolated(unsafe) var observers: [NSObjectProtocol] = []
@@ -297,32 +199,13 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
 
     init(model: PageModel) {
         self.model = model
-        let storage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
-        storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(
-            size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
-        layoutManager.addTextContainer(container)
-        textView = NoteTextView(frame: .zero, textContainer: container)
+        coordinator = InkEditorView.Coordinator(model: model)
+        textView = InkEditorView.makeSurface(over: storage, coordinator: coordinator)
         super.init()
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = false
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.isAutomaticLinkDetectionEnabled = false
-        textView.drawsBackground = false
+        coordinator.noteHost = self
         textView.textContainerInset = NSSize(width: 4, height: 4)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.maxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.delegate = self
-        textView.editor = self
-        popover.scroll.documentView = textView
+        textView.isEditable = true
+        InkEditorView.seat(textView, in: popover.scroll)
         popover.expand.target = self
         popover.expand.action = #selector(expandClicked(_:))
         overlay.autoresizingMask = [.width, .height]
@@ -348,7 +231,7 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
                 .foregroundColor: NSColor.secondaryLabelColor, .kern: 1.15,
             ])
-        restate()
+        coordinator.loadNote(chip: face.chipId)
         overlay.frame = scroll.bounds
         scroll.addSubview(overlay)
         watch(scroll)
@@ -358,7 +241,8 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
         textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
     }
 
-    /// Closes the note; its edits are already the core's.
+    /// Closes the note; its edits are already the core's, and the surface
+    /// keeps none of its ink.
     func close(returningKeys: Bool) {
         guard let chip, let sheet else { return }
         let gaveKeys = returningKeys && holdsKeys
@@ -366,13 +250,8 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
         self.sheet = nil
         isExpanded = false
         unwatch()
+        coordinator.unloadNote()
         overlay.removeFromSuperview()
-        restating = true
-        textView.string = ""
-        restating = false
-        synced = ""
-        selectionBefore = nil
-        model.finishNoteEditingGroup(chip: chip)
         model.restateChipFace(chip, sheet: sheet)
         if gaveKeys, let pageView { pageView.window?.makeFirstResponder(pageView) }
     }
@@ -425,83 +304,11 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
         }
     }
 
-    /// The keymap's editor command for `event`, if one is bound.
-    func command(for event: NSEvent) -> CommandID? {
-        model.keymap.bindings(in: .editor, dispatch: .editor)
-            .first { $0.keystroke.matches(event: event) }?.command
-    }
-
-    // MARK: The note's own stack
-
-    func step(back: Bool) {
-        guard let chip else { return }
-        let outcome = model.stepNote(chip: chip, back: back)
-        guard outcome.applied else { return }
-        restate()
-        if let selection = outcome.selection {
-            textView.setSelectedRange(InkEditorView.Coordinator.clamped(
-                selection, to: (textView.string as NSString).length))
-        }
-        refreshDoorway()
-    }
-
-    func canStep(back: Bool) -> Bool {
-        chip.map { model.canStepNote(chip: $0, back: back) } ?? false
-    }
-
-    func stepName(back: Bool) -> String? {
-        chip.flatMap { model.noteStepName(chip: $0, back: back) }
-    }
-
-    // MARK: Editing
-
-    /// Hands the core the one replace that turns its text into the view's.
-    func sync() {
-        guard let chip, !restating, !textView.hasMarkedText() else { return }
-        let text = textView.string
-        guard text != synced else { return }
-        let ops = InkEditorView.Coordinator.minimalReplace(at: 0, old: synced, new: text)
-        guard let json = DocumentEditOp.wireJSON(ops) else { return }
-        let after = textView.selectedRange()
-        let selection = EditorEditSelection(before: selectionBefore ?? after, after: after)
-        selectionBefore = nil
-        let intent = textView.pendingIntent ?? Self.intent(for: ops)
-        if model.applyNoteOps(chip: chip, json: json, intent: intent, selection: selection) {
-            synced = text
-            refreshDoorway()
-        } else {
-            restate()
-        }
-    }
-
-    nonisolated static func intent(for ops: [DocumentEditOp]) -> EditorEditIntent {
-        let inserts = ops.contains { if case .ins = $0 { true } else { false } }
-        let deletes = ops.contains { if case .del = $0 { true } else { false } }
-        switch (inserts, deletes) {
-        case (true, false): return .typing
-        case (false, true): return .deletion
-        default: return .replacement
-        }
-    }
-
-    /// The view's text from the core's, with no edit crossing for it.
-    private func restate() {
-        guard let chip else { return }
-        let text = model.noteText(chip: chip)
-        restating = true
-        textView.string = text
-        textView.font = InkStyle.baseFont
-        textView.textColor = .labelColor
-        textView.typingAttributes = [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
-        restating = false
-        synced = text
-    }
-
-    /// The block's doorway follows the note's first and last ink.
-    private func refreshDoorway() {
+    /// The note's ink changed: the block's doorway follows its first and last ink.
+    func inkDidChange() {
         guard let chip, let sheet, let pageView, let index = pageView.chipIndex(ofChip: chip)
         else { return }
-        let hasNote = !synced.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasNote = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard pageView.chipCell(at: index)?.info.hasNote != hasNote else { return }
         model.restateChipFace(chip, sheet: sheet)
         follow()
@@ -536,19 +343,5 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
     private func unwatch() {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers = []
-    }
-
-    // MARK: NSTextViewDelegate
-
-    func textView(
-        _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
-        replacementString: String?
-    ) -> Bool {
-        if !restating, selectionBefore == nil { selectionBefore = textView.selectedRange() }
-        return true
-    }
-
-    func textDidChange(_ notification: Notification) {
-        sync()
     }
 }

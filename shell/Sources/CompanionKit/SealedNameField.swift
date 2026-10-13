@@ -83,6 +83,26 @@ struct ChipRename {
     }
 }
 
+/// The name field's editor, which takes only drags of its own text: a drop
+/// from elsewhere is the page's to seal, and no seal can stand here (ADR-0044).
+final class OwnDragsOnlyTextView: NSTextView {
+    private func isOwn(_ sender: NSDraggingInfo) -> Bool {
+        (sender.draggingSource as? NSView) === self
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isOwn(sender) ? super.draggingEntered(sender) : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isOwn(sender) ? super.draggingUpdated(sender) : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isOwn(sender) && super.performDragOperation(sender)
+    }
+}
+
 /// The name field's cell, which edits through a field editor of its own
 /// that takes no drop from elsewhere (ADR-0044).
 final class SealedNameFieldCell: NSTextFieldCell {

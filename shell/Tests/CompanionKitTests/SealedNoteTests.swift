@@ -10,6 +10,7 @@ import XCTest
 final class SealedNoteTests: XCTestCase {
     private struct Page {
         let model: PageModel
+        let client: BlockAskingClient
         let coordinator: InkEditorView.Coordinator
         let textView: InkTextView
         let scroll: NSScrollView
@@ -18,13 +19,39 @@ final class SealedNoteTests: XCTestCase {
         let chip: UInt64
     }
 
+    /// A client that records each sheet the page's block route is asked for,
+    /// its copies and seals kept on a pasteboard in process memory.
+    final class BlockAskingClient: CompanionClient, @unchecked Sendable {
+        private(set) var blocksAsked: [UInt64] = []
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func blocks(sheet: UInt64) -> [BlockInfo] {
+            blocksAsked.append(sheet)
+            return super.blocks(sheet: sheet)
+        }
+    }
+
     /// `ab <chip> cd` in a window of its own, the page's text view holding
     /// the keys and its caret after `ab`.
     private func makePage(width: CGFloat = 520) throws -> Page {
         let suite = "companion-sealed-note-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let model = isolatedModel(defaults: defaults)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-sealed-note-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let client = BlockAskingClient(tag: UUID().uuidString)
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let ambient = NSPasteboard.withUniqueName()
+        addTeardownBlock { ambient.releaseGlobally() }
+        let model = PageModel(
+            formFactor: .backdrop, defaults: defaults,
+            seams: .init(
+                stateDirectory: directory, client: client,
+                clearClipboardIfOurs: { false }, ambientPasteboard: ambient))
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -48,8 +75,8 @@ final class SealedNoteTests: XCTestCase {
         window.makeFirstResponder(textView)
         textView.setSelectedRange(NSRange(location: 2, length: 0))
         return Page(
-            model: model, coordinator: coordinator, textView: textView, scroll: scroll,
-            window: window, sheet: sheet, chip: chip)
+            model: model, client: client, coordinator: coordinator, textView: textView,
+            scroll: scroll, window: window, sheet: sheet, chip: chip)
     }
 
     private func note(_ page: Page) throws -> SealedNoteEditor {
@@ -416,6 +443,185 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertFalse(editor.textView.performDragOperation(other))
         XCTAssertEqual(editor.textView.string, "kept")
         XCTAssertEqual(page.model.noteText(chip: page.chip), "kept")
+    }
+
+    // MARK: The page's own surface (ADR-0045)
+
+    /// The same ink reads the same in the note as on the page: headings,
+    /// list items, links and fences, by font, colour and link. A click on
+    /// a link goes to the coordinator's handler, the page's (ADR-0023).
+    func testTheNoteWearsThePagesFace() throws {
+        let page = try makePage()
+        let ink = "# Rotate\n- monthly\nsee https://example.com/keys\n```swift\nlet key = 1\n```\n"
+        let start = try XCTUnwrap(page.textView.textStorage).length
+        page.textView.insertText(
+            "\n" + ink, replacementRange: NSRange(location: start, length: 0))
+        let onPage = try XCTUnwrap(page.textView.textStorage)
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type(ink, into: editor)
+        let inNote = try XCTUnwrap(editor.textView.textStorage)
+
+        XCTAssertTrue(editor.textView.delegate === editor.coordinator)
+        XCTAssertEqual(inNote.string, ink)
+        for offset in 0..<(ink as NSString).length {
+            for key in [NSAttributedString.Key.font, .foregroundColor, .link, .underlineStyle] {
+                let note = inNote.attribute(key, at: offset, effectiveRange: nil) as? NSObject
+                let mirror = onPage.attribute(key, at: start + 1 + offset, effectiveRange: nil) as? NSObject
+                XCTAssertEqual(note, mirror, "\(key.rawValue) at \(offset) differs from the page's")
+            }
+        }
+        XCTAssertEqual(
+            inNote.attribute(.font, at: 2, effectiveRange: nil) as? NSFont,
+            InkStyle.headingFont(level: 1), "the note's heading is not a heading")
+        XCTAssertNotNil(
+            inNote.attribute(.link, at: (ink as NSString).range(of: "https").location,
+                             effectiveRange: nil), "the note's URL is not a link")
+        XCTAssertEqual(
+            (editor.textView.layoutManager as? InkLayoutManager)?.fenceRegions.count, 1,
+            "the note's fence draws no slab")
+    }
+
+    /// Return on a list item continues it, Tab in its marker nests it, and
+    /// each is a step of the note's own stack (ADR-0024).
+    func testANoteContinuesAndNestsAListAsThePageDoes() throws {
+        let page = try makePage()
+        let inkBefore = pageInk(page)
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("- first", into: editor)
+        editor.textView.insertNewline(nil)
+        XCTAssertEqual(editor.textView.string, "- first\n- ")
+        editor.textView.insertTab(nil)
+        XCTAssertEqual(editor.textView.string, "- first\n  - ")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "- first\n  - ")
+
+        editor.textView.undo(nil)
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "- first\n- ", "⌘Z took more than the nesting")
+        editor.textView.undo(nil)
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "- first", "⌘Z took more than the marker")
+        XCTAssertEqual(editor.textView.string, "- first")
+        editor.textView.insertNewline(nil)
+        editor.textView.insertNewline(nil)
+        XCTAssertEqual(editor.textView.string, "- first\n", "a Return on an empty item kept it")
+        XCTAssertEqual(pageInk(page), inkBefore, "the note's list reached the page")
+    }
+
+    /// A bare fence in the note takes a language for its display alone,
+    /// kept by the note's surface and never by a page; a selection wraps
+    /// into a fence on the note's own routes.
+    func testChooseLanguageActsOnTheNoteAndItsLabelIsTheNotesOwn() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("```\nlet key = 1\n```", into: editor)
+        editor.textView.setSelectedRange(NSRange(location: 6, length: 0))
+        XCTAssertTrue(editor.textView.canChooseCodeLanguage)
+        editor.coordinator.applyManualLanguage("swift")
+        XCTAssertEqual(editor.textView.string, "```\nlet key = 1\n```", "a display label rewrote the note")
+        XCTAssertNotEqual(
+            editor.textView.textStorage?.attribute(.foregroundColor, at: 4, effectiveRange: nil)
+                as? NSColor, NSColor.labelColor, "the fence took no colour from its label")
+        XCTAssertEqual(page.model.fenceRenderingLanguages(for: page.sheet), [:])
+        XCTAssertEqual(page.model.fenceRenderingLanguages(for: page.chip), [:])
+
+        editor.textView.selectAll(nil)
+        editor.textView.deleteBackward(nil)
+        type("let key = 1", into: editor)
+        editor.textView.selectAll(nil)
+        editor.coordinator.applyManualLanguage("swift")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "```swift\nlet key = 1\n```")
+    }
+
+    /// No seal lands in a note: the chords, the menu and the context menu
+    /// seal nothing, and the page's ink and the board are as they were.
+    func testNoSealLandsInANote() throws {
+        let page = try makePage()
+        let inkBefore = pageInk(page)
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("hunter2", into: editor)
+        editor.textView.selectAll(nil)
+
+        XCTAssertFalse(editor.coordinator.sealsHere)
+        XCTAssertNil(editor.coordinator.sealableSelection())
+        let menu = NSMenu()
+        editor.coordinator.appendSealItem(to: menu)
+        XCTAssertTrue(menu.items.isEmpty, "the note's context menu offered a seal")
+        let sealLine = try keyEvent("\r", keyCode: 36, flags: .command, in: page.window)
+        XCTAssertTrue(editor.textView.performKeyEquivalent(with: sealLine), "⌘↩ fell through the note")
+        XCTAssertFalse(page.textView.performKeyEquivalent(with: sealLine), "the page took the note's ⌘↩")
+        editor.textView.sealSelectedContent(nil)
+        editor.coordinator.sealedPaste()
+
+        XCTAssertEqual(editor.textView.string, "hunter2")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "hunter2")
+        XCTAssertEqual(pageInk(page), inkBefore)
+        XCTAssertEqual(page.model.coreClient.documentRuns(sheet: page.sheet).filter {
+            if case .chip = $0 { true } else { false }
+        }.count, 1, "a seal from the note stood on the page")
+    }
+
+    /// No object stands in a note: a batch that carries one is refused by
+    /// the core and the note's text is restated; the page's object, dragged
+    /// over the note, finds nowhere to land.
+    func testNoObjectStandsInANote() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("kept", into: editor)
+        let face = try XCTUnwrap(page.textView.chipCell(at: 3)?.info)
+        editor.textView.insertText(
+            InkEditorView.Coordinator.chipString(face),
+            replacementRange: NSRange(location: 4, length: 0))
+        drainMainQueue()
+        XCTAssertEqual(editor.textView.string, "kept", "an object stood in the note")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "kept")
+
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.declareTypes([.string], owner: nil)
+        board.setString("hunter2", forType: .string)
+        let drag = DraggingInfoStub(
+            pasteboard: board, source: page.textView,
+            location: editor.textView.convert(NSPoint(x: 8, y: 8), to: nil), window: page.window)
+        XCTAssertEqual(editor.textView.draggingEntered(drag), [])
+        XCTAssertFalse(editor.textView.performDragOperation(drag))
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "kept")
+    }
+
+    /// A note shows no block stamps, and its chip id, which overlaps page
+    /// ids, never reaches the page's block route.
+    func testANoteShowsNoBlockStampsAndAsksNoPageForThem() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        let askedBefore = page.client.blocksAsked.count
+        type("one\ntwo\n", into: editor)
+        editor.textView.layout()
+        XCTAssertFalse(
+            editor.textView.subviews.contains { $0 is BlockMetadataField },
+            "the note drew block stamps")
+        XCTAssertEqual(
+            Array(page.client.blocksAsked.dropFirst(askedBefore)).filter { $0 == page.chip }, [],
+            "the note asked a page's block route with its chip id")
+        XCTAssertEqual(editor.textView.textContainerInset, NSSize(width: 4, height: 4))
+    }
+
+    /// ⌥Z, the page's wrap toggle, is not the note's: a note always wraps.
+    func testTheWrapToggleStandsAsideInANote() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        let wraps = page.model.wrapsLines
+        let toggle = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0,
+            windowNumber: page.window.windowNumber, context: nil, characters: "Ω",
+            charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+        XCTAssertEqual(page.model.keymap.command(for: toggle, in: .editor), .editorToggleWrap)
+        editor.textView.keyDown(with: toggle)
+        XCTAssertEqual(page.model.wrapsLines, wraps, "⌥Z in the note flipped the page's wrap")
+        XCTAssertTrue(editor.isOpen)
     }
 
     /// A named object's note is headed with its name.

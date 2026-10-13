@@ -2062,12 +2062,14 @@ public struct InkEditorView: NSViewRepresentable {
             // step taken over an edit that was off screen would put the
             // caret somewhere the writer cannot see. Follow it.
             textView.scrollRangeToVisible(selection)
+            noteHost?.inkDidChange()
         }
 
         // MARK: Editing (ops across the seam, ADR-0013)
 
         public func textDidChange(_ notification: Notification) {
             restyle()
+            noteHost?.inkDidChange()
         }
 
         /// The composition the IME gate is tracking: where it started,
@@ -2872,6 +2874,7 @@ public struct InkEditorView: NSViewRepresentable {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.noteChip == chip else { return }
                 self.restateNote()
+                self.noteHost?.inkDidChange()
             }
         }
 
@@ -4459,7 +4462,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// Whether this page's own name field, or a sealed object's note, holds
     /// the keys, so the page's chords stand aside for it.
     var yieldsKeys: Bool {
-        if window?.firstResponder is NoteTextView { return true }
+        if let other = window?.firstResponder as? InkTextView, other !== self,
+           other.coordinator?.writesNote == true {
+            return true
+        }
         guard let editor = window?.firstResponder as? NSTextView, editor !== self,
               editor.isFieldEditor, let field = editor.delegate as? NSView
         else { return false }
