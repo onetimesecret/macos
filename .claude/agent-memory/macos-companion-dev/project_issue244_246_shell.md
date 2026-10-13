@@ -24,6 +24,22 @@ Built 2026-10-13, app 0.29.0 to 0.31.1, shell only (no FFI change).
 - `InkTextView.performKeyEquivalent` runs for every view in the window,
   first responder or not, so `yieldsKeys` must decline while the name
   field's editor or a `NoteTextView` holds the keys.
+- Review fixes (same day, app 0.31.2 to 0.31.4, ffi 0.37.0): the name
+  field is a subview of the page, so `begin` sets its `nextResponder` to
+  the page's own; otherwise the Edit menu's nil-targeted undo:, seal and
+  language actions reach the page under a draft. Test such routing by
+  walking `nextResponder` from `window.firstResponder` (NSApp is nil
+  under xctest). The note and the name field edit through
+  `OwnDragsOnlyTextView` (the field via `SealedNameFieldCell`'s own field
+  editor) and refuse external drops; both empty their text on close;
+  `SealedBlockLayout.copiesNameValue(kind:)` (text only) gates the `=`
+  zone and the menu item. Law 0001's note row now owes the page's own
+  surface (markdown face, lists, links, fences) to #246.
+- Clipboard in tests: call `client.useMemoryPasteboardForTests()`
+  (`companion_test_memory_pasteboard`) before any copy out or name=value
+  through an ephemeral client, or the suite clears the person's real
+  clipboard. `DraggingInfoStub` stands in for a drag (needs `@MainActor`
+  and `@preconcurrency NSDraggingInfo`).
 
 **Why:** these choices are not visible from the tickets, and the
 hardware checks (docs/qa/verification-procedures/sealed-zones-and-note.md,
