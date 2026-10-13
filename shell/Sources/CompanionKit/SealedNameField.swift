@@ -234,6 +234,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     }
 
     private func close(returningKeys: Bool) {
+        defer { field.stringValue = "" }
         let index = textView?.naming?.index
         textView?.naming = nil
         field.isHidden = true

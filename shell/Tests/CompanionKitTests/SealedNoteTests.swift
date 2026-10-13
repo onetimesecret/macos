@@ -368,6 +368,29 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(page.model.noteText(chip: page.chip), "")
     }
 
+    /// A closed note leaves none of its ink in the shell, whether Esc
+    /// closed it or its object left the page; the core still holds it.
+    func testAClosedNoteLeavesNoInkInTheShell() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("rotate monthly", into: editor)
+        editor.escape()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(editor.textView.string, "", "the note's ink outlived its popover")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "rotate monthly")
+
+        page.coordinator.beginNote(at: 3)
+        XCTAssertEqual(editor.textView.string, "rotate monthly", "reopening lost the note")
+        type(" again", into: editor)
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "rotate monthly again")
+        let storage = try XCTUnwrap(page.textView.textStorage)
+        storage.deleteCharacters(in: NSRange(location: 3, length: 1))
+        page.coordinator.followNote()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(editor.textView.string, "", "the note's ink outlived its object")
+    }
+
     /// A drag from elsewhere finds nowhere to land in the note, since a
     /// seal cannot stand in it (ADR-0043 point 3); a drag of the note's own
     /// ink still moves it.

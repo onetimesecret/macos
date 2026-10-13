@@ -306,6 +306,38 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertTrue(window.firstResponder === page.textView, "the keys did not come back")
     }
 
+    /// A shut field keeps no draft, in the field or its editor, however
+    /// it ended.
+    func testAShutFieldKeepsNoDraft() throws {
+        let page = try makePage()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = page.scroll
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        let fieldEditor = try XCTUnwrap(editor.field.currentEditor() as? NSTextView)
+        editor.draft = "LEFT_BEHIND"
+        editor.keep(returningKeys: true)
+        XCTAssertEqual(editor.field.stringValue, "", "Escape left the draft in the field")
+        XCTAssertEqual(fieldEditor.string, "", "Escape left the draft in its editor")
+
+        page.coordinator.beginNaming(at: 3)
+        editor.draft = "MY_KEY"
+        editor.commit()
+        XCTAssertEqual(coreName(page), "MY_KEY")
+        XCTAssertEqual(editor.field.stringValue, "", "Return left the draft in the field")
+        XCTAssertEqual(fieldEditor.string, "")
+
+        page.coordinator.beginNaming(at: 3)
+        XCTAssertEqual(editor.draft, "MY_KEY", "reopening lost the name")
+        editor.draft = "GONE"
+        try XCTUnwrap(page.textView.textStorage).deleteCharacters(in: NSRange(location: 3, length: 1))
+        page.coordinator.followNaming()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(editor.field.stringValue, "", "the draft outlived its object")
+    }
+
     /// A drag from elsewhere finds nowhere to land in the field, since a
     /// seal cannot stand in a name; the draft is as it was.
     func testTheFieldTakesNoDropFromElsewhere() throws {

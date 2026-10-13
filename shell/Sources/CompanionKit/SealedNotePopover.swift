@@ -367,6 +367,11 @@ final class SealedNoteEditor: NSObject, NSTextViewDelegate {
         isExpanded = false
         unwatch()
         overlay.removeFromSuperview()
+        restating = true
+        textView.string = ""
+        restating = false
+        synced = ""
+        selectionBefore = nil
         model.finishNoteEditingGroup(chip: chip)
         model.restateChipFace(chip, sheet: sheet)
         if gaveKeys, let pageView { pageView.window?.makeFirstResponder(pageView) }

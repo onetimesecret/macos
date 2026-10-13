@@ -697,6 +697,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A closed note, or a shut name field, holds none of its text**
+  (Law 0001, ADR-0043, issues #245 and #246). The note's view kept the
+  last note's text after it closed, past its object's removal and its
+  page's expiry, until another note opened; the name field kept its
+  last draft the same way. Closing now empties both, as a page's
+  storage is emptied when the page leaves. The text is dropped, not
+  wiped, as a page's ink is.
+
 - **A drop on a sealed object's note or name field lands nowhere**
   (app 0.31.3; ADR-0044, issues #245 and #246). Text dragged from
   another app onto an open note, or onto the name field, went into it
