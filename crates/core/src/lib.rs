@@ -8,6 +8,7 @@ mod document;
 pub mod file_persist;
 pub mod files;
 pub mod harden;
+mod ink;
 mod language_detection;
 pub mod ledger;
 pub mod persist;
@@ -26,9 +27,10 @@ pub use document::{EditIntent, EditSelection, TextSelection};
 pub use files::{
     DRAFT_SNAPSHOT_LIMIT, DroppedReason, ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict,
     FileId, FileIo, FileNotice, FileStore, FileWitness, HydrationFate, HydrationOutcome,
-    LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError, StepOutcome,
+    LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError,
 };
 pub use harden::harden_process;
+pub use ink::StepOutcome;
 pub use language_detection::detect_source_language;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
 pub use persist::RestoreError;
