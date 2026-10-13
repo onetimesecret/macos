@@ -6,20 +6,18 @@ public struct PadPickerView: View {
     @ObservedObject private var model: PageModel
     @Environment(\.presentationSurface) private var surface
     @StateObject private var keyboard = PadShortcutMonitor()
-    @State private var menuOpen = false
-    @State private var namingPad = false
+    @State private var routes = PadPickerRoutes()
     @State private var removingPad: PadEntry?
     @State private var confirmingRemoval = false
     @State private var nameDraft = ""
     @State private var nameSubmitted = false
     @State private var nameFailure: String?
-    @State private var padRename = PadRename()
 
     public init(model: PageModel) { self.model = model }
 
     public var body: some View {
         HStack(spacing: 12) {
-            Button { menuOpen.toggle() } label: {
+            Button { routes.listOpen.toggle() } label: {
                 HStack(spacing: 8) {
                     Text(model.pads.activePad.name).lineLimit(1)
                     Image(systemName: "chevron.down").font(.caption)
@@ -31,7 +29,7 @@ public struct PadPickerView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(CompanionL10n.format("pad.picker.current", model.pads.activePad.name))
-            .popover(isPresented: $menuOpen, arrowEdge: .bottom) { pickerMenu }
+            .popover(isPresented: $routes.listOpen, arrowEdge: .bottom) { pickerMenu }
             Spacer(minLength: 0)
             if model.pads.appAssociationsEnabled {
                 ForEach(model.pads.activePad.applicationBundleIDs, id: \.self) { bundleID in
@@ -44,19 +42,19 @@ public struct PadPickerView: View {
         .onAppear { keyboard.install(model: model, surface: surface) }
         .onDisappear {
             keyboard.stop()
-            padRename.keep(in: model)
+            routes.closeList(in: model)
         }
         .onChange(of: model.owner) { _ in
             keyboard.commandHeld = false
-            menuOpen = false
+            routes.closeList(in: model)
         }
-        .onChange(of: menuOpen) { open in
-            if !open { padRename.keep(in: model) }
+        .onChange(of: routes.listOpen) { open in
+            if !open { routes.closeList(in: model) }
         }
         .onReceive(keyboard.$selectedPad) { id in
-            if id != nil { menuOpen = false }
+            if id != nil { routes.closeList(in: model) }
         }
-        .sheet(isPresented: $namingPad) { nameEditor }
+        .sheet(isPresented: $routes.creating) { nameEditor }
         .alert(CompanionL10n.format("pad.remove.title", removingPad?.name ?? ""),
                isPresented: $confirmingRemoval) {
             Button(CompanionL10n.string("pad.remove"), role: .destructive) {
@@ -85,7 +83,7 @@ public struct PadPickerView: View {
             }
             HStack {
                 Spacer()
-                Button(CompanionL10n.string("pad.cancel")) { namingPad = false }
+                Button(CompanionL10n.string("pad.cancel")) { routes.creating = false }
                     .keyboardShortcut(.cancelAction)
                 Button(CompanionL10n.string("pad.create")) { submitName() }
                     .keyboardShortcut(.defaultAction)
@@ -99,15 +97,14 @@ public struct PadPickerView: View {
         nameDraft = ""
         nameSubmitted = false
         nameFailure = nil
-        menuOpen = false
-        namingPad = true
+        routes.beginCreating(in: model)
     }
 
     private func submitName() {
         nameSubmitted = true
         guard PadNameDraft.validationMessage(nameDraft) == nil else { return }
         // Creating already activates the new pad; do not persist a second activation.
-        if model.createPad(named: nameDraft) != nil { namingPad = false }
+        if model.createPad(named: nameDraft) != nil { routes.creating = false }
         else { nameFailure = CompanionL10n.string("pad.name.failed") }
     }
 
@@ -126,16 +123,16 @@ public struct PadPickerView: View {
                         shortcut: keyboard.commandHeld && PadShortcutMonitor.allows(
                             number: index, keymap: model.keymap
                         ) && index <= 9 ? "⌘\(index)" : nil,
-                        renaming: padRename.pad == pad.id,
+                        renaming: routes.rename.pad == pad.id,
                         draft: Binding(
-                            get: { padRename.draft },
-                            set: { padRename.edit($0, in: model) }
+                            get: { routes.rename.draft },
+                            set: { routes.rename.edit($0, in: model) }
                         ),
-                        select: { model.activatePad(pad.id); menuOpen = false },
-                        rename: { padRename.open(pad, in: model) },
-                        commitRename: { padRename.commit(in: model) },
-                        keepRename: { padRename.keep(pad.id, in: model) },
-                        remove: { removingPad = pad; menuOpen = false; confirmingRemoval = true }
+                        select: { model.activatePad(pad.id); routes.closeList(in: model) },
+                        rename: { routes.beginRename(pad, in: model) },
+                        commitRename: { routes.rename.commit(in: model) },
+                        keepRename: { routes.rename.keep(pad.id, in: model) },
+                        remove: { removingPad = pad; routes.closeList(in: model); confirmingRemoval = true }
                     )
                 }
                 Divider().padding(.vertical, 6)
@@ -312,6 +309,32 @@ enum PadNameDraft {
         if trimmed.isEmpty { return CompanionL10n.string("pad.name.empty") }
         if trimmed.count > 80 { return CompanionL10n.string("pad.name.long") }
         return nil
+    }
+}
+
+/// What the pad list has up: the list, the create sheet and a cell's rename
+/// field, apart from the view so a test drives the routes its buttons take.
+@MainActor
+struct PadPickerRoutes {
+    var listOpen = false
+    var creating = false
+    var rename = PadRename()
+
+    /// *Rename pad…*: the field opens in the pad's cell, over the open list.
+    mutating func beginRename(_ pad: PadEntry, in model: PageModel) {
+        rename.open(pad, in: model)
+    }
+
+    /// *New pad…*: the create sheet, which Law 0007 exempts, once the list is shut.
+    mutating func beginCreating(in model: PageModel) {
+        closeList(in: model)
+        creating = true
+    }
+
+    /// The list going away keeps whatever name an open field stood over.
+    mutating func closeList(in model: PageModel) {
+        listOpen = false
+        rename.keep(in: model)
     }
 }
 
