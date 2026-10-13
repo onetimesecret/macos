@@ -166,6 +166,12 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
 
     var isOpen: Bool { rename.isOpen }
 
+    /// Whether the field's editor holds the keys, so its ending gives them back.
+    var holdsKeys: Bool {
+        guard let editor = field.currentEditor() else { return false }
+        return field.window?.firstResponder === editor
+    }
+
     /// Opens the field over the block at `index` on `sheet`, on its name,
     /// selected whole, and gives it the keys.
     func begin(chipAt index: Int, sheet: UInt64) {
@@ -218,7 +224,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
               let index = textView.chipIndex(ofChip: chip),
               let frame = textView.chipFrame(at: index),
               let cell = textView.chipCell(at: index)
-        else { return keep(returningKeys: textView.yieldsKeys) }
+        else { return keep(returningKeys: holdsKeys) }
         let layout = SealedBlockCell.contentLayout(in: frame)
         let width = fieldWidth(room: cell.nameFieldRoom(in: frame))
         textView.naming = InkTextView.Naming(index: index, chip: chip, width: width)

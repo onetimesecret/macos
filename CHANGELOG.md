@@ -720,6 +720,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A field holding the keys keeps the page's chords and Edit menu off
+  the page** (app 0.32.1; Law 0007, ADR-0046). The page answered its
+  chords whoever held the keys, so ⌘Z under a gutter label's draft
+  stepped the page back, and Edit, Choose Language acted on the page
+  even while a sealed name or a note held them. Now the page answers its
+  chords and the Edit menu only when no other field or text view holds
+  the keys: ⌘Z undoes the field's own typing, the seal chords do
+  nothing there, and Choose Language goes to whoever holds the keys,
+  the note included. While a field holds them the menu greys Seal
+  Selected Content, Detect Code Language, Choose Language and Paste
+  Without Detection.
+
 - **Typing over a refused name leaves another notice standing** (app
   0.31.5; Law 0007, issues #245 and #249). While a pad name or a sealed
   name was refused and another notice stood in front of the refusal,

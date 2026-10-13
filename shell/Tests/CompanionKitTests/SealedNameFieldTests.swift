@@ -367,50 +367,42 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertEqual(editor.field.stringValue, "KEPT")
     }
 
-    /// The responder a nil-targeted `action` reaches from the window's
-    /// first responder, as the Edit menu's items find their target.
-    private func answerer(of action: Selector, in window: NSWindow) -> NSResponder? {
-        var responder = window.firstResponder
-        while let current = responder {
-            if current.responds(to: action) { return current }
-            responder = current.nextResponder
-        }
-        return nil
-    }
-
     /// The Edit menu's items find the field's chain, which passes the page
-    /// by: its Undo, Redo, Seal Selected Content and the language items
-    /// cannot reach the page under a draft, and Undo reaches the window's
-    /// own, which steps the field's typing.
+    /// by: its Undo, Redo, Seal Selected Content and the language items,
+    /// Choose Language among them, cannot reach the page under a draft,
+    /// and Undo reaches the window's own, which steps the field's typing.
+    /// The menu greys the page's items while the field holds the keys.
     func testThePagesMenuActionsStandAsideForTheField() throws {
         let page = try makePage()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = page.scroll
-        let actions = [
-            #selector(EditStepResponder.undo(_:)), #selector(EditStepResponder.redo(_:)),
-            #selector(SealResponder.sealSelectedContent(_:)),
-            #selector(LanguageDetectionResponder.pasteWithoutDetection(_:)),
-            #selector(LanguageDetectionResponder.detectCodeLanguage(_:)),
-        ]
         window.makeFirstResponder(page.textView)
-        for action in actions {
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        drainMainQueue()
+        XCTAssertTrue(page.model.sealActions.canSeal, "the control: the page's selection seals")
+        for action in pageMenuActions {
             XCTAssertTrue(answerer(of: action, in: window) === page.textView, "the control: \(action)")
         }
 
         page.coordinator.beginNaming(at: 3)
+        drainMainQueue()
         XCTAssertTrue(page.textView.yieldsKeys, "the field does not hold the keys")
-        for action in actions {
+        for action in pageMenuActions {
             XCTAssertFalse(
                 answerer(of: action, in: window) is InkTextView,
                 "\(action) reached the page under the field")
         }
         XCTAssertTrue(answerer(of: #selector(EditStepResponder.undo(_:)), in: window) === window)
+        XCTAssertFalse(page.model.sealActions.canSeal, "the menu offered the page's seal")
+        XCTAssertFalse(page.model.languageActions.canPaste)
 
         page.coordinator.nameEditor?.keep(returningKeys: true)
+        drainMainQueue()
         XCTAssertTrue(
             answerer(of: #selector(EditStepResponder.undo(_:)), in: window) === page.textView,
             "the page lost its own Undo once the field shut")
+        XCTAssertTrue(page.model.languageActions.canPaste, "the menu did not come back to the page")
     }
 }

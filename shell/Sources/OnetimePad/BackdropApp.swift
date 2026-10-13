@@ -46,7 +46,7 @@ struct BackdropApp: App {
                     CommandGroup(after: .pasteboard) {
                         LanguageDetectionMenuItems(
                             pages: appDelegate.pages,
-                            send: appDelegate.sendToResponder
+                            send: appDelegate.sendToResponder(_:carrying:)
                         )
                     }
                 }
@@ -219,22 +219,36 @@ enum ManualLanguageChoiceTarget: Equatable {
         guard editorSelectionIsEmpty == true else { return nil }
         return selectedFile.map(Self.file)
     }
+
+    /// Runs a choice: an editor's goes down the responder chain to whichever
+    /// surface holds the keys (ADR-0046), a file's render mode to the model.
+    @MainActor
+    func choose(
+        _ language: String,
+        send: (Selector, Any?) -> Void,
+        selectFileMode: (FileRenderMode, UInt64) -> Void
+    ) {
+        switch self {
+        case .editor:
+            send(
+                #selector(LanguageDetectionResponder.chooseCodeLanguage(_:)),
+                CodeLanguageChoice(language: language))
+        case .file(let id):
+            selectFileMode(.source(language), id)
+        }
+    }
 }
 
 @MainActor
 private struct LanguageDetectionMenuItems: View {
     @ObservedObject var pages: PageModel
     @ObservedObject private var languageActions: LanguageActionAvailability
-    let send: (Selector) -> Void
+    let send: (Selector, Any?) -> Void
 
-    init(pages: PageModel, send: @escaping (Selector) -> Void) {
+    init(pages: PageModel, send: @escaping (Selector, Any?) -> Void) {
         self.pages = pages
         _languageActions = ObservedObject(wrappedValue: pages.languageActions)
         self.send = send
-    }
-
-    private var responder: LanguageDetectionResponder? {
-        pages.activeEditor as? LanguageDetectionResponder
     }
 
     private var manualChoiceTarget: ManualLanguageChoiceTarget? {
@@ -246,19 +260,14 @@ private struct LanguageDetectionMenuItems: View {
     }
 
     private func chooseSourceLanguage(_ language: String) {
-        switch manualChoiceTarget {
-        case .editor:
-            responder?.chooseCodeLanguage(language)
-        case .file(let id):
-            pages.selectFileRenderMode(.source(language), for: id)
-        case nil:
-            break
+        manualChoiceTarget?.choose(language, send: send) { mode, id in
+            pages.selectFileRenderMode(mode, for: id)
         }
     }
 
     var body: some View {
         Button("Detect Code Language…") {
-            send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
+            send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)), nil)
         }
         .disabled(!languageActions.canDetect)
 
@@ -275,9 +284,9 @@ private struct LanguageDetectionMenuItems: View {
         .disabled(manualChoiceTarget == nil)
 
         Button("Paste Without Detection") {
-            send(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)))
+            send(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)), nil)
         }
-        .disabled(pages.activeEditor?.isEditable != true)
+        .disabled(!languageActions.canPaste)
     }
 }
 
@@ -1047,6 +1056,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// from a target that cannot see the page's text view.
     func sendToResponder(_ selector: Selector) {
         NSApp.sendAction(selector, to: nil, from: nil)
+    }
+
+    /// The same, with a sender the answer reads, as Choose Language's
+    /// `CodeLanguageChoice` (ADR-0046).
+    func sendToResponder(_ selector: Selector, carrying sender: Any?) {
+        NSApp.sendAction(selector, to: nil, from: sender)
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the

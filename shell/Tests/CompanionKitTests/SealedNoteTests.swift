@@ -608,6 +608,50 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(editor.textView.textContainerInset, NSSize(width: 4, height: 4))
     }
 
+    /// While the note holds the keys the Edit menu's actions reach the note
+    /// and not the page, and the menu shows what the note can do: Choose
+    /// Language in a bare fence, and no seal over a selection (ADR-0046).
+    func testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        drainMainQueue()
+        XCTAssertTrue(page.model.sealActions.canSeal, "the control: the page's selection seals")
+        let inkBefore = pageInk(page)
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("```\nlet key = 1\n```", into: editor)
+        editor.textView.setSelectedRange(NSRange(location: 6, length: 0))
+        drainMainQueue()
+
+        for action in pageMenuActions {
+            XCTAssertTrue(
+                answerer(of: action, in: page.window) === editor.textView,
+                "\(action) missed the note")
+        }
+        XCTAssertTrue(page.model.languageActions.canChoose, "the menu hid the note's Choose Language")
+        XCTAssertFalse(page.model.sealActions.canSeal, "the menu offered a seal in the note")
+        editor.textView.selectAll(nil)
+        drainMainQueue()
+        XCTAssertFalse(page.model.sealActions.canSeal, "the menu offered a seal over the note's text")
+
+        page.textView.chooseCodeLanguage(CodeLanguageChoice(language: "rust"))
+        page.textView.undo(nil)
+        XCTAssertEqual(pageInk(page), inkBefore, "the page answered the menu under the note")
+        let rawText = "let key = 1"
+        editor.textView.selectAll(nil)
+        editor.textView.insertText(rawText, replacementRange: editor.textView.selectedRange())
+        editor.textView.selectAll(nil)
+        XCTAssertTrue(editor.textView.tryToPerform(
+            #selector(LanguageDetectionResponder.chooseCodeLanguage(_:)),
+            with: CodeLanguageChoice(language: "rust")))
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "```rust\n\(rawText)\n```")
+        XCTAssertEqual(pageInk(page), inkBefore)
+
+        editor.escape()
+        drainMainQueue()
+        XCTAssertTrue(page.model.languageActions.canPaste, "the menu did not come back to the page")
+    }
+
     /// ⌥Z, the page's wrap toggle, is not the note's: a note always wraps.
     func testTheWrapToggleStandsAsideInANote() throws {
         let page = try makePage()

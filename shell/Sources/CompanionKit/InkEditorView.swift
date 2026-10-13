@@ -650,6 +650,10 @@ public struct InkEditorView: NSViewRepresentable {
                 self, selector: #selector(blockMetadataFormatDidChange(_:)),
                 name: .NSSystemTimeZoneDidChange, object: nil
             )
+            notifications.addObserver(
+                self, selector: #selector(windowBecameKey(_:)),
+                name: NSWindow.didBecomeKeyNotification, object: nil
+            )
         }
 
         /// Both notifications mean already-rendered labels could have stale
@@ -657,6 +661,18 @@ public struct InkEditorView: NSViewRepresentable {
         /// like the clip observer, so it needs no teardown registration.
         @objc private func blockMetadataFormatDidChange(_ notification: Notification) {
             restyle()
+        }
+
+        @objc private func windowBecameKey(_ notification: Notification) {
+            keysMoved()
+        }
+
+        /// The keys moved to or from a surface or a window: the Edit menu's
+        /// answers follow them on the next turn, once AppKit has settled.
+        func keysMoved() {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshLanguageActionAvailability()
+            }
         }
 
         /// Captures the ordinary plain-text payload once, before AppKit performs
@@ -1071,7 +1087,19 @@ public struct InkEditorView: NSViewRepresentable {
             PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
         }
 
+        /// The Edit menu's language and seal items, as the surface holding the
+        /// keys can answer them (ADR-0046). A note speaks only while it holds
+        /// them; the page says nothing is available while a field does.
         func refreshLanguageActionAvailability() {
+            if writesNote, textView?.answersChords != true { return }
+            if let textView, !textView.answersChords {
+                if let holder = textView.window?.firstResponder as? InkTextView,
+                   holder !== textView, holder.answersChords { return }
+                model.languageActions.stand(
+                    canDetect: false, canChoose: false, selectionIsEmpty: nil, canPaste: false)
+                model.sealActions.stand(canSeal: false)
+                return
+            }
             let canChoose = manualLanguageTargetAvailable
             let selectionIsEmpty: Bool?
             if PageModel.languageDetectionFeaturesAvailable,
@@ -1089,7 +1117,9 @@ public struct InkEditorView: NSViewRepresentable {
             model.languageActions.stand(
                 canDetect: canChoose && model.languageDetectionEnabled,
                 canChoose: canChoose,
-                selectionIsEmpty: selectionIsEmpty
+                selectionIsEmpty: selectionIsEmpty,
+                canPaste: PageModel.languageDetectionFeaturesAvailable
+                    && document != nil && textView?.isEditable == true
             )
             model.sealActions.stand(canSeal: sealableSelection() != nil)
         }
@@ -2895,7 +2925,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Keeps the name a field stands over when its page goes from under it.
         func keepNaming() {
-            nameEditor?.keep(returningKeys: textView?.yieldsKeys ?? false)
+            nameEditor?.keep(returningKeys: nameEditor?.holdsKeys ?? false)
         }
 
         /// Stands an open name field over its object again after the page moved.
@@ -4218,8 +4248,19 @@ final class InkLayoutManager: NSLayoutManager {
     var canDetectCodeLanguage: Bool { get }
     var canChooseCodeLanguage: Bool { get }
     func detectCodeLanguage(_ sender: Any?)
-    func chooseCodeLanguage(_ language: String)
+    /// `sender` is a `CodeLanguageChoice`, so the language rides the chain.
+    func chooseCodeLanguage(_ sender: Any?)
     func pasteWithoutDetection(_ sender: Any?)
+}
+
+/// The language Edit → Choose Language sends down the responder chain, to
+/// whichever surface holds the keys (ADR-0046).
+public final class CodeLanguageChoice: NSObject {
+    public let language: String
+
+    public init(language: String) {
+        self.language = language
+    }
 }
 
 /// The seal of a selection, posted by Edit → Seal Selected Content down
@@ -4365,11 +4406,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     var canChooseCodeLanguage: Bool {
-        coordinator?.manualLanguageTargetAvailable == true
+        answersChords && coordinator?.manualLanguageTargetAvailable == true
     }
 
-    func chooseCodeLanguage(_ language: String) {
-        coordinator?.applyManualLanguage(language)
+    @objc func chooseCodeLanguage(_ sender: Any?) {
+        guard answersChords, let choice = sender as? CodeLanguageChoice else { return }
+        coordinator?.applyManualLanguage(choice.language)
     }
 
     /// The sealed block under the pointer, if any, so the block can
@@ -4459,24 +4501,26 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         return found
     }
 
-    /// Whether this page's own name field, or a sealed object's note, holds
-    /// the keys, so the page's chords stand aside for it.
+    /// Whether another text view or field holds the keys, in this window or
+    /// in a key window over it, so the page's chords stand aside (ADR-0046).
     var yieldsKeys: Bool {
-        if let other = window?.firstResponder as? InkTextView, other !== self,
-           other.coordinator?.writesNote == true {
-            return true
-        }
-        guard let editor = window?.firstResponder as? NSTextView, editor !== self,
-              editor.isFieldEditor, let field = editor.delegate as? NSView
-        else { return false }
-        return field.isDescendant(of: self)
+        if keysHeldInAnotherWindow { return true }
+        guard let holder = window?.firstResponder as? NSTextView else { return false }
+        return holder !== self
     }
 
-    /// Whether this surface's chords are its own to answer: a note's only
-    /// while it holds the keys, the page's unless something else does.
+    /// Whether this surface's chords and Edit menu actions are its own to
+    /// answer: a note's only while it holds the keys, the page's unless
+    /// another text view does (ADR-0046).
     var answersChords: Bool {
         guard coordinator?.writesNote == true else { return !yieldsKeys }
-        return window?.firstResponder === self
+        return window?.firstResponder === self && !keysHeldInAnotherWindow
+    }
+
+    /// A text field in another key window, such as the pad list's popover.
+    private var keysHeldInAnotherWindow: Bool {
+        guard let key = NSApp?.keyWindow, key !== window else { return false }
+        return key.firstResponder is NSTextView
     }
 
     /// The sealed block's cell standing at `index`, if one does.
@@ -4919,10 +4963,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// either. The guard itself sits inside `step`, where every route
     /// meets, rather than being spelled once per door.
     @objc func undo(_ sender: Any?) {
+        guard answersChords else { return }
         coordinator?.step(back: true)
     }
 
     @objc func redo(_ sender: Any?) {
+        guard answersChords else { return }
         coordinator?.step(back: false)
     }
 
@@ -4930,7 +4976,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// method the chord and the context menu row run; a page shown
     /// read-only refuses it here, as it refuses the chord.
     @objc func sealSelectedContent(_ sender: Any?) {
-        guard isEditable else { return }
+        guard isEditable, answersChords else { return }
         coordinator?.sealSelectionOrLine()
     }
 
@@ -4951,11 +4997,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             let back = item.action == #selector(undo(_:))
             let verb = back ? "Undo" : "Redo"
             item.title = model.editStepName(document, back: back).map { "\(verb) \($0)" } ?? verb
-            return isEditable && model.canStepEdit(document, back: back)
+            return isEditable && answersChords && model.canStepEdit(document, back: back)
         case #selector(detectCodeLanguage(_:)):
             return canDetectCodeLanguage
+        case #selector(chooseCodeLanguage(_:)):
+            return canChooseCodeLanguage
         case #selector(pasteWithoutDetection(_:)):
-            return PageModel.languageDetectionFeaturesAvailable && isEditable
+            return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
         default:
             return super.validateMenuItem(item)
         }
@@ -5106,7 +5154,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     var canDetectCodeLanguage: Bool {
         PageModel.languageDetectionFeaturesAvailable
-            && isEditable
+            && isEditable && answersChords
             && coordinator?.canDetectCodeLanguage == true
     }
 
@@ -5116,7 +5164,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     @objc func pasteWithoutDetection(_ sender: Any?) {
-        guard PageModel.languageDetectionFeaturesAvailable, isEditable else { return }
+        guard PageModel.languageDetectionFeaturesAvailable, isEditable, answersChords else { return }
         performOrdinaryPaste(sender, bypassingAutomaticFencing: true) { [unowned self] sender in
             pasteAsPlainText(sender)
         }
@@ -5519,11 +5567,21 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.model.escape()
     }
 
-    /// A note given up closes, on the next turn, once the keys have landed.
+    /// A note given up closes, on the next turn, once the keys have landed;
+    /// the Edit menu's answers follow the keys either way (ADR-0046).
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        if resigned { coordinator?.noteHost?.keysMayHaveLeft() }
+        if resigned {
+            coordinator?.noteHost?.keysMayHaveLeft()
+            coordinator?.keysMoved()
+        }
         return resigned
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { coordinator?.keysMoved() }
+        return became
     }
 
     // MARK: Drop-to-seal

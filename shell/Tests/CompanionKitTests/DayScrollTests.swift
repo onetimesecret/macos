@@ -1486,6 +1486,54 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// While the gutter's field holds the keys the page's ⌘Z and the Edit
+    /// menu's actions stand aside for the draft (Law 0007, ADR-0046).
+    func testTheGuttersFieldTakesThePagesChordsAndMenuAway() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "first line")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 10, length: 0))
+        editor.insertText(" more", replacementRange: NSRange(location: NSNotFound, length: 0))
+        func ink() -> String {
+            model.coreClient.documentRuns(sheet: selected).reduce(into: "") {
+                if case .ink(let ink) = $1 { $0 += ink }
+            }
+        }
+        XCTAssertEqual(ink(), "first line more")
+        XCTAssertTrue(model.canUndoEdit(sheet: selected), "the fixture has nothing to step")
+        drainMainQueue()
+        XCTAssertTrue(model.languageActions.canPaste, "the control: the page answers the menu")
+
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        header.beginRename()
+        let fieldEditor = try XCTUnwrap(roll.window.firstResponder as? NSTextView)
+        XCTAssertTrue(fieldEditor.isFieldEditor)
+        drainMainQueue()
+        XCTAssertFalse(editor.answersChords, "the page kept its chords under the gutter's draft")
+        let undo = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: roll.window.windowNumber, context: nil, characters: "z",
+            charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+        XCTAssertFalse(editor.performKeyEquivalent(with: undo), "the page took ⌘Z from the gutter")
+        XCTAssertEqual(ink(), "first line more", "⌘Z stepped the page under the gutter's draft")
+        for action in pageMenuActions {
+            XCTAssertFalse(
+                answerer(of: action, in: roll.window) is InkTextView,
+                "\(action) reached the page from the gutter's field")
+        }
+        XCTAssertFalse(model.languageActions.canPaste, "the menu offered the page's paste")
+        XCTAssertFalse(model.sealActions.canSeal)
+
+        fieldEditor.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        drainMainQueue()
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertTrue(editor.answersChords)
+        XCTAssertTrue(model.languageActions.canPaste, "the menu did not come back to the page")
+    }
+
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {
         let model = try makeModel()
         model.newPage()

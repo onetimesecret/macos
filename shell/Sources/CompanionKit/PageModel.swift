@@ -383,13 +383,16 @@ public final class LanguageActionAvailability: ObservableObject {
     @Published public private(set) var canDetect = false
     @Published public private(set) var canChoose = false
     @Published public private(set) var selectionIsEmpty: Bool?
+    /// Whether Paste Without Detection has a surface holding the keys to paste into.
+    @Published public private(set) var canPaste = false
 
-    func stand(canDetect: Bool, canChoose: Bool, selectionIsEmpty: Bool?) {
+    func stand(canDetect: Bool, canChoose: Bool, selectionIsEmpty: Bool?, canPaste: Bool) {
         if self.canDetect != canDetect { self.canDetect = canDetect }
         if self.canChoose != canChoose { self.canChoose = canChoose }
         if self.selectionIsEmpty != selectionIsEmpty {
             self.selectionIsEmpty = selectionIsEmpty
         }
+        if self.canPaste != canPaste { self.canPaste = canPaste }
     }
 }
 
