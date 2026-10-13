@@ -30,6 +30,11 @@ and D-38's tooltip and gutter paragraph, as incorporated here, are
 amended by [2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md)
 (D-44 to D-47).
 
+*Amended 2026-10-13:* D-40's plain click and D-41's menu, as
+incorporated here, are narrowed and extended for a sealed object's name
+and note by
+[ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md).
+
 ## D-42 · Confirmation after decrypted copy
 
 After a decrypted copy, the confirmation reads: `copied decrypted

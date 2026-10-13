@@ -302,6 +302,11 @@ and the block reveals an actions glyph on hover that opens this menu;
 see [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md)
 D-40 and D-41.
 
+*Amended 2026-10-13:* a named object's menu gains *Copy name* and *Copy
+name=value, decrypted*, and every object's gains *Name…* or *Rename…*
+and *Note…* or *Edit note…*
+([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
+
 After a decrypted copy, one line confirms the boundary crossing with the
 core's interval: `copied decrypted contents — small. the clipboard
 clears in 60 seconds.` The interval is one core constant,
@@ -401,6 +406,10 @@ in plain; the fragment adds order, not payload exposure.
   *Amended 2026-09-15:* the click also opens the object's menu, and
   Return or Space over the selected object opens it too; see
   [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-40.
+  *Amended 2026-10-13:* a named block's bottom row carries three copy
+  zones, each also in the object's menu, and a click on one copies;
+  outside the bottom row a click still only selects
+  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
 - **D-27 (fixed)** Sealed content is a full-measure block, not an inline
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
   with a lock over the mechanical excerpt, the size class right-aligned
@@ -414,6 +423,10 @@ in plain; the fragment adds order, not payload exposure.
   component to follow; the only `SealedChip` in the tree is the Rust
   type. Tracked as "Sealed block: full-measure attachment replaces
   SealedBlockCell (D-27)" (issue 169).
+  *Amended 2026-10-13:* a named block's bottom row reads
+  `NAME=excerpt`, and its three copy zones show a pill and their
+  consequence under the pointer before a click
+  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
   operations act on the whole object; the caret never lands inside it
