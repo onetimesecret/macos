@@ -5051,42 +5051,63 @@ public final class PageModel: ObservableObject {
         let dwell = action == nil ? Self.noticeDwell : Self.noticeDwellWithAction
         DispatchQueue.main.asyncAfter(deadline: .now() + dwell) { [weak self] in
             guard let self, self.noticeGeneration == generation else { return }
-            self.notice = nil
-            self.noticeAction = nil
+            self.showHeldOrNothing()
         }
     }
 
-    /// A line `holdNotice` put up, which only its own release takes down.
+    /// A line `holdNotice` put up, named so that only its own release ends it.
     public struct NoticeHold: Equatable, Sendable {
-        fileprivate let generation: Int
+        fileprivate let serial: Int
     }
+
+    /// The held line, which a flash stands in front of and a clear returns to.
+    private var held: (hold: NoticeHold, message: String, tone: NoticeTone)?
+    private var holdSerial = 0
+    /// The generation at which the held line was last put on screen.
+    private var heldGeneration: Int?
 
     /// Says `message` under the page with no dwell, for a refusal that
     /// stands while a field stays open (Law 0007, Refusing; D-14).
     @discardableResult
     public func holdNotice(_ message: String, tone: NoticeTone = .actionable) -> NoticeHold {
-        notice = message
-        noticeTone = tone
-        noticeAction = nil
-        noticeGeneration += 1
-        return NoticeHold(generation: noticeGeneration)
+        holdSerial += 1
+        let hold = NoticeHold(serial: holdSerial)
+        held = (hold, message, tone)
+        clearNotice()
+        return hold
     }
 
-    /// Takes a held line down, unless a newer notice has replaced it.
+    /// Ends a hold. Its line goes if it is on screen; a flash in front of
+    /// it keeps its dwell and then leaves the line empty.
     public func releaseNotice(_ hold: NoticeHold) {
-        guard noticeGeneration == hold.generation else { return }
+        guard held?.hold == hold else { return }
+        held = nil
+        if heldGeneration == noticeGeneration { clearNotice() }
+        heldGeneration = nil
+    }
+
+    /// Takes down what the line says, back to the held line if one stands.
+    private func clearNotice() {
         noticeGeneration += 1
-        notice = nil
+        showHeldOrNothing()
+    }
+
+    private func showHeldOrNothing() {
         noticeAction = nil
+        guard let held else {
+            notice = nil
+            return
+        }
+        notice = held.message
+        noticeTone = held.tone
+        heldGeneration = noticeGeneration
     }
 
     /// The notice's button was pressed: run it, and take the line down
     /// with it, since what it offered has been done.
     public func performNoticeAction() {
         guard let action = noticeAction else { return }
-        noticeGeneration += 1
-        notice = nil
-        noticeAction = nil
+        clearNotice()
         action.perform()
     }
 
@@ -5132,7 +5153,7 @@ public final class PageModel: ObservableObject {
     /// the strip has no cap, and a tenth tab opens like the ninth
     /// (issue #158).
     public func newPage() {
-        notice = nil
+        clearNotice()
         clearPendingFileClose()
         // A page asked for now is a page to look at now, so the file
         // that was showing gives way to it.
@@ -5347,7 +5368,7 @@ public final class PageModel: ObservableObject {
     /// may no longer hold. Explicit close is the one thing that ends a
     /// tab (ADR-0017), and it takes the slot with the page.
     public func close(_ id: UInt64) {
-        notice = nil
+        clearNotice()
         // A draft aimed at this page — or at a chip riding on it —
         // dies with it. Left standing, the confirmation would still
         // answer ↩ ("Create link" carries the default action) with a
@@ -5516,7 +5537,7 @@ public final class PageModel: ObservableObject {
     /// not clear is said out loud: a paste that leaves the secret on
     /// the board is the failure this route exists to prevent.
     public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
-        notice = nil
+        clearNotice()
         guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
@@ -5594,7 +5615,7 @@ public final class PageModel: ObservableObject {
     /// dropped bytes never transit this process. `range` is the drop
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
-        notice = nil
+        clearNotice()
         guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
         if chip == nil { flash("nothing to seal") } else { markDirty() }
@@ -5606,7 +5627,7 @@ public final class PageModel: ObservableObject {
     /// locked call (ADR-0013); the editor then updates its projection
     /// to match rather than performing an edit of its own.
     public func sealText(_ text: String, replacing range: NSRange) -> ChipInfo? {
-        notice = nil
+        clearNotice()
         guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealText(sheet: sheet, text, at: at, length: length)
         if chip != nil { markDirty() }
@@ -6017,7 +6038,7 @@ public final class PageModel: ObservableObject {
     /// ↗ page. Everything after this is in-place: no modal, and the
     /// network boundary is the one confirming click.
     public func beginConceal(_ target: ConcealDraft.Target) {
-        notice = nil
+        clearNotice()
         // The draft opens on the link's own default. Which page the
         // target sits on, and how long that page has left, is not
         // consulted (ADR-0026).

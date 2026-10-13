@@ -604,6 +604,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A pad name's refusal stays while its field is open** (app 0.28.2;
+  Law 0007, issue #249). Any other notice replaced the refusal and
+  cleared the line 4 s later, and a new page, a closed tab, a seal or
+  a conceal took it down at once, while the field still held the
+  refused draft. Another notice now stands in front of the refusal for
+  its own few seconds and then gives the line back, and those clears
+  return to the refusal instead of an empty line.
+
 - **A gutter label's field gives the keys back to the page** (app
   0.28.1; Law 0007, issue #248). A click on one page's time while
   another field held the keys, such as a second page's time or the slot

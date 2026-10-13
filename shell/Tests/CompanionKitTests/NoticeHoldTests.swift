@@ -33,5 +33,36 @@ final class NoticeHoldTests: XCTestCase {
         model.flash("long lines wrap")
         model.releaseNotice(hold)
         XCTAssertEqual(model.notice, "long lines wrap", "a release took down a line it did not put up")
+        waitUntil(model.$notice, description: "the flash's dwell ended on an empty line") { $0 == nil }
+    }
+
+    /// A flash stands in front of a held line for its dwell, then gives
+    /// the line back while the field that raised it is still open.
+    func testAHeldLineComesBackWhenAFlashInFrontOfItEnds() throws {
+        let model = try model()
+        let hold = model.holdNotice("Enter a pad name.")
+        model.flash("long lines wrap")
+        XCTAssertEqual(model.notice, "long lines wrap")
+        XCTAssertEqual(model.noticeTone, .plain)
+        waitUntil(model.$notice, description: "the held line came back") { $0 == "Enter a pad name." }
+        XCTAssertEqual(model.noticeTone, .actionable, "the held line came back in the flash's ink")
+        model.releaseNotice(hold)
+        XCTAssertNil(model.notice)
+    }
+
+    /// The model's own clears, a new page and a closed tab among them, put
+    /// a held line back rather than leave the open field's refusal unsaid.
+    func testTheModelsClearsPutAHeldLineBack() throws {
+        let model = try model()
+        model.loadStateIfNeeded()
+        let hold = model.holdNotice("Enter a pad name.")
+        model.newPage()
+        XCTAssertEqual(model.notice, "Enter a pad name.", "a new page took the held line down")
+        model.close(try XCTUnwrap(model.selection))
+        XCTAssertEqual(model.notice, "Enter a pad name.", "a closed tab took the held line down")
+        model.releaseNotice(hold)
+        XCTAssertNil(model.notice)
+        model.newPage()
+        XCTAssertNil(model.notice, "a released line came back")
     }
 }
