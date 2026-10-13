@@ -67,7 +67,7 @@ duration; this lets the deadline land where the clock does"
 "Round a page's deadline up to the hour, or to midnight". It defaults
 to on (`shell/Sources/CompanionKit/PageModel.swift:1486`) and is
 carried to the core by `companion_set_grace_snap`
-(`crates/ffi/src/lib.rs:2214`).
+(`crates/ffi/src/lib.rs:2235`).
 
 ## What the code actually promises, so the expectations below are not guesses
 
@@ -101,7 +101,7 @@ carried to the core by `companion_set_grace_snap`
 - Undo is the core's stack, bound to the document's peer id
   (`crates/core/src/document.rs:130`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:749`),
-  `companion_sheet_undo` (`crates/ffi/src/lib.rs:948`) and
+  `companion_sheet_undo` (`crates/ffi/src/lib.rs:969`) and
   `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:5906`).
   `canUndo` is what greys the Edit menu
   (`shell/Sources/CompanionKit/PageModel.swift:391`).
