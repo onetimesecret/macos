@@ -12,8 +12,8 @@ use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
-    CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title,
+    CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
+    SheetClock, SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
 };
 use crate::sync::{ExpiryPolicy, HoldRegister};
 use crate::ttl::{self, Ttl};
@@ -1189,6 +1189,24 @@ impl<C: Clock> SheetStore<C> {
         self.sheets().find_map(|s| s.chip(id).map(|c| (s.id, c)))
     }
 
+    fn chip_mut(&mut self, id: ChipId) -> Option<&mut SealedChip> {
+        self.tabs
+            .iter_mut()
+            .filter_map(|tab| tab.page.as_mut())
+            .find_map(|sheet| sheet.chips.iter_mut().find(|chip| chip.id == id))
+    }
+
+    /// Name a sealed object by [`judge_name`]'s rule; an empty draft clears
+    /// the name. A refusal changes nothing, and no outcome is recorded.
+    ///
+    /// # Errors
+    /// [`NameRefusal::UnknownChip`], or the rule's own refusal.
+    pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
+        let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
+        chip.name = judge_name(draft)?.map(str::to_owned);
+        Ok(())
+    }
+
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
@@ -1677,6 +1695,7 @@ mod tests {
     use super::*;
     use crate::clock::ManualClock;
     use crate::ledger::LEDGER_RETENTION_MS;
+    use crate::sheet::NAME_CAP;
     use crate::sync::PageChannel;
 
     fn eight_hours() -> Ttl {
@@ -2278,6 +2297,9 @@ mod tests {
 
     const ORIGIN_URL: &str = "https://origin.example.test/reset?tk=Vq9Zx-Chutney-Rt83mN";
 
+    /// Long enough for `fragments_of`, and in no ledger field by chance.
+    const CHIP_NAME: &str = "QUINCE_MARMALADE_ROTATION_KEY_7ZX";
+
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
     }
@@ -2297,6 +2319,7 @@ mod tests {
     fn assert_content_free(store: &SheetStore<ManualClock>) {
         let mut fragments = fragments_of(TOKEN);
         fragments.extend(fragments_of(ORIGIN_URL));
+        fragments.extend(fragments_of(CHIP_NAME));
         let mut checked = 0usize;
         for record in store.ledger() {
             let rendered = format!("{record:?}");
@@ -2355,6 +2378,143 @@ mod tests {
         assert_content_free(&store);
         assert!(store.delete_chip(chip));
         assert_content_free(&store);
+    }
+
+    fn chip_name(store: &SheetStore<ManualClock>, chip: ChipId) -> Option<String> {
+        let (_, sealed) = store.chip_home(chip).expect("the chip stands");
+        sealed.name().map(str::to_owned)
+    }
+
+    #[test]
+    fn a_named_chip_is_content_free_in_the_ledger() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let before = store.ledger().count();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        store.set_chip_name(chip, "").unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        assert_eq!(store.ledger().count(), before, "naming records nothing");
+        assert_eq!(chip_name(&store, chip).as_deref(), Some(CHIP_NAME));
+
+        assert!(store.record_sent(chip, DestinationClass::Clipboard));
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        store.expire_due();
+        assert_eq!(store.ledger().count(), 4, "created, sealed, sent, expired");
+        assert_content_free(&store);
+        assert!(!contains(&store.ledger_snapshot(), CHIP_NAME.as_bytes()));
+    }
+
+    #[test]
+    fn a_name_survives_a_snapshot_round_trip() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let named = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let unnamed = store.seal_text_at(id, "left unnamed", 1, 0).unwrap();
+        store.set_chip_name(named, CHIP_NAME).unwrap();
+        let uuids: Vec<ItemId> = [named, unnamed]
+            .iter()
+            .map(|chip| store.chip_home(*chip).unwrap().1.uuid())
+            .collect();
+
+        let snapshot = store.snapshot(1_000_000);
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let sheet = revived.sheets().next().unwrap();
+        let names: Vec<Option<&str>> = uuids
+            .iter()
+            .map(|uuid| {
+                sheet
+                    .chips()
+                    .find(|chip| chip.uuid() == *uuid)
+                    .unwrap()
+                    .name()
+            })
+            .collect();
+        assert_eq!(names, vec![Some(CHIP_NAME), None]);
+    }
+
+    #[test]
+    fn after_the_page_expires_the_snapshot_holds_no_name() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        assert!(
+            contains(&store.snapshot(1_000_000), CHIP_NAME.as_bytes()),
+            "the control: a live page writes its chip's name"
+        );
+
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+        assert!(!contains(&store.snapshot(1_000_000), CHIP_NAME.as_bytes()));
+        assert!(!contains(&store.ledger_snapshot(), CHIP_NAME.as_bytes()));
+    }
+
+    #[test]
+    fn a_name_outside_the_charset_is_refused_and_an_empty_one_clears() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, TOKEN);
+        store.set_chip_name(chip, "  API_KEY \n").unwrap();
+        assert_eq!(
+            chip_name(&store, chip).as_deref(),
+            Some("API_KEY"),
+            "trimmed"
+        );
+
+        for refused in [
+            "my.key",
+            "my-key",
+            "9lives",
+            "two words",
+            "na\u{EF}ve",
+            "API_KEY=x",
+            "API\0KEY",
+            "\u{FF21}PI_KEY",
+        ] {
+            assert_eq!(
+                store.set_chip_name(chip, refused),
+                Err(NameRefusal::OutsideCharset),
+                "{refused:?}"
+            );
+            assert_eq!(
+                chip_name(&store, chip).as_deref(),
+                Some("API_KEY"),
+                "a refusal moved the name"
+            );
+        }
+        for taken in ["_", "a", "Z9", "_9_lives"] {
+            store.set_chip_name(chip, taken).unwrap();
+            assert_eq!(chip_name(&store, chip).as_deref(), Some(taken));
+        }
+
+        let longest = "A".repeat(NAME_CAP);
+        store.set_chip_name(chip, &longest).unwrap();
+        assert_eq!(chip_name(&store, chip), Some(longest.clone()));
+        assert_eq!(
+            store.set_chip_name(chip, &"A".repeat(NAME_CAP + 1)),
+            Err(NameRefusal::TooLong)
+        );
+        assert_eq!(
+            store.set_chip_name(chip, &format!("{}.", "A".repeat(NAME_CAP + 9))),
+            Err(NameRefusal::OutsideCharset),
+            "the charset is judged before the length"
+        );
+        assert_eq!(chip_name(&store, chip), Some(longest));
+
+        store.set_chip_name(chip, "   ").unwrap();
+        assert_eq!(chip_name(&store, chip), None, "an empty draft clears");
+        store.set_chip_name(chip, "API_KEY").unwrap();
+        store.set_chip_name(chip, "").unwrap();
+        assert_eq!(chip_name(&store, chip), None);
+
+        assert_eq!(
+            store.set_chip_name(ChipId::from_raw(4_242), "API_KEY"),
+            Err(NameRefusal::UnknownChip)
+        );
     }
 
     #[test]

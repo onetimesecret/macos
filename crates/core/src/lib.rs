@@ -34,8 +34,8 @@ pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecor
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
 pub use sheet::{
-    ChipId, ChipMeta, Conceal, ItemId, LabelSource, SealedChip, Segment, Sheet, SheetId, Tab,
-    TabId, local_day,
+    ChipId, ChipMeta, Conceal, ItemId, LabelSource, NAME_CAP, NameRefusal, SealedChip, Segment,
+    Sheet, SheetId, Tab, TabId, judge_name, local_day,
 };
 pub use store::{EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
 pub use sync::{

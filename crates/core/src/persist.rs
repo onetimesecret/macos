@@ -16,7 +16,7 @@ use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title,
+    SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::ttl::Ttl;
@@ -404,6 +404,14 @@ fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
         }
     }
     out.bytes(chip.bytes.expose());
+    // Trailing, so a build that predates it skips it (ADR-0043).
+    match &chip.name {
+        None => out.u8(0),
+        Some(name) => {
+            out.u8(1);
+            out.bytes(name.as_bytes());
+        }
+    }
 }
 
 /// Encode a sheet's block section (frozen summaries, then grouping) into
@@ -696,6 +704,20 @@ fn read_page(
             _ => return Err(Malformed),
         };
         let bytes = record.bytes().ok_or(Malformed)?;
+        // A record written before the name ends here (ADR-0043).
+        let name = if record.done() {
+            None
+        } else {
+            match record.u8().ok_or(Malformed)? {
+                0 => None,
+                // A name this build's rule refuses is dropped, not damage.
+                1 => judge_name(record.str().ok_or(Malformed)?)
+                    .ok()
+                    .flatten()
+                    .map(str::to_owned),
+                _ => return Err(Malformed),
+            }
+        };
         let chip_id = ChipId::from_raw(*next_chip_id);
         *next_chip_id += 1;
         // The face is rebuilt by the sealing constructors, never trusted.
@@ -709,6 +731,7 @@ fn read_page(
             _ => return Err(Malformed),
         };
         chip.conceal = conceal;
+        chip.name = name;
         chips.push(chip);
     }
 
@@ -908,6 +931,7 @@ mod tests {
             .seal_image(first, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
             .unwrap();
         assert!(store.mark_chip_concealed(token, "receipt-42".into()));
+        store.set_chip_name(token, "DEPLOY_TOKEN").unwrap();
         assert!(store.sync_document(
             first,
             vec![
@@ -970,8 +994,10 @@ mod tests {
                 .excerpt()
         );
         assert_eq!(chips[0].conceal().unwrap().receipt_id, "receipt-42");
+        assert_eq!(chips[0].name(), Some("DEPLOY_TOKEN"));
         assert_eq!(chips[1].excerpt(), "PNG image");
         assert!(chips[1].conceal().is_none());
+        assert_eq!(chips[1].name(), None);
 
         let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
         assert_eq!(&*bytes, b"ghp_expected-to-survive");
@@ -1951,17 +1977,77 @@ mod tests {
         doc.insert_chip(0, uuid).unwrap();
         doc.insert(1, " and ink \u{1F600}").unwrap();
         doc.commit(None);
-        let snapshot = sheet_snapshot_with_tails(
-            &[(uuid, "ghp_still-here")],
-            &doc.export_snapshot(),
-            b"a chip field from 2027",
-        );
+        // No name, then the field this build does not know.
+        let tail = [&[0u8][..], b"a chip field from 2027"].concat();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_still-here")], &doc.export_snapshot(), &tail);
 
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
         let chip = store.sheets().next().unwrap().chips().next().unwrap();
         assert_eq!(chip.uuid(), uuid);
         let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
         assert_eq!(&*bytes, b"ghp_still-here");
+    }
+
+    fn one_chip_document(uuid: ItemId) -> Zeroizing<Vec<u8>> {
+        let doc = SheetDocument::new();
+        doc.insert_chip(0, uuid).unwrap();
+        doc.commit(None);
+        doc.export_snapshot()
+    }
+
+    fn name_field(name: &str) -> Vec<u8> {
+        let mut field = vec![1u8];
+        field.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        field.extend_from_slice(name.as_bytes());
+        field
+    }
+
+    #[test]
+    fn a_chip_written_before_names_existed_restores_unnamed() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let snapshot = sheet_snapshot(&[(uuid, "ghp_older-build")], &one_chip_document(uuid));
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), None);
+        let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+        assert_eq!(&*bytes, b"ghp_older-build");
+    }
+
+    #[test]
+    fn a_written_name_comes_back_and_one_the_rule_refuses_is_dropped() {
+        let uuid = ItemId::random();
+        let document = one_chip_document(uuid);
+        for (written, expected) in [
+            ("API_KEY", Some("API_KEY")),
+            ("my.key", None),
+            ("9lives", None),
+            (&"A".repeat(65)[..], None),
+        ] {
+            let (mut store, _clock) = store();
+            let snapshot = sheet_snapshot_with_tails(
+                &[(uuid, "ghp_named-or-not")],
+                &document,
+                &name_field(written),
+            );
+            assert_eq!(store.restore(&snapshot, 0).unwrap(), 1, "{written}");
+            let chip = store.sheets().next().unwrap().chips().next().unwrap();
+            assert_eq!(chip.name(), expected, "{written}");
+            let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+            assert_eq!(&*bytes, b"ghp_named-or-not", "the chip outlived its name");
+        }
+    }
+
+    #[test]
+    fn an_unknown_name_flag_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let uuid = ItemId::random();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[2]);
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
     }
 
     #[test]

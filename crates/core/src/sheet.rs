@@ -159,7 +159,59 @@ pub struct Conceal {
     pub receipt_id: String,
 }
 
-/// A sealed chip: secret bytes and the non-secret face it shows.
+/// The longest sealed name, in characters (ADR-0042 point 1).
+pub const NAME_CAP: usize = 64;
+
+/// Why a sealed name was refused. A refusal leaves the name as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameRefusal {
+    /// No such chip.
+    UnknownChip,
+    /// Longer than [`NAME_CAP`] once trimmed.
+    TooLong,
+    /// Outside `[A-Za-z_][A-Za-z0-9_]*`.
+    OutsideCharset,
+}
+
+impl std::fmt::Display for NameRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameRefusal::UnknownChip => write!(f, "no such sealed object"),
+            NameRefusal::TooLong => write!(f, "a name is at most {NAME_CAP} characters"),
+            NameRefusal::OutsideCharset => write!(
+                f,
+                "a name is letters, digits and underscores, and does not start with a digit"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for NameRefusal {}
+
+/// Judge a draft name: trimmed, empty clears (`None`), anything else must
+/// be [`NAME_CAP`] characters of `[A-Za-z_][A-Za-z0-9_]*` (ADR-0042, ADR-0043).
+///
+/// # Errors
+/// [`NameRefusal::OutsideCharset`], judged first, or [`NameRefusal::TooLong`].
+pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
+    let name = draft.trim();
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Ok(None);
+    };
+    let leads = first.is_ascii_alphabetic() || first == '_';
+    if !leads || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(NameRefusal::OutsideCharset);
+    }
+    // ASCII by now, so bytes count characters.
+    if name.len() > NAME_CAP {
+        return Err(NameRefusal::TooLong);
+    }
+    Ok(Some(name))
+}
+
+/// A sealed chip: secret bytes, the non-secret face it shows, and the
+/// typed name beside it (ADR-0043).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
@@ -168,6 +220,7 @@ pub struct SealedChip {
     pub(crate) excerpt: String,
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
+    pub(crate) name: Option<String>,
 }
 
 impl SealedChip {
@@ -187,6 +240,7 @@ impl SealedChip {
             excerpt,
             size_label,
             conceal: None,
+            name: None,
         }
     }
 
@@ -207,6 +261,7 @@ impl SealedChip {
             excerpt,
             size_label: SizeClass::of(byte_len).to_string(),
             conceal: None,
+            name: None,
         }
     }
 
@@ -244,6 +299,12 @@ impl SealedChip {
     #[must_use]
     pub fn conceal(&self) -> Option<&Conceal> {
         self.conceal.as_ref()
+    }
+
+    /// The typed name, if one was given.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 }
 
