@@ -79,7 +79,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
 - [ ] **Sealed name, a refusal and the keys.** Open the field, type
       `my.key` and press Return. **Pass:** the line under the page asks
       for letters A to Z, digits and underscores, the field stays open
-      with the keys in it, and ⌘Z changes nothing on the page; typing
+      with the keys in it, and neither ⌘Z nor Edit → Undo from the menu
+      bar changes anything on the page; typing
       `MY_KEY` clears the line and Return names the object. Then open
       the field again, press Escape and type a character. **Pass:** the
       name is unchanged and the character lands in the page. **Fail:**
