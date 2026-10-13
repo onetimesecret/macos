@@ -285,6 +285,9 @@ editor window is on, as it does for any document application").
       the horizontal checkpoint and its day label. **Pass:** the first
       click focuses the editor and typing resumes at the saved caret;
       neither the selected page nor the caret changes on that click.
+      The checkpoint's time and a typed name are not focus targets: a
+      click there opens the rename field (Law 0007), which the
+      [rename in place procedure](rename-in-place.md) checks.
       Repeat in the panel, the editor window, an empty buffer, and an
       unsaved file. Enlarge the window with only a short line and its
       final newline: repeat just below the text, halfway down the blank
@@ -926,8 +929,10 @@ recorded yet.
   window height. Click between pages and resize the window: earlier pages keep
   their text height, and selecting one does not add a window of blank space or
   move the checkpoint separators. Check a long roll too. Click each checkpoint's
-  horizontal rule and passive labels: the page beneath that header is selected
-  and receives focus at its saved caret. Rename and contextual menus still work.
+  horizontal rule and day label: the page beneath that header is selected
+  and receives focus at its saved caret. A click on the checkpoint's time, or on
+  a typed name, opens the rename field instead (Law 0007). Rename and contextual
+  menus still work.
 - Use the expand icon in the upper right. Only the selected page remains, with
   the timeline/tab picker and checkpoint headers hidden. Type, select text,
   undo, and resize. The caret remains in the same editor and long text scrolls.
@@ -1001,7 +1006,7 @@ is about, in the split ADR-0033 gives.
 | 2026-09-28 | not recorded | panel | hotkey, status item and resting card click stay with the panel | pass | ADR-0033. Reported passed by the maintainer. |
 | | | both | panel off: hotkey and status item focus the editor, closed, open and miniaturized | | #215. Record active app, typing and conditional stream evidence; rerun panel-on summons. |
 | | | both | panel off: hotkey and status item with the editor on another desktop | | #215. Unverified implementation interpretation; record actual desktop and keyboard result against the proposed expectation. |
-| | | both | blank content and checkpoint clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. |
+| | | both | blank content and checkpoint rule and day label clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. A click on the checkpoint's time or typed name opens the rename field (Law 0007, issue #248). |
 | | | both | blank-space modified clicks and drag selection remain native | | #215. Include enlarged short buffers and read-only text. |
 | | | both | checkpoint VoiceOver description and inline rename field | | #215. Screen-coordinate accessibility tests pass; VoiceOver check unrun. |
 | 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |
