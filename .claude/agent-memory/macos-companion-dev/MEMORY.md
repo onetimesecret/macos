@@ -37,6 +37,7 @@
 - [Bookmark resolution facts](project_bookmark_resolution_facts.md): a bookmark follows its file into the Trash, and resolves to the recorded path when another file sits there; rename chains cannot be staged by renaming in a test
 - [swiftc default target refused by LaunchServices](project_swiftc_default_target_refused_by_launchservices.md): bare swiftc stamps minos 28.0 here, `open` answers -10825; pass -target and an absolute app path
 - [Locate and held files](project_locate_held_files.md): a held row is pending and accessRefused and can read dirty with nothing in it, samePath fails on a path with nothing at it, and ModalSessionTests pins two ModalSession.run sites in FileCoordinator
-- [ADR-0042 open questions](project_adr0042_open_questions.md): all four settled 2026-10-13 by adopting their recommendations; #246 still sets the popover minimum's value and records it
+- [ADR-0042 open questions](project_adr0042_open_questions.md): all four settled 2026-10-13 by adopting their recommendations; #246 set the popover minimum at 320
 - [Issue #241 to #243 core](project_issue241_243_core.md): name and note live on SealedChip (ADR-0043); note routes are keyed by chip id, which overlaps page ids; #245/#246 must markDirty
 - [Epic 252 Track A](project_epic252_track_a.md): SwiftUI field state lives in TabRename.Field, PadRename and PadPickerRoutes; #245 reuses holdNotice; hand checks live in rename-in-place.md
+- [Issues #244 to #246 shell](project_issue244_246_shell.md): zones act only after hover names them, the note is an in-window overlay not an NSPopover, page chords yield to the name field and note

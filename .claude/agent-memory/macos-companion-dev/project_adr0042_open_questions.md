@@ -9,4 +9,4 @@ ADR-0042 (`docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md`) records #
 
 **Why:** #240 point 8 claimed the line after Copy name was in the mockup; it is not, and AGENTS.md forbids presenting an unsourced detail as decided, so the record says these four are its own decisions.
 
-**How to apply:** #244 (zones, menu, line) and #246 (popover) build to that list. #246 must still pick the minimum width's value, name the constant, and add a dated decision history entry to ADR-0042 saying what it is. D-42's line governs the decrypted copies; the mockup's middle dot rendering of it is not the source. Related: [[issue241-243-sealed-name-note-core]].
+**How to apply:** #244 (zones, menu, line) and #246 (popover) built to that list on 2026-10-13; #246 set the minimum at 320 (`NotePopoverLayout.minimumWidth`) in ADR-0042's history, which also records #244's light fills, beat fade and the hover-before-copy rule ([[issue244-246-sealed-shell]]). D-42's line governs the decrypted copies; the mockup's middle dot rendering of it is not the source. Related: [[issue241-243-sealed-name-note-core]].
