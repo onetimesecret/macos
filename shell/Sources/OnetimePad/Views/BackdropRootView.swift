@@ -216,6 +216,7 @@ struct BackdropRootView: View {
                 .stanceFaded(raised: raised, animation: stanceFade)
             }
         }
+        .keepsThePadListAboveTheNoticeLine()
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)

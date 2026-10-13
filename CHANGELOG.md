@@ -720,6 +720,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The pad list stays above the line under the page** (app 0.32.2;
+  Law 0007, issue #249). On a short card or editor window the list,
+  up to 620 points tall under the pad picker, could stand over the line
+  that says why a pad name was refused, so the refusal could not be
+  read while the field it describes was open. The list now ends above
+  the lines under the page and scrolls within what room is left.
+
 - **A field holding the keys keeps the page's chords and Edit menu off
   the page** (app 0.32.1; Law 0007, ADR-0046). The page answered its
   chords whoever held the keys, so ⌘Z under a gutter label's draft

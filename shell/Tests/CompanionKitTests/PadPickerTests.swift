@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 @testable import CompanionKit
@@ -158,6 +159,72 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(rename.isOpen)
         rename.edit("Payroll", in: model)
         XCTAssertNil(model.notice)
+    }
+
+    /// The pad list, hung under the picker, ends above the line under the
+    /// page on a short card, so a refusal said there stays in sight with
+    /// the list open (Law 0007, Refusing; D-14).
+    func testThePadListEndsAboveTheLineUnderThePage() {
+        let tallest = PadListLayout.tallest
+        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: nil, lineTop: 400), tallest)
+        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: 72, lineTop: nil), tallest)
+        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: 72, lineTop: 2_000), tallest)
+        // The card at its least height, 260 points, with the header, the
+        // picker and the strip: little room between the picker and the line.
+        for (row, line) in [(CGFloat(73), CGFloat(206)), (73, 240), (110, 700), (73, 90), (73, 60)] {
+            let height = PadListLayout.maxHeight(rowBottom: row, lineTop: line)
+            XCTAssertGreaterThanOrEqual(height, 0)
+            XCTAssertLessThanOrEqual(
+                row + PadListLayout.popoverChrome + height, max(line, row + PadListLayout.popoverChrome),
+                "the list from \(row) reaches past the line at \(line)")
+        }
+        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: 73, lineTop: 206), 206 - 73 - 24)
+    }
+
+    /// What the pad picker reads in a root that keeps the list above the
+    /// line: where the status stack under the page begins.
+    private struct LineTopProbe: View {
+        @Environment(\.noticeLineTop) private var lineTop
+        let report: (CGFloat?, CGFloat) -> Void
+
+        var body: some View {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { report(lineTop, proxy.frame(in: .global).maxY) }
+                    .onChange(of: lineTop) { report($0, proxy.frame(in: .global).maxY) }
+            }
+            .frame(height: 40)
+        }
+    }
+
+    /// A root that keeps the list above the line hands the picker the
+    /// status stack's top, in the space the picker measures its own row in.
+    func testTheRootHandsThePickerTheTopOfTheLineUnderThePage() throws {
+        let suite = "pad-line-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        var seen: CGFloat?
+        var rowBottom: CGFloat = 0
+        let root = VStack(spacing: 0) {
+            LineTopProbe { seen = $0; rowBottom = $1 }
+            Color.clear.frame(height: 200)
+            PageStatusStack(model: model)
+        }
+        .frame(width: 400, height: 300, alignment: .top)
+        .keepsThePadListAboveTheNoticeLine()
+        let host = NSHostingView(rootView: root)
+        host.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        drainMainQueue()
+        let line = try XCTUnwrap(seen, "the picker heard no line")
+        XCTAssertEqual(line - rowBottom, 200, accuracy: 0.5, "the line is not where the stack begins")
+        XCTAssertEqual(
+            PadListLayout.maxHeight(rowBottom: rowBottom, lineTop: line), 200 - 24, accuracy: 0.5)
     }
 
     func testANameTheCatalogRefusesIsSaidWithTheFieldOpen() throws {

@@ -358,6 +358,7 @@ private struct PrimaryEditorRootView: View {
                 }
             }
         }
+        .keepsThePadListAboveTheNoticeLine()
         .background(Color.panelBackground)
         .background(PageKeyboardMap(model: pages))
         // Said once, at the root, and read by everything under it that

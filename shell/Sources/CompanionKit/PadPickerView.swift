@@ -12,6 +12,8 @@ public struct PadPickerView: View {
     @State private var nameDraft = ""
     @State private var nameSubmitted = false
     @State private var nameFailure: String?
+    @Environment(\.noticeLineTop) private var noticeLineTop
+    @State private var rowBottom: CGFloat?
 
     public init(model: PageModel) { self.model = model }
 
@@ -38,6 +40,11 @@ public struct PadPickerView: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { rowBottom = proxy.frame(in: .global).maxY }
+                .onChange(of: proxy.frame(in: .global).maxY) { rowBottom = $0 }
+        })
         .font(.system(.body, design: .monospaced))
         .onAppear { keyboard.install(model: model, surface: surface) }
         .onDisappear {
@@ -152,7 +159,8 @@ public struct PadPickerView: View {
             }
             .padding(10)
         }
-        .frame(width: 350).frame(maxHeight: 620)
+        .frame(width: 350)
+        .frame(maxHeight: PadListLayout.maxHeight(rowBottom: rowBottom, lineTop: noticeLineTop))
     }
 
     @ViewBuilder
@@ -309,6 +317,62 @@ enum PadNameDraft {
         if trimmed.isEmpty { return CompanionL10n.string("pad.name.empty") }
         if trimmed.count > 80 { return CompanionL10n.string("pad.name.long") }
         return nil
+    }
+}
+
+/// How tall the pad list may stand, hung under the picker, so that it ends
+/// above the line under the page where a pad name's refusal is said
+/// (Law 0007, Refusing; D-14).
+enum PadListLayout {
+    /// The list's height on a card with room to spare.
+    static let tallest: CGFloat = 620
+    /// The popover's arrow and frame between the picker's row and the list.
+    static let popoverChrome: CGFloat = 24
+
+    /// Both in the window's space; either unmeasured leaves the list its tallest.
+    static func maxHeight(rowBottom: CGFloat?, lineTop: CGFloat?) -> CGFloat {
+        guard let rowBottom, let lineTop else { return tallest }
+        return min(tallest, max(0, lineTop - rowBottom - popoverChrome))
+    }
+}
+
+/// The top of the status stack under the page, in the window's space.
+struct NoticeLineTopKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
+    }
+}
+
+private struct NoticeLineTopEnvironmentKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// Where the line under the page begins, for the pad list beside it.
+    var noticeLineTop: CGFloat? {
+        get { self[NoticeLineTopEnvironmentKey.self] }
+        set { self[NoticeLineTopEnvironmentKey.self] = newValue }
+    }
+}
+
+/// Hands the status stack's top to the pad picker standing over the page.
+private struct NoticeLineRoom: ViewModifier {
+    @State private var lineTop: CGFloat?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.noticeLineTop, lineTop)
+            .onPreferenceChange(NoticeLineTopKey.self) { lineTop = $0 }
+    }
+}
+
+extension View {
+    /// For a root that stands the pad picker over the page and its status
+    /// stack: the pad list's popover ends above the line under the page.
+    public func keepsThePadListAboveTheNoticeLine() -> some View {
+        modifier(NoticeLineRoom())
     }
 }
 
