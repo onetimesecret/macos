@@ -1167,6 +1167,31 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
     true
 }
 
+/// Copy `NAME=<plaintext>` by copy decrypted's route (Law 0001, ADR-0043): the
+/// store composes it and this writes it as [`companion_chip_copy_out`] does.
+/// False, writing and recording nothing, for an unknown, unnamed or image chip.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_copy_name_value(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let chip = ChipId::from_raw(chip);
+    let Some(bytes) = guard.store.copy_out_name_value(chip) else {
+        return false;
+    };
+    guard.write_decrypted(chip, bytes, ContentKind::Text);
+    true
+}
+
 /// Remove a chip now, wiping its bytes. Returns whether it existed.
 ///
 /// # Safety
@@ -4173,6 +4198,153 @@ mod tests {
         }
     }
 
+    fn board_text(handle: *mut CompanionHandle) -> Option<String> {
+        let guard = unsafe { &*handle }.inner.lock().unwrap();
+        match guard.pasteboard.read()?.content {
+            PasteboardContent::Text(text) => Some(text),
+            PasteboardContent::Image(_) => None,
+        }
+    }
+
+    fn sent_records(handle: *mut CompanionHandle) -> Vec<serde_json::Value> {
+        let ledger = unsafe { take_json(companion_ledger_json(handle)) };
+        let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
+        records
+            .into_iter()
+            .filter(|record| record["event"] == "sent")
+            .collect()
+    }
+
+    #[test]
+    fn copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "multi-paste me");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("DEPLOY_TOKEN").as_ptr()
+            ));
+
+            assert!(companion_chip_copy_name_value(handle, chip));
+            assert_eq!(
+                board_text(handle).as_deref(),
+                Some("DEPLOY_TOKEN=multi-paste me")
+            );
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                assert!(guard.pasteboard.current_is_transient());
+                assert!(guard.pasteboard.current_is_nspasteboard_concealed());
+            }
+            let sheets = take_json(companion_tabs_json(handle));
+            assert!(sheets.contains("\"chip_count\":1"), "{sheets}");
+
+            // The same guarded clear as copy decrypted: once, then refused.
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(board_text(handle).is_none());
+            assert!(!companion_clear_clipboard_if_ours(handle));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing() {
+        let handle = handle();
+        unsafe {
+            let (sheet, unnamed) = sealed_chip(handle, "never on the board");
+            seed(handle, "someone else's copy");
+            assert!(!companion_chip_copy_name_value(handle, unnamed));
+            assert!(!companion_chip_copy_name_value(handle, 4_242));
+            assert!(!companion_chip_copy_name_value(ptr::null_mut(), unnamed));
+
+            {
+                let mut guard = (*handle).inner.lock().unwrap();
+                let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+                png.resize(64, 7);
+                let image = guard
+                    .store
+                    .seal_image_at(SheetId::from_raw(sheet), png, 0, 0)
+                    .unwrap();
+                guard.store.set_chip_name(image, "LOGO").unwrap();
+                drop(guard);
+                assert!(!companion_chip_copy_name_value(handle, image.raw()));
+            }
+
+            assert_eq!(
+                board_text(handle).as_deref(),
+                Some("someone else's copy"),
+                "a refusal wrote the board"
+            );
+            assert!((*handle).inner.lock().unwrap().last_write.is_none());
+            assert!(
+                sent_records(handle).is_empty(),
+                "a refusal recorded an egress"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_value_copy_and_a_copy_out_retire_each_others_receipts() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "copied both ways");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("BOTH_WAYS").as_ptr()
+            ));
+
+            assert!(companion_chip_copy_out(handle, chip));
+            let first = (*handle).inner.lock().unwrap().last_write;
+            assert!(companion_chip_copy_name_value(handle, chip));
+            let second = (*handle).inner.lock().unwrap().last_write;
+            assert_ne!(first, second, "the second write is a new receipt");
+            assert_eq!(
+                board_text(handle).as_deref(),
+                Some("BOTH_WAYS=copied both ways")
+            );
+
+            assert!(companion_chip_copy_out(handle, chip));
+            assert_eq!(board_text(handle).as_deref(), Some("copied both ways"));
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(
+                board_text(handle).is_none(),
+                "the clear answered for the newest write"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_value_copy_records_one_sent_and_no_name() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("WHARF_LANTERN_KEY").as_ptr()
+            ));
+            assert!(companion_chip_copy_name_value(handle, chip));
+            assert!(companion_chip_copy_name_value(handle, chip));
+
+            let sent = sent_records(handle);
+            assert_eq!(sent.len(), 2, "one per copy: {sent:?}");
+            for record in &sent {
+                assert_eq!(record["destination"], "clipboard");
+                assert_eq!(record["size"], "tiny", "the payload's class");
+            }
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(!ledger.contains("WHARF"), "{ledger}");
+            assert!(!ledger.contains("LANTERN"), "{ledger}");
+            assert!(!ledger.contains("hunter2"), "{ledger}");
+            let saved = (*handle).inner.lock().unwrap().store.ledger_snapshot();
+            assert!(!contains(&saved, b"WHARF_LANTERN_KEY"));
+            companion_free(handle);
+        }
+    }
+
     #[test]
     fn sync_document_names_the_page_and_reaps_omitted_chips() {
         let handle = handle();
@@ -6505,6 +6677,7 @@ mod tests {
                 1,
                 cstring("API_KEY").as_ptr()
             ));
+            assert!(!companion_chip_copy_name_value(ptr::null_mut(), 1));
             assert!(!companion_tab_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
             assert!(

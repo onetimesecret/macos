@@ -1110,6 +1110,15 @@ public class CompanionClient: @unchecked Sendable {
         companion_chip_copy_out(handle, id)
     }
 
+    /// Copy `NAME=<plaintext>` by `copyOutChip`'s route: the core composes
+    /// and writes it and records one `sent`, so the caller arms the same
+    /// guarded clear. False, with nothing written, for an unknown, unnamed
+    /// or image chip.
+    @discardableResult
+    public func copyNameValue(chip: UInt64) -> Bool {
+        companion_chip_copy_name_value(handle, chip)
+    }
+
     /// ⌫ on a chip: removes it whole, bytes zeroized, no resurrection.
     @discardableResult
     public func deleteChip(id: UInt64) -> Bool {

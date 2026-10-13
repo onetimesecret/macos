@@ -3,7 +3,8 @@ import XCTest
 @testable import CompanionKit
 
 /// A sealed object's name across the seam (ADR-0043), against the live
-/// core through an ephemeral handle. Nothing here persists.
+/// core through an ephemeral handle. Nothing here persists; the one
+/// name=value copy is cleared by the guarded clear it arms.
 final class SealedObjectSeamTests: XCTestCase {
     private func sealedChip(
         _ client: CompanionClient, _ text: String = "hunter2"
@@ -52,6 +53,21 @@ final class SealedObjectSeamTests: XCTestCase {
         XCTAssertEqual(
             CompanionClient.chipNameRefusal("API\0KEY"), .outsideCharset,
             "a NUL would hand the core less than was typed")
+    }
+
+    func testANameValueCopyIsRefusedUnnamedAndClearsLikeACopyOut() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (_, chip) = try sealedChip(client)
+        XCTAssertFalse(client.copyNameValue(chip: chip.chipId), "an unnamed object")
+        XCTAssertFalse(client.clearClipboardIfOurs(), "the refusal wrote nothing of ours")
+
+        XCTAssertTrue(client.setChipName("API_KEY", chip: chip.chipId))
+        XCTAssertTrue(client.copyNameValue(chip: chip.chipId))
+        // The guarded clear answers for the write and gives the board back.
+        XCTAssertTrue(client.clearClipboardIfOurs())
+        let sent = client.ledger().filter { $0.event == "sent" }
+        XCTAssertEqual(sent.map(\.destination), ["clipboard"])
+        XCTAssertFalse(sent.contains { $0.title.contains("API_KEY") })
     }
 
     func testANameNeverReachesTheLedger() throws {

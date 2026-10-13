@@ -357,6 +357,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The core copies `NAME=value` for a named sealed object** (Law 0001,
+  ADR-0043, issue #242; `companion-core` 0.27.0, `companion-ffi`
+  0.35.0). `companion_chip_copy_name_value` puts the name, `=` and the
+  object's contents, raw and unquoted (ADR-0042), on the clipboard by
+  the same route as copy decrypted: written by the core, marked
+  transient and concealed, cleared after the core's interval only if
+  the clipboard still holds that write, and one `sent` record that does
+  not carry the name. It refuses an unnamed object and an image. The
+  buffer is allocated at its final size. Nothing in the app offers it
+  yet (issue #244).
+
 - **A sealed object can carry a typed name, in the core** (Law 0001,
   ADR-0043, issue #241; `companion-core` 0.26.0, `companion-ffi`
   0.34.0). `companion_chip_set_name` names a chip, or clears its name

@@ -587,6 +587,20 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
 bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
 /*
+ * Copy NAME=<plaintext>: the name, "=", then the payload raw and
+ * unquoted (ADR-0042 point 4), by companion_chip_copy_out()'s route
+ * (Law 0001, ADR-0043). The core composes the bytes at their final
+ * size and writes them itself, transient and ConcealedType, keeps the
+ * receipt for companion_clear_clipboard_if_ours(), and leaves one
+ * "sent" record to "clipboard" at the payload's size class, titled with
+ * the tab's label as every record is, never the name. The shell never
+ * holds the bytes.
+ * Returns false, writing and recording nothing, for an unknown chip, an
+ * unnamed one or an image.
+ */
+bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
+
+/*
  * Remove a chip now, wiping its bytes (backspace removes it whole;
  * there is no resurrection path). Returns whether it existed.
  */
