@@ -1214,6 +1214,25 @@ impl<C: Clock> SheetStore<C> {
         Some((Zeroizing::new(chip.bytes.expose().to_vec()), chip.meta))
     }
 
+    /// The name, `=` and a text chip's payload, raw, in one buffer at its
+    /// final size (ADR-0042 point 4, ADR-0043). `None` for an unknown,
+    /// unnamed or image chip. Consumes nothing and records nothing.
+    #[must_use]
+    pub fn copy_out_name_value(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
+        let (_, chip) = self.chip_home(id)?;
+        if matches!(chip.meta, ChipMeta::Image { .. }) {
+            return None;
+        }
+        let name = chip.name.as_deref()?;
+        let value = chip.bytes.expose();
+        // Exact size: a reallocation would strand sealed bytes unwiped (Law 0004).
+        let mut out = Zeroizing::new(Vec::with_capacity(name.len() + 1 + value.len()));
+        out.extend_from_slice(name.as_bytes());
+        out.push(b'=');
+        out.extend_from_slice(value);
+        Some(out)
+    }
+
     /// Remove a chip now; its bytes are wiped as it drops (open question
     /// 5). Returns whether the chip existed.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
@@ -2451,6 +2470,57 @@ mod tests {
         assert_eq!(store.expire_due(), vec![id]);
         assert!(!contains(&store.snapshot(1_000_000), CHIP_NAME.as_bytes()));
         assert!(!contains(&store.ledger_snapshot(), CHIP_NAME.as_bytes()));
+    }
+
+    #[test]
+    fn name_value_is_composed_raw_at_its_exact_size() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        // 21 bytes, so a buffer grown by doubling would end with spare capacity.
+        let value = "s3cr3t \"q\" $HOME\nline";
+        let chip = seal(&mut store, id, value);
+        store.set_chip_name(chip, "DB_PASSWORD").unwrap();
+        let before = store.ledger().count();
+
+        let composed = store.copy_out_name_value(chip).unwrap();
+        assert_eq!(&**composed, format!("DB_PASSWORD={value}").as_bytes());
+        assert_eq!(
+            composed.capacity(),
+            composed.len(),
+            "a grown buffer strands sealed bytes"
+        );
+        assert_eq!(
+            store.ledger().count(),
+            before,
+            "the seam records the egress"
+        );
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, value.as_bytes(), "the chip survives");
+    }
+
+    #[test]
+    fn name_value_refuses_an_unnamed_an_image_and_an_unknown_chip() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let unnamed = seal(&mut store, id, TOKEN);
+        assert!(store.copy_out_name_value(unnamed).is_none());
+
+        let image = store
+            .seal_image(id, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
+            .unwrap();
+        store.set_chip_name(image, "LOGO").unwrap();
+        assert!(
+            store.copy_out_name_value(image).is_none(),
+            "an image has no text to stand after `=`"
+        );
+        assert!(store.copy_out_name_value(ChipId::from_raw(4_242)).is_none());
+
+        store.set_chip_name(unnamed, "API_KEY").unwrap();
+        store.set_chip_name(unnamed, "").unwrap();
+        assert!(
+            store.copy_out_name_value(unnamed).is_none(),
+            "a cleared name refuses again"
+        );
     }
 
     #[test]
