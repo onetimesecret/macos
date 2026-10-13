@@ -273,7 +273,8 @@ final class DayScrollProjectionTests: XCTestCase {
     /// The gutter draws a title only when the user typed it. A
     /// placeholder repeats the stamp beside it and a first line repeats
     /// the ink directly under the gutter; a rename shows the field for
-    /// its own length whatever the source.
+    /// its own length whatever the source. A typed name takes the
+    /// time's seat and the time stands to its right (Law 0007).
     func testTheGutterDrawsOnlyATypedName() {
         XCTAssertFalse(DayHeaderView.drawsTitle(source: .placeholder, renaming: false))
         XCTAssertFalse(DayHeaderView.drawsTitle(source: .derived, renaming: false))
@@ -281,6 +282,34 @@ final class DayScrollProjectionTests: XCTestCase {
         XCTAssertFalse(DayHeaderView.drawsTitle(source: nil, renaming: false))
         XCTAssertTrue(DayHeaderView.drawsTitle(source: .placeholder, renaming: true))
         XCTAssertTrue(DayHeaderView.drawsTitle(source: .derived, renaming: true))
+
+        let first = DayHeaderView.words(spokenLabel: "today", stamp: "13:00")
+        let later = DayHeaderView.words(spokenLabel: "today", stamp: "13:41", firstOfDay: false)
+        XCTAssertEqual(first.reading(name: "Deploy notes"), "today · Deploy notes · 13:00")
+        XCTAssertEqual(later.reading(name: "Rotate keys"), "Rotate keys · 13:41")
+        XCTAssertEqual(
+            DayHeaderView.runs(first, named: true),
+            DayHeaderView.Words(day: "today ·", time: "· 13:00"))
+        XCTAssertEqual(
+            DayHeaderView.runs(first, named: false),
+            DayHeaderView.Words(day: "today ·", time: "13:00"))
+        XCTAssertEqual(
+            DayHeaderView.runs(later, named: true),
+            DayHeaderView.Words(day: "", time: "· 13:41"))
+        XCTAssertEqual(
+            DayHeaderView.runs(DayHeaderView.words(spokenLabel: "today", stamp: nil), named: false),
+            DayHeaderView.Words(day: "today", time: ""))
+    }
+
+    /// The draft a gutter's field opens on is what stood in the seat:
+    /// a typed name, or else the time, never the hidden first line.
+    func testAnUnnamedGuttersDraftIsTheTime() {
+        XCTAssertEqual(
+            DayHeaderView.seat(source: .derived, title: "deploy notes", time: "13:00"), "13:00")
+        XCTAssertEqual(
+            DayHeaderView.seat(source: .placeholder, title: "13:00 page", time: "13:00"), "13:00")
+        XCTAssertEqual(
+            DayHeaderView.seat(source: .name, title: "Deploy notes", time: "13:00"), "Deploy notes")
     }
 
     /// What VoiceOver hears at a perforation: the day in full words, the

@@ -1395,7 +1395,8 @@ final class DayHeaderView: NSView {
 
     private let model: PageModel
     private let dayField = NSTextField(labelWithString: "")
-    /// The page's birth time, apart from the day so it has a frame of its own.
+    /// The page's birth time, in its own frame because it is the seat a
+    /// typed name takes: a click on it opens the field (Law 0007).
     private let timeField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
     /// The retained words for a page past the window, and otherwise
@@ -1410,6 +1411,8 @@ final class DayHeaderView: NSView {
     /// as of the last refresh, which is what decides whether the title
     /// is drawn once a rename ends (`drawsTitle`).
     private var titleSource: TitleSource?
+    /// The title the last summary carried, which a kept rename puts back.
+    private var summaryTitle = ""
     /// The day and the time as the stack last said them, apart from the
     /// dots that join them to a name.
     private var words = Words(day: "", time: "")
@@ -1545,7 +1548,20 @@ final class DayHeaderView: NSView {
             super.mouseDown(with: event)
             return
         }
+        if opensRename(at: convert(event.locationInWindow, from: nil)) {
+            beginRename()
+            return
+        }
         if dayStack?.focusEditor(on: pageID) != true { super.mouseDown(with: event) }
+    }
+
+    /// Whether a click here lands in the time's seat: on the time, or on
+    /// the typed name that took its place. The day and the gutter's
+    /// empty run still focus the page (Law 0007, issue #248).
+    private func opensRename(at point: NSPoint) -> Bool {
+        guard tab != nil, titleBeforeRename == nil else { return false }
+        if !timeField.stringValue.isEmpty, timeField.frame.contains(point) { return true }
+        return !titleField.isHidden && titleField.frame.contains(point)
     }
 
     /// Which mark a header draws, as a decision rather than as a
@@ -1579,6 +1595,22 @@ final class DayHeaderView: NSView {
     ) -> Words {
         guard let stamp, !stamp.isEmpty else { return Words(day: spokenLabel, time: "") }
         return Words(day: firstOfDay ? spokenLabel : "", time: stamp)
+    }
+
+    /// What stood in the seat, which a rename opens on: a typed name, or
+    /// else the time (Law 0007, Opening).
+    nonisolated static func seat(source: TitleSource?, title: String, time: String) -> String {
+        source == .name ? title : time
+    }
+
+    /// The day and time as drawn either side of the seat, each carrying
+    /// the dot that joins it to a neighbour.
+    nonisolated static func runs(_ words: Words, named: Bool) -> Words {
+        let followed = named || !words.time.isEmpty
+        return Words(
+            day: words.day.isEmpty || !followed ? words.day : "\(words.day) ·",
+            time: named && !words.time.isEmpty ? "· \(words.time)" : words.time
+        )
     }
 
     /// Whether the gutter draws its title: only a name the user typed.
@@ -1656,8 +1688,9 @@ final class DayHeaderView: NSView {
         // Not while a draft is in the field: this pass runs every
         // second, and the title it would write is the one the rename
         // is there to replace.
+        summaryTitle = summary?.title ?? ""
         if titleBeforeRename == nil {
-            titleField.stringValue = summary?.title ?? ""
+            titleField.stringValue = summaryTitle
         }
         titleSource = summary?.titleSource
         titleField.isHidden = !Self.drawsTitle(
@@ -1668,10 +1701,11 @@ final class DayHeaderView: NSView {
         needsDisplay = true
     }
 
-    /// The day and time runs, joined by a dot where both are said.
+    /// The day and time runs, re-joined to whatever the seat now holds.
     private func compose() {
-        dayField.stringValue = words.day.isEmpty || words.time.isEmpty ? words.day : "\(words.day) ·"
-        timeField.stringValue = words.time
+        let runs = Self.runs(words, named: !titleField.isHidden)
+        dayField.stringValue = runs.day
+        timeField.stringValue = runs.time
     }
 
     /// The countdown VoiceOver hears, kept beside the gauge that
@@ -1704,15 +1738,17 @@ final class DayHeaderView: NSView {
         let dayWidth = dayField.stringValue.isEmpty ? 0 : dayField.frame.width
         dayField.frame = NSRect(x: x, y: top + 3, width: dayWidth, height: labelHeight)
         if dayWidth > 0 { x += dayWidth + Self.gap }
+        if !titleField.isHidden {
+            // A name truncates before the time does, so the time keeps its seat.
+            let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width + Self.gap
+            let room = bounds.width - x - timeWidth - remainingWidth - Self.margin * 2
+            let wanted = titleField.frame.width + (titleField.isEditable ? Self.caretRoom : 0)
+            let width = max(min(wanted, room), titleField.isEditable ? Self.caretRoom : 0)
+            titleField.frame = NSRect(x: x, y: top + 2, width: width, height: Self.gutterHeight - 4)
+            x += width + Self.gap
+        }
         let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width
         timeField.frame = NSRect(x: x, y: top + 3, width: timeWidth, height: labelHeight)
-        let titleX = x + (timeWidth > 0 ? timeWidth + 8 : 0)
-        titleField.frame = NSRect(
-            x: titleX,
-            y: top + 2,
-            width: max(bounds.width - titleX - remainingWidth - Self.margin * 2, 0),
-            height: Self.gutterHeight - 4
-        )
     }
 
     /// The words as drawn, left to right by frame, so a test can pin the
@@ -1725,6 +1761,9 @@ final class DayHeaderView: NSView {
             .joined(separator: " ")
     }
 
+    /// The time's frame in the header, so a test can click on it.
+    var timeFrame: NSRect { timeField.frame }
+
     override func layout() {
         super.layout()
         place()
@@ -1732,6 +1771,9 @@ final class DayHeaderView: NSView {
 
     private static let margin: CGFloat = 12
     private static let gap: CGFloat = 4
+    /// The width an open field keeps past its draft, so the caret and an
+    /// empty draft have somewhere to stand.
+    private static let caretRoom: CGFloat = 16
 
     // MARK: The tear
 
@@ -1831,28 +1873,29 @@ final class DayHeaderView: NSView {
 
     // MARK: The rename, in place
 
-    /// The title becomes a field where it stands (D-14, issue #172): a
-    /// rename is not destructive and has no claim on an interrupting
-    /// question, so the gutter's own label takes the keyboard, with
-    /// the whole title selected, and gives it back when the draft is
-    /// committed or let go of. The label is a text field already; what
-    /// changes is that it may be edited, and who holds the keyboard.
+    /// The seat becomes a field where it stands (D-14, Law 0007): the
+    /// field opens on what the seat showed, a typed name or the time,
+    /// selected whole, and gives the keyboard back when the draft is
+    /// committed or let go of.
     ///
     /// Internal, with `endRename` and `renameDraft`, so the roll's
     /// tests can drive a rename without a window's field editor and
     /// pin that no modal session is entered on the way.
     func beginRename() {
         guard let tab, titleBeforeRename == nil else { return }
-        titleBeforeRename = titleField.stringValue
+        let draft = Self.seat(source: titleSource, title: summaryTitle, time: words.time)
+        titleBeforeRename = draft
         tabBeingRenamed = tab
         responderBeforeRename = window?.firstResponder
-        // A placeholder or a first line is not drawn as a label, but
-        // it is the draft a rename starts from, so the field shows for
-        // the rename's length.
+        // The field opens in the time's seat and the time slides right.
+        titleField.stringValue = draft
         titleField.isHidden = false
         titleField.delegate = self
         titleField.isSelectable = true
         titleField.isEditable = true
+        compose()
+        place()
+        updateAccessibilityLabel()
         window?.makeFirstResponder(titleField)
         titleField.currentEditor()?.selectAll(nil)
     }
@@ -1860,6 +1903,10 @@ final class DayHeaderView: NSView {
     /// Whether the title field is drawn, readable so the roll's tests
     /// can pin what a gutter shows without a window.
     var titleIsDrawn: Bool { !titleField.isHidden }
+
+    /// Whether the seat is a field, readable so a test can tell a click
+    /// that opened it from one that focused the page.
+    var isRenaming: Bool { titleBeforeRename != nil }
 
     /// The time as the gutter is drawing it, readable so a test can pin
     /// what the header shows across a stamp-format edit.
@@ -1871,8 +1918,15 @@ final class DayHeaderView: NSView {
         get { titleField.stringValue }
         set {
             titleField.stringValue = newValue
-            updateAccessibilityLabel()
+            draftChanged()
         }
+    }
+
+    /// The field follows its draft's length, so the time to its right
+    /// moves as the user types.
+    private func draftChanged() {
+        updateAccessibilityLabel()
+        place()
     }
 
     /// Ends the rename one way or the other, deciding through
@@ -1882,23 +1936,26 @@ final class DayHeaderView: NSView {
     /// keyboard is not moved here: the endings that give it back do so
     /// themselves, and a focus loss has already moved it.
     func endRename(committed: Bool) {
-        guard let current = titleBeforeRename else { return }
+        guard let opened = titleBeforeRename else { return }
         let targetTab = tabBeingRenamed
         titleBeforeRename = nil
         tabBeingRenamed = nil
         titleField.delegate = nil
         titleField.isEditable = false
         titleField.isSelectable = false
-        switch TabRename.outcome(draft: titleField.stringValue, current: current, committed: committed) {
+        switch TabRename.outcome(draft: titleField.stringValue, current: opened, committed: committed) {
         case .rename(let name):
-            guard let targetTab else { return }
-            // The field stays up: the name it now holds is a typed
-            // one, and the model's next pass confirms it as such.
-            model.renameTab(targetTab, to: name)
+            if let targetTab { model.renameTab(targetTab, to: name) }
+            // The model's next pass confirms the name; an empty one
+            // gives the seat back to the time.
+            titleField.stringValue = name
+            titleField.isHidden = name.isEmpty
         case .keep:
-            titleField.stringValue = current
+            titleField.stringValue = summaryTitle
             titleField.isHidden = !Self.drawsTitle(source: titleSource, renaming: false)
         }
+        compose()
+        place()
         updateAccessibilityLabel()
         needsDisplay = true
     }
@@ -1943,7 +2000,7 @@ final class DayHeaderView: NSView {
 /// which ends the editing the ordinary way.
 extension DayHeaderView: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
-        updateAccessibilityLabel()
+        draftChanged()
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {

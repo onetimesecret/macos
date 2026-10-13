@@ -1273,7 +1273,7 @@ final class DayScrollTests: XCTestCase {
 
         header.beginRename()
         XCTAssertTrue(header.titleIsDrawn, "the rename had no field to type into")
-        XCTAssertEqual(header.renameDraft, "deploy notes")
+        XCTAssertEqual(header.renameDraft, "11:40", "the draft is the time the seat showed")
         header.endRename(committed: false)
         XCTAssertFalse(header.titleIsDrawn, "a let-go rename left the field up")
 
@@ -1283,6 +1283,85 @@ final class DayScrollTests: XCTestCase {
         header.refresh(summary: named)
         XCTAssertTrue(header.titleIsDrawn, "a typed name was not drawn")
         XCTAssertEqual(header.renameDraft, "the vault")
+    }
+
+    /// One click at a point in a mounted header, routed the way AppKit
+    /// routes it: the stack's hit test picks the view, which gets the event.
+    private func click(_ header: DayHeaderView, at local: NSPoint, in roll: Roll) throws {
+        let inStack = header.convert(local, to: roll.stack)
+        let hit = try XCTUnwrap(roll.stack.hitTest(roll.stack.convert(inStack, to: roll.stack.superview)))
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: roll.stack.convert(inStack, to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: roll.window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+        ))
+        hit.mouseDown(with: event)
+    }
+
+    /// A click on the gutter's time opens the field in the time's seat on
+    /// the time, selected whole, and the time slides to its right; a click
+    /// on the day still focuses the page (Law 0007, issue #248).
+    func testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses() async throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "first line\nsecond line")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let time = header.timeText
+        XCTAssertFalse(time.isEmpty, "the page's gutter has no time to click")
+        XCTAssertEqual(header.reading, "today · \(time)")
+
+        _ = roll.window.makeFirstResponder(nil)
+        let timeFrame = header.timeFrame
+        try click(header, at: NSPoint(x: timeFrame.midX, y: timeFrame.midY), in: roll)
+        await settle()
+        XCTAssertTrue(header.isRenaming, "a click on the time did not open the field")
+        XCTAssertEqual(header.renameDraft, time, "the field did not open on the time the seat showed")
+        XCTAssertEqual(header.reading, "today · \(time) · \(time)", "the time did not slide right")
+        let field = try XCTUnwrap(roll.window.firstResponder as? NSTextView)
+        XCTAssertEqual(
+            field.selectedRange(), NSRange(location: 0, length: (time as NSString).length),
+            "the draft was not selected whole")
+
+        header.endRename(committed: true)
+        XCTAssertEqual(
+            model.tabs.first?.titleSource, .derived, "an untouched Return froze the time into a name")
+        XCTAssertEqual(header.reading, "today · \(time)")
+
+        try click(header, at: NSPoint(x: 20, y: timeFrame.midY), in: roll)
+        await settle()
+        XCTAssertFalse(header.isRenaming, "a click on the day opened the field")
+        XCTAssertTrue(roll.window.firstResponder === editor, "a click on the day did not focus the page")
+    }
+
+    /// A named gutter reads the day, the name and the time, in that order
+    /// on screen; a later page on the day reads the name and the time.
+    /// An empty Return gives the seat back to the time.
+    func testANamedGutterReadsTheDayTheNameAndTheTime() throws {
+        let model = try makeModel()
+        _ = try page(in: model, saying: "one")
+        model.renameTab(try XCTUnwrap(model.selection), to: "Deploy notes")
+        let second = try page(in: model, saying: "two")
+        model.renameTab(try XCTUnwrap(model.selection), to: "Rotate keys")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: second, readOnly: false)
+        let headers = roll.stack.laidOut.map(\.header)
+        XCTAssertEqual(headers.count, 2)
+        let names = try headers.map { header in
+            try XCTUnwrap(model.tabs.first { $0.pageID == header.pageIdentity }?.title)
+        }
+        XCTAssertEqual(headers[0].reading, "today · \(names[0]) · \(headers[0].timeText)")
+        XCTAssertEqual(headers[1].reading, "\(names[1]) · \(headers[1].timeText)")
+
+        headers[1].beginRename()
+        XCTAssertEqual(headers[1].renameDraft, names[1], "a named seat did not open on its name")
+        headers[1].renameDraft = ""
+        headers[1].endRename(committed: true)
+        XCTAssertNotEqual(
+            model.tabs.first { $0.pageID == headers[1].pageIdentity }?.titleSource, .name,
+            "an empty Return kept the name")
+        XCTAssertEqual(headers[1].reading, headers[1].timeText, "the time does not stand alone again")
     }
 
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {

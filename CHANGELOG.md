@@ -346,6 +346,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A click on a page's time in the gutter labels it** (app 0.27.0;
+  Law 0007, issue #248). The field opens where the time stood, on the
+  time, selected whole, and the time moves to the field's right. A
+  labelled gutter reads the day, the label and then the time, as
+  `today · Deploy notes · 13:00`; a later page on the same day reads
+  `Rotate keys · 13:41`. Return over an untouched draft changes nothing,
+  an empty Return drops the label, and a click on the day still focuses
+  the page. *Rename page…* opens the same field on the same draft.
+
 - **The Help menu exports diagnostics and sends reviewed feedback**
   (app 0.26.0). **Copy Diagnostic Summary** copies a summary: version,
   build, source revision and build lane, macOS and architecture,
