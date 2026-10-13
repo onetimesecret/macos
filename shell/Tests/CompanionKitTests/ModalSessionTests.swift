@@ -134,7 +134,9 @@ final class ModalSessionTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(token) }
 
         let header = DayHeaderView(model: model)
-        header.show(dayText: "today", spokenLabel: "today", mark: .none, summary: tab)
+        header.show(
+            words: DayHeaderView.words(spokenLabel: "today", stamp: nil),
+            spokenLabel: "today", mark: .none, summary: tab)
 
         header.beginRename()
         XCTAssertFalse(ModalSession.isRunning, "the field opens in place, not in a panel")

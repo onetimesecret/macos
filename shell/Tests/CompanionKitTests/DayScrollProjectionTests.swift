@@ -258,12 +258,16 @@ final class DayScrollProjectionTests: XCTestCase {
     /// the day alone.
     func testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone() {
         XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "3 days ago", stamp: "09:31"),
+            DayHeaderView.words(spokenLabel: "3 days ago", stamp: "09:31"),
+            DayHeaderView.Words(day: "3 days ago", time: "09:31"))
+        XCTAssertEqual(
+            DayHeaderView.words(spokenLabel: "3 days ago", stamp: "09:31").reading(name: nil),
             "3 days ago · 09:31")
         XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "3 days ago", stamp: "09:31:07", firstOfDay: false),
-            "09:31:07")
-        XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: nil), "today")
+            DayHeaderView.words(spokenLabel: "3 days ago", stamp: "09:31:07", firstOfDay: false),
+            DayHeaderView.Words(day: "", time: "09:31:07"))
+        XCTAssertEqual(
+            DayHeaderView.words(spokenLabel: "today", stamp: nil).reading(name: nil), "today")
     }
 
     /// The gutter draws a title only when the user typed it. A

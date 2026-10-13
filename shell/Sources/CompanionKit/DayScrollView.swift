@@ -631,7 +631,7 @@ final class DayStackView: NSView {
                 // other day exists because a live page is keyed to it.
                 let header = pooledHeader(at: built.count)
                 header.show(
-                    dayText: DayHeaderView.dayText(spokenLabel: unit.spokenLabel, stamp: nil),
+                    words: DayHeaderView.words(spokenLabel: unit.spokenLabel, stamp: nil),
                     spokenLabel: unit.spokenLabel,
                     mark: model.pads.isEnabled && isFirstOnRoll ? .hairline :
                         DayHeaderView.mark(isFirstOnRoll: isFirstOnRoll, isFirstOfDay: true),
@@ -664,7 +664,7 @@ final class DayStackView: NSView {
                 let header = pooledHeader(at: built.count)
                 let summary = summaries[index]
                 header.show(
-                    dayText: DayHeaderView.dayText(
+                    words: DayHeaderView.words(
                         spokenLabel: unit.spokenLabel, stamp: stamps[index], firstOfDay: firstOfDay
                     ),
                     spokenLabel: unit.spokenLabel,
@@ -1328,7 +1328,7 @@ final class DayStackView: NSView {
     /// first line, so every pass refreshes what the gutters say without
     /// touching what the roll is made of. `stampFormat` is one such
     /// change: a pattern edited in Settings publishes back into an
-    /// unchanged projection, so the `dayText` the header prints must be
+    /// unchanged projection, so the `words` the header prints must be
     /// re-derived here rather than only in the assembly pass, or the
     /// mounted headers keep their old stamps until the roll rebuilds
     /// for another reason (Greptile P1 #1).
@@ -1345,21 +1345,21 @@ final class DayStackView: NSView {
         for row in rows {
             let unit = unitByBucket[row.bucket]
             let spokenLabel = unit?.spokenLabel ?? ""
-            let dayText: String
+            let words: DayHeaderView.Words
             let rowSummary: TabSummary?
             if let page = row.page, let unit,
                let index = unit.pageIDs.firstIndex(of: page)
             {
                 let stamp = stampsByBucket[unit.bucket]?[index] ?? ""
-                dayText = DayHeaderView.dayText(
+                words = DayHeaderView.words(
                     spokenLabel: spokenLabel, stamp: stamp, firstOfDay: index == 0
                 )
                 rowSummary = summary(ofTab: unit.tabIDs[index])
             } else {
-                dayText = DayHeaderView.dayText(spokenLabel: spokenLabel, stamp: nil)
+                words = DayHeaderView.words(spokenLabel: spokenLabel, stamp: nil)
                 rowSummary = row.header.tab.flatMap { summary(ofTab: $0) }
             }
-            row.header.refresh(dayText: dayText, summary: rowSummary)
+            row.header.refresh(words: words, summary: rowSummary)
         }
     }
 }
@@ -1395,6 +1395,8 @@ final class DayHeaderView: NSView {
 
     private let model: PageModel
     private let dayField = NSTextField(labelWithString: "")
+    /// The page's birth time, apart from the day so it has a frame of its own.
+    private let timeField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
     /// The retained words for a page past the window, and otherwise
     /// empty. The countdown that used to stand here became a gauge,
@@ -1408,6 +1410,9 @@ final class DayHeaderView: NSView {
     /// as of the last refresh, which is what decides whether the title
     /// is drawn once a rename ends (`drawsTitle`).
     private var titleSource: TitleSource?
+    /// The day and the time as the stack last said them, apart from the
+    /// dots that join them to a name.
+    private var words = Words(day: "", time: "")
 
     /// What this header draws across its top. Readable so a test can
     /// ask the mounted roll where its perforations are rather than
@@ -1423,6 +1428,7 @@ final class DayHeaderView: NSView {
         didSet {
             guard isActive != oldValue else { return }
             dayField.textColor = isActive ? .labelColor : .tertiaryLabelColor
+            timeField.textColor = dayField.textColor
             needsDisplay = true
         }
     }
@@ -1460,6 +1466,8 @@ final class DayHeaderView: NSView {
         super.init(frame: .zero)
         dayField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         dayField.textColor = .tertiaryLabelColor
+        timeField.font = dayField.font
+        timeField.textColor = dayField.textColor
         titleField.font = NSFont.systemFont(ofSize: 11)
         titleField.textColor = .secondaryLabelColor
         titleField.usesSingleLineMode = true
@@ -1470,6 +1478,7 @@ final class DayHeaderView: NSView {
         titleField.isHidden = true
         addSubview(dayField)
         addSubview(titleField)
+        addSubview(timeField)
         addSubview(remainingField)
         setAccessibilityElement(true)
     }
@@ -1502,7 +1511,7 @@ final class DayHeaderView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        if hit === dayField || hit === remainingField
+        if hit === dayField || hit === timeField || hit === remainingField
             || (hit === titleField && !titleField.isEditable) {
             return self
         }
@@ -1549,20 +1558,27 @@ final class DayHeaderView: NSView {
         return isFirstOfDay ? .tear : .hairline
     }
 
-    /// The checkpoint's words. A day's first gutter reads the day and
-    /// the page's birth time, "2 days ago · 13:00"; the gutters under
-    /// it on the same day read the time alone, "13:17", because the
-    /// day was said once above them and the hairline says these are
-    /// one day's pages. Saying the day on every gutter, and a date in
-    /// every time, was the same fact three times over. Two pages born
-    /// the same minute read to the second (`StreamNavigator.stamps`).
-    /// The empty place has no time, so it says the day alone. Pure, so
-    /// the shape is an assertion.
-    nonisolated static func dayText(
+    /// The checkpoint's words, the day apart from the time, since the
+    /// time is the seat a typed name takes (Law 0007).
+    struct Words: Equatable {
+        /// Empty on the gutters under a day's first (D-46).
+        var day: String
+        /// Empty on the empty place, which has no page.
+        var time: String
+
+        /// The line a gutter reads, left to right: day, typed name, time.
+        func reading(name: String?) -> String {
+            [day, name ?? "", time].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+    }
+
+    /// The day once per day and the time on every page (D-46); the empty
+    /// place says the day alone.
+    nonisolated static func words(
         spokenLabel: String, stamp: String?, firstOfDay: Bool = true
-    ) -> String {
-        guard let stamp, !stamp.isEmpty else { return spokenLabel }
-        return firstOfDay ? "\(spokenLabel) · \(stamp)" : stamp
+    ) -> Words {
+        guard let stamp, !stamp.isEmpty else { return Words(day: spokenLabel, time: "") }
+        return Words(day: firstOfDay ? spokenLabel : "", time: stamp)
     }
 
     /// Whether the gutter draws its title: only a name the user typed.
@@ -1607,10 +1623,10 @@ final class DayHeaderView: NSView {
         mark == .none ? Self.gutterHeight : Self.gutterHeight + Self.tearReserve
     }
 
-    func show(dayText: String, spokenLabel: String, mark: Mark, summary: TabSummary?) {
+    func show(words: Words, spokenLabel: String, mark: Mark, summary: TabSummary?) {
         self.mark = mark
         self.spokenLabel = spokenLabel
-        refresh(dayText: dayText, summary: summary)
+        refresh(words: words, summary: summary)
     }
 
     private var spokenLabel = ""
@@ -1621,8 +1637,8 @@ final class DayHeaderView: NSView {
     /// runs on every pass while `show` runs only on an assembly, so a
     /// pattern edit that leaves the roll's structure alone still moves
     /// the stamp on every gutter.
-    func refresh(dayText: String, summary: TabSummary?) {
-        dayField.stringValue = dayText
+    func refresh(words: Words, summary: TabSummary?) {
+        self.words = words
         refresh(summary: summary)
     }
 
@@ -1647,8 +1663,15 @@ final class DayHeaderView: NSView {
         titleField.isHidden = !Self.drawsTitle(
             source: titleSource, renaming: titleBeforeRename != nil)
         remainingField.stringValue = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
+        compose()
         updateAccessibilityLabel()
         needsDisplay = true
+    }
+
+    /// The day and time runs, joined by a dot where both are said.
+    private func compose() {
+        dayField.stringValue = words.day.isEmpty || words.time.isEmpty ? words.day : "\(words.day) ·"
+        timeField.stringValue = words.time
     }
 
     /// The countdown VoiceOver hears, kept beside the gauge that
@@ -1670,18 +1693,20 @@ final class DayHeaderView: NSView {
     /// unplaced header.
     func place() {
         let top: CGFloat = mark == .none ? 0 : Self.tearReserve
-        dayField.sizeToFit()
-        remainingField.sizeToFit()
-        let dayWidth = dayField.frame.width
+        let labelHeight = Self.gutterHeight - 6
+        for field in [dayField, timeField, remainingField, titleField] { field.sizeToFit() }
         let remainingWidth = remainingField.frame.width
-        dayField.frame = NSRect(
-            x: Self.margin, y: top + 3, width: dayWidth, height: Self.gutterHeight - 6
-        )
         remainingField.frame = NSRect(
             x: max(bounds.width - Self.margin - remainingWidth, 0), y: top + 3,
-            width: remainingWidth, height: Self.gutterHeight - 6
+            width: remainingWidth, height: labelHeight
         )
-        let titleX = Self.margin + (dayWidth > 0 ? dayWidth + 8 : 0)
+        var x = Self.margin
+        let dayWidth = dayField.stringValue.isEmpty ? 0 : dayField.frame.width
+        dayField.frame = NSRect(x: x, y: top + 3, width: dayWidth, height: labelHeight)
+        if dayWidth > 0 { x += dayWidth + Self.gap }
+        let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width
+        timeField.frame = NSRect(x: x, y: top + 3, width: timeWidth, height: labelHeight)
+        let titleX = x + (timeWidth > 0 ? timeWidth + 8 : 0)
         titleField.frame = NSRect(
             x: titleX,
             y: top + 2,
@@ -1690,12 +1715,23 @@ final class DayHeaderView: NSView {
         )
     }
 
+    /// The words as drawn, left to right by frame, so a test can pin the
+    /// order a reader sees rather than the order they were set in.
+    var reading: String {
+        [dayField, titleField, timeField]
+            .filter { !$0.isHidden && !$0.stringValue.isEmpty }
+            .sorted { $0.frame.minX < $1.frame.minX }
+            .map(\.stringValue)
+            .joined(separator: " ")
+    }
+
     override func layout() {
         super.layout()
         place()
     }
 
     private static let margin: CGFloat = 12
+    private static let gap: CGFloat = 4
 
     // MARK: The tear
 
@@ -1825,9 +1861,9 @@ final class DayHeaderView: NSView {
     /// can pin what a gutter shows without a window.
     var titleIsDrawn: Bool { !titleField.isHidden }
 
-    /// The day text as the gutter is drawing it, readable so a test
-    /// can pin what the header shows across a stamp-format edit.
-    var dayText: String { dayField.stringValue }
+    /// The time as the gutter is drawing it, readable so a test can pin
+    /// what the header shows across a stamp-format edit.
+    var timeText: String { words.time }
 
     /// The draft as the field holds it, readable and settable so a test
     /// can stand in for the keyboard.

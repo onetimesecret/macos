@@ -1223,7 +1223,9 @@ final class DayScrollTests: XCTestCase {
         let first = try XCTUnwrap(model.tabs.first { $0.id == firstID })
         let second = try XCTUnwrap(model.tabs.first { $0.id == secondID })
         let header = DayHeaderView(model: model)
-        header.show(dayText: "today", spokenLabel: "today", mark: .none, summary: first)
+        header.show(
+            words: DayHeaderView.words(spokenLabel: "today", stamp: nil),
+            spokenLabel: "today", mark: .none, summary: first)
 
         header.beginRename()
         header.renameDraft = "draft for first"
@@ -1247,7 +1249,9 @@ final class DayScrollTests: XCTestCase {
         let placeholder = try XCTUnwrap(model.tabs.first { $0.id == tabID })
         XCTAssertEqual(placeholder.titleSource, .placeholder)
         let header = DayHeaderView(model: model)
-        header.show(dayText: "today · 11:39", spokenLabel: "today", mark: .none, summary: placeholder)
+        header.show(
+            words: DayHeaderView.words(spokenLabel: "today", stamp: "11:39"),
+            spokenLabel: "today", mark: .none, summary: placeholder)
         XCTAssertFalse(header.titleIsDrawn, "a placeholder title was drawn beside its own stamp")
         XCTAssertTrue(
             header.subviews.allSatisfy { $0 is NSTextField },
@@ -1262,7 +1266,9 @@ final class DayScrollTests: XCTestCase {
         try page(in: model, saying: "deploy notes\nthe rest")
         let derived = try XCTUnwrap(model.tabs.first { $0.id == model.selection })
         XCTAssertEqual(derived.titleSource, .derived)
-        header.show(dayText: "11:40", spokenLabel: "today", mark: .hairline, summary: derived)
+        header.show(
+            words: DayHeaderView.words(spokenLabel: "today", stamp: "11:40", firstOfDay: false),
+            spokenLabel: "today", mark: .hairline, summary: derived)
         XCTAssertFalse(header.titleIsDrawn, "a first line was drawn above itself")
 
         header.beginRename()
@@ -1286,7 +1292,9 @@ final class DayScrollTests: XCTestCase {
         model.renameTab(tabID, to: "original title")
         let summary = try XCTUnwrap(model.tabs.first { $0.id == tabID })
         let header = DayHeaderView(model: model)
-        header.show(dayText: "today", spokenLabel: "today", mark: .none, summary: summary)
+        header.show(
+            words: DayHeaderView.words(spokenLabel: "today", stamp: nil),
+            spokenLabel: "today", mark: .none, summary: summary)
 
         header.beginRename()
         header.renameDraft = "visible draft"
@@ -1308,8 +1316,8 @@ final class DayScrollTests: XCTestCase {
     /// A pattern edited in Settings publishes back into an unchanged
     /// projection: the roll rebuilds nothing (Greptile P1 #1) but the
     /// mounted headers must still say the new pattern's stamp, because
-    /// the assembly pass is where the old code put dayText. The
-    /// ordinary pass has to move it now.
+    /// the assembly pass is where the old code put the gutter's words.
+    /// The ordinary pass has to move them now.
     func testAStampFormatEditRolls_MountedGuttersWithoutRebuilding() throws {
         let model = try makeModel()
         let only = try page(in: model, saying: "credentials")
@@ -1320,7 +1328,7 @@ final class DayScrollTests: XCTestCase {
             readOnly: false
         )
         let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
-        let before = header.dayText
+        let before = header.timeText
         let rebuildsBefore = roll.stack.rebuilds
 
         model.stampFormat = StreamNavigator.StampFormat(short: "h:mm a", fine: "h:mm:ss a")
@@ -1337,12 +1345,16 @@ final class DayScrollTests: XCTestCase {
             "the roll rebuilt when no structural fact changed"
         )
         XCTAssertNotEqual(
-            header.dayText, before,
+            header.timeText, before,
             "the mounted gutter kept the old pattern's stamp across a settings edit"
         )
         XCTAssertTrue(
-            header.dayText.hasSuffix("AM") || header.dayText.hasSuffix("PM"),
-            "the new pattern's meridiem is missing from the gutter: \(header.dayText)"
+            header.timeText.hasSuffix("AM") || header.timeText.hasSuffix("PM"),
+            "the new pattern's meridiem is missing from the gutter: \(header.timeText)"
+        )
+        XCTAssertTrue(
+            header.reading.hasSuffix(header.timeText),
+            "the time is not the last word the gutter draws: \(header.reading)"
         )
     }
 
