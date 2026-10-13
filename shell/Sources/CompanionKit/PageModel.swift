@@ -5690,6 +5690,16 @@ public final class PageModel: ObservableObject {
         return true
     }
 
+    /// Names a sealed object on page `sheet`, or clears its name given a
+    /// blank draft, and redraws its block; false when the core refused.
+    @discardableResult
+    public func setChipName(_ name: String, chip: UInt64, sheet: UInt64) -> Bool {
+        guard client.setChipName(name, chip: chip) else { return false }
+        markDirty()
+        restateChipFace(chip, sheet: sheet)
+        return true
+    }
+
     /// The line after *Copy name* (ADR-0042 point 8).
     public static let copiedNameLine = "copied the name."
 

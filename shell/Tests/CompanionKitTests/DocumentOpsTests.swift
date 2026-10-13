@@ -509,12 +509,15 @@ final class DocumentOpsWiringTests: XCTestCase {
         // D-41's order as ADR-0042 extends it; nil is a separator.
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: false),
-            ["Copy decrypted contents", "Create one-time link…", nil, "Remove protected content"])
+            [
+                "Copy decrypted contents", "Create one-time link…", nil, "Name…", nil,
+                "Remove protected content",
+            ])
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true),
             [
                 "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
-                "Create one-time link…", nil, "Remove protected content",
+                "Create one-time link…", nil, "Rename…", nil, "Remove protected content",
             ])
         makeEditor()
         textView.insertText(

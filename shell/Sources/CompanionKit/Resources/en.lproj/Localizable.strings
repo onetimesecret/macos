@@ -73,3 +73,8 @@
 "pad.files.heading" = "FILES";
 "pad.settings.layout" = "Tabs shows named pages along the bottom at full page width. Timeline groups live pages by day with independent day and checkpoint ordering, taking %ld points from the page. Lines wrap and older blank pages are counted rather than drawn.";
 "pad.remove.failed" = "The pad could not be removed. Finish any pending file decision and try again.";
+
+/* A sealed object's name field, and its refusals in the line under the page (Law 0007, ADR-0042 point 1). */
+"chip.name.field" = "Name";
+"chip.name.long" = "Use 64 characters or fewer for the name.";
+"chip.name.charset" = "Use the letters A to Z, digits and underscores for the name, and start it with a letter or an underscore.";

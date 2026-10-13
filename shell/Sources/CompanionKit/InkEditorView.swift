@@ -765,6 +765,7 @@ public struct InkEditorView: NSViewRepresentable {
             if textView.isEditable != editable {
                 invalidateOrdinaryPasteMeasurement()
             }
+            if !editable { keepNaming() }
             textView.isEditable = editable
             refreshLanguageActionAvailability()
         }
@@ -1490,6 +1491,7 @@ public struct InkEditorView: NSViewRepresentable {
             // here, and this is the guard for one that did not.
             guard model.admits(.activeEditor, from: surface) else { return }
             invalidateOrdinaryPasteMeasurement()
+            keepNaming()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             // The one-layout-manager-per-storage invariant rests on this
@@ -1546,6 +1548,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// same pass.
         func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
             guard currentSheet != nil, let outgoing = textView.textStorage else { return }
+            keepNaming()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             let vacant = NSTextStorage()
@@ -2045,6 +2048,10 @@ public struct InkEditorView: NSViewRepresentable {
             // declines to emit still moves the page under that reading.
             generation &+= 1
             structuralStyleNeedsRebuild = true
+            if nameEditor?.isOpen == true {
+                // On the next turn: the object may have moved or gone, and the field follows.
+                DispatchQueue.main.async { [weak self] in self?.followNaming() }
+            }
             if let sheet = currentSheet {
                 // Display-only inferred labels belong to the old character
                 // projection and cannot survive a projection rewrite.
@@ -2448,6 +2455,8 @@ public struct InkEditorView: NSViewRepresentable {
             case copyDecrypted
             case copyNameValue
             case createLink
+            case name
+            case rename
             case remove
 
             var title: String {
@@ -2456,17 +2465,20 @@ public struct InkEditorView: NSViewRepresentable {
                 case .copyDecrypted: "Copy decrypted contents"
                 case .copyNameValue: "Copy name=value, decrypted"
                 case .createLink: "Create one-time link…"
+                case .name: "Name…"
+                case .rename: "Rename…"
                 case .remove: "Remove protected content"
                 }
             }
         }
 
         /// The object's menu in D-41's order as ADR-0042 extends it, nil
-        /// marking a separator: the copies and the link, then the
-        /// removal set apart. An unnamed object has no name to copy.
+        /// marking a separator: the copies and the link, the object's own
+        /// words, then the removal set apart.
         static func chipMenuItems(named: Bool) -> [ChipMenuItem?] {
             (named ? [.copyName] : []) + [.copyDecrypted]
-                + (named ? [.copyNameValue] : []) + [.createLink, nil, .remove]
+                + (named ? [.copyNameValue] : [])
+                + [.createLink, nil, named ? .rename : .name, nil, .remove]
         }
 
         /// The menu's titles, pinned by a test rather than read off a screen.
@@ -2582,6 +2594,8 @@ public struct InkEditorView: NSViewRepresentable {
                 case .createLink:
                     item.action = #selector(concealChip(_:))
                     item.representedObject = attachment.info.chipId as NSNumber
+                case .name, .rename:
+                    item.action = #selector(nameChip(_:))
                 case .remove:
                     // The separator and verb carry the destructive meaning;
                     // leave menu text styling to AppKit.
@@ -2691,6 +2705,36 @@ public struct InkEditorView: NSViewRepresentable {
         @objc private func copyChipNameValue(_ sender: NSMenuItem) {
             guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
             copyNameValue(at: index)
+        }
+
+        @objc private func nameChip(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            beginNaming(at: index)
+        }
+
+        // MARK: The name, in its seat (Law 0007)
+
+        /// The field a sealed object's name is typed into, made on first use.
+        private(set) var nameEditor: SealedNameEditor?
+
+        /// Opens the name field over the block at `index`, on an editable page.
+        func beginNaming(at index: Int) {
+            guard let textView, let sheet = currentSheet, !sheet.isFileID else { return }
+            let editor = nameEditor ?? SealedNameEditor(model: model)
+            nameEditor = editor
+            editor.textView = textView
+            editor.begin(chipAt: index, sheet: sheet)
+        }
+
+        /// Keeps the name a field stands over when its page goes from under it.
+        func keepNaming() {
+            nameEditor?.keep(returningKeys: textView?.yieldsKeys ?? false)
+        }
+
+        /// Stands an open name field over its object again after the page moved.
+        func followNaming() {
+            guard let nameEditor, nameEditor.isOpen else { return }
+            nameEditor.follow()
         }
 
         /// The chip's ↗: open the inline confirmation. The bytes stay
@@ -4215,6 +4259,38 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         redrawChip(at: beat.index)
     }
 
+    /// The block whose name seat is a field, and how wide the field is (Law 0007).
+    struct Naming: Equatable {
+        let index: Int
+        let chip: UInt64
+        let width: CGFloat
+    }
+
+    var naming: Naming?
+
+    /// Where the chip with `chip` as its id stands on this page, if it does.
+    func chipIndex(ofChip chip: UInt64) -> Int? {
+        guard let storage = textStorage else { return nil }
+        var found: Int?
+        storage.enumerateAttribute(
+            .attachment, in: NSRange(location: 0, length: storage.length)
+        ) { value, range, stop in
+            guard (value as? ChipAttachment)?.info.chipId == chip else { return }
+            found = range.location
+            stop.pointee = true
+        }
+        return found
+    }
+
+    /// Whether this page's own name field holds the keys, so the page's
+    /// chords stand aside for it.
+    var yieldsKeys: Bool {
+        guard let editor = window?.firstResponder as? NSTextView, editor !== self,
+              editor.isFieldEditor, let field = editor.delegate as? NSView
+        else { return false }
+        return field.isDescendant(of: self)
+    }
+
     /// The sealed block's cell standing at `index`, if one does.
     func chipCell(at index: Int) -> SealedBlockCell? {
         guard let storage = textStorage, index >= 0, index < storage.length else { return nil }
@@ -4225,7 +4301,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// The named row's zone under `point` on the block at `index`; nil
     /// off the row, between runs, and on an unnamed block.
     func chipZone(at point: NSPoint, chipAt index: Int) -> SealedBlockLayout.Zone? {
-        guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { return nil }
+        guard naming?.index != index,
+              let frame = chipFrame(at: index), let cell = chipCell(at: index)
+        else { return nil }
         return cell.namedRow(in: frame)?.geometry.zone(at: point)
     }
 
@@ -4308,7 +4386,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         applyHover(at: nil)
     }
 
-    private func redrawChip(at index: Int) {
+    func redrawChip(at index: Int) {
         guard let layoutManager, let textContainer,
               let storage = textStorage, index < storage.length else { return }
         let glyphs = layoutManager.glyphRange(
@@ -4353,19 +4431,30 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case select
         /// A named row's zone, on its first click.
         case copy(SealedBlockLayout.Zone)
+        /// The name field, from a double click (Law 0007).
+        case openName
         /// A later click on a zone that acted on its first.
         case ignore
     }
 
-    /// Pure, so the rule is an assertion. Off a zone, and with a gesture
-    /// modifier held, the click selects as anywhere else on the block.
+    /// Pure, so the rule is an assertion. A named row opens the field only
+    /// from the name zone; an unnamed one from anywhere on its row.
     nonisolated static func chipClick(
-        zone: SealedBlockLayout.Zone?, clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+        named: Bool, zone: SealedBlockLayout.Zone?, inRow: Bool, clickCount: Int,
+        modifierFlags: NSEvent.ModifierFlags
     ) -> ChipClick {
-        guard let zone,
-              modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
+        guard modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
         else { return .select }
-        return clickCount == 1 ? .copy(zone) : .ignore
+        guard named else {
+            guard inRow, clickCount >= 2 else { return .select }
+            return clickCount == 2 ? .openName : .ignore
+        }
+        guard let zone else { return .select }
+        switch clickCount {
+        case 1: return .copy(zone)
+        case 2 where zone == .name: return .openName
+        default: return .ignore
+        }
     }
 
     /// A click on the explicit actions affordance opens the object's menu.
@@ -4398,12 +4487,18 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             coordinator.openChipMenu(at: index, from: point, in: self)
             return
         }
+        let frame = chipFrame(at: index)
         switch Self.chipClick(
+            named: chipCell(at: index)?.info.name != nil,
             zone: chipZone(at: point, chipAt: index),
+            inRow: frame.map { SealedBlockCell.contentLayout(in: $0).rowBand.contains(point) }
+                ?? false,
             clickCount: event.clickCount, modifierFlags: event.modifierFlags)
         {
         case .copy(let zone):
             if coordinator.copy(zone, chipAt: index) { beginCopyBeat(zone, at: index) }
+        case .openName:
+            coordinator.beginNaming(at: index)
         case .ignore:
             return
         case .select:
@@ -4546,6 +4641,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         updateChipEditorMeasure()
         super.layout()
         coordinator?.refitBlockLabels()
+        coordinator?.followNaming()
     }
 
     /// TextKit's attachment sizing callback is explicitly nonisolated,
@@ -4587,8 +4683,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// through `keyDown` below, which fires only while this page holds
     /// the keyboard.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let command = editorCommand(for: event), command.modifiers.contains(.command),
-           dispatch(command.id) {
+        if !yieldsKeys, let command = editorCommand(for: event),
+           command.modifiers.contains(.command), dispatch(command.id) {
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -5423,9 +5519,18 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     /// The named row in a block drawn at `cellFrame`, nil when unnamed (ADR-0042
     /// point 2); measured against the seat's widest words, not its current ones.
+    /// With `editingWidth` the name's seat is a field that wide (Law 0007),
+    /// drawn by the field, and the row follows it whether named or not.
     @MainActor
-    func namedRow(in cellFrame: NSRect) -> NamedRow? {
-        guard let name = info.name, !name.isEmpty else { return nil }
+    func namedRow(in cellFrame: NSRect, editingWidth: CGFloat? = nil) -> NamedRow? {
+        let name: String
+        if editingWidth != nil {
+            name = ""
+        } else if let typed = info.name, !typed.isEmpty {
+            name = typed
+        } else {
+            return nil
+        }
         let layout = Self.contentLayout(in: cellFrame)
         let nameAttributes: [NSAttributedString.Key: Any] = [
             .font: InkStyle.chipNameFont, .foregroundColor: NSColor.labelColor,
@@ -5440,9 +5545,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
             string: String(name.prefix(Self.nameFloorCharacters)) + "…",
             attributes: nameAttributes)
         let wholeValue = NSAttributedString(string: info.excerpt, attributes: valueAttributes)
-        let allotment = SealedBlockLayout.rowAllotment(
-            available: SealedBlockLayout.excerptWidth(
-                containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth),
+        let available = SealedBlockLayout.excerptWidth(
+            containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth)
+        let allotment = editingWidth.map {
+            (name: $0, value: max(0, available - $0 - equals.size().width))
+        } ?? SealedBlockLayout.rowAllotment(
+            available: available,
             name: NSAttributedString(string: name, attributes: nameAttributes).size().width,
             equals: equals.size().width,
             value: wholeValue.size().width,
@@ -5456,12 +5564,22 @@ final class SealedBlockCell: NSTextAttachmentCell {
             equals: equals,
             value: fittedValue,
             geometry: layout.namedRow(
-                nameWidth: fittedName.size().width,
+                nameWidth: editingWidth ?? fittedName.size().width,
                 equalsWidth: equals.size().width,
                 valueWidth: fittedValue.size().width,
                 height: wholeValue.size().height
             )
         )
+    }
+
+    /// The most the name field may take of a block drawn at `cellFrame`:
+    /// the row, less the `=` that follows it.
+    @MainActor
+    func nameFieldRoom(in cellFrame: NSRect) -> CGFloat {
+        let equals = NSAttributedString(string: "=", attributes: [.font: InkStyle.chipFont])
+        return SealedBlockLayout.excerptWidth(
+            containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth
+        ) - equals.size().width
     }
 
     /// The widest thing a named row's seat can say, which its row
@@ -5703,8 +5821,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let beat = view?.copyBeat.flatMap {
             $0.index == charIndex && $0.chip == info.chipId ? $0 : nil
         }
+        let naming = view?.naming.flatMap {
+            $0.index == charIndex && $0.chip == info.chipId ? $0 : nil
+        }
         draw(
             withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered,
+            editingWidth: naming?.width,
             zone: hovered ? view?.hoveredZone : nil,
             beat: beat.flatMap { beat in
                 Self.beatStrength(
@@ -5718,7 +5840,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
         draw(
             withFrame: cellFrame, in: controlView, selected: false, hovered: false,
-            zone: nil, beat: nil)
+            editingWidth: nil, zone: nil, beat: nil)
     }
 
     /// How long a zone wears ember after its copy (ADR-0042 point 8).
@@ -5744,6 +5866,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor
     private func draw(
         withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool,
+        editingWidth: CGFloat?,
         zone: SealedBlockLayout.Zone?, beat: (zone: SealedBlockLayout.Zone, strength: CGFloat)?
     ) {
         #if DEBUG
@@ -5802,7 +5925,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             ))
         }
 
-        guard let row = namedRow(in: cellFrame) else {
+        guard let row = namedRow(in: cellFrame, editingWidth: editingWidth) else {
             let excerptLine = excerpt
             let metadataSize = metadata.size()
             excerptLine.draw(in: layout.excerptRect(
@@ -5812,12 +5935,15 @@ final class SealedBlockCell: NSTextAttachmentCell {
             metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
             return
         }
-        drawPills(row.geometry, metrics: layout.metrics, zone: zone, beat: beat)
+        if editingWidth == nil {
+            drawPills(row.geometry, metrics: layout.metrics, zone: zone, beat: beat)
+        }
         row.name.draw(at: row.geometry.name.origin)
         row.equals.draw(at: row.geometry.equals.origin)
         row.value.draw(at: row.geometry.value.origin)
         let seat = Self.seatString(Self.seatText(
-            sizeLabel: info.sizeLabel, hovered: zone, copied: beat != nil))
+            sizeLabel: info.sizeLabel, hovered: editingWidth == nil ? zone : nil,
+            copied: editingWidth == nil && beat != nil))
         seat.draw(at: layout.metadataOrigin(width: seat.size().width))
     }
 

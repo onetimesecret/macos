@@ -357,6 +357,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A sealed object is named in its own seat** (app 0.30.0; Law 0007,
+  ADR-0042, issue #245). *Name…* on an unnamed object, *Rename…* on a
+  named one, a double click on an unnamed object's bottom row or on a
+  named one's name opens a field where the name stands, on the name,
+  selected whole, with `NAME` as its placeholder and the excerpt to its
+  right. Return names the object and the block redraws in place; an
+  empty Return clears the name; Return over the name it opened on,
+  Escape, the keyboard leaving, the object leaving the page and the
+  page going read only all keep it. A name outside 1 to 64 characters
+  of `A` to `Z`, `a` to `z`, digits and `_`, not starting with a digit,
+  is said in the line under the page and the field stays open; the line
+  stays while the field does and goes once the draft is a name the core
+  takes. While the field holds the keys the page's chords stand aside,
+  so ⌘Z cannot step the page back under a draft. No dialog is involved.
+
 - **A named sealed object's bottom row copies by zone** (app 0.29.0;
   Law 0001, ADR-0042, issue #244). The row reads `NAME=excerpt`: the
   name semibold, `=` in the secondary colour, then the excerpt. The

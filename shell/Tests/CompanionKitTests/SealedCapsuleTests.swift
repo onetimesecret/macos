@@ -75,7 +75,7 @@ final class SealedCapsuleTests: XCTestCase {
             named.items.map { $0.isSeparatorItem ? nil : $0.title },
             [
                 "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
-                "Create one-time link…", nil, "Remove protected content",
+                "Create one-time link…", nil, "Rename…", nil, "Remove protected content",
             ])
         for item in named.items where !item.isSeparatorItem {
             XCTAssertNotNil(item.action, "\(item.title) does nothing")
@@ -130,24 +130,28 @@ final class SealedCapsuleTests: XCTestCase {
     /// A first click on a zone copies; a later click of the same press
     /// does nothing; off a zone, or with a modifier, the click selects.
     func testAZoneActsOnTheFirstClickAndAClickOffItSelects() {
+        func click(
+            _ zone: SealedBlockLayout.Zone?, _ count: Int, _ flags: NSEvent.ModifierFlags = []
+        ) -> InkTextView.ChipClick {
+            InkTextView.chipClick(
+                named: true, zone: zone, inRow: zone != nil, clickCount: count,
+                modifierFlags: flags)
+        }
         for zone in SealedBlockLayout.Zone.allCases {
-            XCTAssertEqual(
-                InkTextView.chipClick(zone: zone, clickCount: 1, modifierFlags: []), .copy(zone))
-            XCTAssertEqual(
-                InkTextView.chipClick(zone: zone, clickCount: 1, modifierFlags: .capsLock),
-                .copy(zone))
-            XCTAssertEqual(
-                InkTextView.chipClick(zone: zone, clickCount: 3, modifierFlags: []), .ignore)
-            XCTAssertEqual(
-                InkTextView.chipClick(zone: zone, clickCount: 1, modifierFlags: .shift), .select)
+            XCTAssertEqual(click(zone, 1), .copy(zone))
+            XCTAssertEqual(click(zone, 1, .capsLock), .copy(zone))
+            XCTAssertEqual(click(zone, 3), .ignore)
+            XCTAssertEqual(click(zone, 1, .shift), .select)
         }
         for zone in [SealedBlockLayout.Zone.value, .equals] {
-            XCTAssertEqual(
-                InkTextView.chipClick(zone: zone, clickCount: 2, modifierFlags: []), .ignore,
-                "a second click on a decrypted zone acted again")
+            XCTAssertEqual(click(zone, 2), .ignore, "a second click on a decrypted zone acted again")
         }
-        XCTAssertEqual(InkTextView.chipClick(zone: nil, clickCount: 1, modifierFlags: []), .select)
-        XCTAssertEqual(InkTextView.chipClick(zone: nil, clickCount: 2, modifierFlags: []), .select)
+        XCTAssertEqual(click(nil, 1), .select)
+        XCTAssertEqual(click(nil, 2), .select)
+        XCTAssertEqual(
+            InkTextView.chipClick(
+                named: false, zone: nil, inRow: true, clickCount: 1, modifierFlags: []),
+            .select, "an unnamed row's click selects as the block does")
     }
 
     /// A client that counts the two decrypted copies and answers yes
@@ -283,12 +287,20 @@ final class SealedCapsuleTests: XCTestCase {
         try press(value, clicks: 2)
         XCTAssertEqual(client.copiedOut, [fixture.chipID], "the second click copied again")
 
-        try press(NSPoint(x: row.name.midX, y: row.name.midY), clicks: 1)
+        let namePoint = NSPoint(x: row.name.midX, y: row.name.midY)
+        try press(namePoint, clicks: 1)
         XCTAssertEqual(fixture.pasteboard.string(forType: .string), "MY_API_KEY")
         XCTAssertEqual(textView.copyBeat?.zone, .name)
         XCTAssertEqual(
             textView.selectedRange(), NSRange(location: 0, length: 0),
             "a zone's click moved the selection")
+
+        // The name zone's second click opens the field and copies nothing more.
+        let copies = fixture.pasteboard.changeCount
+        try press(namePoint, clicks: 2)
+        XCTAssertEqual(fixture.coordinator.nameEditor?.isOpen, true)
+        XCTAssertEqual(fixture.pasteboard.changeCount, copies, "the second click copied again")
+        XCTAssertEqual(client.copiedOut, [fixture.chipID])
     }
 
     /// Hover is per point: the zone under the pointer, nothing between

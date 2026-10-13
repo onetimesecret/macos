@@ -151,6 +151,28 @@ final class ModalSessionTests: XCTestCase {
         XCTAssertEqual(model.tabs.first?.title, "payroll", "escape and focus loss keep the title")
         XCTAssertEqual(header.renameDraft, "payroll", "and the gutter shows it again")
 
+        // A sealed object's name, in its seat (Law 0007): opened, refused,
+        // named and kept, and no bracket entered on any of it.
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        textView.insertText("SECRET", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 0, length: 6))
+        coordinator.sealSelectionOrLine()
+        coordinator.beginNaming(at: 0)
+        let nameField = try XCTUnwrap(coordinator.nameEditor)
+        XCTAssertTrue(nameField.isOpen)
+        XCTAssertFalse(ModalSession.isRunning, "the name field opens in place, not in a panel")
+        nameField.draft = "not.a.name"
+        nameField.commit()
+        XCTAssertTrue(nameField.isOpen, "a refusal is a line, not a dialog")
+        nameField.draft = "API_KEY"
+        nameField.commit()
+        coordinator.beginNaming(at: 0)
+        nameField.keep(returningKeys: true)
+        XCTAssertFalse(nameField.isOpen)
+
         XCTAssertEqual(ends, 0, "no bracket was entered on either ending")
         XCTAssertFalse(ModalSession.isRunning)
     }
