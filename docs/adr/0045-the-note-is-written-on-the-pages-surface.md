@@ -96,3 +96,11 @@ The note is written on the page's own surface, over the note's routes.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #246, before its code.
+
+## Erratum
+
+2026-10-13: Decision point 5 says a page's display label goes on its
+next structural rewrite. The surface drops every display label at the
+next character edit of its document, a keystroke included, and a note's
+goes the same way, as well as when the note closes. The decision is
+unchanged: a note's labels are the open note's alone and never a page's.

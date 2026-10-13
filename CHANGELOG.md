@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No seal lands in a note, by chord, menu or drop; no sealed object
   stands in one; it shows no block stamps; and ⌥Z leaves the page's
   wrap setting alone there, since a note always wraps. A language
-  chosen for a bare fence's colours in a note lasts until the note
-  closes.
+  chosen for a bare fence's colours in a note is the note's alone, and
+  goes at the note's next edit or when it closes, as a page's goes at
+  its next edit.
 
 - **A pad is renamed in its own cell** (app 0.28.0; Law 0007, issue
   #249). *Rename pad…* turns the pad's name into a field where it
