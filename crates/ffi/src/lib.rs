@@ -37,8 +37,8 @@ use ots_client::Transport as _;
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
     LedgerEvent, NameRefusal, RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore,
-    SystemClock, TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, judge_name,
-    local_day,
+    StepOutcome, SystemClock, TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language,
+    judge_name, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -2897,6 +2897,20 @@ fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *
         return ptr::null_mut();
     };
     match serde_json::to_string(&chip_face(sealed)) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A step's outcome as the header's `StepOutcome`, an owned C string.
+pub(crate) fn step_outcome_json(outcome: StepOutcome) -> *mut c_char {
+    let value = serde_json::json!({
+        "applied": outcome.applied,
+        "caretUTF16": outcome.caret_u16.map_or(-1, i64::from),
+        "selectionLocationUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.location_u16)),
+        "selectionLengthUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.length_u16)),
+    });
+    match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
