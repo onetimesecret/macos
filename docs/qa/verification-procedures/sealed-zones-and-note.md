@@ -62,6 +62,22 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       stays under its block as the page scrolls, and on the narrow card
       it spans the card's content width. **Fail:** the note stays where
       it was while the block scrolls away, or it overhangs the card.
+- [ ] **A drop from another app.** Select a word in TextEdit. With the
+      note open, drag the word onto the note's text, then onto the page
+      below the note. Then open the name field on a block and drag the
+      word onto the field. **Pass:** the cursor offers nothing over the
+      note or the field and nothing lands in either, while the drop on
+      the page becomes a sealed block (ADR-0044). **Fail:** the word
+      appears in the note or the field, or the drop on the page lands
+      as plain ink.
+- [ ] **A named image.** Copy an image in Preview and press ⇧⌘V on the
+      page, then choose the block's *Name…*, type `LOGO` and press
+      Return, then move the pointer across `=` and
+      open the object's menu. **Pass:** the row reads `LOGO=` and the
+      image's excerpt, `=` shows no pill and the seat keeps its size
+      class, and the menu has *Copy name* but no *Copy name=value,
+      decrypted*. **Fail:** the seat offers name=value, or the menu
+      item is there.
 
 ## Results
 
@@ -76,3 +92,5 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | expand, contract, close | | |
 | | | the note's undo is its own | | |
 | | | scrolling and a narrow card | | |
+| | | a drop from another app | | |
+| | | a named image | | |
