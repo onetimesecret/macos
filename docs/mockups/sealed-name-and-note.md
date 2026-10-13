@@ -5,7 +5,10 @@
 > 2026-10-13 amendment. The mockup
 > ([sealed-name-and-note.svg](sealed-name-and-note.svg)) draws today's
 > block first and the proposed states beside it; this note says what each
-> state means. It remains a lead, not a source.
+> state means. It remains a lead, not a source, except for the surface
+> details [ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
+> names. That record also settles the charset, the double click and the
+> three open points below, where its answers are noted.
 
 # Sealed object: a name and a note
 
@@ -40,12 +43,16 @@ it does.
   the bottom row. An inline field opens in the name's seat with the
   placeholder `NAME`; Return commits, Esc cancels. No dialog (D-14).
   *Rename…* reopens the same field over the current name.
+  *Settled by ADR-0042:* on a named row only a double click on the name
+  opens the field; the value and `=` copy on the first click.
 - **What it is.** Page-owned text, like a title: ambient ink that lives
   with the object core-side and travels with it through cut, paste and
   clone in the sealed fragment. It is never payload and never enters the
   ledger, which has no content field to receive it. Proposed shape: up to
   64 characters, letters, digits, underscore, dot and dash, so that
   `name=value` pastes as an environment line. Case is kept as typed.
+  *Settled by ADR-0042:* 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`,
+  refused core-side, since a dot or a dash does not assign in a shell.
 
 ## The three copy zones
 
@@ -139,3 +146,7 @@ more seats the law reaches:
   contains spaces, or copy it raw as an IDE does.
 - The note's measure when the card is narrower than the popover's
   minimum.
+
+*Answered by ADR-0042:* an unnamed row has no zones until the object is
+named; the value is copied raw; and on a narrow card the note takes the
+card's full content width.
