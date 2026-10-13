@@ -14,6 +14,7 @@ use crate::blocks::{BlockIndex, MaterializedMeta, PersistedBlock};
 use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
     SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
@@ -297,6 +298,8 @@ struct PageExport {
     blob: Zeroizing<Vec<u8>>,
     /// The block section (ADR-0013).
     meta: Zeroizing<Vec<u8>>,
+    /// Each chip's note text, in chip order; an empty note writes none.
+    notes: Vec<Option<Zeroizing<String>>>,
 }
 
 impl PageExport {
@@ -304,6 +307,16 @@ impl PageExport {
         Self {
             blob: sheet.document.export_snapshot(),
             meta: encode_materialized(&sheet.blocks, &sheet.document),
+            notes: sheet
+                .chips
+                .iter()
+                .map(|chip| {
+                    chip.note
+                        .as_ref()
+                        .map(Note::text)
+                        .filter(|text| !text.is_empty())
+                })
+                .collect(),
         }
     }
 }
@@ -380,8 +393,9 @@ fn emit_sheet(sheet: &Sheet, export: &PageExport, now: Instant, out: &mut dyn Si
     out.u64(ms(sheet.total_held(now)));
     // Chips first, so every identity is known before a mark resolves one.
     out.u64(sheet.chips.len() as u64);
-    for chip in &sheet.chips {
-        framed(&mut *out, |out| emit_chip(chip, out));
+    for (chip, note) in sheet.chips.iter().zip(&export.notes) {
+        let note = note.as_ref().map(|text| text.as_str());
+        framed(&mut *out, |out| emit_chip(chip, note, out));
     }
     // The whole document, history included; the projection derives from it.
     out.bytes(&export.blob);
@@ -399,7 +413,7 @@ fn emit_sheet(sheet: &Sheet, export: &PageExport, now: Instant, out: &mut dyn Si
 }
 
 /// One chip record. The face is recomputed on the way back in.
-fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
+fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
     out.raw(chip.uuid.as_bytes());
     out.u8(match chip.meta {
         ChipMeta::Text { .. } => 0,
@@ -413,12 +427,19 @@ fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
         }
     }
     out.bytes(chip.bytes.expose());
-    // Trailing, so a build that predates it skips it (ADR-0043).
+    // Trailing, so a build that predates them skips both (ADR-0043).
     match &chip.name {
         None => out.u8(0),
         Some(name) => {
             out.u8(1);
             out.bytes(name.as_bytes());
+        }
+    }
+    match note {
+        None => out.u8(0),
+        Some(text) => {
+            out.u8(1);
+            out.bytes(text.as_bytes());
         }
     }
 }
@@ -727,6 +748,16 @@ fn read_page(
                 _ => return Err(Malformed),
             }
         };
+        // And one written before the note ends here; its undo starts empty.
+        let note = if record.done() {
+            None
+        } else {
+            match record.u8().ok_or(Malformed)? {
+                0 => None,
+                1 => Some(Note::holding(record.str().ok_or(Malformed)?)),
+                _ => return Err(Malformed),
+            }
+        };
         let chip_id = ChipId::from_raw(*next_chip_id);
         *next_chip_id += 1;
         // The face is rebuilt by the sealing constructors, never trusted.
@@ -741,6 +772,7 @@ fn read_page(
         };
         chip.conceal = conceal;
         chip.name = name;
+        chip.note = note;
         chips.push(chip);
     }
 
@@ -941,6 +973,15 @@ mod tests {
             .unwrap();
         assert!(store.mark_chip_concealed(token, "receipt-42".into()));
         store.set_chip_name(token, "DEPLOY_TOKEN").unwrap();
+        assert!(store.apply_note_ops(
+            token,
+            &[crate::store::EditOp::Insert {
+                pos_u16: 0,
+                text: "rotate after \u{1F511} the audit".into(),
+            }],
+            crate::document::EditIntent::Typing,
+            None,
+        ));
         assert!(store.sync_document(
             first,
             vec![
@@ -1004,9 +1045,18 @@ mod tests {
         );
         assert_eq!(chips[0].conceal().unwrap().receipt_id, "receipt-42");
         assert_eq!(chips[0].name(), Some("DEPLOY_TOKEN"));
+        assert_eq!(
+            &**revived.note_text(chips[0].id()).unwrap(),
+            "rotate after \u{1F511} the audit"
+        );
+        assert!(
+            !revived.note_can_undo(chips[0].id()),
+            "a note's undo starts empty after a restore"
+        );
         assert_eq!(chips[1].excerpt(), "PNG image");
         assert!(chips[1].conceal().is_none());
         assert_eq!(chips[1].name(), None);
+        assert!(!chips[1].has_note());
 
         let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
         assert_eq!(&*bytes, b"ghp_expected-to-survive");
@@ -1986,8 +2036,8 @@ mod tests {
         doc.insert_chip(0, uuid).unwrap();
         doc.insert(1, " and ink \u{1F600}").unwrap();
         doc.commit(None);
-        // No name, then the field this build does not know.
-        let tail = [&[0u8][..], b"a chip field from 2027"].concat();
+        // No name, no note, then the field this build does not know.
+        let tail = [&[0u8, 0][..], b"a chip field from 2027"].concat();
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_still-here")], &doc.export_snapshot(), &tail);
 
@@ -2005,10 +2055,11 @@ mod tests {
         doc.export_snapshot()
     }
 
-    fn name_field(name: &str) -> Vec<u8> {
+    /// A present name or note: flag 1, then the length prefixed text.
+    fn text_field(text: &str) -> Vec<u8> {
         let mut field = vec![1u8];
-        field.extend_from_slice(&(name.len() as u64).to_le_bytes());
-        field.extend_from_slice(name.as_bytes());
+        field.extend_from_slice(&(text.len() as u64).to_le_bytes());
+        field.extend_from_slice(text.as_bytes());
         field
     }
 
@@ -2038,7 +2089,7 @@ mod tests {
             let snapshot = sheet_snapshot_with_tails(
                 &[(uuid, "ghp_named-or-not")],
                 &document,
-                &name_field(written),
+                &text_field(written),
             );
             assert_eq!(store.restore(&snapshot, 0).unwrap(), 1, "{written}");
             let chip = store.sheets().next().unwrap().chips().next().unwrap();
@@ -2046,6 +2097,51 @@ mod tests {
             let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
             assert_eq!(&*bytes, b"ghp_named-or-not", "the chip outlived its name");
         }
+    }
+
+    #[test]
+    fn a_chip_written_before_notes_existed_keeps_its_name_and_has_no_note() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let snapshot = sheet_snapshot_with_tails(
+            &[(uuid, "ghp_named-only")],
+            &one_chip_document(uuid),
+            &text_field("API_KEY"),
+        );
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), Some("API_KEY"));
+        assert!(!chip.has_note());
+        assert_eq!(&**store.note_text(chip.id()).unwrap(), "");
+    }
+
+    #[test]
+    fn a_written_note_comes_back_beside_its_name() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), None);
+        assert!(chip.has_note());
+        assert_eq!(
+            &**store.note_text(chip.id()).unwrap(),
+            "kept \u{1F600} beside it"
+        );
+    }
+
+    #[test]
+    fn an_unknown_note_flag_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let uuid = ItemId::random();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[0, 7]);
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
     }
 
     #[test]

@@ -10,7 +10,9 @@ use zeroize::Zeroizing;
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
+use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
     SheetClock, SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
@@ -1207,6 +1209,107 @@ impl<C: Clock> SheetStore<C> {
         Ok(())
     }
 
+    fn note(&self, id: ChipId) -> Option<&Note> {
+        self.chip_home(id)?.1.note.as_ref()
+    }
+
+    /// A sealed object's note, empty when it has none; `None` for an unknown
+    /// chip (ADR-0043).
+    #[must_use]
+    pub fn note_text(&self, id: ChipId) -> Option<Zeroizing<String>> {
+        let (_, chip) = self.chip_home(id)?;
+        Some(
+            chip.note
+                .as_ref()
+                .map_or_else(|| Zeroizing::new(String::new()), Note::text),
+        )
+    }
+
+    /// Apply a batch to a sealed object's note, whole or not at all; the first
+    /// accepted batch makes the note. The page and the ledger are not touched.
+    pub fn apply_note_ops(
+        &mut self,
+        id: ChipId,
+        ops: &[EditOp],
+        intent: EditIntent,
+        selection: Option<EditSelection>,
+    ) -> bool {
+        let Some(chip) = self.chip_mut(id) else {
+            return false;
+        };
+        if ops.is_empty() {
+            return true;
+        }
+        let made = chip.note.is_none();
+        let note = chip.note.get_or_insert_with(|| Note::holding(""));
+        if let Some(clean) = note.apply(ops, intent, selection) {
+            return clean;
+        }
+        // A refused first batch makes no note.
+        if made {
+            chip.note = None;
+        }
+        false
+    }
+
+    /// End the note's typing run without adding a step. False only for an
+    /// unknown chip.
+    pub fn finish_note_editing_group(
+        &mut self,
+        id: ChipId,
+        selection: Option<TextSelection>,
+    ) -> bool {
+        let Some((_, chip)) = self.chip_home(id) else {
+            return false;
+        };
+        if let Some(note) = &chip.note {
+            note.finish_editing_group(selection);
+        }
+        true
+    }
+
+    /// Whether the note has a step of its own to take back.
+    #[must_use]
+    pub fn note_can_undo(&self, id: ChipId) -> bool {
+        self.note(id).is_some_and(Note::can_undo)
+    }
+
+    /// Whether the note has a step of its own to put back.
+    #[must_use]
+    pub fn note_can_redo(&self, id: ChipId) -> bool {
+        self.note(id).is_some_and(Note::can_redo)
+    }
+
+    /// Content-free label for the note's next Undo.
+    pub fn note_undo_action_name(&self, id: ChipId) -> Option<&'static str> {
+        self.note(id)?.undo_action_name()
+    }
+
+    /// Content-free label for the note's next Redo.
+    pub fn note_redo_action_name(&self, id: ChipId) -> Option<&'static str> {
+        self.note(id)?.redo_action_name()
+    }
+
+    /// Take back the note's last step; the page's stack is not touched.
+    /// `None` for an unknown chip.
+    pub fn undo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
+        self.step_note(id, true)
+    }
+
+    /// Put back the step [`SheetStore::undo_note`] took.
+    pub fn redo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
+        self.step_note(id, false)
+    }
+
+    fn step_note(&mut self, id: ChipId, back: bool) -> Option<StepOutcome> {
+        let chip = self.chip_mut(id)?;
+        Some(
+            chip.note
+                .as_mut()
+                .map_or(StepOutcome::NONE, |note| note.step(back)),
+        )
+    }
+
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
@@ -2319,6 +2422,9 @@ mod tests {
     /// Long enough for `fragments_of`, and in no ledger field by chance.
     const CHIP_NAME: &str = "QUINCE_MARMALADE_ROTATION_KEY_7ZX";
 
+    /// The same, for a note.
+    const CHIP_NOTE: &str = "Wq9Fj Zx7Kp Marmot Burrow Vq2Ld Gh5Ty";
+
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
     }
@@ -2339,6 +2445,7 @@ mod tests {
         let mut fragments = fragments_of(TOKEN);
         fragments.extend(fragments_of(ORIGIN_URL));
         fragments.extend(fragments_of(CHIP_NAME));
+        fragments.extend(fragments_of(CHIP_NOTE));
         let mut checked = 0usize;
         for record in store.ledger() {
             let rendered = format!("{record:?}");
@@ -2470,6 +2577,235 @@ mod tests {
         assert_eq!(store.expire_due(), vec![id]);
         assert!(!contains(&store.snapshot(1_000_000), CHIP_NAME.as_bytes()));
         assert!(!contains(&store.ledger_snapshot(), CHIP_NAME.as_bytes()));
+    }
+
+    fn typed(pos_u16: u32, text: &str) -> Vec<EditOp> {
+        vec![EditOp::Insert {
+            pos_u16,
+            text: text.into(),
+        }]
+    }
+
+    fn write_note(store: &mut SheetStore<ManualClock>, chip: ChipId, text: &str) {
+        assert!(store.apply_note_ops(chip, &typed(0, text), EditIntent::Paste, None));
+    }
+
+    fn note_of(store: &SheetStore<ManualClock>, chip: ChipId) -> String {
+        store.note_text(chip).expect("the chip stands").to_string()
+    }
+
+    #[test]
+    fn a_note_survives_a_snapshot_round_trip() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let noted = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let bare = store.seal_text_at(id, "no note here", 1, 0).unwrap();
+        write_note(&mut store, noted, CHIP_NOTE);
+        let uuids: Vec<ItemId> = [noted, bare]
+            .iter()
+            .map(|chip| store.chip_home(*chip).unwrap().1.uuid())
+            .collect();
+
+        let snapshot = store.snapshot(1_000_000);
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let ids: Vec<ChipId> = uuids
+            .iter()
+            .map(|uuid| {
+                let sheet = revived.sheets().next().unwrap();
+                sheet
+                    .chips()
+                    .find(|chip| chip.uuid() == *uuid)
+                    .unwrap()
+                    .id()
+            })
+            .collect();
+        assert_eq!(note_of(&revived, ids[0]), CHIP_NOTE);
+        assert!(revived.chip_home(ids[0]).unwrap().1.has_note());
+        assert_eq!(note_of(&revived, ids[1]), "");
+        assert!(!revived.chip_home(ids[1]).unwrap().1.has_note());
+        assert!(
+            !revived.note_can_undo(ids[0]),
+            "undo does not survive relaunch"
+        );
+    }
+
+    #[test]
+    fn after_the_page_expires_the_snapshot_holds_no_note() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        write_note(&mut store, chip, CHIP_NOTE);
+        assert!(
+            contains(&store.snapshot(1_000_000), CHIP_NOTE.as_bytes()),
+            "the control: a live page writes its chip's note"
+        );
+
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+        assert!(
+            store.note_text(chip).is_none(),
+            "the note went with its chip"
+        );
+        assert!(!contains(&store.snapshot(1_000_000), CHIP_NOTE.as_bytes()));
+        assert!(!contains(&store.ledger_snapshot(), CHIP_NOTE.as_bytes()));
+    }
+
+    #[test]
+    fn undo_inside_the_note_is_separate_from_the_pages_undo() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        assert!(store.apply_ops(id, &typed(1, " page ink")));
+        assert!(store.apply_note_ops(chip, &typed(0, "note ink"), EditIntent::Typing, None));
+        let page_ink =
+            |store: &SheetStore<ManualClock>| {
+                store.sheet(id).unwrap().segments().iter().any(
+                    |segment| matches!(segment, Segment::Ink(text) if text.contains("page ink")),
+                )
+            };
+        assert_eq!(store.note_undo_action_name(chip), Some("Typing"));
+
+        assert!(store.undo_note(chip).unwrap().applied);
+        assert_eq!(note_of(&store, chip), "", "the note's step came back");
+        assert!(page_ink(&store), "the note's undo reached the page");
+        assert!(store.can_undo(id), "the page's step still waits");
+        assert!(!store.note_can_undo(chip));
+
+        assert!(store.undo(id));
+        assert!(!page_ink(&store));
+        assert!(
+            store.note_can_redo(chip),
+            "the page's undo took the note's redo"
+        );
+        assert_eq!(note_of(&store, chip), "");
+
+        assert!(store.redo_note(chip).unwrap().applied);
+        assert_eq!(note_of(&store, chip), "note ink");
+        assert!(store.can_redo(id), "the note's redo took the page's");
+        assert!(store.redo(id));
+        assert!(page_ink(&store));
+        assert_eq!(note_of(&store, chip), "note ink");
+
+        assert!(store.undo_note(chip).unwrap().applied, "its own step again");
+        assert!(page_ink(&store));
+        assert!(store.undo_note(ChipId::from_raw(4_242)).is_none());
+    }
+
+    #[test]
+    fn note_edits_leave_the_ledger_unchanged() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        let before: Vec<LedgerRecord> = store.ledger().cloned().collect();
+
+        write_note(&mut store, chip, CHIP_NOTE);
+        assert!(store.apply_note_ops(
+            chip,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 6
+            }],
+            EditIntent::Deletion,
+            None
+        ));
+        assert!(store.undo_note(chip).unwrap().applied);
+        assert!(store.finish_note_editing_group(chip, None));
+        let after: Vec<LedgerRecord> = store.ledger().cloned().collect();
+        assert_eq!(after, before, "a note edit recorded something");
+        assert_content_free(&store);
+
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        store.expire_due();
+        assert_content_free(&store);
+        assert!(!contains(&store.ledger_snapshot(), b"Marmot"));
+    }
+
+    #[test]
+    fn a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let other = store.seal_text_at(id, "another", 1, 0).unwrap();
+
+        let refused = [
+            vec![EditOp::InsertChip {
+                pos_u16: 0,
+                chip: other,
+            }],
+            vec![EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 1,
+            }],
+            typed(5, "past the end"),
+        ];
+        for ops in &refused {
+            assert!(!store.apply_note_ops(chip, ops, EditIntent::Typing, None));
+            assert!(
+                store.chip_home(chip).unwrap().1.note.is_none(),
+                "a refused first batch made a note: {ops:?}"
+            );
+        }
+
+        write_note(&mut store, chip, "kept");
+        for ops in &refused {
+            assert!(!store.apply_note_ops(chip, ops, EditIntent::Typing, None));
+            assert_eq!(note_of(&store, chip), "kept", "{ops:?}");
+        }
+        assert!(store.apply_note_ops(chip, &[], EditIntent::Typing, None));
+        assert!(!store.apply_note_ops(
+            ChipId::from_raw(4_242),
+            &typed(0, "x"),
+            EditIntent::Typing,
+            None
+        ));
+        assert_eq!(
+            store.sheet(id).unwrap().chip_count(),
+            2,
+            "the page's chips stand"
+        );
+    }
+
+    #[test]
+    fn a_note_of_only_whitespace_opens_no_doorway() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let doorway = |store: &SheetStore<ManualClock>| store.chip_home(chip).unwrap().1.has_note();
+        assert!(!doorway(&store));
+        write_note(&mut store, chip, "  \n\t");
+        assert!(!doorway(&store));
+        assert!(store.apply_note_ops(chip, &typed(4, "x"), EditIntent::Typing, None));
+        assert!(doorway(&store));
+    }
+
+    #[test]
+    fn a_name_and_a_note_are_never_payload() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        write_note(&mut store, chip, CHIP_NOTE);
+
+        let one = store.chip_payload(chip).unwrap();
+        assert_eq!(
+            &**one,
+            TOKEN.as_bytes(),
+            "a chip's conceal payload is its bytes"
+        );
+        let page = store.sheet_payload(id).unwrap();
+        assert!(
+            page.contains(TOKEN),
+            "the control: the page inlines its chip"
+        );
+        for text in [CHIP_NAME, CHIP_NOTE] {
+            assert!(!page.contains(text), "{text} rode the page's payload");
+        }
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, TOKEN.as_bytes());
     }
 
     #[test]

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::SizeClass;
+use crate::note::Note;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
@@ -211,7 +212,7 @@ pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
 }
 
 /// A sealed chip: secret bytes, the non-secret face it shows, and the
-/// typed name beside it (ADR-0043).
+/// typed name and note beside it (ADR-0043).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
@@ -221,6 +222,8 @@ pub struct SealedChip {
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
     pub(crate) name: Option<String>,
+    /// Made by its first accepted edit.
+    pub(crate) note: Option<Note>,
 }
 
 impl SealedChip {
@@ -241,6 +244,7 @@ impl SealedChip {
             size_label,
             conceal: None,
             name: None,
+            note: None,
         }
     }
 
@@ -262,6 +266,7 @@ impl SealedChip {
             size_label: SizeClass::of(byte_len).to_string(),
             conceal: None,
             name: None,
+            note: None,
         }
     }
 
@@ -305,6 +310,12 @@ impl SealedChip {
     #[must_use]
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    /// Whether a note holds anything but whitespace: the block's doorway.
+    #[must_use]
+    pub fn has_note(&self) -> bool {
+        self.note.as_ref().is_some_and(Note::has_content)
     }
 }
 

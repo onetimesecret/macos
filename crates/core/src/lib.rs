@@ -11,6 +11,7 @@ pub mod harden;
 mod ink;
 mod language_detection;
 pub mod ledger;
+mod note;
 pub mod persist;
 pub mod secret;
 pub mod sheet;
