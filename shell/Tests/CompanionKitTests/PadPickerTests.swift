@@ -46,6 +46,139 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
     }
 
+    // MARK: The pad cell's rename field (Law 0007, issue #249)
+
+    private func padModel() throws -> (PageModel, PadEntry) {
+        let suite = "pad-rename-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.pads.isEnabled = true
+        let id = try XCTUnwrap(model.createPad(named: "Otto"))
+        return (model, try XCTUnwrap(model.pads.entries.first { $0.id == id }))
+    }
+
+    private func name(of pad: PadEntry, in model: PageModel) -> String? {
+        model.pads.entries.first { $0.id == pad.id }?.name
+    }
+
+    func testReturnInTheCellRenamesThePadAndShutsTheField() throws {
+        let (model, pad) = try padModel()
+        var rename = PadRename()
+        rename.open(pad, in: model)
+        XCTAssertTrue(rename.isOpen)
+        XCTAssertEqual(rename.pad, pad.id)
+        XCTAssertEqual(rename.draft, "Otto", "the field did not open on the pad's name")
+
+        rename.edit("  Otto Renamed ", in: model)
+        rename.commit(in: model)
+        XCTAssertEqual(name(of: pad, in: model), "Otto Renamed")
+        XCTAssertFalse(rename.isOpen)
+        XCTAssertNil(model.notice)
+    }
+
+    func testAnUntouchedReturnEscapeAndFocusLossKeepTheName() throws {
+        let (model, pad) = try padModel()
+        var rename = PadRename()
+        rename.open(pad, in: model)
+        rename.edit("Otto ", in: model)
+        rename.commit(in: model)
+        XCTAssertFalse(rename.isOpen, "an untouched Return left the field open")
+        XCTAssertEqual(name(of: pad, in: model), "Otto")
+
+        // Escape, the keyboard leaving and the list closing all end in `keep`.
+        rename.open(pad, in: model)
+        rename.edit("Payroll", in: model)
+        rename.keep(in: model)
+        XCTAssertFalse(rename.isOpen)
+        XCTAssertEqual(name(of: pad, in: model), "Otto")
+    }
+
+    func testAFieldMovedToAnotherCellOutlivesTheFocusLossOfTheOneItLeft() throws {
+        let (model, otto) = try padModel()
+        let familiaID = try XCTUnwrap(model.createPad(named: "Familia"))
+        let familia = try XCTUnwrap(model.pads.entries.first { $0.id == familiaID })
+        var rename = PadRename()
+        rename.open(otto, in: model)
+        rename.open(familia, in: model)
+        XCTAssertEqual(rename.draft, "Familia")
+        rename.keep(otto.id, in: model)
+        XCTAssertEqual(rename.pad, familia.id, "the cell it left shut the field it moved to")
+        rename.keep(familia.id, in: model)
+        XCTAssertFalse(rename.isOpen)
+    }
+
+    func testARefusalKeepsBothTheFieldAndTheLine() throws {
+        let (model, pad) = try padModel()
+        var rename = PadRename()
+        rename.open(pad, in: model)
+        rename.edit("", in: model)
+        rename.commit(in: model)
+        XCTAssertTrue(rename.isOpen, "an empty pad name shut the field")
+        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.empty"))
+        XCTAssertEqual(model.noticeTone, .actionable)
+        XCTAssertEqual(name(of: pad, in: model), "Otto")
+
+        rename.edit(String(repeating: "o", count: 81), in: model)
+        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.long"), "the line kept an old refusal")
+        rename.edit("Payroll", in: model)
+        XCTAssertNil(model.notice, "the line still refused a draft the pad can take")
+        XCTAssertTrue(rename.isOpen)
+
+        rename.edit("", in: model)
+        rename.commit(in: model)
+        rename.keep(in: model)
+        XCTAssertNil(model.notice, "the refusal outlived its field")
+        XCTAssertEqual(name(of: pad, in: model), "Otto")
+    }
+
+    func testANameTheCatalogRefusesIsSaidWithTheFieldOpen() throws {
+        let (model, _) = try padModel()
+        let scratch = try XCTUnwrap(model.pads.entries.first { $0.isScratch })
+        var rename = PadRename()
+        rename.open(scratch, in: model)
+        rename.edit("Notes", in: model)
+        rename.commit(in: model)
+        XCTAssertTrue(rename.isOpen)
+        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.failed"))
+        XCTAssertEqual(name(of: scratch, in: model), scratch.name)
+    }
+
+    func testAPadRenameAttachesNoSheetAndRunsNoModalSession() throws {
+        let (model, pad) = try padModel()
+        var ends = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { _ in MainActor.assumeIsolated { ends += 1 } }
+        defer { NotificationCenter.default.removeObserver(token) }
+        func noSheetNoModal(_ moment: String) {
+            XCTAssertFalse(ModalSession.isRunning, "a modal session ran \(moment)")
+            XCTAssertTrue(
+                (NSApp?.windows ?? []).allSatisfy { $0.attachedSheet == nil },
+                "a sheet was attached \(moment)")
+        }
+
+        var rename = PadRename()
+        rename.open(pad, in: model)
+        noSheetNoModal("on opening")
+        rename.edit("", in: model)
+        rename.commit(in: model)
+        noSheetNoModal("on a refusal")
+        rename.edit("Payroll", in: model)
+        rename.commit(in: model)
+        noSheetNoModal("on a commit")
+        XCTAssertEqual(ends, 0)
+    }
+
+    func testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay() {
+        for key in ["pad.rename.title", "pad.rename"] {
+            XCTAssertEqual(CompanionL10n.string(key), key, "\(key) is still in the strings")
+        }
+        for key in ["pad.cancel", "pad.name", "pad.new.title", "pad.create", "pad.rename.menu"] {
+            XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) went with the rename sheet")
+        }
+    }
+
     func testPadShortcutsYieldToSheetAttachedToAnotherWindow() {
         _ = NSApplication.shared
         let windows = (0..<3).map { _ in

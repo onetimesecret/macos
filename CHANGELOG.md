@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A pad is renamed in its own cell** (app 0.28.0; Law 0007, issue
+  #249). *Rename pad…* turns the pad's name into a field where it
+  stands, on the name, selected whole, and the list stays open. Return
+  renames; Return over an unchanged name, Escape, the keyboard leaving
+  and the list closing all keep the name. An empty name, or one over 80
+  characters, is said in the line under the page and the field stays
+  open; the line stays while the field does, and goes when the draft
+  becomes a name the pad can take. The *Rename pad* sheet, with its
+  Rename and Cancel buttons, is gone. Creating a pad still uses its
+  sheet.
+
 - **Development bundles no longer take the TestFlight copy's name.**
   `scripts/dev.sh` builds `dist/OnetimePad Debug.app` and
   `scripts/install.sh` installs `/Applications/OnetimePad Local.app`;

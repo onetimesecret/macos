@@ -30,8 +30,6 @@
 "pad.name.failed" = "The pad could not be saved. Finish any pending file decision and try again.";
 "pad.create" = "Create";
 "pad.cancel" = "Cancel";
-"pad.rename.title" = "Rename pad";
-"pad.rename" = "Rename";
 "pad.rename.menu" = "Rename pad…";
 "pad.remove.title" = "Remove %@?";
 "pad.remove" = "Remove pad";
