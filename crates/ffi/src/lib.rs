@@ -36,8 +36,8 @@ use ots_client::Transport as _;
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
-    LedgerEvent, RestoreError, Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab,
-    TabId, TextSelection, Ttl, detect_source_language, local_day,
+    LedgerEvent, RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore, SystemClock,
+    TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1395,18 +1395,9 @@ pub unsafe extern "C" fn companion_sheet_document_json(
         .iter()
         .filter_map(|segment| match segment {
             Segment::Ink(text) => Some(serde_json::json!({ "ink": text })),
-            Segment::Chip(chip_id) => sheet.chip(*chip_id).map(|chip| {
-                serde_json::json!({ "chip": {
-                    "chip_id": chip.id().raw(),
-                    "kind": match chip.meta() {
-                        ChipMeta::Text { .. } => "text",
-                        ChipMeta::Image { .. } => "image",
-                    },
-                    "excerpt": chip.excerpt(),
-                    "size_label": chip.size_label(),
-                    "concealed": chip.conceal().is_some(),
-                }})
-            }),
+            Segment::Chip(chip_id) => sheet
+                .chip(*chip_id)
+                .map(|chip| serde_json::json!({ "chip": chip_face(chip) })),
         })
         .collect();
     match serde_json::to_string(&runs) {
@@ -2129,7 +2120,7 @@ pub unsafe extern "C" fn companion_chip_conceal(
             return conceal_error("that content is gone");
         };
         if matches!(
-            sheet.chip(chip).map(companion_core::SealedChip::meta),
+            sheet.chip(chip).map(SealedChip::meta),
             Some(ChipMeta::Image { .. })
         ) {
             return conceal_error(
@@ -2829,20 +2820,24 @@ fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *
     let Some(sealed) = store.sheet(sheet).and_then(|s| s.chip(chip)) else {
         return ptr::null_mut();
     };
-    let value = serde_json::json!({
-        "chip_id": sealed.id().raw(),
-        "kind": match sealed.meta() {
-            ChipMeta::Text { .. } => "text",
-            ChipMeta::Image { .. } => "image",
-        },
-        "excerpt": sealed.excerpt(),
-        "size_label": sealed.size_label(),
-        "concealed": sealed.conceal().is_some(),
-    });
-    match serde_json::to_string(&value) {
+    match serde_json::to_string(&chip_face(sealed)) {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// A chip's face as the seal routes and the document both send it.
+fn chip_face(chip: &SealedChip) -> serde_json::Value {
+    serde_json::json!({
+        "chip_id": chip.id().raw(),
+        "kind": match chip.meta() {
+            ChipMeta::Text { .. } => "text",
+            ChipMeta::Image { .. } => "image",
+        },
+        "excerpt": chip.excerpt(),
+        "size_label": chip.size_label(),
+        "concealed": chip.conceal().is_some(),
+    })
 }
 
 /// `{"origin": url}`, JSON so compaction can read it back mechanically.
