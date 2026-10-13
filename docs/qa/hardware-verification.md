@@ -365,6 +365,14 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   under a sandbox, so this is the only place any of it is checked. Not
   an ADR-0016 case.
 
+- [`rename-in-place.md`](verification-procedures/rename-in-place.md).
+  Owner: delano. The rename fields of Law 0007 in a real key window: a
+  click on a gutter's time opens its field, the keys come back to the
+  page after Escape and Return, the strip's field selects its title
+  whole, and the pad cell's field opens without a sheet, keeps its keys
+  and its refusal line over an empty Return, and keeps the name on
+  Escape (issues #248, #249, #250). Not an ADR-0016 case.
+
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally
 kept here as well would only be a second copy to go stale.
