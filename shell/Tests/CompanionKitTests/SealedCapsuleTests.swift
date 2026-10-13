@@ -647,6 +647,111 @@ final class SealedCapsuleTests: XCTestCase {
             "the keypad's return is still return")
     }
 
+    // MARK: The caret and the selection (Law 0001)
+
+    /// `ab <object> cd`, laid out in a window with the keys, the object at 3.
+    private func caretPage() throws -> (InkTextView, NSWindow) {
+        let model = try makeModel()
+        let coordinator = InkEditorView.Coordinator(model: model)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 400),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let scroll = InkEditorView.bareScroller()
+        scroll.frame = window.contentLayoutRect
+        InkEditorView.seat(textView, in: scroll)
+        window.contentView = scroll
+        textView.isEditable = true
+        window.makeFirstResponder(textView)
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
+        XCTAssertNotNil(coordinator.chipAttachment(at: 3), "the fixture holds no object at 3")
+        XCTAssertEqual(textView.textStorage?.length, 7)
+        return (textView, window)
+    }
+
+    /// One arrow press takes the caret over the object, either way.
+    func testTheCaretCrossesAnObjectAsOneUnitBothWays() throws {
+        let (textView, window) = try caretPage()
+        defer { window.close() }
+        let caret = { textView.selectedRange() }
+
+        textView.setSelectedRange(NSRange(location: 3, length: 0))
+        textView.moveRight(nil)
+        XCTAssertEqual(caret(), NSRange(location: 4, length: 0), "→ stopped inside the object")
+        textView.moveLeft(nil)
+        XCTAssertEqual(caret(), NSRange(location: 3, length: 0), "← stopped inside the object")
+
+        var walked: [Int] = []
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        for _ in 0..<7 {
+            textView.moveRight(nil)
+            walked.append(caret().location)
+        }
+        XCTAssertEqual(walked, [1, 2, 3, 4, 5, 6, 7], "→ took two presses over the object")
+        walked = []
+        for _ in 0..<7 {
+            textView.moveLeft(nil)
+            walked.append(caret().location)
+        }
+        XCTAssertEqual(walked, [6, 5, 4, 3, 2, 1, 0], "← took two presses over the object")
+    }
+
+    /// Every shift extension holds the object whole or leaves it out.
+    func testAShiftSelectionHoldsTheWholeObjectOrNoneOfIt() throws {
+        let (textView, window) = try caretPage()
+        defer { window.close() }
+        let object = NSRange(location: 3, length: 1)
+
+        textView.setSelectedRange(NSRange(location: 3, length: 0))
+        textView.moveRightAndModifySelection(nil)
+        XCTAssertEqual(
+            NSIntersectionRange(textView.selectedRange(), object), object,
+            "⇧→ from before the object did not take it whole")
+        textView.setSelectedRange(NSRange(location: 4, length: 0))
+        textView.moveLeftAndModifySelection(nil)
+        XCTAssertEqual(
+            NSIntersectionRange(textView.selectedRange(), object), object,
+            "⇧← from after the object did not take it whole")
+
+        let extensions = [
+            #selector(NSResponder.moveRightAndModifySelection(_:)),
+            #selector(NSResponder.moveLeftAndModifySelection(_:)),
+            #selector(NSResponder.moveWordRightAndModifySelection(_:)),
+            #selector(NSResponder.moveWordLeftAndModifySelection(_:)),
+            #selector(NSResponder.moveUpAndModifySelection(_:)),
+            #selector(NSResponder.moveDownAndModifySelection(_:)),
+            #selector(NSResponder.moveToEndOfLineAndModifySelection(_:)),
+            #selector(NSResponder.moveToBeginningOfLineAndModifySelection(_:)),
+        ]
+        for start in 0...7 {
+            for extend in extensions {
+                textView.setSelectedRange(NSRange(location: start, length: 0))
+                for _ in 0..<3 {
+                    textView.doCommand(by: extend)
+                    let held = NSIntersectionRange(textView.selectedRange(), object).length
+                    XCTAssertTrue(
+                        held == 0 || NSLocationInRange(object.location, textView.selectedRange()),
+                        "\(extend) from \(start) held part of the object")
+                    XCTAssertTrue(held == 0 || held == object.length)
+                }
+            }
+        }
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        textView.moveToEndOfDocumentAndModifySelection(nil)
+        XCTAssertEqual(NSIntersectionRange(textView.selectedRange(), object), object)
+        XCTAssertTrue(
+            InkEditorView.Coordinator.containsChip(
+                try XCTUnwrap(textView.textStorage), in: textView.selectedRange()))
+    }
+
     // MARK: The lines
 
     /// The copy line names what was copied, its size class and the
