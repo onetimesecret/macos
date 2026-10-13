@@ -1155,25 +1155,15 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let Some((bytes, meta)) = guard.store.copy_out_chip(ChipId::from_raw(chip)) else {
+    let chip = ChipId::from_raw(chip);
+    let Some((bytes, meta)) = guard.store.copy_out_chip(chip) else {
         return false;
     };
     let kind = match meta {
         ChipMeta::Text { .. } => ContentKind::Text,
         ChipMeta::Image { .. } => ContentKind::Image,
     };
-    guard.retire_last_write();
-    let receipt = guard.pasteboard.write(
-        bytes,
-        kind,
-        WriteOptions {
-            nspasteboard_concealed: true,
-        },
-    );
-    guard.last_write = Some(receipt);
-    guard
-        .store
-        .record_sent(ChipId::from_raw(chip), DestinationClass::Clipboard);
+    guard.write_decrypted(chip, bytes, kind);
     true
 }
 
@@ -1276,6 +1266,21 @@ impl Companion {
         if let Some(receipt) = self.last_write.take() {
             self.pasteboard.clear_if_unchanged(receipt);
         }
+    }
+
+    /// Copy decrypted's write, whatever composed the bytes: retire, write
+    /// transient and concealed, keep the receipt, record one `sent`.
+    fn write_decrypted(&mut self, chip: ChipId, bytes: Zeroizing<Vec<u8>>, kind: ContentKind) {
+        self.retire_last_write();
+        let receipt = self.pasteboard.write(
+            bytes,
+            kind,
+            WriteOptions {
+                nspasteboard_concealed: true,
+            },
+        );
+        self.last_write = Some(receipt);
+        self.store.record_sent(chip, DestinationClass::Clipboard);
     }
 }
 
