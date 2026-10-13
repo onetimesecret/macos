@@ -1,7 +1,11 @@
-> **Status: Proposal.** Nothing here is implemented or decided. The mockup
+> **Status: Affirmed, not implemented.** The maintainer affirmed the two
+> decisions under "What this reopens" on 2026-10-13. The naming rule is
+> [Law 0007](../law/0007-edit-in-place.md); the sealed rows are owed in
+> [Law 0001](../law/0001-sealed-object.md)'s contract under its
+> 2026-10-13 amendment. The mockup
 > ([sealed-name-and-note.svg](sealed-name-and-note.svg)) draws today's
-> block first and the proposed states beside it; the sentences below say
-> what each state means and which accepted decisions it reopens.
+> block first and the proposed states beside it; this note says what each
+> state means. It remains a lead, not a source.
 
 # Sealed object: a name and a note
 
@@ -97,19 +101,35 @@ object's own words next, removal last behind a separator.
   beside the name and carried in the sealed fragment. Not in the ledger.
   It expires with the page, on the page's clock (D-33).
 
-## What this reopens
+## Edit in place, beyond the block
 
-- **D-40** says a plain click on the block only selects it and that the
+The naming field above is one seat of a general rule, now
+[Law 0007](../law/0007-edit-in-place.md): a name is edited where it is
+shown, Return commits, Escape keeps, nothing asks. The mockup draws two
+more seats the law reaches:
+
+- **Checkpoint label.** The gutter reads the day once and then the time,
+  as today. A click on the time opens the field in the time's seat and
+  the time slides to its right. Once a label is typed the gutter reads
+  `today · Deploy notes · 13:00`; a later page on the day reads the time
+  alone, `13:17`, until labelled, `Rotate keys · 13:41`. An empty Return
+  drops the label and the time stands alone again.
+- **Pad list.** *Rename pad…* opens the field in the pad's own cell. The
+  *Rename pad* sheet with its Rename and Cancel buttons goes; the name
+  rules (not empty, 80 characters) are said in a line under the page.
+
+## What this reopened, affirmed 2026-10-13
+
+- **D-40** said a plain click on the block only selects it and that the
   block is not a button. The three zones make the bottom row of a named
-  block clickable. Proposed resolution: the rest of the block keeps
-  D-40; the row's zones are handles in D-29's sense, a named
-  declassification on the object itself with the consequence written
-  beside the pointer before the click.
-- **D-41's menu** gains four items. The first verb no longer carries the
-  only egress, so the chord's line in the record needs a sentence.
-- **Law 0001's contract table** needs rows for copy name, copy
-  name=value, naming, renaming and the note, plus the fragment's envelope
-  growing two optional text fields.
+  block clickable. Affirmed: the rest of the block keeps D-40; the row's
+  zones are handles in D-29's sense, a named declassification on the
+  object itself with the consequence written beside the pointer before
+  the click.
+- **D-41's menu** gains four items, in that record's order.
+- **Law 0001's contract table** gains rows for naming, the three zones
+  and the note, all owed; the fragment's envelope grows two optional text
+  fields.
 
 ## Open
 
