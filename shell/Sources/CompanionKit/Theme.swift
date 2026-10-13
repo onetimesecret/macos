@@ -35,6 +35,11 @@ extension NSColor {
     /// places that draw with an `NSColor`. Light #B0361A, dark #F5865F.
     public static let emberText = NSColor.appearanceAware(light: 0xB0361A, dark: 0xF5865F)
 
+    /// A named sealed row's hover pill and its ember beat's tint; the
+    /// dark shades are ADR-0042's drawing, the light ones its history's.
+    static let sealedZonePill = NSColor.appearanceAware(light: 0xE4E4E9, dark: 0x3B3B40)
+    static let sealedZoneEmberTint = NSColor.appearanceAware(light: 0xF8DED5, dark: 0x4A2F27)
+
     /// The four inks a fenced block's tokens wear (D-06), and the only
     /// place they are written down. Each starts from the system hue a
     /// reader already associates with the kind (purple keyword, red

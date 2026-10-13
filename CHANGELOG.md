@@ -357,6 +357,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A named sealed object's bottom row copies by zone** (app 0.29.0;
+  Law 0001, ADR-0042, issue #244). The row reads `NAME=excerpt`: the
+  name semibold, `=` in the secondary colour, then the excerpt. The
+  pointer finds three zones. The name copies the name to the clipboard
+  as ordinary text, says `copied the name.` and arms no clear. The value
+  copies the decrypted contents, and `=` copies `NAME=value`, both by
+  copy decrypted's route, with its line and its clear after the core's
+  interval. Before the click the size class's seat names what the zone
+  will do, over a pill under the zone; after it the zone wears ember
+  for a second and the seat reads `copied`, without the fade under
+  Reduce Motion. A zone acts on its first click only, a click
+  elsewhere on the block still selects it, and an unnamed block has no
+  zones. A long name gives way before the value. The object's menu
+  gains *Copy name* and *Copy name=value, decrypted* on a named
+  object, and VoiceOver hears the name with the block. Nothing names
+  an object yet (issue #245).
+
 - **A sealed object can carry a note, in the core** (Law 0001, ADR-0043,
   issue #243; `companion-core` 0.28.0, `companion-ffi` 0.36.0). The
   note is ink of its own beside the object, with its own undo: undoing

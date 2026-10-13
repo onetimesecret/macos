@@ -1264,6 +1264,10 @@ public final class PageModel: ObservableObject {
     /// be asserted without touching the developer's clipboard.
     private let clearClipboardIfOurs: @Sendable () -> Bool
 
+    /// Where ambient text such as a sealed object's name is copied: the
+    /// general pasteboard, or the one a test named.
+    let ambientPasteboard: NSPasteboard
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1306,6 +1310,9 @@ public final class PageModel: ObservableObject {
         /// write is declined either way: the seam replaces the trap and
         /// never the verdict.
         let declinedPresentationWrite: (@MainActor (PresentationField, PresentationOwner) -> Void)?
+        /// A pasteboard of the test's own for ambient copies, so a suite
+        /// never writes the person's clipboard.
+        let ambientPasteboard: NSPasteboard?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1318,7 +1325,8 @@ public final class PageModel: ObservableObject {
             clearClipboardIfOurs: (@Sendable () -> Bool)? = nil,
             declinedPresentationWrite: (
                 @MainActor (PresentationField, PresentationOwner) -> Void
-            )? = nil
+            )? = nil,
+            ambientPasteboard: NSPasteboard? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1329,6 +1337,7 @@ public final class PageModel: ObservableObject {
             self.clipboardClearDebounce = clipboardClearDebounce
             self.clearClipboardIfOurs = clearClipboardIfOurs
             self.declinedPresentationWrite = declinedPresentationWrite
+            self.ambientPasteboard = ambientPasteboard
         }
     }
 
@@ -1409,6 +1418,7 @@ public final class PageModel: ObservableObject {
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         clipboardClearDebounce = seams.clipboardClearDebounce
         declinedPresentationWrite = seams.declinedPresentationWrite
+        ambientPasteboard = seams.ambientPasteboard ?? .general
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
         // Resolved once, here, so the surface and the page's text view
@@ -5639,11 +5649,37 @@ public final class PageModel: ObservableObject {
     /// not read-only: a successful copy appends a sent record to the
     /// ledger, and that record is lost unless a write is armed for it
     /// (issue #52).
-    public func copyOutChip(_ id: UInt64, size: String? = nil) {
-        guard client.copyOutChip(id: id) else { return }
+    @discardableResult
+    public func copyOutChip(_ id: UInt64, size: String? = nil) -> Bool {
+        guard client.copyOutChip(id: id) else { return false }
         markDirty()
         armClipboardClear()
         flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
+        return true
+    }
+
+    /// Copy `NAME=<plaintext>` by copy decrypted's route (ADR-0043 point 7),
+    /// with copy out's clear and line (ADR-0042 point 8).
+    @discardableResult
+    public func copyChipNameValue(_ id: UInt64, size: String? = nil) -> Bool {
+        guard client.copyNameValue(chip: id) else { return false }
+        markDirty()
+        armClipboardClear()
+        flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
+        return true
+    }
+
+    /// The line after *Copy name* (ADR-0042 point 8).
+    public static let copiedNameLine = "copied the name."
+
+    /// Copy a sealed object's name, which is ambient ink (Law 0001), to
+    /// the ordinary pasteboard. No clear is armed and nothing is recorded.
+    @discardableResult
+    public func copyChipName(_ name: String) -> Bool {
+        ambientPasteboard.clearContents()
+        guard ambientPasteboard.setString(name, forType: .string) else { return false }
+        flash(Self.copiedNameLine)
+        return true
     }
 
     /// The confirmation after a copy-out (D-29): what happened, how

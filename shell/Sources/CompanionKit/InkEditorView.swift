@@ -2444,28 +2444,34 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// One item of the object's menu.
         enum ChipMenuItem: Equatable {
+            case copyName
             case copyDecrypted
+            case copyNameValue
             case createLink
             case remove
 
             var title: String {
                 switch self {
+                case .copyName: "Copy name"
                 case .copyDecrypted: "Copy decrypted contents"
+                case .copyNameValue: "Copy name=value, decrypted"
                 case .createLink: "Create one-time link…"
                 case .remove: "Remove protected content"
                 }
             }
         }
 
-        /// The object's menu in D-41's order, nil marking a separator:
-        /// the two egresses, then the removal set apart.
-        static func chipMenuItems() -> [ChipMenuItem?] {
-            [.copyDecrypted, .createLink, nil, .remove]
+        /// The object's menu in D-41's order as ADR-0042 extends it, nil
+        /// marking a separator: the copies and the link, then the
+        /// removal set apart. An unnamed object has no name to copy.
+        static func chipMenuItems(named: Bool) -> [ChipMenuItem?] {
+            (named ? [.copyName] : []) + [.copyDecrypted]
+                + (named ? [.copyNameValue] : []) + [.createLink, nil, .remove]
         }
 
         /// The menu's titles, pinned by a test rather than read off a screen.
-        static func chipMenuTitles() -> [String?] {
-            chipMenuItems().map { $0?.title }
+        static func chipMenuTitles(named: Bool) -> [String?] {
+            chipMenuItems(named: named).map { $0?.title }
         }
 
         /// A plain click on a chip selects the whole object and never
@@ -2546,7 +2552,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// stage removal is a separate call).
         func appendChipItems(to menu: NSMenu, at charIndex: Int) {
             guard let attachment = chipAttachment(at: charIndex) else { return }
-            for entry in Self.chipMenuItems() {
+            for entry in Self.chipMenuItems(named: attachment.info.name != nil) {
                 guard let entry else {
                     menu.addItem(.separator())
                     continue
@@ -2557,6 +2563,8 @@ public struct InkEditorView: NSViewRepresentable {
                 // so its action reads the block's own face off the storage.
                 item.representedObject = charIndex as NSNumber
                 switch entry {
+                case .copyName:
+                    item.action = #selector(copyChipName(_:))
                 case .copyDecrypted:
                     item.action = #selector(copyOutChip(_:))
                     // The chord beside the verb is the keymap's, the way
@@ -2569,6 +2577,8 @@ public struct InkEditorView: NSViewRepresentable {
                         item.keyEquivalent = chord.menuKeyEquivalent
                         item.keyEquivalentModifierMask = chord.menuModifierMask
                     }
+                case .copyNameValue:
+                    item.action = #selector(copyChipNameValue(_:))
                 case .createLink:
                     item.action = #selector(concealChip(_:))
                     item.representedObject = attachment.info.chipId as NSNumber
@@ -2598,12 +2608,42 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Copy the chip at `index` back out through the core, and say
         /// so with the block's own size class in the line.
-        func copyOutChip(at index: Int) {
-            guard let attachment = chipAttachment(at: index) else { return }
-            model.copyOutChip(
+        @discardableResult
+        func copyOutChip(at index: Int) -> Bool {
+            guard let attachment = chipAttachment(at: index) else { return false }
+            return model.copyOutChip(
                 attachment.info.chipId,
                 size: SealedBlockCell.displayedSizeClass(attachment.info.sizeLabel)
             )
+        }
+
+        /// Copy the name of the chip at `index`, which is ambient ink.
+        @discardableResult
+        func copyName(at index: Int) -> Bool {
+            guard let name = chipAttachment(at: index)?.info.name else { return false }
+            return model.copyChipName(name)
+        }
+
+        /// Copy `NAME=value` for the chip at `index` by copy decrypted's
+        /// route; the core composes and writes it.
+        @discardableResult
+        func copyNameValue(at index: Int) -> Bool {
+            guard let attachment = chipAttachment(at: index), attachment.info.name != nil
+            else { return false }
+            return model.copyChipNameValue(
+                attachment.info.chipId,
+                size: SealedBlockCell.displayedSizeClass(attachment.info.sizeLabel)
+            )
+        }
+
+        /// A named row's zone, clicked: each zone takes its own route.
+        @discardableResult
+        func copy(_ zone: SealedBlockLayout.Zone, chipAt index: Int) -> Bool {
+            switch zone {
+            case .name: copyName(at: index)
+            case .equals: copyNameValue(at: index)
+            case .value: copyOutChip(at: index)
+            }
         }
 
         // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
@@ -2641,6 +2681,16 @@ public struct InkEditorView: NSViewRepresentable {
         @objc private func copyOutChip(_ sender: NSMenuItem) {
             guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
             copyOutChip(at: index)
+        }
+
+        @objc private func copyChipName(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            copyName(at: index)
+        }
+
+        @objc private func copyChipNameValue(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            copyNameValue(at: index)
         }
 
         /// The chip's ↗: open the inline confirmation. The bytes stay
@@ -4116,6 +4166,69 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
     }
 
+    /// The zone of the hovered block's named row under the pointer, so
+    /// its pill and seat words can be drawn (ADR-0042 point 8).
+    private(set) var hoveredZone: SealedBlockLayout.Zone?
+
+    /// A zone's copy, worn in ember for `SealedBlockCell.beatDuration`.
+    struct CopyBeat: Equatable {
+        let index: Int
+        let chip: UInt64
+        let zone: SealedBlockLayout.Zone
+        let started: TimeInterval
+    }
+
+    private(set) var copyBeat: CopyBeat?
+    private var copyBeatTimer: Timer?
+
+    /// Lights the beat on the zone at `index` and lets it rest after
+    /// its second; a second copy restarts it where it fell.
+    func beginCopyBeat(_ zone: SealedBlockLayout.Zone, at index: Int) {
+        guard let chip = chipCell(at: index)?.info.chipId else { return }
+        copyBeatTimer?.invalidate()
+        if let previous = copyBeat { redrawChip(at: previous.index) }
+        copyBeat = CopyBeat(
+            index: index, chip: chip, zone: zone, started: ProcessInfo.processInfo.systemUptime)
+        redrawChip(at: index)
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let timer = Timer(
+            timeInterval: reduceMotion ? SealedBlockCell.beatDuration : 1.0 / 30,
+            repeats: !reduceMotion
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.advanceCopyBeat() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        copyBeatTimer = timer
+    }
+
+    private func advanceCopyBeat() {
+        guard let beat = copyBeat else {
+            copyBeatTimer?.invalidate()
+            copyBeatTimer = nil
+            return
+        }
+        if ProcessInfo.processInfo.systemUptime - beat.started >= SealedBlockCell.beatDuration {
+            copyBeat = nil
+            copyBeatTimer?.invalidate()
+            copyBeatTimer = nil
+        }
+        redrawChip(at: beat.index)
+    }
+
+    /// The sealed block's cell standing at `index`, if one does.
+    func chipCell(at index: Int) -> SealedBlockCell? {
+        guard let storage = textStorage, index >= 0, index < storage.length else { return nil }
+        return (storage.attribute(.attachment, at: index, effectiveRange: nil) as? ChipAttachment)?
+            .attachmentCell as? SealedBlockCell
+    }
+
+    /// The named row's zone under `point` on the block at `index`; nil
+    /// off the row, between runs, and on an unnamed block.
+    func chipZone(at point: NSPoint, chipAt index: Int) -> SealedBlockLayout.Zone? {
+        guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { return nil }
+        return cell.namedRow(in: frame)?.geometry.zone(at: point)
+    }
+
     private var hoverTracking: NSTrackingArea?
 
     override func updateTrackingAreas() {
@@ -4181,7 +4294,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     private func applyHover(at point: NSPoint?) {
-        hoveredChipIndex = point.flatMap { coordinator?.chipIndex(at: $0, in: self) }
+        let index = point.flatMap { coordinator?.chipIndex(at: $0, in: self) }
+        let zone = index.flatMap { index in point.flatMap { chipZone(at: $0, chipAt: index) } }
+        let zoneMoved = zone != hoveredZone
+        hoveredZone = zone
+        hoveredChipIndex = index
+        if zoneMoved, let index { redrawChip(at: index) }
         coordinator?.updateBlockMetadataHover(at: point)
     }
 
@@ -4228,11 +4346,34 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         isEditable || super.acceptsFirstMouse(for: event)
     }
 
+    /// What a primary click on a sealed block does past its actions seat
+    /// (Law 0001, ADR-0042 points 2 and 3).
+    enum ChipClick: Equatable {
+        /// AppKit's path, whose delegate selects the whole object (D-40).
+        case select
+        /// A named row's zone, on its first click.
+        case copy(SealedBlockLayout.Zone)
+        /// A later click on a zone that acted on its first.
+        case ignore
+    }
+
+    /// Pure, so the rule is an assertion. Off a zone, and with a gesture
+    /// modifier held, the click selects as anywhere else on the block.
+    nonisolated static func chipClick(
+        zone: SealedBlockLayout.Zone?, clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> ChipClick {
+        guard let zone,
+              modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
+        else { return .select }
+        return clickCount == 1 ? .copy(zone) : .ignore
+    }
+
     /// A click on the explicit actions affordance opens the object's menu.
     /// Control-primary over a chip takes the same direct route as a
-    /// secondary click, avoiding text-system additions to the menu. Every
-    /// other primary click stays on AppKit's attachment path, whose
-    /// delegate selects the object without opening anything.
+    /// secondary click, avoiding text-system additions to the menu. A
+    /// named row's zones copy (`chipClick`). Every other primary click
+    /// stays on AppKit's attachment path, whose delegate selects the
+    /// object without opening anything.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if Self.shouldFocusBlankSpace(
@@ -4242,31 +4383,32 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         ), consumeBlankFocusClick(event) {
             return
         }
-        if Self.shouldOpenChipContextMenu(
-            clickCount: event.clickCount, modifierFlags: event.modifierFlags),
-           let coordinator,
-           let index = coordinator.chipIndex(at: point, in: self)
-        {
-            setSelectedRange(NSRange(location: index, length: 1))
-            coordinator.openChipMenu(at: index, from: point, in: self)
-            return
-        }
-        guard Self.shouldOpenChipActions(
-            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
-        else {
+        guard let coordinator, let index = coordinator.chipIndex(at: point, in: self) else {
             super.mouseDown(with: event)
             return
         }
-        if let coordinator,
-           let index = coordinator.chipIndex(at: point, in: self),
-           let frame = chipFrame(at: index),
-           SealedBlockCell.actionsRect(in: frame).contains(point)
+        if Self.shouldOpenChipContextMenu(
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+            || (Self.shouldOpenChipActions(
+                clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+                && chipFrame(at: index).map { SealedBlockCell.actionsRect(in: $0).contains(point) }
+                    == true)
         {
             setSelectedRange(NSRange(location: index, length: 1))
             coordinator.openChipMenu(at: index, from: point, in: self)
             return
         }
-        super.mouseDown(with: event)
+        switch Self.chipClick(
+            zone: chipZone(at: point, chipAt: index),
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        {
+        case .copy(let zone):
+            if coordinator.copy(zone, chipAt: index) { beginCopyBeat(zone, at: index) }
+        case .ignore:
+            return
+        case .select:
+            super.mouseDown(with: event)
+        }
     }
 
     /// Plain blank-space clicks preserve the existing caret even if the
@@ -5238,6 +5380,135 @@ final class SealedBlockCell: NSTextAttachmentCell {
         return normalized
     }
 
+    /// What the size class's seat says a click on `zone` will do,
+    /// before the click (Law 0001, ADR-0042 point 8).
+    nonisolated static func seatWords(for zone: SealedBlockLayout.Zone) -> String {
+        switch zone {
+        case .name: "copies the name"
+        case .equals: "copies name=value, decrypted"
+        case .value: "copies the value, decrypted"
+        }
+    }
+
+    /// The seat's word for the beat after a zone's copy.
+    nonisolated static let copiedWords = "copied"
+
+    /// What the seat reads: the beat's word, a hovered zone's words, or
+    /// the size class at rest.
+    nonisolated static func seatText(
+        sizeLabel: String, hovered: SealedBlockLayout.Zone?, copied: Bool
+    ) -> String {
+        if copied { return copiedWords }
+        if let hovered { return seatWords(for: hovered) }
+        return displayedSizeClass(sizeLabel)
+    }
+
+    /// A long name keeps this many characters and an ellipsis before
+    /// the value gives way at all.
+    nonisolated static let nameFloorCharacters = 4
+
+    /// A named row as drawn: the three runs, fitted to the row, and
+    /// where they stand.
+    struct NamedRow {
+        let name: NSAttributedString
+        let equals: NSAttributedString
+        let value: NSAttributedString
+        let geometry: SealedBlockLayout.NamedRow
+    }
+
+    /// The named row in a block drawn at `cellFrame`, nil when unnamed (ADR-0042
+    /// point 2); measured against the seat's widest words, not its current ones.
+    @MainActor
+    func namedRow(in cellFrame: NSRect) -> NamedRow? {
+        guard let name = info.name, !name.isEmpty else { return nil }
+        let layout = Self.contentLayout(in: cellFrame)
+        let nameAttributes: [NSAttributedString.Key: Any] = [
+            .font: InkStyle.chipNameFont, .foregroundColor: NSColor.labelColor,
+        ]
+        let valueAttributes: [NSAttributedString.Key: Any] = [
+            .font: InkStyle.chipFont, .foregroundColor: NSColor.labelColor,
+        ]
+        let equals = NSAttributedString(string: "=", attributes: [
+            .font: InkStyle.chipFont, .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        let floor = NSAttributedString(
+            string: String(name.prefix(Self.nameFloorCharacters)) + "…",
+            attributes: nameAttributes)
+        let wholeValue = NSAttributedString(string: info.excerpt, attributes: valueAttributes)
+        let allotment = SealedBlockLayout.rowAllotment(
+            available: SealedBlockLayout.excerptWidth(
+                containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth),
+            name: NSAttributedString(string: name, attributes: nameAttributes).size().width,
+            equals: equals.size().width,
+            value: wholeValue.size().width,
+            nameFloor: floor.size().width
+        )
+        let fittedName = Self.fitted(name, attributes: nameAttributes, width: allotment.name)
+        let fittedValue = Self.fitted(
+            info.excerpt, attributes: valueAttributes, width: allotment.value)
+        return NamedRow(
+            name: fittedName,
+            equals: equals,
+            value: fittedValue,
+            geometry: layout.namedRow(
+                nameWidth: fittedName.size().width,
+                equalsWidth: equals.size().width,
+                valueWidth: fittedValue.size().width,
+                height: wholeValue.size().height
+            )
+        )
+    }
+
+    /// The widest thing a named row's seat can say, which its row
+    /// leaves room for.
+    @MainActor
+    static var widestSeatWidth: CGFloat {
+        let words = SealedBlockLayout.Zone.allCases.map(seatWords(for:))
+            + [copiedWords, "size unknown"]
+        return words.map { seatString($0).size().width }.max() ?? 0
+    }
+
+    @MainActor
+    static func seatString(_ text: String) -> NSAttributedString {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
+    /// `text` cut at its tail with an ellipsis to fit `width`, or whole
+    /// when it fits; the longest prefix that fits is kept.
+    @MainActor
+    static func fitted(
+        _ text: String, attributes: [NSAttributedString.Key: Any], width: CGFloat
+    ) -> NSAttributedString {
+        let whole = NSAttributedString(string: text, attributes: attributes)
+        guard whole.size().width > width else { return whole }
+        let characters = Array(text)
+        func candidate(_ count: Int) -> NSAttributedString {
+            NSAttributedString(
+                string: String(characters.prefix(count)) + "…", attributes: attributes)
+        }
+        var kept = 0
+        var tooMany = characters.count
+        while tooMany - kept > 1 {
+            let middle = (kept + tooMany) / 2
+            if candidate(middle).size().width <= width { kept = middle } else { tooMany = middle }
+        }
+        let fitted = candidate(kept)
+        return fitted.size().width <= width ? fitted : NSAttributedString(string: "")
+    }
+
+    /// The block as VoiceOver names it: what it is, its name, its size.
+    override func accessibilityLabel() -> String? {
+        [Self.classification.lowercased(), info.name, Self.displayedSizeClass(info.sizeLabel)]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
     struct ContentLayout {
         let metrics: SealedBlockLayout.Metrics
         /// The content column's leading edge, the one inset every row
@@ -5253,11 +5524,26 @@ final class SealedBlockCell: NSTextAttachmentCell {
         /// seat shares, and the baseline its smaller face sits on.
         let metadataRight: CGFloat
         let metadataY: CGFloat
+        /// The bottom row's band, the block's lower half, where a named
+        /// row's zones answer the pointer.
+        let rowBand: NSRect
 
         /// The size class is drawn at its own measured width, ending at
         /// the column's trailing edge.
         func metadataOrigin(width: CGFloat) -> NSPoint {
             NSPoint(x: metadataRight - width, y: metadataY)
+        }
+
+        /// A named row's three runs end to end from the leading edge, at
+        /// the widths they are drawn at.
+        func namedRow(
+            nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat
+        ) -> SealedBlockLayout.NamedRow {
+            let name = NSRect(x: left, y: bottomRowY, width: nameWidth, height: height)
+            let equals = NSRect(x: name.maxX, y: bottomRowY, width: equalsWidth, height: height)
+            let value = NSRect(x: equals.maxX, y: bottomRowY, width: valueWidth, height: height)
+            return SealedBlockLayout.NamedRow(
+                name: name, equals: equals, value: value, band: rowBand, metrics: metrics)
         }
 
         /// Where the excerpt is drawn and where its tail is cut: the
@@ -5298,7 +5584,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
             lockRect: lockRect,
             labelOrigin: NSPoint(x: lockRect.maxX + metrics.lockToLabelGap, y: topRowY),
             metadataRight: cellFrame.maxX - metrics.horizontalPadding,
-            metadataY: bottomRowY + metrics.metadataBaselineNudge
+            metadataY: bottomRowY + metrics.metadataBaselineNudge,
+            rowBand: NSRect(
+                x: cellFrame.minX, y: cellFrame.midY,
+                width: cellFrame.width, height: cellFrame.maxY - cellFrame.midY)
         )
     }
 
@@ -5406,11 +5695,39 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let selected = view.map { $0.selectedRange() == NSRange(location: charIndex, length: 1) }
             ?? false
         let hovered = view?.hoveredChipIndex == charIndex
-        draw(withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered)
+        let beat = view?.copyBeat.flatMap {
+            $0.index == charIndex && $0.chip == info.chipId ? $0 : nil
+        }
+        draw(
+            withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered,
+            zone: hovered ? view?.hoveredZone : nil,
+            beat: beat.flatMap { beat in
+                Self.beatStrength(
+                    elapsed: ProcessInfo.processInfo.systemUptime - beat.started,
+                    reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ).map { (beat.zone, $0) }
+            }
+        )
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        draw(withFrame: cellFrame, in: controlView, selected: false, hovered: false)
+        draw(
+            withFrame: cellFrame, in: controlView, selected: false, hovered: false,
+            zone: nil, beat: nil)
+    }
+
+    /// How long a zone wears ember after its copy (ADR-0042 point 8).
+    nonisolated static let beatDuration: TimeInterval = 1
+    /// The fade at each end of the beat, which Reduce Motion drops.
+    nonisolated static let beatFade: TimeInterval = 0.15
+
+    /// How strongly the beat is drawn `elapsed` seconds after the copy,
+    /// from 0 to 1, or nil once the row rests.
+    nonisolated static func beatStrength(elapsed: TimeInterval, reduceMotion: Bool) -> CGFloat? {
+        guard elapsed >= 0, elapsed < beatDuration else { return nil }
+        guard !reduceMotion else { return 1 }
+        let edge = min(elapsed, beatDuration - elapsed)
+        return CGFloat(min(1, edge / beatFade))
     }
 
     /// State first, identity second, actions third: the lock and the
@@ -5420,7 +5737,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// way the card says it holds the keyboard, paired with the
     /// selection itself so the colour is never the only carrier.
     @MainActor
-    private func draw(withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool) {
+    private func draw(
+        withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool,
+        zone: SealedBlockLayout.Zone?, beat: (zone: SealedBlockLayout.Zone, strength: CGFloat)?
+    ) {
         #if DEBUG
         lastDrawnFrame = cellFrame
         #endif
@@ -5477,13 +5797,50 @@ final class SealedBlockCell: NSTextAttachmentCell {
             ))
         }
 
-        let excerptLine = excerpt
-        let metadataSize = metadata.size()
-        excerptLine.draw(in: layout.excerptRect(
-            metadataWidth: metadataSize.width,
-            height: excerptLine.size().height
-        ))
-        metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
+        guard let row = namedRow(in: cellFrame) else {
+            let excerptLine = excerpt
+            let metadataSize = metadata.size()
+            excerptLine.draw(in: layout.excerptRect(
+                metadataWidth: metadataSize.width,
+                height: excerptLine.size().height
+            ))
+            metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
+            return
+        }
+        drawPills(row.geometry, metrics: layout.metrics, zone: zone, beat: beat)
+        row.name.draw(at: row.geometry.name.origin)
+        row.equals.draw(at: row.geometry.equals.origin)
+        row.value.draw(at: row.geometry.value.origin)
+        let seat = Self.seatString(Self.seatText(
+            sizeLabel: info.sizeLabel, hovered: zone, copied: beat != nil))
+        seat.draw(at: layout.metadataOrigin(width: seat.size().width))
+    }
+
+    /// The hovered zone's pill, and the beat's ember over the zone it
+    /// copied from; the beat wins where both would fall.
+    @MainActor
+    private func drawPills(
+        _ row: SealedBlockLayout.NamedRow, metrics: SealedBlockLayout.Metrics,
+        zone: SealedBlockLayout.Zone?, beat: (zone: SealedBlockLayout.Zone, strength: CGFloat)?
+    ) {
+        func pill(_ zone: SealedBlockLayout.Zone, inset: CGFloat = 0) -> NSBezierPath {
+            NSBezierPath(
+                roundedRect: row.pill(for: zone).insetBy(dx: inset, dy: inset),
+                xRadius: metrics.pillRadius, yRadius: metrics.pillRadius)
+        }
+        if let zone, zone != beat?.zone {
+            NSColor.sealedZonePill.setFill()
+            pill(zone).fill()
+        }
+        guard let beat else { return }
+        NSColor.sealedZonePill.withAlphaComponent(zone == beat.zone ? 1 : beat.strength).setFill()
+        pill(beat.zone).fill()
+        NSColor.sealedZoneEmberTint.withAlphaComponent(beat.strength).setFill()
+        pill(beat.zone).fill()
+        let stroke = pill(beat.zone, inset: 0.5)
+        stroke.lineWidth = 1
+        NSColor.ember.withAlphaComponent(beat.strength).setStroke()
+        stroke.stroke()
     }
 }
 
@@ -5645,6 +6002,11 @@ public enum InkStyle {
     /// reads as a token rather than a word, in the page's own face.
     public static var chipFont: NSFont {
         typeface.font(size: max(typeface.size - 2, Typeface.sizeRange.lowerBound), weight: .medium)
+    }
+
+    /// A sealed object's name, in the excerpt's face set semibold (ADR-0042 point 8).
+    public static var chipNameFont: NSFont {
+        typeface.font(size: chipFont.pointSize, weight: .semibold)
     }
 
     /// `### deploy friday` → (level 3, markerLength 4). Scope for rev C

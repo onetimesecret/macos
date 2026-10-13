@@ -66,6 +66,247 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertNil(coordinator.selectedChipIndex)
         textView.setSelectedRange(NSRange(location: 2, length: 2))
         XCTAssertNil(coordinator.selectedChipIndex, "a mixed selection offered the chord a payload")
+
+        // Named, the menu gains the two copies in D-41's order as
+        // ADR-0042 extends it, and the chord stays on copy decrypted.
+        name(textView, chipAt: 3, model: model, as: "MY_API_KEY")
+        let named = try XCTUnwrap(coordinator.chipMenu(at: 3))
+        XCTAssertEqual(
+            named.items.map { $0.isSeparatorItem ? nil : $0.title },
+            [
+                "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
+                "Create one-time link…", nil, "Remove protected content",
+            ])
+        for item in named.items where !item.isSeparatorItem {
+            XCTAssertNotNil(item.action, "\(item.title) does nothing")
+            XCTAssertEqual(
+                item.keyEquivalent.isEmpty, item.title != "Copy decrypted contents",
+                "\(item.title) took or lost the copy chord")
+        }
+    }
+
+    // MARK: The named row's zones (Law 0001, ADR-0042 points 2, 3 and 8)
+
+    /// Stands a face carrying `name` in for the chip at `index`, as a
+    /// restate does, so no op crosses for it.
+    private func name(
+        _ textView: InkTextView, chipAt index: Int, model: PageModel, as name: String
+    ) {
+        guard let storage = textView.textStorage,
+              let face = (storage.attribute(.attachment, at: index, effectiveRange: nil)
+                as? ChipAttachment)?.info
+        else { return XCTFail("no chip at \(index)") }
+        XCTAssertTrue(model.coreClient.setChipName(name, chip: face.chipId))
+        let named = ChipInfo(
+            chipId: face.chipId, kind: face.kind, excerpt: face.excerpt,
+            sizeLabel: face.sizeLabel, concealed: face.concealed, name: name)
+        model.applyingProjection {
+            storage.replaceCharacters(
+                in: NSRange(location: index, length: 1),
+                with: InkEditorView.Coordinator.chipString(named))
+        }
+    }
+
+    /// A first click on a zone copies; a later click of the same press
+    /// does nothing; off a zone, or with a modifier, the click selects.
+    func testAZoneActsOnTheFirstClickAndAClickOffItSelects() {
+        for zone in SealedBlockLayout.Zone.allCases {
+            XCTAssertEqual(
+                InkTextView.chipClick(zone: zone, clickCount: 1, modifierFlags: []), .copy(zone))
+            XCTAssertEqual(
+                InkTextView.chipClick(zone: zone, clickCount: 1, modifierFlags: .capsLock),
+                .copy(zone))
+            XCTAssertEqual(
+                InkTextView.chipClick(zone: zone, clickCount: 3, modifierFlags: []), .ignore)
+            XCTAssertEqual(
+                InkTextView.chipClick(zone: zone, clickCount: 1, modifierFlags: .shift), .select)
+        }
+        for zone in [SealedBlockLayout.Zone.value, .equals] {
+            XCTAssertEqual(
+                InkTextView.chipClick(zone: zone, clickCount: 2, modifierFlags: []), .ignore,
+                "a second click on a decrypted zone acted again")
+        }
+        XCTAssertEqual(InkTextView.chipClick(zone: nil, clickCount: 1, modifierFlags: []), .select)
+        XCTAssertEqual(InkTextView.chipClick(zone: nil, clickCount: 2, modifierFlags: []), .select)
+    }
+
+    /// A client that counts the two decrypted copies and answers yes
+    /// without writing the pasteboard, so each route can be told apart.
+    private final class CopyCountingClient: CompanionClient, @unchecked Sendable {
+        private(set) var copiedOut: [UInt64] = []
+        private(set) var copiedNameValue: [UInt64] = []
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func copyOutChip(id: UInt64) -> Bool {
+            copiedOut.append(id)
+            return true
+        }
+
+        override func copyNameValue(chip: UInt64) -> Bool {
+            copiedNameValue.append(chip)
+            return true
+        }
+    }
+
+    /// Each zone takes its own model route and says so in the line: the
+    /// name to the ordinary pasteboard with no clear, the value by copy
+    /// out, and `=` by the core's `name=value`.
+    /// A page holding `ab <chip> cd` over a counting client, its ambient
+    /// copies kept on a pasteboard of the test's own.
+    private struct ZoneFixture {
+        let model: PageModel
+        let client: CopyCountingClient
+        let pasteboard: NSPasteboard
+        let coordinator: InkEditorView.Coordinator
+        let textView: InkTextView
+        let chipID: UInt64
+    }
+
+    private func makeZoneFixture(_ tag: String) throws -> ZoneFixture {
+        let suite = "companion-sealed-zones-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-sealed-zones-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        let client = CopyCountingClient(tag: tag)
+        let model = PageModel(
+            formFactor: .backdrop, defaults: defaults,
+            seams: .init(
+                stateDirectory: directory, client: client,
+                clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard))
+        let coordinator = InkEditorView.Coordinator(model: model)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        let chipID = try XCTUnwrap(coordinator.chipAttachment(at: 3)?.info.chipId)
+        return ZoneFixture(
+            model: model, client: client, pasteboard: pasteboard, coordinator: coordinator,
+            textView: textView, chipID: chipID)
+    }
+
+    func testEachZoneCallsItsOwnModelRoute() throws {
+        let fixture = try makeZoneFixture(#function)
+        defer { fixture.pasteboard.releaseGlobally() }
+        let (model, client, pasteboard, coordinator, textView, chipID) = (
+            fixture.model, fixture.client, fixture.pasteboard, fixture.coordinator,
+            fixture.textView, fixture.chipID)
+
+        XCTAssertFalse(coordinator.copy(.name, chipAt: 3), "an unnamed object has no name")
+        XCTAssertFalse(coordinator.copy(.equals, chipAt: 3), "nor a name=value")
+        XCTAssertTrue(client.copiedNameValue.isEmpty)
+        name(textView, chipAt: 3, model: model, as: "MY_API_KEY")
+
+        XCTAssertTrue(coordinator.copy(.name, chipAt: 3))
+        XCTAssertEqual(pasteboard.string(forType: .string), "MY_API_KEY")
+        XCTAssertEqual(model.notice, PageModel.copiedNameLine)
+        XCTAssertEqual(PageModel.copiedNameLine, "copied the name.")
+        XCTAssertTrue(client.copiedOut.isEmpty && client.copiedNameValue.isEmpty)
+
+        XCTAssertTrue(coordinator.copy(.value, chipAt: 3))
+        XCTAssertEqual(client.copiedOut, [chipID])
+        XCTAssertTrue(client.copiedNameValue.isEmpty)
+        let line = PageModel.copiedLine(
+            clearsIn: CompanionClient.clipboardClearSeconds(), size: "tiny")
+        XCTAssertEqual(model.notice, line)
+
+        model.flash("something else")
+        XCTAssertTrue(coordinator.copy(.equals, chipAt: 3))
+        XCTAssertEqual(client.copiedNameValue, [chipID])
+        XCTAssertEqual(client.copiedOut, [chipID], "the = zone took the value's route")
+        XCTAssertEqual(model.notice, line, "name=value says D-42's line as it stands")
+        XCTAssertEqual(pasteboard.string(forType: .string), "MY_API_KEY", "a core copy is the core's")
+    }
+
+    /// A press on the value zone copies once and lights the beat; the
+    /// second click of the same press copies nothing more; the name zone's
+    /// press copies the name; none of them moves the selection.
+    func testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection() throws {
+        let fixture = try makeZoneFixture(#function)
+        defer { fixture.pasteboard.releaseGlobally() }
+        let (model, client, textView) = (fixture.model, fixture.client, fixture.textView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        let scroll = NSScrollView(frame: window.contentLayoutRect)
+        InkEditorView.seat(textView, in: scroll)
+        window.contentView = scroll
+        name(textView, chipAt: 3, model: model, as: "MY_API_KEY")
+        textView.layout()
+        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let frame = try XCTUnwrap(textView.chipFrame(at: 3))
+        let row = try XCTUnwrap(textView.chipCell(at: 3)?.namedRow(in: frame)).geometry
+
+        func press(_ point: NSPoint, clicks: Int) throws {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: textView.convert(point, to: nil),
+                modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                clickCount: clicks, pressure: 1))
+            textView.mouseDown(with: event)
+        }
+        let value = NSPoint(x: row.value.midX, y: row.value.midY)
+        try press(value, clicks: 1)
+        XCTAssertEqual(client.copiedOut, [fixture.chipID])
+        XCTAssertEqual(textView.copyBeat?.zone, .value)
+        XCTAssertEqual(textView.copyBeat?.chip, fixture.chipID)
+        try press(value, clicks: 2)
+        XCTAssertEqual(client.copiedOut, [fixture.chipID], "the second click copied again")
+
+        try press(NSPoint(x: row.name.midX, y: row.name.midY), clicks: 1)
+        XCTAssertEqual(fixture.pasteboard.string(forType: .string), "MY_API_KEY")
+        XCTAssertEqual(textView.copyBeat?.zone, .name)
+        XCTAssertEqual(
+            textView.selectedRange(), NSRange(location: 0, length: 0),
+            "a zone's click moved the selection")
+    }
+
+    /// Hover is per point: the zone under the pointer, nothing between
+    /// the runs' ends and the seat, and nothing on an unnamed block.
+    func testHoverFindsTheZoneUnderThePointer() throws {
+        let model = try makeModel()
+        let coordinator = InkEditorView.Coordinator(model: model)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 300))
+        InkEditorView.seat(textView, in: scroll)
+        textView.insertText(
+            "SECRET", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 0, length: 6))
+        coordinator.sealSelectionOrLine()
+        textView.layout()
+        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
+        let frame = try XCTUnwrap(textView.chipFrame(at: 0))
+        XCTAssertNil(
+            textView.chipZone(at: NSPoint(x: frame.minX + 20, y: frame.maxY - 6), chipAt: 0),
+            "an unnamed row answered a zone")
+
+        name(textView, chipAt: 0, model: model, as: "DB_PASSWORD")
+        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
+        let row = try XCTUnwrap(textView.chipCell(at: 0)?.namedRow(in: frame)).geometry
+        for zone in SealedBlockLayout.Zone.allCases {
+            let run = switch zone {
+            case .name: row.name
+            case .equals: row.equals
+            case .value: row.value
+            }
+            XCTAssertEqual(
+                textView.chipZone(at: NSPoint(x: run.midX, y: run.midY), chipAt: 0), zone)
+        }
+        XCTAssertNil(
+            textView.chipZone(at: NSPoint(x: row.value.maxX + 4, y: row.value.midY), chipAt: 0))
     }
 
     /// In a flipped text view, the lock, classification, and actions
