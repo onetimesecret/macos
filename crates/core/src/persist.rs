@@ -89,18 +89,11 @@ impl<C: Clock> SheetStore<C> {
     pub fn snapshot(&self, wall_ms: u64) -> Zeroizing<Vec<u8>> {
         let now = self.clock.now();
         // Exported once, so both passes see the same bytes (Law 0004).
-        let blobs: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets()
-            .map(|sheet| sheet.document.export_snapshot())
-            .collect();
-        let metas: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets()
-            .map(|sheet| encode_materialized(&sheet.blocks, &sheet.document))
-            .collect();
+        let pages: Vec<PageExport> = self.sheets().map(PageExport::of).collect();
         let mut sizer = Sizer(0);
-        emit(self, &blobs, &metas, now, wall_ms, &mut sizer);
+        emit(self, &pages, now, wall_ms, &mut sizer);
         let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
-        emit(self, &blobs, &metas, now, wall_ms, &mut Writer(&mut buffer));
+        emit(self, &pages, now, wall_ms, &mut Writer(&mut buffer));
         debug_assert_eq!(buffer.len(), sizer.0, "sizing pass drifted from the write");
         buffer
     }
@@ -298,10 +291,26 @@ pub(crate) fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
     body(out);
 }
 
+/// What a live page writes that a walk must not produce twice (Law 0004).
+struct PageExport {
+    /// The whole document, history included.
+    blob: Zeroizing<Vec<u8>>,
+    /// The block section (ADR-0013).
+    meta: Zeroizing<Vec<u8>>,
+}
+
+impl PageExport {
+    fn of(sheet: &Sheet) -> Self {
+        Self {
+            blob: sheet.document.export_snapshot(),
+            meta: encode_materialized(&sheet.blocks, &sheet.document),
+        }
+    }
+}
+
 fn emit<C: Clock>(
     store: &SheetStore<C>,
-    blobs: &[Zeroizing<Vec<u8>>],
-    metas: &[Zeroizing<Vec<u8>>],
+    pages: &[PageExport],
     now: Instant,
     wall_ms: u64,
     out: &mut dyn Sink,
@@ -310,18 +319,18 @@ fn emit<C: Clock>(
     out.u64(wall_ms);
     out.u64(store.tabs.len() as u64);
     // Consumed out here because the framed body runs twice.
-    let mut pages = blobs.iter().zip(metas);
+    let mut pages = pages.iter();
     for tab in &store.tabs {
         let page = tab.page.as_ref().map(|sheet| {
-            let (blob, meta) = pages.next().expect("one export per live page");
-            (sheet, blob.as_slice(), meta.as_slice())
+            let export = pages.next().expect("one export per live page");
+            (sheet, export)
         });
         framed(&mut *out, |out| emit_tab(tab, page, now, out));
     }
 }
 
 /// One tab record: identity, birthday, name, rung, then the framed page.
-fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: &mut dyn Sink) {
+fn emit_tab(tab: &Tab, page: Option<(&Sheet, &PageExport)>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(tab.uuid.as_bytes());
     out.u64(tab.created_wall_ms);
@@ -335,16 +344,16 @@ fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: 
     out.u64(tab.rung.duration().as_secs());
     match page {
         None => out.u8(0),
-        Some((sheet, blob, meta)) => {
+        Some((sheet, export)) => {
             out.u8(1);
-            framed(&mut *out, |out| emit_sheet(sheet, blob, meta, now, out));
+            framed(&mut *out, |out| emit_sheet(sheet, export, now, out));
         }
     }
 }
 
 /// One page record. No title: it is derived and recomputed at restore
 /// (ADR-0017).
-fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut dyn Sink) {
+fn emit_sheet(sheet: &Sheet, export: &PageExport, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(sheet.uuid.as_bytes());
     out.u64(sheet.created_wall_ms);
@@ -375,9 +384,9 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
         framed(&mut *out, |out| emit_chip(chip, out));
     }
     // The whole document, history included; the projection derives from it.
-    out.bytes(blob);
+    out.bytes(&export.blob);
     // Materialized metadata from the compaction ceremony (ADR-0013).
-    out.bytes(meta);
+    out.bytes(&export.meta);
     // Trailing page-level floor: a deletion's stamp, which no block can
     // carry.
     match sheet.blocks.compaction_frontier() {
