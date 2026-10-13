@@ -94,6 +94,11 @@ Three pages minted in one minute read as three copies of one page.
   `testTheGutterDrawsOnlyATypedName`;
   `DayScrollTests.testAGutterDrawsATypedNameAndNoGauge`; the FFI's key
   list test names `title_source`.
+  *Amended 2026-10-13:* [Law 0007](../../law/0007-edit-in-place.md)
+  (issue 248) gives the time its own seat: a typed name stands between
+  the day and the time, `today · Deploy notes · 13:00`, and a rename
+  opens on what the seat showed, the name or else the time. The pure
+  function is now `DayHeaderView.words(spokenLabel:stamp:firstOfDay:)`.
 - **D-47 (fixed)** No gauge on a gutter. A page's remaining life is
   drawn once, under the active node on the rail, and nowhere on the
   roll. D-37 kept the gutter's gauge because time as geometry is D-11

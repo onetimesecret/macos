@@ -14,11 +14,11 @@ sources:
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points this law left open)
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
   - docs/spec/design/2026-0916-rail-redundancy.md, D-44 and D-46 (the gutter's time and typed name)
-  - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending)
-  - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `dayText`, `drawsTitle`)
+  - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending; `TabRename.Field`, the SwiftUI fields' state)
+  - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `words`, `seat`, `drawsTitle`)
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
-  - shell/Sources/CompanionKit/PadPickerView.swift (`nameEditor`, the sheet this law retires; `PadNameDraft`)
-  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`)
+  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the cell's field; `PadNameDraft`; `nameEditor`, now the create sheet alone)
+  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `holdNotice`)
 ---
 
 # Law 0007: Edit in place
@@ -128,10 +128,10 @@ without a test says what it is owed by.
 | the gutter's hit target while open | opening | the field, not the composed header, takes the click | `DayScrollTests.swift` `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename` |
 | the gutter at rest | showing | the day once, then the time; only a typed name is drawn | `DayScrollProjectionTests.swift` `testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone`, `testTheGutterDrawsOnlyATypedName`; `DayScrollTests.swift` `testAGutterDrawsATypedNameAndNoGauge`; `StreamNavigatorTests.swift` `testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage` |
 | the gutter's menu | opening | *Rename page…* opens the field in the gutter | `DayScrollTests.swift` `testTheDayGutterOffersTheSameVerbsAsTheStrip` |
-| a click on the gutter's time | opening | opens the field in the time's seat; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41` | owed: issue 248; `DayHeaderView.dayText` and `place` change |
-| the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | outcomes through `TabRename` (rows above); the field itself: owed, issue 250 |
-| the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | owed: issue 249; the contradicting build is `PadPickerView.nameEditor` |
-| a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one | owed: issue 249; `PadNameDraft.validationMessage` supplies the words |
+| a click on the gutter's time | opening | opens the field in the time's seat; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41` | `DayScrollTests.swift` `testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`, `testANamedGutterReadsTheDayTheNameAndTheTime`; `DayScrollProjectionTests.swift` `testAnUnnamedGuttersDraftIsTheTime` |
+| the strip's *Rename tab…* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testAnUntouchedReturnIsJudgedAgainstWhatTheFieldOpenedOn`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip and the slot rail call; the SwiftUI field's focus and selection are checked by hand |
+| the pad list's *Rename pad…* | opening | opens the field in the pad's cell, the only way in: a click on the cell activates the pad; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheCellRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testAPadRenameAttachesNoSheetAndRunsNoModalSession`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` |
+| a pad name the catalog refuses, empty or over 80 characters | refusing | said in the line under the page with the field still open, `pad.name.empty`'s words for an empty one | `PadPickerTests.swift` `testARefusalKeepsBothTheFieldAndTheLine`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; `NoticeHoldTests.swift` `testAHeldLineOutlastsTheDwellAndGoesWhenReleased` |
 | a sealed object's *Name…*, *Rename…*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | owed: issue 245 (the field), issue 241 (the core's setter); Law 0001's 2026-10-13 amendment |
 | a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | owed: issue 241 (the core's refusal), issue 245 (the field) |
 
@@ -165,14 +165,21 @@ without a test says what it is owed by.
 ## Acceptance and tests
 
 Shell (`shell/Tests/CompanionKitTests`): `TabRenameTests` (the five
-outcome tests), `ModalSessionTests.testRenameNeverRunsAModalSession`,
+outcome tests and the three `TabRename.Field` tests),
+`ModalSessionTests.testRenameNeverRunsAModalSession`,
 `DayScrollTests` (`testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft`,
 `testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement`,
 `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename`,
 `testAGutterDrawsATypedNameAndNoGauge`,
-`testTheDayGutterOffersTheSameVerbsAsTheStrip`),
-`DayScrollProjectionTests` (the two gutter tests above),
-`StreamNavigatorTests.testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage`.
+`testTheDayGutterOffersTheSameVerbsAsTheStrip`,
+`testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`,
+`testANamedGutterReadsTheDayTheNameAndTheTime`),
+`DayScrollProjectionTests` (the two gutter tests above and
+`testAnUnnamedGuttersDraftIsTheTime`),
+`StreamNavigatorTests.testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage`,
+`PadPickerTests` (the six pad cell tests in the rows above and
+`testAFieldMovedToAnotherCellOutlivesTheFocusLossOfTheOneItLeft`),
+`NoticeHoldTests`.
 
 Core and seam: a name is page-owned text; `companion_tab_set_title`
 (`crates/ffi/src/lib.rs`) carries the tab's, capped core-side. The pad's
@@ -181,12 +188,10 @@ with Law 0001's amendment, refused core-side outside ADR-0042's charset
 (issue 241).
 
 Tests that pin the contradicting build and are rewritten when the owed
-rows land: none named; `PadPickerView.nameEditor` has no test of its own.
+rows land: none.
 
-Owed: the gutter's click and the time to the right (issue 248); the pad
-cell's field, the sheet's removal and the refusal line that stays while
-the field is open (issue 249); the sealed object's name field (issue 245,
-over issue 241's setter); a test for the strip's field (issue 250).
+Owed: the sealed object's name field (issue 245, over issue 241's
+setter).
 
 ## Amendments
 
@@ -207,3 +212,9 @@ over issue 241's setter); a test for the strip's field (issue 250).
   Committing and Refusing classes and four rows change; one row is added.
 - 2026-10-13: Rows amendment (issue 251). Every owed row, and the owed
   list under the tests, points at its issue in epic 252.
+- 2026-10-13: Built rows amendment (issues 248, 249, 250). The gutter's
+  click, the strip's field and the pad cell's field are built, and
+  their four rows name the tests that pin them. The strip's and the pad
+  cell's fields are SwiftUI and are not driven under the runner, so
+  their state lives in `TabRename.Field` and `PadRename`, which the
+  fields call and the tests drive. The sources list follows the code.
