@@ -177,6 +177,15 @@ bool companion_test_wire_stub(CompanionHandle *handle, uint16_t status,
  * with companion_string_free(). Test-util builds only (ADR-0018). */
 char *companion_test_wire_last_json(CompanionHandle *handle);
 
+/* Replace the handle's pasteboard with one in process memory, after
+ * taking back any write of ours on the old one, so a shell test's copy
+ * decrypted and name=value copies never reach the general pasteboard
+ * the person at the keyboard is using. Returns whether it was
+ * installed; null answers false. The symbol exists only in test-util
+ * builds of the core (ADR-0018), on the same terms as
+ * companion_new_ephemeral() above. */
+bool companion_test_memory_pasteboard(CompanionHandle *handle);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */

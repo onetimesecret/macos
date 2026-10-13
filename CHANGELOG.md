@@ -357,6 +357,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A shell test can keep the core's copies off the general pasteboard**
+  (`companion_test_memory_pasteboard`; `companion-ffi` 0.37.0). An
+  ephemeral handle writes the system pasteboard, so a Swift test of copy
+  decrypted or `name=value` put a test value on the clipboard of whoever
+  ran the suite and then cleared it, taking what they had copied with
+  it. Under `test-util` this seam gives the handle a board in process
+  memory, after taking back any write of its own on the old one. Like
+  the other seams it is absent from release builds, and
+  `scripts/package-app.sh` and `scripts/verify-release-core.sh` refuse a
+  binary that exports it.
+
 - **A sealed object's note opens in a popover over the page** (app
   0.31.0; Law 0001, ADR-0042, ADR-0043, issue #246). *Note…* on an
   object with no note, *Edit note…* on one with a note, or a click on

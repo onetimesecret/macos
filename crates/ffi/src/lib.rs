@@ -371,6 +371,27 @@ pub unsafe extern "C" fn companion_test_wire_last_json(
     }
 }
 
+/// Replace the handle's pasteboard with one in process memory, after taking
+/// back any write of ours on the old one, so a test's copies never reach the
+/// general pasteboard. Returns whether it was installed. `test-util` only
+/// (ADR-0018).
+///
+/// # Safety
+/// `handle` must be null or a valid handle.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_memory_pasteboard(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.retire_last_write();
+    guard.pasteboard = Board::Memory(MemoryPasteboard::new());
+    true
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     #[cfg(target_os = "macos")]
@@ -3626,6 +3647,32 @@ mod tests {
             companion_free(first);
             companion_free(second);
             companion_free(third);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_memory_pasteboard_seam_keeps_an_ephemeral_handles_copies_in_process() {
+        let tag = cstring("memory-pasteboard-seam");
+        unsafe {
+            assert!(!companion_test_memory_pasteboard(ptr::null_mut()));
+            let handle = companion_new_ephemeral(tag.as_ptr());
+            assert!(companion_test_memory_pasteboard(handle));
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                assert!(matches!(guard.pasteboard, Board::Memory(_)));
+            }
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("API_KEY").as_ptr()
+            ));
+            assert!(companion_chip_copy_name_value(handle, chip));
+            assert_eq!(board_text(handle).as_deref(), Some("API_KEY=hunter2"));
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(board_text(handle).is_none());
+            companion_free(handle);
         }
     }
 
