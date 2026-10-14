@@ -5,7 +5,7 @@ import XCTest
 
 /// Law 0001's backspace rows (D-30, ADR-0047 point 4): the first press beside
 /// an object selects it, the second detaches it, and the removal line's Undo
-/// stands the same object again, against the live core.
+/// stands the same object again, against the live core, for every deletion.
 @MainActor
 final class SealedRemovalTests: XCTestCase {
     private struct Page {
@@ -78,6 +78,16 @@ final class SealedRemovalTests: XCTestCase {
 
     private func length(_ page: Page) -> Int? { page.textView.textStorage?.length }
 
+    private static let noReplacement = NSRange(location: NSNotFound, length: 0)
+
+    /// The line said a removal, with the Undo beside it.
+    private func assertRemovalLine(
+        _ page: Page, _ message: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertEqual(page.model.notice, PageModel.removedLine, message, file: file, line: line)
+        XCTAssertEqual(page.model.noticeAction?.label, "Undo", message, file: file, line: line)
+    }
+
     /// Two presses take the first object: the caret after it, then its selection.
     private func removeFirstObject(_ page: Page) {
         page.textView.setSelectedRange(NSRange(location: 4, length: 0))
@@ -133,6 +143,16 @@ final class SealedRemovalTests: XCTestCase {
         page.textView.deleteForward(nil)
         XCTAssertEqual(length(page), 10)
         XCTAssertEqual(chips(page), page.chips)
+        XCTAssertNil(page.model.notice)
+    }
+
+    /// ⌃T beside an object moves it a place and keeps it, so no line says a removal.
+    func testATransposeBesideAnObjectKeepsItAndSaysNothing() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 4, length: 0))
+        page.textView.transpose(nil)
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(page.coordinator.chipAttachment(at: 4)?.info.chipId, page.chips[0])
         XCTAssertNil(page.model.notice)
     }
 
@@ -214,6 +234,91 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), [page.chips[0]])
         XCTAssertEqual(page.model.noticeAction?.label, "Undo")
 
+        page.model.performNoticeAction()
+        XCTAssertEqual(chips(page), page.chips)
+    }
+
+    // MARK: Every deletion
+
+    /// A removal that follows a deletion run is a step of its own: the line's Undo stands
+    /// the objects and leaves the ink deleted before, which the next ⌘Z brings back.
+    func testARemovalByReachIsItsOwnStepAfterADeletionRun() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 12, length: 0))
+        page.textView.deleteBackward(nil)
+        XCTAssertNil(page.model.notice)
+        page.textView.deleteToBeginningOfParagraph(nil)
+        XCTAssertEqual(chips(page), [])
+        XCTAssertEqual(length(page), 0)
+        assertRemovalLine(page, "a paragraph's deletion")
+
+        page.model.performNoticeAction()
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(length(page), 11, "one Undo took the removal and the ink before it")
+        page.coordinator.step(back: true)
+        XCTAssertEqual(length(page), 12)
+    }
+
+    /// Typing or Return over a selected object takes it as one step with the line; the
+    /// line's Undo stands it again and takes the letter back, not the typing before it.
+    func testTypingOverASelectedObjectTakesItAsOneStepWithTheLine() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 12, length: 0))
+        page.textView.insertText("zz", replacementRange: Self.noReplacement)
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.insertText("x", replacementRange: Self.noReplacement)
+        XCTAssertEqual(chips(page), [page.chips[1]])
+        XCTAssertEqual(page.textView.string.prefix(4), "ab x")
+        assertRemovalLine(page, "typing")
+
+        page.model.performNoticeAction()
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(length(page), 14, "the Undo took the typing before the removal")
+
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        page.textView.insertNewline(nil)
+        XCTAssertEqual(chips(page), [page.chips[0]])
+        assertRemovalLine(page, "Return")
+    }
+
+    /// A composition over a selected object takes it once the composition ends, committed
+    /// or abandoned, and the line comes then rather than while it is marked.
+    func testACompositionOverASelectedObjectTakesItWithTheLineWhenItEnds() throws {
+        for commits in [true, false] {
+            let page = try makePage()
+            page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+            page.textView.setMarkedText(
+                "ka", selectedRange: NSRange(location: 2, length: 0),
+                replacementRange: Self.noReplacement)
+            XCTAssertNil(page.model.notice, "the line came while the composition was marked")
+            if commits {
+                page.textView.insertText("\u{304B}", replacementRange: Self.noReplacement)
+            } else {
+                page.textView.setMarkedText(
+                    "", selectedRange: NSRange(location: 0, length: 0),
+                    replacementRange: Self.noReplacement)
+                page.textView.unmarkText()
+            }
+            XCTAssertEqual(chips(page), [page.chips[1]], "commits: \(commits)")
+            assertRemovalLine(page, "commits: \(commits)")
+            page.model.performNoticeAction()
+            XCTAssertEqual(chips(page), page.chips, "commits: \(commits)")
+        }
+    }
+
+    /// A board's text read over a selected object, as AppKit's paste and a service's
+    /// answer write it, takes the object with the line.
+    func testABoardsTextReadOverASelectedObjectTakesItWithTheLine() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("q", forType: .string)
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        XCTAssertTrue(page.textView.readSelection(from: board, type: .string))
+        XCTAssertEqual(chips(page), [page.chips[1]])
+        XCTAssertEqual(page.textView.string.prefix(4), "ab q")
+        assertRemovalLine(page, "a board's text")
         page.model.performNoticeAction()
         XCTAssertEqual(chips(page), page.chips)
     }

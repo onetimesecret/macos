@@ -2104,6 +2104,7 @@ public struct InkEditorView: NSViewRepresentable {
         public func textDidChange(_ notification: Notification) {
             restyle()
             noteHost?.inkDidChange()
+            settleRemovalWatch()
         }
 
         /// The composition the IME gate is tracking: where it started,
@@ -2228,6 +2229,8 @@ public struct InkEditorView: NSViewRepresentable {
         func finishComposition(in storage: NSTextStorage, document: InkDocument) {
             guard let ime = imeComposition else { return }
             imeComposition = nil
+            // A cancel settles here with no didChangeText to follow it.
+            defer { settleRemovalWatch() }
             let text = storage.string as NSString
             let span = NSRange(location: ime.location, length: max(0, ime.spanLength))
             guard NSMaxRange(span) <= text.length else {
@@ -2548,6 +2551,16 @@ public struct InkEditorView: NSViewRepresentable {
                 }
             }
             return found
+        }
+
+        /// The chip ids of the objects standing in `range`.
+        static func chipIDs(_ storage: NSTextStorage, in range: NSRange) -> Set<UInt64> {
+            guard isValid(range, for: storage.length) else { return [] }
+            var ids = Set<UInt64>()
+            storage.enumerateAttribute(.attachment, in: range) { value, _, _ in
+                if let chip = value as? ChipAttachment { ids.insert(chip.info.chipId) }
+            }
+            return ids
         }
 
         static func chipString(_ chip: ChipInfo) -> NSAttributedString {
@@ -3248,8 +3261,7 @@ public struct InkEditorView: NSViewRepresentable {
             let range = NSRange(location: index, length: 1)
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
-                textView.didChangeText() // travels as a del op; the core detaches the chip
-                noteRemoval()
+                textView.didChangeText() // a del op the core detaches by; the removal watch says so
             }
         }
 
@@ -3268,11 +3280,48 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Whether a deletion of the page's selection would take an object with it.
         var selectionHoldsObject: Bool {
-            guard !writesNote, let textView, let storage = textView.textStorage else { return false }
-            return textView.selectedRanges.contains { Self.containsChip(storage, in: $0.rangeValue) }
+            rangesHoldObject(textView?.selectedRanges.map(\.rangeValue) ?? [])
         }
 
-        /// After a deletion took an object: end its step, so Undo stands the object alone,
+        /// Whether any of `ranges` on the page holds an object.
+        func rangesHoldObject(_ ranges: [NSRange]) -> Bool {
+            guard !writesNote, let storage = textView?.textStorage else { return false }
+            return ranges.contains { Self.containsChip(storage, in: $0) }
+        }
+
+        /// The objects an edit's ranges held when AppKit asked to make it, until it lands.
+        private var removalWatch: (document: InkDocument, chips: Set<UInt64>)?
+
+        /// Every edit AppKit makes on the page asks here first; one over an object
+        /// ends the coalescing run, so its removal is a step of its own (D-30).
+        public func textView(
+            _ textView: NSTextView, shouldChangeTextInRanges affectedRanges: [NSValue],
+            replacementStrings: [String]?
+        ) -> Bool {
+            guard !writesNote, !model.isApplyingProjection, let document,
+                  let storage = textView.textStorage
+            else { return true }
+            let chips = affectedRanges.reduce(into: Set<UInt64>()) {
+                $0.formUnion(Self.chipIDs(storage, in: $1.rangeValue))
+            }
+            guard !chips.isEmpty else { return true }
+            model.finishEditingGroup(document, selection: textView.selectedRange())
+            let watched = removalWatch?.document == document ? removalWatch?.chips ?? [] : []
+            removalWatch = (document, watched.union(chips))
+            return true
+        }
+
+        /// Once an edit has landed: if an object it held no longer stands, the removal line.
+        private func settleRemovalWatch() {
+            guard let watch = removalWatch, let storage = textView?.textStorage
+            else { return }
+            removalWatch = nil
+            guard watch.document == document else { return }
+            let standing = Self.chipIDs(storage, in: NSRange(location: 0, length: storage.length))
+            if !watch.chips.isSubset(of: standing) { noteRemoval() }
+        }
+
+        /// After an edit took an object: end its step, so Undo stands the object alone,
         /// and say so with Undo beside the line (D-30).
         func noteRemoval() {
             guard let document, let textView else { return }
@@ -5711,10 +5760,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
         guard answersChords else { return }
         if coordinator.selectObjectBeside(forward: forward) { return }
-        let takesObject = coordinator.selectionHoldsObject
-        let length = textStorage?.length
         withEditIntent(.deletion, perform: delete)
-        if takesObject, textStorage?.length != length { coordinator.noteRemoval() }
     }
 
     var canDetectCodeLanguage: Bool {
