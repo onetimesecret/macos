@@ -5801,6 +5801,28 @@ public final class PageModel: ObservableObject {
         return true
     }
 
+    /// The line when a selection of several stretches holds a sealed object.
+    public static let severalStretchesLine = "sealed objects copy from one selection, not several."
+
+    /// Copy a page's selected ranges to the ordinary pasteboard as the core
+    /// composes them (ADR-0047 point 2); nothing is written if one is refused.
+    @discardableResult
+    public func copySelection(_ ranges: [NSRange], sheet: UInt64) -> Bool {
+        guard !sheet.isFileID, !ranges.isEmpty else { return false }
+        var fragments: [SealedFragment] = []
+        for range in ranges {
+            guard let fragment = client.copyFragment(sheet: sheet, range: range) else { return false }
+            fragments.append(fragment)
+        }
+        guard fragments.count > 1 else { return fragments[0].write(to: ambientPasteboard) }
+        // One envelope holds one range, so several stretches carry no object.
+        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+            flash(Self.severalStretchesLine)
+            return false
+        }
+        return SealedFragment(joining: fragments).write(to: ambientPasteboard)
+    }
+
     /// The confirmation after a copy-out (D-29): what happened, how
     /// much of it, and when the board gives it back, in the words the
     /// stream navigator design gave it. The size is the object's own

@@ -2714,6 +2714,15 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
+        /// Copy the page's selected ranges by the core's fragment (ADR-0047 point 2).
+        @discardableResult
+        func copySelection() -> Bool {
+            guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
+            else { return false }
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            return model.copySelection(ranges, sheet: sheet)
+        }
+
         /// The chip standing at the selection, when the selection is
         /// exactly one chip and nothing else: the one shape the copy
         /// decrypted chord acts on. Nil over ink, over a caret, or over
@@ -5001,6 +5010,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return canChooseCodeLanguage
         case #selector(pasteWithoutDetection(_:)):
             return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
+        case #selector(copy(_:)):
+            return answersChords && super.validateMenuItem(item)
+        case #selector(selectAll(_:)) where coordinator?.writesNote != true:
+            return answersChords && super.validateMenuItem(item)
         default:
             return super.validateMenuItem(item)
         }
@@ -5129,6 +5142,22 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         performOrdinaryPaste(sender, bypassingAutomaticFencing: bypass) { [unowned self] sender in
             pasteAsPlainText(sender)
         }
+    }
+
+    /// A page copies by the core's fragment and stands aside while another
+    /// surface holds the keys (ADR-0046); a note or a file copies as AppKit does.
+    override func copy(_ sender: Any?) {
+        guard answersChords else { return }
+        guard let coordinator, !coordinator.writesNote,
+              let sheet = coordinator.currentSheet, !sheet.isFileID
+        else { return super.copy(sender) }
+        coordinator.copySelection()
+    }
+
+    /// The page's select all stands aside while another surface holds the keys.
+    override func selectAll(_ sender: Any?) {
+        if coordinator?.writesNote != true, !answersChords { return }
+        super.selectAll(sender)
     }
 
     override func cut(_ sender: Any?) {
