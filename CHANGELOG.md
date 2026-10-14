@@ -43,11 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drag from, the pointer is an open hand; while a name or a note holds
   the keys it stays the text cursor.
 
-- **The menu bar keeps no Print…** (app 0.35.0; Law 0001, issue #170).
-  The app's commands replace SwiftUI's print group with nothing, so no
-  later scene brings back Print… or Page Setup…, which would draw each
-  object's face, before a print that draws placeholders exists.
-
 - **A page's copy of ink alone is plain text** (app 0.34.0; ADR-0047
   point 2, issue #170). ⌘C and ⌘X on a page write the text the core
   composes, so ink pasted into Mail or TextEdit arrives without the
