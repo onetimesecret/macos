@@ -8,9 +8,10 @@ holding a sealed object, and the decrypted drag from its handle.
 paste, drag and decrypted drag rows cite this procedure for what the
 runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md).
 **Owner:** delano.
-**Status:** open. Blocked until the editor writes and reads the
-fragment and offers the decrypted drag handle (issue #170's shell
-half); not yet run.
+**Status:** open; not yet run. The editor's copy writes the fragment,
+so the first two checks can run; the rest are blocked until the editor
+cuts, pastes, drags and offers the decrypted drag handle (issue #170's
+shell half).
 
 ## Why by hand
 
