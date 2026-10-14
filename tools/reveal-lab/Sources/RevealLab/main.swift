@@ -566,11 +566,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         } else {
             let insideCard = reveal.frame.contains(p)
             updateCardInteraction(at: p, time: time)
-            guard let sourceFrame = sourceFrame() else { dismiss(block: false); return }
-            let corridor = mode == .held || mode == .pointer || mode == .shake || mode == .doubleShift
-                ? reveal.frame.insetBy(dx: -45, dy: -45)
-                : reveal.frame.union(sourceFrame).insetBy(dx: -16, dy: -16)
-            let keep = sourceEligible(p, exit: true) || corridor.contains(p)
+            let keep = retainsCard(at: p)
             if keep { exitAt = nil }
             else if let exitAt, time - exitAt > 0.2 { dismiss(block: false) }
             else if exitAt == nil { exitAt = time }
@@ -590,6 +586,15 @@ final class Lab: NSObject, NSApplicationDelegate {
         }
         push = max(0, push - 0.15)
 
+    }
+
+    func retainsCard(at point: NSPoint) -> Bool {
+        guard triggersAvailable else { return false }
+        if explicitAnchor != nil || mode == .held || mode == .pointer || mode == .shake || mode == .doubleShift {
+            return reveal.frame.insetBy(dx: -45, dy: -45).contains(point)
+        }
+        guard let source = sourceFrame() else { return false }
+        return sourceEligible(point, exit: true) || reveal.frame.union(source).insetBy(dx: -16, dy: -16).contains(point)
     }
 
     func updateCardInteraction(at point: NSPoint, time: TimeInterval) {
@@ -934,6 +939,33 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
     lab.card.setFrameSize(NSSize(width: 34, height: 34))
     lab.card.stage = .card; lab.card.layoutSubtreeIfNeeded()
     layout.expect(!lab.card.open.isHidden, "Full-stage controls must not depend on intermediate animation bounds")
+
+    for mode in [Mode.dwell, .tab, .drag, .status] {
+        let test = TestContext(name: "smoke mode=\(mode.rawValue) anchored retention")
+        lab.sides.selectItem(at: startup.require(Side.allCases.firstIndex(of: .right), "Right side missing"))
+        select(mode)
+        lab.showFallback()
+        test.expect(lab.phase == .card && lab.explicitAnchor != nil, "Fallback action must create an explicitly anchored card")
+        lab.dismiss(block: false)
+        let screen = test.require(lab.screen, "Retention test needs a display")
+        let anchor = NSPoint(x: screen.visibleFrame.minX + 80, y: screen.visibleFrame.minY + 120)
+        lab.explicitAnchor = anchor
+        lab.show(.card)
+        lab.reveal.setFrame(lab.cardFrame, display: true)
+        lab.hoveringStatus = true; lab.hoveringHandle = true
+        let source = test.require(lab.sourceFrame(), "Source frame missing")
+        let remote = NSPoint(x: source.midX, y: source.midY)
+        let local = NSPoint(x: lab.reveal.frame.midX, y: lab.reveal.frame.midY)
+        let padding = NSPoint(x: lab.reveal.frame.minX - 30, y: local.y)
+        test.expect(lab.retainsCard(at: local) && lab.retainsCard(at: padding), "Explicit fallback must retain the card and its local padding")
+        test.expect(!lab.reveal.frame.insetBy(dx: -45, dy: -45).contains(remote), "Retention fixture needs a remote source")
+        test.expect(!lab.retainsCard(at: remote), "Remote source/hover must not retain an explicitly anchored card")
+        let gap = NSPoint(x: (remote.x + local.x) / 2, y: (remote.y + local.y) / 2)
+        test.expect(!lab.retainsCard(at: gap), "Far-away source corridor must not retain the fallback card")
+        lab.explicitAnchor = nil
+        test.expect(lab.retainsCard(at: remote), "Non-anchored source corridor must remain available")
+        lab.dismiss(block: false)
+    }
 
     let held = TestContext(name: "smoke mode=Held glance")
     select(.held)
