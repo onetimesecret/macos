@@ -603,7 +603,7 @@ read as a page an instant from death rather than a slot standing ready.
   where the default is headed; the default does not flip before D-26's
   two settings exist, or Days + side would ship as the only
   alternative. There is no page cap to design for: the core has had
-  none since issue #158 (`PageModel.swift:5224`), so no refusal is
+  none since issue #158 (`PageModel.swift:5240`), so no refusal is
   drawn. What remains open is when the prototype label comes off and
   the default flips.
   *Amended 2026-10-01:* D-26's two settings will not exist, so the gate
