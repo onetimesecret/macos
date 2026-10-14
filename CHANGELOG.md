@@ -939,12 +939,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Text dropped or pasted right after a sealed object no longer
   doubles it** (app 0.35.0; Law 0001, issue #170). Text holding U+FFFC,
-  dropped from a regular text file or pasted or answered by a service
-  right after an object, took on that object, so the page showed it
-  twice while the core held it once. Every later edit then landed in
-  the wrong place, and a backspace of ink could remove another object
-  without a line. Such text now lands without the character beside an
-  object as anywhere else, and each object stands once.
+  dropped from a regular text file or answered by a service right
+  after an object, took on that object, so the page showed it twice
+  while the core held it once. Every later edit then landed in the
+  wrong place, and a backspace of ink could remove another object
+  without a line. Such text, pasted too, now lands without the
+  character beside an object as anywhere else, and each object stands
+  once.
 
 - **A paste takes nothing from a page past its deadline**
   (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
