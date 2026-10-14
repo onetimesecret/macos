@@ -70,6 +70,14 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       goes; the letter lands on the page; ⌘Z takes the place back.
       **Fail:** the card rests on the click, the letter goes to another
       app, or the line shows any part of the word.
+- [ ] **A paste over several stretches.** Copy a selection holding a
+      sealed object. Select two words of ink apart from each other by
+      dragging the second with ⌘ held, and press ⌘V. Then cut a sealed
+      object, select two words the same way, and click the slot's
+      `place here`. **Pass:** each time the line under the page reads
+      `sealed objects paste into one selection, not several.` and both
+      words stay as they were. **Fail:** either word is replaced, or
+      nothing is said.
 - [ ] **A cut across a relaunch.** Cut a sealed object, quit with ⌘Q,
       relaunch, paste. **Pass:** the slot's line is back before the
       paste and the object returns. **Fail:** the paste places
