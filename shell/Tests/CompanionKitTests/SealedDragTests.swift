@@ -208,6 +208,66 @@ final class SealedDragTests: XCTestCase {
         }
     }
 
+    // MARK: The drag's image
+
+    /// An image's pixels, drawn once into a bitmap of its own size.
+    private func pixels(_ image: NSImage?) throws -> Data {
+        let image = try XCTUnwrap(image, "the drag had no image")
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(image.size.width),
+            pixelsHigh: Int(image.size.height), bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+        let bytes = try XCTUnwrap(rep.bitmapData)
+        return Data(bytes: bytes, count: rep.bytesPerRow * rep.pixelsHigh)
+    }
+
+    /// The image of a drag of the whole page: the page drag's own, or AppKit's.
+    private func dragImage(_ page: Page, appKits: Bool = false) throws -> Data {
+        page.textView.selectAll(nil)
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: NSPoint(x: 60, y: 300), modifierFlags: [],
+            timestamp: 0, windowNumber: page.window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1))
+        var origin = NSPoint.zero
+        let image = appKits
+            ? page.textView.dragImageForSelection(with: event, origin: &origin)
+            : page.textView.pageDragImage(with: event, origin: &origin)
+        return try pixels(image)
+    }
+
+    /// Other apps see the drag's image pass, so it draws the selection's ink and each
+    /// object's face, its size class and any name, but never its excerpt: two objects
+    /// that differ only in their contents drag as one image.
+    func testTheDragsImageDrawsInkAndEachFaceButNoExcerpt() throws {
+        let (model, _) = try makeModel()
+        let seal = [NSRange(location: 3, length: 6)]
+        let secret = try mountPage(on: model, text: "ab SECRET cd", seals: seal)
+        let other = try mountPage(on: model, text: "ab QWERTY cd", seals: seal)
+        let ink = try mountPage(on: model, text: "xy SECRET cd", seals: seal)
+        let faces = try [secret, other].map { try XCTUnwrap(chips($0).first) }
+        XCTAssertNotEqual(faces[0].excerpt, faces[1].excerpt, "the control: the excerpts differ")
+        XCTAssertEqual(faces[0].sizeLabel, faces[1].sizeLabel)
+        XCTAssertNotEqual(
+            try dragImage(secret, appKits: true), try dragImage(other, appKits: true),
+            "the control: AppKit's own image draws the excerpt")
+
+        XCTAssertEqual(try dragImage(secret), try dragImage(other), "the image drew an excerpt")
+        XCTAssertNotEqual(try dragImage(secret), try dragImage(ink), "the image drew no ink")
+
+        let unnamed = try dragImage(secret)
+        for (page, face) in zip([secret, other], faces) {
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: face.chipId, sheet: page.sheet))
+        }
+        XCTAssertEqual(try dragImage(secret), try dragImage(other), "a named row drew its value")
+        XCTAssertNotEqual(try dragImage(secret), unnamed, "the image drew no name")
+        XCTAssertFalse(secret.textView.drawsPageDragImage, "the page kept drawing drag faces")
+    }
+
     // MARK: The drag inside the page
 
     /// A drop on the page moves ink and objects through the core as one step that

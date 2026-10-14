@@ -6233,7 +6233,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return false
         case .fragment(let item):
             var origin = NSPoint.zero
-            let image = dragImageForSelection(with: event, origin: &origin)
+            let image = pageDragImage(with: event, origin: &origin)
                 ?? NSImage(size: NSSize(width: 1, height: 1))
             // AppKit gives the image's lower left corner; a flipped frame starts at its top.
             let top = isFlipped ? origin.y - image.size.height : origin.y
@@ -6245,6 +6245,17 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             session.draggingFormation = .none
             return true
         }
+    }
+
+    /// Whether the page drag's image is being drawn, so each block draws its drag face.
+    private(set) var drawsPageDragImage = false
+
+    /// The selection's ink as drawn and each object's face without its excerpt, built as
+    /// the decrypted drag's image is (ADR-0051 point 5), since other apps see it pass.
+    func pageDragImage(with event: NSEvent, origin: inout NSPoint) -> NSImage? {
+        drawsPageDragImage = true
+        defer { drawsPageDragImage = false }
+        return dragImageForSelection(with: event, origin: &origin)
     }
 
     override func draggingSession(
@@ -6863,6 +6874,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
         withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int,
         layoutManager: NSLayoutManager
     ) {
+        // AppKit draws a drag's image with no control view, so the page is found by its layout.
+        if (layoutManager.firstTextView as? InkTextView)?.drawsPageDragImage == true {
+            return draw(
+                withFrame: cellFrame, in: controlView, face: .dragImage, selected: false,
+                hovered: false, editingWidth: nil, zone: nil, beat: nil)
+        }
         let view = controlView as? InkTextView
         let selected = view.map { $0.selectedRange() == NSRange(location: charIndex, length: 1) }
             ?? false
@@ -6874,8 +6891,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
             $0.index == charIndex && $0.chip == info.chipId ? $0 : nil
         }
         draw(
-            withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered,
-            editingWidth: naming?.width,
+            withFrame: cellFrame, in: controlView, face: .page, selected: selected,
+            hovered: hovered, editingWidth: naming?.width,
             zone: hovered ? view?.hoveredZone : nil,
             beat: beat.flatMap { beat in
                 Self.beatStrength(
@@ -6888,8 +6905,15 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
         draw(
-            withFrame: cellFrame, in: controlView, selected: false, hovered: false,
+            withFrame: cellFrame, in: controlView, face: .page, selected: false, hovered: false,
             editingWidth: nil, zone: nil, beat: nil)
+    }
+
+    /// Where a block is drawn: on its page, or in the page drag's image, which other
+    /// apps see while it passes over them and so shows no excerpt (Law 0001's plain drag row).
+    enum Face {
+        case page
+        case dragImage
     }
 
     /// How long a zone wears ember after its copy (ADR-0044 point 1).
@@ -6914,8 +6938,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// selection itself so the colour is never the only carrier.
     @MainActor
     private func draw(
-        withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool,
-        editingWidth: CGFloat?,
+        withFrame cellFrame: NSRect, in controlView: NSView?, face: Face, selected: Bool,
+        hovered: Bool, editingWidth: CGFloat?,
         zone: SealedBlockLayout.Zone?, beat: (zone: SealedBlockLayout.Zone, strength: CGFloat)?
     ) {
         #if DEBUG
@@ -6980,10 +7004,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
         guard let row = namedRow(in: cellFrame, editingWidth: editingWidth) else {
             let excerptLine = excerpt
             let metadataSize = metadata.size()
-            excerptLine.draw(in: layout.excerptRect(
-                metadataWidth: metadataSize.width,
-                height: excerptLine.size().height
-            ))
+            if face == .page {
+                excerptLine.draw(in: layout.excerptRect(
+                    metadataWidth: metadataSize.width,
+                    height: excerptLine.size().height
+                ))
+            }
             metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
             drawDoorwayRule(in: cellFrame)
             return
@@ -6992,8 +7018,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
             drawPills(row.geometry, metrics: layout.metrics, zone: zone, beat: beat)
         }
         row.name.draw(at: row.geometry.name.origin)
-        row.equals.draw(at: row.geometry.equals.origin)
-        row.value.draw(at: row.geometry.value.origin)
+        if face == .page {
+            row.equals.draw(at: row.geometry.equals.origin)
+            row.value.draw(at: row.geometry.value.origin)
+        }
         let hovered = editingWidth == nil ? zone : nil
         let copied = editingWidth == nil && beat != nil
         let seat = Self.seatString(Self.seatText(
