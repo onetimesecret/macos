@@ -132,6 +132,7 @@ final class CardView: NSView {
     var cancel: (() -> Void)?
     var dropped: ((Int) -> Void)?
     var acceptsDrop = false
+    var stage: Phase = .idle { didSet { needsLayout = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -151,7 +152,7 @@ final class CardView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
     override func layout() {
         super.layout()
-        let peek = bounds.width < 100 || bounds.height < 90
+        let peek = stage != .card
         title.stringValue = peek ? "RL" : "Reveal Lab"
         title.frame = NSRect(x: 10, y: bounds.height - 32, width: bounds.width - 20, height: 22)
         detail.frame = NSRect(x: 12, y: 53, width: bounds.width - 24, height: 42)
@@ -555,7 +556,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         let first = phase == .idle
         if first { cardFrame = destination() }
         let frame = stagedFrame(cardFrame, stage: stage, mode: mode, side: side)
-        phase = stage; shownAt = now; exitAt = nil
+        phase = stage; card.stage = stage; shownAt = now; exitAt = nil
         armingOrigin = NSEvent.mouseLocation
         pointerWasOutside = !frame.contains(armingOrigin)
         card.open.isEnabled = false
@@ -576,7 +577,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     func dismiss(block: Bool) {
         if phase != .idle { log("dismiss") }
         reveal.orderOut(nil)
-        phase = .idle; enteredAt = nil; exitAt = nil; explicitAnchor = nil
+        phase = .idle; card.stage = .idle; enteredAt = nil; exitAt = nil; explicitAnchor = nil
         blocked = block; push = 0; card.open.isEnabled = false; card.acceptsDrop = false
     }
 
@@ -721,12 +722,15 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
         test.expect(lab.guide.isVisible == mode.hasEdgeTarget, "Guide visibility must match the mode")
         lab.enteredAt = lab.now
         lab.show(.peek)
-        test.expect(lab.reveal.ignoresMouseEvents, "Peek must pass through clicks")
+        lab.card.layoutSubtreeIfNeeded()
+        test.expect(lab.phase == .peek && lab.card.stage == .peek, "Peek phase must reach CardView explicitly")
+        test.expect(lab.card.open.isHidden && lab.reveal.ignoresMouseEvents, "Peek must hide controls and pass through clicks")
         lab.show(.card)
         test.expect(!lab.reveal.ignoresMouseEvents, "Full card must catch clicks before arming")
         test.expect(!lab.reveal.canBecomeKey && !lab.reveal.canBecomeMain, "Reveal must remain non-key and non-main")
         lab.reveal.setFrame(lab.cardFrame, display: true)
         lab.card.layoutSubtreeIfNeeded()
+        test.expect(lab.card.stage == .card && !lab.card.open.isHidden, "Full stage must expose controls")
         let point = NSPoint(x: lab.cardFrame.midX - 10, y: lab.cardFrame.midY)
         lab.armingOrigin = point; lab.pointerWasOutside = false
         let click = test.require(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 30, y: 100),
@@ -753,8 +757,16 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
         lab.card.commit = originalCommit
         test.expect(app.keyWindow === keyWindow, "Reveal cycle must leave the key window unchanged")
         lab.dismiss(block: false)
-        test.expect(!lab.reveal.isVisible, "Dismiss must hide the reveal")
+        test.expect(lab.phase == .idle && lab.card.stage == .idle && !lab.reveal.isVisible, "Dismiss must reset phase, stage, and visibility")
     }
+
+    let layout = TestContext(name: "smoke explicit CardView stage")
+    lab.card.setFrameSize(NSSize(width: 248, height: 132))
+    lab.card.stage = .peek; lab.card.layoutSubtreeIfNeeded()
+    layout.expect(lab.card.open.isHidden, "Peek controls must stay hidden even at full-card bounds")
+    lab.card.setFrameSize(NSSize(width: 34, height: 34))
+    lab.card.stage = .card; lab.card.layoutSubtreeIfNeeded()
+    layout.expect(!lab.card.open.isHidden, "Full-stage controls must not depend on intermediate animation bounds")
 
     let held = TestContext(name: "smoke mode=Held glance")
     select(.held)
