@@ -196,3 +196,7 @@ cycles all mode render/reset paths, checks that reveal leaves the lab's current 
 window unchanged, and simulates held press/release callbacks. It exits itself.
 Neither test generates physical gestures, verifies OS shortcut delivery,
 performs real external drag/drop, or checks typing in another app.
+
+The macOS [CI workflow](../../.github/workflows/ci.yml) builds this package,
+runs the self-test, and checks bundle assembly. The AppKit smoke test remains
+a local check.
