@@ -446,7 +446,8 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
  * the batch's earlier ops leave it. Parsing is reject-whole; a batch
  * that parses is validated whole against the page and applied
  * atomically or not at all. Chip liveness follows the document: a
- * delete that swallows a chip's sentinel zeroizes the chip. Returns
+ * delete that swallows a chip's sentinel detaches the chip, and a chip
+ * op naming one of the page's detached chips reattaches it (ADR-0047). Returns
  * whether the batch applied; on false, restate the page through
  * companion_sheet_sync_document (the recovery path).
  */
@@ -533,7 +534,8 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  * this survives as the RECOVERY path: a page restated whole after a
  * rejected batch, at the price of that page's provenance. STILL
  * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
- * deleted in the editor and is zeroized here. Malformed snapshots (bad
+ * deleted in the editor and is detached here, and a detached chip it
+ * names reattaches (ADR-0047). Malformed snapshots (bad
  * JSON, foreign chip, duplicate reference) are rejected whole. Returns
  * acceptance.
  */
@@ -612,8 +614,10 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
 
 /*
- * Remove a chip now, wiping its bytes (backspace removes it whole;
- * there is no resurrection path). Returns whether it existed.
+ * Burn a chip, attached or detached: its bytes are wiped, its page's
+ * undo stack goes with it, and one `discarded` is recorded. A removal
+ * by backspace is not a burn; it detaches (ADR-0047). Returns whether
+ * it existed.
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
 

@@ -631,21 +631,34 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 1))
     }
 
-    func testAnUndoResurrectingADeadChipIsStrippedSilently() {
+    /// Seals "seal me" and removes the object whole, as a backspace would.
+    private func sealThenRemove() -> ChipInfo? {
         makeEditor()
         textView.insertText(
             "seal me", replacementRange: NSRange(location: NSNotFound, length: 0))
         textView.setSelectedRange(NSRange(location: 0, length: 7))
         coordinator.sealSelectionOrLine()
-        guard case .chip(let face)? = coreRuns().first else {
-            return XCTFail("the seal left no chip")
-        }
-        // The chip dies (deleted whole, as backspace would).
+        guard case .chip(let face)? = coreRuns().first else { return nil }
         storage.deleteCharacters(in: NSRange(location: 0, length: 1))
-        XCTAssertTrue(coreRuns().isEmpty)
-        // A stale undo replays the attachment: the core rejects the
-        // chip op, recovery strips the glyph, and no chip returns,
-        // because undo never un-seals.
+        XCTAssertTrue(coreRuns().isEmpty, "the removal took the object off the page")
+        return face
+    }
+
+    func testUndoAfterRemovingAChipStandsTheSameObjectAgain() throws {
+        let face = try XCTUnwrap(sealThenRemove(), "the seal left no chip")
+        // The core kept the object detached, so its step puts it back (D-30).
+        coordinator.step(back: true)
+        guard case .chip(let back)? = coreRuns().first else {
+            return XCTFail("undo left no object on the page")
+        }
+        XCTAssertEqual(back.chipId, face.chipId)
+        assertParity()
+    }
+
+    func testPuttingARemovedChipsAttachmentBackReattachesIt() throws {
+        let face = try XCTUnwrap(sealThenRemove(), "the seal left no chip")
+        // The attachment put back travels as a chip op, which a detached
+        // object of this page answers (ADR-0047).
         storage.insert(
             InkEditorView.Coordinator.chipString(
                 ChipInfo(
@@ -653,10 +666,10 @@ final class DocumentOpsWiringTests: XCTestCase {
                     sizeLabel: face.sizeLabel, concealed: face.concealed)),
             at: 0
         )
-        XCTAssertFalse(InkEditorView.Coordinator.runs(of: storage).contains {
-            if case .chip = $0 { true } else { false }
-        }, "the dead chip's glyph survived recovery")
-        XCTAssertTrue(coreRuns().isEmpty)
+        guard case .chip(let back)? = coreRuns().first else {
+            return XCTFail("the object did not stand again")
+        }
+        XCTAssertEqual(back.chipId, face.chipId)
         assertParity()
     }
 

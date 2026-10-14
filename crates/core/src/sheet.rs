@@ -244,6 +244,9 @@ pub struct SealedChip {
     pub(crate) name: Option<String>,
     /// Made by its first accepted edit.
     pub(crate) note: Option<Note>,
+    /// Whether its sentinel has stood in a body; the first standing is the
+    /// seal's, which no step may take back (D-30).
+    pub(crate) stood: bool,
 }
 
 impl SealedChip {
@@ -265,6 +268,7 @@ impl SealedChip {
             conceal: None,
             name: None,
             note: None,
+            stood: false,
         }
     }
 
@@ -287,6 +291,7 @@ impl SealedChip {
             conceal: None,
             name: None,
             note: None,
+            stood: false,
         }
     }
 
@@ -388,7 +393,10 @@ pub struct Sheet {
     pub(crate) segments: Vec<Segment>,
     /// Paragraph identities, kept across edits (ADR-0013).
     pub(crate) blocks: BlockIndex,
+    /// Chips whose sentinels stand in the body.
     pub(crate) chips: Vec<SealedChip>,
+    /// Chips the body no longer shows, kept on the page's clock (ADR-0047).
+    pub(crate) detached: Vec<SealedChip>,
     pub(crate) clock: SheetClock,
     /// Held time from lapsed holds (open question №8).
     pub(crate) total_held: Duration,
@@ -413,6 +421,25 @@ impl Sheet {
     #[must_use]
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    /// Detach each chip whose sentinel left the body and reattach each
+    /// detached chip whose sentinel stands again (ADR-0047).
+    pub(crate) fn settle_roster(&mut self) {
+        let live = self.document.live_chips();
+        let (standing, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.chips)
+            .into_iter()
+            .partition(|chip| live.contains(&chip.uuid));
+        let (back, away): (Vec<_>, Vec<_>) = std::mem::take(&mut self.detached)
+            .into_iter()
+            .partition(|chip| live.contains(&chip.uuid));
+        self.chips = standing;
+        self.chips.extend(back);
+        for chip in &mut self.chips {
+            chip.stood = true;
+        }
+        self.detached = away;
+        self.detached.extend(gone);
     }
 
     /// Rebuild `segments` from the document. A sentinel matching no owned
@@ -496,6 +523,26 @@ impl Sheet {
     #[must_use]
     pub fn chip(&self, id: ChipId) -> Option<&SealedChip> {
         self.chips.iter().find(|c| c.id == id)
+    }
+
+    /// The chips the body no longer shows, kept for undo and for a paste
+    /// that names them (ADR-0047).
+    pub fn detached(&self) -> impl Iterator<Item = &SealedChip> {
+        self.detached.iter()
+    }
+
+    /// A chip by id, attached or detached.
+    pub(crate) fn owned_chip(&self, id: ChipId) -> Option<&SealedChip> {
+        self.chips.iter().chain(&self.detached).find(|c| c.id == id)
+    }
+
+    /// Every identity the page owns, attached or detached.
+    pub(crate) fn owned_uuids(&self) -> Vec<ItemId> {
+        self.chips
+            .iter()
+            .chain(&self.detached)
+            .map(|chip| chip.uuid)
+            .collect()
     }
 
     /// Number of chips on the sheet.
@@ -1401,6 +1448,7 @@ mod tests {
             segments: Vec::new(),
             blocks,
             chips: Vec::new(),
+            detached: Vec::new(),
             clock: SheetClock::Running {
                 deadline: Instant::now(),
             },

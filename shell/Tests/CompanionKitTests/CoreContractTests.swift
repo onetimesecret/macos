@@ -93,12 +93,16 @@ final class CoreContractTests: XCTestCase {
         XCTAssertTrue(client.tabs().isEmpty, "closing the tab took the slot too")
         let ledger = client.ledger()
 
-        // One record per lifecycle step: the page's creation, the seal,
-        // the page's discard. Nothing else in this test emits.
-        XCTAssertEqual(ledger.map(\.event), ["discarded", "sealed", "created"])
+        // One record per item a step touches: the page's creation, the
+        // seal, then the close, which ends the chip and the page apart
+        // (ADR-0047). Nothing else in this test emits.
+        XCTAssertEqual(ledger.map(\.event), ["discarded", "discarded", "sealed", "created"])
         let discarded = try XCTUnwrap(ledger.first)
-        let sealed = ledger[1]
-        let created = ledger[2]
+        let chipDeath = ledger[1]
+        let sealed = ledger[2]
+        let created = ledger[3]
+        XCTAssertEqual(chipDeath.item, sealed.item, "the chip's own death")
+        XCTAssertEqual(chipDeath.title, "deploy friday")
         XCTAssertEqual(sealed.size, chip.sizeLabel)
         // Both sides read the core's one Display impl; the vocabulary
         // itself is pinned here so a renamed bucket cannot pass unseen.

@@ -1124,7 +1124,8 @@ public class CompanionClient: @unchecked Sendable {
         companion_chip_copy_name_value(handle, chip)
     }
 
-    /// ⌫ on a chip: removes it whole, bytes zeroized, no resurrection.
+    /// Burn a chip, attached or detached: bytes zeroized and its page's undo
+    /// gone. A backspace is no burn; its delete op detaches (ADR-0047).
     @discardableResult
     public func deleteChip(id: UInt64) -> Bool {
         companion_chip_delete(handle, id)

@@ -34,24 +34,8 @@ final class LedgerAppendArmingTests: XCTestCase {
         defaults.removePersistentDomain(forName: "companion-kit-arming-tests")
         let model = isolatedModel(defaults: defaults)
         let client = model.coreClient
-
-        // The copy-out step writes the real clipboard (concealed and
-        // transient, but a write all the same), so hold what the
-        // developer had and put it back when the test is done.
-        let board = NSPasteboard.general
-        let held: [NSPasteboardItem] = (board.pasteboardItems ?? []).map { item in
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    copy.setData(data, forType: type)
-                }
-            }
-            return copy
-        }
-        defer {
-            board.clearContents()
-            if !held.isEmpty { board.writeObjects(held) }
-        }
+        // The copy-out step writes a board in process memory, not the clipboard.
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
 
         var chip: ChipInfo?
         // One entry per ledger-appending path the model can drive on
@@ -69,15 +53,9 @@ final class LedgerAppendArmingTests: XCTestCase {
             ("copyOutChip appends sent to clipboard", {
                 model.copyOutChip(chip?.chipId ?? 0)
             }),
-            ("deleting a chip in an edit batch appends discarded", {
-                // The batch also leaves ink behind: a page that dies
-                // empty entombs without a record, and the close step
-                // needs one to assert on.
-                model.applyOps(
-                    sheet: model.selection ?? 0,
-                    opsJSON: #"[{"del":{"at":0,"len":1}},{"ins":{"at":0,"text":"ink"}}]"#)
-            }),
-            ("close appends discarded", {
+            // A removal in an edit batch detaches and appends nothing
+            // (ADR-0047); the close below records the chip's death.
+            ("close appends discarded for the chip and the page", {
                 if let page = model.selection { model.close(page) }
             }),
         ]

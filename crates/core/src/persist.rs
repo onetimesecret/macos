@@ -773,6 +773,8 @@ fn read_page(
         chip.conceal = conceal;
         chip.name = name;
         chip.note = note;
+        // A written chip stood when it was written; its seal is long past.
+        chip.stood = true;
         chips.push(chip);
     }
 
@@ -837,6 +839,7 @@ fn read_page(
         segments,
         blocks,
         chips,
+        detached: Vec::new(),
         clock,
         total_held,
         // Not persisted: no sync session survives a restart (issue #101).

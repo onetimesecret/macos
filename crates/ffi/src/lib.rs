@@ -734,8 +734,9 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
 // ---- The synced document ----
 
 /// Replace a page's document snapshot, a JSON array of `{"ink": "text"}` and
-/// `{"chip": id}` runs. Chips it omits are zeroized; a malformed snapshot is
-/// rejected whole. Returns whether it was accepted.
+/// `{"chip": id}` runs. Chips it omits are detached and detached ones it names
+/// reattach (ADR-0047); a malformed snapshot is rejected whole. Returns whether
+/// it was accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `json` must be a valid,
@@ -1213,7 +1214,8 @@ pub unsafe extern "C" fn companion_chip_copy_name_value(
     true
 }
 
-/// Remove a chip now, wiping its bytes. Returns whether it existed.
+/// Burn a chip, attached or detached, wiping its bytes and its page's undo
+/// stack (ADR-0047). Returns whether it existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -4889,7 +4891,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_document_names_the_page_and_reaps_omitted_chips() {
+    fn sync_document_names_the_page_and_detaches_omitted_chips() {
         let handle = handle();
         unsafe {
             let (_tab, sheet) = new_page(handle);
@@ -4927,13 +4929,20 @@ mod tests {
                 cstring(r#"[{"chip": 424242}]"#).as_ptr()
             ));
 
-            // A snapshot that omits the chip zeroizes it.
+            // A snapshot that omits the chip detaches it (ADR-0047).
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
                 cstring(r#"[{"ink": "just ink"}]"#).as_ptr()
             ));
-            assert!(!companion_chip_copy_out(handle, chip_id), "no resurrection");
+            assert!(!companion_chip_copy_out(handle, chip_id), "off the page");
+            let named = format!("[{{\"chip\": {chip_id}}}]");
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(&named).as_ptr()
+            ));
+            assert!(companion_chip_copy_out(handle, chip_id), "back on the page");
 
             companion_free(handle);
         }
