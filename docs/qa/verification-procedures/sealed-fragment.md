@@ -122,6 +122,21 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       on the page. The same holds for ⌦ with the caret just before the
       object. **Fail:** one press removes the object, the line has no
       `Undo`, the card rests on the click, or the letter goes elsewhere.
+- [ ] **Every other deletion.** On the raised card, with `before`, a
+      sealed word and `after` on one line and the caret just after the
+      object, press ⌥⌫ once, then again. Repeat with ⌘⌫, and with ⌃K
+      and ⌥⌦ from just before the object. Then select the object and
+      choose Edit > Delete; select it again and type a letter; select it
+      again and press Return. Then put the caret before `before` and
+      press ⌃K. **Pass:** each first press at a caret selects the object
+      and removes nothing, and each second press removes it; every
+      removal, the last ⌃K's whole line included, shows `protected
+      content removed.` with `Undo`, and the click stands the same
+      object again with its name, with the line's ink for the ⌃K; while
+      a name field is open, none of these keys changes the page.
+      **Fail:** a first press removes the object, a
+      removal shows no line or no `Undo`, the `Undo` takes back more
+      than the removal, or the page changes under the name field.
 - [ ] **The removal's Undo after the page moves on.** Remove an object
       with two presses, then type a letter before the line clears.
       **Pass:** the `Undo` button leaves the line at once, and ⌘Z
