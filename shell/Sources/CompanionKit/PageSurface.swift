@@ -76,7 +76,6 @@ public struct PageContentView: View {
     private var content: some View {
         if !Self.mounts(surface: surface, owner: model.owner) {
             // A form factor's root view draws its own stand in for the
-                            .foregroundStyle(model.isPageExpanded ? Color.accentColor : Color.secondaryInk)
             // window that does not own, and never reaches this. It is
             // here so that a root which forgot to ask gets nothing,
             // where it would otherwise get a second editor, a second
