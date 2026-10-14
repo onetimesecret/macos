@@ -890,9 +890,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.35.0; Law 0001, ADR-0047, issue #170). After a copy or a cut the
   card offered to seal the clipboard, and ⇧⌘V sealed the copy's public
   text and cleared the board, losing the fragment. Neither now acts on
-  a board holding this app's own copy: no offer shows, and ⇧⌘V says
-  `nothing to seal: the clipboard holds this app's own copy, which ⌘V
-  pastes.`
+  a board holding this app's own copy, whether a release or a debug
+  build wrote it: no offer shows, and ⇧⌘V says `nothing to seal: the
+  clipboard holds this app's own copy, which ⌘V pastes.` A drag
+  carrying another build's copy lands its public text as ink rather
+  than sealing it.
 
 - **The summon offer's button waits while a name or a note is
   written** (app 0.35.0; Law 0001, Law 0007, ADR-0046, issue #170). The

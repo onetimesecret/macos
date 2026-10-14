@@ -13,6 +13,18 @@ extension SealedFragment {
         pasteboard.pasteboardItems?.first { $0.types.contains(pasteboardType) }
     }
 
+    /// The private type as every build names it, release and debug.
+    static let everyBuildsType: Set<NSPasteboard.PasteboardType> = [
+        NSPasteboard.PasteboardType(CompanionClient.releaseSealedFragmentType),
+        NSPasteboard.PasteboardType(CompanionClient.debugSealedFragmentType),
+    ]
+
+    /// Whether an item on `pasteboard` carries any build's private type, a copy of this
+    /// app's own even where this build cannot read its envelope.
+    static func anyBuildsItem(on pasteboard: NSPasteboard) -> Bool {
+        pasteboard.pasteboardItems?.contains { !everyBuildsType.isDisjoint(with: $0.types) } ?? false
+    }
+
     /// Several selected stretches of ink as one plain text, by line.
     init(joining fragments: [SealedFragment]) {
         self.init(envelope: nil, plainText: fragments.map(\.plainText).joined(separator: "\n"))

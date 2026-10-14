@@ -1079,6 +1079,44 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(client.takes, 1, "the control: another app's text goes to the core")
     }
 
+    /// The private type a build other than this one writes, release or debug.
+    static var otherBuildsType: NSPasteboard.PasteboardType {
+        let other = CompanionClient.sealedFragmentType == CompanionClient.releaseSealedFragmentType
+            ? CompanionClient.debugSealedFragmentType : CompanionClient.releaseSealedFragmentType
+        return NSPasteboard.PasteboardType(other)
+    }
+
+    /// A copy another build of this app wrote is ours too: no offer, and ⇧⌘V and the
+    /// offer's button take nothing; this build reads no envelope from it, so ⌘V is AppKit's.
+    func testAnotherBuildsCopyOnTheBoardOffersNothingToSeal() throws {
+        let client = SealWitness(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.announce(page.textView)
+        let caret = NSRange(location: 0, length: 0)
+        let item = NSPasteboardItem()
+        XCTAssertTrue(item.setData(Data([1, 2, 3]), forType: Self.otherBuildsType))
+        XCTAssertTrue(item.setString("[sealed content · tiny]", forType: .string))
+        page.pasteboard.clearContents()
+        XCTAssertTrue(page.pasteboard.writeObjects([item]))
+        let board = page.pasteboard.changeCount
+        let length = page.textView.textStorage?.length
+
+        page.model.refreshPasteboardOffer(from: .panel)
+        XCTAssertFalse(page.model.pasteboardOffer, "an offer was made over another build's copy")
+        page.model.performSealedPaste?()
+        XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "the button")
+        page.model.flash("before the chord")
+        XCTAssertTrue(page.textView.performKeyEquivalent(with: try sealChord(in: page.window)))
+        XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "the chord")
+        XCTAssertEqual(client.takes, 0, "the core was asked to take another build's copy")
+        XCTAssertEqual(page.pasteboard.changeCount, board, "the board was touched")
+        XCTAssertEqual(page.textView.textStorage?.length, length)
+
+        XCTAssertNil(SealedFragment.item(on: page.pasteboard), "this build read another's envelope")
+        page.textView.setSelectedRange(caret)
+        XCTAssertFalse(page.coordinator.pasteFragment(), "⌘V read another build's envelope")
+    }
+
     /// While a field or the note holds the keys the offer's button seals nothing
     /// and says why, as the slot's place does (ADR-0046).
     func testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {

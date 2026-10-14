@@ -651,6 +651,39 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(shape(page), "ab # cd # ef")
     }
 
+    /// A drag from another build of this app carries its fragment under that build's
+    /// type: it never meets drop to seal, and lands its public text as ink.
+    func testAnotherBuildsFragmentLandsAsItsTextAndNeverSeals() throws {
+        let (model, _) = try makeModel()
+        let page = try mountPage(on: model, text: "xy", seals: [])
+        let records = model.coreClient.ledger().count
+        let item = NSPasteboardItem()
+        XCTAssertTrue(item.setData(Data([1, 2, 3]), forType: SealedFragmentEditorTests.otherBuildsType))
+        XCTAssertTrue(item.setString(placeholder, forType: .string))
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        board.clearContents()
+        XCTAssertTrue(board.writeObjects([item]))
+        let drag = DraggingInfoStub(
+            pasteboard: board, source: nil,
+            location: page.textView.convert(
+                NSPoint(x: 10, y: page.textView.bounds.maxY - 2), to: nil),
+            window: page.window, mask: .copy)
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        XCTAssertEqual(page.textView.dropRoute(for: drag), .ink)
+        model.notice = nil
+        XCTAssertFalse(page.textView.performDragOperation(drag), "the drop landed under the field")
+        XCTAssertEqual(model.notice, PageModel.dropWaitsLine)
+        XCTAssertEqual(shape(page), "xy")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        XCTAssertTrue(dropInk(drag, on: page), "another build's fragment did not land")
+        XCTAssertEqual(shape(page), "xy" + placeholder)
+        XCTAssertTrue(chips(page).isEmpty, "another build's fragment was sealed")
+        XCTAssertEqual(model.coreClient.ledger().count, records, "a seal was recorded")
+    }
+
     // MARK: Standing aside (ADR-0046)
 
     /// While a name field or the note holds the keys, the page starts no drag and

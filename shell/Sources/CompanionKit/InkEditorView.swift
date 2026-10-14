@@ -6312,7 +6312,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case move
         /// A copy fragment, pasted through the core as ⌘V pastes it.
         case fragment
-        /// Ink from a page or note of this app, which AppKit drops as ink.
+        /// Ink from a page or note of this app, or another build's fragment, dropped by AppKit as ink.
         case ink
         /// Any other drag, another app's above all, sealed where a seal can land.
         case seal
@@ -6330,8 +6330,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return .move
         }
         if carriesFragment(sender) { return coordinator.takesFragmentDrop ? .fragment : .refused }
-        // This app's own ink was never meant to be staged, so it never meets drop to seal.
-        if editor != nil { return coordinator.takesFragmentDrop ? .ink : .refused }
+        // This app's own ink, or another build's fragment, was never meant to be staged.
+        if editor != nil || SealedFragment.anyBuildsItem(on: sender.draggingPasteboard) {
+            return coordinator.takesFragmentDrop ? .ink : .refused
+        }
         return coordinator.sealsHere ? .seal : .refused
     }
 

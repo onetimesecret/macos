@@ -1258,11 +1258,17 @@ public class CompanionClient: @unchecked Sendable {
     /// with `.debug` in a debug build so the two cannot read each other's.
     public static var sealedFragmentType: String {
         #if DEBUG
-        "com.onetimesecret.onetimepad.sealed-fragment.debug"
+        debugSealedFragmentType
         #else
-        "com.onetimesecret.onetimepad.sealed-fragment"
+        releaseSealedFragmentType
         #endif
     }
+
+    /// The private type as a release build names it (ADR-0047 point 13).
+    static let releaseSealedFragmentType = "com.onetimesecret.onetimepad.sealed-fragment"
+
+    /// The private type as a debug build names it.
+    static let debugSealedFragmentType = releaseSealedFragmentType + ".debug"
 
     /// Copy a UTF-16 range of a page. Nil for an empty or bad range, a
     /// page past its deadline (ADR-0052) or an envelope past a cap (ADR-0053).
