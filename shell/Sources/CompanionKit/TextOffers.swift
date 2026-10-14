@@ -5,11 +5,12 @@ import AppKit
 @MainActor
 enum TextOffers {
     /// Takes out the items that hold or read the selection for another process from the
-    /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar), then
-    /// folds the separators.
+    /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar, Search
+    /// With), then folds the separators.
     static func removeSelectionReaders(from menu: NSMenu) {
         menu.items.filter {
             isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) || isSpelling($0)
+                || isWebSearch($0)
         }
         .forEach(menu.removeItem)
         var previousIsSeparator = true
@@ -55,8 +56,15 @@ enum TextOffers {
         "_changeSpellingFromMenu:", "_ignoreSpellingFromMenu:", "_learnSpellingFromMenu:",
     ]
 
-    /// Writing Tools on `textView`, which a file keeps and a page, note or name refuses.
-    static func offerWritingTools(_ offers: Bool, on textView: NSTextView) {
+    /// Search With Google, which hands the selection to the browser's search.
+    static func isWebSearch(_ item: NSMenuItem) -> Bool {
+        item.action.map(NSStringFromSelector)?.hasPrefix("_searchWith") == true
+    }
+
+    /// The readers no click gates, which a file keeps and a page, note or name refuses:
+    /// Writing Tools, and the typing suggestions the spell server makes around the caret.
+    static func offerUngatedReaders(_ offers: Bool, on textView: NSTextView) {
+        textView.isAutomaticTextCompletionEnabled = offers
         guard #available(macOS 15.0, *) else { return }
         textView.writingToolsBehavior = offers ? .default : .none
     }
@@ -111,6 +119,42 @@ class AskingTextView: NSTextView {
         super.showDefinition(
             for: attrString, range: targetRange, options: options,
             baselineOriginProvider: originProvider)
+    }
+
+    /// Quick Look Attachments, which previews what the selection links to.
+    override func toggleQuickLookPreviewPanel(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.toggleQuickLookPreviewPanel(sender)
+    }
+
+    /// ⌥Esc or F5, whose completions the spell server makes from the word at the caret.
+    override func complete(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.complete(sender)
+    }
+
+    /// Copy Style, onto the font board every process reads.
+    override func copyFont(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.copyFont(sender)
+    }
+
+    /// Copy Ruler, onto the ruler board every process reads.
+    override func copyRuler(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.copyRuler(sender)
+    }
+
+    /// AppKit's share picker over the selection, refused where Share… is (Law 0001).
+    override func orderFrontSharingServicePicker(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.orderFrontSharingServicePicker(sender)
+    }
+
+    /// The typing suggestions `TextOffers.offerUngatedReaders` turned off stay off.
+    override func toggleAutomaticTextCompletion(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.toggleAutomaticTextCompletion(sender)
     }
 
     // MARK: Spelling, grammar and text checking, which hand the text to the spell server

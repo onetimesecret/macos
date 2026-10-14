@@ -392,8 +392,10 @@ final class SealedFragmentEditorTests: XCTestCase {
 
     /// Share… builds its picker over the selection with the menu, before any gate is
     /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
-    /// page's, a sealed name's and a note's text offer neither; a file keeps both.
-    func testAPageANameAndANoteOfferNoShareAndNoWritingTools() throws {
+    /// page's, a sealed name's and a note's text offer neither; nor Search With Google,
+    /// which hands the selection to the browser, nor the typing suggestions the spell
+    /// server makes around the caret at every move. A file keeps them all.
+    func testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.applyNoteOps(
             chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
@@ -423,6 +425,17 @@ final class SealedFragmentEditorTests: XCTestCase {
             }, "Share left a doubled separator")
         }
 
+        XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isWebSearch), "the control: a file searches")
+        for (menu, surface) in [(pageMenu, "page"), (nameMenu, "name"), (noteMenu, "note")] {
+            XCTAssertFalse(menu.items.contains(where: TextOffers.isWebSearch), "the \(surface) searches")
+        }
+        XCTAssertTrue(file.isAutomaticTextCompletionEnabled, "the control: a file suggests")
+        for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
+            XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface) suggests")
+            view.toggleAutomaticTextCompletion(nil)
+            XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface)'s toggle")
+        }
+
         guard #available(macOS 15.0, *) else { return }
         let writingTools = Selector(("showWritingTools:"))
         XCTAssertTrue(fileMenu.items.contains { $0.action == writingTools }, "the control")
@@ -435,6 +448,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
         fileCoordinator.currentSheet = page.sheet
         XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
+        XCTAssertFalse(file.isAutomaticTextCompletionEnabled, "a page mounted where a file stood")
     }
 
     /// Look Up and Translate are built titled with the selection they hold, Speech reads it
@@ -1490,9 +1504,10 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
-    /// AppKit's readers outside the text menu: look up, speech, spelling, grammar and text
-    /// checking. Run only where a gate refuses: one that ran would speak, look up or hand
-    /// the text to the spell server. A refused toggle leaves its setting as it stood.
+    /// AppKit's readers outside the text menu: look up, speech, spelling, grammar, text
+    /// checking, completion, Quick Look and the style copies. Run only where a gate refuses:
+    /// one that ran would speak, look up, hand the text to the spell server or write a board
+    /// every process reads. A refused toggle leaves its setting as it stood.
     private var appKitReaders: [(name: String, run: (NSTextView) -> Void)] {
         let everything = { (view: NSTextView) in NSRange(location: 0, length: view.string.utf16.count) }
         return [
@@ -1539,6 +1554,19 @@ final class SealedFragmentEditorTests: XCTestCase {
             ("the spelling panel's Ignore", { $0.ignoreSpelling(NSTextField(string: "ab")) }),
             ("a check as the text changes", {
                 $0.checkText(in: everything($0), types: NSTextCheckingAllTypes, options: [:])
+            }),
+            ("completion", { $0.complete(nil) }),
+            ("Quick Look Attachments", {
+                $0.selectAll(nil)
+                $0.toggleQuickLookPreviewPanel(nil)
+            }),
+            ("Copy Style", {
+                $0.selectAll(nil)
+                $0.copyFont(nil)
+            }),
+            ("Copy Ruler", {
+                $0.selectAll(nil)
+                $0.copyRuler(nil)
             }),
         ]
     }

@@ -275,9 +275,9 @@ public struct InkEditorView: NSViewRepresentable {
         // The list automation's grouping calls survive as no-ops and
         // are documented where they stand.
         textView.allowsUndo = false
-        // Writing Tools reads past every gate and rewrites across an object (Law 0001);
-        // a file's mount gives it back.
-        TextOffers.offerWritingTools(false, on: textView)
+        // Writing Tools and typing suggestions read past every gate (Law 0001); a file's
+        // mount gives them back.
+        TextOffers.offerUngatedReaders(false, on: textView)
         Self.enableFinding(on: textView)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -530,7 +530,7 @@ public struct InkEditorView: NSViewRepresentable {
         var currentSheet: UInt64? {
             didSet {
                 if let currentSheet, let textView {
-                    TextOffers.offerWritingTools(currentSheet.isFileID, on: textView)
+                    TextOffers.offerUngatedReaders(currentSheet.isFileID, on: textView)
                 }
                 // A teardown parks on no page and keeps the Undo; a mount of another page retires it.
                 if let currentSheet, currentSheet != oldValue {
