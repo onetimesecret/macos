@@ -880,10 +880,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   torn down, as a trip to the ledger does, the line's Undo did nothing;
   and an edit to the page through another surface left an Undo that
   stepped that edit back instead. The page model now holds the
-  removal: the first edit or step past it, or the page going, takes
-  the Undo off the line, and the button steps the page back through
-  whichever surface shows it, waiting while a name or a note holds
-  the keys.
+  removal: the first edit or step past it, a surface turning to
+  another page, or the page going, takes the Undo off the line, and
+  the button steps the page back through whichever surface shows it,
+  never one showing it read only, waiting while a name or a note
+  holds the keys.
 
 - **⇧⌘V and the summon offer leave this app's own copy alone** (app
   0.35.0; Law 0001, ADR-0047, issue #170). After a copy or a cut the

@@ -6223,9 +6223,6 @@ public final class PageModel: ObservableObject {
     /// The page and its count of edits just after a removal, while the line offers Undo.
     private var removalStamp: (sheet: UInt64, generation: UInt64)?
 
-    /// The surface the removal was made on, which takes the Undo's step while it shows the page.
-    private weak var removalSurface: InkTextView?
-
     /// The count of edits sent for `document`, which only grows.
     private func editGeneration(_ document: InkDocument) -> UInt64 {
         editGenerations[document, default: 0]
@@ -6244,9 +6241,8 @@ public final class PageModel: ObservableObject {
     }
 
     /// After a removal on `sheet`: the line, with an Undo the model answers itself.
-    func noteRemoval(sheet: UInt64, surface: InkTextView? = nil) {
+    func noteRemoval(sheet: UInt64) {
         removalStamp = (sheet, editGeneration(.sheet(sheet)))
-        removalSurface = surface
         flash(
             Self.removedLine,
             action: Self.offersRemovalUndo
@@ -6255,37 +6251,39 @@ public final class PageModel: ObservableObject {
     }
 
     /// The removal line's Undo: one step back on its page while the removal is the
-    /// latest edit sent for it, through a surface showing the page when one does.
+    /// latest edit sent for it, through the surface showing the page when one does.
     private func undoRemoval() {
         guard removalUndoStands, let stamp = removalStamp else { return }
-        let editor = activeEditor as? InkTextView
-        let surface = [removalSurface, editor].compactMap { $0 }.first {
-            $0.coordinator?.writesNote == false && $0.coordinator?.currentSheet == stamp.sheet
-        }
-        // With no page surface to ask, a text view holding the key window's keys waits too.
-        let waits = (surface ?? editor).map { !$0.answersChords }
+        // A surface showing the page takes the step, so it meets Coordinator.step's editability gate.
+        let shown = surface(showing: stamp.sheet)
+        // With the page shown nowhere, the owner's editor or the key window's text view answers.
+        let waits = (shown ?? activeEditor as? InkTextView).map { !$0.answersChords }
             ?? (NSApp?.keyWindow?.firstResponder is NSTextView)
         guard !waits else {
             flash(Self.undoWaitsLine)
             return
         }
         removalStamp = nil
-        removalSurface = nil
-        if let coordinator = surface?.coordinator {
-            coordinator.step(back: true)
+        if let shown {
+            shown.coordinator?.step(back: true)
         } else {
             stepEdit(.sheet(stamp.sheet), back: true)
         }
     }
 
-    /// A surface turned from `sheet` to another page: that page's removal Undo goes.
-    func surfaceLeft(page sheet: UInt64) {
-        if removalStamp?.sheet == sheet { retireRemovalUndo() }
+    /// The page surface whose layout reads `sheet`'s storage, when one shows the page.
+    private func surface(showing sheet: UInt64) -> InkTextView? {
+        storages[sheet]?.layoutManagers.lazy.flatMap(\.textContainers)
+            .compactMap { $0.textView as? InkTextView }.first
+    }
+
+    /// A surface mounted `sheet`: a removal's Undo on any other page goes.
+    func surfaceMounted(page sheet: UInt64) {
+        if let stamp = removalStamp, stamp.sheet != sheet { retireRemovalUndo() }
     }
 
     private func retireRemovalUndo() {
         removalStamp = nil
-        removalSurface = nil
         withdrawRemovalUndo()
     }
 

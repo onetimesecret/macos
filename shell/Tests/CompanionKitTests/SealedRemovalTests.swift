@@ -255,10 +255,13 @@ final class SealedRemovalTests: XCTestCase {
 
     /// A removal whose surface is then dismantled and let go, as a ledger round trip
     /// takes the editor down; the model, the page and its objects are what remain.
-    private func removeAndTearDown() throws -> (model: PageModel, sheet: UInt64, chips: [UInt64]) {
+    private func removeAndTearDown(
+        before removal: (PageModel) throws -> Void = { _ in }
+    ) throws -> (model: PageModel, sheet: UInt64, chips: [UInt64]) {
         weak var gone: InkEditorView.Coordinator?
         let kept = try autoreleasepool { () throws -> (PageModel, UInt64, [UInt64]) in
             let page = try makePage()
+            try removal(page.model)
             removeFirstObject(page)
             assertRemovalLine(page, "the removal said nothing")
             let scroll = try XCTUnwrap(page.textView.enclosingScrollView)
@@ -317,21 +320,61 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), removed)
     }
 
-    /// With the page shown nowhere, the owner's editor on another page answers for the
-    /// keys: while a field beside it holds them, the Undo waits and the page stays.
+    /// With the page shown nowhere, the owner's editor, mounted on another page before the
+    /// removal, answers for the keys: while a field beside it holds them, the Undo waits.
     func testTheUndoWithItsPageShownNowhereWaitsWhileAFieldHoldsTheKeys() throws {
-        let (model, sheet, removed) = try removeAndTearDown()
-        let undo = try XCTUnwrap(model.noticeAction)
-        model.newPage()
-        let other = try mount(model, try XCTUnwrap(model.selectedPageID), chips: [])
+        var mounted: Page?
+        let (model, sheet, removed) = try removeAndTearDown { model in
+            model.newPage()
+            let other = try mount(model, try XCTUnwrap(model.selectedPageID), chips: [])
+            model.mountEditor(other.textView, from: .panel)
+            mounted = other
+        }
+        let other = try XCTUnwrap(mounted)
         XCTAssertNotEqual(other.sheet, sheet)
-        model.mountEditor(other.textView, from: .panel)
+        let undo = try XCTUnwrap(model.noticeAction, "the control: the Undo stands")
         XCTAssertTrue(other.window.makeFirstResponder(other.field))
         drainMainQueue()
 
         undo.perform()
         XCTAssertEqual(model.notice, PageModel.undoWaitsLine)
         XCTAssertEqual(chips(model, sheet), [removed[1]], "the Undo stepped the page under the field")
+    }
+
+    /// A surface mounting another page after the teardown takes the Undo off the line, so
+    /// the button never steps a page out of sight; a press kept from before steps nothing.
+    func testAMountOfAnotherPageRetiresTheUndo() throws {
+        var another: UInt64?
+        let (model, sheet, removed) = try removeAndTearDown { model in
+            model.newPage()
+            another = model.selectedPageID
+        }
+        let undo = try XCTUnwrap(model.noticeAction)
+        let other = try mount(model, try XCTUnwrap(another), chips: [])
+        XCTAssertNotEqual(other.sheet, sheet)
+        XCTAssertEqual(model.notice, PageModel.removedLine)
+        XCTAssertNil(model.noticeAction, "an Undo over a page out of sight")
+
+        undo.perform()
+        XCTAssertEqual(chips(model, sheet), [removed[1]], "a kept Undo stepped the page out of sight")
+        XCTAssertNotEqual(model.notice, PageModel.undoWaitsLine)
+    }
+
+    /// A surface showing the page read only, as a resting card remounted on it, is the one
+    /// the Undo steps through, so the editability gate leaves the page as it stands.
+    func testTheUndoRewritesNoPageShownReadOnly() throws {
+        let (model, sheet, removed) = try removeAndTearDown()
+        let resting = try mount(model, sheet, chips: removed)
+        resting.textView.isEditable = false
+        let shown = resting.textView.string
+
+        model.performNoticeAction()
+        XCTAssertEqual(chips(model, sheet), [removed[1]], "the Undo stepped a page shown read only")
+        XCTAssertEqual(resting.textView.string, shown, "the Undo rewrote a page shown read only")
+
+        resting.textView.isEditable = true
+        resting.coordinator.step(back: true)
+        XCTAssertEqual(chips(model, sheet), removed, "the control: ⌘Z once the page takes edits")
     }
 
     /// An edit to the page through another surface takes the first surface's Undo off

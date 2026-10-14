@@ -228,11 +228,14 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       With `ledger::Show` bound in your own keymap, as
       [hardware verification](../hardware-verification.md) says, do
       both again on the card alone, opening the ledger and pressing Esc
-      in place of the Dock tile. **Pass:** each click stands the same
-      object again, selected, with its name; after each letter the
-      `Undo` leaves the line at once. **Fail:** a click does nothing,
-      the line loses its `Undo` when the surface changes, or after a
-      letter the button stays or takes the letter back.
+      in place of the Dock tile. Last, remove an object, open the
+      ledger, and choose another page's tab. **Pass:** each click
+      stands the same object again, selected, with its name; after each
+      letter the `Undo` leaves the line at once; on the other page the
+      line offers no `Undo`. **Fail:** a click does nothing, the line
+      loses its `Undo` when the surface changes on the same page, after
+      a letter the button stays or takes the letter back, or the other
+      page's line offers an `Undo` that steps the first page.
 - [ ] **The removal's Undo while a name is written.** Remove an object
       with two presses. Before the line clears, open another object's
       name field, type a letter, and click the line's `Undo`. **Pass:**

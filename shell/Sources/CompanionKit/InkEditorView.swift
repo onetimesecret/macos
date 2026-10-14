@@ -526,9 +526,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// whose page only paths key on it (ADR-0045).
         var currentSheet: UInt64? {
             didSet {
-                // A teardown parks on no page and keeps the Undo; turning to another page retires it.
-                if let oldValue, let currentSheet, oldValue != currentSheet {
-                    model.surfaceLeft(page: oldValue)
+                // A teardown parks on no page and keeps the Undo; a mount of another page retires it.
+                if let currentSheet, currentSheet != oldValue {
+                    model.surfaceMounted(page: currentSheet)
                 }
             }
         }
@@ -3396,7 +3396,7 @@ public struct InkEditorView: NSViewRepresentable {
         func noteRemoval() {
             guard let document, case .sheet(let sheet) = document, let textView else { return }
             model.finishEditingGroup(document, selection: textView.selectedRange())
-            model.noteRemoval(sheet: sheet, surface: textView)
+            model.noteRemoval(sheet: sheet)
         }
 
         // MARK: Markdown — styled, never rewritten
