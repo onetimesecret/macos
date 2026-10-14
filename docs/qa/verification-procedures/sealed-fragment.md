@@ -2,8 +2,10 @@
 
 **Applies to:** OnetimePad's copy, cut, paste and drags of a selection
 holding a sealed object and a service's request for it, the decrypted
-drag from its handle, and the
-two presses that remove an object and the line's Undo after them.
+drag from its handle, the
+two presses that remove an object and the line's Undo after them, the
+sealed paste and its offer over this app's own copy, and a menu bar
+with no Print….
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
@@ -78,6 +80,27 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `sealed objects paste into one selection, not several.` and both
       words stay as they were. **Fail:** either word is replaced, or
       nothing is said.
+- [ ] **⇧⌘V over this app's own copy.** Copy a selection holding a
+      sealed object, rest the card and summon it again with ⌃⌥Space,
+      then press ⇧⌘V at a caret on the page. Do the same after a cut.
+      **Pass:** no `seal it (⇧⌘V)` row shows after the summon; the line
+      reads `nothing to seal: the clipboard holds this app's own copy,
+      which ⌘V pastes.`; no new object appears; `osascript -e
+      'clipboard info'` still lists the private type; ⌘V then pastes
+      the copy, or places the cut. **Fail:** the row shows, an object
+      appears, or the clipboard is cleared.
+- [ ] **The offer's button while a name is written.** Copy a word in
+      TextEdit and summon the card so the `seal it (⇧⌘V)` row shows.
+      Open an object's name field, type a letter, and click the row's
+      button; then do the same with the object's note open. **Pass:**
+      the line reads `a name or note is being written, so the clipboard
+      was not sealed.`, no object appears, the field or note keeps its
+      draft and the row stays; once both are closed the button seals
+      the word. **Fail:** an object appears while either is open.
+- [ ] **No print.** With a page holding the keys, open each menu in the
+      menu bar and the page's context menu, then press ⌘P. **Pass:** no
+      menu holds Print… or Page Setup…, and ⌘P opens no print panel.
+      **Fail:** either item shows, or a print panel opens.
 - [ ] **A cut across a relaunch.** Cut a sealed object, quit with ⌘Q,
       relaunch, paste. **Pass:** the slot's line is back before the
       paste and the object returns. **Fail:** the paste places
