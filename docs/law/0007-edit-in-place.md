@@ -4,7 +4,7 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 points 1, 3, 5 and 6; ADR-0046
+decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 points 1, 3, 5 and 6; ADR-0043; ADR-0044; ADR-0046
 consumed-by:
   - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the sealed name's charset, the double click seats, the empty pad name)
@@ -310,3 +310,6 @@ Owed: a first run of the rename in place procedure.
   there and says why. The keys row lists it and cites its test, which
   holds the keys in a field and in the note; the button on the raised
   card is a hand check in the sealed fragment procedure.
+- 2026-10-14: Record amendment (epic 252). `decisions` adds ADR-0043
+  and ADR-0044, which the sealed name's rows already build on: the core
+  judge and refusal, and no drop from elsewhere into the field.
