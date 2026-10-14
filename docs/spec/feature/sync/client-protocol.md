@@ -6,7 +6,8 @@ documentation_status: draft # draft | needs-review | reviewed | stale
 
 **Status:** draft, not accepted; grants itself no authority and changes
 no spec. Describes the client at `50044ad`, with the deadline gate that
-`4fde3d8`, `ba3d5eb` and `999d011` added (§3, §4.4, §7.1, §7.4, §7.6).
+`4fde3d8`, `ba3d5eb`, `999d011` and `b6600bb` added (§2, §3, §4.4,
+§7.1, §7.4, §7.6).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
@@ -36,7 +37,7 @@ Persisted (key-material): `sync-device-identity`, `sync-channel-secret`,
 | GOP chain (epoch, key), rebuilt at epoch 0 (§8); standing and pending key package (§5); committed frame not yet accepted | `EngineState` |
 | `next_seq`; attach snapshot (epoch, `frame_present`, roster); outbox; in-flight batch and id; ballot scope (page, opened time) and entropy | `SyncSession` |
 | Staged batch: each page's export cursor when the batch was sealed | `SyncState.staged_batch` |
-| Enrolled pages (enrolling defers compaction and starts the export frontier at the pristine version), each with its export frontier, acknowledged cursor, last published deadline and hold, terminal sent | `SyncState.enrolled` |
+| Enrolled pages (enrolling defers compaction and starts the export frontier at the pristine version; a page past its deadline does not enrol, `a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing`), each with its export frontier, acknowledged cursor, last published deadline and hold, terminal sent | `SyncState.enrolled` |
 | Per page channel: epoch, current, hold live, terminal, ballot | `PageChannel` |
 
 **Dissolve** (detach, sign-out, refused refresh) drops the engine,
