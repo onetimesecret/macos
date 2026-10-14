@@ -323,6 +323,9 @@ pub struct SyncSession {
     /// The sealed key frame a committed ceremony produced, waiting for
     /// [`SyncSession::take_frame`] and the frame publish.
     pending_frame: Option<crate::gop::KeyFrame>,
+    /// The page whose solo commit's frame seal refused: its frame is owed
+    /// at the chain's epoch (client protocol §7.6).
+    owed_frame: Option<ItemId>,
     /// The last absorbed attach answer: where the channel stands and
     /// who else is on it. `None` until an attach lands.
     attach: Option<AttachSnapshot>,
@@ -371,6 +374,7 @@ impl SyncSession {
             received_entropy: None,
             ballot_scope: None,
             pending_frame: None,
+            owed_frame: None,
             attach: None,
         }
     }
@@ -1074,8 +1078,8 @@ impl SyncSession {
     /// and stage the frame at once, every page channel adopting the new
     /// epoch (client protocol §7.2). False when a ballot is in flight,
     /// the page is unknown, not deferred or past its deadline, or the
-    /// RNG refuses, the frame's seal included, which comes after the
-    /// rebuild and the advance.
+    /// RNG refuses the entropy. A refused frame seal, after the rebuild
+    /// and the advance, still commits and owes the frame.
     pub fn solo_ceremony<C: Clock>(
         &mut self,
         page: ItemId,
@@ -1094,7 +1098,29 @@ impl SyncSession {
         else {
             return false;
         };
-        self.commit_advance(page, chain, &entropy, Some(rebuild.as_slice()))
+        if !self.commit_advance(page, chain, &entropy, Some(rebuild.as_slice())) {
+            // No peer holds this epoch, so no frame for it comes from elsewhere.
+            self.owed_frame = Some(page);
+        }
+        true
+    }
+
+    /// Seal the frame a solo commit still owes, at the chain's epoch: the
+    /// page's rebuild, or an empty frame where the store cuts none (client
+    /// protocol §7.6). The page when the store rebuilt it, refused seal or
+    /// not, so the caller settles its cursor.
+    pub fn seal_owed_frame<C: Clock>(
+        &mut self,
+        store: &mut SheetStore<C>,
+        chain: &crate::gop::GopKeyChain,
+    ) -> Option<ItemId> {
+        let page = self.owed_frame?;
+        let rebuild = sheet_of(store, page).and_then(|sheet| store.perform_ceremony(sheet));
+        if let Some(frame) = crate::gop::seal_frame(chain, rebuild.as_ref().map(|r| r.as_slice())) {
+            self.pending_frame = Some(frame);
+            self.owed_frame = None;
+        }
+        rebuild.map(|_| page)
     }
 
     /// Keep this device in step: advance the chain, move every page
@@ -1107,6 +1133,8 @@ impl SyncSession {
         entropy: &[u8],
         rebuild: Option<&[u8]>,
     ) -> bool {
+        // A new epoch's frame supersedes one an earlier commit still owes.
+        self.owed_frame = None;
         self.pending_frame = crate::gop::ceremony_commit(chain, entropy, rebuild);
         for channel in self.channels.values_mut() {
             channel.rejoin_at_epoch(chain.epoch());
@@ -2180,7 +2208,7 @@ mod tests {
     }
 
     #[test]
-    fn a_solo_ceremony_whose_frame_seal_refuses_reports_no_commit() {
+    fn a_solo_commit_whose_frame_seal_refuses_owes_the_frame_at_its_epoch() {
         let mut store = SheetStore::new(ManualClock::new());
         let page = store.new_tab().1;
         assert!(store.apply_ops(
@@ -2196,16 +2224,60 @@ mod tests {
         let mut solo = session("fp-a");
 
         // The rebuild and the advance stand, since the store has forgotten
-        // its history, but no frame was staged, so no commit is reported.
+        // its history; the commit is reported and its frame is owed.
         chain.refuse_next_seal();
-        assert!(!solo.solo_ceremony(uuid, &mut store, &mut chain));
+        assert!(solo.solo_ceremony(uuid, &mut store, &mut chain));
         assert_eq!(chain.epoch(), 1);
         assert!(solo.take_frame().is_none());
         assert!(!solo.ballot_in_flight());
 
-        // Control: the same ceremony with a working RNG commits.
+        // A second refusal keeps it owed; the store's rebuild still stands.
+        chain.refuse_next_seal();
+        assert_eq!(solo.seal_owed_frame(&mut store, &chain), Some(uuid));
+        assert!(solo.take_frame().is_none());
+
+        // The next seal stages it once, at the same epoch, holding the page.
+        assert_eq!(solo.seal_owed_frame(&mut store, &chain), Some(uuid));
+        let frame = solo.take_frame().unwrap();
+        assert_eq!((chain.epoch(), frame.epoch()), (1, 1));
+        let mut joiner = SheetStore::new(ManualClock::new());
+        let j = joiner.new_tab().1;
+        joiner
+            .adopt_key_frame(j, uuid, &chain.open(frame.sealed()).unwrap())
+            .unwrap();
+        assert_eq!(
+            joiner.sheet(j).unwrap().segments(),
+            store.sheet(page).unwrap().segments()
+        );
+        assert_eq!(solo.seal_owed_frame(&mut store, &chain), None);
+        assert!(solo.take_frame().is_none(), "owed once");
+
+        // With the page gone the owed frame is empty, as a ballot's is.
+        chain.refuse_next_seal();
+        assert!(solo.solo_ceremony(uuid, &mut store, &mut chain));
+        assert!(store.discard_page(page));
+        assert_eq!(solo.seal_owed_frame(&mut store, &chain), None);
+        let frame = solo.take_frame().unwrap();
+        assert_eq!(frame.epoch(), 2);
+        assert!(chain.open(frame.sealed()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_later_commit_supersedes_an_owed_frame() {
+        let mut store = SheetStore::new(ManualClock::new());
+        let page = store.new_tab().1;
+        assert!(store.set_compaction_deferred(page, true));
+        let uuid = store.sheet(page).unwrap().uuid();
+        let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut solo = session("fp-a");
+        chain.refuse_next_seal();
+        assert!(solo.solo_ceremony(uuid, &mut store, &mut chain));
+
+        // The next commit stages its own epoch's frame, and nothing stays owed.
         assert!(solo.solo_ceremony(uuid, &mut store, &mut chain));
         assert_eq!(solo.take_frame().unwrap().epoch(), 2);
+        assert_eq!(solo.seal_owed_frame(&mut store, &chain), None);
+        assert!(solo.take_frame().is_none());
     }
 
     #[test]

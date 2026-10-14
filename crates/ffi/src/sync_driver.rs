@@ -722,9 +722,10 @@ fn sign_out_locked(companion: &mut Companion) {
     }
 }
 
-/// One outbound sweep, under the lock and off the network: queue each
-/// page's new ops, moved deadline or hold, or a dead page's marker, then
-/// rotate when a page is due (client protocol §3 step 2, §7.1).
+/// One outbound sweep, under the lock and off the network: seal an owed
+/// frame, queue each page's new ops, moved deadline or hold, or a dead
+/// page's marker, then rotate when a page is due (client protocol §3
+/// step 2, §7.1, §7.6).
 pub(crate) fn sweep_outbound(
     companion: &mut Companion,
     now_ms: u64,
@@ -738,11 +739,18 @@ pub(crate) fn sweep_outbound(
         ..
     } = companion;
     let SyncState {
-        engine, enrolled, ..
+        engine,
+        enrolled,
+        staged_batch,
+        ..
     } = sync;
     let Some(engine) = engine.as_mut() else {
         return;
     };
+    // A frame a refused seal left owed goes first, so the relay can follow.
+    if let Some(page) = engine.session.seal_owed_frame(store, &engine.chain) {
+        settle_frontier(store, enrolled, staged_batch, &mut engine.session, page);
+    }
     let mut rotate = false;
     let mut due_target: Option<ItemId> = None;
     for (page, tracking) in enrolled.iter_mut() {
@@ -2899,8 +2907,8 @@ mod tests {
         assert_eq!(body["epoch"], 1);
         assert!(engine.unpublished_frame.is_some());
 
-        // The next ceremony's seal refuses after the chain moved: no
-        // commit is reported, and the epoch 1 frame is dropped unsent.
+        // The next ceremony's seal refuses after the chain moved: the epoch
+        // 1 frame is dropped unsent, and epoch 2's is owed.
         companion.store.cycle_rung(tab).unwrap();
         assert!(companion.store.ceremony_due(page));
         let engine = companion.sync.engine.as_mut().unwrap();
@@ -2909,13 +2917,50 @@ mod tests {
         sweep_outbound(&mut companion, 0, &mut events);
         let engine = companion.sync.engine.as_mut().unwrap();
         assert_eq!(engine.chain.epoch(), 2);
+        assert!(stage_frame(engine).is_none());
+        assert!(engine.unpublished_frame.is_none());
+    }
+
+    #[test]
+    fn a_solo_commit_whose_frame_seal_refused_moves_the_relay_on_the_next_turn() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+
+        // The rebuild and the advance stand, so the commit is reported and
+        // the cursor settles, but no frame exists at epoch 1 yet.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.chain.refuse_next_seal();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
         assert!(
-            !events
+            events
                 .iter()
                 .any(|event| event["kind"] == "ceremony_committed")
         );
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+        let engine = companion.sync.engine.as_mut().unwrap();
         assert!(stage_frame(engine).is_none());
-        assert!(engine.unpublished_frame.is_none());
+
+        // The next turn seals it at the same epoch, so the relay moves with
+        // the device, and the page's cursor settles on the fresh rebuild.
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let request = stage_frame(engine).expect("the owed frame's PUT");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!((engine.chain.epoch(), body["epoch"].as_u64()), (1, Some(1)));
+        let frame = engine.unpublished_frame.as_ref().unwrap();
+        assert!(!engine.chain.open(frame.sealed()).unwrap().is_empty());
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, rebuilt);
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
     }
 
     #[test]

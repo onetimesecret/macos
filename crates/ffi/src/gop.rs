@@ -172,6 +172,12 @@ pub fn ceremony_commit(
     rebuild: Option<&[u8]>,
 ) -> Option<KeyFrame> {
     chain.advance(entropy);
+    seal_frame(chain, rebuild)
+}
+
+/// Seal the store's rebuild, or an empty frame, as the key frame of the
+/// chain's current epoch. `None` when the seal refuses.
+pub fn seal_frame(chain: &GopKeyChain, rebuild: Option<&[u8]>) -> Option<KeyFrame> {
     let sealed = chain.seal(rebuild.unwrap_or_default())?;
     Some(KeyFrame {
         epoch: chain.epoch(),
