@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
-use crate::fragment::{Copied, Fragment, Node, placeholder};
+use crate::fragment::{Copied, CopyRefusal, Fragment, Node, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
 use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Sheet, SheetId, judge_name};
@@ -88,25 +88,34 @@ impl Planned<'_> {
 
 impl<C: Clock> SheetStore<C> {
     /// Copy a selection: its envelope when it holds an object, and its public
-    /// text. `None` for an unknown page, a page past its deadline (ADR-0052)
-    /// or a range [`Sheet::select`] refuses.
-    #[must_use]
-    pub fn copy_fragment(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
-        let (fragment, plain) = self.readable_sheet(id)?.select(at_u16, len_u16)?;
-        let envelope = fragment.has_reference().then(|| fragment.envelope());
-        Some(Copied { envelope, plain })
+    /// text. Refused for an unknown page, a page past its deadline (ADR-0052),
+    /// a range [`Sheet::select`] refuses or an envelope past a cap (ADR-0053).
+    pub fn copy_fragment(
+        &self,
+        id: SheetId,
+        at_u16: u32,
+        len_u16: u32,
+    ) -> Result<Copied, CopyRefusal> {
+        let (fragment, plain) = self.selected(id, at_u16, len_u16)?;
+        let envelope = composed(&fragment)?;
+        Ok(Copied { envelope, plain })
     }
 
     /// Copy a selection, then delete it as one step, its objects detaching as
-    /// the one active cut. `None`, changing nothing, where either refuses.
-    pub fn cut_fragment(&mut self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
-        let (mut fragment, plain) = self.readable_sheet(id)?.select(at_u16, len_u16)?;
+    /// the one active cut. Refused, changing nothing, where either refuses.
+    pub fn cut_fragment(
+        &mut self,
+        id: SheetId,
+        at_u16: u32,
+        len_u16: u32,
+    ) -> Result<Copied, CopyRefusal> {
+        let (mut fragment, plain) = self.selected(id, at_u16, len_u16)?;
         let members: Vec<ItemId> = fragment.references().map(|r| r.uuid).collect();
         let token = (!members.is_empty()).then(ItemId::random);
         fragment.cut = token;
-        let envelope = token.map(|_| fragment.envelope());
+        let envelope = composed(&fragment)?;
         let selection = selection(at_u16, len_u16, at_u16, 0);
-        let sheet = self.sheet_mut(id)?;
+        let sheet = self.sheet_mut(id).ok_or(CopyRefusal::Refused)?;
         let stood = edit_body(sheet, EditIntent::Cut, selection, |sheet| {
             sheet.document.delete(at_u16 as usize, len_u16 as usize)?;
             sheet.blocks.note_delete(at_u16 as usize, len_u16 as usize);
@@ -114,7 +123,7 @@ impl<C: Clock> SheetStore<C> {
         });
         self.settle_document(id);
         if !stood {
-            return None;
+            return Err(CopyRefusal::Refused);
         }
         if let (Some(token), Some(envelope)) = (token, &envelope) {
             self.active_cut = Some(ActiveCut {
@@ -124,7 +133,7 @@ impl<C: Clock> SheetStore<C> {
                 envelope: envelope.clone(),
             });
         }
-        Some(Copied { envelope, plain })
+        Ok(Copied { envelope, plain })
     }
 
     /// Paste an envelope over a range as one step, resolving each reference;
@@ -394,6 +403,18 @@ impl<C: Clock> SheetStore<C> {
         plan
     }
 
+    /// A readable page's range as a fragment and its public text (ADR-0052).
+    fn selected(
+        &self,
+        id: SheetId,
+        at_u16: u32,
+        len_u16: u32,
+    ) -> Result<(Fragment, Zeroizing<String>), CopyRefusal> {
+        self.readable_sheet(id)
+            .and_then(|sheet| sheet.select(at_u16, len_u16))
+            .ok_or(CopyRefusal::Refused)
+    }
+
     /// Whether a page's clock has run out though no sweep has taken it yet.
     fn is_due(&self, id: SheetId) -> bool {
         let now = self.clock.now();
@@ -492,6 +513,15 @@ fn edit_body(
     true
 }
 
+/// A copy's or a cut's envelope, `None` for ink alone; refused past a cap.
+fn composed(fragment: &Fragment) -> Result<Option<Zeroizing<Vec<u8>>>, CopyRefusal> {
+    fragment
+        .has_reference()
+        .then(|| fragment.envelope())
+        .transpose()
+        .map_err(CopyRefusal::PastCap)
+}
+
 /// The selections on both sides of one edit.
 fn selection(at: u32, len: u32, after_at: u32, after_len: u32) -> EditSelection {
     EditSelection {
@@ -517,6 +547,7 @@ mod tests {
 
     use super::*;
     use crate::clock::ManualClock;
+    use crate::fragment::{EnvelopeCap, REFERENCE_CAP};
     use crate::ledger::LEDGER_RETENTION_MS;
     use crate::sheet::Segment;
     use crate::store::EditOp;
@@ -707,12 +738,88 @@ mod tests {
         let (id, a, _) = mixed(&mut store);
         let records = store.ledger().count();
         store.sheet_mut(id).unwrap().document.fail_writes_after(0);
-        assert!(store.cut_fragment(id, 0, 8).is_none());
+        assert_eq!(
+            store.cut_fragment(id, 0, 8).err(),
+            Some(CopyRefusal::Refused)
+        );
         assert_eq!(body(&store, id), "ab\u{FFFC}cd\u{FFFC}ef");
         assert!(detached(&store, id).is_empty());
         assert!(store.active_cut().is_none());
         assert_eq!(store.ledger().count(), records);
         assert!(store.copy_out_chip(a).is_some());
+    }
+
+    /// A page of `count` objects and nothing else, one unit each.
+    fn objects(store: &mut SheetStore<ManualClock>, count: usize) -> SheetId {
+        let id = store.new_tab().1;
+        let segments = (0..count)
+            .map(|_| Segment::Chip(store.seal_text(id, A).unwrap()))
+            .collect();
+        assert!(store.sync_document(id, segments));
+        id
+    }
+
+    #[test]
+    fn a_copy_or_cut_naming_past_the_reference_cap_composes_nothing_and_changes_nothing() {
+        let (mut store, _) = store();
+        let id = objects(&mut store, REFERENCE_CAP + 2);
+        store.cut_fragment(id, 0, 1).unwrap();
+        let earlier: Vec<ItemId> = store
+            .active_cut()
+            .unwrap()
+            .1
+            .iter()
+            .map(|c| c.uuid)
+            .collect();
+        let before = (standing(&store, id), detached(&store, id));
+        let records = store.ledger().count();
+
+        let past = u32::try_from(REFERENCE_CAP + 1).unwrap();
+        let refused = Some(CopyRefusal::PastCap(EnvelopeCap::References));
+        assert_eq!(store.copy_fragment(id, 0, past).err(), refused);
+        assert_eq!(store.cut_fragment(id, 0, past).err(), refused);
+        assert_eq!((standing(&store, id), detached(&store, id)), before);
+        let active: Vec<ItemId> = store
+            .active_cut()
+            .unwrap()
+            .1
+            .iter()
+            .map(|c| c.uuid)
+            .collect();
+        assert_eq!(active, earlier, "the earlier cut stands");
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+
+        assert!(store.undo(id), "the earlier cut is the newest step");
+        assert_eq!(standing(&store, id).len(), REFERENCE_CAP + 2);
+        let at_cap = u32::try_from(REFERENCE_CAP).unwrap();
+        let cut = store.cut_fragment(id, 0, at_cap).unwrap();
+        assert!(
+            Fragment::parse(&cut.envelope.unwrap()).is_some(),
+            "at the cap"
+        );
+    }
+
+    #[test]
+    fn a_copy_or_cut_longer_than_the_length_cap_composes_nothing_and_changes_nothing() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let a = store.seal_text(id, A).unwrap();
+        let ink = "x".repeat(EnvelopeCap::Length.limit());
+        assert!(store.sync_document(id, vec![Segment::Ink(ink.clone()), Segment::Chip(a)]));
+        let uuid = uuid_of(&store, a);
+        let records = store.ledger().count();
+
+        let whole = u32::try_from(ink.len() + 1).unwrap();
+        let refused = Some(CopyRefusal::PastCap(EnvelopeCap::Length));
+        assert_eq!(store.copy_fragment(id, 0, whole).err(), refused);
+        assert_eq!(store.cut_fragment(id, 0, whole).err(), refused);
+        assert_eq!(standing(&store, id), vec![uuid]);
+        assert!(detached(&store, id).is_empty());
+        assert!(store.active_cut().is_none());
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+
+        let ink_alone = store.copy_fragment(id, 0, whole - 1).unwrap();
+        assert!(ink_alone.envelope.is_none(), "ink alone meets no cap");
     }
 
     #[test]
@@ -1197,7 +1304,7 @@ mod tests {
             name: Some("FOREIGN".into()),
             note: None,
         }));
-        let mixed = Fragment { cut: None, nodes }.envelope();
+        let mixed = Fragment { cut: None, nodes }.envelope().unwrap();
 
         let page = store.new_tab().1;
         let placed = store.paste_fragment(page, 0, 0, &mixed, None).unwrap();
@@ -1309,12 +1416,15 @@ mod tests {
     fn a_page_past_its_deadline_gives_no_copy_before_its_sweep() {
         let (mut store, clock) = store();
         let (id, ..) = mixed(&mut store);
-        assert!(store.copy_fragment(id, 0, 8).is_some(), "readable before");
+        assert!(store.copy_fragment(id, 0, 8).is_ok(), "readable before");
         clock.advance(HOUR);
         let records = store.ledger().count();
 
-        assert!(store.copy_fragment(id, 0, 8).is_none());
-        assert!(store.copy_fragment(id, 0, 2).is_none(), "ink alone too");
+        assert_eq!(
+            store.copy_fragment(id, 0, 8).err(),
+            Some(CopyRefusal::Refused)
+        );
+        assert!(store.copy_fragment(id, 0, 2).is_err(), "ink alone too");
         assert_eq!(store.ledger().count(), records, "nothing recorded");
         assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
     }
@@ -1327,8 +1437,11 @@ mod tests {
         let before = body(&store, id);
         let records = store.ledger().count();
 
-        assert!(store.cut_fragment(id, 0, 8).is_none());
-        assert!(store.cut_fragment(id, 0, 2).is_none(), "ink alone too");
+        assert_eq!(
+            store.cut_fragment(id, 0, 8).err(),
+            Some(CopyRefusal::Refused)
+        );
+        assert!(store.cut_fragment(id, 0, 2).is_err(), "ink alone too");
         assert_eq!(body(&store, id), before, "nothing changed");
         assert!(store.active_cut().is_none(), "no cut stands");
         assert_eq!(store.ledger().count(), records, "nothing recorded");

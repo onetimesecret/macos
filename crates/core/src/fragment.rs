@@ -21,6 +21,49 @@ pub(crate) const ENVELOPE_CAP: usize = 2 * FILE_SIZE_LIMIT;
 /// The most references one envelope may name (ADR-0049).
 pub(crate) const REFERENCE_CAP: usize = 1024;
 
+/// A cap of ADR-0049, which the parse and, since ADR-0053, the copy and
+/// the cut hold an envelope to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvelopeCap {
+    /// Its length in bytes, [`EnvelopeCap::limit`] at most.
+    Length,
+    /// The references it names, [`EnvelopeCap::limit`] at most.
+    References,
+}
+
+impl EnvelopeCap {
+    /// The cap an envelope of `bytes` naming `references` passes, its
+    /// length first; `None` within both.
+    pub(crate) fn passed(bytes: usize, references: usize) -> Option<Self> {
+        if bytes > ENVELOPE_CAP {
+            Some(Self::Length)
+        } else if references > REFERENCE_CAP {
+            Some(Self::References)
+        } else {
+            None
+        }
+    }
+
+    /// The most this cap allows: bytes, or references.
+    #[must_use]
+    pub const fn limit(self) -> usize {
+        match self {
+            Self::Length => ENVELOPE_CAP,
+            Self::References => REFERENCE_CAP,
+        }
+    }
+}
+
+/// Why a copy or a cut composed nothing and changed nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyRefusal {
+    /// An unknown page, one past its deadline (ADR-0052), a range
+    /// [`Sheet::select`] refuses, or a cut the body refused.
+    Refused,
+    /// The envelope would pass a cap (ADR-0053).
+    PastCap(EnvelopeCap),
+}
+
 /// One run of a fragment, in selection order.
 pub(crate) enum Node {
     /// Visible ink, never empty.
@@ -87,8 +130,8 @@ impl Fragment {
     }
 
     /// The envelope's bytes, encoded twice so the buffer is born at its
-    /// final size (Law 0004).
-    pub(crate) fn envelope(&self) -> Zeroizing<Vec<u8>> {
+    /// final size (Law 0004); the cap it would pass, before any buffer.
+    pub(crate) fn envelope(&self) -> Result<Zeroizing<Vec<u8>>, EnvelopeCap> {
         let cut = self.cut.map(|cut| cut.to_string());
         let nodes: Vec<WireNode<'_>> = self
             .nodes
@@ -112,17 +155,20 @@ impl Fragment {
         };
         let mut sizer = Counter(0);
         serde_json::to_writer(&mut sizer, &wire).expect("a fragment always encodes");
+        if let Some(cap) = EnvelopeCap::passed(sizer.0, self.references().count()) {
+            return Err(cap);
+        }
         let mut out = Zeroizing::new(Vec::with_capacity(sizer.0));
         serde_json::to_writer(&mut *out, &wire).expect("a fragment always encodes");
         debug_assert_eq!(out.len(), sizer.0, "sizing pass drifted from the write");
-        out
+        Ok(out)
     }
 
     /// Read an envelope. `None` when this build cannot: another version, an
     /// unknown key, a malformed UUID, bytes that are not UTF-8 JSON, or past
     /// a cap of ADR-0049, which counts one object named twice.
     pub(crate) fn parse(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() > ENVELOPE_CAP {
+        if EnvelopeCap::passed(bytes.len(), 0).is_some() {
             return None;
         }
         let wire: WireFragment<'_> = serde_json::from_slice(bytes).ok()?;
@@ -146,7 +192,9 @@ impl Fragment {
                 WireNode::Ref(reference) => {
                     let uuid = ItemId::parse(&reference.uuid)?;
                     // A second naming of one object would clone it twice (ADR-0049).
-                    if named.len() == REFERENCE_CAP || !named.insert(uuid) {
+                    if !named.insert(uuid)
+                        || EnvelopeCap::passed(bytes.len(), named.len()).is_some()
+                    {
                         return None;
                     }
                     nodes.push(Node::Ref(Reference {
@@ -352,7 +400,7 @@ mod tests {
         let mut store = store();
         let (id, a, b) = mixed(&mut store);
         let (fragment, _) = store.sheet(id).unwrap().select(0, BODY).unwrap();
-        let read = Fragment::parse(&fragment.envelope()).unwrap();
+        let read = Fragment::parse(&fragment.envelope().unwrap()).unwrap();
         assert_eq!(read.nodes.len(), 5);
         assert_eq!(ink(&read.nodes[0]), Some("before "));
         assert_eq!(reference(&read.nodes[1]), Some(uuid(&store, id, a)));
@@ -380,7 +428,7 @@ mod tests {
         let mut store = store();
         let (id, ..) = mixed(&mut store);
         let (fragment, plain) = store.sheet(id).unwrap().select(0, BODY).unwrap();
-        let envelope = fragment.envelope();
+        let envelope = fragment.envelope().unwrap();
         for needle in [SECRET, "bbbbbbbb", "n0ts3cr3t"] {
             assert!(!plain.contains(needle));
             assert!(
@@ -426,10 +474,9 @@ mod tests {
 
         let whole = store.copy_fragment(id, 0, BODY).unwrap();
         assert!(Fragment::parse(&whole.envelope.unwrap()).is_some());
-        assert!(
-            store
-                .copy_fragment(SheetId::from_raw(4_242), 0, 1)
-                .is_none()
+        assert_eq!(
+            store.copy_fragment(SheetId::from_raw(4_242), 0, 1).err(),
+            Some(CopyRefusal::Refused)
         );
         assert_eq!(store.ledger().count(), records);
         assert_eq!(store.sheet(id).unwrap().chip_count(), 2);
@@ -455,7 +502,7 @@ mod tests {
         let mut store = store();
         let (id, ..) = mixed(&mut store);
         let (fragment, _) = store.sheet(id).unwrap().select(0, BODY).unwrap();
-        let envelope = fragment.envelope();
+        let envelope = fragment.envelope().unwrap();
         assert_eq!(envelope.capacity(), envelope.len());
     }
 
@@ -470,7 +517,10 @@ mod tests {
         assert_eq!(ink(&read.nodes[0]), Some("a \"quoted\"\nline"));
         assert_eq!(reference(&read.nodes[1]), Some(uuid));
         assert_eq!(
-            Fragment::parse(&read.envelope()).unwrap().nodes.len(),
+            Fragment::parse(&read.envelope().unwrap())
+                .unwrap()
+                .nodes
+                .len(),
             2,
             "what this build writes it reads back"
         );
@@ -506,13 +556,13 @@ mod tests {
         let (id, a, _) = mixed(&mut store);
         named(&mut store, id, a);
         let (fragment, _) = store.sheet(id).unwrap().select(0, BODY).unwrap();
-        let read = Fragment::parse(&fragment.envelope()).unwrap();
+        let read = Fragment::parse(&fragment.envelope().unwrap()).unwrap();
         assert_eq!(
             name_and_note(&read.nodes[1]),
             (Some("API_KEY"), Some("rotate \"monthly\"\nthen \u{1F511}"))
         );
         assert_eq!(name_and_note(&read.nodes[3]), (None, None), "B has neither");
-        let text = String::from_utf8(fragment.envelope().to_vec()).unwrap();
+        let text = String::from_utf8(fragment.envelope().unwrap().to_vec()).unwrap();
         assert_eq!(
             text.matches("\"name\"").count(),
             1,
@@ -601,5 +651,52 @@ mod tests {
             Fragment::parse(ink(ENVELOPE_CAP + 1).as_bytes()).is_none(),
             "one byte past"
         );
+    }
+
+    fn naming_fragment(count: usize) -> Fragment {
+        let nodes = (0..count)
+            .map(|_| {
+                Node::Ref(Reference {
+                    uuid: ItemId::random(),
+                    name: None,
+                    note: None,
+                })
+            })
+            .collect();
+        Fragment { cut: None, nodes }
+    }
+
+    /// Ink of `len` bytes, then one reference, as a copy would compose it.
+    fn ink_fragment(len: usize) -> Fragment {
+        let mut fragment = naming_fragment(1);
+        let text = Zeroizing::new("x".repeat(len));
+        fragment.nodes.insert(0, Node::Ink(text));
+        fragment
+    }
+
+    #[test]
+    fn an_envelope_composed_at_a_cap_reads_back_and_one_past_composes_nothing() {
+        let at_cap = naming_fragment(REFERENCE_CAP).envelope().unwrap();
+        let read = Fragment::parse(&at_cap).unwrap();
+        assert_eq!(read.references().count(), REFERENCE_CAP);
+        assert_eq!(
+            naming_fragment(REFERENCE_CAP + 1).envelope().err(),
+            Some(EnvelopeCap::References)
+        );
+
+        let frame = ink_fragment(0).envelope().unwrap().len();
+        let longest = ink_fragment(ENVELOPE_CAP - frame).envelope().unwrap();
+        assert_eq!(longest.len(), ENVELOPE_CAP);
+        assert!(
+            Fragment::parse(&longest).is_some(),
+            "what it writes it reads"
+        );
+        assert_eq!(
+            ink_fragment(ENVELOPE_CAP - frame + 1).envelope().err(),
+            Some(EnvelopeCap::Length),
+            "one byte past"
+        );
+        assert_eq!(EnvelopeCap::Length.limit(), 8 * 1024 * 1024);
+        assert_eq!(EnvelopeCap::References.limit(), 1024);
     }
 }

@@ -34,7 +34,7 @@ pub use files::{
     FileId, FileIo, FileNotice, FileStore, FileWitness, HydrationFate, HydrationOutcome,
     LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError,
 };
-pub use fragment::Copied;
+pub use fragment::{Copied, CopyRefusal, EnvelopeCap};
 pub use harden::harden_process;
 pub use ink::StepOutcome;
 pub use language_detection::detect_source_language;
