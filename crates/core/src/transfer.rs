@@ -59,6 +59,8 @@ pub struct Placed {
     pub unavailable: u32,
     /// The envelope could not be read, so its public text was placed.
     pub unreadable: bool,
+    /// Pages past their deadline the route swept before resolving (ADR-0048).
+    pub pages_expired: u32,
 }
 
 /// One resolved node, ready to stand in a body.
@@ -125,7 +127,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Paste an envelope over a range as one step, resolving each reference;
-    /// an unreadable one places `plain`. `None`, changing nothing, on refusal.
+    /// an unreadable one places `plain`. `None` on refusal, keeping only its sweep.
     pub fn paste_fragment(
         &mut self,
         id: SheetId,
@@ -153,7 +155,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A drag inside a page: move a range to `to`, measured before the move, as
-    /// one step keeping every object. `None` for a `to` in the range or a bad one.
+    /// one step keeping every object. `None` for a `to` in the range, a bad one
+    /// or a page past its deadline.
     pub fn move_range(
         &mut self,
         id: SheetId,
@@ -161,6 +164,9 @@ impl<C: Clock> SheetStore<C> {
         len_u16: u32,
         to_u16: u32,
     ) -> Option<Placed> {
+        if self.is_due(id) {
+            return None;
+        }
         let sheet = self.sheet(id)?;
         let end = from_u16.checked_add(len_u16)?;
         if (from_u16..=end).contains(&to_u16) || !range_in_body(&sheet.segments, to_u16, 0) {
@@ -256,12 +262,19 @@ impl<C: Clock> SheetStore<C> {
         fragment: &Fragment,
         unreadable: bool,
     ) -> Option<Placed> {
-        if !range_in_body(&self.sheet(id)?.segments, at_u16, len_u16) {
+        if !range_in_body(&self.sheet(id)?.segments, at_u16, len_u16) || self.is_due(id) {
             return None;
         }
+        // Sweep first, as a load does, so a due page's objects resolve expired.
+        let pages_expired = if fragment.has_reference() {
+            count(self.expire_due().into_iter())
+        } else {
+            0
+        };
         let mut placed = Placed {
             location_u16: at_u16,
             unreadable,
+            pages_expired,
             ..Placed::default()
         };
         let plan = self.resolve(fragment, &mut placed);
@@ -378,6 +391,13 @@ impl<C: Clock> SheetStore<C> {
             plan.push(Planned::Placeholder(placeholder(word)));
         }
         plan
+    }
+
+    /// Whether a page's clock has run out though no sweep has taken it yet.
+    fn is_due(&self, id: SheetId) -> bool {
+        let now = self.clock.now();
+        self.sheet(id)
+            .is_some_and(|sheet| sheet.remaining(now).is_zero())
     }
 
     /// A live object by identity, attached or detached, on any page.
@@ -1201,6 +1221,117 @@ mod tests {
         let page = store.new_tab().1;
         let placed = store.paste_fragment(page, 0, 0, &envelope, None).unwrap();
         assert_eq!(placed.burned, 2, "a closed page burns its cut objects");
+    }
+
+    fn expired_on_record(store: &SheetStore<ManualClock>, uuid: ItemId) -> bool {
+        store
+            .ledger()
+            .any(|record| record.item == uuid && matches!(record.event, LedgerEvent::Expired))
+    }
+
+    #[test]
+    fn a_cut_from_a_page_past_its_deadline_reattaches_nothing_and_places_expired() {
+        let (mut store, clock) = store();
+        let (id, a, b) = mixed(&mut store);
+        let uuids = [uuid_of(&store, a), uuid_of(&store, b)];
+        store.cut_fragment(id, 0, 8).unwrap();
+        clock.advance(HOUR);
+        let fresh = store.new_tab().1;
+
+        let placed = store.paste_active_cut(fresh, 0, 0).unwrap();
+        assert_eq!(
+            (placed.reattached, placed.cloned, placed.expired),
+            (0, 0, 2)
+        );
+        assert_eq!(placed.pages_expired, 1, "the paste swept the due page");
+        assert_eq!(
+            body(&store, fresh),
+            "ab[sealed content \u{b7} expired]cd[sealed content \u{b7} expired]ef"
+        );
+        assert!(store.sheet(fresh).unwrap().chips().next().is_none());
+        assert!(detached(&store, fresh).is_empty());
+        assert!(store.sheet(id).is_none(), "the due page is gone");
+        assert!(store.active_cut().is_none());
+        assert!(uuids.iter().all(|uuid| expired_on_record(&store, *uuid)));
+    }
+
+    #[test]
+    fn a_copy_from_a_page_past_its_deadline_clones_nothing_and_places_expired() {
+        let (mut store, clock) = store();
+        let (id, a, b) = mixed(&mut store);
+        let uuids = [uuid_of(&store, a), uuid_of(&store, b)];
+        let envelope = store.copy_fragment(id, 0, 8).unwrap().envelope.unwrap();
+        clock.advance(HOUR);
+        let fresh = store.new_tab().1;
+        let sealed = |store: &SheetStore<ManualClock>| {
+            store
+                .ledger()
+                .filter(|record| matches!(record.event, LedgerEvent::Sealed))
+                .count()
+        };
+        let before = sealed(&store);
+
+        let placed = store.paste_fragment(fresh, 0, 0, &envelope, None).unwrap();
+        assert_eq!(
+            (placed.cloned, placed.expired, placed.pages_expired),
+            (0, 2, 1)
+        );
+        assert!(store.sheet(fresh).unwrap().chips().next().is_none());
+        assert!(detached(&store, fresh).is_empty());
+        assert!(store.sheet(id).is_none());
+        assert_eq!(sealed(&store), before, "no clone was recorded");
+        assert!(uuids.iter().all(|uuid| expired_on_record(&store, *uuid)));
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep() {
+        let (mut store, clock) = store();
+        let (id, ..) = mixed(&mut store);
+        let envelope = store.copy_fragment(id, 0, 8).unwrap().envelope.unwrap();
+        store.cut_fragment(id, 0, 3).unwrap();
+        clock.advance(HOUR);
+        let before = body(&store, id);
+        let records = store.ledger().count();
+
+        assert!(store.paste_fragment(id, 0, 0, &envelope, None).is_none());
+        assert!(store.paste_active_cut(id, 0, 0).is_none());
+        assert!(store.clone_range(id, 0, 5, 5).is_none());
+        assert!(store.move_range(id, 0, 1, 5).is_none());
+        assert_eq!(body(&store, id), before, "nothing changed");
+        assert_eq!(store.ledger().count(), records);
+        assert!(store.active_cut().is_some());
+        assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
+    }
+
+    #[test]
+    fn a_paste_the_body_refuses_after_its_sweep_reverts_the_paste_and_not_the_sweep() {
+        let (mut store, clock) = store();
+        let (doomed, a, _) = mixed(&mut store);
+        let doomed_uuid = uuid_of(&store, a);
+        clock.advance(HOUR / 2);
+        let (id, ..) = mixed(&mut store);
+        let envelope = store.copy_fragment(id, 0, 8).unwrap().envelope.unwrap();
+        clock.advance(HOUR / 2);
+        let before = body(&store, id);
+
+        store.sheet_mut(id).unwrap().document.fail_writes_after(2);
+        assert!(store.paste_fragment(id, 8, 0, &envelope, None).is_none());
+        assert_eq!(body(&store, id), before, "the paste reverted");
+        assert!(store.sheet(doomed).is_none(), "the sweep stands");
+        assert!(expired_on_record(&store, doomed_uuid));
+    }
+
+    #[test]
+    fn a_paste_of_ink_alone_sweeps_nothing() {
+        let (mut store, clock) = store();
+        let (doomed, ..) = mixed(&mut store);
+        clock.advance(HOUR);
+        let fresh = store.new_tab().1;
+        let placed = store
+            .paste_fragment(fresh, 0, 0, b"not an envelope", Some("ink"))
+            .unwrap();
+        assert_eq!(placed.pages_expired, 0);
+        assert!(store.sheet(doomed).is_some(), "left for the timer");
     }
 
     #[test]
