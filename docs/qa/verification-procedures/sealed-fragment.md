@@ -131,12 +131,13 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       note. Select `before`, the object and `after`, then drag the
       selection to the end of the page and drop it. **Pass:** while
       dragging, an insertion line shows where the run will land, and the
-      drag image shows the block as the page draws it and nothing more
-      of the sealed word; the run lands there with the object's name and
-      note; ⌘Z puts the whole run back in one step. Dropping the
-      selection onto itself changes nothing. **Fail:** no insertion
-      line, the object returns without its name or note, the image
-      shows more than the block does, or ⌘Z takes back only part of it.
+      drag image shows the ink and the block with `SEALED CONTENT`, its
+      name and its size class, and no part of the sealed word; the run
+      lands there with the object's name and note; ⌘Z puts the whole run
+      back in one step. Dropping the selection onto itself changes
+      nothing. **Fail:** no insertion line, the object returns without
+      its name or note, the image shows any of the sealed word, an `=`
+      after the name, or ⌘Z takes back only part of it.
 - [ ] **A drag that starts on the object.** Click a sealed object once
       so it is selected, then drag it from its block and drop it lower
       on the page. **Pass:** the object moves with its name and nothing
@@ -179,20 +180,24 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the page keeps its run. **Fail:** the field takes any of the
       sealed word, or the run leaves the page.
 - [ ] **Plain drag out.** Drag the selection into TextEdit, then drag it
-      onto the Trash in the Dock. **Pass:** TextEdit receives the same
-      placeholder text as the copy did, the page keeps its run both
-      times, and the Trash takes nothing. **Fail:** the sealed word
-      arrives, or the run leaves the page.
+      onto the Trash in the Dock. **Pass:** while it passes over TextEdit
+      the image shows no part of the sealed word, TextEdit receives the
+      same placeholder text as the copy did, the page keeps its run both
+      times, and the Trash takes nothing. **Fail:** the image or the drop
+      shows the sealed word, or the run leaves the page.
 - [ ] **The decrypted drag's handle.** On a card at least as wide as
       the default, point at a sealed object, then move away, then click
       the object once. **Pass:** while pointed at or selected, the top
       row shows `drag decrypted` in an ember outline just before `···`,
       and nothing else on the block moves when it appears; it goes when
-      the pointer leaves an unselected block. A click on the handle that
-      does not move selects the object. Narrow the card until the handle
-      would meet `SEALED CONTENT`: it is no longer drawn. **Fail:** the
-      block's contents shift, the handle overlaps the classification, or
-      a still click starts a drag.
+      the pointer leaves an unselected block. Over the drawn handle the
+      pointer is an open hand, and off it the text cursor again. A click
+      on the handle that does not move selects the object. Narrow the
+      card until the handle would meet `SEALED CONTENT`: it is no longer
+      drawn, and the pointer there stays the text cursor. **Fail:** the
+      block's contents shift, the handle overlaps the classification,
+      the pointer does not change over the handle or stays an open hand
+      off it, or a still click starts a drag.
 - [ ] **Decrypted drag into a form field.** Drag from the object's
       decrypted handle into a browser's text field; repeat in Safari and
       in one Chromium browser. **Pass:** the drag image shows only the
@@ -217,10 +222,12 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       field shows the sealed word, a new object appears, a `sent` lands,
       or the app stops answering.
 - [ ] **The handle while a name is written.** Open an object's name
-      field, then press and drag from the handle of another object.
-      **Pass:** no drag starts and the line under the page reads
+      field, then point at the handle of another object, and press and
+      drag from it. **Pass:** the pointer over the handle stays the text
+      cursor, no drag starts and the line under the page reads
       `a name or note is being written, so the drag did not start.`
-      **Fail:** a drag starts, or the name field loses its draft.
+      **Fail:** an open hand shows, a drag starts, or the name field
+      loses its draft.
 - [ ] **A decrypted drag onto the desktop.** Drag from the handle onto
       Finder's desktop. **Pass:** Finder's answer is another app's drop:
       the object stays and the ledger gains one `sent` to `drag`. Note
