@@ -902,3 +902,8 @@ moved a decision.
   issue 169), the fragment and lifecycle model (D-29, D-31, D-33, issue 170), the
   split Days setting (D-26, issue 171) and the four dialogs (D-14,
   D-19, issue 172, resolved 2026-09-16).
+- 2026-10-14, D-30's *Owed* clause: met under issue 170. A chip the
+  page stops showing is detached, not zeroized
+  ([ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)
+  point 4), so ⌘Z stands the same object again; Law 0001's two
+  backspace rows cite the tests. The clause stays as written.
