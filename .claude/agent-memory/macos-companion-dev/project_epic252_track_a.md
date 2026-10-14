@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, and why a trap under xctest hangs
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, why a trap under xctest hangs, and AskingTextView with Law 0001's AppKit text routes table, where every new AppKit reader or rewrite is sorted
 metadata:
   type: project
 ---
@@ -152,6 +152,30 @@ for review fixes; shell only.
   check, read from the page standing aside under its note. Never run a
   mutation that lets a speech or look up gate pass: it speaks or looks
   up on the machine running the suite.
+- Phase 8 unit 2 (2026-10-14): every AppKit reader of a page's, a
+  note's or a name's text asks `AskingTextView.mayReadOut`
+  (TextOffers.swift), the base of InkTextView and SealedNameTextView;
+  add a new one there and a row to Law 0001's AppKit text routes
+  table. Probed facts: continuous spelling and grammar, text
+  replacement (on by default on a page), smart quotes and Substitutions'
+  replace actions all enter `checkText(in:types:options:)`;
+  `checkSpelling:` does not; `complete:` reaches
+  `completions(forPartialWordRange:)`; `updateCandidates` runs on every
+  selection change even with no Touch Bar, so never ask there. Over a
+  misspelled word AppKit's menu adds `_changeSpellingFromMenu:`,
+  `_invokeProofreadingFeedbackThumbsUp:`/`Down:`,
+  `_ignoreSpellingFromMenu:`, `_learnSpellingFromMenu:` and
+  `_searchWithGoogleFromMenu:`. AppleSpell treats U+FFFC as a word
+  boundary. `replaceQuotesInSelection:` changes nothing under xctest
+  even on a plain view; use dashes. Rewrites (`rewritingInk`) make the
+  delegate refuse every ask while AppKit's action runs and make them
+  after, stretch by stretch; `asOneEdit` holds an action's ops and its
+  textDidChange for one batch. AppKit's uppercaseWord: over several
+  ranges asks per range in order. Never let `complete:` or
+  `orderFrontSharingServicePicker:` run in a test: their windows would
+  hold the run loop. `storage(for:)` now takes a peer's U+FFFC out of a
+  kept storage and restates it; a peer's change still never restates a
+  mounted one.
 - Test traps: any Swift trap (assert, precondition) under xctest stops
   the process at `_assertionFailure` with no output until killed;
   `assertProjectionParity` now writes its line and exits instead, so a
