@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A page's copy of ink alone is plain text** (app 0.34.0; ADR-0047
+  point 2, issue #170). ⌘C and ⌘X on a page write the text the core
+  composes, so ink pasted into Mail or TextEdit arrives without the
+  page's fonts. A note and a file copy as before.
+
 - **Removing a sealed object keeps it, and ⌘Z puts it back** (app
   0.33.0; `companion-core` 0.29.0; Law 0001, ADR-0047, issue #170). A
   backspace, *Remove protected content*, a cut or a restate takes the
@@ -324,8 +329,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ember keyline. The lines after the actions read "copied decrypted
   contents — small. the clipboard clears in 60 seconds.", "the link is on the
   clipboard — paste it where it needs to go." and "protected content
-  removed." (its Undo button waits for the editor's half of issue 170;
-  ⌘Z already puts the object back). The interval is the core constant read through the seam; the
+  removed." with an Undo button that stands the same object again
+  (issue #170). The interval is the core constant read through the seam; the
   clear is attempted only if the general pasteboard still holds that write.
 
 - **A day's gutter says the day and the minute, and draws a gauge.**
@@ -385,10 +390,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The editor copies, cuts, pastes and drags a sealed object by
+  reference** (app 0.34.0; Law 0001, ADR-0047, ADR-0048, ADR-0050,
+  ADR-0051, issues #170 and #247).
+  - ⌘C on a selection holding a sealed object writes one pasteboard
+    item: the core's envelope under
+    `com.onetimesecret.onetimepad.sealed-fragment` (`.debug` in a debug
+    build) and the public text, the ink with
+    `[sealed content · <size class>]` for each object. Another app
+    receives the public text alone.
+  - ⌘X cuts through the core as one undo step. The objects leave the
+    page and are kept, and a line under the page names them by their
+    faces beside a `place here` button that places the cut at the
+    caret.
+  - ⌘V, Paste and Match Style and Paste Without Detection place a
+    fragment through the core as one undo step. The first paste of a
+    cut brings the same objects back with their names and notes; a
+    paste after a copy, or a later paste of a cut, clones each one with
+    its name and note; an object that has ended places
+    `[sealed content · expired]`, `[sealed content · burned]` or
+    `[sealed content · unavailable]` where it stood. A note takes the
+    public text. A paste that swept a page past its deadline settles
+    that page at once.
+  - The first ⌫ beside an object, or ⌦ before it, selects it, and the
+    second removes it. The line "protected content removed." offers
+    Undo, which stands the same object again until the page moves on.
+  - A drag of the selection inside a page moves it, or with ⌥ clones
+    its objects, as one undo step. A drag to another page pastes it
+    there and removes it from the first, where ⌘Z brings it back. A
+    drag to another app carries the public text alone.
+  - `drag decrypted`, a handle on a hovered or selected block, drags
+    the object's plaintext to another app. The core writes it only when
+    the destination asks and records one `sent` to `drag`; the object
+    stays and the general pasteboard is untouched. No surface of
+    OnetimePad takes the drop.
+  - A service asking for a selection holding an object is handed the
+    public text, and no service that would write back over the
+    selection is offered.
+  - Each of these stands aside while a sealed name or a note holds the
+    keys (ADR-0046).
+
 - **The core cuts, copies and pastes a sealed fragment, in one
   transaction** (`companion-core` 0.29.0, `companion-ffi` 0.38.0,
   `companion-pasteboard` 0.4.0; Law 0001, ADR-0047, issue #170). The
-  editor does not use these routes yet; its half of issue 170 is next.
+  editor's copy, cut, paste, clipboard slot and drags use these routes
+  (the entry above).
   - `companion_sheet_copy_fragment` answers a selection as a versioned
     envelope of ordered ink and object references, never payload, and
     its public text, the ink with `[sealed content · <size class>]` for
@@ -773,6 +819,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A paste takes nothing from a page past its deadline**
+  (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
+  issue #170). Between a page's deadline and the timer's sweep, a paste,
+  the slot's place, a move or a clone could still resolve the page's
+  objects. A paste naming an object now sweeps every due page first, so
+  a cut whose page ran out places `[sealed content · expired]`, and the
+  slot, a move and a clone refuse a due page. The placed fragment's
+  `pages_expired` says how many pages the sweep took. Copy, cut, copy
+  decrypted and the decrypted drag still read a due page until its
+  timer fires.
+
 - **The pad list stays above the line under the page** (app 0.32.2;
   Law 0007, issue #249). On a short card or editor window the list,
   up to 620 points tall under the pad picker, could stand over the line
@@ -865,6 +922,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when it takes the keyboard.
 
 ### Security
+
+- **A pasted envelope is bounded** (`companion-core` 0.31.1; Law 0001,
+  ADR-0049, issue #170). An envelope longer than 8 MiB, naming more
+  than 1024 objects, or naming one object twice is refused whole and
+  pastes its public text, so a crafted fragment cannot clone one object
+  many times over. A copy or cut past those caps writes an envelope
+  this build then refuses to read.
 
 - **A response body no longer grows in place** (Law 0004, draft;
   `companion-transport` 0.2.1, `companion-ffi` 0.33.1). The transport
