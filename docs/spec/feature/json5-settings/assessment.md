@@ -60,7 +60,7 @@ Primary source locations:
 
 - `shell/Sources/CompanionKit/PageModel.swift:723-975`
 - `shell/Sources/CompanionKit/PageModel.swift:1466-1542`
-- `shell/Sources/CompanionKit/PageModel.swift:6735-6772`
+- `shell/Sources/CompanionKit/PageModel.swift:6821-6858`
 - `shell/Sources/CompanionKit/SyncController.swift:4-43`
 - `shell/Sources/CompanionKit/SyncController.swift:83-91`
 - `shell/Sources/CompanionKit/SyncController.swift:147-208`
@@ -283,11 +283,11 @@ Validation covers:
 
 ### Cross-field behavior
 
-Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:697-699`, `shell/Sources/CompanionKit/InkEditorView.swift:857-859`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
+Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:700-702`, `shell/Sources/CompanionKit/InkEditorView.swift:860-862`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
 
 ### Connection validation
 
-Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6737-6753`.
+Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6823-6839`.
 
 The API token and non-secret connection fields require a defined transaction outcome when one persistence operation succeeds and the other fails.
 
