@@ -190,6 +190,7 @@ final class HandleView: NSView {
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseEntered(with event: NSEvent) { enter?() }
     override func mouseExited(with event: NSEvent) { exit?() }
     override func mouseDown(with event: NSEvent) { click?() }
@@ -421,8 +422,8 @@ final class Lab: NSObject, NSApplicationDelegate {
         guide.setFrame(rect.intersection(screen.frame), display: true)
         guide.orderFront(nil)
     }
-    @objc func mouseEntered(with event: NSEvent) { hoveringStatus = true }
-    @objc func mouseExited(with event: NSEvent) { hoveringStatus = false }
+    @objc(mouseEntered:) func mouseEntered(with event: NSEvent) { hoveringStatus = true }
+    @objc(mouseExited:) func mouseExited(with event: NSEvent) { hoveringStatus = false }
 
     func log(_ text: String) {
         logLines.append(String(format: "%.2f %@", now, text))
@@ -740,7 +741,7 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
         var commits = 0
         let originalCommit = lab.card.commit
         lab.card.commit = { commits += 1 }
-        test.expect(lab.card.acceptsFirstMouse(for: click), "Card must accept the first inactive click")
+        test.expect(lab.card.acceptsFirstMouse(for: click) && lab.card.open.acceptsFirstMouse(for: click), "Card and Open must accept the first inactive click")
         test.expect(lab.card.hitTest(NSPoint(x: 30, y: 100)) === lab.card, "Card background must catch the click")
         lab.card.mouseDown(with: click)
         test.expect(commits == 0, "Unarmed click must not commit")
@@ -759,6 +760,33 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
         lab.dismiss(block: false)
         test.expect(lab.phase == .idle && lab.card.stage == .idle && !lab.reveal.isVisible, "Dismiss must reset phase, stage, and visibility")
     }
+
+    let tracking = TestContext(name: "smoke mode=Menu-bar hover selector dispatch")
+    select(.status)
+    for (type, selector, expected) in [(NSEvent.EventType.mouseEntered, #selector(NSResponder.mouseEntered(with:)), true),
+                                       (.mouseExited, #selector(NSResponder.mouseExited(with:)), false)] {
+        tracking.expect(lab.responds(to: selector), "Tracking owner must respond to \(NSStringFromSelector(selector))")
+        let event = tracking.require(NSEvent.enterExitEvent(with: type, location: .zero, modifierFlags: [], timestamp: lab.now,
+                                                          windowNumber: lab.status.button?.window?.windowNumber ?? 0,
+                                                          context: nil, eventNumber: 0, trackingNumber: 0, userData: nil), "Could not construct a tracking event")
+        lab.perform(selector, with: event)
+        tracking.expect(lab.hoveringStatus == expected, "Objective-C tracking dispatch must update hover state")
+        tracking.expect(lab.sourceEligible(.zero) == expected, "Tracking dispatch must update status source eligibility")
+    }
+
+    let handle = TestContext(name: "smoke mode=Visible edge tab simulated inactive click")
+    select(.tab)
+    let click = handle.require(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 5, y: 5), modifierFlags: [],
+                                                timestamp: lab.now, windowNumber: lab.handle.windowNumber, context: nil,
+                                                eventNumber: 0, clickCount: 1, pressure: 1), "Could not construct a handle click")
+    var clicks = 0
+    let originalClick = lab.handleView.click
+    lab.handleView.click = { clicks += 1 }
+    handle.expect(lab.handleView.acceptsFirstMouse(for: click), "Handle must accept the first inactive click")
+    if lab.handleView.acceptsFirstMouse(for: click) { lab.handleView.mouseDown(with: click) }
+    handle.expect(clicks == 1, "Simulated first-click routing must call the handle callback once")
+    handle.expect(app.keyWindow === keyWindow, "Simulated handle click must not change the key window")
+    lab.handleView.click = originalClick
 
     let layout = TestContext(name: "smoke explicit CardView stage")
     lab.card.setFrameSize(NSSize(width: 248, height: 132))
