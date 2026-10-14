@@ -803,6 +803,20 @@ char *companion_sheet_move_range(CompanionHandle *handle, uint64_t sheet,
                                  uint32_t to_utf16);
 
 /*
+ * A drag between pages (ADR-0054): delete a range on source and stand
+ * it at at_utf16 on dest as one transaction, every object keeping its
+ * identity, name and note; nothing is recorded. dest takes one undo
+ * step, and a move holding an object clears source's undo. Returns the
+ * placed JSON, its run on dest, or null with neither page changed for
+ * one page, a file id, a bad range or point, or either page past its
+ * deadline. Both pages restate from the core after a move; the source
+ * deletes nothing itself. The option drag pastes the copy fragment.
+ */
+char *companion_sheet_move_range_to(CompanionHandle *handle, uint64_t source,
+                                    uint32_t from_utf16, uint32_t len_utf16,
+                                    uint64_t dest, uint32_t at_utf16);
+
+/*
  * The option drag inside a page: insert a copy of a range at to_utf16,
  * every object cloned, as one undo step. Returns the placed JSON or null.
  */

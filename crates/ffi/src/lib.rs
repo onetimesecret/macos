@@ -1661,6 +1661,42 @@ pub unsafe extern "C" fn companion_sheet_move_range(
         .map_or(ptr::null_mut(), placed_json)
 }
 
+/// A drag between pages (ADR-0054): move a range of `source` to `at_utf16` on
+/// `dest` as one transaction keeping every object. The placed JSON, its run on
+/// `dest`, or null with neither page changed.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_move_range_to(
+    handle: *mut CompanionHandle,
+    source: u64,
+    from_utf16: u32,
+    len_utf16: u32,
+    dest: u64,
+    at_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(source) || is_file_id(dest) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .move_range_to(
+            SheetId::from_raw(source),
+            from_utf16,
+            len_utf16,
+            SheetId::from_raw(dest),
+            at_utf16,
+        )
+        .map_or(ptr::null_mut(), placed_json)
+}
+
 /// The ⌥ drag inside a page: insert a copy of a UTF-16 range at `to_utf16`,
 /// every object cloned, as one step. Returns the placed JSON or null.
 ///
@@ -8136,6 +8172,8 @@ mod tests {
             assert!(companion_sheet_paste_active_cut(handle, tagged, 0, 0).is_null());
             assert!(companion_sheet_move_range(handle, tagged, 0, 1, 3).is_null());
             assert!(companion_sheet_clone_range(handle, tagged, 0, 1, 3).is_null());
+            assert!(companion_sheet_move_range_to(handle, tagged, 0, 1, page, 0).is_null());
+            assert!(companion_sheet_move_range_to(handle, page, 0, 1, tagged, 0).is_null());
 
             let after = take_json(companion_sheet_document_json(handle, page));
             assert!(after.contains("hello"));
@@ -8365,6 +8403,61 @@ mod tests {
         }
     }
 
+    /// The chip ids standing on a page, in order.
+    unsafe fn standing_chips(handle: *mut CompanionHandle, sheet: u64) -> Vec<u64> {
+        let runs = unsafe { json_of(companion_sheet_document_json(handle, sheet)) };
+        runs.as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|run| run.get("chip")?["chip_id"].as_u64())
+            .collect()
+    }
+
+    #[test]
+    fn a_drag_between_pages_crosses_the_seam_keeping_its_object() {
+        let handle = handle();
+        unsafe {
+            let (home, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let (_, away) = new_page(handle);
+            assert!(
+                companion_sheet_move_range_to(handle, home, 2, 1, home, 0).is_null(),
+                "one page"
+            );
+            assert!(companion_sheet_move_range_to(handle, home, 2, 1, 4_242, 0).is_null());
+
+            let moved = json_of(companion_sheet_move_range_to(handle, home, 1, 3, away, 0));
+            assert_eq!(moved["location_utf16"], 0);
+            assert_eq!(moved["length_utf16"], 3);
+            assert_eq!(moved["reattached"], 1);
+            assert_eq!(moved["cloned"], 0);
+            assert_eq!(standing_chips(handle, away), [chip], "the same object");
+            assert!(standing_chips(handle, home).is_empty());
+            assert!(
+                !companion_sheet_can_undo(handle, home),
+                "no step there stands it again"
+            );
+            assert!(companion_chip_copy_out(handle, chip));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_drag_between_pages_refuses_a_page_past_its_deadline_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (due, chip) = a_due_page_with_a_chip(handle);
+            let (_, fresh) = new_page(handle);
+            assert!(companion_sheet_move_range_to(handle, due, 2, 1, fresh, 0).is_null());
+            let ops = cstring(r#"[{"ins": {"at": 0, "text": "x"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, fresh, ops.as_ptr()));
+            assert!(companion_sheet_move_range_to(handle, fresh, 0, 1, due, 0).is_null());
+            assert_eq!(standing_chips(handle, due), [chip], "neither page changed");
+            assert!(standing_chips(handle, fresh).is_empty());
+            assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");
+            companion_free(handle);
+        }
+    }
+
     #[test]
     fn the_fragment_routes_fail_closed() {
         unsafe {
@@ -8378,6 +8471,7 @@ mod tests {
             assert!(companion_sheet_paste_active_cut(null, 1, 0, 0).is_null());
             assert!(companion_sheet_move_range(null, 1, 0, 1, 3).is_null());
             assert!(companion_sheet_clone_range(null, 1, 0, 1, 3).is_null());
+            assert!(companion_sheet_move_range_to(null, 1, 0, 1, 2, 0).is_null());
             assert!(companion_active_cut_json(null).is_null());
             let kind = cstring("public.utf8-plain-text");
             assert!(!companion_chip_provide_drag(

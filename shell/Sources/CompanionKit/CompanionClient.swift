@@ -1331,6 +1331,18 @@ public class CompanionClient: @unchecked Sendable {
             from: companion_sheet_move_range(handle, sheet, wire.0, wire.1, to))
     }
 
+    /// A drag between pages (ADR-0054): move `range` to `at` on `toSheet` as one
+    /// transaction keeping every object. Nil with neither page changed.
+    @discardableResult
+    public func moveRange(
+        sheet: UInt64, range: NSRange, toSheet dest: UInt64, at: Int
+    ) -> PlacedFragment? {
+        guard let wire = selectionWire(range), let at = UInt32(exactly: at) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_move_range_to(handle, sheet, wire.0, wire.1, dest, at))
+    }
+
     /// The ⌥ drag inside a page: a copy of `range` at `to`, every object
     /// cloned core-side, as one step.
     @discardableResult

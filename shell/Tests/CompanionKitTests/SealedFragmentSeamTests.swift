@@ -108,6 +108,39 @@ final class SealedFragmentSeamTests: XCTestCase {
         XCTAssertEqual(chips(client, sheet: sheet).count, 2)
     }
 
+    func testADragBetweenPagesMovesTheSameObjectAndRefusesADuePage() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (home, chip) = try page(client)
+        XCTAssertNotEqual(client.newTab(), 0)
+        let away = try XCTUnwrap(client.tabs().last?.pageID)
+        let object = NSRange(location: 1, length: 3)
+        XCTAssertNil(client.moveRange(sheet: home, range: object, toSheet: home, at: 0))
+
+        let moved = try XCTUnwrap(client.moveRange(
+            sheet: home, range: object, toSheet: away, at: 0))
+        XCTAssertEqual(moved.range, NSRange(location: 0, length: 3))
+        XCTAssertEqual(moved.reattached, 1)
+        XCTAssertEqual(moved.cloned, 0)
+        XCTAssertEqual(chips(client, sheet: away).map(\.chipId), [chip.chipId])
+        XCTAssertTrue(chips(client, sheet: home).isEmpty)
+        XCTAssertFalse(client.canUndo(sheet: home), "no step there stands it again")
+
+        let tab = try XCTUnwrap(client.tabs().last?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        let due = try XCTUnwrap(client.tabs().last?.pageID)
+        XCTAssertNotEqual(client.newTab(), 0)
+        let fresh = try XCTUnwrap(client.tabs().last?.pageID)
+        XCTAssertTrue(client.applyOps(sheet: fresh, json: #"[{"ins":{"at":0,"text":"x"}}]"#))
+        XCTAssertNil(client.moveRange(
+            sheet: due, range: NSRange(location: 0, length: 3), toSheet: fresh, at: 0))
+        XCTAssertNil(client.moveRange(
+            sheet: fresh, range: NSRange(location: 0, length: 1), toSheet: due, at: 0))
+        XCTAssertEqual(chips(client, sheet: due).count, 1, "neither page changed")
+        XCTAssertTrue(chips(client, sheet: fresh).isEmpty)
+        XCTAssertEqual(client.expireDue(), 1, "the sweep still takes it")
+    }
+
     func testAPasteSweepsADuePageAndSaysHowMany() throws {
         let client = CompanionClient.ephemeral(tag: #function)
         let (sheet, _) = try page(client)
