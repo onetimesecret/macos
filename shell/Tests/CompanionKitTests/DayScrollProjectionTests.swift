@@ -29,10 +29,12 @@ final class DayScrollProjectionTests: XCTestCase {
 
     @discardableResult
     private func page(in model: PageModel, saying ink: String) throws -> UInt64 {
-        model.newPage()
-        let page = try XCTUnwrap(model.selectedPageID)
+        let tab = model.coreClient.newTab()
+        XCTAssertNotEqual(tab, 0)
+        let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
         XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: "[{\"ink\": \"\(ink)\"}]"))
         model.refresh()
+        model.select(tab)
         return page
     }
 

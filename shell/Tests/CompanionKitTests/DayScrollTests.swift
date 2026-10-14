@@ -31,19 +31,19 @@ final class DayScrollTests: XCTestCase {
         return model
     }
 
-    /// A page with something on it, minted by the shipped gesture. The
-    /// ink goes in through the core's own restate rather than through a
-    /// keystroke, because what these tests need is a document with a
-    /// known length, not an emitter under test.
+    /// Seed an independent page through the core, without splitting
+    /// the selected page at the editor's caret.
     @discardableResult
     private func page(in model: PageModel, saying ink: String) throws -> UInt64 {
-        model.newPage()
-        let page = try XCTUnwrap(model.selectedPageID)
+        let tab = model.coreClient.newTab()
+        XCTAssertNotEqual(tab, 0)
+        let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
         let escaped = ink.replacingOccurrences(of: "\n", with: "\\n")
         XCTAssertTrue(model.coreClient.syncDocument(
             sheet: page, json: "[{\"ink\": \"\(escaped)\"}]"
         ))
         model.refresh()
+        model.select(tab)
         return page
     }
 
@@ -1221,10 +1221,10 @@ final class DayScrollTests: XCTestCase {
 
     func testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement() throws {
         let model = try makeModel()
-        model.newPage()
+        try page(in: model, saying: "")
         let firstID = try XCTUnwrap(model.selection)
         model.renameTab(firstID, to: "first page")
-        model.newPage()
+        try page(in: model, saying: "")
         let secondID = try XCTUnwrap(model.selection)
         model.renameTab(secondID, to: "second page")
         let first = try XCTUnwrap(model.tabs.first { $0.id == firstID })
@@ -1265,7 +1265,7 @@ final class DayScrollTests: XCTestCase {
     /// countdown is still spoken.
     func testAGutterDrawsATypedNameAndNoGauge() throws {
         let model = try makeModel()
-        model.newPage()
+        try page(in: model, saying: "")
         let tabID = try XCTUnwrap(model.selection)
         let placeholder = try XCTUnwrap(model.tabs.first { $0.id == tabID })
         XCTAssertEqual(placeholder.titleSource, .placeholder)
@@ -1550,7 +1550,7 @@ final class DayScrollTests: XCTestCase {
 
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {
         let model = try makeModel()
-        model.newPage()
+        try page(in: model, saying: "")
         let tabID = try XCTUnwrap(model.selection)
         model.renameTab(tabID, to: "original title")
         let summary = try XCTUnwrap(model.tabs.first { $0.id == tabID })
