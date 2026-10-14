@@ -281,7 +281,7 @@ Settle list, as of this date:
 - **The two derivation thresholds.** Open. Part 1 is not built: no
   `block_revisions` seam exists in `crates/`. The two second figure
   the idle gap would start from is at least settled and in the code
-  (`crates/core/src/document.rs:27`), argued at
+  (`crates/core/src/document.rs:39`), argued at
   [`2026-0901-pause-boundaries.md`](../spec/feature/block-revisions/2026-0901-pause-boundaries.md).
 - **Measured cost of the fork then checkout walk.** Open, and
   unmeasured. Nothing in the tree performs the walk.
@@ -292,15 +292,15 @@ Settle list, as of this date:
   confirmed ballot and `crates/ffi/src/sync_session.rs:1051` for the
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
-  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1016`).
+  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1037`).
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
   (`crates/ffi/src/gop.rs:277`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
-  (`crates/core/src/store.rs:5098`). The joining side discards too, by
+  (`crates/core/src/store.rs:5152`). The joining side discards too, by
   a separate rule: a frame lands only on a pristine page
-  (`crates/core/src/store.rs:4836`), so a device carrying
+  (`crates/core/src/store.rs:4890`), so a device carrying
   pre-ceremony history drops it and rejoins empty
-  (`crates/core/src/store.rs:4787`). **Unverified; no test exercises
+  (`crates/core/src/store.rs:4841`). **Unverified; no test exercises
   a key frame emitted without a local discard**, and no code path
   offers one. Whether part 2's schedule change removes the occasion
   rather than the coupling is the question left standing.
@@ -309,18 +309,18 @@ Settle list, as of this date:
 Delivered by #132 and holding part 4:
 
 - Local only step, peer's operations left standing:
-  `crates/core/src/document.rs:1594`, `crates/core/src/store.rs:5920`.
+  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:5974`.
 - Nothing to step back through after a restore or a ceremony:
-  `crates/core/src/document.rs:1562`, `crates/core/src/document.rs:1579`,
-  `crates/core/src/store.rs:5864`.
+  `crates/core/src/document.rs:1574`, `crates/core/src/document.rs:1591`,
+  `crates/core/src/store.rs:5918`.
 - The stack forgotten where a step would lie: a seal
-  (`crates/core/src/store.rs:5213`), a deleted chip
-  (`crates/core/src/store.rs:5666`), a wholesale restate
-  (`crates/core/src/store.rs:5847`), a peer's chip deletion
-  (`crates/core/src/store.rs:5883`).
+  (`crates/core/src/store.rs:5267`), a deleted chip
+  (`crates/core/src/store.rs:5720`), a wholesale restate
+  (`crates/core/src/store.rs:5901`), a peer's chip deletion
+  (`crates/core/src/store.rs:5937`).
 - Two second merge interval and the automation's own step:
-  `crates/core/src/document.rs:1501`, `crates/core/src/document.rs:1523`.
-- The caret across the seam: `crates/core/src/document.rs:1436`,
+  `crates/core/src/document.rs:1513`, `crates/core/src/document.rs:1535`.
+- The caret across the seam: `crates/core/src/document.rs:1448`,
   `crates/ffi/src/lib.rs:5374`.
 
 **Part 2, "The page is history's retention unit (amends ADR-0013)",
