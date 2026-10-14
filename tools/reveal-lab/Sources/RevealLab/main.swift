@@ -658,28 +658,112 @@ final class Lab: NSObject, NSApplicationDelegate {
     }
 }
 
+struct TestContext {
+    let name: String
+
+    func fail(_ message: String, line: Int = #line) -> Never {
+        fputs("FAIL [\(name)] line \(line): \(message)\n", stderr)
+        exit(1)
+    }
+
+    func expect(_ condition: @autoclosure () -> Bool, _ message: String, line: Int = #line) {
+        if !condition() { fail(message, line: line) }
+    }
+
+    func require<T>(_ value: T?, _ message: String, line: Int = #line) -> T {
+        guard let value else { fail(message, line: line) }
+        return value
+    }
+}
+
 func selfTest() {
+    let test = TestContext(name: "self-test geometry")
     let frame = NSRect(x: -1000, y: 0, width: 1000, height: 800)
     let edge = EdgeGeometry(frame: frame, side: .right, fraction: 0.5)
-    precondition(edge.contains(NSPoint(x: -12, y: 400)))
-    precondition(!edge.contains(NSPoint(x: -25, y: 400)))
-    precondition(!edge.contains(NSPoint(x: -12, y: 480)))
-    precondition(edge.contains(NSPoint(x: -25, y: 480), depth: 44, halfLength: 90))
-    precondition(!edge.contains(NSPoint(x: 1, y: 400)))
-    precondition(edge.isExposed(at: NSPoint(x: 0, y: 400), others: []))
-    precondition(!edge.isExposed(at: NSPoint(x: 0, y: 400), others: [NSRect(x: 0, y: 0, width: 1000, height: 800)]))
-    precondition(edge.isExposed(at: NSPoint(x: 0, y: 700), others: [NSRect(x: 0, y: 0, width: 1000, height: 600)]))
+    test.expect(edge.contains(NSPoint(x: -12, y: 400)), "Entry band must include 12pt depth")
+    test.expect(!edge.contains(NSPoint(x: -25, y: 400)), "Entry band must exclude 25pt depth")
+    test.expect(!edge.contains(NSPoint(x: -12, y: 480)), "Entry band must exclude 80pt along-edge distance")
+    test.expect(edge.contains(NSPoint(x: -25, y: 480), depth: 44, halfLength: 90), "Exit band must include its wider margin")
+    test.expect(!edge.contains(NSPoint(x: 1, y: 400)), "Points outside the display must be excluded")
+    test.expect(edge.isExposed(at: NSPoint(x: 0, y: 400), others: []), "Unshared edge must be exposed")
+    test.expect(!edge.isExposed(at: NSPoint(x: 0, y: 400), others: [NSRect(x: 0, y: 0, width: 1000, height: 800)]), "Shared seam must not be exposed")
+    test.expect(edge.isExposed(at: NSPoint(x: 0, y: 700), others: [NSRect(x: 0, y: 0, width: 1000, height: 600)]), "Unshared part of a partial seam must be exposed")
     for side in Side.allCases {
+        let test = TestContext(name: "self-test side=\(side.rawValue)")
         let e = EdgeGeometry(frame: frame, side: side, fraction: 0.5)
-        precondition(e.distance(e.center) == 0)
-        precondition(e.contains(e.center))
-        precondition(frame.contains(e.entryFrame))
-        precondition(e.contains(NSPoint(x: e.entryFrame.midX, y: e.entryFrame.midY)))
+        test.expect(e.distance(e.center) == 0, "Edge center must have zero depth")
+        test.expect(e.contains(e.center), "Edge center must be eligible")
+        test.expect(frame.contains(e.entryFrame), "Entry marker must fit inside the display")
+        test.expect(e.contains(NSPoint(x: e.entryFrame.midX, y: e.entryFrame.midY)), "Marker center must be eligible")
     }
     let bounds = NSRect(x: -1000, y: 30, width: 1000, height: 740)
-    let fitted = clamped(NSRect(x: 0, y: -100, width: 248, height: 132), to: bounds)
-    precondition(bounds.contains(fitted))
+    test.expect(bounds.contains(clamped(NSRect(x: 0, y: -100, width: 248, height: 132), to: bounds)), "Card must clamp to visible bounds")
     print("PASS: entry/exit bands, negative display origins, all four edges, shared/partial seams, card clamping")
+}
+
+func smokeTest(_ lab: Lab, app: NSApplication) {
+    lab.timer?.invalidate()
+    let startup = TestContext(name: "smoke startup")
+    let keyWindow = app.keyWindow
+    func select(_ mode: Mode) {
+        lab.modes.selectItem(at: startup.require(Mode.allCases.firstIndex(of: mode), "Mode missing from popup"))
+        lab.changed()
+    }
+    for mode in Mode.allCases {
+        let test = TestContext(name: "smoke mode=\(mode.rawValue)")
+        select(mode)
+        test.expect(lab.instructions.stringValue == mode.instructions, "Instructions must match the selected mode")
+        test.expect(lab.guide.ignoresMouseEvents && !lab.guide.canBecomeKey, "Guide must be non-key and mouse-transparent")
+        test.expect(lab.guide.isVisible == mode.hasEdgeTarget, "Guide visibility must match the mode")
+        lab.enteredAt = lab.now
+        lab.show(.peek)
+        test.expect(lab.reveal.ignoresMouseEvents, "Peek must pass through clicks")
+        lab.show(.card)
+        test.expect(!lab.reveal.ignoresMouseEvents, "Full card must catch clicks before arming")
+        test.expect(!lab.reveal.canBecomeKey && !lab.reveal.canBecomeMain, "Reveal must remain non-key and non-main")
+        lab.reveal.setFrame(lab.cardFrame, display: true)
+        lab.card.layoutSubtreeIfNeeded()
+        let point = NSPoint(x: lab.cardFrame.midX - 10, y: lab.cardFrame.midY)
+        lab.armingOrigin = point; lab.pointerWasOutside = false
+        let click = test.require(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 30, y: 100),
+                                                  modifierFlags: [], timestamp: lab.now,
+                                                  windowNumber: lab.reveal.windowNumber, context: nil,
+                                                  eventNumber: 0, clickCount: 1, pressure: 1), "Could not construct a simulated card click")
+        var commits = 0
+        let originalCommit = lab.card.commit
+        lab.card.commit = { commits += 1 }
+        test.expect(lab.card.acceptsFirstMouse(for: click), "Card must accept the first inactive click")
+        test.expect(lab.card.hitTest(NSPoint(x: 30, y: 100)) === lab.card, "Card background must catch the click")
+        lab.card.mouseDown(with: click)
+        test.expect(commits == 0, "Unarmed click must not commit")
+        lab.updateCardInteraction(at: point, time: lab.shownAt + 0.2)
+        test.expect(!lab.card.open.isEnabled, "Stationary pointer must not arm")
+        lab.updateCardInteraction(at: NSPoint(x: point.x + 2, y: point.y), time: lab.shownAt + 0.2)
+        test.expect(!lab.card.open.isEnabled, "Two-point jitter must not arm")
+        lab.updateCardInteraction(at: NSPoint(x: point.x + 6, y: point.y), time: lab.shownAt + 0.2)
+        if mode != .drag {
+            test.expect(lab.card.open.isEnabled, "Deliberate motion must arm the card")
+            lab.card.mouseDown(with: click)
+            test.expect(commits == 1, "Armed background click must commit exactly once")
+        } else { test.expect(lab.card.acceptsDrop, "Drag card must accept drops instead of arming clicks") }
+        lab.card.commit = originalCommit
+        test.expect(app.keyWindow === keyWindow, "Reveal cycle must leave the key window unchanged")
+        lab.dismiss(block: false)
+        test.expect(!lab.reveal.isVisible, "Dismiss must hide the reveal")
+    }
+
+    let held = TestContext(name: "smoke mode=Held glance")
+    select(.held)
+    lab.glance(true)
+    held.expect(lab.phase == .card, "Held press must reveal the card")
+    lab.glance(false)
+    held.expect(lab.phase == .idle, "Held release must dismiss")
+
+    lab.marker.state = .off
+    lab.updateGuide()
+    held.expect(!lab.guide.isVisible, "Disabled marker must hide the guide")
+    print("PASS: AppKit startup, 12 mode render/reset cycles, click-catching cards, stationary/jitter rejection, deliberate motion arming, simulated card clicks, unchanged key window during reveal, simulated held press/release")
+    app.terminate(nil)
 }
 
 if CommandLine.arguments.contains("--self-test") {
@@ -690,67 +774,7 @@ if CommandLine.arguments.contains("--self-test") {
     let delegate = Lab()
     app.delegate = delegate
     if CommandLine.arguments.contains("--smoke-test") {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            delegate.timer?.invalidate()
-            let keyWindow = app.keyWindow
-            for (index, _) in Mode.allCases.enumerated() {
-                delegate.modes.selectItem(at: index)
-                delegate.changed()
-                precondition(delegate.instructions.stringValue == delegate.mode.instructions)
-                precondition(delegate.guide.ignoresMouseEvents && !delegate.guide.canBecomeKey)
-                precondition(delegate.guide.isVisible == delegate.mode.hasEdgeTarget)
-                delegate.enteredAt = delegate.now
-                delegate.show(.peek)
-                precondition(delegate.reveal.ignoresMouseEvents)
-                delegate.show(.card)
-                guard !delegate.reveal.ignoresMouseEvents else {
-                    fputs("FAIL: fully revealed card passes clicks to the desktop before arming\n", stderr)
-                    exit(1)
-                }
-                precondition(!delegate.reveal.canBecomeKey && !delegate.reveal.canBecomeMain)
-                delegate.reveal.setFrame(delegate.cardFrame, display: true)
-                delegate.card.layoutSubtreeIfNeeded()
-                let point = NSPoint(x: delegate.cardFrame.midX - 10, y: delegate.cardFrame.midY)
-                delegate.armingOrigin = point
-                delegate.pointerWasOutside = false
-                let click = NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 30, y: 100),
-                                              modifierFlags: [], timestamp: delegate.now,
-                                              windowNumber: delegate.reveal.windowNumber, context: nil,
-                                              eventNumber: 0, clickCount: 1, pressure: 1)!
-                var commits = 0
-                let originalCommit = delegate.card.commit
-                delegate.card.commit = { commits += 1 }
-                precondition(delegate.card.acceptsFirstMouse(for: click))
-                precondition(delegate.card.hitTest(NSPoint(x: 30, y: 100)) === delegate.card)
-                delegate.card.mouseDown(with: click)
-                precondition(commits == 0)
-                delegate.updateCardInteraction(at: point, time: delegate.shownAt + 0.2)
-                precondition(!delegate.card.open.isEnabled)
-                delegate.updateCardInteraction(at: NSPoint(x: point.x + 2, y: point.y), time: delegate.shownAt + 0.2)
-                precondition(!delegate.card.open.isEnabled)
-                delegate.updateCardInteraction(at: NSPoint(x: point.x + 6, y: point.y), time: delegate.shownAt + 0.2)
-                if delegate.mode != .drag {
-                    precondition(delegate.card.open.isEnabled)
-                    delegate.card.mouseDown(with: click)
-                    precondition(commits == 1)
-                } else { precondition(delegate.card.acceptsDrop) }
-                delegate.card.commit = originalCommit
-                precondition(app.keyWindow === keyWindow)
-                delegate.dismiss(block: false)
-                precondition(!delegate.reveal.isVisible)
-            }
-            delegate.modes.selectItem(at: Mode.allCases.firstIndex(of: .held)!)
-            delegate.changed()
-            delegate.glance(true)
-            precondition(delegate.phase == .card)
-            delegate.glance(false)
-            precondition(delegate.phase == .idle)
-            delegate.marker.state = .off
-            delegate.updateGuide()
-            precondition(!delegate.guide.isVisible)
-            print("PASS: AppKit startup, 12 mode render/reset cycles, click-catching cards, stationary/jitter rejection, deliberate motion arming, simulated card clicks, unchanged key window during reveal, simulated held press/release")
-            app.terminate(nil)
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { smokeTest(delegate, app: app) }
     }
     app.run()
 }
