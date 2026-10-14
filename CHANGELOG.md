@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes the page while a name or a note holds the keys.
 
 - **The decrypted drag's handle shows an open hand** (app 0.35.0;
-  Law 0001, ADR-0051, issue #170). Over a drawn handle a press would
+  Law 0001, ADR-0055, issue #170). Over a drawn handle a press would
   drag from, the pointer is an open hand; while a name or a note holds
   the keys it stays the text cursor.
 
