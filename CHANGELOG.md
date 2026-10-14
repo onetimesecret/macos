@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Removing a sealed object keeps it, and ⌘Z puts it back** (app
+  0.33.0; `companion-core` 0.29.0; Law 0001, ADR-0047, issue #170). A
+  backspace, *Remove protected content*, a cut or a restate takes the
+  object off the page but keeps it, on the page's clock, until the page
+  ends; ⌘Z, redo, or the editor putting its attachment back stands the
+  same object again, so moving one by the editor's own delete and insert
+  no longer destroys it. A seal stays one way: the first standing of a
+  fresh seal still clears the page's undo. *Burn local copy* after a
+  conceal still destroys at once. The ledger no longer records a
+  removal; when a page ends it records each object it held, removed or
+  not, as expired or discarded under the object's own identity, beside
+  the page's record. Removed objects are written to the state file after
+  the page's floor, so the format's version does not change; an older
+  build drops them at its next save.
+
 - **A sealed object's note is written on the page's own surface** (app
   0.32.0; Law 0001, ADR-0045, issue #246). The note reads and types as
   the page does: headings, lists that continue on Return and nest on
@@ -309,8 +324,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ember keyline. The lines after the actions read "copied decrypted
   contents — small. the clipboard clears in 60 seconds.", "the link is on the
   clipboard — paste it where it needs to go." and "protected content
-  removed." (its Undo is gated until issue 170 lands the detached
-  state). The interval is the core constant read through the seam; the
+  removed." (its Undo button waits for the editor's half of issue 170;
+  ⌘Z already puts the object back). The interval is the core constant read through the seam; the
   clear is attempted only if the general pasteboard still holds that write.
 
 - **A day's gutter says the day and the minute, and draws a gauge.**
@@ -369,6 +384,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the interval through `companion_clipboard_clear_seconds`.
 
 ### Added
+
+- **The core cuts, copies and pastes a sealed fragment, in one
+  transaction** (`companion-core` 0.29.0, `companion-ffi` 0.38.0,
+  `companion-pasteboard` 0.4.0; Law 0001, ADR-0047, issue #170). The
+  editor does not use these routes yet; its half of issue 170 is next.
+  - `companion_sheet_copy_fragment` answers a selection as a versioned
+    envelope of ordered ink and object references, never payload, and
+    its public text, the ink with `[sealed content · <size class>]` for
+    each object. A selection of ink alone has no envelope.
+  - `companion_sheet_cut_fragment` deletes the selection as one undo
+    step and keeps its objects as the one active cut, whose faces
+    `companion_active_cut_json` gives the clipboard slot.
+  - `companion_sheet_paste_fragment` places an envelope as one undo
+    step: the active cut's objects reattach from its own envelope, any
+    other live object is cloned under a new identity, and a reference
+    whose object has ended places `[sealed content · expired]` or
+    `[sealed content · burned]` while the ledger holds its end, else
+    `[sealed content · unavailable]`. An envelope the core cannot read
+    places the item's public text and says so. A body that refuses
+    the edit partway is reverted, and nothing else moves.
+  - `companion_sheet_paste_active_cut` places the cut from the slot;
+    `companion_sheet_move_range` and `companion_sheet_clone_range` are
+    the drag and the ⌥ drag inside a page.
+  - `companion_chip_provide_drag` writes a decrypted drag's payload
+    into the drag's pasteboard item, core side, when a destination
+    asks, and records one `sent` to the new `drag` destination. It
+    refuses the general pasteboard and any type but the object's own.
+  - The active cut is written with the page it came from, so a relaunch
+    between a cut and its paste still reattaches. A ledger holding a
+    `drag` record cannot be read by an older build.
+
+- **A sealed object's name and note travel in its fragment**
+  (`companion-core` 0.30.0; Law 0001, ADR-0047, issue #247). A
+  reference carries the object's name and note. A clone takes them, the
+  name judged by the rule a typed one is, so one the rule refuses is
+  dropped and the object kept; a reattached object keeps its own; a
+  placeholder and the public text carry neither. The private type sits
+  on the general pasteboard, so the note's text goes wherever a
+  clipboard manager takes it.
 
 - **A shell test can keep the core's copies off the general pasteboard**
   (`companion_test_memory_pasteboard`; `companion-ffi` 0.37.0). An
@@ -439,7 +493,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read and edit it the way the file routes read and edit a file. The
   chip's face carries `has_note`, true while the note holds anything but
   whitespace. The note has no clock of its own and no ledger record: it
-  goes with its object, when the page expires or the object is removed.
+  goes with its object, kept while the object is removed and destroyed
+  when the page ends or the object is burned.
   It is written as text after the name in the chip's record, so the
   format's version does not change, and its undo starts empty after a
   relaunch. An older build drops it at its next save, as it drops the
