@@ -100,8 +100,9 @@ struct ShiftTapDetector {
 func stagedFrame(_ card: NSRect, stage: Phase, mode: Mode, side: Side) -> NSRect {
     guard stage == .peek else { return card }
     var frame = card
-    if mode == .status || side == .top { frame.origin.y = frame.maxY - 34; frame.size.height = 34 }
-    else if side == .bottom || mode == .corner { frame.size.height = 34 }
+    if mode == .corner { frame.size.height = 34 }
+    else if mode == .status || side == .top { frame.origin.y = frame.maxY - 34; frame.size.height = 34 }
+    else if side == .bottom { frame.size.height = 34 }
     else if side == .left { frame.size.width = 34 }
     else { frame.origin.x = frame.maxX - 34; frame.size.width = 34 }
     return frame
@@ -779,6 +780,10 @@ func selfTest() {
         test.expect(e.contains(e.center), "Edge center must be eligible")
         test.expect(frame.contains(e.entryFrame), "Entry marker must fit inside the display")
         test.expect(e.contains(NSPoint(x: e.entryFrame.midX, y: e.entryFrame.midY)), "Marker center must be eligible")
+        let card = NSRect(x: -248, y: 30, width: 248, height: 132)
+        let peek = stagedFrame(card, stage: .peek, mode: .corner, side: side)
+        test.expect(peek == NSRect(x: card.minX, y: card.minY, width: 248, height: 34), "Corner peek must stay bottom-aligned regardless of prior side")
+        test.expect(stagedFrame(card, stage: .card, mode: .corner, side: side) == card, "Full-card stage must preserve its frame")
     }
     let bounds = NSRect(x: -1000, y: 30, width: 1000, height: 740)
     test.expect(bounds.contains(clamped(NSRect(x: 0, y: -100, width: 248, height: 132), to: bounds)), "Card must clamp to visible bounds")
@@ -820,7 +825,7 @@ func selfTest() {
     shift.expect(!detector.sample(flags: [], at: 0.1), "Reset during a held Shift must ignore its release")
     _ = detector.sample(flags: .shift, at: 0.15)
     shift.expect(!detector.sample(flags: [], at: 0.2), "Reset must clear the pending first tap")
-    print("PASS: entry/exit bands, negative display origins, all four edges, shared/partial seams, card clamping")
+    print("PASS: geometry, display selection/reorder/removal/empty recovery, corner peek across all sides, deterministic Shift timing/chord/reset tests")
 }
 
 func smokeTest(_ lab: Lab, app: NSApplication) {
@@ -843,6 +848,18 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
         test.expect(lab.instructions.stringValue == mode.instructions, "Instructions must match the selected mode")
         test.expect(lab.guide.ignoresMouseEvents && !lab.guide.canBecomeKey, "Guide must be non-key and mouse-transparent")
         test.expect(lab.guide.isVisible == mode.hasEdgeTarget, "Guide visibility must match the mode")
+        if mode.hasEdgeTarget {
+            let screen = test.require(lab.screen, "Guide needs a selected display")
+            let expected: NSRect
+            if mode == .corner { expected = test.require(lab.sourceFrame(), "Corner source missing") }
+            else if mode == .tab || mode == .drag { expected = lab.handle.frame.insetBy(dx: -5, dy: -5) }
+            else { expected = test.require(lab.edge, "Edge geometry missing").entryFrame }
+            let clipped = expected.intersection(screen.frame)
+            let actual = lab.guide.frame
+            test.expect(abs(actual.minX - clipped.minX) <= 1 && abs(actual.minY - clipped.minY) <= 1
+                        && abs(actual.width - clipped.width) <= 1 && abs(actual.height - clipped.height) <= 1,
+                        "Marker frame \(actual) must match clipped source band \(clipped) within 1pt AppKit alignment")
+        }
         lab.enteredAt = lab.now
         lab.show(.peek)
         lab.card.layoutSubtreeIfNeeded()
