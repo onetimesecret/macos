@@ -35,10 +35,10 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, Copied, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT,
-    FileId, LedgerEvent, NameRefusal, PayloadError, Placed, RestoreError, SealedChip, Segment,
-    Sheet, SheetId, SheetStore, StepOutcome, SystemClock, TTL_LADDER, Tab, TabId, TextSelection,
-    Ttl, detect_source_language, judge_name, local_day,
+    ChipId, ChipMeta, Copied, CopyRefusal, DestinationClass, EditIntent, EditOp, EditSelection,
+    EnvelopeCap, FILE_SIZE_LIMIT, FileId, LedgerEvent, NameRefusal, PayloadError, Placed,
+    RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore, StepOutcome, SystemClock,
+    TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, judge_name, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1502,9 +1502,10 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
 
 // ---- The sealed fragment: copy, cut, paste, drags (ADR-0047) ----
 
-/// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`; null
-/// for a file id, an unknown page, a page past its deadline (ADR-0052) or a
-/// bad range. Free with [`companion_string_free`].
+/// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`, or
+/// `{"error", "limit"}` past an envelope cap (ADR-0053); null for a file id,
+/// an unknown page, a page past its deadline (ADR-0052) or a bad range.
+/// Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1524,14 +1525,16 @@ pub unsafe extern "C" fn companion_sheet_copy_fragment(
     let Ok(guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    guard
-        .store
-        .copy_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16)
-        .map_or(ptr::null_mut(), |copied| copied_json(&copied))
+    copy_outcome_json(
+        guard
+            .store
+            .copy_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16),
+    )
 }
 
 /// [`companion_sheet_copy_fragment`], then delete the range as one undo step,
-/// its objects detaching as the active cut. Null, changing nothing, on refusal.
+/// its objects detaching as the active cut. It refuses as the copy does, or
+/// for a body that refuses the edit, and a refusal changes nothing.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1551,10 +1554,11 @@ pub unsafe extern "C" fn companion_sheet_cut_fragment(
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    guard
-        .store
-        .cut_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16)
-        .map_or(ptr::null_mut(), |copied| copied_json(&copied))
+    copy_outcome_json(
+        guard
+            .store
+            .cut_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16),
+    )
 }
 
 /// Paste envelope bytes over a range as one undo step, `plain` placed for one
@@ -3460,6 +3464,22 @@ fn copied_json(copied: &Copied) -> *mut c_char {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// A copy's or a cut's answer: [`copied_json`], `{"error": "tooLarge" |
+/// "tooManyObjects", "limit"}` past a cap (ADR-0053), else null.
+fn copy_outcome_json(outcome: Result<Copied, CopyRefusal>) -> *mut c_char {
+    let cap = match outcome {
+        Ok(copied) => return copied_json(&copied),
+        Err(CopyRefusal::Refused) => return ptr::null_mut(),
+        Err(CopyRefusal::PastCap(cap)) => cap,
+    };
+    let error = match cap {
+        EnvelopeCap::Length => "tooLarge",
+        EnvelopeCap::References => "tooManyObjects",
+    };
+    let limit = cap.limit() as u64;
+    into_c_string(serde_json::json!({ "error": error, "limit": limit }).to_string())
 }
 
 /// What a paste, a move or a clone placed: its run in UTF-16 units, a count
@@ -8201,6 +8221,49 @@ mod tests {
             assert_eq!(slot["objects"], serde_json::json!([]));
 
             companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_copy_or_cut_past_an_envelope_cap_names_the_cap_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (long, _) = page_with_a_chip(handle, "hunter2-secret");
+            let ink = "x".repeat(EnvelopeCap::Length.limit());
+            let ops = cstring(&format!(r#"[{{"ins": {{"at": 0, "text": "{ink}"}}}}]"#));
+            assert!(companion_sheet_apply_ops(handle, long, ops.as_ptr()));
+            let whole = u32::try_from(ink.len() + 5).unwrap();
+            let before = take_json(companion_sheet_document_json(handle, long));
+
+            let refused = serde_json::json!({ "error": "tooLarge", "limit": 8_388_608 });
+            let copied = json_of(companion_sheet_copy_fragment(handle, long, 0, whole));
+            assert_eq!(copied, refused, "no plain to write either");
+            let cut = json_of(companion_sheet_cut_fragment(handle, long, 0, whole));
+            assert_eq!(cut, refused);
+            let after = take_json(companion_sheet_document_json(handle, long));
+            assert!(after == before, "the cut changed nothing");
+            assert!(json_of(companion_active_cut_json(handle))["page_id"].is_null());
+            let ink_alone = json_of(companion_sheet_copy_fragment(handle, long, 0, whole - 5));
+            assert!(ink_alone["envelope"].is_null(), "ink alone meets no cap");
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn each_cap_crosses_the_seam_as_its_own_token_and_limit() {
+        unsafe {
+            let length = copy_outcome_json(Err(CopyRefusal::PastCap(EnvelopeCap::Length)));
+            assert_eq!(
+                json_of(length),
+                serde_json::json!({ "error": "tooLarge", "limit": 8_388_608 })
+            );
+            let objects = copy_outcome_json(Err(CopyRefusal::PastCap(EnvelopeCap::References)));
+            assert_eq!(
+                json_of(objects),
+                serde_json::json!({ "error": "tooManyObjects", "limit": 1024 })
+            );
+            assert!(copy_outcome_json(Err(CopyRefusal::Refused)).is_null());
         }
     }
 

@@ -496,10 +496,38 @@ public struct SealedFragment: Hashable, Sendable {
     /// The ink, with `[sealed content · <size class>]` for each object.
     public let plainText: String
 
+    /// A copy, or a cap's refusal with `error` and `limit` (ADR-0053).
     struct Wire: Decodable {
         let envelope: String?
-        let plain: String
+        let plain: String?
+        let error: String?
+        let limit: Int?
     }
+
+    /// The core's answer to a copy or a cut; nil, or one this build does not know, refuses.
+    static func outcome(of wire: Wire?) -> Result<SealedFragment, FragmentRefusal> {
+        switch (wire?.plain, wire?.error, wire?.limit) {
+        case (let plain?, nil, _):
+            .success(
+                SealedFragment(envelope: wire?.envelope.map { Data($0.utf8) }, plainText: plain))
+        case (nil, "tooLarge", let limit?):
+            .failure(.tooLarge(limit: limit))
+        case (nil, "tooManyObjects", let limit?):
+            .failure(.tooManyObjects(limit: limit))
+        default:
+            .failure(.refused)
+        }
+    }
+}
+
+/// Why the core composed no fragment for a copy or a cut.
+public enum FragmentRefusal: Error, Equatable, Sendable {
+    /// An unknown page, one past its deadline, a bad range or a cut the body refused.
+    case refused
+    /// Its envelope would be longer than `limit` bytes (ADR-0053).
+    case tooLarge(limit: Int)
+    /// Its envelope would name more than `limit` sealed objects (ADR-0053).
+    case tooManyObjects(limit: Int)
 }
 
 /// What a paste, a move or a clone placed (ADR-0047 point 6).
@@ -1236,17 +1264,31 @@ public class CompanionClient: @unchecked Sendable {
         #endif
     }
 
-    /// Copy a UTF-16 range of a page. Nil for an empty or bad range, or a
-    /// page past its deadline (ADR-0052).
+    /// Copy a UTF-16 range of a page. Nil for an empty or bad range, a
+    /// page past its deadline (ADR-0052) or an envelope past a cap (ADR-0053).
     public func copyFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
-        guard let wire = selectionWire(range) else { return nil }
+        try? copyFragmentResult(sheet: sheet, range: range).get()
+    }
+
+    /// Copy a UTF-16 range of a page, or why the core refused it.
+    public func copyFragmentResult(
+        sheet: UInt64, range: NSRange
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        guard let wire = selectionWire(range) else { return .failure(.refused) }
         return fragment(from: companion_sheet_copy_fragment(handle, sheet, wire.0, wire.1))
     }
 
     /// Copy a range, then delete it as one undo step; its objects detach
     /// as the active cut. Nil, with nothing changed, where the core refuses.
     public func cutFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
-        guard let wire = selectionWire(range) else { return nil }
+        try? cutFragmentResult(sheet: sheet, range: range).get()
+    }
+
+    /// Cut a range as `cutFragment` does, or why the core refused it.
+    public func cutFragmentResult(
+        sheet: UInt64, range: NSRange
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        guard let wire = selectionWire(range) else { return .failure(.refused) }
         return fragment(from: companion_sheet_cut_fragment(handle, sheet, wire.0, wire.1))
     }
 
@@ -1326,9 +1368,10 @@ public class CompanionClient: @unchecked Sendable {
         }
     }
 
-    private func fragment(from ptr: UnsafeMutablePointer<CChar>?) -> SealedFragment? {
-        guard let wire = decodeJSON(SealedFragment.Wire.self, from: ptr) else { return nil }
-        return SealedFragment(envelope: wire.envelope.map { Data($0.utf8) }, plainText: wire.plain)
+    private func fragment(
+        from ptr: UnsafeMutablePointer<CChar>?
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        SealedFragment.outcome(of: decodeJSON(SealedFragment.Wire.self, from: ptr))
     }
 
     // MARK: A sealed object's note (ADR-0043)

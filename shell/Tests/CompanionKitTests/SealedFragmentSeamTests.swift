@@ -151,6 +151,44 @@ final class SealedFragmentSeamTests: XCTestCase {
         XCTAssertEqual(client.expireDue(), 1, "the settle a refusal asks for sweeps it")
     }
 
+    func testACopyOrCutPastAnEnvelopeCapNamesItsLimitAndChangesNothing() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (sheet, chip) = try page(client)
+        let limit = 8 * 1024 * 1024
+        let ink = String(repeating: "x", count: limit)
+        XCTAssertTrue(client.applyOps(sheet: sheet, json: #"[{"ins":{"at":0,"text":"\#(ink)"}}]"#))
+        let all = NSRange(location: 0, length: limit + 5)
+
+        XCTAssertEqual(
+            client.copyFragmentResult(sheet: sheet, range: all), .failure(.tooLarge(limit: limit)))
+        XCTAssertEqual(
+            client.cutFragmentResult(sheet: sheet, range: all), .failure(.tooLarge(limit: limit)))
+        XCTAssertNil(client.copyFragment(sheet: sheet, range: all), "nothing to write")
+        XCTAssertEqual(chips(client, sheet: sheet).map(\.chipId), [chip.chipId])
+        XCTAssertNil(client.activeCut(), "no cut stands")
+        XCTAssertEqual(
+            client.copyFragmentResult(sheet: 4_242, range: whole), .failure(.refused),
+            "any other refusal stays bare")
+    }
+
+    func testTheSeamsCapAnswersDecodeAsTheirRefusals() throws {
+        func outcome(_ json: String) throws -> Result<SealedFragment, FragmentRefusal> {
+            SealedFragment.outcome(
+                of: try JSONDecoder().decode(SealedFragment.Wire.self, from: Data(json.utf8)))
+        }
+        XCTAssertEqual(
+            try outcome(#"{"error":"tooManyObjects","limit":1024}"#),
+            .failure(.tooManyObjects(limit: 1024)))
+        XCTAssertEqual(
+            try outcome(#"{"error":"tooLarge","limit":8388608}"#),
+            .failure(.tooLarge(limit: 8_388_608)))
+        XCTAssertEqual(try outcome(#"{"error":"later","limit":1}"#), .failure(.refused))
+        XCTAssertEqual(SealedFragment.outcome(of: nil), .failure(.refused))
+        XCTAssertEqual(
+            try outcome(#"{"envelope":null,"plain":"ab"}"#),
+            .success(SealedFragment(envelope: nil, plainText: "ab")))
+    }
+
     func testADecryptedDragWritesTheItemCoreSideAndRecordsADrag() throws {
         let client = CompanionClient.ephemeral(tag: #function)
         let (_, chip) = try page(client)

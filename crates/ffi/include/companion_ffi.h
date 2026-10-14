@@ -739,6 +739,13 @@ char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);
  * "[sealed content · <size class>]" for each object, the public
  * representation. Null for an unknown page, a page past its deadline
  * (ADR-0052) or an empty or bad range.
+ *
+ * An envelope past a cap the paste keeps (ADR-0049) is refused whole,
+ * naming the cap and its limit (ADR-0053):
+ *   {"error": "tooLarge", "limit": 8388608}       bytes
+ *   {"error": "tooManyObjects", "limit": 1024}    references
+ * Nothing is handed back to write, not even "plain". A selection of ink
+ * alone writes no envelope and meets no cap.
  */
 char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
                                     uint32_t at_utf16, uint32_t len_utf16);
@@ -747,8 +754,9 @@ char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
  * As companion_sheet_copy_fragment(), then delete the range as one undo
  * step. Its objects detach on the page's clock as the store's one
  * active cut, whose envelope names it; a later cut holding an object
- * replaces it. Null, changing nothing, where the copy or the page
- * refuses.
+ * replaces it. Null, or the copy's cap refusal, where the copy or the
+ * page refuses; either changes nothing, and an earlier active cut
+ * stands.
  */
 char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
                                    uint32_t at_utf16, uint32_t len_utf16);
