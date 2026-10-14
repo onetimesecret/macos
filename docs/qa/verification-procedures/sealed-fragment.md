@@ -9,10 +9,11 @@ paste, drag and decrypted drag rows cite this procedure for what the
 runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md);
 [ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md).
 **Owner:** delano.
-**Status:** open; not yet run. The editor's copy writes the fragment,
-so the first two checks can run; the rest are blocked until the editor
-cuts, pastes, drags and offers the decrypted drag handle (issue #170's
-shell half).
+**Status:** open; not yet run. The editor's copy and cut write the
+fragment and the slot's button places a cut, so the first two checks
+and the slot's check can run; the rest are blocked until the editor
+pastes, drags and offers the decrypted drag handle (issue #170's shell
+half).
 
 ## Why by hand
 
@@ -43,6 +44,16 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the object returns with its name, and ⌘Z takes the paste back.
       **Fail:** the line stays, or the object returns as a clone with
       a fresh face.
+- [ ] **The slot's button on the raised card.** Name a sealed object,
+      select it with some ink and cut with ⌘X. Switch to another page,
+      put the caret at its end and click the slot's `place here`
+      button under the page, then type a letter. **Pass:** the line
+      named the object by its name and size class and showed nothing
+      of the sealed word; the card stays raised through the click; the
+      object and the ink land at the caret with the name; the line
+      goes; the letter lands on the page; ⌘Z takes the place back.
+      **Fail:** the card rests on the click, the letter goes to another
+      app, or the line shows any part of the word.
 - [ ] **A cut across a relaunch.** Cut a sealed object, quit with ⌘Q,
       relaunch, paste. **Pass:** the slot's line is back before the
       paste and the object returns. **Fail:** the paste places
