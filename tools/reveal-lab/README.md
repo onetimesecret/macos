@@ -48,7 +48,8 @@ The script builds a small `.app` under this directory's ignored `.build/`,
 then opens it. No Rust framework, CompanionApp checkout, package download,
 or main-app build is needed. The **RL** menu-bar item brings the controls back.
 Close the controls to get them out of the way; **Quit lab** exits the process.
-Quit an existing lab before rebuilding/relaunching it.
+Rebuilding replaces the bundled executable without quitting a running lab.
+Quit the existing lab and relaunch to use the new build.
 
 ## Start here: see your first interaction
 
