@@ -103,7 +103,12 @@ The envelope's layout, its caps, the routes and the refusals are in Law
 
 ## Eject triggers
 
-- A fragment needs a node kind beyond ink and a reference.
+- A fragment needs a node kind beyond ink and a reference, or needs to
+  name one object twice.
+- A person's own selection meets an envelope cap, 8 MiB or 1024
+  objects (Law 0001's copy and paste rows), in ordinary use; that would
+  ask for higher caps or a paged envelope, not for a copy the paste
+  cannot read.
 - The shell needs to read an envelope to decide something the type
   alone cannot tell it.
 - AppKit is seen asking a decrypted drag's provider off the main thread
@@ -112,4 +117,4 @@ The envelope's layout, its caps, the routes and the refusals are in Law
 ## Decision history
 
 - 2026-10-14: Proposed.
-- 2026-10-14: Consolidated from draft ADR-0047 (the sealed fragment, the detached store and decrypted drag) points 1 (the boundary, not the layout), 2, 3 and 11's boundary, written 2026-10-13 and never ratified; its points 4 and 5 are [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md), and its other points stand in Law 0001's rows, the sealed row spec and the core interface note.
+- 2026-10-14: Consolidated from draft ADR-0047 (the sealed fragment, the detached store and decrypted drag) points 1 (the boundary, not the layout), 2, 3 and 11's boundary, written 2026-10-13 and never ratified; its points 4 and 5 are [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md), and its other points stand in Law 0001's rows, the sealed row spec and the core interface note. The eject triggers for the caps come from drafts ADR-0049 and ADR-0053, and the one for the main thread from draft ADR-0050.
