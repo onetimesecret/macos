@@ -60,10 +60,10 @@ Primary source locations:
 
 - `shell/Sources/CompanionKit/PageModel.swift:723-975`
 - `shell/Sources/CompanionKit/PageModel.swift:1466-1542`
-- `shell/Sources/CompanionKit/PageModel.swift:6845-6882`
-- `shell/Sources/CompanionKit/SyncController.swift:4-43`
-- `shell/Sources/CompanionKit/SyncController.swift:83-91`
-- `shell/Sources/CompanionKit/SyncController.swift:147-208`
+- `shell/Sources/CompanionKit/PageModel.swift:6892-6929`
+- `shell/Sources/CompanionKit/SyncController.swift:4-40`
+- `shell/Sources/CompanionKit/SyncController.swift:69-77`
+- `shell/Sources/CompanionKit/SyncController.swift:128-182`
 - `shell/Sources/OnetimePad/BackdropModel.swift:73-169`
 - `shell/Sources/OnetimePad/BackdropModel.swift:719-793`
 - `shell/Sources/OnetimePad/BackdropGeometry.swift:99-160`
@@ -287,7 +287,7 @@ Automatic paste fencing currently remains storable while language detection is d
 
 ### Connection validation
 
-Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6847-6863`.
+Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6894-6910`.
 
 The API token and non-secret connection fields require a defined transaction outcome when one persistence operation succeeds and the other fails.
 
@@ -301,7 +301,7 @@ Sync validation distinguishes among:
 - client-ID requirements;
 - an absent relay, which remains meaningful and does not acquire an invented fallback.
 
-The absence of a relay fallback is explicit at `shell/Sources/CompanionKit/SyncController.swift:4-33`.
+The absence of a relay fallback is explicit at `shell/Sources/CompanionKit/SyncController.swift:4-30`.
 
 ## Settings store and runtime ownership
 
@@ -316,7 +316,7 @@ Runtime application follows a two-phase lifecycle:
 3. Runtime consumers are attached.
 4. Side-effecting services start at their existing lifecycle points.
 
-This separation preserves existing behavior in which initialization reads persisted values without property observers. It also preserves the delayed sync start: `SyncController.init` is inert even when sync is enabled, and `start()` runs after page restoration (`shell/Sources/CompanionKit/SyncController.swift:189-208`).
+This separation preserves existing behavior in which initialization reads persisted values without property observers. It also preserves the delayed sync start: `SyncController.init` is inert even when sync is enabled, and `start()` runs after page restoration (`shell/Sources/CompanionKit/SyncController.swift:164-182`).
 
 Settings changes apply through explicit runtime consumers rather than by hydrating live models through unrelated public setters. Effects include:
 
