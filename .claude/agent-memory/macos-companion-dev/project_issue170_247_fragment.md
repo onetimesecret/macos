@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0051, app 0.34.0; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0052, app 0.34.0; the deadline gate (readable_sheets); the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -66,8 +66,20 @@ Seams for the editor half (all page ids, all refuse a file id):
   paste, move and clone route must `markDirty()` then `refresh()`, as
   `settleCoreEvent` does, or a swept page stays on screen until the
   timer. An envelope over 8 MiB, over 1024 refs, or naming one UUID
-  twice is unreadable. Copy, cut, copy decrypted and the decrypted drag
-  still read a due page until its timer fires (left, named in ADR-0048).
+  twice is unreadable. ADR-0052 (phase 4, core 0.32.0, ffi 0.40.0)
+  replaced ADR-0048's consequence that copy and cut still read a due page.
+
+- Deadline gate (ADR-0052): `SheetStore::readable_sheets` is the one
+  accessor for any route that gives a page out; it asks `Sheet::is_due`,
+  the sweep's own predicate. `chip_home` goes through it, so every
+  `chip_home` caller (note undo names, `finish_note_editing_group`)
+  refuses a due page too; `chip_mut` and `record_sent` do not, on
+  purpose. Reads never sweep; the shell must settle on any refusal and
+  on wake. `noteRuns` collapses a refusal to `[]`. AppKit's note copy,
+  cut and drag and its ink alone service and several stretch drag never
+  reach the core, so the gate cannot cover them (ADR-0052 erratum).
+  `age_by`/`ageForTests` stage a due page with no sweep; ids re-mint,
+  so read them back. Core mutation checks by Edit ran unrefused.
 
 - Paste is built (shell unit 4): `InkTextView.paste`, `pasteAsPlainText`
   and `pasteWithoutDetection` ask `Coordinator.pasteFragment()` first,
