@@ -4831,23 +4831,29 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     /// Whether another text view or field holds the keys, in this window or
     /// in a key window over it, so the page's chords stand aside (ADR-0046).
-    var yieldsKeys: Bool {
-        if keysHeldInAnotherWindow { return true }
+    var yieldsKeys: Bool { yieldsKeys(toAnyBut: nil) }
+
+    /// Whether a text view other than this one and `source` holds the keys, in this
+    /// window or in a key window over it: a drag's source holds them for its own gesture.
+    func yieldsKeys(toAnyBut source: NSView?) -> Bool {
+        if keysHeldInAnotherWindow(besides: source) { return true }
         guard let holder = window?.firstResponder as? NSTextView else { return false }
-        return holder !== self
+        return holder !== self && holder !== source
     }
 
     /// Whether this surface answers its chords and Edit menu: a note while it
     /// holds the keys, the page unless another text view does (ADR-0046).
     var answersChords: Bool {
         guard coordinator?.writesNote == true else { return !yieldsKeys }
-        return window?.firstResponder === self && !keysHeldInAnotherWindow
+        return window?.firstResponder === self && !keysHeldInAnotherWindow()
     }
 
-    /// A text field in another key window, such as the pad list's popover.
-    private var keysHeldInAnotherWindow: Bool {
-        guard let key = NSApp?.keyWindow, key !== window else { return false }
-        return key.firstResponder is NSTextView
+    /// A text field in another key window, such as the pad list's popover, other than `source`.
+    private func keysHeldInAnotherWindow(besides source: NSView? = nil) -> Bool {
+        guard let key = NSApp?.keyWindow, key !== window,
+              let holder = key.firstResponder as? NSTextView
+        else { return false }
+        return holder !== source
     }
 
     /// The sealed block's cell standing at `index`, if one does.

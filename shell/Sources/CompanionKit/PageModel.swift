@@ -5972,7 +5972,7 @@ public final class PageModel: ObservableObject {
             if client.undo(sheet: sheet) { selecting = range }
             flash(Self.cutPutBackLine, tone: .actionable)
         }
-        settleTransfer(sheet: sheet)
+        settleTransfer(sheet)
         return .cut(selecting: selecting)
     }
 
@@ -5986,7 +5986,7 @@ public final class PageModel: ObservableObject {
             settleCoreEvent()
             return nil
         }
-        settleTransfer(sheet: sheet)
+        settleTransfer(sheet)
         return placed
     }
 
@@ -6031,7 +6031,7 @@ public final class PageModel: ObservableObject {
             flash(Self.pasteRefusedLine)
             return .refused
         }
-        settleTransfer(sheet: sheet)
+        settleTransfer(sheet)
         if placed.unreadable { flash(Self.pastedPublicTextLine) }
         return .placed(placed)
     }
@@ -6067,7 +6067,7 @@ public final class PageModel: ObservableObject {
             settleCoreEvent()
             return nil
         }
-        settleTransfer(sheet: sheet)
+        settleTransfer(sheet)
         return placed
     }
 
@@ -6112,15 +6112,17 @@ public final class PageModel: ObservableObject {
         ownsPresentation && cutStands && hasPage && !fileShowing && !ledgerShowing
     }
 
-    /// After the core rewrote a page by a transfer: restate it, then settle as
+    /// After the core rewrote pages by a transfer: restate each, then settle as
     /// the event timer does, since a paste may have swept due pages (ADR-0048).
-    private func settleTransfer(sheet: UInt64) {
-        restateStorage(sheet: sheet)
-        invalidateQuietRendering(for: sheet)
+    private func settleTransfer(_ sheets: UInt64...) {
+        for sheet in sheets {
+            restateStorage(sheet: sheet)
+            invalidateQuietRendering(for: sheet)
+        }
         markDirty()
         refresh()
         #if DEBUG
-        assertProjectionParity(sheet: sheet)
+        for sheet in sheets { assertProjectionParity(sheet: sheet) }
         #endif
     }
 
