@@ -2,11 +2,13 @@
 //! ADR-0047, ADR-0054): the fragment's routes, the one active cut, and how a
 //! reference resolves.
 
+use std::borrow::Cow;
+
 use zeroize::Zeroizing;
 
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
-use crate::fragment::{Copied, CopyRefusal, Fragment, Node, placeholder};
+use crate::fragment::{Copied, CopyRefusal, Fragment, Node, ink_of, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
 use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Sheet, SheetId, judge_name};
@@ -150,10 +152,10 @@ impl<C: Clock> SheetStore<C> {
         if let Some(fragment) = Fragment::parse(envelope) {
             return self.place(id, at_u16, len_u16, &fragment, false);
         }
-        let plain = plain.filter(|text| !text.is_empty())?;
+        let plain = plain.and_then(|text| ink_of(Cow::Borrowed(text)))?;
         let fallback = Fragment {
             cut: None,
-            nodes: vec![Node::Ink(Zeroizing::new(plain.to_owned()))],
+            nodes: vec![Node::Ink(plain)],
         };
         self.place(id, at_u16, len_u16, &fallback, true)
     }
@@ -890,6 +892,36 @@ mod tests {
 
         let ink_alone = store.copy_fragment(id, 0, whole - 1).unwrap();
         assert!(ink_alone.envelope.is_none(), "ink alone meets no cap");
+    }
+
+    #[test]
+    fn a_paste_places_its_ink_without_the_chip_sentinel() {
+        let (mut store, _) = store();
+        let (id, _, _) = mixed(&mut store);
+        let envelope = format!(r#"{{"version":1,"nodes":[{{"ink":"x{}y"}}]}}"#, '\u{FFFC}');
+        let placed = store
+            .paste_fragment(id, 0, 0, envelope.as_bytes(), None)
+            .unwrap();
+        assert_eq!(placed.length_u16, 2);
+        assert_eq!(body(&store, id), "xyab\u{FFFC}cd\u{FFFC}ef");
+
+        let unreadable = br#"{"version":99,"nodes":[]}"#;
+        let placed = store
+            .paste_fragment(id, 0, 0, unreadable, Some("p\u{FFFC}q"))
+            .unwrap();
+        assert_eq!(placed.length_u16, 2, "the public text kept the sentinel");
+        assert_eq!(body(&store, id), "pqxyab\u{FFFC}cd\u{FFFC}ef");
+        assert!(
+            store
+                .paste_fragment(id, 0, 0, unreadable, Some("\u{FFFC}"))
+                .is_none(),
+            "a public text of the sentinel alone placed something"
+        );
+        assert_eq!(
+            standing(&store, id).len(),
+            2,
+            "a sentinel stood as an object"
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::document::strip_sentinels;
 use crate::files::FILE_SIZE_LIMIT;
 use crate::note::Note;
 use crate::sheet::{ItemId, SealedChip, Segment, Sheet};
@@ -183,11 +184,10 @@ impl Fragment {
         let mut named: HashSet<ItemId> = HashSet::new();
         for node in wire.nodes {
             match node {
-                WireNode::Ink(text) if text.is_empty() => {}
-                // An escaped string was already owned; the rest copy at size.
-                WireNode::Ink(Cow::Owned(text)) => nodes.push(Node::Ink(Zeroizing::new(text))),
-                WireNode::Ink(Cow::Borrowed(text)) => {
-                    nodes.push(Node::Ink(Zeroizing::new(text.to_owned())));
+                WireNode::Ink(text) => {
+                    if let Some(ink) = ink_of(text) {
+                        nodes.push(Node::Ink(ink));
+                    }
                 }
                 WireNode::Ref(reference) => {
                     let uuid = ItemId::parse(&reference.uuid)?;
@@ -200,18 +200,25 @@ impl Fragment {
                     nodes.push(Node::Ref(Reference {
                         uuid,
                         name: reference.name.filter(|name| !name.is_empty()),
-                        note: reference.note.and_then(|text| match text {
-                            Cow::Borrowed("") => None,
-                            Cow::Owned(text) if text.is_empty() => None,
-                            Cow::Owned(text) => Some(Zeroizing::new(text)),
-                            Cow::Borrowed(text) => Some(Zeroizing::new(text.to_owned())),
-                        }),
+                        note: reference.note.and_then(ink_of),
                     }));
                 }
             }
         }
         Some(Self { cut, nodes })
     }
+}
+
+/// An envelope's ink or note as wipeable text without the chip sentinel, which a
+/// page or a note keeps for its chips alone (Law 0001); `None` when none is left.
+pub(crate) fn ink_of(text: Cow<'_, str>) -> Option<Zeroizing<String>> {
+    if text.is_empty() {
+        return None;
+    }
+    // An escaped string was already owned; the rest copy at size.
+    let mut ink = Zeroizing::new(text.into_owned());
+    strip_sentinels(&mut ink);
+    (!ink.is_empty()).then_some(ink)
 }
 
 impl Sheet {
@@ -590,6 +597,25 @@ mod tests {
         );
         let read = Fragment::parse(text.as_bytes()).unwrap();
         assert_eq!(name_and_note(&read.nodes[0]), (None, None));
+    }
+
+    #[test]
+    fn an_envelopes_ink_and_note_read_without_the_chip_sentinel() {
+        let (uuid, other, s) = (ItemId::random(), ItemId::random(), '\u{FFFC}');
+        // The quoted ink is owned once decoded, so both of `ink_of`'s paths run.
+        let text = format!(
+            r#"{{"version":1,"nodes":[{{"ink":"a{s}b"}},{{"ink":"\"{s}"}},{{"ink":"{s}"}},{{"ref":{{"uuid":"{uuid}","note":"n{s}"}}}},{{"ref":{{"uuid":"{other}","note":"{s}"}}}}]}}"#
+        );
+        let read = Fragment::parse(text.as_bytes()).unwrap();
+        assert_eq!(
+            read.nodes.len(),
+            4,
+            "ink of the sentinel alone stayed a node"
+        );
+        assert_eq!(ink(&read.nodes[0]), Some("ab"));
+        assert_eq!(ink(&read.nodes[1]), Some("\""));
+        assert_eq!(name_and_note(&read.nodes[2]), (None, Some("n")));
+        assert_eq!(name_and_note(&read.nodes[3]), (None, None));
     }
 
     #[test]

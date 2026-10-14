@@ -30,13 +30,17 @@ impl Note {
         !self.text().trim().is_empty()
     }
 
-    /// [`ink::apply_batch`]; `None` refused the batch whole.
+    /// [`ink::apply_batch`]; `None` refused the batch whole, as is one that
+    /// would write the chip sentinel as ink.
     pub(crate) fn apply(
         &mut self,
         ops: &[EditOp],
         intent: EditIntent,
         selection: Option<EditSelection>,
     ) -> Option<bool> {
+        if ops.iter().any(EditOp::inks_sentinel) {
+            return None;
+        }
         ink::apply_batch(&mut self.document, ops, intent, selection)
     }
 

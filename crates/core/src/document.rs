@@ -22,6 +22,18 @@ const CHIP_MARK: &str = "chip";
 /// U+FFFC: one UTF-16 code unit, so a chip's wire width is one.
 const CHIP_SENTINEL: &str = "\u{FFFC}";
 
+/// Whether `ink` holds the chip sentinel, which a page or a note keeps for its
+/// chips alone (Law 0001).
+pub(crate) fn holds_sentinel(ink: &str) -> bool {
+    ink.contains(CHIP_SENTINEL)
+}
+
+/// Takes every chip sentinel out of `ink` in place, so the buffer that held
+/// it is the one a wipe reaches.
+pub(crate) fn strip_sentinels(ink: &mut String) {
+    ink.retain(|c| !CHIP_SENTINEL.contains(c));
+}
+
 /// Undo grouping window; a ceiling on a step's growth, not an idle-gap
 /// detector (block-revisions/2026-0901-pause-boundaries.md). Local only.
 const UNDO_MERGE_INTERVAL_MS: i64 = 2_000;

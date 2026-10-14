@@ -1840,6 +1840,15 @@ mod tests {
     }
 
     #[test]
+    fn a_file_keeps_the_chip_sentinel_as_its_own_text() {
+        let io = MemoryIo::with("/note.txt", "a\u{FFFC}b".as_bytes());
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/note.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(1, "\u{FFFC}")], 1));
+        assert_eq!(store.text(id).as_deref(), Some("a\u{FFFC}\u{FFFC}b"));
+    }
+
+    #[test]
     fn a_save_takes_its_witness_from_the_write_and_not_from_the_path_afterwards() {
         let io = ReplacedAfterWriteIo {
             inner: MemoryIo::with("/note.txt", b"body"),

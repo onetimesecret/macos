@@ -9,7 +9,9 @@ use zeroize::Zeroizing;
 
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
-use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
+use crate::document::{
+    EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal, holds_sentinel,
+};
 use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::note::Note;
@@ -149,6 +151,14 @@ pub enum EditOp {
         /// The chip whose sentinel goes here.
         chip: ChipId,
     },
+}
+
+impl EditOp {
+    /// Whether this op would write the chip sentinel as ink, which a page or a
+    /// note refuses (Law 0001): only [`EditOp::InsertChip`] stands one.
+    pub(crate) fn inks_sentinel(&self) -> bool {
+        matches!(self, Self::Insert { text, .. } if holds_sentinel(text))
+    }
 }
 
 /// Editing intent inferred from a batch's shape, for callers that do not
@@ -690,6 +700,9 @@ impl<C: Clock> SheetStore<C> {
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
+        if ops.iter().any(EditOp::inks_sentinel) {
+            return false;
+        }
         // Phase one: validate the whole batch in exact code units.
         let mut sim = sim_units(&sheet.segments);
         for op in ops {
@@ -839,7 +852,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Replace a page's body wholesale, the recovery route (ADR-0013): chips it
-    /// omits detach, those it names reattach, a foreign or repeated one refuses all.
+    /// omits detach, those it names reattach, a foreign or repeated one or a
+    /// sentinel written as ink refuses all.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "the segments used to move into the sheet; the signature outlives that so callers of the recovery path stay untouched while stage 3 rebuilds the seam"
@@ -850,11 +864,18 @@ impl<C: Clock> SheetStore<C> {
         };
         let mut referenced: Vec<ChipId> = Vec::new();
         for segment in &segments {
-            if let Segment::Chip(chip_id) = segment {
-                if referenced.contains(chip_id) || sheet.owned_chip(*chip_id).is_none() {
-                    return false;
+            match segment {
+                Segment::Chip(chip_id) => {
+                    if referenced.contains(chip_id) || sheet.owned_chip(*chip_id).is_none() {
+                        return false;
+                    }
+                    referenced.push(*chip_id);
                 }
-                referenced.push(*chip_id);
+                Segment::Ink(text) => {
+                    if holds_sentinel(text) {
+                        return false;
+                    }
+                }
             }
         }
         // Wipe and retype, chips under their existing identities.
@@ -2990,6 +3011,39 @@ mod tests {
             store.sheet(id).unwrap().chip_count(),
             2,
             "the page's chips stand"
+        );
+    }
+
+    #[test]
+    fn neither_a_page_nor_a_note_takes_the_chip_sentinel_as_ink() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops(id, &typed(0, "ab")));
+        let chip = store.seal_text_at(id, TOKEN, 1, 0).unwrap();
+        write_note(&mut store, chip, "kept");
+        let before = store.sheet(id).unwrap().segments.clone();
+
+        // What a yank of a killed object, or outside text holding U+FFFC, would send.
+        let inked = typed(0, "x\u{FFFC}y");
+        assert!(
+            !store.apply_ops(id, &inked),
+            "a page took the sentinel as ink"
+        );
+        assert!(
+            !store.apply_note_ops(chip, &inked, EditIntent::Paste, None),
+            "a note took the sentinel as ink"
+        );
+        let recovery = vec![Segment::Ink("\u{FFFC}".into()), Segment::Chip(chip)];
+        assert!(
+            !store.sync_document(id, recovery),
+            "the recovery took it as ink"
+        );
+
+        assert_eq!(store.sheet(id).unwrap().segments, before);
+        assert_eq!(note_of(&store, chip), "kept");
+        assert!(
+            store.apply_ops(id, &typed(0, "xy")),
+            "the control: the ink alone"
         );
     }
 
