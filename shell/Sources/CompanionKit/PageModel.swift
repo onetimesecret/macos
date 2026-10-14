@@ -6685,20 +6685,46 @@ public final class PageModel: ObservableObject {
         guard let storage = storages[sheet] else { return }
         let shell = InkEditorView.Coordinator.runs(of: storage)
         let core = client.documentRuns(sheet: sheet)
-        var matches = shell.count == core.count
-        if matches {
-            for (ours, theirs) in zip(shell, core) {
-                switch (ours, theirs) {
-                case (.ink(let a), .ink(let b)) where a == b: continue
-                case (.chip(let a), .chip(let b)) where a == b.chipId: continue
-                default:
-                    matches = false
-                }
-            }
+        guard let breach = Self.parityBreach(editor: shell, core: core) else { return }
+        // A trap hangs xctest with no output, so a test run ends here and says why.
+        if FormFactor.runningUnderTests {
+            FileHandle.standardError.write(Data("\(breach)\n".utf8))
+            exit(EXIT_FAILURE)
         }
-        assert(matches, "the editor and the core disagree about the page")
+        assertionFailure(breach)
     }
     #endif
+
+    /// Nil while the editor and the core spell the same page; otherwise the line
+    /// that says how they differ, by kinds and lengths, never the ink itself.
+    nonisolated static func parityBreach(editor: [DocumentRun], core: [RestoredRun]) -> String? {
+        let theirs = core.map { run -> DocumentRun in
+            switch run {
+            case .ink(let text): .ink(text)
+            case .chip(let info): .chip(info.chipId)
+            }
+        }
+        let same = editor.count == theirs.count && zip(editor, theirs).allSatisfy { pair in
+            switch pair {
+            case (.ink(let a), .ink(let b)): a == b
+            case (.chip(let a), .chip(let b)): a == b
+            default: false
+            }
+        }
+        guard !same else { return nil }
+        return "the editor and the core disagree about the page: "
+            + "editor \(paritySketch(editor)), core \(paritySketch(theirs))"
+    }
+
+    /// Runs as kinds and lengths alone, for a line a log may keep.
+    private nonisolated static func paritySketch(_ runs: [DocumentRun]) -> String {
+        runs.map { run in
+            switch run {
+            case .ink(let text): "ink(\(text.utf16.count))"
+            case .chip(let id): "chip(\(id))"
+            }
+        }.joined(separator: " ")
+    }
 
     // MARK: Conceal — the exit ramp
 
