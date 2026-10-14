@@ -45,6 +45,16 @@ Seams for the editor half (all page ids, all refuse a file id):
   `cut:` calls `copy:` then deletes (probed), so the editor's cut must not
   call `super.cut`, or it writes the copy fragment and detaches as a removal.
 
+- Core guards (unit 2, ADR-0048 and ADR-0049, core 0.31.1, ffi 0.39.0):
+  paste, slot, move and clone refuse a page past its deadline (nil,
+  nothing changed); a paste naming an object first runs `expire_due`, and
+  `PlacedFragment.pagesExpired` counts the pages it took. So every
+  paste, move and clone route must `markDirty()` then `refresh()`, as
+  `settleCoreEvent` does, or a swept page stays on screen until the
+  timer. An envelope over 8 MiB, over 1024 refs, or naming one UUID
+  twice is unreadable. Copy, cut, copy decrypted and the decrypted drag
+  still read a due page until its timer fires (left, named in ADR-0048).
+
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
 0001 overrides it (type name, no removed placeholder).
