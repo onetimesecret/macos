@@ -8,14 +8,15 @@ two presses that remove an object and the line's Undo after them.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
 paste, drag and decrypted drag rows cite this procedure for what the
 runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md);
-[ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md).
+[ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md);
+[ADR-0050](../../adr/0050-a-decrypted-drag-lands-only-in-another-app.md);
+[ADR-0051](../../adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md).
 **Owner:** delano.
 **Status:** open; not yet run. The editor's copy and cut write the
-fragment, its paste reads it, the slot's button places a cut and two
-presses remove an object with Undo on the line, and the page drags its
-selection as the fragment, so every check but the decrypted drag can
-run; the decrypted drag checks are blocked until the editor offers the
-handle (issue #170's shell half).
+fragment, its paste reads it, the slot's button places a cut, two
+presses remove an object with Undo on the line, the page drags its
+selection as the fragment, and the block's handle starts the decrypted
+drag, so every check can run.
 
 ## Why by hand
 
@@ -121,13 +122,46 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       placeholder text as the copy did, the page keeps its run both
       times, and the Trash takes nothing. **Fail:** the sealed word
       arrives, or the run leaves the page.
+- [ ] **The decrypted drag's handle.** On a card at least as wide as
+      the default, point at a sealed object, then move away, then click
+      the object once. **Pass:** while pointed at or selected, the top
+      row shows `drag decrypted` in an ember outline just before `···`,
+      and nothing else on the block moves when it appears; it goes when
+      the pointer leaves an unselected block. A click on the handle that
+      does not move selects the object. Narrow the card until the handle
+      would meet `SEALED CONTENT`: it is no longer drawn. **Fail:** the
+      block's contents shift, the handle overlaps the classification, or
+      a still click starts a drag.
 - [ ] **Decrypted drag into a form field.** Drag from the object's
-      decrypted handle into a browser's text field. **Pass:** the field
-      receives the sealed word, the object stays on the page, the ledger
-      gains one `sent` to `drag`, and `osascript -e 'clipboard info'`
-      shows the general pasteboard unchanged. **Fail:** the drop is
-      empty, the object leaves, or the general pasteboard holds the word.
+      decrypted handle into a browser's text field; repeat in Safari and
+      in one Chromium browser. **Pass:** the drag image shows only the
+      handle, the field receives the sealed word, the object stays on
+      the page, the ledger gains one `sent` to `drag`, and
+      `osascript -e 'clipboard info'` shows the general pasteboard
+      unchanged. **Fail:** the drop is empty, the image shows the
+      excerpt, the object leaves, or the general pasteboard holds the
+      word. An empty drop is the third eject trigger of ADR-0050.
 - [ ] **A cancelled decrypted drag.** Start the decrypted drag and press
-      Esc before releasing. **Pass:** the ledger gains no `sent`, since
-      no destination asked. **Fail:** a `sent` lands for a drag no
+      Esc before releasing, then wait a minute and start an ordinary
+      drag in another app. **Pass:** the ledger gains no `sent`, since no
+      destination asked. **Fail:** a `sent` lands for a drag no
       destination took.
+- [ ] **A decrypted drag dropped on the app** (ADR-0050). Drag from the
+      handle and hover, then release, over: the same page below the
+      object; the other page where two show at once; an open note; a
+      tab's name field; the pad list's name field; a Settings field; and
+      the window's own edge. **Pass:** the pointer shows no drop over
+      each, nothing lands anywhere, nothing is sealed, the ledger gains
+      no `sent`, and the app answers at once afterwards. **Fail:** any
+      field shows the sealed word, a new object appears, a `sent` lands,
+      or the app stops answering.
+- [ ] **The handle while a name is written.** Open an object's name
+      field, then press and drag from the handle of another object.
+      **Pass:** no drag starts and the line under the page reads
+      `a name or note is being written, so the drag did not start.`
+      **Fail:** a drag starts, or the name field loses its draft.
+- [ ] **A decrypted drag onto the desktop.** Drag from the handle onto
+      Finder's desktop. **Pass:** Finder's answer is another app's drop:
+      the object stays and the ledger gains one `sent` to `drag`. Note
+      whether Finder wrote a clipping file, which would hold the sealed
+      word on disk until deleted. **Fail:** the object leaves.
