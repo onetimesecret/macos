@@ -440,6 +440,122 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(shape(target), "xyab #", "a read only page took a drop")
     }
 
+    // MARK: Ink from this app's editors
+
+    /// A board of plain ink, as AppKit's own drag of text writes it.
+    private func inkBoard(_ text: String) -> NSPasteboard {
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        board.declareTypes([.string], owner: nil)
+        board.setString(text, forType: .string)
+        return board
+    }
+
+    /// AppKit's drop of `drag` on `view`, run only once the route says ink, since a
+    /// drop to seal would read the system's drag board.
+    private func dropInk(_ drag: DraggingInfoStub, on page: Page) -> Bool {
+        let view = page.textView
+        guard view.dropRoute(for: drag) == .ink else {
+            XCTFail("ink from this app did not route as ink")
+            return false
+        }
+        XCTAssertNotEqual(view.draggingEntered(drag), [], "the page offered no drop for ink")
+        _ = view.draggingUpdated(drag)
+        return view.prepareForDragOperation(drag) && view.performDragOperation(drag)
+    }
+
+    /// Ink dragged from another page lands as ink, never sealed: one stretch moves
+    /// through the core, and ⌥ lands a copy as AppKit drops it; no object is made.
+    func testInkFromAnotherPageLandsAsInkAndNeverSeals() throws {
+        let (model, _) = try makeModel()
+        let source = try mountPage(on: model)
+        let target = try mountPage(on: model, text: "xy", seals: [])
+        let ids = chips(source).map(\.chipId)
+        let records = model.coreClient.ledger().count
+        let end = target.textView.convert(
+            NSPoint(x: 10, y: target.textView.bounds.maxY - 2), to: nil)
+
+        let stretch = try beginDrag(source, NSRange(location: 0, length: 2))
+        XCTAssertNil(SealedFragment.item(on: stretch), "the control: ink alone carries no fragment")
+        let moved = FakeDrag(source: source.textView, board: stretch, mask: move, location: end)
+        XCTAssertEqual(target.textView.dropRoute(for: moved), .move)
+        XCTAssertTrue(target.textView.performDragOperation(moved))
+        source.coordinator.endPageDrag()
+        XCTAssertEqual(shape(target), "xyab", "one stretch of ink did not move as ink")
+        XCTAssertEqual(shape(source), " # cd # ef")
+
+        let copied = try beginDrag(source, NSRange(location: 3, length: 2))
+        let option = DraggingInfoStub(
+            pasteboard: copied, source: source.textView, location: end, window: target.window,
+            mask: .copy)
+        XCTAssertTrue(dropInk(option, on: target), "⌥ ink from another page did not land")
+        source.coordinator.endPageDrag()
+        XCTAssertEqual(shape(target), "xyabcd", "⌥ ink did not land as ink")
+        XCTAssertEqual(shape(source), " # cd # ef", "⌥ ink left its source")
+
+        XCTAssertTrue(chips(target).isEmpty, "ink from another page was sealed")
+        XCTAssertEqual(chips(source).map(\.chipId), ids)
+        XCTAssertEqual(model.coreClient.ledger().count, records, "a seal was recorded")
+    }
+
+    /// The note's ink, dragged onto its own page or another, lands as ink and never
+    /// meets drop to seal, though the note holds the keys while it is dragged from.
+    func testInkFromTheNoteLandsAsInkAndNeverSeals() throws {
+        let (model, _) = try makeModel()
+        let page = try mountPage(on: model)
+        let other = try mountPage(on: model, text: "xy", seals: [])
+        let ids = chips(page).map(\.chipId)
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys, "the control: the note holds the keys")
+        note.textView.insertText("kept", replacementRange: NSRange(location: NSNotFound, length: 0))
+        note.textView.selectAll(nil)
+        let records = model.coreClient.ledger().count
+
+        let home = DraggingInfoStub(
+            pasteboard: inkBoard("kept"), source: note.textView,
+            location: page.textView.convert(NSPoint(x: 10, y: page.textView.bounds.maxY - 2), to: nil),
+            window: page.window)
+        XCTAssertEqual(
+            page.textView.dragOperation(for: home, type: .string), .copy,
+            "AppKit's answer between two text views, so the note keeps its ink")
+        XCTAssertTrue(dropInk(home, on: page), "the note's ink did not land on its page")
+        XCTAssertEqual(shape(page), "ab # cd # efkept")
+        XCTAssertEqual(model.noteText(chip: ids[0]), "kept", "the drop changed the note")
+
+        let away = DraggingInfoStub(
+            pasteboard: inkBoard("kept"), source: note.textView,
+            location: other.textView.convert(NSPoint(x: 10, y: other.textView.bounds.maxY - 2), to: nil),
+            window: other.window)
+        XCTAssertTrue(dropInk(away, on: other), "the note's ink did not land on another page")
+        XCTAssertEqual(shape(other), "xykept")
+        XCTAssertEqual(model.noteText(chip: ids[0]), "kept", "the note lost its ink")
+
+        XCTAssertEqual(chips(page).map(\.chipId), ids, "the note's ink was sealed")
+        XCTAssertTrue(chips(other).isEmpty, "the note's ink was sealed")
+        XCTAssertEqual(model.coreClient.ledger().count, records, "a seal was recorded")
+    }
+
+    /// Another app's ink still meets drop to seal on a page, and finds nowhere to land
+    /// on a page that takes no edits; the route is read, never the system's drag board.
+    func testAnotherAppsInkStillMeetsDropToSeal() throws {
+        let (model, _) = try makeModel()
+        let page = try mountPage(on: model)
+        let foreign = DraggingInfoStub(
+            pasteboard: inkBoard("hunter2"), source: nil,
+            location: page.textView.convert(NSPoint(x: 10, y: 10), to: nil), window: page.window)
+        XCTAssertEqual(page.textView.dropRoute(for: foreign), .seal)
+        XCTAssertEqual(page.textView.draggingEntered(foreign), .copy)
+        XCTAssertEqual(page.textView.draggingUpdated(foreign), .copy)
+
+        page.textView.isEditable = false
+        XCTAssertEqual(page.textView.dropRoute(for: foreign), .refused)
+        XCTAssertEqual(page.textView.draggingEntered(foreign), [])
+        XCTAssertFalse(page.textView.performDragOperation(foreign))
+        XCTAssertEqual(shape(page), "ab # cd # ef")
+    }
+
     // MARK: Standing aside (ADR-0046)
 
     /// While a name field or the note holds the keys, the page starts no drag and
@@ -463,6 +579,17 @@ final class SealedDragTests: XCTestCase {
             XCTAssertFalse(
                 page.coordinator.dropMovedPageDrag(from: other.coordinator, at: 12, offered: move),
                 holder)
+            XCTAssertEqual(model.notice, PageModel.dropWaitsLine, holder)
+            let ink = DraggingInfoStub(
+                pasteboard: inkBoard("zz"), source: other.textView,
+                location: page.textView.convert(NSPoint(x: 10, y: 10), to: nil),
+                window: page.window, mask: .copy)
+            // Never let a drop to seal read the system's drag board.
+            guard page.textView.dropRoute(for: ink) == .ink else {
+                return XCTFail("ink from another page did not route as ink under the \(holder)")
+            }
+            model.notice = nil
+            XCTAssertFalse(page.textView.performDragOperation(ink), holder)
             XCTAssertEqual(model.notice, PageModel.dropWaitsLine, holder)
             XCTAssertFalse(page.coordinator.dropFragment(from: foreign, at: 12), holder)
             XCTAssertEqual(shape(page), "ab # cd # ef", "the page took a drop under the \(holder)")

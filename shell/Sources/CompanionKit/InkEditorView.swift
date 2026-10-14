@@ -6127,9 +6127,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case move
         /// A copy fragment, pasted through the core as ⌘V pastes it.
         case fragment
-        /// This surface's own drag that is not the page's, which AppKit drops.
+        /// Ink from a page or note of this app, which AppKit drops as ink.
         case ink
-        /// Any other drag, sealed where a seal can land.
+        /// Any other drag, another app's above all, sealed where a seal can land.
         case seal
     }
 
@@ -6145,6 +6145,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return .move
         }
         if carriesFragment(sender) { return coordinator.takesFragmentDrop ? .fragment : .refused }
+        // This app's own ink was never meant to be staged, so it never meets drop to seal.
+        if editor != nil { return coordinator.takesFragmentDrop ? .ink : .refused }
         return coordinator.sealsHere ? .seal : .refused
     }
 
@@ -6186,6 +6188,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return coordinator?.dropFragment(
                 from: sender.draggingPasteboard, at: index, source: editor) ?? false
         case .ink:
+            guard editor === self || coordinator?.admitsDrop(from: editor) == true else {
+                return false
+            }
             return super.performDragOperation(sender)
         case .seal:
             return coordinator?.sealDrop(at: index) ?? false

@@ -8,15 +8,19 @@ final class DraggingInfoStub: NSObject, @preconcurrency NSDraggingInfo {
     let draggingSource: Any?
     let draggingLocation: NSPoint
     let draggingDestinationWindow: NSWindow?
+    let draggingSourceOperationMask: NSDragOperation
 
-    init(pasteboard: NSPasteboard, source: Any?, location: NSPoint, window: NSWindow?) {
+    init(
+        pasteboard: NSPasteboard, source: Any?, location: NSPoint, window: NSWindow?,
+        mask: NSDragOperation = [.copy, .generic, .move]
+    ) {
         draggingPasteboard = pasteboard
         draggingSource = source
         draggingLocation = location
         draggingDestinationWindow = window
+        draggingSourceOperationMask = mask
     }
 
-    var draggingSourceOperationMask: NSDragOperation { [.copy, .generic, .move] }
     var draggedImageLocation: NSPoint { draggingLocation }
     var draggedImage: NSImage? { nil }
     var draggingSequenceNumber: Int { 1 }
