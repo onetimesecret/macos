@@ -6031,10 +6031,10 @@ public final class PageModel: ObservableObject {
         from pasteboard: NSPasteboard, sheet: UInt64, ranges: [NSRange]
     ) -> PasteOutcome {
         // A file takes the public text, as another app does.
-        guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard),
-              let envelope = item.data(forType: SealedFragment.pasteboardType)
-        else { return .ordinary }
+        guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard) else { return .ordinary }
         guard let range = pasteRange(ranges) else { return .refused }
+        // Data the item names but cannot give is an envelope this build cannot read (ADR-0047 point 3).
+        let envelope = item.data(forType: SealedFragment.pasteboardType) ?? Data()
         guard let placed = settlingRefusal({
             client.pasteFragment(
                 sheet: sheet, range: range, envelope: envelope,

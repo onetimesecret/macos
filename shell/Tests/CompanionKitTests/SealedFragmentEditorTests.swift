@@ -768,6 +768,48 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.model.notice, PageModel.pasteRefusedLine)
     }
 
+    /// A promise of the private type that gives nothing, as a provider that failed leaves it.
+    private final class EmptyPromise: NSObject, NSPasteboardItemDataProvider {
+        nonisolated func pasteboard(
+            _ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+            provideDataForType type: NSPasteboard.PasteboardType
+        ) {}
+    }
+
+    /// An item naming the private type whose data cannot be read pastes as an unreadable
+    /// envelope: its public text with the line, or, with no text, nothing and the refusal.
+    func testAnItemWhoseFragmentCannotBeReadPastesItsPublicTextAndSaysSo() throws {
+        let page = try makePage()
+        let promise = EmptyPromise()
+        func offer(text: String?) {
+            let item = NSPasteboardItem()
+            XCTAssertTrue(item.setDataProvider(promise, forTypes: [SealedFragment.pasteboardType]))
+            if let text { XCTAssertTrue(item.setString(text, forType: .string)) }
+            page.pasteboard.clearContents()
+            XCTAssertTrue(page.pasteboard.writeObjects([item]))
+            let offered = SealedFragment.item(on: page.pasteboard)
+            XCTAssertNotNil(offered, "the control: the item names the private type")
+            XCTAssertNil(offered?.data(forType: SealedFragment.pasteboardType), "the control: no data")
+        }
+
+        // The coordinator's answer, not ⌘V, so a regression never reaches AppKit's general board.
+        offer(text: "x \(placeholder) y")
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertTrue(page.coordinator.pasteFragment(), "left to AppKit's paste")
+        XCTAssertTrue(page.textView.string.hasPrefix("x \(placeholder) yab "), page.textView.string)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.model.notice, PageModel.pastedPublicTextLine)
+
+        offer(text: nil)
+        let text = page.textView.string
+        let marks = page.model.dirtyMarks
+        XCTAssertTrue(page.coordinator.pasteFragment(), "left to AppKit's paste")
+        XCTAssertEqual(page.textView.string, text)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.model.notice, PageModel.pasteRefusedLine)
+        XCTAssertEqual(page.model.dirtyMarks, marks, "a refusal armed a write")
+    }
+
     /// A paste that swept a due page settles at once: the swept page leaves the
     /// model's tabs without waiting for the timer (ADR-0048).
     func testAPasteThatSweepsADuePageSettlesAtOnce() throws {
