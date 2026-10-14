@@ -1482,8 +1482,10 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// AppKit's own ways out, which no core route sees, ask first: past the deadline a
-    /// service's write of ink alone, a drag of ink stretches and the note's copy, cut,
-    /// drag and service give nothing out, and the settle takes the page with its line.
+    /// service's write of ink alone, a drag of ink stretches, Use Selection for Find and
+    /// the note's copy, cut, drag, service and Use Selection for Find give nothing out, and
+    /// the settle takes the page with its line. The finder is asked only through its gate,
+    /// since a finder that ran would write the find pasteboard every process reads.
     func testAppKitsWaysOutOfAPagePastItsDeadlineAskFirstAndSettle() throws {
         let board = NSPasteboard.withUniqueName()
         addTeardownBlock { board.releaseGlobally() }
@@ -1513,13 +1515,22 @@ final class SealedFragmentEditorTests: XCTestCase {
                     note.textView.coordinator?.givesOutShownText(), false,
                     "the note's copy, cut or drag would run")
             }),
+            ("use selection for find", {
+                $0.textView.setSelectedRange(NSRange(location: 0, length: 2))
+                XCTAssertTrue($0.textView.refusesFinderAction(self.useSelectionForFind))
+            }),
+            ("the note's use selection for find", {
+                let note = try XCTUnwrap($0.coordinator.noteEditor?.textView)
+                note.selectAll(nil)
+                XCTAssertTrue(note.refusesFinderAction(self.useSelectionForFind))
+            }),
         ]
         for ask in asks {
             let page = try makePage()
             XCTAssertTrue(page.model.applyNoteOps(
                 chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
                 intent: .typing, selection: nil))
-            if ask.name == "the note" {
+            if ask.name.hasPrefix("the note") {
                 page.coordinator.beginNote(at: 3)
                 drainMainQueue()
             }
@@ -1534,6 +1545,35 @@ final class SealedFragmentEditorTests: XCTestCase {
             XCTAssertFalse(
                 page.model.tabs.contains { $0.pageID == page.sheet }, "\(ask.name): no settle")
         }
+    }
+
+    /// Use Selection for Find as the Find menu sends it; only the tag is read.
+    private var useSelectionForFind: NSMenuItem {
+        let item = NSMenuItem(
+            title: "Use Selection for Find",
+            action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "")
+        item.tag = NSTextFinder.Action.setSearchString.rawValue
+        return item
+    }
+
+    /// While the page stands, Use Selection for Find over ink goes to the finder, on the
+    /// page and in the note, and over an object still refuses with its own line.
+    func testUseSelectionForFindGoesToTheFinderWhileThePageStands() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        XCTAssertFalse(page.textView.refusesFinderAction(useSelectionForFind))
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        XCTAssertTrue(page.textView.refusesFinderAction(useSelectionForFind))
+        XCTAssertEqual(page.model.notice, "a chip has no text to search for")
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        note.selectAll(nil)
+        XCTAssertFalse(note.refusesFinderAction(useSelectionForFind))
+        XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet })
     }
 
     /// What another app reads from a copy: a rich or a plain text reader gets

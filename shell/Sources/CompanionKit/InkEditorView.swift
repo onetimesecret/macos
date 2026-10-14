@@ -6187,6 +6187,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// menu sends `performFindPanelAction:`, and a find bar built by
     /// something else sends `performTextFinderAction:`. The two share
     /// the tag numbering the guard reads.
+    ///
+    /// Use Selection for Find hands the ink to the finder, whose find
+    /// pasteboard every process reads, so it asks first (ADR-0052).
     override func performFindPanelAction(_ sender: Any?) {
         guard !refusesFinderAction(sender) else { return }
         super.performFindPanelAction(sender)
@@ -6197,13 +6200,15 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         super.performTextFinderAction(sender)
     }
 
-    /// True for a ⌘E over a selection holding a chip. The action arrives
-    /// as the sender's tag; a sender carrying no readable tag is let
-    /// through, because this is a refusal to be certain about and not a
-    /// reason to break find.
+    /// True for a ⌘E over a selection holding a chip, or over any selection
+    /// of a page past its deadline. The action arrives as the sender's tag; a
+    /// sender carrying no readable tag is let through, because this is a
+    /// refusal to be certain about and not a reason to break find.
     func refusesFinderAction(_ sender: Any?) -> Bool {
-        guard (sender as? NSMenuItem)?.tag == NSTextFinder.Action.setSearchString.rawValue,
-              let storage = textStorage,
+        let tag = (sender as? NSValidatedUserInterfaceItem)?.tag ?? (sender as? NSControl)?.tag
+        guard tag == NSTextFinder.Action.setSearchString.rawValue else { return false }
+        guard givesOutShownText else { return true }
+        guard let storage = textStorage,
               InkEditorView.Coordinator.containsChip(storage, in: selectedRange())
         else { return false }
         coordinator?.model.flash("a chip has no text to search for")
