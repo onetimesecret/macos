@@ -804,9 +804,8 @@ pub(crate) fn sweep_outbound(
     }
 }
 
-/// The first enrolled page that stands here before its deadline: the
-/// anchor of a rotation no page is owed. A page past its deadline would
-/// refuse the ceremony (ADR-0052).
+/// The first enrolled page held here before its deadline, the anchor of a
+/// rotation no page is owed; a page past it would refuse (ADR-0052).
 fn live_anchor(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &BTreeMap<ItemId, PageTracking>,

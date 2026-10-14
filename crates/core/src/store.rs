@@ -4633,8 +4633,7 @@ mod tests {
     }
 
     /// Two inked pages on `alpha` mirrored on `beta`, each published as the
-    /// sync sweep publishes: what it holds past its last export, delivered
-    /// or refused.
+    /// sync sweep does: past its last export, delivered or refused.
     struct TwoPages {
         alpha: SheetStore<ManualClock>,
         beta: SheetStore<ManualClock>,
