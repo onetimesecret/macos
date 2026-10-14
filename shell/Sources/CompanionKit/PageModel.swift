@@ -5750,7 +5750,10 @@ public final class PageModel: ObservableObject {
     /// (issue #52).
     @discardableResult
     public func copyOutChip(_ id: UInt64, size: String? = nil) -> Bool {
-        guard client.copyOutChip(id: id) else { return false }
+        guard client.copyOutChip(id: id) else {
+            settleRefusal(told: true)
+            return false
+        }
         markDirty()
         armClipboardClear()
         flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
@@ -5761,7 +5764,10 @@ public final class PageModel: ObservableObject {
     /// with copy out's clear and line (ADR-0042 point 8).
     @discardableResult
     public func copyChipNameValue(_ id: UInt64, size: String? = nil) -> Bool {
-        guard client.copyNameValue(chip: id) else { return false }
+        guard client.copyNameValue(chip: id) else {
+            settleRefusal(told: true)
+            return false
+        }
         markDirty()
         armClipboardClear()
         flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
@@ -5841,16 +5847,19 @@ public final class PageModel: ObservableObject {
         case composed(SealedFragment)
         /// One envelope holds one range, so several stretches carry no object.
         case severalStretchesHoldAnObject
+        /// The page was past its deadline, and the settle took it (ADR-0052).
+        case pageExpired
         case refused
     }
 
-    /// Compose a page's selected ranges for a copy or a service; writes nothing.
+    /// Compose a page's selected ranges for a copy or a service; writes nothing,
+    /// and a refusal settles as the timer would (ADR-0052 point 4).
     public func composeSelection(_ ranges: [NSRange], sheet: UInt64) -> SelectionComposition {
         guard !sheet.isFileID, !ranges.isEmpty else { return .refused }
         var fragments: [SealedFragment] = []
         for range in ranges {
             guard let fragment = client.copyFragment(sheet: sheet, range: range) else {
-                return .refused
+                return settleIfDue(sheet: sheet) ? .pageExpired : .refused
             }
             fragments.append(fragment)
         }
@@ -5870,6 +5879,9 @@ public final class PageModel: ObservableObject {
             return fragment.write(to: ambientPasteboard)
         case .severalStretchesHoldAnObject:
             flash(Self.severalStretchesLine)
+            return false
+        case .pageExpired:
+            flash(Self.pageExpiredLine)
             return false
         case .refused:
             return false
@@ -5901,18 +5913,22 @@ public final class PageModel: ObservableObject {
     public func cutSelection(_ ranges: [NSRange], sheet: UInt64) -> CutOutcome {
         guard !sheet.isFileID, let range = ranges.first else { return .refused }
         guard ranges.count == 1 else {
-            for range in ranges {
-                guard let fragment = client.copyFragment(sheet: sheet, range: range) else {
-                    return .refused
-                }
-                if fragment.envelope != nil {
-                    flash(Self.severalStretchesCutLine)
-                    return .refused
-                }
+            switch composeSelection(ranges, sheet: sheet) {
+            case .composed:
+                return .inkStretches
+            case .severalStretchesHoldAnObject:
+                flash(Self.severalStretchesCutLine)
+            case .pageExpired:
+                flash(Self.pageExpiredLine)
+            case .refused:
+                break
             }
-            return .inkStretches
+            return .refused
         }
-        guard let fragment = client.cutFragment(sheet: sheet, range: range) else { return .refused }
+        guard let fragment = client.cutFragment(sheet: sheet, range: range) else {
+            settleRefusal(sheet: sheet, told: true)
+            return .refused
+        }
         var selecting = NSRange(location: range.location, length: 0)
         if !writeCutFragment(fragment, ambientPasteboard) {
             // The core deleted the range already; its undo stands it again.
@@ -5991,8 +6007,15 @@ public final class PageModel: ObservableObject {
 
     /// A page's range as its drag carries it: the copy's fragment (ADR-0047 point 10).
     public func dragFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
-        guard !sheet.isFileID else { return nil }
-        return client.copyFragment(sheet: sheet, range: range)
+        switch composeSelection([range], sheet: sheet) {
+        case .composed(let fragment):
+            return fragment
+        case .pageExpired:
+            flash(Self.pageExpiredLine)
+            return nil
+        case .severalStretchesHoldAnObject, .refused:
+            return nil
+        }
     }
 
     /// A page's own drag dropped on it at `index`: the range moved, or cloned for ⌥,
@@ -6020,6 +6043,7 @@ public final class PageModel: ObservableObject {
 
     /// The decrypted drag, asked by a destination: the core writes the chip's payload
     /// into `item` and records one `sent` to `drag` (ADR-0047 point 11), so a write is armed.
+    /// A refusal settles with no line, since the destination asked (ADR-0052).
     @discardableResult
     public func provideDecryptedDrag(
         chip: UInt64, pasteboard: NSPasteboard, item: NSPasteboardItem,
@@ -6027,7 +6051,10 @@ public final class PageModel: ObservableObject {
     ) -> Bool {
         guard client.provideDecryptedDrag(
             chip: chip, pasteboard: pasteboard, item: item, type: type.rawValue)
-        else { return false }
+        else {
+            settleRefusal(told: false)
+            return false
+        }
         markDirty()
         return true
     }
@@ -6553,6 +6580,11 @@ public final class PageModel: ObservableObject {
         // clear belongs to that egress, not to whichever draft the UI is
         // showing when the response returns.
         if outcome.ok { armClipboardClear() }
+        // A refusal may be a page past its deadline (ADR-0052): settle as the timer would.
+        if !outcome.ok {
+            let page: UInt64? = if case .page(let id) = target { id } else { nil }
+            settleRefusal(sheet: page, told: true)
+        }
         // The confirmation may have been dismissed — or reopened on a
         // new offer for the same target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
@@ -6949,5 +6981,24 @@ public final class PageModel: ObservableObject {
         markDirty()
         refresh() // re-arms for the next event
         return expired
+    }
+
+    /// When the core's next event is due its timer is late, so settle as it fires.
+    /// True when `sheet` went, or, with no page named, when any page went.
+    @discardableResult
+    func settleIfDue(sheet: UInt64? = nil) -> Bool {
+        guard client.nextEventMs() == 0 else { return false }
+        let expired = settleCoreEvent() > 0
+        guard let sheet else { return expired }
+        return expired && !livePageIDs.contains(sheet)
+    }
+
+    /// The line when a page past its deadline refused what a person asked of it (ADR-0052).
+    public static let pageExpiredLine = "this page has expired."
+
+    /// A core route refused to give a page out: settle as the timer would, since a page
+    /// past its deadline refuses (ADR-0052 point 4), and tell a person who acted.
+    func settleRefusal(sheet: UInt64? = nil, told: Bool) {
+        if settleIfDue(sheet: sheet), told { flash(Self.pageExpiredLine) }
     }
 }

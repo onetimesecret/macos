@@ -3118,11 +3118,15 @@ public struct InkEditorView: NSViewRepresentable {
 
         // MARK: A note's own surface, over the note's routes (ADR-0045)
 
-        /// Puts the note of `chip` under this surface, its text from the core.
-        func loadNote(chip: UInt64) {
+        /// Puts the note of `chip` under this surface, its text from the core;
+        /// false, with nothing loaded, where the core refuses the note (ADR-0052).
+        @discardableResult
+        func loadNote(chip: UInt64) -> Bool {
             unloadNote()
+            guard let text = model.noteText(chip: chip) else { return false }
             noteChip = chip
-            restateNote()
+            showNote(text)
+            return true
         }
 
         /// Takes the note away; its edits are already the core's, and the
@@ -3145,10 +3149,21 @@ public struct InkEditorView: NSViewRepresentable {
             model.finishNoteEditingGroup(chip: chip)
         }
 
-        /// The note's text from the core, with no edit crossing for it.
+        /// The note's text from the core, with no edit crossing for it. A refusal
+        /// empties the surface and settles as the timer would (ADR-0052).
         private func restateNote() {
-            guard let noteChip, let storage = textView?.textStorage else { return }
-            let text = model.noteText(chip: noteChip) ?? ""
+            guard let noteChip else { return }
+            guard let text = model.noteText(chip: noteChip) else {
+                showNote("")
+                model.settleRefusal(sheet: noteHost?.sheet, told: true)
+                return
+            }
+            showNote(text)
+        }
+
+        /// Lays `text` down as the note's whole storage, styled as the page's ink.
+        private func showNote(_ text: String) {
+            guard let storage = textView?.textStorage else { return }
             model.applyingProjection {
                 storage.setAttributedString(NSAttributedString(
                     string: text,

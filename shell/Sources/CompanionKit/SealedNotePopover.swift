@@ -221,6 +221,10 @@ final class SealedNoteEditor: NSObject {
               let scroll = pageView.enclosingScrollView
         else { return }
         if isOpen { close(returningKeys: false) }
+        // A note the core refuses opens nothing and settles (ADR-0052).
+        guard coordinator.loadNote(chip: face.chipId) else {
+            return model.settleRefusal(sheet: sheet, told: true)
+        }
         chip = face.chipId
         self.sheet = sheet
         isExpanded = false
@@ -230,7 +234,6 @@ final class SealedNoteEditor: NSObject {
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
                 .foregroundColor: NSColor.secondaryLabelColor, .kern: 1.15,
             ])
-        coordinator.loadNote(chip: face.chipId)
         overlay.frame = scroll.bounds
         scroll.addSubview(overlay)
         watch(scroll)

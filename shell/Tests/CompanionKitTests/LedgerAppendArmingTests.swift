@@ -96,4 +96,48 @@ final class LedgerAppendArmingTests: XCTestCase {
                 "\(step.name): a ledger record was appended and no write was armed (issue #52)")
         }
     }
+
+    /// A refused read appends nothing and arms nothing. Past a page's deadline it
+    /// records no `sent`, and only the settle's sweep appends, with its write armed (ADR-0052).
+    func testARefusedReadArmsNothingAndPastADeadlineOnlyItsSweepAppends() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "companion-kit-refused-read-tests"))
+        defaults.removePersistentDomain(forName: "companion-kit-refused-read-tests")
+        let model = isolatedModel(defaults: defaults)
+        let client = model.coreClient
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        model.newPage()
+        let chip = try XCTUnwrap(
+            model.sealText("n0ts3cr3t", replacing: NSRange(location: 0, length: 0))?.chipId)
+        XCTAssertTrue(model.setChipName("API_KEY", chip: chip, sheet: model.selectedPageID ?? 0))
+        let reads: [(name: String, run: (UInt64) -> Bool)] = [
+            ("copyOutChip", { model.copyOutChip($0) }),
+            ("copyChipNameValue", { model.copyChipNameValue($0) }),
+            ("provideDecryptedDrag", {
+                model.provideDecryptedDrag(
+                    chip: $0, pasteboard: board, item: NSPasteboardItem(), type: .string)
+            }),
+        ]
+
+        for read in reads {
+            let records = client.ledger().count
+            let marks = model.dirtyMarks
+            XCTAssertFalse(read.run(4_242), "\(read.name) read an unknown object")
+            XCTAssertEqual(client.ledger().count, records, read.name)
+            XCTAssertEqual(model.dirtyMarks, marks, "\(read.name): a refusal armed a write")
+        }
+
+        let tab = try XCTUnwrap(model.selection)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertEqual(client.tabs().first?.hasPage, true, "the control: no sweep ran")
+        let records = client.ledger().count
+        let marks = model.dirtyMarks
+        XCTAssertFalse(reads[0].run(chip), "copy decrypted read a page past its deadline")
+        let appended = client.ledger().dropFirst(records)
+        XCTAssertFalse(appended.isEmpty, "the settle swept nothing")
+        XCTAssertFalse(appended.contains { $0.event == "sent" }, "the refused read recorded a sent")
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the sweep's records armed no write")
+    }
 }

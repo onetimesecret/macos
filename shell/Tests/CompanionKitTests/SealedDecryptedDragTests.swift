@@ -230,6 +230,29 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(shape(page), "ab # cd")
     }
 
+    /// An ask past the page's deadline is refused, writes and records nothing, and
+    /// settles the page with no line, since the destination asked (ADR-0052).
+    func testAnAskPastThePagesDeadlineIsRefusedAndSettlesWithoutALine() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let (source, item) = try begin(page)
+        let client = model.coreClient
+        let tab = try XCTUnwrap(model.tabs.first { $0.pageID == page.sheet }?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertTrue(client.tabs().contains { $0.pageID == page.sheet }, "the control: no sweep")
+        let board = privateBoard()
+        XCTAssertTrue(board.writeObjects([item]))
+
+        XCTAssertNil(board.string(forType: .string), "the payload left a page past its deadline")
+        XCTAssertEqual(source.asks, 1)
+        XCTAssertEqual(sent(model), [])
+        XCTAssertNotEqual(model.notice, PageModel.pageExpiredLine, "a line answered the ask")
+        XCTAssertFalse(
+            model.tabs.contains { $0.pageID == page.sheet }, "the refusal left the page standing")
+        source.end(with: [])
+    }
+
     // MARK: Inside the app (ADR-0050)
 
     /// The app's own decrypted drag lands on no page: refused before drop to seal reads

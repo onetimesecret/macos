@@ -790,6 +790,92 @@ final class SealedFragmentEditorTests: XCTestCase {
             page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
     }
 
+    // MARK: A page past its deadline (ADR-0052)
+
+    /// Puts `page` past its deadline with no sweep: a one hour rung, two hours on.
+    private func age(_ page: Page) throws {
+        let client = page.model.coreClient
+        let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == page.sheet }?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        // The re-mint is dense, so the editor's ids still name what the core holds.
+        XCTAssertTrue(client.tabs().contains { $0.pageID == page.sheet }, "the page was swept")
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+    }
+
+    private func sent(_ page: Page) -> [String] {
+        page.model.coreClient.ledger().filter { $0.event == "sent" }.map(\.destination)
+    }
+
+    /// From its deadline, before any sweep, each way out of a page the person asks
+    /// for refuses, writes and records nothing, and settles at once with its line.
+    func testEveryWayOutOfAPagePastItsDeadlineRefusesAndTheSettleTakesIt() throws {
+        let routes: [(name: String, run: (Page) -> Void)] = [
+            ("copy", {
+                $0.textView.setSelectedRange(self.whole)
+                $0.textView.copy(nil)
+            }),
+            ("cut", {
+                $0.textView.setSelectedRange(self.whole)
+                $0.textView.cut(nil)
+            }),
+            ("copy decrypted", { XCTAssertFalse($0.coordinator.copyOutChip(at: 3)) }),
+            ("copy NAME=value", { XCTAssertFalse($0.coordinator.copyNameValue(at: 3)) }),
+            ("the note", {
+                $0.coordinator.beginNote(at: 3)
+                XCTAssertNotEqual($0.coordinator.noteEditor?.isOpen, true, "the note opened")
+            }),
+            ("the drag", {
+                $0.textView.setSelectedRange(self.whole)
+                guard case .refused = $0.coordinator.beginPageDrag() else {
+                    return XCTFail("the drag began")
+                }
+            }),
+        ]
+        for route in routes {
+            let page = try makePage()
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+            try age(page)
+            let board = page.pasteboard.changeCount
+
+            route.run(page)
+
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, route.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet },
+                "\(route.name): the page outlived its refusal")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(route.name) wrote the board")
+            XCTAssertEqual(sent(page), [], "\(route.name) recorded a sent")
+            XCTAssertNil(page.model.activeCut, route.name)
+        }
+    }
+
+    /// A conceal of a page or an object past its deadline sends nothing, and its
+    /// refusal settles: the draft goes with its subject and the line says why.
+    func testAConcealPastTheDeadlineSendsNothingAndTheSettleTakesThePage() throws {
+        for onPage in [false, true] {
+            let page = try makePage()
+            let client = page.model.coreClient
+            XCTAssertTrue(client.stubWireForTests(status: 0))
+            try age(page)
+            let target: ConcealDraft.Target = onPage ? .page(page.sheet) : .chip(page.chips[0])
+            page.model.beginConceal(target)
+            let draft = try XCTUnwrap(page.model.concealDraft)
+            let outcome = onPage
+                ? client.concealSheet(id: page.sheet, ttlSecs: draft.ttlSecs, passphrase: "", recipient: "")
+                : client.concealChip(id: page.chips[0], ttlSecs: draft.ttlSecs, passphrase: "", recipient: "")
+            XCTAssertFalse(outcome.ok)
+            XCTAssertNil(client.lastWireForTests(), "the conceal reached the wire")
+
+            page.model.finishConceal(outcome, for: target, draftID: draft.id)
+
+            XCTAssertNil(page.model.concealDraft, "the draft outlived its subject")
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine)
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet })
+            XCTAssertEqual(sent(page), [])
+        }
+    }
+
     /// What another app reads from a copy: a rich or a plain text reader gets
     /// the public text, with a placeholder where each object stood.
     func testAnotherAppReadsThePublicTextAlone() throws {
