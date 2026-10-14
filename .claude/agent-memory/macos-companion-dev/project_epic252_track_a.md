@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, and the find, name, Share and Writing Tools gates
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, and why a ballot always advances with an empty frame for a page it cannot give out
 metadata:
   type: project
 ---
@@ -109,6 +109,21 @@ for review fixes; shell only.
   object refusal asks `chipStands` (ungated) before and after the
   settle. Still ungated and undecided: Look Up, Translate and Speech
   on the page's text menu, whose titles carry the selection.
+- Phase 7 unit 1 (2026-10-14): a confirmed ballot always advances the
+  chain; `SyncSession::commit_advance` is the one path for ballot and
+  solo, and only the store's rebuild decides whether the frame holds
+  the page. A page the store will not rebuild (due, gone, not
+  deferred) seals an empty frame, because if every member reads the
+  last accept past the deadline and none PUTs a frame, the relay stays
+  an epoch behind and 409s every publish (client protocol 4.4). Solo
+  keeps the store's refusal. `JoinedBallot` in the sync_session tests
+  builds two devices with both accepts on the stream. Still open: a
+  seal refusal leaves an earlier unpublished frame to go out under the
+  new epoch (§7.6). A peer's unmarked U+FFFC imports as ink; the shell
+  must take it out as an edit, but `sync_document` (the recovery
+  mirror) refuses such ink, and undoing the removal would stand it
+  again. ADR-0025's delivery note keeps line citations current by
+  digits plus a decision history entry, not by rewriting its text.
 - Test traps: the DEBUG `assertProjectionParity` traps and xctest hangs
   with no output, so run mutation checks under `timeout`. `ageForTests`
   re-mints the store and drops every undo stack; reach a refused note
