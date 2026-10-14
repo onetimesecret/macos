@@ -58,9 +58,9 @@ ADR-0011 requires boundary snapping to be a persisted setting in the local form 
 
 Primary source locations:
 
-- `shell/Sources/CompanionKit/PageModel.swift:719-971`
-- `shell/Sources/CompanionKit/PageModel.swift:1448-1524`
-- `shell/Sources/CompanionKit/PageModel.swift:6394-6431`
+- `shell/Sources/CompanionKit/PageModel.swift:723-975`
+- `shell/Sources/CompanionKit/PageModel.swift:1460-1536`
+- `shell/Sources/CompanionKit/PageModel.swift:6506-6543`
 - `shell/Sources/CompanionKit/SyncController.swift:4-43`
 - `shell/Sources/CompanionKit/SyncController.swift:83-91`
 - `shell/Sources/CompanionKit/SyncController.swift:147-208`
@@ -106,7 +106,7 @@ Verified persisted candidates are:
 | `restingPinned` | `BackdropModel` | Current backdrop pinning behavior |
 | `backdrop.geometry` | `BackdropGeometry` | Existing encoded shape includes a legacy decoding path |
 
-`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:719-727`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
+`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:723-731`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
 
 ## Persistence boundary
 
@@ -287,7 +287,7 @@ Automatic paste fencing currently remains storable while language detection is d
 
 ### Connection validation
 
-Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6396-6412`.
+Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6508-6524`.
 
 The API token and non-secret connection fields require a defined transaction outcome when one persistence operation succeeds and the other fails.
 
