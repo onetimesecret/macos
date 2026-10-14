@@ -660,6 +660,9 @@ final class SealedDragTests: XCTestCase {
 
         var landed = shape(page)
         for (name, source) in sources {
+            XCTAssertEqual(
+                page.textView.dragOperation(for: drag(from: source), type: .string), .copy,
+                "\(name): AppKit's answer between two views, so the source keeps its text")
             XCTAssertTrue(dropInk(drag(from: source), on: page), name)
             landed += "zz"
             XCTAssertEqual(shape(page), landed, name)
