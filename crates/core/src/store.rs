@@ -918,6 +918,43 @@ impl<C: Clock> SheetStore<C> {
         clean
     }
 
+    /// Take every U+FFFC out of a page's ink, a peer's or an earlier build's
+    /// (Law 0001), as a local edit its peers receive and no undo puts back.
+    /// Returns whether any went.
+    pub fn take_out_unmarked_object_characters(&mut self, id: SheetId) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        let taken = sheet.document.take_out_unmarked_sentinels();
+        if taken.is_empty() {
+            return false;
+        }
+        // Last first, as they went, so each offset is still true.
+        for at in &taken {
+            sheet.blocks.note_delete(*at, 1);
+        }
+        self.settle_document(id);
+        true
+    }
+
+    /// Write `text` as ink below the guard that refuses U+FFFC and outside the
+    /// undo stack, as an earlier build's restored page or a peer's batch lands
+    /// it. `test-util` only (ADR-0018).
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn ink_below_the_guard(&mut self, id: SheetId, pos_u16: u32, text: &str) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        sheet.document.commit(None);
+        if sheet.document.insert(pos_u16 as usize, text).is_err() {
+            return false;
+        }
+        sheet.document.commit_unrecorded();
+        sheet.blocks.note_insert(pos_u16 as usize, text);
+        self.settle_document(id);
+        true
+    }
+
     /// Settle the chip roster (ADR-0047), then rebuild the projection and
     /// derived title.
     pub(crate) fn settle_document(&mut self, id: SheetId) {
@@ -4629,6 +4666,55 @@ mod tests {
         assert_eq!(beta.sheet(b).unwrap().segments(), ink("xy"));
         ship(&beta, b, &mut alpha, a).unwrap();
         assert_eq!(alpha.sheet(a).unwrap().segments(), ink("xy"));
+    }
+
+    #[test]
+    fn taking_out_a_peers_object_character_reaches_the_peer_and_no_undo_puts_it_back() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().1;
+        let b = beta.new_tab().1;
+        assert!(alpha.ink_below_the_guard(a, 0, "x\u{FFFC}y"));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert!(beta.apply_ops(b, &typed(3, "z")));
+        let ink = |text: &str| vec![Segment::Ink(text.into())];
+        assert_eq!(beta.sheet(b).unwrap().segments(), ink("x\u{FFFC}yz"));
+
+        assert!(beta.take_out_unmarked_object_characters(b));
+        assert_eq!(beta.sheet(b).unwrap().segments(), ink("xyz"));
+        assert!(
+            !beta.take_out_unmarked_object_characters(b),
+            "a second pass found one"
+        );
+        ship(&beta, b, &mut alpha, a).unwrap();
+        assert_eq!(alpha.sheet(a).unwrap().segments(), ink("xyz"));
+
+        // The one step to take back is the typed `z`, and taking it back stands no U+FFFC.
+        assert!(beta.undo(b));
+        assert_eq!(beta.sheet(b).unwrap().segments(), ink("xy"));
+        assert!(!beta.undo(b), "the take out left a step to undo");
+        assert!(beta.redo(b));
+        assert_eq!(beta.sheet(b).unwrap().segments(), ink("xyz"));
+    }
+
+    #[test]
+    fn taking_out_object_characters_leaves_every_chip_standing() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        assert!(store.ink_below_the_guard(id, 0, "\u{FFFC}a"));
+        assert!(store.ink_below_the_guard(id, 3, "b\u{FFFC}"));
+
+        assert!(store.take_out_unmarked_object_characters(id));
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            vec![
+                Segment::Ink("a".into()),
+                Segment::Chip(chip),
+                Segment::Ink("b".into())
+            ]
+        );
+        assert!(!store.take_out_unmarked_object_characters(SheetId::from_raw(9_999)));
     }
 
     #[test]
