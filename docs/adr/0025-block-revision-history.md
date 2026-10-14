@@ -296,11 +296,11 @@ Settle list, as of this date:
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
   (`crates/ffi/src/gop.rs:277`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
-  (`crates/core/src/store.rs:5152`). The joining side discards too, by
+  (`crates/core/src/store.rs:5194`). The joining side discards too, by
   a separate rule: a frame lands only on a pristine page
-  (`crates/core/src/store.rs:4890`), so a device carrying
+  (`crates/core/src/store.rs:4882`), so a device carrying
   pre-ceremony history drops it and rejoins empty
-  (`crates/core/src/store.rs:4841`). **Unverified; no test exercises
+  (`crates/core/src/store.rs:4833`). **Unverified; no test exercises
   a key frame emitted without a local discard**, and no code path
   offers one. Whether part 2's schedule change removes the occasion
   rather than the coupling is the question left standing.
@@ -309,15 +309,15 @@ Settle list, as of this date:
 Delivered by #132 and holding part 4:
 
 - Local only step, peer's operations left standing:
-  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:5974`.
+  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:6016`.
 - Nothing to step back through after a restore or a ceremony:
   `crates/core/src/document.rs:1574`, `crates/core/src/document.rs:1591`,
-  `crates/core/src/store.rs:5918`.
+  `crates/core/src/store.rs:5960`.
 - The stack forgotten where a step would lie: a seal
-  (`crates/core/src/store.rs:5267`), a deleted chip
-  (`crates/core/src/store.rs:5720`), a wholesale restate
-  (`crates/core/src/store.rs:5901`), a peer's chip deletion
-  (`crates/core/src/store.rs:5937`).
+  (`crates/core/src/store.rs:5309`), a deleted chip
+  (`crates/core/src/store.rs:5762`), a wholesale restate
+  (`crates/core/src/store.rs:5943`), a peer's chip deletion
+  (`crates/core/src/store.rs:5979`).
 - Two second merge interval and the automation's own step:
   `crates/core/src/document.rs:1513`, `crates/core/src/document.rs:1535`.
 - The caret across the seam: `crates/core/src/document.rs:1448`,
