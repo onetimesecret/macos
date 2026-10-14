@@ -2375,6 +2375,32 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.opened.urls, [Self.secretLink], "the control: the link opens")
     }
 
+    /// What AppKit drives from attributes on its own: a page and a note find no links as
+    /// typed, the restyle pass alone does (ADR-0023), and an object's attachment holds no
+    /// contents and no file, with no delegate answer to name one, so AppKit's double click,
+    /// Quick Look and attachment drag have nothing of it to open, show or write.
+    func testAppKitFindsNoLinkOnAPageAndAnObjectGivesItNothingToHandOut() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        XCTAssertFalse(page.textView.isAutomaticLinkDetectionEnabled, "the page finds links")
+        XCTAssertFalse(note.isAutomaticLinkDetectionEnabled, "the note finds links")
+        for index in [3, 8] {
+            let chip = try XCTUnwrap(page.coordinator.chipAttachment(at: index))
+            XCTAssertNil(chip.contents, "the object at \(index) holds contents")
+            XCTAssertNil(chip.fileWrapper, "the object at \(index) holds a file")
+        }
+        for (selector, name) in [
+            (#selector(NSTextViewDelegate.textView(_:urlForContentsOf:at:)), "a URL"),
+            (#selector(NSTextViewDelegate.textView(_:writablePasteboardTypesFor:at:)), "board types"),
+            (#selector(NSTextViewDelegate.textView(_:write:at:to:type:)), "a board write"),
+            (#selector(NSTextViewDelegate.textView(_:doubleClickedOn:in:at:)), "a double click"),
+        ] {
+            XCTAssertFalse(page.coordinator.responds(to: selector), "the delegate answers \(name)")
+        }
+    }
+
     /// A held press on a link selects it and drags the selection through
     /// `dragSelection(with:offset:slideBack:)`, the method a page's and a note's drag gate,
     /// so a change of AppKit's route fails here. The view and its link are the test's own.
