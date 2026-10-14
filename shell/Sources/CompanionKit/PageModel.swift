@@ -6229,6 +6229,9 @@ public final class PageModel: ObservableObject {
     /// design's words (D-30).
     public static let removedLine = "protected content removed."
 
+    /// The line when a rewrite of the selection, such as a spelling change, would take an object.
+    public static let rewriteRefusedLine = "the change would replace a sealed object, so it was not made."
+
     /// Whether a removal's Undo is offered beside `removedLine`: the core
     /// keeps a removed object detached to reattach from (ADR-0047 point 4).
     public static let offersRemovalUndo = true

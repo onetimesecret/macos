@@ -199,6 +199,128 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertNil(page.model.notice)
     }
 
+    // MARK: Rewrites of the selection
+
+    /// Both objects stand in the core and in the editor, each U+FFFC carrying its own, and
+    /// nothing said a removal.
+    private func assertObjectsStand(_ page: Page, _ message: String, line: UInt = #line) throws {
+        XCTAssertEqual(chips(page), page.chips, message, line: line)
+        let text = page.textView.string as NSString
+        let faces = (0..<text.length).filter { text.character(at: $0) == 0xFFFC }
+            .map { page.coordinator.chipAttachment(at: $0)?.info.chipId }
+        XCTAssertEqual(faces, page.chips.map { Optional($0) }, message, line: line)
+        XCTAssertNotEqual(page.model.notice, PageModel.removedLine, message, line: line)
+        try assertParity(page, message, line: line)
+    }
+
+    /// Make Upper Case, Make Lower Case and Capitalize over a selection holding objects
+    /// rewrite its ink and leave every object standing, the selection kept, each one
+    /// step that one Undo takes back whole (D-30).
+    func testATransformationOverObjectsRewritesTheInkAsOneStep() throws {
+        let page = try makePage()
+        let whole = NSRange(location: 0, length: 12)
+        let ways: [(name: String, run: (NSTextView) -> Void, ink: String)] = [
+            ("Make Upper Case", { $0.uppercaseWord(nil) }, "AB  CD  EF"),
+            ("Make Lower Case", { $0.lowercaseWord(nil) }, "ab  cd  ef"),
+            ("Capitalize", { $0.capitalizeWord(nil) }, "Ab  Cd  Ef"),
+        ]
+        var inks = [coreInk(page)]
+        for way in ways {
+            page.textView.setSelectedRange(whole)
+
+            way.run(page.textView)
+
+            XCTAssertEqual(coreInk(page), way.ink, way.name)
+            try assertObjectsStand(page, way.name)
+            XCTAssertNil(page.model.notice, way.name)
+            XCTAssertEqual(page.textView.selectedRange(), whole, "\(way.name) moved the selection")
+            inks.append(way.ink)
+        }
+        for ink in inks.dropLast().reversed() {
+            page.coordinator.step(back: true)
+            XCTAssertEqual(coreInk(page), ink, "one Undo took more or less than one transformation")
+            try assertObjectsStand(page, "after Undo")
+        }
+    }
+
+    /// A transformation from an object on, and at a caret before or after one, where
+    /// AppKit picks the range, rewrites ink alone and the object stands.
+    func testATransformationBesideAnObjectKeepsIt() throws {
+        let ways: [(name: String, selection: NSRange, ink: String?)] = [
+            ("from an object", NSRange(location: 3, length: 4), "ab  CD  ef"),
+            ("at a caret before one", NSRange(location: 3, length: 0), nil),
+            ("at a caret after one", NSRange(location: 4, length: 0), nil),
+        ]
+        for way in ways {
+            let page = try makePage()
+            page.textView.setSelectedRange(way.selection)
+
+            page.textView.uppercaseWord(nil)
+
+            if let ink = way.ink { XCTAssertEqual(coreInk(page), ink, way.name) }
+            try assertObjectsStand(page, way.name)
+            XCTAssertNil(page.model.notice, way.name)
+        }
+    }
+
+    /// Substitutions' replace actions over a selection holding objects leave every object
+    /// standing, and what one replaces in the ink on both sides of them is one step.
+    func testAReplaceInSelectionOverObjectsKeepsThemAsOneStep() throws {
+        let page = try makePage(tail: " a -- b")
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.insertText("x -- y ", replacementRange: Self.noReplacement)
+        let before = coreInk(page)
+        page.textView.setSelectedRange(NSRange(location: 0, length: page.textView.string.utf16.count))
+
+        page.textView.perform(Selector(("replaceDashesInSelection:")), with: nil)
+
+        XCTAssertFalse(coreInk(page).contains("--"), "a dash was left: \(coreInk(page))")
+        try assertObjectsStand(page, "Replace Dashes")
+        page.coordinator.step(back: true)
+        XCTAssertEqual(coreInk(page), before, "one Undo took more or less than the replace")
+        try assertObjectsStand(page, "after Undo")
+    }
+
+    /// The spelling panel's Change replaces the selection with one word, so over a selection
+    /// holding an object it is refused with the line; over ink it changes it.
+    func testASpellingChangeOverAnObjectIsRefusedWithTheLine() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 1, length: 4))
+
+        page.textView.changeSpelling(NSTextField(string: "x"))
+
+        XCTAssertEqual(page.model.notice, PageModel.rewriteRefusedLine)
+        XCTAssertEqual(coreInk(page), "ab  cd  ef")
+        try assertObjectsStand(page, "the refused change")
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        page.textView.changeSpelling(NSTextField(string: "xy"))
+        XCTAssertEqual(coreInk(page), "xy  cd  ef", "the control: a change over ink")
+        try assertObjectsStand(page, "the change over ink")
+    }
+
+    /// A rewrite's plan keeps one U+FFFC for each object and writes no ink where none
+    /// stood; any other is refused whole.
+    func testARewriteThatWouldNotKeepItsObjectsHasNoPlan() {
+        let foreign = { (id: UInt64) in
+            InkEditorView.Coordinator.chipString(ChipInfo(
+                chipId: id, kind: "text", excerpt: "", sizeLabel: "tiny", concealed: false))
+        }
+        let storage = NSTextStorage(string: "ab")
+        storage.append(foreign(1))
+        storage.append(foreign(2))
+        storage.append(NSAttributedString(string: "cd"))
+        let whole = NSRange(location: 0, length: storage.length)
+        let plan = { (text: String) in
+            InkEditorView.Coordinator.inkRewrites(storage, of: whole, as: text)?.map(\.text)
+        }
+
+        XCTAssertEqual(plan("AB\u{FFFC}\u{FFFC}CD"), ["AB", "", "CD"])
+        XCTAssertNil(plan("ABCD"), "it drops the objects")
+        XCTAssertNil(plan("AB\u{FFFC}CD"), "it drops one")
+        XCTAssertNil(plan("AB\u{FFFC}x\u{FFFC}CD"), "it writes ink between two objects")
+    }
+
     /// A selection of ink and an object goes in one press and offers the same Undo.
     func testASelectionHoldingAnObjectGoesInOnePressWithUndo() throws {
         let page = try makePage()
@@ -985,9 +1107,9 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), page.chips, "the removal did not come back")
     }
 
-    /// While a field or the note holds the keys, no other deletion, ⌃Y or typing over a
-    /// selected object selects or removes anything on the page (ADR-0046).
-    func testEveryDeletionYankAndTypingStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+    /// While a field or the note holds the keys, no other deletion, ⌃Y, typing over a
+    /// selected object or rewrite of the selection changes anything on the page (ADR-0046).
+    func testEveryDeletionYankTypingAndRewriteStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage(tail: "\nxy")
         page.textView.setSelectedRange(NSRange(location: 13, length: 0))
         page.textView.deleteToEndOfParagraph(nil) // the kill buffer holds `xy` for ⌃Y
@@ -1011,6 +1133,12 @@ final class SealedRemovalTests: XCTestCase {
             ("Edit > Delete", object, { $0.delete(nil) }),
             ("⌃Y", object, { $0.yank(nil) }),
             ("typing", object, { $0.insertText("x", replacementRange: Self.noReplacement) }),
+            ("Make Upper Case", NSRange(location: 0, length: 12), { $0.uppercaseWord(nil) }),
+            ("Make Lower Case", NSRange(location: 0, length: 12), { $0.lowercaseWord(nil) }),
+            ("Capitalize", NSRange(location: 0, length: 12), { $0.capitalizeWord(nil) }),
+            ("the spelling panel's Change", NSRange(location: 0, length: 2), {
+                $0.changeSpelling(NSTextField(string: "xy"))
+            }),
         ]
         func standsAside(_ holder: String) {
             XCTAssertFalse(page.textView.answersChords, holder)

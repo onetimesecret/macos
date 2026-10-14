@@ -512,6 +512,35 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(menu.items.map(\.title), ["Cut"])
     }
 
+    /// A page's Transformations keep the three its rewrite carries round an object; the
+    /// conversions AppKit adds beside them, where an input source asks, leave the page's
+    /// menu, and a note's keeps them.
+    func testAPagesTransformationsAreTheThreeItsRewriteCarries() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        let transformations = { (menu: NSMenu) in
+            menu.items.compactMap(\.submenu).first {
+                $0.items.contains { $0.action == #selector(NSResponder.uppercaseWord(_:)) }
+            }?.items.compactMap(\.action).map(NSStringFromSelector)
+        }
+        XCTAssertEqual(
+            transformations(pageMenu), ["uppercaseWord:", "lowercaseWord:", "capitalizeWord:"])
+
+        let built = NSMenu()
+        let submenu = NSMenu()
+        for action in ["uppercaseWord:", "lowercaseWord:", "capitalizeWord:", "convertToFullWidth:"] {
+            submenu.addItem(NSMenuItem(title: action, action: Selector((action)), keyEquivalent: ""))
+        }
+        built.addItem(NSMenuItem(title: "Transformations", action: nil, keyEquivalent: ""))
+        built.items[0].submenu = submenu
+
+        TextOffers.removeUncarriedTransformations(from: built)
+
+        XCTAssertEqual(
+            transformations(built), ["uppercaseWord:", "lowercaseWord:", "capitalizeWord:"])
+    }
+
     /// Continuous spelling reaches the spell server only through `checkTextInRange`, the
     /// one method the asking views gate for it, so a change of AppKit's route fails here.
     /// Its text is the test's own, never a page's.

@@ -2114,9 +2114,37 @@ public struct InkEditorView: NSViewRepresentable {
         // MARK: Editing (ops across the seam, ADR-0013)
 
         public func textDidChange(_ notification: Notification) {
+            // One action's several edits are one change, taken once its batch has gone.
+            guard heldBatch == nil else { return }
+            inkChanged()
+        }
+
+        private func inkChanged() {
             restyle()
             noteHost?.inkDidChange()
             settleRemovalWatch()
+        }
+
+        /// The ops of an action's storage edits, held back to go as one batch (`asOneEdit`).
+        private var heldBatch: [DocumentEditOp]?
+
+        /// Runs `body`, whose storage edits reach the core as one batch, so one step.
+        func asOneEdit(_ intent: EditorEditIntent, _ body: () -> Void) {
+            guard heldBatch == nil, let document, let textView else {
+                return withEditIntent(intent, perform: body)
+            }
+            heldBatch = []
+            var sent = false
+            withEditIntent(intent) {
+                body()
+                let ops = heldBatch ?? []
+                heldBatch = nil
+                sent = !ops.isEmpty
+                emit(ops, document: document, selection: EditorEditSelection(
+                    before: editSelectionBefore ?? textView.selectedRange(),
+                    after: textView.selectedRange()))
+            }
+            if sent { inkChanged() }
         }
 
         /// The composition the IME gate is tracking: where it started,
@@ -2238,6 +2266,10 @@ public struct InkEditorView: NSViewRepresentable {
                 editedRange: editedRange,
                 changeInLength: delta
             )
+            if heldBatch != nil {
+                heldBatch?.append(contentsOf: ops)
+                return
+            }
             let deletedLength = max(0, editedRange.length - delta)
             let selection = EditorEditSelection(
                 before: editSelectionBefore
@@ -2610,6 +2642,35 @@ public struct InkEditorView: NSViewRepresentable {
                 if let chip = value as? ChipAttachment { ids.insert(chip.info.chipId) }
             }
             return ids
+        }
+
+        /// The stretches of ink in `range` between its objects, in order, empty ones kept.
+        static func inkStretches(_ storage: NSTextStorage, in range: NSRange) -> [NSRange] {
+            guard isValid(range, for: storage.length) else { return [] }
+            var stretches: [NSRange] = []
+            var start = range.location
+            storage.enumerateAttribute(.attachment, in: range) { value, run, _ in
+                guard value is ChipAttachment else { return }
+                for index in run.location..<NSMaxRange(run) {
+                    stretches.append(NSRange(location: start, length: index - start))
+                    start = index + 1
+                }
+            }
+            stretches.append(NSRange(location: start, length: NSMaxRange(range) - start))
+            return stretches
+        }
+
+        /// AppKit's rewrite of `range` as `replacement`, stretch by stretch of ink: nil unless
+        /// it keeps one U+FFFC for each object and writes no ink where none stood.
+        static func inkRewrites(
+            _ storage: NSTextStorage, of range: NSRange, as replacement: String
+        ) -> [(range: NSRange, text: String)]? {
+            let stretches = inkStretches(storage, in: range)
+            let texts = replacement.components(separatedBy: objectCharacter)
+            guard !stretches.isEmpty, texts.count == stretches.count else { return nil }
+            let rewrites = zip(stretches, texts).map { (range: $0, text: $1) }
+            if rewrites.contains(where: { $0.range.length == 0 && !$0.text.isEmpty }) { return nil }
+            return rewrites
         }
 
         static func chipString(_ chip: ChipInfo) -> NSAttributedString {
@@ -3364,6 +3425,15 @@ public struct InkEditorView: NSViewRepresentable {
             guard !writesNote, !model.isApplyingProjection, let document,
                   let storage = textView.textStorage
             else { return true }
+            // An in place rewrite is made after AppKit asks, stretch by stretch (`rewritingInk`).
+            if heldRewrites != nil, let replacementStrings,
+               replacementStrings.count == affectedRanges.count
+            {
+                heldRewrites?.append(contentsOf: zip(affectedRanges, replacementStrings).map {
+                    (range: $0.rangeValue, replacement: $1)
+                })
+                return false
+            }
             // A new ask means the last one's edit landed or never comes, so it judges nothing.
             removalWatch?.asked = []
             let chips = affectedRanges.reduce(into: Set<UInt64>()) {
@@ -3376,6 +3446,37 @@ public struct InkEditorView: NSViewRepresentable {
             watch.asked = chips
             removalWatch = watch
             return true
+        }
+
+        /// The edits an AppKit rewrite asked for while `rewritingInk` runs, none yet made.
+        private var heldRewrites: [(range: NSRange, replacement: String)]?
+
+        /// Runs `rewrite`, AppKit's rewrite of the page's selection, then makes each edit it
+        /// asked for stretch by stretch of ink, so every object stands, as one step (D-30);
+        /// one that would not keep its objects is refused with the line.
+        func rewritingInk(_ rewrite: () -> Void) {
+            guard !writesNote, !writesFile, let textView, let storage = textView.textStorage
+            else { return rewrite() }
+            asOneEdit(.replacement) {
+                heldRewrites = []
+                rewrite()
+                let asked = (heldRewrites ?? []).sorted { $0.range.location < $1.range.location }
+                heldRewrites = nil
+                guard !asked.isEmpty else { return }
+                let plans = asked.map { Self.inkRewrites(storage, of: $0.range, as: $0.replacement) }
+                for stretch in plans.reversed().flatMap({ ($0 ?? []).reversed() })
+                where (storage.string as NSString).substring(with: stretch.range) != stretch.text {
+                    textView.performValidatedReplacement(
+                        in: stretch.range, with: NSAttributedString(string: stretch.text))
+                }
+                var shift = 0
+                textView.selectedRanges = zip(asked, plans).map { ask, plan in
+                    let length = plan == nil ? ask.range.length : ask.replacement.utf16.count
+                    defer { shift += length - ask.range.length }
+                    return NSValue(range: NSRange(location: ask.range.location + shift, length: length))
+                }
+                if plans.contains(where: { $0 == nil }) { model.flash(PageModel.rewriteRefusedLine) }
+            }
         }
 
         /// The asked edit reached the storage, so its objects are the settle's to judge.
@@ -5473,6 +5574,9 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             return coordinator.chipMenu(at: index)
         }
         let menu = super.menu(for: event) ?? NSMenu()
+        if let coordinator, !coordinator.writesNote, !coordinator.writesFile {
+            TextOffers.removeUncarriedTransformations(from: menu)
+        }
         coordinator?.appendSealItem(to: menu)
         coordinator?.appendLanguageItems(to: menu)
         return menu
@@ -5485,6 +5589,51 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
 
     /// A file's text menu keeps them all.
     override var keepsSelectionReaders: Bool { coordinator?.writesFile == true }
+
+    /// What a check of a page's or a note's text applies at once, as Substitutions'
+    /// replace actions ask, is one step.
+    override func checkText(
+        in range: NSRange, types checkingTypes: NSTextCheckingTypes,
+        options: [NSSpellChecker.OptionKey: Any] = [:]
+    ) {
+        guard let coordinator, !coordinator.writesFile else {
+            return super.checkText(in: range, types: checkingTypes, options: options)
+        }
+        coordinator.asOneEdit(.replacement) {
+            super.checkText(in: range, types: checkingTypes, options: options)
+        }
+    }
+
+    // MARK: AppKit's rewrites of the selection (Law 0001, D-30)
+
+    /// Make Upper Case: the ink changes and every object stands, as one step.
+    override func uppercaseWord(_ sender: Any?) {
+        rewriting { super.uppercaseWord(sender) }
+    }
+
+    /// Make Lower Case, as Make Upper Case.
+    override func lowercaseWord(_ sender: Any?) {
+        rewriting { super.lowercaseWord(sender) }
+    }
+
+    /// Capitalize, as Make Upper Case.
+    override func capitalizeWord(_ sender: Any?) {
+        rewriting { super.capitalizeWord(sender) }
+    }
+
+    /// The spelling panel's Change, refused with the line over a selection holding an object.
+    override func changeSpelling(_ sender: Any?) {
+        rewriting { super.changeSpelling(sender) }
+    }
+
+    /// A page's rewrite stands aside while another surface holds the keys (ADR-0046).
+    private func rewriting(_ rewrite: () -> Void) {
+        guard let coordinator, !coordinator.writesNote, !coordinator.writesFile else {
+            return withEditIntent(.replacement, perform: rewrite)
+        }
+        guard answersChords else { return }
+        coordinator.rewritingInk(rewrite)
+    }
 
     /// A resize rewraps paragraphs without touching their content, so
     /// the block affordances (ADR-0013) are re-decided and moved from

@@ -56,6 +56,23 @@ enum TextOffers {
         "_changeSpellingFromMenu:", "_ignoreSpellingFromMenu:", "_learnSpellingFromMenu:",
     ]
 
+    /// Takes out the Transformations AppKit adds past Make Upper Case, Make Lower Case and
+    /// Capitalize (Convert to Full Width and its kin), which a page's rewrite does not carry.
+    static func removeUncarriedTransformations(from menu: NSMenu) {
+        for submenu in menu.items.compactMap(\.submenu)
+        where submenu.items.contains(where: { $0.action == #selector(NSResponder.uppercaseWord(_:)) }) {
+            submenu.items.filter { item in
+                !item.isSeparatorItem && !carriedTransformations.contains { $0 == item.action }
+            }
+            .forEach(submenu.removeItem)
+        }
+    }
+
+    private static let carriedTransformations = [
+        #selector(NSResponder.uppercaseWord(_:)), #selector(NSResponder.lowercaseWord(_:)),
+        #selector(NSResponder.capitalizeWord(_:)),
+    ]
+
     /// Search With Google, which hands the selection to the browser's search.
     static func isWebSearch(_ item: NSMenuItem) -> Bool {
         item.action.map(NSStringFromSelector)?.hasPrefix("_searchWith") == true
