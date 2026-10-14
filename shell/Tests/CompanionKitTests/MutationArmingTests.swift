@@ -24,7 +24,7 @@ import XCTest
 ///   - `clearUnreadableStateFile`: `RestoreFailureTests`, which sees the
 ///     armed write land as the file that replaces the unreadable one.
 ///   - `finishConceal`: `ConcealWireTests`, on a stubbed wire.
-///   - `newTab`, `close`, `sealText`, `copyOutChip` and `applyOps`:
+///   - `newTab`, `close`, `sealText` and `copyOutChip`:
 ///     `LedgerAppendArmingTests`.
 ///   - `setChipName` and `applyNoteOps`: `SealedNameFieldTests`.
 ///   - `provideDecryptedDrag`: `LedgerAppendArmingTests` and
@@ -110,11 +110,13 @@ final class MutationArmingTests: XCTestCase {
                 return Self.ink(of: model.coreClient.documentRuns(sheet: page))
                     == "the deploy key rotates friday"
             }),
+            ("applyOps", {
+                model.applyOps(sheet: page, opsJSON: #"[{"ins":{"at":0,"text":"so "}}]"#)
+                    && Self.ink(of: client.documentRuns(sheet: page))
+                    == "so the deploy key rotates friday"
+            }),
             ("undoEdit, through step", {
-                // Typed through the client, so only the step's own mark counts.
-                guard client.applyOps(sheet: page, json: #"[{"ins":{"at":0,"text":"so "}}]"#)
-                else { return false }
-                return model.undoEdit(sheet: page).applied
+                model.undoEdit(sheet: page).applied
                     && Self.ink(of: client.documentRuns(sheet: page))
                     == "the deploy key rotates friday"
             }),
