@@ -292,15 +292,15 @@ Settle list, as of this date:
   confirmed ballot and `crates/ffi/src/sync_session.rs:1051` for the
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
-  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1037`).
+  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1044`).
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
   (`crates/ffi/src/gop.rs:277`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
-  (`crates/core/src/store.rs:5194`). The joining side discards too, by
+  (`crates/core/src/store.rs:5217`). The joining side discards too, by
   a separate rule: a frame lands only on a pristine page
-  (`crates/core/src/store.rs:4882`), so a device carrying
+  (`crates/core/src/store.rs:4905`), so a device carrying
   pre-ceremony history drops it and rejoins empty
-  (`crates/core/src/store.rs:4833`). **Unverified; no test exercises
+  (`crates/core/src/store.rs:4856`). **Unverified; no test exercises
   a key frame emitted without a local discard**, and no code path
   offers one. Whether part 2's schedule change removes the occasion
   rather than the coupling is the question left standing.
@@ -309,19 +309,19 @@ Settle list, as of this date:
 Delivered by #132 and holding part 4:
 
 - Local only step, peer's operations left standing:
-  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:6016`.
+  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:6039`.
 - Nothing to step back through after a restore or a ceremony:
   `crates/core/src/document.rs:1574`, `crates/core/src/document.rs:1591`,
-  `crates/core/src/store.rs:5960`.
+  `crates/core/src/store.rs:5983`.
 - The stack forgotten where a step would lie: a seal
-  (`crates/core/src/store.rs:5309`), a deleted chip
-  (`crates/core/src/store.rs:5762`), a wholesale restate
-  (`crates/core/src/store.rs:5943`), a peer's chip deletion
-  (`crates/core/src/store.rs:5979`).
+  (`crates/core/src/store.rs:5332`), a deleted chip
+  (`crates/core/src/store.rs:5785`), a wholesale restate
+  (`crates/core/src/store.rs:5966`), a peer's chip deletion
+  (`crates/core/src/store.rs:6002`).
 - Two second merge interval and the automation's own step:
   `crates/core/src/document.rs:1513`, `crates/core/src/document.rs:1535`.
 - The caret across the seam: `crates/core/src/document.rs:1448`,
-  `crates/ffi/src/lib.rs:5374`.
+  `crates/ffi/src/lib.rs:5391`.
 
 **Part 2, "The page is history's retention unit (amends ADR-0013)",
 stays open.** The question it asks is whether rung transitions and
