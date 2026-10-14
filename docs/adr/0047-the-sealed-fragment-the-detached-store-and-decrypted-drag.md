@@ -184,3 +184,7 @@ the core writes a decrypted drag into the drag item the shell hands it.
   sweeps due pages before point 6 resolves and refuses a due page to a
   paste, move or clone; [ADR-0049](0049-a-pasted-envelope-is-bounded.md)
   bounds the envelope point 3 reads. The decisions above stand.
+- 2026-10-13: [ADR-0050](0050-a-decrypted-drag-lands-only-in-another-app.md)
+  says which asks point 11's provider answers, and
+  [ADR-0051](0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md)
+  places its handle. The decisions above stand.
