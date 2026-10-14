@@ -9,9 +9,6 @@ public struct PadPickerView: View {
     @State private var routes = PadPickerRoutes()
     @State private var removingPad: PadEntry?
     @State private var confirmingRemoval = false
-    @State private var nameDraft = ""
-    @State private var nameSubmitted = false
-    @State private var nameFailure: String?
     @Environment(\.noticeLineTop) private var noticeLineTop
     @State private var rowBottom: CGFloat?
 
@@ -61,7 +58,7 @@ public struct PadPickerView: View {
         .onReceive(keyboard.$selectedPad) { id in
             if id != nil { routes.closeList(in: model) }
         }
-        .sheet(isPresented: $routes.creating) { nameEditor }
+        .sheet(isPresented: $routes.creating) { PadCreateSheet(model: model, isPresented: $routes.creating) }
         .alert(CompanionL10n.format("pad.remove.title", removingPad?.name ?? ""),
                isPresented: $confirmingRemoval) {
             Button(CompanionL10n.string("pad.remove"), role: .destructive) {
@@ -76,43 +73,8 @@ public struct PadPickerView: View {
         }
     }
 
-    /// The create sheet, which Law 0007 exempts until a new cell has a seat;
-    /// a rename happens in the pad's own cell (`PadRename`).
-    private var nameEditor: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(CompanionL10n.string("pad.new.title"))
-                .font(.headline)
-            TextField(CompanionL10n.string("pad.name"), text: $nameDraft)
-                .onSubmit { submitName() }
-            if let message = nameFailure ?? PadNameDraft.validationMessage(nameDraft),
-               nameSubmitted || !nameDraft.isEmpty {
-                Text(message).font(.caption).foregroundStyle(Color.emberText)
-            }
-            HStack {
-                Spacer()
-                Button(CompanionL10n.string("pad.cancel")) { routes.creating = false }
-                    .keyboardShortcut(.cancelAction)
-                Button(CompanionL10n.string("pad.create")) { submitName() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20).frame(width: 340)
-        .onChange(of: nameDraft) { _ in nameFailure = nil }
-    }
-
     private func beginCreating() {
-        nameDraft = ""
-        nameSubmitted = false
-        nameFailure = nil
         routes.beginCreating(in: model)
-    }
-
-    private func submitName() {
-        nameSubmitted = true
-        guard PadNameDraft.validationMessage(nameDraft) == nil else { return }
-        // Creating already activates the new pad; do not persist a second activation.
-        if model.createPad(named: nameDraft) != nil { routes.creating = false }
-        else { nameFailure = CompanionL10n.string("pad.name.failed") }
     }
 
     private var folderTally: String {
@@ -311,6 +273,45 @@ private struct PadNameField: View {
             // On the next turn, once the field is in the popover's window.
             .onAppear { DispatchQueue.main.async { focused = true } }
             .accessibilityLabel(Text(CompanionL10n.string("pad.name")))
+    }
+}
+
+/// The create sheet, shared separately from the picker's routes.
+struct PadCreateSheet: View {
+    @ObservedObject var model: PageModel
+    @Binding var isPresented: Bool
+    @State private var draft = ""
+    @State private var submitted = false
+    @State private var failure: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(CompanionL10n.string("pad.new.title"))
+                .font(.headline)
+            TextField(CompanionL10n.string("pad.name"), text: $draft)
+                .onSubmit(submit)
+            if let message = failure ?? PadNameDraft.validationMessage(draft),
+               submitted || !draft.isEmpty {
+                Text(message).font(.caption).foregroundStyle(Color.emberText)
+            }
+            HStack {
+                Spacer()
+                Button(CompanionL10n.string("pad.cancel")) { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Button(CompanionL10n.string("pad.create"), action: submit)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 340)
+        .onChange(of: draft) { _ in failure = nil }
+    }
+
+    private func submit() {
+        submitted = true
+        guard PadNameDraft.validationMessage(draft) == nil else { return }
+        // Creating already activates the new pad; do not persist a second activation.
+        if model.createPad(named: draft) != nil { isPresented = false }
+        else { failure = CompanionL10n.string("pad.name.failed") }
     }
 }
 
