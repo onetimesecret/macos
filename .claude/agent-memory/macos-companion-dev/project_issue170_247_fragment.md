@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names, a nil control view under the drag image, drop to seal reading the real drag board)
 metadata:
   type: project
 ---
@@ -170,6 +170,13 @@ Seams for the editor half (all page ids, all refuse a file id):
   no `pageDrag` still falls to `super.performDragOperation`; never make
   the page a decrypted drag's source.
   `FakeDrag` stands in for NSDraggingInfo; never pass it to a super call.
+  The drag's image (phase 4 unit 7, F3) is `InkTextView.pageDragImage`,
+  which sets `drawsPageDragImage` around `dragImageForSelection` so each
+  `SealedBlockCell` draws its `.dragImage` face (no excerpt, a name with
+  no `=` or value). Probed: AppKit draws that image synchronously with a
+  nil control view, so the cell finds the page through
+  `layoutManager.firstTextView`, not `controlView`. The test compares
+  offscreen pixels of two objects differing only in contents.
 
 - Decrypted drag is built (shell unit 7, `SealedDecryptedDragTests`,
   ADR-0050 and ADR-0051): `DecryptedDrag` is the session's source and
@@ -180,9 +187,17 @@ Seams for the editor half (all page ids, all refuse a file id):
   promise is met; a standalone item's read asks with a nil pasteboard;
   an in-process read asks synchronously on main inside the read. So
   drop to seal on our own decrypted drag would relock the core's Mutex:
-  `isDecryptedDrag` refuses first, and the in-app mask is empty. A test
-  of the refusal must assert `draggingEntered` before calling perform,
-  or a regression reads the real system drag board.
+  `isDecryptedDrag` refuses first, and the in-app mask is empty. Drop to
+  seal reads the real system drag board core side, so a test that may
+  reach `performDragOperation` builds its model on a client subclass
+  overriding `sealFromDrag` (`DropToSealWitness` in
+  `SealedDecryptedDragTests`, phase 4 unit 7), which counts and never
+  calls the core. `prepareForDragOperation`'s own guard is unpinned:
+  NSTextView answers false for a `FakeDrop` anyway. The handle's open
+  hand is `InkTextView.decryptedDragCursorRects` (drawn per
+  `drawsDecryptedDragHandle(at:)` and `answersChords`) fed to
+  `resetCursorRects`; hover, selection and `keysMoved` invalidate it.
+  Probed: NSTextView's `mouseMoved` does not reset the cursor.
 
 - Finished (unit 8, app 0.34.0): a service's request goes through
   `InkTextView.writeSelection(to:types:)`, `writablePasteboardTypes` and
