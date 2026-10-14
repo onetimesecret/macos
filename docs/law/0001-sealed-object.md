@@ -35,11 +35,11 @@ sources:
   - crates/core/src/note.rs (the note's own document and undo)
   - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections; the name and note routes)
   - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt, ChipInfo.name, ChipInfo.hasNote)
-  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands; `makeSurface`, the page's and the note's one writing surface)
+  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands; `makeSurface`, the page's and the note's one writing surface; `selectObjectBeside` and `undoRemoval`, the two presses and the removal line's Undo)
   - shell/Sources/CompanionKit/SealedBlockLayout.swift (the named row's zones, pill and allotment)
   - shell/Sources/CompanionKit/SealedNameField.swift (the name's field)
   - shell/Sources/CompanionKit/SealedNotePopover.swift (`NotePopoverLayout.minimumWidth`, the note's popover)
-  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes; `InkDocument`, the routes by document; `cutSelection`, `placeActiveCut`, `cutSlotSentence`, the cut and the clipboard slot; `pasteFragment`, the paste)
+  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes; `InkDocument`, the routes by document; `cutSelection`, `placeActiveCut`, `cutSlotSentence`, the cut and the clipboard slot; `pasteFragment`, the paste; `noteRemoval` and `withdrawRemovalUndo`, the removal line)
   - shell/Sources/CompanionKit/PageSurface.swift (`PageStatusStack`, the clipboard slot's line)
   - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
@@ -139,8 +139,8 @@ without a test says what it is owed by.
 | ⌥ drag | structural editing | clones all selected sealed objects core-side as one operation, following the macOS copy-drag convention | the core's clone: `transfer.rs` `an_option_drag_clones_every_object_in_one_step`; refused on a page past its deadline: `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`; the gesture, owed: issue 170, the editor's half |
 | plain drag, outside | ambient observation | exposes only ordered ink and placeholders | the public text it carries is the copy's (the copy row); the drag, owed: issue 170, the editor's half, and the hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | the core's write into the drag item, its refusals and its record: `lib.rs` `a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag`, `a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`, `the_fragment_routes_fail_closed`; `crates/pasteboard/src/macos.rs` `a_drag_item_takes_the_plaintext_under_its_kinds_type`, `a_drag_item_on_the_general_pasteboard_says_so`, `a_drag_item_refuses_null_and_objects_of_another_class`; `SealedFragmentSeamTests.swift` `testADecryptedDragWritesTheItemCoreSideAndRecordsADrag`; its buffer: `store.rs` `a_copy_out_is_written_at_its_exact_size`; the `Drag` class at rest: `persist.rs` `every_destination_class_round_trips_in_the_ledger`; the handle and its data provider, owed: issue 170, the editor's half; a drop into another app, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
-| backspace beside it | structural editing | the first press selects the object, the second removes it from the page | owed: issue 170, the editor's half; one backspace removes the object today, and no test pins either behaviour |
-| backspace, selected | structural editing | detaches it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; the detach and the undo: `store.rs` `deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`, `undo_stands_a_removed_chip_again_from_the_detached_store`; through the editor: `DocumentOpsTests.swift` `testUndoAfterRemovingAChipStandsTheSameObjectAgain`, `testPuttingARemovedChipsAttachmentBackReattachesIt`; the removal line's Undo button, owed: issue 170, the editor's half |
+| backspace beside it | structural editing | the first press selects the object, the second removes it from the page | the editor's two presses, and a forward delete before the object alike: `SealedRemovalTests.swift` `testTheFirstBackspaceBesideAnObjectSelectsItAndTheSecondRemovesIt`, `testTheFirstForwardDeleteBeforeAnObjectSelectsItAndTheSecondRemovesIt`; a press beside ink deletes one character, `testAPressBesideInkDeletesOneCharacter`; standing aside while a field or the note holds the keys (ADR-0046) `testBackspaceAndTheUndoStandAsideWhileAFieldOrTheNoteHoldsTheKeys`; the real keys on the raised card, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| backspace, selected | structural editing | detaches it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; the detach and the undo: `store.rs` `deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`, `undo_stands_a_removed_chip_again_from_the_detached_store`; through the editor: `DocumentOpsTests.swift` `testUndoAfterRemovingAChipStandsTheSameObjectAgain`, `testPuttingARemovedChipsAttachmentBackReattachesIt`; the removal line's Undo, which stands the same object again and leaves the line once the page moves past the removal: `SealedRemovalTests.swift` `testTheRemovalLinesUndoStandsTheSameObjectAgain`, `testASelectionHoldingAnObjectGoesInOnePressWithUndo`, `testARemovalIsItsOwnStep`, `testTheUndoGoesOnceThePageMovesPastTheRemoval`, `testTheMenusRemovalOffersTheSameUndo`; `SealedCapsuleTests.swift` `testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords`; the line's button on the raised card, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | find, word count | ambient observation | does not inspect the payload; may count one protected object | `WrapTests.swift` `testUseSelectionForFindRefusesAChip`; no word count exists |
 | expiry | destruction/lifecycle | destroys all of the page's attached and detached payloads; while terminal-cause evidence remains, later references produce an expired placeholder and cannot be undone | `store.rs` `an_expiring_page_destroys_its_detached_chips_and_records_each`; `transfer.rs` `an_expired_reference_says_so_while_evidence_remains_then_is_unavailable`, `the_active_cut_ends_with_its_page`; between the deadline and its sweep (ADR-0048): `a_cut_from_a_page_past_its_deadline_reattaches_nothing_and_places_expired`, `a_copy_from_a_page_past_its_deadline_clones_nothing_and_places_expired` |
 | explicit burn | destruction/lifecycle | destroys the named local payloads atomically; while terminal-cause evidence remains, later references produce a burned placeholder | `store.rs` `burning_a_chip_takes_the_stack_with_it`, `burning_a_detached_chip_destroys_it_and_takes_the_stack_with_it`; `transfer.rs` `a_burned_reference_says_so`, `burning_a_clones_source_leaves_the_clone` |
@@ -494,7 +494,8 @@ pin chip expiry or lifecycle),
 `SealedBlockTests` (the block's geometry; the named row, its zones, pill,
 seat words and beat, and the block's label), `SealedCapsuleTests` (the
 zones' clicks and routes, hover by point, both menus, the face changed
-in place, the caret and a shift selection crossing an object whole),
+in place, the caret and a shift selection crossing an object whole, the
+removal line's Undo and its withdrawal),
 `SealedNameFieldTests` (the name's field, per Law 0007),
 `ModalSessionTests.testRenameNeverRunsAModalSession` (naming stays
 dialog free), `SealedNoteTests` (the doorway, the popover's placement,
@@ -509,6 +510,10 @@ paste swept), `SealedFragmentEditorTests` (the
 editor's copy, cut, paste and select all on a privately named
 pasteboard, the clipboard slot's words, where its line stands and its
 place at the caret, and their standing aside while a field or the note
+holds the keys), `SealedRemovalTests` (the two presses beside an
+object, the removal line's Undo standing the same object again, the
+removal as its own step, the Undo leaving the line once the page moves
+past the removal, and their standing aside while a field or the note
 holds the keys), `LedgerAppendArmingTests` (a paste's clones arm a
 write).
 
@@ -522,15 +527,17 @@ been run.
 The tests that pinned the contradicting build (removal reaped, nothing
 reattached) were rewritten under issue 170 as the `store.rs` tests
 above that detach and reattach, and `DocumentOpsTests`
-`testPuttingARemovedChipsAttachmentBackReattachesIt`.
+`testPuttingARemovedChipsAttachmentBackReattachesIt`. The test that
+pinned the removal line without its Undo was rewritten as
+`SealedCapsuleTests`
+`testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords`.
 `burning_a_chip_takes_the_stack_with_it` stands, since a burn is not a
 removal.
 
 Owed: issue 170, the editor's half: writing and reading the fragment on
 the plain drags, settling after a move or clone as
-the timer does (ADR-0048), the decrypted drag
-handle and its data provider, the second backspace, and the removal
-line's Undo button, each over the core's
+the timer does (ADR-0048), and the decrypted drag
+handle and its data provider, each over the core's
 routes and tests named in the rows; a first run of the sealed zones and
 note procedure and of the sealed fragment procedure. Issues 169
 (`SealedBlockTests`) and 172 (the interrupting dialogs) are closed;
@@ -749,3 +756,16 @@ paths must stay dialog free.
   leave a fragment to AppKit's paste, which reads the public text. The
   other app paste row cites what a rich or plain text reader takes from
   the board. The owed list drops the paste and its settle.
+- 2026-10-13: Editor removal amendment (issue 170's editor half). The
+  backspace beside it row replaces its owed clause with
+  `SealedRemovalTests`, which drives the two presses through the
+  editor: a backspace after an object, or a forward delete before it,
+  selects it whole, and the next press removes it. The backspace,
+  selected row cites the removal line's Undo, which stands the same
+  object again from the detached store, the removal as its own step,
+  and the Undo leaving the line once the page moves past the removal.
+  Both stand aside while a field or the note holds the keys. The real
+  keys and the line's button on the raised card go to the sealed
+  fragment procedure. The acceptance list follows, the paragraph of
+  contradicting tests names the rewritten removal line test, and the
+  owed list drops the second backspace and the removal line's Undo.
