@@ -1054,7 +1054,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than split from its peers. Its expiry still goes, so a peer's
   copy dies too. A batch or frame already sealed before the deadline
   still goes out on its retry. A page past its deadline no longer
-  enrols, so the relay hears nothing of a page no peer was ever sent.
+  enrols, so one not enrolled before its deadline sends the relay
+  nothing, its expiry included.
 
 - **A page a peer's hold leaves no life goes at once** (app 0.35.0;
   `companion-core` 0.32.0; Law 0001, ADR-0052, issue #170). A paired
