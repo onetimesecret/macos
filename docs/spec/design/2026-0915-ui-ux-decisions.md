@@ -397,6 +397,13 @@ in plain; the fragment adds order, not payload exposure.
   is never seeded from the page's remaining time; failure is inline text
   and the button becomes Retry; the local copy is offered up to burn and
   never burned automatically.
+  *Amended 2026-10-14:* the sheet stays inline. Its title takes the
+  menu's verb, `create a one-time link from this sealed content`; its
+  buttons are title case (*Create Link*, *Burn Local Copy*, *Keep It*);
+  a *Cancel* left of the default button answers Escape and waits out a
+  request in flight; each field has a label of its own; and the guest
+  line ends in a *Connection Settings…* link that opens that tab
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-10 (fixed)** Hover reveals affordances, never content, and the
   affordance keeps its seat whether visible or not (~120 ms opacity,
   0 ms under Reduce Motion): revealing it never nudges the ink or
