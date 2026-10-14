@@ -2196,6 +2196,7 @@ public struct InkEditorView: NSViewRepresentable {
                 }
                 return
             }
+            landRemovalWatch()
             guard let document else { return }
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
                 // Composition in flight: the span grows and shrinks
@@ -3319,8 +3320,15 @@ public struct InkEditorView: NSViewRepresentable {
             return ranges.contains { Self.containsChip(storage, in: $0) }
         }
 
-        /// The objects an edit's ranges held when AppKit asked to make it, until it lands.
-        private var removalWatch: (document: InkDocument, chips: Set<UInt64>)?
+        /// The objects held by edits AppKit asked to make on one document: `asked` until
+        /// that edit reaches the storage, then `landed`, which the settle judges.
+        private struct RemovalWatch {
+            let document: InkDocument
+            var asked: Set<UInt64> = []
+            var landed: Set<UInt64> = []
+        }
+
+        private var removalWatch: RemovalWatch?
 
         /// Every edit AppKit makes on the page asks here first; one over an object
         /// ends the coalescing run, so its removal is a step of its own (D-30).
@@ -3331,14 +3339,26 @@ public struct InkEditorView: NSViewRepresentable {
             guard !writesNote, !model.isApplyingProjection, let document,
                   let storage = textView.textStorage
             else { return true }
+            // A new ask means the last one's edit landed or never comes, so it judges nothing.
+            removalWatch?.asked = []
             let chips = affectedRanges.reduce(into: Set<UInt64>()) {
                 $0.formUnion(Self.chipIDs(storage, in: $1.rangeValue))
             }
             guard !chips.isEmpty else { return true }
             model.finishEditingGroup(document, selection: textView.selectedRange())
-            let watched = removalWatch?.document == document ? removalWatch?.chips ?? [] : []
-            removalWatch = (document, watched.union(chips))
+            var watch = removalWatch.flatMap { $0.document == document ? $0 : nil }
+                ?? RemovalWatch(document: document)
+            watch.asked = chips
+            removalWatch = watch
             return true
+        }
+
+        /// The asked edit reached the storage, so its objects are the settle's to judge.
+        private func landRemovalWatch() {
+            guard var watch = removalWatch, !watch.asked.isEmpty else { return }
+            watch.landed.formUnion(watch.asked)
+            watch.asked = []
+            removalWatch = watch
         }
 
         /// U+FFFC, which a page or a note holds for its objects alone (Law 0001).
@@ -3366,9 +3386,9 @@ public struct InkEditorView: NSViewRepresentable {
             guard let watch = removalWatch, let storage = textView?.textStorage
             else { return }
             removalWatch = nil
-            guard watch.document == document else { return }
+            guard watch.document == document, !watch.landed.isEmpty else { return }
             let standing = Self.chipIDs(storage, in: NSRange(location: 0, length: storage.length))
-            if !watch.chips.isSubset(of: standing) { noteRemoval() }
+            if !watch.landed.isSubset(of: standing) { noteRemoval() }
         }
 
         /// After an edit took an object: end its step, so Undo stands the object alone,

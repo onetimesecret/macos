@@ -647,6 +647,31 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), page.chips)
     }
 
+    /// AppKit may ask to change an object's range and then make no edit. That ask judges
+    /// no later edit: once the object goes by the core's cut, typing says no removal.
+    func testAnAskNoEditFollowedJudgesNoLaterEdit() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.textView.shouldChangeText(
+            in: NSRange(location: 3, length: 1), replacementString: ""))
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        guard case .cut = page.coordinator.cutSelection() else { return XCTFail("the cut refused") }
+        XCTAssertEqual(chips(page), [page.chips[1]], "the control: the cut took the object")
+        page.model.notice = nil
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.insertText("z", replacementRange: Self.noReplacement)
+        XCTAssertEqual(page.textView.string.prefix(3), "zab")
+        XCTAssertNotEqual(page.model.notice, PageModel.removedLine, "typing said a removal it did not make")
+        XCTAssertNil(page.model.noticeAction, "an Undo that would take the typing back")
+
+        XCTAssertTrue(page.textView.shouldChangeText(
+            in: NSRange(location: 8, length: 1), replacementString: ""))
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        page.textView.deleteBackward(nil)
+        XCTAssertEqual(chips(page), [], "the control: an asked edit that lands still takes its object")
+        assertRemovalLine(page, "the edit after a stale ask")
+    }
+
     /// A fragment pasted, or the slot's cut placed, over a selected object takes that object
     /// with the line, and the line's Undo stands it again.
     func testAPasteOrPlaceOverASelectedObjectTakesItWithTheLine() throws {
