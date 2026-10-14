@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets); copy and cut refuse past an envelope cap; the core move between pages (drop not wired); the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the core move between pages (drop not wired); the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -75,8 +75,11 @@ Seams for the editor half (all page ids, all refuse a file id):
   or detached. The FFI answers `{"error": "tooLarge" | "tooManyObjects",
   "limit"}` (every other refusal stays null), and
   `copyFragmentResult`/`cutFragmentResult` give a `FragmentRefusal`. The
-  optional `copyFragment`/`cutFragment` still return nil, so the editor
-  writes nothing but says nothing yet: its line is owed. Sealing 1025
+  optional `copyFragment`/`cutFragment` still return nil. The editor's
+  line is built (phase 4 unit 4): `composeSelection` carries
+  `.pastCap(FragmentRefusal)` and one `PageModel.refusalLine(for:_:)`
+  words every refused composition for copy, cut, drag and a service
+  (so a service now hears the several stretches line too). Sealing 1025
   chips one FFI call at a time takes about 21 s in a debug test, so seam
   tests use the 8 MiB length cap; the store seals 1026 in well under 1 s.
 
@@ -85,12 +88,21 @@ Seams for the editor half (all page ids, all refuse a file id):
   the sweep's own predicate. `chip_home` goes through it, so every
   `chip_home` caller (note undo names, `finish_note_editing_group`)
   refuses a due page too; `chip_mut` and `record_sent` do not, on
-  purpose. Reads never sweep; the shell must settle on any refusal and
-  on wake. `noteRuns` collapses a refusal to `[]`. AppKit's note copy,
-  cut and drag and its ink alone service and several stretch drag never
-  reach the core, so the gate cannot cover them (ADR-0052 erratum).
-  `age_by`/`ageForTests` stage a due page with no sweep; ids re-mint,
-  so read them back. Core mutation checks by Edit ran unrefused.
+  purpose. Reads never sweep. Shell half (phase 4 unit 4): a wake
+  (`Seams.wakeNotifications`) runs `settleCoreEvent`; a refused read
+  calls `settleIfDue`, which settles only when `nextEventMs() == 0`, so
+  a refusal with nothing due arms no write (`LedgerAppendArmingTests`)
+  and a late conceal outcome over a fake page id keeps its draft. Paste
+  and drop refusals keep the unconditional `settleCoreEvent`, since the
+  paste sweeps first. AppKit's ways out (note copy, cut, drag, service;
+  ink alone service; ink stretch drag) ask `PageModel.givesOut(sheet:)`,
+  which also refuses a page no longer in `tabs`, because a hand mounted
+  editor keeps a swept page's storage. `noteRuns` answers nil for a
+  refusal. Never call a note's `textView.copy`/`cut` in a test: NSTextView
+  writes the general pasteboard; pin through `givesOutShownText()` or
+  `writeSelection` on a unique board. `age_by`/`ageForTests` stage a due
+  page with no sweep; ids re-mint densely, so a one page fixture keeps
+  its ids (assert it). Mutation checks by Edit ran unrefused.
 
 - Move between pages (ADR-0054, phase 4, core and seam only):
   `SheetStore::move_range_to` / `companion_sheet_move_range_to` /
