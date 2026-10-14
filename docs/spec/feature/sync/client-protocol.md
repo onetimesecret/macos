@@ -7,7 +7,7 @@ documentation_status: draft # draft | needs-review | reviewed | stale
 **Status:** draft, not accepted; grants itself no authority and changes
 no spec. Describes the client at `50044ad`, with the deadline gate that
 `4fde3d8`, `ba3d5eb`, `999d011` and `b6600bb` added (§2, §3, §4.4,
-§7.1, §7.4, §7.6).
+§7.1, §7.4, §7.6) and the ballot advance `3de557c` made (§7.1, §7.6).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
@@ -225,7 +225,7 @@ lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
 
 | Envelope | Handling |
 | --- | --- |
-| Ops | `admit_delta(batch epoch)`: a terminal page refuses; an equal epoch applies to a page held here; any other emits `rejoin_required`. `applied` only if the document version moved, so an echo is not an arrival; store refusals are dropped silently. |
+| Ops | `admit_delta(batch epoch)`: a terminal page refuses; an equal epoch applies to a page held here; any other emits `rejoin_required`. `applied` only if the document version moved, so an echo is not an arrival; store refusals are dropped silently. A U+FFFC no chip mark carries, which an earlier build took as ink, applies as ink rather than stall the page (10.31), and a later local delete of it applies and reaches the peer (`a_peers_batch_holding_an_unmarked_object_character_lands_and_a_delete_takes_it_out`). |
 | Expiry | the wall-clock pair read off the live countdown; `observe_peer_expiry` shortens, never extends (ADR-0021: "the earliest known expiry wins"); a held page ignores it |
 | Hold | the register's state, never the press, applied in stream order; a live hold suspends the countdown |
 | Terminal | `marker_trusted`: exactly `page_id(16) ‖ wall_ms(8) ‖ sig(64)`, the envelope's page id, signed over `signing_domain(TERMINAL_SIGN_CONTEXT, claim)` by this device or a peer record (`trusted_identities`); then the page is entombed (`deltas_round_trip_and_the_terminal_gate_needs_a_current_view`) |
@@ -242,8 +242,8 @@ lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
 | this device queued a terminal marker | a due page, else the first live enrolled page by id; with none, no rotation |
 | a publish answered `413` | the first live enrolled page by id; with none, no rotation |
 
-A live page here is one held before its deadline: a page past it would
-refuse the commit (§7.6), so it is never a target, since `ceremony_due`
+A live page here is one held before its deadline: a page past it gives
+the commit no rebuild (§7.6), so it is never a target, since `ceremony_due`
 answers false for it, or an anchor
 (`a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`,
 `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`).
@@ -281,22 +281,30 @@ held id and a named member, so devices commit at the same position
 
 ### 7.6 Commit
 
-On the completing accept, `ceremony_commit` compacts the target page
-only, advances the chain with the ballot's entropy and seals the
-snapshot, unpadded, under the new key; existing page channels take the
-new epoch, the frame is staged, and `settle_frontier` moves both
-cursors to the rebuild, which travels only as the frame. A store
-refusal (page gone, not enrolled or past its deadline; entropy already
-consumed) rotates nothing
-(`the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`,
+On the completing accept, `perform_ceremony` compacts the target page
+only and returns its snapshot; `ceremony_commit` then advances the
+chain with the ballot's entropy and seals the snapshot, unpadded, under
+the new key, and `commit_advance` moves every page channel to the new
+epoch and stages the frame. `settle_frontier` moves both cursors to the
+rebuild, which travels only as the frame. Entropy already consumed
+commits nothing. Where the store cuts no rebuild (the page gone, not
+enrolled or past its deadline here), the device still advances and
+moves its channels, and stages a frame sealed over nothing, so it stays
+on its peers' epoch and the relay can take that epoch even when no
+member could cut the page
+(`a_deadline_between_two_devices_drains_keeps_both_on_one_epoch`,
+`a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay`,
+`the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`,
 `a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`).
-A device that accepted before the page's deadline and meets the
-completing accept after it therefore stays on the old epoch while its
-peers advance (interpretation). A frame or batch sealed before the
-deadline still goes out on its retry: the frame PUT is what moves the
-relay's epoch.
-A seal refusal leaves the chain advanced but moves no channel and
-stages no frame, here and in `solo_ceremony` (interpretation).
+The empty frame's size tells the relay that it holds no page, and a
+rejoin from it would land none (interpretation). `solo_ceremony` keeps
+the store's refusal as a refusal, since no peer holds its entropy
+(`a_solo_ceremony_the_store_refuses_rotates_nothing`). A frame or batch
+sealed before the deadline still goes out on its retry: the frame PUT
+is what moves the relay's epoch.
+A seal refusal leaves the chain advanced and the channels moved but
+stages no frame, here and in `solo_ceremony`, so a frame an earlier
+commit left unpublished goes out under the new epoch (interpretation).
 
 ### 7.7 Abandonment
 
@@ -438,6 +446,7 @@ Owner questions first; the owner decides which side moves in each.
 | 10.29 | surface.md §4: "no peer awake reads `sync waiting`"; §5: "the relay cannot be reached", "waiting on your browser" | `currentPeers`, `sentence` | an asleep rostered peer reads `synced`; the built sentences differ (code reading) |
 | 10.30 | `companion_sync_pump` documents a `signed_out` event | `SyncEvent::SignedOut` | never constructed outside a test; sign-out arrives as the turn's reason (code reading) |
 | 10.31 | ADR-0021: "Sync must move a Page between a user's enrolled devices" | §6, `SheetStore::apply_remote_update` | no envelope carries a sealed object, and a batch that stands a sentinel the peer's page does not own is refused whole (`ChipRoster`) and dropped; every later batch of that page builds on it (`MissingHistory`) and no rejoin exists (§8), so a page holding an object, sealed there or carried onto it by a move or a cut's reattach, stops reaching every peer (`sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer`, `sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`) |
+| 10.32 | relay-protocol §5: "compact, advance, reseal" | §7.6 | a member whose store cuts no rebuild of the page, past its deadline or gone there, advances without compacting and reseals an empty frame, which may win the epoch at the relay (`a_deadline_between_two_devices_drains_keeps_both_on_one_epoch`, `a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay`) |
 
 ## Appendix A. Signing contexts, info strings, magics
 
