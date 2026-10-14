@@ -322,7 +322,7 @@ pub struct SyncSession {
     ballot_scope: Option<(ItemId, u64)>,
     /// The sealed key frame a committed ceremony produced, waiting for
     /// [`SyncSession::take_frame`] and the frame publish.
-    pending_frame: Option<Vec<u8>>,
+    pending_frame: Option<crate::gop::KeyFrame>,
     /// The last absorbed attach answer: where the channel stands and
     /// who else is on it. `None` until an attach lands.
     attach: Option<AttachSnapshot>,
@@ -364,7 +364,7 @@ impl SyncSession {
     /// device holds one, and the driver publishes it whoever proposed
     /// (client protocol §7.8).
     #[must_use]
-    pub fn take_frame(&mut self) -> Option<Vec<u8>> {
+    pub fn take_frame(&mut self) -> Option<crate::gop::KeyFrame> {
         self.pending_frame.take()
     }
 
@@ -948,9 +948,15 @@ impl SyncSession {
                     return;
                 };
                 // Every member advances on this accept, so a page the store
-                // will not rebuild here (ADR-0052) still advances the chain.
+                // will not rebuild here (ADR-0052) still advances the chain,
+                // and a refused seal leaves the epoch's frame to a peer.
                 let rebuild = sheet_of(store, page).and_then(|sheet| store.perform_ceremony(sheet));
-                self.commit_advance(page, chain, &entropy, rebuild.as_deref().map(Vec::as_slice));
+                let _staged = self.commit_advance(
+                    page,
+                    chain,
+                    &entropy,
+                    rebuild.as_deref().map(Vec::as_slice),
+                );
                 events.push(SyncEvent::CeremonyCommitted(page));
             }
         }
@@ -1021,7 +1027,8 @@ impl SyncSession {
     /// and stage the frame at once, every page channel adopting the new
     /// epoch (client protocol §7.2). False when a ballot is in flight,
     /// the page is unknown, not deferred or past its deadline, or the
-    /// RNG refuses.
+    /// RNG refuses, the frame's seal included, which comes after the
+    /// rebuild and the advance.
     pub fn solo_ceremony<C: Clock>(
         &mut self,
         page: ItemId,
@@ -1040,19 +1047,19 @@ impl SyncSession {
         else {
             return false;
         };
-        self.commit_advance(page, chain, &entropy, Some(rebuild.as_slice()));
-        true
+        self.commit_advance(page, chain, &entropy, Some(rebuild.as_slice()))
     }
 
     /// Keep this device in step: advance the chain, move every page
     /// channel to its epoch, stage this frame (client protocol §7.6).
+    /// Whether a frame was staged; a refused seal stages none.
     fn commit_advance(
         &mut self,
         page: ItemId,
         chain: &mut crate::gop::GopKeyChain,
         entropy: &[u8],
         rebuild: Option<&[u8]>,
-    ) {
+    ) -> bool {
         self.pending_frame = crate::gop::ceremony_commit(chain, entropy, rebuild);
         for channel in self.channels.values_mut() {
             channel.rejoin_at_epoch(chain.epoch());
@@ -1062,6 +1069,7 @@ impl SyncSession {
             .or_default()
             .rejoin_at_epoch(chain.epoch());
         self.ballot_scope = None;
+        self.pending_frame.is_some()
     }
 
     /// `POST /channel/pairing` — one §7 mailbox message, already in
@@ -1104,17 +1112,16 @@ impl SyncSession {
         self.received_entropy = None;
     }
 
-    /// `PUT /channel/frame` after a committed ceremony: the epoch the
-    /// chain now stands at, superseding the old frame and purging every
-    /// older delta. `None` when no access token is held.
+    /// `PUT /channel/frame` after a committed ceremony, at the epoch that
+    /// sealed the frame, superseding the old frame and purging every older
+    /// delta. `None` when no access token is held.
     #[must_use]
-    pub fn publish_frame_request(
-        &self,
-        chain: &crate::gop::GopKeyChain,
-        frame: &[u8],
-    ) -> Option<HttpRequest> {
+    pub fn publish_frame_request(&self, frame: &crate::gop::KeyFrame) -> Option<HttpRequest> {
         let auth = self.auth()?;
-        Some(self.api.publish_frame_request(chain.epoch(), frame, &auth))
+        Some(
+            self.api
+                .publish_frame_request(frame.epoch(), frame.sealed(), &auth),
+        )
     }
 
     /// `GET /channel/frame`, the rejoin path's first move. `None` when
@@ -1815,11 +1822,11 @@ mod tests {
 
         // The proposer's frame is sealed under the incoming key.
         let frame = a.take_frame().unwrap();
-        let opened = chain_b.open(&frame).unwrap();
+        let opened = chain_b.open(frame.sealed()).unwrap();
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(!contains(&opened, b"DOOMED"));
         relay.epoch = 1;
-        let request = a.publish_frame_request(&chain_a, &frame).unwrap();
+        let request = a.publish_frame_request(&frame).unwrap();
         assert!(request.url.ends_with("/channel/frame"));
     }
 
@@ -1939,11 +1946,9 @@ mod tests {
         }
 
         /// The frame PUT device `i` stages, with the epoch it names.
-        fn frame_put(&mut self, i: usize) -> (u64, Vec<u8>) {
+        fn frame_put(&mut self, i: usize) -> (u64, crate::gop::KeyFrame) {
             let frame = self.sessions[i].take_frame().expect("a staged frame");
-            let request = self.sessions[i]
-                .publish_frame_request(&self.chains[i], &frame)
-                .unwrap();
+            let request = self.sessions[i].publish_frame_request(&frame).unwrap();
             let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
             (body["epoch"].as_u64().unwrap(), frame)
         }
@@ -1971,12 +1976,13 @@ mod tests {
         let (epoch_a, frame_a) = ballot.frame_put(0);
         let (epoch_b, frame_b) = ballot.frame_put(1);
         assert_eq!((epoch_a, epoch_b), (1, 1));
+        assert_eq!((frame_a.epoch(), frame_b.epoch()), (1, 1));
         assert!(
-            ballot.chains[1].open(&frame_a).is_some(),
+            ballot.chains[1].open(frame_a.sealed()).is_some(),
             "B shares A's key"
         );
         assert!(
-            ballot.chains[0].open(&frame_b).unwrap().is_empty(),
+            ballot.chains[0].open(frame_b.sealed()).unwrap().is_empty(),
             "B's frame held some of the page"
         );
     }
@@ -2009,7 +2015,12 @@ mod tests {
         for i in 0..2 {
             let (epoch, frame) = ballot.frame_put(i);
             assert_eq!(epoch, 1);
-            assert!(ballot.chains[1 - i].open(&frame).unwrap().is_empty());
+            assert!(
+                ballot.chains[1 - i]
+                    .open(frame.sealed())
+                    .unwrap()
+                    .is_empty()
+            );
         }
         ballot.relay.epoch = 1;
         ballot.sessions[0].queue_ops(ItemId::random(), b"another page");
@@ -2019,6 +2030,23 @@ mod tests {
         ballot.sessions[0]
             .absorb_publish(&ballot.relay.accept_publish(&request))
             .unwrap();
+    }
+
+    #[test]
+    fn a_member_whose_frame_seal_refuses_still_takes_its_peers_epoch() {
+        let mut ballot = JoinedBallot::new();
+        let committed = SyncEvent::CeremonyCommitted(ballot.uuid);
+        assert!(ballot.drain(0).contains(&committed));
+        // B's RNG declines the frame's nonce: B still commits on the same
+        // accept, staging nothing, and A's frame stands for the epoch.
+        ballot.chains[1].refuse_next_seal();
+        assert!(ballot.drain(1).contains(&committed));
+        assert_eq!(ballot.chains[1].epoch(), 1);
+        assert!(!ballot.sessions[1].ballot_in_flight());
+        assert!(ballot.sessions[1].take_frame().is_none());
+        let (epoch, frame_a) = ballot.frame_put(0);
+        assert_eq!(epoch, 1);
+        assert!(ballot.chains[1].open(frame_a.sealed()).is_some());
     }
 
     #[test]
@@ -2046,6 +2074,35 @@ mod tests {
         assert!(!solo.solo_ceremony(uuid, &mut store, &mut chain));
         assert_eq!(chain.epoch(), 0);
         assert!(solo.take_frame().is_none());
+    }
+
+    #[test]
+    fn a_solo_ceremony_whose_frame_seal_refuses_reports_no_commit() {
+        let mut store = SheetStore::new(ManualClock::new());
+        let page = store.new_tab().1;
+        assert!(store.apply_ops(
+            page,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "ink".into()
+            }]
+        ));
+        assert!(store.set_compaction_deferred(page, true));
+        let uuid = store.sheet(page).unwrap().uuid();
+        let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut solo = session("fp-a");
+
+        // The rebuild and the advance stand, since the store has forgotten
+        // its history, but no frame was staged, so no commit is reported.
+        chain.refuse_next_seal();
+        assert!(!solo.solo_ceremony(uuid, &mut store, &mut chain));
+        assert_eq!(chain.epoch(), 1);
+        assert!(solo.take_frame().is_none());
+        assert!(!solo.ballot_in_flight());
+
+        // Control: the same ceremony with a working RNG commits.
+        assert!(solo.solo_ceremony(uuid, &mut store, &mut chain));
+        assert_eq!(solo.take_frame().unwrap().epoch(), 2);
     }
 
     #[test]

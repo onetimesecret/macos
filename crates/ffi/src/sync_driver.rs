@@ -20,7 +20,7 @@ use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
 
 use crate::diagnostics::diag_fault;
-use crate::gop::GopKeyChain;
+use crate::gop::{GopKeyChain, KeyFrame};
 use crate::pairing::{self, MailboxMessage};
 use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
 use crate::sync_session::{KeyPackage, KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
@@ -149,7 +149,7 @@ pub(crate) struct EngineState {
     pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
-    pub unpublished_frame: Option<Vec<u8>>,
+    pub unpublished_frame: Option<KeyFrame>,
 }
 
 /// Per enrolled page: the delta cursor and what was last published for
@@ -1140,14 +1140,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
             .sync
             .engine
             .as_mut()
-            .and_then(|engine| {
-                if let Some(frame) = engine.session.take_frame() {
-                    engine.unpublished_frame = Some(frame);
-                }
-                let frame = engine.unpublished_frame.as_deref()?;
-                let EngineState { session, chain, .. } = engine;
-                session.publish_frame_request(chain, frame)
-            })
+            .and_then(stage_frame)
             .zip(transport)
     };
     if let Some((request, transport)) = staged
@@ -1163,6 +1156,23 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
     }
 
     pump_result(handle, None, &events)
+}
+
+/// The frame PUT this turn owes: a freshly staged frame replaces an older
+/// one, and one sealed behind the chain's epoch is dropped unsent.
+fn stage_frame(engine: &mut EngineState) -> Option<ots_client::HttpRequest> {
+    if let Some(frame) = engine.session.take_frame() {
+        engine.unpublished_frame = Some(frame);
+    }
+    if engine
+        .unpublished_frame
+        .as_ref()
+        .is_some_and(|frame| frame.epoch() != engine.chain.epoch())
+    {
+        engine.unpublished_frame = None;
+    }
+    let frame = engine.unpublished_frame.as_ref()?;
+    engine.session.publish_frame_request(frame)
 }
 
 /// Send one publish batch, absorbing the answer; a `401` refreshes
@@ -2788,7 +2798,7 @@ mod tests {
                 .any(|event| event["kind"] == "ceremony_committed")
         );
         let frame = engine.session.take_frame().expect("a frame to publish");
-        let opened = engine.chain.open(&frame).unwrap();
+        let opened = engine.chain.open(frame.sealed()).unwrap();
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(!contains(&opened, b"DOOMED"));
 
@@ -2808,6 +2818,45 @@ mod tests {
             !engine.session.publish_due(4_000),
             "the rebuild must not be republished as a delta"
         );
+    }
+
+    #[test]
+    fn a_frame_sealed_behind_the_chain_s_epoch_never_goes_out() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let tab = companion.store.tabs().next().unwrap().id();
+
+        // The first ceremony's PUT never hears back, so its frame waits.
+        companion.store.cycle_rung(tab).unwrap();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let request = stage_frame(engine).expect("the first frame's PUT");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        assert!(engine.unpublished_frame.is_some());
+
+        // The next ceremony's seal refuses after the chain moved: no
+        // commit is reported, and the epoch 1 frame is dropped unsent.
+        companion.store.cycle_rung(tab).unwrap();
+        assert!(companion.store.ceremony_due(page));
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.chain.refuse_next_seal();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert_eq!(engine.chain.epoch(), 2);
+        assert!(
+            !events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed")
+        );
+        assert!(stage_frame(engine).is_none());
+        assert!(engine.unpublished_frame.is_none());
     }
 
     #[test]
