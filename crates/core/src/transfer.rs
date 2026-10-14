@@ -7,7 +7,8 @@ use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
 use crate::fragment::{Copied, Fragment, Node, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
-use crate::sheet::{ChipId, ItemId, SealedChip, Sheet, SheetId};
+use crate::note::Note;
+use crate::sheet::{ChipId, ItemId, SealedChip, Sheet, SheetId, judge_name};
 use crate::store::{SheetStore, range_in_body};
 
 /// The store's one active cut (ADR-0047 point 5).
@@ -335,13 +336,14 @@ impl<C: Clock> SheetStore<C> {
         let mut reattaching: Vec<ItemId> = Vec::new();
         let mut plan = Vec::with_capacity(fragment.nodes.len());
         for node in &fragment.nodes {
-            let uuid = match node {
+            let reference = match node {
                 Node::Ink(text) => {
                     plan.push(Planned::Ink(text));
                     continue;
                 }
-                Node::Ref(reference) => reference.uuid,
+                Node::Ref(reference) => reference,
             };
+            let uuid = reference.uuid;
             if let Some((page, members)) = &cut
                 && members.contains(&uuid)
                 && !reattaching.contains(&uuid)
@@ -352,8 +354,15 @@ impl<C: Clock> SheetStore<C> {
                 continue;
             }
             let id = ChipId(self.next_chip_id);
-            if let Some(clone) = self.live_object(uuid).map(|source| source.duplicate(id)) {
+            if let Some(mut clone) = self.live_object(uuid).map(|source| source.duplicate(id)) {
                 self.next_chip_id += 1;
+                // The envelope's name and note, the name judged as a typed one is.
+                clone.name = reference
+                    .name
+                    .as_deref()
+                    .and_then(|name| judge_name(name).ok().flatten())
+                    .map(str::to_owned);
+                clone.note = reference.note.as_deref().map(|text| Note::holding(text));
                 placed.cloned += 1;
                 plan.push(Planned::Clone(Box::new(clone)));
                 continue;
@@ -768,6 +777,109 @@ mod tests {
         assert_eq!(standing(&store, id)[0], uuid);
     }
 
+    fn name_and_note(store: &mut SheetStore<ManualClock>, chip: ChipId, name: &str, note: &str) {
+        store.set_chip_name(chip, name).unwrap();
+        let len = u32::try_from(store.note_text(chip).unwrap().encode_utf16().count()).unwrap();
+        let mut ops = vec![EditOp::Delete {
+            pos_u16: 0,
+            len_u16: len,
+        }];
+        ops.push(EditOp::Insert {
+            pos_u16: 0,
+            text: note.into(),
+        });
+        assert!(store.apply_note_ops(chip, &ops, EditIntent::Replacement, None));
+    }
+
+    /// The chip standing at `index` on a page.
+    fn standing_chip(store: &SheetStore<ManualClock>, id: SheetId, index: usize) -> ChipId {
+        let chips: Vec<ChipId> = store
+            .sheet(id)
+            .unwrap()
+            .segments()
+            .iter()
+            .filter_map(|segment| match segment {
+                Segment::Chip(chip) => Some(*chip),
+                Segment::Ink(_) => None,
+            })
+            .collect();
+        chips[index]
+    }
+
+    #[test]
+    fn a_clone_carries_the_name_and_note_its_fragment_holds() {
+        let (mut store, _) = store();
+        let (id, a, _) = mixed(&mut store);
+        name_and_note(&mut store, a, "API_KEY", "rotate monthly");
+        let envelope = store.copy_fragment(id, 2, 1).unwrap().envelope.unwrap();
+        // The original moves on; the copy holds what was copied.
+        name_and_note(&mut store, a, "OLD_KEY", "retired");
+
+        store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        let clone = standing_chip(&store, id, 0);
+        let face = store.sheet(id).unwrap().chip(clone).unwrap();
+        assert_eq!(face.name(), Some("API_KEY"));
+        assert!(face.has_note());
+        assert_eq!(&**store.note_text(clone).unwrap(), "rotate monthly");
+        assert!(
+            !store.note_can_undo(clone),
+            "the note's text, not its history"
+        );
+        assert_eq!(
+            store.sheet(id).unwrap().chip(a).unwrap().name(),
+            Some("OLD_KEY")
+        );
+        let ledger = store.ledger_snapshot();
+        for word in ["API_KEY", "rotate monthly"] {
+            assert!(
+                !ledger.windows(word.len()).any(|w| w == word.as_bytes()),
+                "{word} reached the ledger"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pasted_name_the_rule_refuses_is_dropped_and_the_object_kept() {
+        let (mut store, _) = store();
+        let (id, a, _) = mixed(&mut store);
+        let envelope = format!(
+            r#"{{"version":1,"nodes":[{{"ref":{{"uuid":"{}","name":"not a name","note":"kept"}}}}]}}"#,
+            uuid_of(&store, a)
+        );
+        let placed = store
+            .paste_fragment(id, 0, 0, envelope.as_bytes(), None)
+            .unwrap();
+        assert_eq!(placed.cloned, 1);
+        let clone = standing_chip(&store, id, 0);
+        assert_eq!(store.sheet(id).unwrap().chip(clone).unwrap().name(), None);
+        assert_eq!(&**store.note_text(clone).unwrap(), "kept");
+    }
+
+    #[test]
+    fn a_reattached_object_keeps_its_own_name_and_note() {
+        let (mut store, _) = store();
+        let (id, a, _) = mixed(&mut store);
+        name_and_note(&mut store, a, "API_KEY", "rotate monthly");
+        let envelope = store.cut_fragment(id, 2, 1).unwrap().envelope.unwrap();
+        store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        let face = store.sheet(id).unwrap().chip(a).unwrap();
+        assert_eq!(face.name(), Some("API_KEY"));
+        assert_eq!(&**store.note_text(a).unwrap(), "rotate monthly");
+    }
+
+    #[test]
+    fn a_placeholder_carries_neither_name_nor_note() {
+        let (mut store, clock) = store();
+        let (id, a, _) = mixed(&mut store);
+        name_and_note(&mut store, a, "API_KEY", "rotate monthly");
+        let envelope = store.copy_fragment(id, 2, 1).unwrap().envelope.unwrap();
+        clock.advance(HOUR);
+        store.expire_due();
+        let page = store.new_tab().1;
+        store.paste_fragment(page, 0, 0, &envelope, None).unwrap();
+        assert_eq!(body(&store, page), "[sealed content \u{b7} expired]");
+    }
+
     #[test]
     fn a_cut_pasted_on_another_page_moves_there_and_clears_the_source_undo() {
         let (mut store, _) = store();
@@ -1033,6 +1145,8 @@ mod tests {
         nodes.push(Node::Ink(Zeroizing::new(" 3 ".into())));
         nodes.push(Node::Ref(crate::fragment::Reference {
             uuid: ItemId::random(),
+            name: Some("FOREIGN".into()),
+            note: None,
         }));
         let mixed = Fragment { cut: None, nodes }.envelope();
 

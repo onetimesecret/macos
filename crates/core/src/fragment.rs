@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::note::Note;
 use crate::sheet::{ItemId, SealedChip, Segment, Sheet};
 
 /// The one envelope version this build writes and reads.
@@ -23,11 +24,23 @@ pub(crate) enum Node {
 /// A sealed object as a fragment names it.
 pub(crate) struct Reference {
     pub(crate) uuid: ItemId,
+    /// The object's typed name, ink (issue #247).
+    pub(crate) name: Option<String>,
+    /// The object's note, ink, never empty (issue #247).
+    pub(crate) note: Option<Zeroizing<String>>,
 }
 
 impl Reference {
     fn of(chip: &SealedChip) -> Self {
-        Self { uuid: chip.uuid }
+        Self {
+            uuid: chip.uuid,
+            name: chip.name.clone(),
+            note: chip
+                .note
+                .as_ref()
+                .map(Note::text)
+                .filter(|text| !text.is_empty()),
+        }
     }
 }
 
@@ -76,6 +89,11 @@ impl Fragment {
                 Node::Ink(text) => WireNode::Ink(Cow::Borrowed(text.as_str())),
                 Node::Ref(reference) => WireNode::Ref(WireRef {
                     uuid: reference.uuid.to_string(),
+                    name: reference.name.clone(),
+                    note: reference
+                        .note
+                        .as_ref()
+                        .map(|text| Cow::Borrowed(text.as_str())),
                 }),
             })
             .collect();
@@ -114,6 +132,13 @@ impl Fragment {
                 }
                 WireNode::Ref(reference) => nodes.push(Node::Ref(Reference {
                     uuid: ItemId::parse(&reference.uuid)?,
+                    name: reference.name.filter(|name| !name.is_empty()),
+                    note: reference.note.and_then(|text| match text {
+                        Cow::Borrowed("") => None,
+                        Cow::Owned(text) if text.is_empty() => None,
+                        Cow::Owned(text) => Some(Zeroizing::new(text)),
+                        Cow::Borrowed(text) => Some(Zeroizing::new(text.to_owned())),
+                    }),
                 })),
             }
         }
@@ -239,13 +264,17 @@ enum WireNode<'a> {
     #[serde(rename = "ink")]
     Ink(#[serde(borrow)] Cow<'a, str>),
     #[serde(rename = "ref")]
-    Ref(WireRef),
+    Ref(#[serde(borrow)] WireRef<'a>),
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireRef {
+struct WireRef<'a> {
     uuid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
+    note: Option<Cow<'a, str>>,
 }
 
 #[cfg(test)]
@@ -426,6 +455,72 @@ mod tests {
             2,
             "what this build writes it reads back"
         );
+    }
+
+    fn named(store: &mut SheetStore<ManualClock>, id: SheetId, chip: ChipId) {
+        store.set_chip_name(chip, "API_KEY").unwrap();
+        assert!(store.apply_note_ops(
+            chip,
+            &[crate::store::EditOp::Insert {
+                pos_u16: 0,
+                text: "rotate \"monthly\"\nthen \u{1F511}".into(),
+            }],
+            crate::document::EditIntent::Typing,
+            None,
+        ));
+        assert!(store.sheet(id).unwrap().chip(chip).unwrap().has_note());
+    }
+
+    fn name_and_note(node: &Node) -> (Option<&str>, Option<&str>) {
+        match node {
+            Node::Ref(reference) => (
+                reference.name.as_deref(),
+                reference.note.as_deref().map(String::as_str),
+            ),
+            Node::Ink(_) => panic!("not a reference"),
+        }
+    }
+
+    #[test]
+    fn the_envelope_round_trips_with_and_without_a_name_and_a_note() {
+        let mut store = store();
+        let (id, a, _) = mixed(&mut store);
+        named(&mut store, id, a);
+        let (fragment, _) = store.sheet(id).unwrap().select(0, BODY).unwrap();
+        let read = Fragment::parse(&fragment.envelope()).unwrap();
+        assert_eq!(
+            name_and_note(&read.nodes[1]),
+            (Some("API_KEY"), Some("rotate \"monthly\"\nthen \u{1F511}"))
+        );
+        assert_eq!(name_and_note(&read.nodes[3]), (None, None), "B has neither");
+        let text = String::from_utf8(fragment.envelope().to_vec()).unwrap();
+        assert_eq!(
+            text.matches("\"name\"").count(),
+            1,
+            "absent, not null, when unnamed"
+        );
+        assert_eq!(text.matches("\"note\"").count(), 1);
+    }
+
+    #[test]
+    fn the_public_text_names_neither_the_name_nor_the_note() {
+        let mut store = store();
+        let (id, a, _) = mixed(&mut store);
+        named(&mut store, id, a);
+        let (_, plain) = store.sheet(id).unwrap().select(0, BODY).unwrap();
+        assert!(!plain.contains("API_KEY"));
+        assert!(!plain.contains("monthly"));
+        assert!(plain.contains("[sealed content \u{b7} tiny]"));
+    }
+
+    #[test]
+    fn an_empty_name_or_note_reads_as_none() {
+        let uuid = ItemId::random();
+        let text = format!(
+            r#"{{"version":1,"nodes":[{{"ref":{{"uuid":"{uuid}","name":"","note":""}}}}]}}"#
+        );
+        let read = Fragment::parse(text.as_bytes()).unwrap();
+        assert_eq!(name_and_note(&read.nodes[0]), (None, None));
     }
 
     #[test]
