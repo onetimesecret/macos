@@ -45,7 +45,7 @@ public enum LaunchAtLogin {
 /// The caption a settings section carries above its rows. Every
 /// section in the three forms wears the same small secondary text, so
 /// the style lives once rather than beside each `Section`.
-private struct SettingsCaption: View {
+struct SettingsCaption: View {
     let text: String
 
     init(_ text: String) {
@@ -204,19 +204,6 @@ public struct GeneralSettingsView: View {
                 .pickerStyle(.segmented)
             } header: {
                 SettingsCaption(Self.pageLayoutCaption(experimental: model.pads.isEnabled))
-            }
-            Section {
-                Toggle(CompanionL10n.string("pad.settings.enabled"), isOn: Binding(
-                    get: { model.pads.isEnabled }, set: { model.pads.isEnabled = $0 }
-                ))
-                .disabled(model.pads.loadFailure != nil)
-                if let failure = model.pads.loadFailure {
-                    Text(failure).font(.caption).foregroundStyle(Color.emberText)
-                }
-            } header: {
-                SettingsCaption(CompanionL10n.string("pad.settings.caption"))
-            } footer: {
-                SettingsCaption(CompanionL10n.string("pad.settings.storage"))
             }
             // Timeline exposes the time-specific preferences.
             if model.showsTimeUnits {

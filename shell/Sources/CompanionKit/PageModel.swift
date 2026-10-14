@@ -1080,6 +1080,20 @@ public final class PageModel: ObservableObject {
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
 
+    /// The Settings tabs the surface points to by name: the conceal
+    /// sheet's Connection Settings… and the pad switcher's Manage Pads….
+    public enum SettingsPane: Sendable {
+        case connection
+        case pads
+    }
+
+    /// Set by the app delegate: Settings opened on a named tab.
+    public var onOpenSettingsPane: ((SettingsPane) -> Void)?
+
+    public func openSettings(_ pane: SettingsPane) {
+        onOpenSettingsPane?(pane)
+    }
+
     /// Set by the roll while it is mounted: put the clip back on Day 0
     /// (issue #79). Nil in horizontal mode, where there is one page in
     /// the clip and no roll to anchor.

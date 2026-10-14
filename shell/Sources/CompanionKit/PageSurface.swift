@@ -226,12 +226,6 @@ public struct PageStatusStack: View {
     }
 
     public var body: some View {
-        // Where the stack begins, so the pad list's popover can end above it.
-        Color.clear.frame(height: 0)
-            .background(GeometryReader { proxy in
-                Color.clear.preference(
-                    key: NoticeLineTopKey.self, value: proxy.frame(in: .global).minY)
-            })
         if model.contentRestoreRefused {
             // The standing restore-failure state (issue #49): persistent
             // for the whole session, unlike a notice, because the

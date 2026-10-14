@@ -4865,7 +4865,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         return window?.firstResponder === self && !keysHeldInAnotherWindow()
     }
 
-    /// A text field in another key window, such as the pad list's popover, other than `source`.
+    /// A text field in another key window, such as a pad's in Settings, other than `source`.
     private func keysHeldInAnotherWindow(besides source: NSView? = nil) -> Bool {
         guard let key = NSApp?.keyWindow, key !== window,
               let holder = key.firstResponder as? NSTextView

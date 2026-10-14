@@ -4,21 +4,32 @@ import CompanionKit
 import SwiftUI
 
 /// The tabs of the Settings window, in toolbar order. General first,
-/// as every Apple app has it, then code presentation, followed by the
-/// two that reach outside the Mac: where a conceal goes, and how pages travel.
+/// as every Apple app has it, then code presentation and the pads,
+/// followed by the two that reach outside the Mac: where a conceal goes,
+/// and how pages travel.
 ///
 /// The symbol names are SF Symbols. A misspelt one draws nothing and
 /// complains nowhere, so `SettingsTabTests` resolves each of them.
 enum SettingsTab: Int, CaseIterable {
     case general
     case code
+    case pads
     case connection
     case sync
+
+    /// The tab a surface's button names (`PageModel.SettingsPane`).
+    init(_ pane: PageModel.SettingsPane) {
+        switch pane {
+        case .connection: self = .connection
+        case .pads: self = .pads
+        }
+    }
 
     var label: String {
         switch self {
         case .general: "General"
         case .code: "Code"
+        case .pads: "Pads"
         case .connection: "Connection"
         case .sync: "Sync"
         }
@@ -28,6 +39,7 @@ enum SettingsTab: Int, CaseIterable {
         switch self {
         case .general: "gearshape"
         case .code: "curlybraces"
+        case .pads: "square.stack"
         case .connection: "network"
         case .sync: "arrow.triangle.2.circlepath"
         }
@@ -42,9 +54,13 @@ enum SettingsTab: Int, CaseIterable {
     /// was open last, as Settings windows do, with one exception: the
     /// surface's banner for a ledger that will not open sends the user
     /// here to clear it, and the clear lives on General. Opening on
-    /// any other tab would turn that instruction into a search.
-    static func landing(current: SettingsTab, ledgerRestoreRefused: Bool) -> SettingsTab {
-        ledgerRestoreRefused ? .general : current
+    /// any other tab would turn that instruction into a search. A button
+    /// that names a tab, the conceal sheet's Connection Settings…, lands
+    /// on the tab it names.
+    static func landing(
+        current: SettingsTab, requested: SettingsTab? = nil, ledgerRestoreRefused: Bool
+    ) -> SettingsTab {
+        requested ?? (ledgerRestoreRefused ? .general : current)
     }
 }
 
@@ -79,8 +95,9 @@ final class BackdropSettingsWindowController: NSObject {
     /// switch appears, scrolls rather than pushing the window around.
     private static func height(of tab: SettingsTab) -> CGFloat {
         switch tab {
-        case .general: 700
+        case .general: 640
         case .code: 390
+        case .pads: 560
         case .connection: 360
         case .sync: 380
         }
@@ -103,7 +120,7 @@ final class BackdropSettingsWindowController: NSObject {
         window === candidate
     }
 
-    func show() {
+    func show(tab requested: SettingsTab? = nil) {
         if window == nil {
             let tabs = makeTabs()
             let window = NSWindow(contentViewController: tabs)
@@ -141,6 +158,7 @@ final class BackdropSettingsWindowController: NSObject {
             let current = SettingsTab(rawValue: tabs.selectedTabViewItemIndex) ?? .general
             tabs.selectedTabViewItemIndex = SettingsTab.landing(
                 current: current,
+                requested: requested,
                 ledgerRestoreRefused: model.pages.ledgerRestoreRefused
             ).index
         }
@@ -200,6 +218,8 @@ final class BackdropSettingsWindowController: NSObject {
             )
         case .code:
             hosted = host(CodeSettingsView(model: model.pages), for: tab)
+        case .pads:
+            hosted = host(PadSettingsView(model: model.pages), for: tab)
         case .connection:
             hosted = host(ConnectionSettingsView(model: model.pages), for: tab)
         case .sync:
