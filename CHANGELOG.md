@@ -1023,6 +1023,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whether the page still stands. The page's drawing is not gated, so
   it shows until the settle.
 
+- **Sync sends nothing of a page past its deadline** (app 0.35.0;
+  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
+  issue #170). With sync on, a page past its deadline but not yet swept
+  still exported its new ops to the relay, a ceremony could cut its
+  whole document as the channel's key frame, and ops queued just
+  before the deadline were sealed and sent after it. Now the core
+  exports no update and cuts no frame from such a page, the sync sweep
+  withdraws its ops still waiting for a seal and never rotates the
+  channel on it, and a device holding it stays out of a ballot for it
+  rather than split from its peers. Its expiry still goes, so a peer's
+  copy dies too. A batch or frame already sealed before the deadline
+  still goes out on its retry.
+
 - **A page drag's image shows no object's contents** (app 0.35.0;
   Law 0001, ADR-0051, issue #170). The image AppKit drew for a drag of
   a page's selection showed each sealed block as the page does,
