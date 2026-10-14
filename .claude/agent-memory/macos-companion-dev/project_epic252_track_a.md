@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, and why a drag test must never reach drop to seal
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, and why the next event asks is_due
 metadata:
   type: project
 ---
@@ -81,6 +81,18 @@ for review fixes; shell only.
   an envelope stays per build. ADR-0055 records the handle's open hand.
   `citecheck.py` misses relative citations such as
   `(../../shell/...swift:N)`; grep those by hand.
+- Phase 6 unit 1 (2026-10-14): `Sheet::next_event` answers now once
+  `Sheet::is_due` holds, since the shell settles only when
+  `nextEventMs() == 0`; never restate the due predicate in a scheduler.
+  `hold_register` rounds its frozen life up (`millis_up`);
+  `expiry_policy` still truncates, which only shortens. `enrol_page`
+  refuses a due page, and a restore resets every page's ceremony to
+  immediate, so a test that ages enrolled pages enrols before `age_by`
+  and again after. `staged_envelopes` in the sync_driver tests opens a
+  publish as a peer would. Unswept ink of a due page is held by the
+  core's export gate; the sweep's own check is a second gate. The auto
+  mode classifier refused a mutation of `export_document_updates`'s
+  gate but allowed ones in sync_driver.rs.
 - Test traps: the DEBUG `assertProjectionParity` traps and xctest hangs
   with no output, so run mutation checks under `timeout`. `ageForTests`
   re-mints the store and drops every undo stack; reach a refused note
