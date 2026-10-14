@@ -774,24 +774,25 @@ final class SealedCapsuleTests: XCTestCase {
     /// keeps the object detached; withdrawn, the words stay and the button goes.
     func testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords() throws {
         let model = try makeModel()
-        var undone = 0
+        model.newPage()
+        let sheet = try XCTUnwrap(model.selectedPageID)
         XCTAssertTrue(PageModel.offersRemovalUndo)
-        model.noteRemoval { undone += 1 }
+        model.noteRemoval(sheet: sheet)
         XCTAssertEqual(model.notice, PageModel.removedLine)
         XCTAssertEqual(model.noticeTone, .plain)
         XCTAssertEqual(model.noticeAction?.label, "Undo")
-        XCTAssertEqual(undone, 0)
 
         model.withdrawRemovalUndo()
         XCTAssertEqual(model.notice, PageModel.removedLine)
         XCTAssertNil(model.noticeAction)
-        model.performNoticeAction()
-        XCTAssertEqual(undone, 0, "a withdrawn Undo still ran")
 
         // Another line's button is not the removal's to withdraw.
+        var undone = 0
         model.flash("a line with a button", action: .init(label: "Undo") { undone += 1 })
         model.withdrawRemovalUndo()
         XCTAssertEqual(model.noticeAction?.label, "Undo")
+        model.performNoticeAction()
+        XCTAssertEqual(undone, 1)
     }
 
     /// A notice's action runs once and takes the line down with it;

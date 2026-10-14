@@ -3041,6 +3041,8 @@ public final class PageModel: ObservableObject {
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
         fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
+        // A removal's Undo has nothing to step back once its page is gone.
+        if let stamp = removalStamp, !livePages.contains(stamp.sheet) { retireRemovalUndo() }
         selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id))
         // When pages are organized by day, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
@@ -5654,6 +5656,7 @@ public final class PageModel: ObservableObject {
             return nil
         }
         pasteboardOffer = false
+        countEdit(.sheet(sheet))
         markDirty()
         flash(
             cleared
@@ -5727,7 +5730,12 @@ public final class PageModel: ObservableObject {
         clearNotice()
         guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
-        if chip == nil { flash("nothing to seal") } else { markDirty() }
+        if chip == nil {
+            flash("nothing to seal")
+        } else {
+            countEdit(.sheet(sheet))
+            markDirty()
+        }
         return chip
     }
 
@@ -5739,7 +5747,10 @@ public final class PageModel: ObservableObject {
         clearNotice()
         guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealText(sheet: sheet, text, at: at, length: length)
-        if chip != nil { markDirty() }
+        if chip != nil {
+            countEdit(.sheet(sheet))
+            markDirty()
+        }
         return chip
     }
 
@@ -5799,6 +5810,7 @@ public final class PageModel: ObservableObject {
     public func applyNoteOps(
         chip: UInt64, json: String, intent: EditorEditIntent, selection: EditorEditSelection?
     ) -> Bool {
+        countEdit(.note(chip: chip))
         guard client.applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
         else { return false }
         markDirty()
@@ -5809,6 +5821,7 @@ public final class PageModel: ObservableObject {
     public func stepNote(chip: UInt64, back: Bool) -> StepOutcome {
         let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
         guard let outcome, outcome.applied else { return .nothing }
+        countEdit(.note(chip: chip))
         markDirty()
         return StepOutcome(applied: true, selection: outcome.selection)
     }
@@ -6146,6 +6159,7 @@ public final class PageModel: ObservableObject {
     /// the event timer does, since a paste may have swept due pages (ADR-0048).
     private func settleTransfer(_ sheets: UInt64...) {
         for sheet in sheets {
+            countEdit(.sheet(sheet))
             restateStorage(sheet: sheet)
             invalidateQuietRendering(for: sheet)
         }
@@ -6181,12 +6195,76 @@ public final class PageModel: ObservableObject {
     /// The removal line's Undo, pressed while a name or the note holds the keys (ADR-0046).
     public static let undoWaitsLine = "a name or note is being written, so the removal was not undone."
 
-    /// After a removal: the line, with Undo beside it.
-    public func noteRemoval(undo: @escaping @MainActor () -> Void) {
+    /// How many edits this model has sent the core for each document, from any surface.
+    private var editGenerations: [InkDocument: UInt64] = [:]
+
+    /// The page and its count of edits just after a removal, while the line offers Undo.
+    private var removalStamp: (sheet: UInt64, generation: UInt64)?
+
+    /// The surface the removal was made on, which takes the Undo's step while it shows the page.
+    private weak var removalSurface: InkTextView?
+
+    /// The count of edits sent for `document`, which only grows.
+    private func editGeneration(_ document: InkDocument) -> UInt64 {
+        editGenerations[document, default: 0]
+    }
+
+    /// Whether the removal is still the latest edit sent for its page.
+    private var removalUndoStands: Bool {
+        guard let stamp = removalStamp else { return false }
+        return stamp.generation == editGeneration(.sheet(stamp.sheet))
+    }
+
+    /// Counts an edit sent for each of `documents`; one on a removal's page retires its Undo.
+    private func countEdit(_ documents: InkDocument...) {
+        for document in documents { editGenerations[document, default: 0] &+= 1 }
+        if removalStamp != nil, !removalUndoStands { retireRemovalUndo() }
+    }
+
+    /// After a removal on `sheet`: the line, with an Undo the model answers itself.
+    func noteRemoval(sheet: UInt64, surface: InkTextView? = nil) {
+        removalStamp = (sheet, editGeneration(.sheet(sheet)))
+        removalSurface = surface
         flash(
             Self.removedLine,
-            action: Self.offersRemovalUndo ? NoticeAction(label: "Undo", perform: undo) : nil
+            action: Self.offersRemovalUndo
+                ? NoticeAction(label: "Undo") { [weak self] in self?.undoRemoval() } : nil
         )
+    }
+
+    /// The removal line's Undo: one step back on its page while the removal is the
+    /// latest edit sent for it, through a surface showing the page when one does.
+    private func undoRemoval() {
+        guard removalUndoStands, let stamp = removalStamp else { return }
+        let editor = activeEditor as? InkTextView
+        let surface = [removalSurface, editor].compactMap { $0 }.first {
+            $0.coordinator?.writesNote == false && $0.coordinator?.currentSheet == stamp.sheet
+        }
+        // With no page surface to ask, a text view holding the key window's keys waits too.
+        let waits = (surface ?? editor).map { !$0.answersChords }
+            ?? (NSApp?.keyWindow?.firstResponder is NSTextView)
+        guard !waits else {
+            flash(Self.undoWaitsLine)
+            return
+        }
+        removalStamp = nil
+        removalSurface = nil
+        if let coordinator = surface?.coordinator {
+            coordinator.step(back: true)
+        } else {
+            stepEdit(.sheet(stamp.sheet), back: true)
+        }
+    }
+
+    /// A surface turned from `sheet` to another page: that page's removal Undo goes.
+    func surfaceLeft(page sheet: UInt64) {
+        if removalStamp?.sheet == sheet { retireRemovalUndo() }
+    }
+
+    private func retireRemovalUndo() {
+        removalStamp = nil
+        removalSurface = nil
+        withdrawRemovalUndo()
     }
 
     /// Takes the removal's Undo off its line once the page has moved past the removal.
@@ -6236,6 +6314,7 @@ public final class PageModel: ObservableObject {
         intent: EditorEditIntent = .typing,
         selection: EditorEditSelection? = nil
     ) -> Bool {
+        countEdit(.sheet(sheet))
         // Files route first, on the tag and nothing else. A file has no
         // quiet rendering on the roll, no chips to reap, and its
         // dirtiness is the file's own rather than the sealed store's,
@@ -6385,6 +6464,7 @@ public final class PageModel: ObservableObject {
     /// there is no second call for the caret: the outcome carries it.
     private func fileStep(_ file: UInt64, _ take: () -> CompanionKit.StepOutcome?) -> StepOutcome {
         guard let outcome = take(), outcome.applied else { return .nothing }
+        countEdit(.sheet(file))
         restateStorage(sheet: file)
         markFilesDirty()
         refreshOpenFiles()
@@ -6468,6 +6548,7 @@ public final class PageModel: ObservableObject {
     /// as operations would apply the step twice.
     private func step(sheet: UInt64, _ take: () -> Bool) -> StepOutcome {
         guard take() else { return .nothing }
+        countEdit(.sheet(sheet))
         restateStorage(sheet: sheet)
         invalidateQuietRendering(for: sheet)
         markDirty()
@@ -6511,6 +6592,7 @@ public final class PageModel: ObservableObject {
     /// `recoverProjection`; programmatic rewrites (a burn) come here
     /// directly.
     public func syncDocument(sheet: UInt64, runs: [DocumentRun]) {
+        countEdit(.sheet(sheet))
         // A file has no wholesale mirror. The core has no
         // companion_file_sync_document, deliberately: the mirror exists
         // for chip liveness after a refused batch, and a file holds no
@@ -6686,6 +6768,7 @@ public final class PageModel: ObservableObject {
             // the number key are the arrangement they built, which only
             // a close may end (ADR-0017).
             _ = client.discardPage(id: id)
+            countEdit(.sheet(id))
             markDirty()
             refresh()
         }
@@ -6711,7 +6794,10 @@ public final class PageModel: ObservableObject {
         // and the burned chip would go on being drawn there.
         let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
         _ = client.deleteChip(id: chipId)
-        if let host { invalidateQuietRendering(for: host) }
+        if let host {
+            countEdit(.sheet(host))
+            invalidateQuietRendering(for: host)
+        }
         for storage in storages.values {
             var found: NSRange?
             storage.enumerateAttribute(

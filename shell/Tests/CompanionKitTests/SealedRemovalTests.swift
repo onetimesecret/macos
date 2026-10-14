@@ -35,9 +35,30 @@ final class SealedRemovalTests: XCTestCase {
             seams: .init(
                 stateDirectory: directory, client: client,
                 clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard))
-        let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
+        let blank = try mount(model, sheet, chips: [])
+        let (coordinator, textView) = (blank.coordinator, blank.textView)
+        textView.insertText(
+            "ab SECRET cd TOKEN ef" + tail, replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        textView.setSelectedRange(NSRange(location: 8, length: 5))
+        coordinator.sealSelectionOrLine()
+        textView.layout()
+        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
+        let chips = try [3, 8].map { try XCTUnwrap(coordinator.chipAttachment(at: $0)?.info.chipId) }
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        drainMainQueue()
+        model.notice = nil
+        return Page(
+            model: model, coordinator: coordinator, textView: textView, field: blank.field,
+            window: blank.window, sheet: sheet, chips: chips)
+    }
+
+    /// A surface over `sheet` in a window of its own, a field beside it, the surface holding the keys.
+    private func mount(_ model: PageModel, _ sheet: UInt64, chips: [UInt64]) throws -> Page {
+        let coordinator = InkEditorView.Coordinator(model: model)
         let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: sheet, coordinator: coordinator))
         let window = NSWindow(
@@ -52,26 +73,18 @@ final class SealedRemovalTests: XCTestCase {
         content.addSubview(field)
         window.contentView = content
         textView.isEditable = true
-        textView.insertText(
-            "ab SECRET cd TOKEN ef" + tail, replacementRange: NSRange(location: NSNotFound, length: 0))
-        textView.setSelectedRange(NSRange(location: 3, length: 6))
-        coordinator.sealSelectionOrLine()
-        textView.setSelectedRange(NSRange(location: 8, length: 5))
-        coordinator.sealSelectionOrLine()
         textView.layout()
         textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
-        let chips = try [3, 8].map { try XCTUnwrap(coordinator.chipAttachment(at: $0)?.info.chipId) }
         XCTAssertTrue(window.makeFirstResponder(textView))
-        textView.setSelectedRange(NSRange(location: 0, length: 0))
-        drainMainQueue()
-        model.notice = nil
         return Page(
             model: model, coordinator: coordinator, textView: textView, field: field,
             window: window, sheet: sheet, chips: chips)
     }
 
-    private func chips(_ page: Page) -> [UInt64] {
-        page.model.coreClient.documentRuns(sheet: page.sheet).compactMap {
+    private func chips(_ page: Page) -> [UInt64] { chips(page.model, page.sheet) }
+
+    private func chips(_ model: PageModel, _ sheet: UInt64) -> [UInt64] {
+        model.coreClient.documentRuns(sheet: sheet).compactMap {
             if case .chip(let chip) = $0 { chip.chipId } else { nil }
         }
     }
@@ -236,6 +249,134 @@ final class SealedRemovalTests: XCTestCase {
 
         page.model.performNoticeAction()
         XCTAssertEqual(chips(page), page.chips)
+    }
+
+    // MARK: The Undo is the model's
+
+    /// A removal whose surface is then dismantled and let go, as a ledger round trip
+    /// takes the editor down; the model, the page and its objects are what remain.
+    private func removeAndTearDown() throws -> (model: PageModel, sheet: UInt64, chips: [UInt64]) {
+        weak var gone: InkEditorView.Coordinator?
+        let kept = try autoreleasepool { () throws -> (PageModel, UInt64, [UInt64]) in
+            let page = try makePage()
+            removeFirstObject(page)
+            assertRemovalLine(page, "the removal said nothing")
+            let scroll = try XCTUnwrap(page.textView.enclosingScrollView)
+            InkEditorView.dismantleNSView(scroll, coordinator: page.coordinator)
+            page.window.contentView = nil
+            gone = page.coordinator
+            return (page.model, page.sheet, page.chips)
+        }
+        XCTAssertNil(gone, "the surface outlived its teardown")
+        return kept
+    }
+
+    /// With the surface that made the removal gone, the line's Undo still stands the
+    /// same object again, in the core and in the page's storage.
+    func testTheRemovalLinesUndoOutlivesItsSurface() throws {
+        let (model, sheet, removed) = try removeAndTearDown()
+        XCTAssertEqual(chips(model, sheet), [removed[1]])
+        XCTAssertEqual(model.noticeAction?.label, "Undo", "the teardown took the Undo")
+
+        model.performNoticeAction()
+        XCTAssertEqual(chips(model, sheet), removed, "the Undo died with its surface")
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipIDs(
+                model.storage(for: sheet), in: NSRange(location: 3, length: 1)),
+            [removed[0]], "the page's storage was left without the object")
+    }
+
+    /// A surface mounted on the page after the teardown takes the Undo's step, so the
+    /// object comes back selected there.
+    func testTheUndoStepsThroughTheSurfaceMountedAfterTheTeardown() throws {
+        let (model, sheet, removed) = try removeAndTearDown()
+        let page = try mount(model, sheet, chips: removed)
+        model.mountEditor(page.textView, from: .panel)
+
+        model.performNoticeAction()
+        XCTAssertEqual(chips(page), removed)
+        XCTAssertEqual(page.coordinator.chipAttachment(at: 3)?.info.chipId, removed[0])
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 3, length: 1))
+    }
+
+    /// While a field beside the remounted surface holds the keys, the Undo waits and
+    /// says so (ADR-0046); ⌘Z on the page brings the object back once it has them.
+    func testTheUndoAfterTheTeardownStandsAsideWhileAFieldHoldsTheKeys() throws {
+        let (model, sheet, removed) = try removeAndTearDown()
+        let page = try mount(model, sheet, chips: removed)
+        model.mountEditor(page.textView, from: .panel)
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+
+        model.performNoticeAction()
+        XCTAssertEqual(model.notice, PageModel.undoWaitsLine)
+        XCTAssertEqual(chips(page), [removed[1]], "the Undo stepped the page under the field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.step(back: true)
+        XCTAssertEqual(chips(page), removed)
+    }
+
+    /// With the page shown nowhere, the owner's editor on another page answers for the
+    /// keys: while a field beside it holds them, the Undo waits and the page stays.
+    func testTheUndoWithItsPageShownNowhereWaitsWhileAFieldHoldsTheKeys() throws {
+        let (model, sheet, removed) = try removeAndTearDown()
+        let undo = try XCTUnwrap(model.noticeAction)
+        model.newPage()
+        let other = try mount(model, try XCTUnwrap(model.selectedPageID), chips: [])
+        XCTAssertNotEqual(other.sheet, sheet)
+        model.mountEditor(other.textView, from: .panel)
+        XCTAssertTrue(other.window.makeFirstResponder(other.field))
+        drainMainQueue()
+
+        undo.perform()
+        XCTAssertEqual(model.notice, PageModel.undoWaitsLine)
+        XCTAssertEqual(chips(model, sheet), [removed[1]], "the Undo stepped the page under the field")
+    }
+
+    /// An edit to the page through another surface takes the first surface's Undo off
+    /// the line, and a press it kept steps nothing back.
+    func testAnEditThroughAnotherSurfaceRetiresTheUndo() throws {
+        let page = try makePage()
+        removeFirstObject(page)
+        let undo = try XCTUnwrap(page.model.noticeAction)
+        let other = try mount(page.model, page.sheet, chips: page.chips)
+        other.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        other.textView.insertText("x", replacementRange: Self.noReplacement)
+        XCTAssertEqual(length(other), 12)
+        XCTAssertEqual(page.model.notice, PageModel.removedLine)
+        XCTAssertNil(page.model.noticeAction, "an Undo that would take the other surface's typing back")
+
+        undo.perform()
+        XCTAssertEqual(length(other), 12, "a kept Undo stepped the typing back")
+        XCTAssertEqual(chips(page), [page.chips[1]])
+    }
+
+    /// ⌘Z after the removal is a step sent past it, so a kept press cannot step further back.
+    func testAStepAfterTheRemovalRetiresTheLinesUndo() throws {
+        let page = try makePage()
+        removeFirstObject(page)
+        let undo = try XCTUnwrap(page.model.noticeAction)
+        page.coordinator.step(back: true)
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertNil(page.model.noticeAction, "an Undo that would step back past the removal")
+
+        undo.perform()
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(length(page), 12, "a kept Undo stepped back past the removal")
+    }
+
+    /// A page that goes with no word of its own, as a sweep takes it, takes its removal's Undo along.
+    func testTheUndoGoesWithItsPage() throws {
+        let page = try makePage()
+        removeFirstObject(page)
+        let undo = try XCTUnwrap(page.model.noticeAction)
+        _ = page.model.coreClient.closeTab(id: try XCTUnwrap(page.model.selection))
+        page.model.refresh()
+        XCTAssertEqual(page.model.notice, PageModel.removedLine)
+        XCTAssertNil(page.model.noticeAction, "an Undo over a page that is gone")
+        undo.perform()
+        XCTAssertNotEqual(page.model.notice, PageModel.undoWaitsLine)
     }
 
     // MARK: Every deletion

@@ -525,10 +525,13 @@ public struct InkEditorView: NSViewRepresentable {
         /// The page or file under the editor, or nil on a note's surface,
         /// whose page only paths key on it (ADR-0045).
         var currentSheet: UInt64? {
-            didSet { if oldValue != currentSheet { retireRemovalUndo() } }
+            didSet {
+                // A teardown parks on no page and keeps the Undo; turning to another page retires it.
+                if let oldValue, let currentSheet, oldValue != currentSheet {
+                    model.surfaceLeft(page: oldValue)
+                }
+            }
         }
-        /// The page and edit count just after a removal, while its line offers Undo.
-        private var removalStamp: (document: InkDocument, generation: Int)?
         /// The note this surface writes, by its object's chip, while one is open.
         private(set) var noteChip: UInt64?
         /// The popover that holds this surface when it is a note's, not the page's.
@@ -2150,7 +2153,6 @@ public struct InkEditorView: NSViewRepresentable {
             // that filled the classification cache. An edit this method
             // declines to emit still moves the page under that reading.
             generation &+= 1
-            retireRemovalUndo()
             structuralStyleNeedsRebuild = true
             if nameEditor?.isOpen == true || noteEditor?.isOpen == true {
                 // On the next turn: the object may have moved or gone, and its field or note follows.
@@ -3327,34 +3329,11 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// After an edit took an object: end its step, so Undo stands the object alone,
-        /// and say so with Undo beside the line (D-30).
+        /// and say so with the model's Undo beside the line (D-30).
         func noteRemoval() {
-            guard let document, let textView else { return }
+            guard let document, case .sheet(let sheet) = document, let textView else { return }
             model.finishEditingGroup(document, selection: textView.selectedRange())
-            removalStamp = (document, generation)
-            model.noteRemoval { [weak self] in self?.undoRemoval() }
-        }
-
-        /// The removal line's Undo: one step back, while the removal is still the page's latest edit.
-        func undoRemoval() {
-            guard let stamp = removalStamp, stamp.document == document,
-                  stamp.generation == generation, let textView
-            else { return }
-            guard textView.answersChords else {
-                model.flash(PageModel.undoWaitsLine)
-                return
-            }
-            removalStamp = nil
-            step(back: true)
-        }
-
-        /// Any later edit or another page retires the removal's Undo from its line.
-        private func retireRemovalUndo() {
-            guard let stamp = removalStamp,
-                  stamp.document != document || stamp.generation != generation
-            else { return }
-            removalStamp = nil
-            model.withdrawRemovalUndo()
+            model.noteRemoval(sheet: sheet, surface: textView)
         }
 
         // MARK: Markdown — styled, never rewritten
