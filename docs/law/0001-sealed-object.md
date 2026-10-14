@@ -1266,8 +1266,8 @@ paths must stay dialog free.
   deadline amendment and applying ADR-0052's decision, "From a page's
   deadline, whether or not a sweep has taken it, the core gives none of
   it out."). A page past its deadline still enrolled, and the next
-  sweep sent the relay its expiry, for a page no peer had been sent. It
-  now does not enrol; a page enrolled before its deadline stays
+  sweep sent the relay its expiry, though this device had sent the
+  relay nothing of it before. It now does not enrol; a page enrolled before its deadline stays
   enrolled, so its expiry still reaches its peers. Ink typed before
   the deadline that no sweep took before a sleep past it reaches no
   publish, as the core's export gate already refused it; a test now
