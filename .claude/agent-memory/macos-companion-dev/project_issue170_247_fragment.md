@@ -45,6 +45,20 @@ Seams for the editor half (all page ids, all refuse a file id):
   `cut:` calls `copy:` then deletes (probed), so the editor's cut must not
   call `super.cut`, or it writes the copy fragment and detaches as a removal.
 
+- Cut and slot are built (shell unit 3): `InkTextView.cut` to
+  `Coordinator.cutSelection` to `PageModel.cutSelection` (`CutOutcome`).
+  Reuse for paste, move, clone: `PageModel.settleTransfer(sheet:)`
+  (restate, quiet rendering, markDirty, refresh) and
+  `Coordinator.settleRewrite(selecting:)` (restyle, caret, scroll).
+  `activeCut` is read in `refresh()`; the slot line sits in
+  `PageStatusStack`, owner only, and its button runs
+  `placeActiveCutAtCaret`. A failed write is tested through
+  `Seams.writeCutFragment`: NSPasteboard cannot be subclassed
+  (allocWithZone throws) and a released board still takes writes.
+  Open trap: after our copy or cut, `holds_external_content` sees
+  `.string`, so the summon offer would seal the placeholder text.
+  Mutation test runs are refused by the auto mode classifier.
+
 - Core guards (unit 2, ADR-0048 and ADR-0049, core 0.31.1, ffi 0.39.0):
   paste, slot, move and clone refuse a page past its deadline (nil,
   nothing changed); a paste naming an object first runs `expire_due`, and

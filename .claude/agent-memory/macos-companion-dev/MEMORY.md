@@ -41,4 +41,4 @@
 - [Issue #241 to #243 core](project_issue241_243_core.md): name and note live on SealedChip (ADR-0043); note routes are keyed by chip id, which overlaps page ids; #245/#246 must markDirty
 - [Epic 252 Track A](project_epic252_track_a.md): SwiftUI field state lives in TabRename.Field, PadRename and PadPickerRoutes; #245 reuses holdNotice; hand checks live in rename-in-place.md
 - [Issues #244 to #246 shell](project_issue244_246_shell.md): zones act after hover; the note is an InkTextView routed by InkDocument; answersChords gives keys and menu to the holder; tests copy only via useMemoryPasteboardForTests
-- [Issues #170 and #247](project_issue170_247_fragment.md): ADR-0047 seams; removal detaches; cut never calls super.cut; a paste may sweep due pages (ADR-0048), so settle after it
+- [Issues #170 and #247](project_issue170_247_fragment.md): ADR-0047 seams; removal detaches; cut and slot built, so reuse settleTransfer; a paste may sweep due pages (ADR-0048)
