@@ -20,6 +20,7 @@ use crate::sheet::{
     SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
+use crate::transfer::ActiveCut;
 use crate::ttl::Ttl;
 
 /// Magic and version of a plaintext content snapshot. Earlier versions
@@ -125,9 +126,10 @@ impl<C: Clock> SheetStore<C> {
         let mut next_tab_id = 1;
         let mut next_sheet_id = 1;
         let mut next_chip_id = 1;
+        let mut active_cut = None;
         for _ in 0..tab_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            tabs.push(read_tab(
+            let (tab, cut) = read_tab(
                 &mut record,
                 now,
                 away,
@@ -135,7 +137,10 @@ impl<C: Clock> SheetStore<C> {
                 &mut next_tab_id,
                 &mut next_sheet_id,
                 &mut next_chip_id,
-            )?);
+            )?;
+            tabs.push(tab);
+            // One cut stands at a time; a second record of one is not believed.
+            active_cut = active_cut.or(cut);
         }
         if !reader.done() {
             return Err(RestoreError::Malformed);
@@ -146,6 +151,7 @@ impl<C: Clock> SheetStore<C> {
         self.next_tab_id = next_tab_id;
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = next_chip_id;
+        self.active_cut = active_cut;
         Ok(restored)
     }
 
@@ -343,14 +349,24 @@ fn emit<C: Clock>(
     for tab in &store.tabs {
         let page = tab.page.as_ref().map(|sheet| {
             let export = pages.next().expect("one export per live page");
-            (sheet, export)
+            // The active cut rides with the page it came from (ADR-0047).
+            let cut = store
+                .active_cut
+                .as_ref()
+                .filter(|cut| cut.page == sheet.id)
+                .map(|cut| cut.envelope.as_slice());
+            (sheet, export, cut)
         });
         framed(&mut *out, |out| emit_tab(tab, page, now, out));
     }
 }
 
+/// A live page, what it writes once, and the active cut's envelope if the
+/// cut came from it.
+type PageWrite<'a> = (&'a Sheet, &'a PageExport, Option<&'a [u8]>);
+
 /// One tab record: identity, birthday, name, rung, then the framed page.
-fn emit_tab(tab: &Tab, page: Option<(&Sheet, &PageExport)>, now: Instant, out: &mut dyn Sink) {
+fn emit_tab(tab: &Tab, page: Option<PageWrite<'_>>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(tab.uuid.as_bytes());
     out.u64(tab.created_wall_ms);
@@ -364,16 +380,16 @@ fn emit_tab(tab: &Tab, page: Option<(&Sheet, &PageExport)>, now: Instant, out: &
     out.u64(tab.rung.duration().as_secs());
     match page {
         None => out.u8(0),
-        Some((sheet, export)) => {
+        Some(page) => {
             out.u8(1);
-            framed(&mut *out, |out| emit_sheet(sheet, export, now, out));
+            framed(&mut *out, |out| emit_sheet(page, now, out));
         }
     }
 }
 
 /// One page record. No title: it is derived and recomputed at restore
 /// (ADR-0017).
-fn emit_sheet(sheet: &Sheet, export: &PageExport, now: Instant, out: &mut dyn Sink) {
+fn emit_sheet((sheet, export, cut): PageWrite<'_>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(sheet.uuid.as_bytes());
     out.u64(sheet.created_wall_ms);
@@ -422,6 +438,14 @@ fn emit_sheet(sheet: &Sheet, export: &PageExport, now: Instant, out: &mut dyn Si
     for (chip, note) in sheet.detached.iter().zip(&export.detached_notes) {
         let note = note.as_ref().map(|text| text.as_str());
         framed(&mut *out, |out| emit_chip(chip, note, out));
+    }
+    // Then the active cut's envelope, on the page it came from.
+    match cut {
+        None => out.u8(0),
+        Some(envelope) => {
+            out.u8(1);
+            out.bytes(envelope);
+        }
     }
 }
 
@@ -632,7 +656,7 @@ fn read_tab(
     next_tab_id: &mut u64,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
-) -> Result<Tab, RestoreError> {
+) -> Result<(Tab, Option<ActiveCut>), RestoreError> {
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
@@ -650,15 +674,15 @@ fn read_tab(
         _ => return Err(Malformed),
     };
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
-    let page = match reader.u8().ok_or(Malformed)? {
-        0 => None,
+    let (page, cut) = match reader.u8().ok_or(Malformed)? {
+        0 => (None, None),
         1 => {
             let mut body = reader.framed().ok_or(Malformed)?;
             // A page flag over an empty frame is damage.
             if body.buf.is_empty() {
                 return Err(Malformed);
             }
-            Some(read_page(
+            let (page, cut) = read_page(
                 &mut body,
                 now,
                 away,
@@ -666,7 +690,8 @@ fn read_tab(
                 rung.longest_life(),
                 next_sheet_id,
                 next_chip_id,
-            )?)
+            )?;
+            (Some(page), cut)
         }
         _ => return Err(Malformed),
     };
@@ -674,14 +699,15 @@ fn read_tab(
     let id = TabId::from_raw(*next_tab_id);
     *next_tab_id += 1;
 
-    Ok(Tab {
+    let tab = Tab {
         id,
         uuid,
         created_wall_ms,
         name,
         rung,
         page,
-    })
+    };
+    Ok((tab, cut))
 }
 
 /// One page record. `ceiling` ([`Ttl::longest_life`]) bounds every life
@@ -694,7 +720,7 @@ fn read_page(
     ceiling: Duration,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
-) -> Result<Sheet, RestoreError> {
+) -> Result<(Sheet, Option<ActiveCut>), RestoreError> {
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
@@ -761,6 +787,16 @@ fn read_page(
     if identities.len() != chips.len() + detached.len() {
         return Err(Malformed);
     }
+    // And the active cut's envelope, on the page it came from.
+    let cut = if reader.done() {
+        None
+    } else {
+        match reader.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(reader.bytes().ok_or(Malformed)?),
+            _ => return Err(Malformed),
+        }
+    };
 
     let document = SheetDocument::new();
     document.import_snapshot(blob)?;
@@ -799,7 +835,7 @@ fn read_page(
 
     let derived_title = derive_title(&segments);
 
-    Ok(Sheet {
+    let sheet = Sheet {
         id,
         uuid,
         derived_title,
@@ -813,7 +849,10 @@ fn read_page(
         total_held,
         // Not persisted: no sync session survives a restart (issue #101).
         ceremony: CeremonyState::Immediate,
-    })
+    };
+    // A cut whose objects are not all detached here restores as no cut.
+    let cut = cut.and_then(|envelope| ActiveCut::restored(&sheet, envelope));
+    Ok((sheet, cut))
 }
 
 /// A count, then that many framed chip records; ids are minted in order.
@@ -1167,16 +1206,19 @@ mod tests {
         let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
         let page_at = UNNAMED_TAB_PREFIX + 8;
         let page = &tab[page_at..page_at + page_len];
-        // The empty detached list is the page's last eight bytes.
-        let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
-        rebuilt_tab.extend_from_slice(&frame(&page[..page.len() - 8]));
-        let older = with_first_tab(&snapshot, &rebuilt_tab);
+        // An empty detached list, eight bytes, then a cut flag of one.
+        for (older_by, what) in [(9, "both fields"), (1, "the cut flag")] {
+            let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
+            rebuilt_tab.extend_from_slice(&frame(&page[..page.len() - older_by]));
+            let older = with_first_tab(&snapshot, &rebuilt_tab);
 
-        let mut revived = store_on(clock);
-        assert_eq!(revived.restore(&older, wall).unwrap(), 1);
-        let sheet = revived.sheets().next().unwrap();
-        assert_eq!(sheet.detached().count(), 0);
-        assert_eq!(sheet.segments(), store.sheet(id).unwrap().segments());
+            let mut revived = store_on(clock.clone());
+            assert_eq!(revived.restore(&older, wall).unwrap(), 1, "without {what}");
+            let sheet = revived.sheets().next().unwrap();
+            assert_eq!(sheet.detached().count(), 0);
+            assert_eq!(sheet.segments(), store.sheet(id).unwrap().segments());
+            assert!(revived.active_cut().is_none());
+        }
     }
 
     #[test]
@@ -1991,10 +2033,11 @@ mod tests {
         with_first_tab(snapshot, &rebuilt_tab)
     }
 
-    /// The floor and the fields after it, for a page holding no detached chip.
+    /// The floor and the fields after it, for a page holding no detached chip
+    /// and no cut.
     fn floor_len(sheet: &Sheet) -> usize {
         assert!(sheet.detached.is_empty(), "the helper counts an empty list");
-        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8 + 8
+        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8 + 8 + 1
     }
 
     const UNNAMED_TAB_PREFIX: usize = 16 + 8 + 1 + 8 + 1;

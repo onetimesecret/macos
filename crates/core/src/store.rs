@@ -10,7 +10,6 @@ use zeroize::Zeroizing;
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
-use crate::fragment::Copied;
 use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::note::Note;
@@ -180,6 +179,8 @@ pub struct SheetStore<C: Clock> {
     pub(crate) next_tab_id: u64,
     pub(crate) next_sheet_id: u64,
     pub(crate) next_chip_id: u64,
+    /// The last cut that held an object, until it ends (ADR-0047 point 5).
+    pub(crate) active_cut: Option<crate::transfer::ActiveCut>,
 }
 
 impl<C: Clock> SheetStore<C> {
@@ -195,6 +196,7 @@ impl<C: Clock> SheetStore<C> {
             next_tab_id: 1,
             next_sheet_id: 1,
             next_chip_id: 1,
+            active_cut: None,
         }
     }
 
@@ -384,7 +386,7 @@ impl<C: Clock> SheetStore<C> {
         self.tabs.iter_mut().find(|tab| tab.id == id)
     }
 
-    fn sheet_mut(&mut self, id: SheetId) -> Option<&mut Sheet> {
+    pub(crate) fn sheet_mut(&mut self, id: SheetId) -> Option<&mut Sheet> {
         self.tabs
             .iter_mut()
             .filter_map(|tab| tab.page.as_mut())
@@ -392,7 +394,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The tab a page stands in.
-    fn tab_of(&self, page: SheetId) -> Option<&Tab> {
+    pub(crate) fn tab_of(&self, page: SheetId) -> Option<&Tab> {
         self.tabs.iter().find(|tab| tab.holds(page))
     }
 
@@ -869,7 +871,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// Settle the chip roster (ADR-0047), then rebuild the projection and
     /// derived title. Nothing here records or forgets a step.
-    fn settle_document(&mut self, id: SheetId) {
+    pub(crate) fn settle_document(&mut self, id: SheetId) {
         let Some(sheet) = self.sheet_mut(id) else {
             return;
         };
@@ -881,6 +883,7 @@ impl<C: Clock> SheetStore<C> {
         // Derived on edit, never later (ADR-0012); the user's name is on
         // the tab and out of reach here (ADR-0017).
         sheet.derived_title = derive_title(&sheet.segments);
+        self.end_a_broken_cut();
     }
 
     /// A page's sync frontier, as opaque bytes (issue #96). `None` for an
@@ -1288,16 +1291,6 @@ impl<C: Clock> SheetStore<C> {
         )
     }
 
-    /// Copy a selection (Law 0001, ADR-0047): its envelope when it holds an
-    /// object, and its public text. `None` for an unknown page or a range
-    /// [`Sheet::select`] refuses. The page is not touched.
-    #[must_use]
-    pub fn copy_fragment(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
-        let (fragment, plain) = self.sheet(id)?.select(at_u16, len_u16)?;
-        let envelope = fragment.has_reference().then(|| fragment.envelope());
-        Some(Copied { envelope, plain })
-    }
-
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
@@ -1360,6 +1353,7 @@ impl<C: Clock> SheetStore<C> {
         let Some((uuid, len, label, created)) = removed else {
             return false;
         };
+        self.end_a_broken_cut();
         self.record(
             LedgerEvent::Discarded,
             uuid,
@@ -1633,7 +1627,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Append one record, newest first, and evict past the window.
-    fn record(
+    pub(crate) fn record(
         &mut self,
         event: LedgerEvent,
         item: ItemId,
@@ -1663,6 +1657,8 @@ impl<C: Clock> SheetStore<C> {
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
     )]
     fn entomb(&mut self, sheet: Sheet, label: String, event: LedgerEvent) {
+        // The page has left the strip, so a cut it held ends here.
+        self.end_a_broken_cut();
         for chip in sheet.chips.iter().chain(&sheet.detached) {
             self.record(
                 event,
@@ -1748,6 +1744,16 @@ fn sim_units(segments: &[Segment]) -> Vec<SimUnit> {
         }
     }
     units
+}
+
+/// Whether `at..at + len` lies in the body and splits no surrogate pair.
+pub(crate) fn range_in_body(segments: &[Segment], at_u16: u32, len_u16: u32) -> bool {
+    let units = sim_units(segments);
+    let at = at_u16 as usize;
+    let Some(end) = at.checked_add(len_u16 as usize) else {
+        return false;
+    };
+    end <= units.len() && !splits_surrogate_pair(&units, at) && !splits_surrogate_pair(&units, end)
 }
 
 /// Whether `pos` falls between the halves of a surrogate pair.

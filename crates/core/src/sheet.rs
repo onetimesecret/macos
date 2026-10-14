@@ -295,6 +295,21 @@ impl SealedChip {
         }
     }
 
+    /// A clone under a new identity (ADR-0047 point 6): the payload copied
+    /// core-side at its exact size, with no receipt, name or note.
+    pub(crate) fn duplicate(&self, id: ChipId) -> Self {
+        let mut clone = match self.meta {
+            ChipMeta::Text { .. } => Self::text(
+                id,
+                std::str::from_utf8(self.bytes.expose()).expect("a text chip is sealed from UTF-8"),
+            ),
+            ChipMeta::Image { .. } => Self::image(id, self.bytes.expose().to_vec()),
+        };
+        // Its first standing is a paste, which a step may take back.
+        clone.stood = true;
+        clone
+    }
+
     /// Identifier.
     #[must_use]
     pub fn id(&self) -> ChipId {

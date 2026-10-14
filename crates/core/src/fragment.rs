@@ -54,7 +54,15 @@ pub(crate) fn placeholder(word: &str) -> String {
 impl Fragment {
     /// Whether any node names a sealed object.
     pub(crate) fn has_reference(&self) -> bool {
-        self.nodes.iter().any(|node| matches!(node, Node::Ref(_)))
+        self.references().next().is_some()
+    }
+
+    /// The references, in order.
+    pub(crate) fn references(&self) -> impl Iterator<Item = &Reference> {
+        self.nodes.iter().filter_map(|node| match node {
+            Node::Ref(reference) => Some(reference),
+            Node::Ink(_) => None,
+        })
     }
 
     /// The envelope's bytes, encoded twice so the buffer is born at its
@@ -86,10 +94,6 @@ impl Fragment {
 
     /// Read an envelope. `None` when this build cannot: another version, an
     /// unknown key, a malformed UUID, or bytes that are not UTF-8 JSON.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the paste, built next, is its caller")
-    )]
     pub(crate) fn parse(bytes: &[u8]) -> Option<Self> {
         let wire: WireFragment<'_> = serde_json::from_slice(bytes).ok()?;
         if wire.version != VERSION {

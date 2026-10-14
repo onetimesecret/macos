@@ -19,6 +19,8 @@ pub mod secret;
 pub mod sheet;
 pub mod store;
 pub mod sync;
+// Copy, cut, paste and the drags inside a page (ADR-0047).
+mod transfer;
 pub mod ttl;
 
 /// This crate's semantic version.
@@ -47,4 +49,5 @@ pub use store::{EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
 pub use sync::{
     CeremonyBallot, DeltaAdmission, ExpiryPolicy, HoldRegister, PageChannel, TerminalMarker,
 };
+pub use transfer::Placed;
 pub use ttl::{TTL_LADDER, Ttl};
