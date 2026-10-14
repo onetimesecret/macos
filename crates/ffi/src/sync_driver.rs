@@ -738,10 +738,7 @@ pub(crate) fn sweep_outbound(
         ..
     } = companion;
     let SyncState {
-        engine,
-        enrolled,
-        staged_batch,
-        ..
+        engine, enrolled, ..
     } = sync;
     let Some(engine) = engine.as_mut() else {
         return;
@@ -800,11 +797,8 @@ pub(crate) fn sweep_outbound(
             }
         }
     }
-    if rotate
-        && let Some(target) = due_target.or_else(|| live_anchor(store, enrolled))
-        && rotate_channel(store, engine, &**credentials, target, now_ms, events)
-    {
-        settle_frontier(store, enrolled, staged_batch, target);
+    if rotate && let Some(target) = due_target.or_else(|| live_anchor(store, enrolled)) {
+        rotate_channel(store, sync, &**credentials, target, now_ms, events);
     }
 }
 
@@ -945,16 +939,25 @@ pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> 
 }
 
 /// Rotate the channel at `target`: a ballot to the verified peers, or
-/// solo when there are none (client protocol §7.2, §7.3, §7.9). True
-/// when the solo path committed and the page owes a settled cursor.
+/// solo when there are none (client protocol §7.2, §7.3, §7.9). A solo
+/// commit settles the page's cursor, whichever trigger asked.
 fn rotate_channel(
     store: &mut companion_core::SheetStore<companion_core::SystemClock>,
-    engine: &mut EngineState,
+    sync: &mut SyncState,
     credentials: &dyn CredentialStore,
     target: ItemId,
     now_ms: u64,
     events: &mut Vec<serde_json::Value>,
-) -> bool {
+) {
+    let SyncState {
+        engine,
+        enrolled,
+        staged_batch,
+        ..
+    } = sync;
+    let Some(engine) = engine.as_mut() else {
+        return;
+    };
     let identities: Vec<(String, Vec<u8>)> = pairing::peer_records(credentials)
         .into_iter()
         .map(|record| (record.fingerprint, record.identity_pub))
@@ -970,7 +973,7 @@ fn rotate_channel(
             events.push(serde_json::json!({
                 "kind": "ceremony_committed", "page": page, "page_id": page_id
             }));
-            return true;
+            settle_frontier(store, enrolled, staged_batch, target);
         }
     } else {
         let own = engine.packages.package().clone();
@@ -983,7 +986,6 @@ fn rotate_channel(
             }));
         }
     }
-    false
 }
 
 /// A terminal marker: the page id and wall stamp, signed by the device
@@ -1227,25 +1229,25 @@ fn publish_round(
         }
         Err(refusal) => {
             if matches!(refusal, RelayRefusal::CeremonyRequired) {
-                // Client protocol §4.4: at the cap, rotate now.
-                let now = guard.sync.now_ms();
-                let Companion {
-                    store,
-                    sync,
-                    credentials,
-                    ..
-                } = &mut *guard;
-                let SyncState {
-                    engine, enrolled, ..
-                } = sync;
-                if let Some(engine) = engine.as_mut()
-                    && let Some(target) = live_anchor(store, enrolled)
-                {
-                    rotate_channel(store, engine, &**credentials, target, now, events);
-                }
+                rotate_at_cap(&mut guard, events);
             }
             events.push(refusal_json(&refusal));
         }
+    }
+}
+
+/// Client protocol §4.4: at the cap, rotate now on the first enrolled page
+/// held here before its deadline.
+fn rotate_at_cap(companion: &mut Companion, events: &mut Vec<serde_json::Value>) {
+    let now = companion.sync.now_ms();
+    let Companion {
+        store,
+        sync,
+        credentials,
+        ..
+    } = companion;
+    if let Some(target) = live_anchor(store, &sync.enrolled) {
+        rotate_channel(store, sync, &**credentials, target, now, events);
     }
 }
 
@@ -2857,6 +2859,58 @@ mod tests {
         );
         assert!(stage_frame(engine).is_none());
         assert!(engine.unpublished_frame.is_none());
+    }
+
+    #[test]
+    fn a_solo_commit_at_the_relay_cap_settles_the_page_s_cursor() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+
+        // The relay answers the page's batch with its cap, and the room is
+        // empty, so the rotation commits solo.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let EngineState { session, chain, .. } = engine;
+        let _ = session.publish_request(0, chain).unwrap();
+        let cap = HttpResponse {
+            status: 413,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            session.absorb_publish(&cap).unwrap_err(),
+            RelayRefusal::CeremonyRequired
+        );
+        rotate_at_cap(&mut companion, &mut events);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed")
+        );
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, rebuilt);
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+
+        // Once the kept batch drains, the rebuild is owed only as the frame.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let EngineState { session, chain, .. } = engine;
+        let _ = session.publish_request(4_000, chain).unwrap();
+        session
+            .absorb_publish(&HttpResponse {
+                status: 200,
+                body: br#"{"seq":1}"#.to_vec(),
+            })
+            .unwrap();
+        sweep_outbound(&mut companion, 8_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(
+            !engine.session.publish_due(8_000),
+            "the rebuild must not be republished as a delta"
+        );
     }
 
     #[test]
