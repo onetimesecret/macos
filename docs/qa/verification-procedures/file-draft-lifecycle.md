@@ -160,7 +160,7 @@ the wrong action order or default; the tab closing after Keep editing;
 or the discarded draft coming back, which would let a later cmd-s write
 typing from a session the person had ended.
 
-## Case 4: Take theirs is immediate and undoable
+## Case 4: Take Theirs is immediate and undoable
 
 1. With `/tmp/qa-draft.txt` open, type `MINE` at the start and do not
    save.
@@ -171,14 +171,14 @@ typing from a session the person had ended.
    ```
 
 3. Activate OnetimePad. Confirm the conflict banner appears, then choose
-   **Take theirs**.
+   **Take Theirs**.
 4. Press cmd-z, then cmd-shift-z.
 
-**Pass:** Take theirs presents no confirmation and immediately shows
+**Pass:** Take Theirs presents no confirmation and immediately shows
 `THEIRS`. Undo restores the buffer containing `MINE`; Redo shows
-`THEIRS` again. The conflict is cleared after Take theirs.
+`THEIRS` again. The conflict is cleared after Take Theirs.
 
-**Fail:** any alert or confirmation; Take theirs leaving the old buffer
+**Fail:** any alert or confirmation; Take Theirs leaving the old buffer
 visible; Undo failing to restore it; Redo failing to reapply the disk
 copy; or the conflict remaining after the replacement succeeds.
 
@@ -210,7 +210,7 @@ and
 4. In the same tab, type `MINE` at the start and do not save.
    In Terminal, `printf 'THEIRS\n' > /tmp/qa-draft.txt`. Activate
    OnetimePad so the conflict banner appears, press cmd-w so the close
-   banner stands alongside it, then choose **Take theirs**.
+   banner stands alongside it, then choose **Take Theirs**.
 
 **Pass:** in each of steps 2, 3 and 4 the banner goes away and the tab
 stays open with the file clean. After step 2, `cat /tmp/qa-draft.txt`

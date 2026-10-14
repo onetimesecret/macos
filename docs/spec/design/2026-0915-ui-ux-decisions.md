@@ -658,6 +658,10 @@ in draw order: content-restore failure · ledger failure · cancelled quit
   *Banned:* "3 items expiring soon", "Are you sure?" on expiry,
   onboarding or celebratory copy, "your secrets are safe with us", and
   any label implying content can be revealed.
+  *Amended 2026-10-14:* the register is the sentences'; a button in a
+  status line is a button and is title case, *Quit Anyway (⌘Q)*,
+  *Seal It (⇧⌘V)*
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-16 (fixed)** The empty state is one calm sentence ("No page here
   yet.") over a hint naming the gesture that works on this surface and
   stance. No illustration, no onboarding flow.

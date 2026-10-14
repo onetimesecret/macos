@@ -62,7 +62,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       a fresh face.
 - [ ] **The slot's button on the raised card.** Name a sealed object,
       select it with some ink and cut with ⌘X. Switch to another page,
-      put the caret at its end and click the slot's `place here`
+      put the caret at its end and click the slot's `Place Here`
       button under the page, then type a letter. **Pass:** the line
       named the object by its name and size class and showed nothing
       of the sealed word; the card stays raised through the click; the
@@ -108,7 +108,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       object and press ⌫ once. Press ⌫ again, then click the line's
       `Undo` button, then type a letter. **Pass:** the first ⌫ selects
       the object and removes nothing; the second removes it and the
-      line under the page reads `protected content removed.` with
+      line under the page reads `sealed content removed.` with
       `Undo`; the click keeps the card raised and stands the same
       object again, selected, with its face and name; the letter lands
       on the page. The same holds for ⌦ with the caret just before the

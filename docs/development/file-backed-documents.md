@@ -359,9 +359,9 @@ list:
 
 | the file | the actions, in order |
 | --- | --- |
-| changed | Keep mine, Take theirs, Save As |
-| missing | Locate…, Keep mine, Save As |
-| `accessRefused`, in a conflict | Locate…, Keep mine, Save As |
+| changed | Keep Mine, Take Theirs, Save As… |
+| missing | Locate…, Keep Mine, Save As… |
+| `accessRefused`, in a conflict | Locate…, Keep Mine, Save As… |
 
 The accepted UI record counts three actions and two sentence inputs
 (D-17 in `docs/spec/design/2026-0915-ui-ux-decisions.md`). The

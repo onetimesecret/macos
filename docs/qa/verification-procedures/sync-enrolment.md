@@ -83,14 +83,14 @@ or a single packet to either host.
 On machine A, turn the switch on. The page should say sync is signed
 out; the header should say `sync signed out`.
 
-- [ ] **Press Sign in.** Expected: the default browser opens on the
+- [ ] **Press Sign In.** Expected: the default browser opens on the
       account server's consent screen. The header changes to
       `signing in`, the page says it is waiting on the browser, and
-      Settings shows a spinner with a Give up beside it.
+      Settings shows a spinner with a Give Up beside it.
 - [ ] **Close the browser tab without consenting, then press Give
-      up.** Expected: within a second or two, the header returns to
+      Up.** Expected: within a second or two, the header returns to
       `sync signed out`, Settings says the sign in was given up and
-      nothing was stored, and the Give up disappears. Time it: a wait
+      nothing was stored, and the Give Up disappears. Time it: a wait
       that runs on for minutes is the defect this check exists for.
 
   ```sh
@@ -98,12 +98,12 @@ out; the header should say `sync signed out`.
     -a sync-oauth-refresh   # expect: not found
   ```
 
-- [ ] **Press Sign in and then Give up immediately**, before the
+- [ ] **Press Sign In and then Give Up immediately**, before the
       consent screen has finished loading. Expected: the same given up
       sentence. It must never read as the server refusing the sign in:
       no server was asked anything, and the cancel racing the app's
       own background call is the ordinary case rather than a rare one.
-- [ ] **Press Sign in, complete the consent, and press Give up as the
+- [ ] **Press Sign In, complete the consent, and press Give Up as the
       browser hands back.** This one is a race and may take several
       attempts to land inside; the window is the token exchange, which
       is one network round trip wide. Expected: one of two outcomes
@@ -118,7 +118,7 @@ out; the header should say `sync signed out`.
     -a sync-oauth-refresh
   ```
 
-- [ ] **Press Sign in, and with the consent screen still open turn the
+- [ ] **Press Sign In, and with the consent screen still open turn the
       sync switch off.** Expected: the header says nothing at all, and
       the item below does not exist however long you leave the browser
       tab open afterwards. Consenting after the switch went off must
@@ -136,7 +136,7 @@ out; the header should say `sync signed out`.
       elsewhere by the session that ended, nor a `sync behind` it
       reported.
 
-- [ ] **Press Sign in again and complete the consent.** Expected: the
+- [ ] **Press Sign In again and complete the consent.** Expected: the
       browser says the tab can be closed, the header goes to
       `reaching` and then `synced`, and Settings lists this Mac.
 - [ ] **Answer any Keychain prompt that appears.** Note which item it
@@ -146,7 +146,7 @@ out; the header should say `sync signed out`.
       refresh round trip. The header reaches `synced` without a
       consent screen.
 
-**Fail:** a Give up that does not end the wait, a refresh token
+**Fail:** a Give Up that does not end the wait, a refresh token
 present after an abandoned or given up ceremony or after the switch
 went off mid trip, a cancel described as a server refusal, a prompt at
 launch, or a relaunch that asks for the browser again.
@@ -161,13 +161,13 @@ now pass the account gate and neither can read the other's pages.
       is correct and is the state ADR-0021 section 5 describes: past
       the account gate, past no pairing, holding ciphertext it cannot
       open.
-- [ ] **On A press Invite a device, on B press Join from here.**
+- [ ] **On A press Invite a Device, on B press Join from Here.**
       Expected: both show a spinner, then the same six digits.
-- [ ] **Compare them, then press "They don't match" on B.** Expected:
+- [ ] **Compare them, then press "They Don't Match" on B.** Expected:
       both ceremonies end, both say the strings did not match and
       nothing was stored, and neither device list gains a paired row.
       This is the check that the comparison can fail.
-- [ ] **Run it again and press "They match" on both.** Expected: both
+- [ ] **Run it again and press "They Match" on both.** Expected: both
       say paired, and each device list gains the other with a
       fingerprint head and a seen time.
 
@@ -176,7 +176,7 @@ pairs anyway, or a pairing that leaves a row on only one machine.
 
 ## Check 4: pages travelling, and the mark
 
-- [ ] **On A, choose "Sync this page to your devices" from a page's
+- [ ] **On A, choose "Sync This Page to Your Devices" from a page's
       tab menu, and type.** Expected: within a few seconds the same
       text appears on B, in a page of its own.
 - [ ] **While A is typing, watch B's page.** Expected: B shows
@@ -222,7 +222,7 @@ across to the other machine's records.
 
 ## Check 6: signing out, and what it must not take with it
 
-- [ ] **On A, press Sign out of sync and confirm.** Expected: the
+- [ ] **On A, press Sign Out of Sync and confirm.** Expected: the
       header reads `sync signed out`, the page says the pad is
       unaffected, and every page, sealed chip and tab name is exactly
       as it was.

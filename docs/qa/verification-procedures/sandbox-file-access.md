@@ -85,7 +85,7 @@ to real customer or production files to manufacture a result.
 unavailable state even when content timestamps/size still match. The clean
 file retains its loaded text; this is not the unread, empty held state of
 case 16. The dirty file retains its draft and offers recovery actions
-without Take theirs while the other copy cannot be read. No typing is lost
+without Take Theirs while the other copy cannot be read. No typing is lost
 and no file is written merely because the app activates. After access is
 restored, the unavailable indication clears; differing disk contents must
 still follow the conflict/reload behavior in the existing cases.
@@ -151,7 +151,7 @@ Inspect the header visually and with VoiceOver: record the actual spoken
 text and available actions. **Expected:** the held header communicates that
 the file has not been read, without a saved/unsaved claim or encoding/line
 ending facts. No empty encoding label should occupy visual space. Locate
-and Close remain available; Keep mine and Take theirs must not act on an
+and Close remain available; Keep Mine and Take Theirs must not act on an
 unloaded copy.
 
 Extend case 20 with a documented, disposable roster size representative of
@@ -362,17 +362,17 @@ For each of the three, open a file, type `MINE` without saving, then in
 Terminal `printf 'THEIRS\n' > ` the file, and switch back so the
 conflict banner appears.
 
-1. **Keep mine**, then cmd-s.
-2. **Take theirs**, then cmd-z.
-3. **Save As** to a new name.
+1. **Keep Mine**, then cmd-s.
+2. **Take Theirs**, then cmd-z.
+3. **Save As…** to a new name.
 
-**Pass:** keep mine clears the banner and the save overwrites the disk
-copy with the buffer. Take theirs shows `THEIRS` at once and undo
+**Pass:** Keep Mine clears the banner and the save overwrites the disk
+copy with the buffer. Take Theirs shows `THEIRS` at once and undo
 brings `MINE` back. Save As writes the new file and leaves the changed
 one alone.
 
-**Fail:** any of the three refused, or "could not be read" after take
-theirs.
+**Fail:** any of the three refused, or "could not be read" after Take
+Theirs.
 
 ## Case 8: deleted
 
@@ -382,8 +382,8 @@ theirs.
 
 **Pass:** on activation the files are reported as no longer at their
 paths, and the dirty one stands in a missing conflict with its draft.
-Its banner offers Locate…, Keep mine and Save As, in that order, and no
-Take theirs, since there is no copy to take. The clean one keeps its
+Its banner offers Locate…, Keep Mine and Save As…, in that order, and no
+Take Theirs, since there is no copy to take. The clean one keeps its
 text and shows a banner reading "NAME is no longer at PATH" with
 Locate… and Close. Switching away and back a second time leaves both
 banners up and does not repeat the sentence. After the relaunch the clean tab is gone with a notice naming
@@ -521,10 +521,10 @@ its tab is there with no text, the editor takes no typing, and a banner
 reads "NAME cannot be read at PATH" with Locate… and Close. A dirty one
 comes back with its draft and a banner reading "NAME cannot be read at
 its path and this copy has unsaved edits · saving is refused until one
-copy is chosen" with Locate…, Keep mine and Save As. Take theirs is not
+copy is chosen" with Locate…, Keep Mine and Save As…. Take Theirs is not
 drawn. Switching to another app and back leaves that banner exactly as
 it was, and cmd-s on the tab is still refused with "NAME cannot be read
-at its path. Choose Locate, keep mine, or Save As before saving."
+at its path. Choose Locate…, Keep Mine, or Save As… before saving."
 
 **Pass:** step 2 fills the tab with the file's text and the save lands.
 Step 3 clears the banner with the draft still in place, if the file has
@@ -551,7 +551,7 @@ Trash, and the sandboxed behaviour has not been seen.
 1. Open one file and leave it saved. Open another and leave an unsaved
    edit in it. Quit.
 2. In Finder, move both files to the Trash. Relaunch.
-3. On the dirty tab, choose keep mine and press cmd-s.
+3. On the dirty tab, choose Keep Mine and press cmd-s.
 4. Quit and relaunch once more without touching anything.
 
 **Pass:** the clean tab is gone with a notice that the file is no
@@ -648,26 +648,26 @@ and `held.txt` is untouched.
 3. On `loc-x.txt`, choose Locate… and pick `moved/loc-x-same.txt`.
    Press cmd-s.
 4. On `loc-y.txt`, choose Locate… and pick `moved/loc-y-other.txt`.
-   Choose Take theirs, then press cmd-z.
+   Choose Take Theirs, then press cmd-z.
 5. Quit and relaunch.
 
 **Pass:** after step 1 each dirty tab's banner reads "NAME is no longer
 at its path and this copy has unsaved edits · saving is refused until
-one copy is chosen" with Locate…, Keep mine and Save As, and no Take
-theirs. In step 2 the save is refused with "loc-x.txt is no longer at its path.
-Choose Locate, keep mine, or Save As before saving.", the cancel
+one copy is chosen" with Locate…, Keep Mine and Save As…, and no Take
+Theirs. In step 2 the save is refused with "loc-x.txt is no longer at its path.
+Choose Locate…, Keep Mine, or Save As… before saving.", the cancel
 changes nothing, and the Locate onto the open file is refused with
 "loc-z.txt is already open, so loc-x.txt was not pointed at it. Close
 it first, or choose another file."; the tab is unchanged after all
 three. In step 3 the banner goes, the draft is still on screen and
 unsaved, and the save writes it into `moved/loc-x-same.txt`. In step 4
 the tab is bound to `loc-y-other.txt`, the draft is still on screen,
-and the banner now says the file changed on disk, with Keep mine, Take
-theirs and Save As and no Locate; Take theirs shows `OTHER` and undo
+and the banner now says the file changed on disk, with Keep Mine, Take
+Theirs and Save As… and no Locate; Take Theirs shows `OTHER` and undo
 brings the draft back. Nothing is created at either old path. After
 step 5 both tabs reopen on the files they were pointed at.
 
-**Fail:** a draft lost or replaced by anything but Take theirs; a save
+**Fail:** a draft lost or replaced by anything but Take Theirs; a save
 landing at a deleted path; Locate onto the open file succeeding; or
 "could not be read" after picking a file in the panel, which would mean
 the panel's grant did not reach the core's read.
@@ -741,7 +741,7 @@ sandbox.
 
 2. On `gone-clean.txt`, press cmd-s. `ls ~/Documents/qa-sandbox`.
 3. On `gone-dirty.txt`, press cmd-s. `ls` again.
-4. On `gone-dirty.txt`, choose Keep mine and press cmd-s. `ls` again.
+4. On `gone-dirty.txt`, choose Keep Mine and press cmd-s. `ls` again.
 5. On `gone-clean.txt`, choose File > Save As, and in the panel choose
    the same directory and the same name, `gone-clean.txt`.
 
@@ -751,9 +751,9 @@ its path, so it was not saved. Choose Locate to find it, or Save As to
 write it somewhere.", and the banner "gone-clean.txt is no longer at"
 followed by its path still stands with Locate… and Close. In step 3
 nothing is written, the tab still stands in the missing conflict with
-Locate…, Keep mine and Save As, the draft is still on screen, and the
-sentence reads "gone-dirty.txt is no longer at its path. Choose Locate,
-keep mine, or Save As before saving." In step 4 the save creates
+Locate…, Keep Mine and Save As…, the draft is still on screen, and the
+sentence reads "gone-dirty.txt is no longer at its path. Choose Locate…,
+Keep Mine, or Save As… before saving." In step 4 the save creates
 `gone-dirty.txt` with
 the draft's text, or is refused out loud under the sandbox for want of
 a grant on a path with no file; record which. In step 5 the file is
@@ -828,7 +828,7 @@ it, and the suites cover that outside a sandbox.
    printf 'THEIRS\n' > ~/Documents/qa-sandbox/kept.txt
    ```
 
-3. Choose Keep mine. Do not save.
+3. Choose Keep Mine. Do not save.
 4. In Terminal, delete the file, and switch back to the app:
 
    ```sh
@@ -836,16 +836,16 @@ it, and the suites cover that outside a sandbox.
    ```
 
 5. Press cmd-s. `ls ~/Documents/qa-sandbox`.
-6. Choose Keep mine again and press cmd-s. `ls` again.
+6. Choose Keep Mine again and press cmd-s. `ls` again.
 
-**Pass:** after step 2 the conflict banner stands with Keep mine, Take
-theirs and Save As, and step 3 clears it. After step 4 the app says
+**Pass:** after step 2 the conflict banner stands with Keep Mine, Take
+Theirs and Save As…, and step 3 clears it. After step 4 the app says
 "kept.txt is no longer at its path." and the banner is back, now
-offering Locate…, Keep mine and Save As, and no Take theirs. In step 5
+offering Locate…, Keep Mine and Save As…, and no Take Theirs. In step 5
 nothing is written, `kept.txt` is not in the listing, the draft is
 still on screen, the banner still stands, and the sentence reads
-"kept.txt is no longer at its path. Choose Locate, keep mine, or Save
-As before saving." In step 6 the save creates `kept.txt` with the
+"kept.txt is no longer at its path. Choose Locate…, Keep Mine, or Save
+As… before saving." In step 6 the save creates `kept.txt` with the
 draft's text, or is refused out loud under the sandbox for want of a
 grant on a path with no file; record which.
 
@@ -884,15 +884,15 @@ put in the changed conflict when it is another.
    ```
 
 **Pass:** after step 2 the app says "back.txt is no longer at its
-path." and the banner offers Locate…, Keep mine and Save As; the tab is
+path." and the banner offers Locate…, Keep Mine and Save As…; the tab is
 still named by its original path and not by one in the Trash. In step 3
 the banner comes down, on the switch back or at the save, the save
 lands with no sentence, and the file holds the draft's text. After step
 4 the missing conflict stands again. In step 5 the banner changes to
-the changed conflict, offering Keep mine, Take theirs and Save As,
+the changed conflict, offering Keep Mine, Take Theirs and Save As…,
 nothing is written, the file still reads `SOMEBODY ELSE`, and the
-sentence reads "back.txt changed on disk. Choose keep mine, take
-theirs, or Save As before saving."
+sentence reads "back.txt changed on disk. Choose Keep Mine, Take
+Theirs, or Save As… before saving."
 
 **Fail:** the save in step 3 refused with the missing sentence while
 the file is there; the file in step 5 overwritten; the banner in step 5
@@ -914,7 +914,7 @@ cover the flag; this case is the header and the dot on screen.
    ```
 
 2. In Terminal, write another copy over it, switch back to the app and
-   choose Keep mine:
+   choose Keep Mine:
 
    ```sh
    printf 'THEIRS\n' > ~/Documents/qa-sandbox/undone.txt

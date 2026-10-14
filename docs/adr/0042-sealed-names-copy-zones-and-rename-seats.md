@@ -6,6 +6,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-10-13
+- **Superseded in part by:** [ADR-0055](0055-menus-and-buttons-use-the-platforms-wording.md), specifically the case and the ellipses of the Menu point's words and its *Remove protected content*. The order, the items and the chord stand.
 - **Depends on:** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md), whose three egress points this record keeps at three.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -177,3 +178,7 @@ cite the narrowed D-40 and the extended D-41.
   [ADR-0044](0044-sealed-row-and-note-details.md), which also records
   what issues #244 and #246 settled of points 7 and 8. Edits that had
   written those into this record's Decision and history are taken back.
+- 2026-10-14: Superseded in part by
+  [ADR-0055](0055-menus-and-buttons-use-the-platforms-wording.md): the
+  Menu point's words are title case, *Name* and *Rename* lose their
+  ellipsis, and the removal reads *Remove Sealed Content*.
