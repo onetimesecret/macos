@@ -422,8 +422,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `drag decrypted`, a handle on a hovered or selected block, drags
     the object's plaintext to another app. The core writes it only when
     the destination asks and records one `sent` to `drag`; the object
-    stays and the general pasteboard is untouched. No surface of
-    OnetimePad takes the drop.
+    stays and the general pasteboard is untouched. The drag offers no
+    operation inside OnetimePad, and its pages and notes refuse it.
   - A service asking for a selection holding an object is handed the
     public text, and no service that would write back over the
     selection is offered.
