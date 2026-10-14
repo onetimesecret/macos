@@ -188,24 +188,11 @@ impl<C: Clock> SheetStore<C> {
         } else {
             to_u16
         };
-        let plan: Vec<Planned<'_>> = fragment
-            .nodes
-            .iter()
-            .map(|node| match node {
-                Node::Ink(text) => Planned::Ink(text),
-                Node::Ref(reference) => Planned::Reattach {
-                    uuid: reference.uuid,
-                    from: id,
-                },
-            })
-            .collect();
+        let plan = reattaching(&fragment, id);
         let placed = Placed {
             location_u16: dest,
             length_u16: len_u16,
-            reattached: count(
-                plan.iter()
-                    .filter(|p| matches!(p, Planned::Reattach { .. })),
-            ),
+            reattached: reattached(&plan),
             ..Placed::default()
         };
         let selection = selection(from_u16, len_u16, dest, len_u16);
@@ -262,8 +249,7 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
-    /// Stand a fragment over a range in one step, then move the chips it
-    /// names: the transaction of ADR-0047 point 8.
+    /// Resolve a fragment, then stand it over a range: a paste.
     fn place(
         &mut self,
         id: SheetId,
@@ -288,6 +274,20 @@ impl<C: Clock> SheetStore<C> {
             ..Placed::default()
         };
         let plan = self.resolve(fragment, &mut placed);
+        self.stand_plan(id, at_u16, len_u16, EditIntent::Paste, plan, placed)
+    }
+
+    /// Stand a plan over a range in one step, then move the chips it names:
+    /// the transaction of ADR-0047 point 8. `None` once the body reverts.
+    fn stand_plan(
+        &mut self,
+        id: SheetId,
+        at_u16: u32,
+        len_u16: u32,
+        intent: EditIntent,
+        plan: Vec<Planned<'_>>,
+        mut placed: Placed,
+    ) -> Option<Placed> {
         let width: usize = plan.iter().map(Planned::width).sum();
         if width == 0 {
             return None;
@@ -296,7 +296,7 @@ impl<C: Clock> SheetStore<C> {
         let end = at_u16.checked_add(placed.length_u16)?;
         let selection = selection(at_u16, len_u16, end, 0);
         let sheet = self.sheet_mut(id)?;
-        let stood = edit_body(sheet, EditIntent::Paste, selection, |sheet| {
+        let stood = edit_body(sheet, intent, selection, |sheet| {
             sheet.document.delete(at_u16 as usize, len_u16 as usize)?;
             sheet.blocks.note_delete(at_u16 as usize, len_u16 as usize);
             stand(sheet, at_u16 as usize, &plan)
@@ -534,6 +534,30 @@ fn selection(at: u32, len: u32, after_at: u32, after_len: u32) -> EditSelection 
             length_u16: after_len,
         },
     }
+}
+
+/// A selection's nodes as a plan that stands each object again by identity,
+/// taken from `from`: a move's plan.
+fn reattaching(fragment: &Fragment, from: SheetId) -> Vec<Planned<'_>> {
+    fragment
+        .nodes
+        .iter()
+        .map(|node| match node {
+            Node::Ink(text) => Planned::Ink(text),
+            Node::Ref(reference) => Planned::Reattach {
+                uuid: reference.uuid,
+                from,
+            },
+        })
+        .collect()
+}
+
+/// How many objects a plan stands again by identity.
+fn reattached(plan: &[Planned<'_>]) -> u32 {
+    count(
+        plan.iter()
+            .filter(|item| matches!(item, Planned::Reattach { .. })),
+    )
 }
 
 /// A count as the outcome's width.
