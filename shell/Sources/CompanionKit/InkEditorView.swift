@@ -2723,6 +2723,50 @@ public struct InkEditorView: NSViewRepresentable {
             return model.copySelection(ranges, sheet: sheet)
         }
 
+        /// Cut the page's selection through the core (ADR-0047 point 5).
+        @discardableResult
+        func cutSelection() -> PageModel.CutOutcome {
+            guard !writesNote, let textView, textView.isEditable,
+                  let sheet = currentSheet, !sheet.isFileID
+            else { return .refused }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            let outcome = model.cutSelection(ranges, sheet: sheet)
+            if case .cut(let selecting) = outcome { settleRewrite(selecting: selecting) }
+            return outcome
+        }
+
+        /// Place the clipboard slot's cut at the caret (ADR-0047 point 12); stands
+        /// aside while a name or note holds the keys (ADR-0046).
+        @discardableResult
+        func placeActiveCut() -> Bool {
+            guard !writesNote, let textView, textView.isEditable,
+                  let sheet = currentSheet, !sheet.isFileID
+            else { return false }
+            guard textView.answersChords else {
+                model.flash(PageModel.placeWaitsLine)
+                return false
+            }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard let placed = model.placeActiveCut(sheet: sheet, range: textView.selectedRange())
+            else { return false }
+            settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
+            return true
+        }
+
+        /// After the core rewrote the page under the editor: lay the styles back
+        /// down and stand the selection, as a step does.
+        func settleRewrite(selecting selection: NSRange) {
+            guard let textView else { return }
+            restyle()
+            let clamped = Self.clamped(selection, to: textView.textStorage?.length ?? 0)
+            textView.setSelectedRange(clamped)
+            textView.scrollRangeToVisible(clamped)
+            noteHost?.inkDidChange()
+        }
+
         /// The chip standing at the selection, when the selection is
         /// exactly one chip and nothing else: the one shape the copy
         /// decrypted chord acts on. Nil over ink, over a caret, or over
@@ -5010,7 +5054,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return canChooseCodeLanguage
         case #selector(pasteWithoutDetection(_:)):
             return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
-        case #selector(copy(_:)):
+        case #selector(copy(_:)), #selector(cut(_:)):
             return answersChords && super.validateMenuItem(item)
         case #selector(selectAll(_:)) where coordinator?.writesNote != true:
             return answersChords && super.validateMenuItem(item)
@@ -5160,7 +5204,14 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         super.selectAll(sender)
     }
 
+    /// A page cuts through the core, never by `super.cut`, whose `copy:` writes
+    /// a copy's fragment; a note, a file and ink stretches cut as AppKit does.
     override func cut(_ sender: Any?) {
+        guard answersChords else { return }
+        if let coordinator, !coordinator.writesNote,
+           let sheet = coordinator.currentSheet, !sheet.isFileID,
+           coordinator.cutSelection() != .inkStretches
+        { return }
         withEditIntent(.cut) {
             super.cut(sender)
         }

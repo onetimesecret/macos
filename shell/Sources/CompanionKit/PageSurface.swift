@@ -346,6 +346,31 @@ public struct PageStatusStack: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         }
+        if let cut = model.activeCut, let sentence = PageModel.cutSlotSentence(for: cut),
+            PageModel.shouldShowCutSlot(
+                cutStands: true,
+                hasPage: model.selectedPageID != nil,
+                fileShowing: model.selectedFile != nil,
+                ledgerShowing: model.showingLedger,
+                ownsPresentation: model.owner == surface
+            )
+        {
+            // The clipboard slot (ADR-0047 point 12): faces and one button, no menu or panel.
+            HStack(spacing: 8) {
+                Text(sentence)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Button("place here") { model.placeActiveCutAtCaret() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .accessibilityLabel(Text("Place the cut sealed objects at the caret"))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
         if let notice = model.notice {
             // Ember only for what needs acting on (design record,
             // section 5): a refusal that leaves a save undone. A

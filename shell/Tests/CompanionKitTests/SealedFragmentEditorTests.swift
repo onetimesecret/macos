@@ -41,7 +41,9 @@ final class SealedFragmentEditorTests: XCTestCase {
     private let placeholder = "[sealed content · tiny]"
 
     /// `ab <SECRET> cd <TOKEN> ef`, twelve units, the page holding the keys.
-    private func makePage() throws -> Page {
+    private func makePage(
+        writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil
+    ) throws -> Page {
         let suite = "companion-fragment-editor-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -56,7 +58,8 @@ final class SealedFragmentEditorTests: XCTestCase {
             formFactor: .backdrop, defaults: defaults,
             seams: .init(
                 stateDirectory: directory, client: client,
-                clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard))
+                clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard,
+                writeCutFragment: writeCutFragment))
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -300,5 +303,207 @@ final class SealedFragmentEditorTests: XCTestCase {
         page.textView.copy(nil)
         XCTAssertNotEqual(page.pasteboard.changeCount, before, "the copy did not come back")
         XCTAssertEqual(page.pasteboard.string(forType: .string), placeholder)
+    }
+
+    // MARK: Cut and the clipboard slot
+
+    /// ⌘X writes the cut's fragment, detaches every object as the active cut
+    /// in one step, and one ⌘Z stands the same objects again.
+    func testACutDetachesItsObjectsAsOneStepAndOneUndoStandsThemAgain() throws {
+        let page = try makePage()
+        let marks = page.model.dirtyMarks
+        page.textView.setSelectedRange(whole)
+        page.textView.cut(nil)
+
+        XCTAssertEqual(
+            page.pasteboard.pasteboardItems?.first?.types, [SealedFragment.pasteboardType, .string])
+        XCTAssertEqual(
+            page.pasteboard.string(forType: .string), "ab \(placeholder) cd \(placeholder) ef")
+        let cut = try envelope(on: page.pasteboard)
+        XCTAssertNotNil(cut.cut, "a cut's fragment names its cut")
+        XCTAssertEqual(cut.nodes.compactMap(\.ref).count, 2)
+        let all = everything(on: page.pasteboard)
+        XCTAssertFalse(all.contains("SECRET") || all.contains("TOKEN"), "a payload left the page")
+        XCTAssertEqual(page.textView.string, "")
+        XCTAssertTrue(chips(page).isEmpty)
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 0, length: 0))
+        XCTAssertEqual(page.model.activeCut?.pageID, page.sheet)
+        XCTAssertEqual(page.model.activeCut?.objects.map(\.chipId), page.chips)
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "the cut armed no write")
+
+        page.coordinator.step(back: true)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips, "one undo did not stand them all")
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length)
+        XCTAssertNil(page.model.activeCut, "the slot outlived the undo")
+    }
+
+    /// A board that refuses the cut's fragment gets the cut back: the core's
+    /// undo stands every object again and a line says so (Law 0002).
+    func testACutTheBoardRefusesIsPutBack() throws {
+        let page = try makePage(writeCutFragment: { _, _ in false })
+        let before = page.pasteboard.changeCount
+        page.textView.setSelectedRange(whole)
+        page.textView.cut(nil)
+
+        XCTAssertEqual(page.pasteboard.changeCount, before)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips, "the refused cut took its objects")
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length)
+        XCTAssertEqual(page.textView.selectedRange(), whole)
+        XCTAssertNil(page.model.activeCut, "a slot for a cut that was put back")
+        XCTAssertEqual(page.model.notice, PageModel.cutPutBackLine)
+    }
+
+    /// The slot names each object by its name or as sealed content, and its
+    /// size class; never its payload nor its excerpt.
+    func testTheSlotNamesTheCutObjectsByTheirFacesAlone() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        let excerpts = chips(page).map(\.excerpt)
+        page.textView.setSelectedRange(whole)
+        page.textView.cut(nil)
+
+        let cut = try XCTUnwrap(page.model.activeCut)
+        let sentence = try XCTUnwrap(PageModel.cutSlotSentence(for: cut))
+        XCTAssertEqual(
+            sentence, "cut, waiting to be placed: API_KEY · tiny, sealed content · tiny")
+        for excerpt in excerpts {
+            XCTAssertFalse(sentence.contains(excerpt), "the slot drew an excerpt")
+        }
+        XCTAssertFalse(sentence.contains("SECRET") || sentence.contains("TOKEN"))
+        XCTAssertNil(PageModel.cutSlotSentence(for: ActiveCut(pageID: page.sheet, objects: [])))
+    }
+
+    /// The line stands under the owner's page only, with a cut standing, and
+    /// never over a file or the ledger.
+    func testTheSlotStandsUnderTheOwnersPageAlone() {
+        func shows(_ cut: Bool, _ page: Bool, _ file: Bool, _ ledger: Bool, _ owns: Bool) -> Bool {
+            PageModel.shouldShowCutSlot(
+                cutStands: cut, hasPage: page, fileShowing: file, ledgerShowing: ledger,
+                ownsPresentation: owns)
+        }
+        XCTAssertTrue(shows(true, true, false, false, true))
+        XCTAssertFalse(shows(false, true, false, false, true), "no cut stands")
+        XCTAssertFalse(shows(true, false, false, false, true), "an empty slot has no caret")
+        XCTAssertFalse(shows(true, true, true, false, true), "a file takes no object")
+        XCTAssertFalse(shows(true, true, false, true, true), "the ledger is a reading surface")
+        XCTAssertFalse(shows(true, true, false, false, false), "the other window")
+    }
+
+    /// The slot's button places the same object at the caret as one step,
+    /// with its name, and the line goes; ⌘Z takes the place back.
+    func testTheSlotPlacesTheSameObjectAtTheCaretAndItsLineGoes() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.cut(nil)
+        XCTAssertEqual(page.model.activeCut?.objects.map(\.chipId), [page.chips[0]])
+        XCTAssertEqual(chips(page).map(\.chipId), [page.chips[1]])
+
+        let end = try XCTUnwrap(page.textView.textStorage?.length)
+        page.textView.setSelectedRange(NSRange(location: end, length: 0))
+        page.model.mountEditor(page.textView, from: page.model.owner)
+        let marks = page.model.dirtyMarks
+        page.model.placeActiveCutAtCaret()
+
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips.reversed(), "not the same object")
+        XCTAssertEqual(chips(page).last?.name, "API_KEY")
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: end + 1, length: 0))
+        XCTAssertTrue(page.coordinator.chipAttachment(at: end) != nil, "the storage was not restated")
+        XCTAssertNil(page.model.activeCut, "the line outlived its first place")
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "the place armed no write")
+
+        page.coordinator.step(back: true)
+        XCTAssertEqual(chips(page).map(\.chipId), [page.chips[1]], "one undo did not take it back")
+        XCTAssertFalse(page.coordinator.placeActiveCut(), "a place with no cut standing")
+        XCTAssertEqual(chips(page).map(\.chipId), [page.chips[1]])
+    }
+
+    /// A cut of ink alone writes plain text and leaves the standing cut as it was.
+    func testACutOfInkAloneWritesPlainTextAndLeavesTheSlotAlone() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.cut(nil)
+        let standing = try XCTUnwrap(page.model.activeCut)
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        page.textView.cut(nil)
+        XCTAssertEqual(page.pasteboard.pasteboardItems?.first?.types, [.string])
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "ab")
+        XCTAssertTrue(page.textView.string.hasPrefix("  cd"))
+        XCTAssertEqual(page.model.activeCut, standing)
+    }
+
+    /// Several stretches of ink cut as AppKit does; several holding an object
+    /// cut nothing and say so, since one envelope holds one range.
+    func testSeveralStretchesCutAsInkOrNotAtAll() throws {
+        let page = try makePage()
+        page.textView.selectedRanges = [
+            NSValue(range: NSRange(location: 0, length: 4)),
+            NSValue(range: NSRange(location: 8, length: 4)),
+        ]
+        let before = page.pasteboard.changeCount
+        page.textView.cut(nil)
+        XCTAssertEqual(page.pasteboard.changeCount, before)
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.model.notice, PageModel.severalStretchesCutLine)
+        XCTAssertNil(page.model.activeCut)
+
+        page.textView.selectedRanges = [
+            NSValue(range: NSRange(location: 0, length: 2)),
+            NSValue(range: NSRange(location: 5, length: 2)),
+        ]
+        page.textView.cut(nil)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "ab\ncd")
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length - 4)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips, "an ink cut moved an object")
+        XCTAssertNil(page.model.activeCut)
+    }
+
+    /// While a field or the note holds the keys, Cut reaches the holder, the
+    /// page cuts nothing and the slot's button places nothing (ADR-0046).
+    func testCutAndThePlaceStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.cut(nil)
+        let standing = try XCTUnwrap(page.model.activeCut)
+        let cutAction = #selector(NSText.cut(_:))
+        let cutItem = NSMenuItem(title: "Cut", action: cutAction, keyEquivalent: "")
+        let selection = NSRange(location: 0, length: 4)
+        page.textView.setSelectedRange(selection)
+        XCTAssertTrue(page.textView.validateMenuItem(cutItem), "the control: the page cuts")
+        let before = page.pasteboard.changeCount
+        let length = page.textView.textStorage?.length
+
+        func standsAside(_ holder: String) {
+            XCTAssertFalse(page.textView.validateMenuItem(cutItem), holder)
+            page.textView.setSelectedRange(selection)
+            page.textView.cut(nil)
+            XCTAssertFalse(page.coordinator.placeActiveCut(), holder)
+            XCTAssertEqual(page.pasteboard.changeCount, before, "the page cut under the \(holder)")
+            XCTAssertEqual(page.textView.textStorage?.length, length, holder)
+            XCTAssertEqual(chips(page).map(\.chipId), [page.chips[1]], holder)
+            XCTAssertEqual(page.model.activeCut, standing, holder)
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertFalse(answerer(of: cutAction, in: page.window) === page.textView)
+        standsAside("field")
+        XCTAssertEqual(page.model.notice, PageModel.placeWaitsLine)
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 7)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        XCTAssertTrue(answerer(of: cutAction, in: page.window) === note.textView)
+        standsAside("note")
+
+        note.escape()
+        drainMainQueue()
+        XCTAssertTrue(page.window.firstResponder === page.textView)
+        XCTAssertTrue(page.coordinator.placeActiveCut(), "the place did not come back")
+        XCTAssertNil(page.model.activeCut)
     }
 }

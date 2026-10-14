@@ -709,6 +709,10 @@ public final class PageModel: ObservableObject {
     /// editor installs it (`routeSealedPaste(_:from:)`).
     public private(set) var performSealedPaste: (() -> Void)?
 
+    /// The clipboard slot's cut (ADR-0047 point 12): its page and faces, read
+    /// again on every `refresh()`; nil when no cut stands.
+    @Published public private(set) var activeCut: ActiveCut?
+
     /// The inline conceal confirmation, when one is open.
     @Published public var concealDraft: ConcealDraft?
 
@@ -1284,6 +1288,9 @@ public final class PageModel: ObservableObject {
     /// general pasteboard, or the one a test named.
     let ambientPasteboard: NSPasteboard
 
+    /// How a cut writes its fragment onto `ambientPasteboard`; a test hands in one that refuses.
+    private let writeCutFragment: @MainActor (SealedFragment, NSPasteboard) -> Bool
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1329,6 +1336,8 @@ public final class PageModel: ObservableObject {
         /// A pasteboard of the test's own for ambient copies, so a suite
         /// never writes the person's clipboard.
         let ambientPasteboard: NSPasteboard?
+        /// A cut's fragment write that refuses, since no real board can be made to (Law 0002).
+        let writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1342,7 +1351,8 @@ public final class PageModel: ObservableObject {
             declinedPresentationWrite: (
                 @MainActor (PresentationField, PresentationOwner) -> Void
             )? = nil,
-            ambientPasteboard: NSPasteboard? = nil
+            ambientPasteboard: NSPasteboard? = nil,
+            writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1354,6 +1364,7 @@ public final class PageModel: ObservableObject {
             self.clearClipboardIfOurs = clearClipboardIfOurs
             self.declinedPresentationWrite = declinedPresentationWrite
             self.ambientPasteboard = ambientPasteboard
+            self.writeCutFragment = writeCutFragment
         }
     }
 
@@ -1435,6 +1446,7 @@ public final class PageModel: ObservableObject {
         clipboardClearDebounce = seams.clipboardClearDebounce
         declinedPresentationWrite = seams.declinedPresentationWrite
         ambientPasteboard = seams.ambientPasteboard ?? .general
+        writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
         // Resolved once, here, so the surface and the page's text view
@@ -2963,6 +2975,9 @@ public final class PageModel: ObservableObject {
         // died. The menu's two items are asked again on every one of
         // them rather than at a list of paths someone has to keep.
         refreshEditSteps()
+        // A cut ends at a paste, an undo, a burn or its page's death; the core says which.
+        let cut = client.activeCut()
+        if cut != activeCut { activeCut = cut }
         let rosterCalendar = Calendar.current
         let readStartedAt = Date()
         tabs = client.tabs()
@@ -5821,6 +5836,103 @@ public final class PageModel: ObservableObject {
             return false
         }
         return SealedFragment(joining: fragments).write(to: ambientPasteboard)
+    }
+
+    /// The line when a cut's several stretches hold a sealed object.
+    public static let severalStretchesCutLine = "sealed objects cut from one selection, not several."
+
+    /// The line when the board refused a cut's fragment and the core took the cut back.
+    public static let cutPutBackLine = "the clipboard refused the cut, so it was put back."
+
+    /// The line when the slot's button meets a name or note holding the keys (ADR-0046).
+    public static let placeWaitsLine = "a name or note is being written, so the cut was not placed."
+
+    /// What a page's cut did, for the editor to settle.
+    public enum CutOutcome: Equatable, Sendable {
+        /// The core rewrote the page; the editor stands `selecting`.
+        case cut(selecting: NSRange)
+        /// Several stretches of ink alone, which AppKit cuts as it always has.
+        case inkStretches
+        /// Nothing changed.
+        case refused
+    }
+
+    /// Cut a page's selection through the core as one undo step (ADR-0047 point 5)
+    /// and write its fragment; several stretches holding an object cut nothing.
+    @discardableResult
+    public func cutSelection(_ ranges: [NSRange], sheet: UInt64) -> CutOutcome {
+        guard !sheet.isFileID, let range = ranges.first else { return .refused }
+        guard ranges.count == 1 else {
+            for range in ranges {
+                guard let fragment = client.copyFragment(sheet: sheet, range: range) else {
+                    return .refused
+                }
+                if fragment.envelope != nil {
+                    flash(Self.severalStretchesCutLine)
+                    return .refused
+                }
+            }
+            return .inkStretches
+        }
+        guard let fragment = client.cutFragment(sheet: sheet, range: range) else { return .refused }
+        var selecting = NSRange(location: range.location, length: 0)
+        if !writeCutFragment(fragment, ambientPasteboard) {
+            // The core deleted the range already; its undo stands it again.
+            if client.undo(sheet: sheet) { selecting = range }
+            flash(Self.cutPutBackLine, tone: .actionable)
+        }
+        settleTransfer(sheet: sheet)
+        return .cut(selecting: selecting)
+    }
+
+    /// The slot's route: place the active cut over `range` on `sheet`
+    /// (ADR-0047 point 12). Nil, with the page settled, when the core refuses.
+    @discardableResult
+    public func placeActiveCut(sheet: UInt64, range: NSRange) -> PlacedFragment? {
+        guard !sheet.isFileID else { return nil }
+        guard let placed = client.pasteActiveCut(sheet: sheet, range: range) else {
+            // A refusal can follow a sweep the core made (ADR-0048).
+            settleCoreEvent()
+            return nil
+        }
+        settleTransfer(sheet: sheet)
+        return placed
+    }
+
+    /// The slot's button: place the active cut at the owner's caret.
+    public func placeActiveCutAtCaret() {
+        (activeEditor as? InkTextView)?.coordinator?.placeActiveCut()
+    }
+
+    /// The slot's words: each cut object by its name, or as sealed content,
+    /// and its size class, leaving the excerpt out. Nil for a cut holding nothing.
+    public nonisolated static func cutSlotSentence(for cut: ActiveCut) -> String? {
+        guard !cut.objects.isEmpty else { return nil }
+        let faces = cut.objects.map {
+            "\($0.name ?? "sealed content") · \(SealedBlockCell.displayedSizeClass($0.sizeLabel))"
+        }
+        return "cut, waiting to be placed: " + faces.joined(separator: ", ")
+    }
+
+    /// Whether the slot's line stands: under the owner's page (ADR-0033), where
+    /// its button reaches a caret, and never over a file or the ledger.
+    public nonisolated static func shouldShowCutSlot(
+        cutStands: Bool, hasPage: Bool, fileShowing: Bool, ledgerShowing: Bool,
+        ownsPresentation: Bool
+    ) -> Bool {
+        ownsPresentation && cutStands && hasPage && !fileShowing && !ledgerShowing
+    }
+
+    /// After the core rewrote a page by a transfer: restate it, then settle as
+    /// the event timer does, since a paste may have swept due pages (ADR-0048).
+    private func settleTransfer(sheet: UInt64) {
+        restateStorage(sheet: sheet)
+        invalidateQuietRendering(for: sheet)
+        markDirty()
+        refresh()
+        #if DEBUG
+        assertProjectionParity(sheet: sheet)
+        #endif
     }
 
     /// The confirmation after a copy-out (D-29): what happened, how
