@@ -209,6 +209,58 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.model.notice, PageModel.severalStretchesLine)
     }
 
+    /// A note's copy and a file's copy write as AppKit does onto the model's board: their
+    /// text as plain text and never the private type, over a board a page's copy filled.
+    func testANoteOrAFileCopiesPlainTextAndNeverTheFragment() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        func fillWithAPagesCopy() {
+            XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+            page.textView.setSelectedRange(whole)
+            page.textView.copy(nil)
+            XCTAssertNotNil(
+                page.pasteboard.data(forType: SealedFragment.pasteboardType),
+                "the control: a page's copy wrote the fragment")
+        }
+        func assertPlainTextAlone(_ text: String, _ surface: String) {
+            XCTAssertEqual(page.pasteboard.string(forType: .string), text, surface)
+            XCTAssertFalse(
+                page.pasteboard.types?.contains(SealedFragment.pasteboardType) ?? true,
+                "\(surface) wrote the private type")
+        }
+
+        fillWithAPagesCopy()
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        note.textView.selectAll(nil)
+        note.textView.copy(nil)
+        assertPlainTextAlone("rotate monthly", "the note")
+        note.escape()
+        drainMainQueue()
+
+        fillWithAPagesCopy()
+        let storage = NSTextStorage(string: "line one\nline two\n")
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 200, height: 200))
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        let file = InkTextView(
+            frame: NSRect(x: 220, y: 8, width: 200, height: 24), textContainer: container)
+        let fileCoordinator = InkEditorView.Coordinator(model: page.model)
+        file.coordinator = fileCoordinator
+        fileCoordinator.textView = file
+        fileCoordinator.currentSheet = CompanionClient.fileIDTag | 9_001
+        page.window.contentView?.addSubview(file)
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        file.setSelectedRange(NSRange(location: 0, length: 8))
+        file.copy(nil)
+        assertPlainTextAlone("line one", "the file")
+    }
+
     // MARK: Services
 
     /// A service asking for a selection holding an object gets the copy's

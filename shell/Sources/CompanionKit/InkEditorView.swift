@@ -5560,9 +5560,17 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
               let sheet = coordinator.currentSheet, !sheet.isFileID
         else {
             guard givesOutShownText else { return }
-            return super.copy(sender)
+            return copyAsAppKitDoes(sender)
         }
         coordinator.copySelection()
+    }
+
+    /// AppKit's copy of the selection, written on the model's ambient board, which a
+    /// test replaces, rather than the general board `super.copy` names.
+    private func copyAsAppKitDoes(_ sender: Any?) {
+        guard let board = coordinator?.model.ambientPasteboard else { return super.copy(sender) }
+        guard selectedRanges.contains(where: { $0.rangeValue.length > 0 }) else { return }
+        _ = super.writeSelection(to: board, types: writablePasteboardTypes)
     }
 
     /// Whether AppKit may write out what this view shows (ADR-0052); a bare view may.
