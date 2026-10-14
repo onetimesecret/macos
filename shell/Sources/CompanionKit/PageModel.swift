@@ -5976,6 +5976,24 @@ public final class PageModel: ObservableObject {
         return placed
     }
 
+    /// The line when the decrypted drag meets a name or note holding the keys (ADR-0046).
+    public static let decryptedDragWaitsLine =
+        "a name or note is being written, so the drag did not start."
+
+    /// The decrypted drag, asked by a destination: the core writes the chip's payload
+    /// into `item` and records one `sent` to `drag` (ADR-0047 point 11), so a write is armed.
+    @discardableResult
+    public func provideDecryptedDrag(
+        chip: UInt64, pasteboard: NSPasteboard, item: NSPasteboardItem,
+        type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        guard client.provideDecryptedDrag(
+            chip: chip, pasteboard: pasteboard, item: item, type: type.rawValue)
+        else { return false }
+        markDirty()
+        return true
+    }
+
     /// The slot's words: each cut object by its name, or as sealed content,
     /// and its size class, leaving the excerpt out. Nil for a cut holding nothing.
     public nonisolated static func cutSlotSentence(for cut: ActiveCut) -> String? {

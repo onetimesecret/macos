@@ -36,7 +36,7 @@ final class LedgerAppendArmingTests: XCTestCase {
         let client = model.coreClient
         // The copy-out step writes a board in process memory, not the clipboard.
         XCTAssertTrue(client.useMemoryPasteboardForTests())
-        // The paste step carries its fragment on a board of its own.
+        // The paste and decrypted drag steps use a board of their own.
         let board = NSPasteboard.withUniqueName()
         addTeardownBlock { board.releaseGlobally() }
 
@@ -71,6 +71,12 @@ final class LedgerAppendArmingTests: XCTestCase {
                 guard let sheet = model.selectedPageID else { return }
                 model.dropRange(
                     NSRange(location: 0, length: 1), sheet: sheet, at: 0, cloning: true)
+            }),
+            // A destination's ask of the decrypted drag records a sent (ADR-0047 point 11).
+            ("provideDecryptedDrag appends sent to drag", {
+                model.provideDecryptedDrag(
+                    chip: chip?.chipId ?? 0, pasteboard: board, item: NSPasteboardItem(),
+                    type: .string)
             }),
             // A removal in an edit batch detaches and appends nothing
             // (ADR-0047); the close below records the chip's death.

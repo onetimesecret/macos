@@ -63,6 +63,10 @@ enum SealedBlockLayout {
         let pillOverhang: CGFloat
         /// What the `=` zone takes from the runs beside it, each side.
         let equalsSlop: CGFloat
+        /// The decrypted drag's handle (ADR-0051): its clearance from the
+        /// actions seat and from the classification, and its words' inset from its outline.
+        let handleGap: CGFloat
+        let handleInset: CGFloat
     }
 
     /// A zone of a named object's bottom row (Law 0001, ADR-0042 point 8).
@@ -172,7 +176,9 @@ enum SealedBlockLayout {
             pillHeight: 15,
             pillRadius: 4,
             pillOverhang: 3,
-            equalsSlop: 2
+            equalsSlop: 2,
+            handleGap: 8,
+            handleInset: 5
         )
     }
 }

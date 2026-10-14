@@ -2928,6 +2928,34 @@ public struct InkEditorView: NSViewRepresentable {
             model.finishEditingGroup(drag.document, selection: textView.selectedRange())
         }
 
+        // MARK: The decrypted drag from a block's handle (ADR-0047 point 11, ADR-0050)
+
+        /// The decrypted drag under way, held until its session ends.
+        private(set) var decryptedDrag: DecryptedDrag?
+
+        /// Start the decrypted drag of the object at `index`: its source and its one item,
+        /// whose payload the core writes when a destination asks. Nil while a field holds the keys.
+        func beginDecryptedDrag(at index: Int) -> (source: DecryptedDrag, item: NSPasteboardItem)? {
+            guard !writesNote, let textView, let attachment = chipAttachment(at: index),
+                  let type = DecryptedDrag.pasteboardType(forKind: attachment.info.kind)
+            else { return nil }
+            guard textView.answersChords else {
+                model.flash(PageModel.decryptedDragWaitsLine)
+                return nil
+            }
+            let chip = attachment.info.chipId
+            let source = DecryptedDrag(chip: chip, type: type) { [weak model] board, item, type in
+                model?.provideDecryptedDrag(chip: chip, pasteboard: board, item: item, type: type)
+                    ?? false
+            }
+            guard let item = source.pasteboardItem() else { return nil }
+            source.onEnd = { [weak self, weak source] in
+                if let self, self.decryptedDrag === source { self.decryptedDrag = nil }
+            }
+            decryptedDrag = source
+            return (source, item)
+        }
+
         /// After the core rewrote the page under the editor: lay the styles back
         /// down and stand the selection, as a step does.
         func settleRewrite(selecting selection: NSRange) {
@@ -5005,6 +5033,16 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
         let frame = chipFrame(at: index)
         let cell = chipCell(at: index)
+        if let handle = frame.flatMap({ cell?.decryptedDragRect(in: $0) }),
+           Self.startsDecryptedDrag(
+               onHandle: handle.contains(point),
+               handleShown: hoveredChipIndex == index
+                   || selectedRange() == NSRange(location: index, length: 1),
+               clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        {
+            trackDecryptedDrag(from: event, chipAt: index, handle: handle)
+            return
+        }
         switch Self.chipClick(
             named: cell?.info.name != nil,
             zone: Self.actingZone(
@@ -5028,6 +5066,59 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case .select:
             super.mouseDown(with: event)
         }
+    }
+
+    /// Only a first plain press on the handle while it is drawn starts the decrypted drag.
+    nonisolated static func startsDecryptedDrag(
+        onHandle: Bool, handleShown: Bool, clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        onHandle && handleShown
+            && shouldOpenChipActions(clickCount: clickCount, modifierFlags: modifierFlags)
+    }
+
+    /// How far a press on the handle travels before it becomes a drag.
+    nonisolated static let decryptedDragSlop: CGFloat = 3
+
+    nonisolated static func pressBecomesDrag(from start: NSPoint, to point: NSPoint) -> Bool {
+        hypot(point.x - start.x, point.y - start.y) >= decryptedDragSlop
+    }
+
+    /// A press on the handle: once it moves, the decrypted drag begins; a press that
+    /// lifts first selects the object, as a click elsewhere on the block does.
+    private func trackDecryptedDrag(from event: NSEvent, chipAt index: Int, handle: NSRect) {
+        guard let window else { return }
+        while true {
+            guard let next = window.nextEvent(
+                matching: [.leftMouseDragged, .leftMouseUp],
+                until: Date(timeIntervalSinceNow: 0.1), inMode: .eventTracking, dequeue: true)
+            else {
+                if NSEvent.pressedMouseButtons & 1 == 0 { return }
+                continue
+            }
+            if next.type == .leftMouseUp {
+                setSelectedRange(NSRange(location: index, length: 1))
+                return
+            }
+            if Self.pressBecomesDrag(from: event.locationInWindow, to: next.locationInWindow) {
+                beginDecryptedDrag(chipAt: index, handle: handle, event: next)
+                return
+            }
+        }
+    }
+
+    /// The session, its image the handle as drawn rather than the block (ADR-0051 point 5).
+    private func beginDecryptedDrag(chipAt index: Int, handle: NSRect, event: NSEvent) {
+        guard let (source, item) = coordinator?.beginDecryptedDrag(at: index) else { return }
+        let dragging = NSDraggingItem(pasteboardWriter: item)
+        let image = NSImage(size: handle.size)
+        if let snapshot = bitmapImageRepForCachingDisplay(in: handle) {
+            cacheDisplay(in: handle, to: snapshot)
+            image.addRepresentation(snapshot)
+        }
+        dragging.setDraggingFrame(handle, contents: image)
+        let session = beginDraggingSession(with: [dragging], event: event, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
     }
 
     /// Plain blank-space clicks preserve the existing caret even if the
@@ -5913,6 +6004,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if isDecryptedDrag(sender) { return [] }
         guard isExternalDrag(sender), !carriesFragment(sender) else {
             return super.draggingEntered(sender)
         }
@@ -5920,6 +6012,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if isDecryptedDrag(sender) { return [] }
         guard isExternalDrag(sender), !carriesFragment(sender) else {
             return super.draggingUpdated(sender)
         }
@@ -5931,6 +6024,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// pasteboard itself — the dropped bytes never enter this process.
     /// The page's own drag and a fragment go through the core instead.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        // Before drop to seal reads the drag board, which would ask this app's provider.
+        if isDecryptedDrag(sender) { return false }
         let index = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
         if isOwnPageDrag(sender) {
             return coordinator?.dropPageDrag(
@@ -5953,8 +6048,17 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         return coordinator?.sealDrop(at: index) ?? false
     }
 
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isDecryptedDrag(sender) ? false : super.prepareForDragOperation(sender)
+    }
+
     private func isExternalDrag(_ sender: NSDraggingInfo) -> Bool {
         (sender.draggingSource as? NSView) !== self
+    }
+
+    /// This app's own decrypted drag, which the page and the note refuse (ADR-0050 point 2).
+    private func isDecryptedDrag(_ sender: NSDraggingInfo) -> Bool {
+        sender.draggingSource is DecryptedDrag
     }
 
     // MARK: Drags of the page's selection (ADR-0047 point 10)
@@ -6011,6 +6115,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     override func dragOperation(
         for dragInfo: NSDraggingInfo, type: NSPasteboard.PasteboardType
     ) -> NSDragOperation {
+        if isDecryptedDrag(dragInfo) { return [] }
         guard let coordinator else { return super.dragOperation(for: dragInfo, type: type) }
         if isOwnPageDrag(dragInfo) {
             let index = characterIndexForInsertion(
@@ -6487,6 +6592,58 @@ final class SealedBlockCell: NSTextAttachmentCell {
         )
     }
 
+    /// The decrypted drag's handle, labelled in the design record's words (D-29).
+    nonisolated static let decryptedDragWords = "drag decrypted"
+
+    /// The handle's seat: on the classification's row, a gap before the actions seat and
+    /// as wide as its words; nil where it would meet the classification (ADR-0051 point 2).
+    nonisolated static func decryptedDragRect(
+        in cellFrame: NSRect, wordsWidth: CGFloat, labelWidth: CGFloat
+    ) -> NSRect? {
+        let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
+        let actions = actionsRect(in: cellFrame)
+        let width = wordsWidth + metrics.handleInset * 2
+        let handle = NSRect(
+            x: actions.minX - metrics.handleGap - width, y: actions.minY,
+            width: width, height: actions.height)
+        let labelEnd = contentLayout(in: cellFrame).labelOrigin.x + labelWidth
+        return handle.minX >= labelEnd + metrics.handleGap ? handle : nil
+    }
+
+    /// The handle in a block drawn at `cellFrame`, measured in the faces it is drawn in;
+    /// nil for a kind with no type to drag as.
+    @MainActor
+    func decryptedDragRect(in cellFrame: NSRect) -> NSRect? {
+        guard DecryptedDrag.pasteboardType(forKind: info.kind) != nil else { return nil }
+        return Self.decryptedDragRect(
+            in: cellFrame, wordsWidth: Self.decryptedDragString.size().width,
+            labelWidth: classificationLabel.size().width)
+    }
+
+    @MainActor
+    static var decryptedDragString: NSAttributedString {
+        NSAttributedString(
+            string: decryptedDragWords,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+    }
+
+    /// The handle: its words in an ember outline, apart from the block's other ink.
+    @MainActor
+    static func drawDecryptedDragHandle(in rect: NSRect) {
+        let outline = NSBezierPath(
+            roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
+        outline.lineWidth = 1
+        NSColor.ember.setStroke()
+        outline.stroke()
+        let words = decryptedDragString
+        let size = words.size()
+        words.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+    }
+
 
     /// The captured editor measure wins when an unwrapped text container
     /// is effectively infinite; otherwise the finite container or
@@ -6662,6 +6819,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
                 x: seat.maxX - size.width,
                 y: seat.midY - size.height / 2
             ))
+            if let handle = decryptedDragRect(in: cellFrame) {
+                Self.drawDecryptedDragHandle(in: handle)
+            }
         }
 
         guard let row = namedRow(in: cellFrame, editingWidth: editingWidth) else {
