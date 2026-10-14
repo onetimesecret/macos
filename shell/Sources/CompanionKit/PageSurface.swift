@@ -30,12 +30,33 @@ public struct PageContentView: View {
     /// backdrop names the one that would make it typeable at all.
     let emptyHint: String
 
+    /// Whether the expand control stands over the page. The editor
+    /// window puts it in its toolbar instead, out of a band of its own.
+    let showsExpandControl: Bool
+
     @Environment(\.presentationSurface) private var surface
 
-    public init(model: PageModel, readOnly: Bool = false, emptyHint: String) {
+    public init(
+        model: PageModel, readOnly: Bool = false, emptyHint: String,
+        showsExpandControl: Bool = true
+    ) {
         self.model = model
         self.readOnly = readOnly
         self.emptyHint = emptyHint
+        self.showsExpandControl = showsExpandControl
+    }
+
+    /// The expand control's glyph: a page centred in its frame, which
+    /// does not read as the window's full screen arrows.
+    public static let expandSymbol = "rectangle.center.inset.filled"
+
+    /// The expand control's words, one pair wherever the control stands.
+    public static func expandHelp(expanded: Bool) -> String {
+        expanded ? "Collapse page (Esc)" : "Expand page"
+    }
+
+    public static func expandLabel(expanded: Bool) -> String {
+        expanded ? "Collapse page" : "Expand page"
     }
 
     /// Whether a window shows the content area at all, pure: only the
@@ -48,22 +69,21 @@ public struct PageContentView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if Self.mounts(surface: surface, owner: model.owner), model.canExpandPage {
+            if showsExpandControl, Self.mounts(surface: surface, owner: model.owner),
+               model.canExpandPage {
                 HStack {
                     Spacer()
                     Button(action: model.togglePageExpansion) {
-                        Image(systemName: model.isPageExpanded
-                              ? "arrow.down.right.and.arrow.up.left"
-                              : "arrow.up.left.and.arrow.down.right")
-                            .scaleEffect(x: 1, y: -1)
+                        Image(systemName: Self.expandSymbol)
                             .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(model.isPageExpanded ? Color.accentColor : Color.secondaryInk)
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help(model.isPageExpanded ? "Collapse page (Esc)" : "Expand page")
-                    .accessibilityLabel(model.isPageExpanded ? "Collapse page" : "Expand page")
+                    .help(Self.expandHelp(expanded: model.isPageExpanded))
+                    .accessibilityLabel(Self.expandLabel(expanded: model.isPageExpanded))
+                    .accessibilityAddTraits(model.isPageExpanded ? .isSelected : [])
                     .disabled(readOnly)
                 }
                 .padding(.trailing, 6)
