@@ -80,6 +80,39 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `sealed objects paste into one selection, not several.` and both
       words stay as they were. **Fail:** either word is replaced, or
       nothing is said.
+- [ ] **Several stretches copied, cut or dragged.** Copy a word in
+      TextEdit. On the page, select a sealed object with some ink, then
+      add a word of ink further down by dragging over it with ⌘ held.
+      Press ⌘C, then ⌘X, then drag the selection. Then select two words
+      of ink alone the same way and press ⌘C. **Pass:** the lines read
+      `sealed objects copy from one selection, not several.`, `sealed
+      objects cut from one selection, not several.` and `sealed objects
+      drag from one selection, not several.`; no drag starts; the page
+      is unchanged and ⌘V in TextEdit still pastes its own word. The two
+      words of ink alone copy as plain text. **Fail:** any of the three
+      writes the clipboard, changes the page or says nothing.
+- [ ] **The slot's line with many objects.** On a card at its default
+      width, name eight sealed objects with long names, select them all
+      with the ink between and cut. **Pass:** the slot's line stays one
+      line and ends in an ellipsis, `place here` stays whole at its end
+      and places all eight, and no part of a sealed word shows.
+      **Fail:** the line wraps, pushes the button off the card, or shows
+      any part of a sealed word.
+- [ ] **The Edit menu while a field holds the keys.** Copy a selection
+      holding a sealed object. Open a tab's name field with *Rename
+      tab…*, open the Edit menu, then choose Paste; do the same in an
+      object's name field. Then, in an object's name field holding a
+      name, select part of it and choose Edit > Cut; open the object's
+      note, select a word and choose Edit > Cut. **Pass:** with a field
+      open, Seal Selected Content and Paste Without Detection are
+      greyed; Paste puts plain text into the field, the tab's field
+      taking `[sealed content · tiny]` with the ink and the sealed name
+      field saying why it will not take it; each Cut takes its text out
+      of the field or the note, and `osascript -e 'clipboard info'`
+      lists plain text with no private type; the page, its objects and
+      the ledger are unchanged and no slot's line appears. **Fail:** a
+      paste or a cut acts on the page, a clone or a slot's line appears,
+      or the ledger gains a record.
 - [ ] **⇧⌘V over this app's own copy.** Copy a selection holding a
       sealed object, rest the card and summon it again with ⌃⌥Space,
       then press ⇧⌘V at a caret on the page. Do the same after a cut.
@@ -134,6 +167,15 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       note shows the ink with `[sealed content · tiny]` where the object
       stood, and the page is unchanged. **Fail:** the note shows the
       sealed word or a block, or the paste lands on the page.
+- [ ] **A paste with automatic fencing on.** In Settings, turn on
+      *Automatically fence detected code*. Copy a selection holding a
+      sealed object between two lines of code such as `let x = 1`, and
+      press ⌘V lower on the page. Then copy code from TextEdit and paste
+      it. **Pass:** the run lands as copied, the object as its block with
+      its name and no fence around the run, and ⌘Z takes the whole paste
+      back in one step; the code from TextEdit is fenced as before.
+      **Fail:** a fence wraps the run, the object lands as
+      `[sealed content · tiny]` text, or ⌘Z takes back only part of it.
 - [ ] **Two presses and the removal's Undo.** On the raised card, type
       `before`, seal a word, type `after`, put the caret just after the
       object and press ⌫ once. Press ⌫ again, then click the line's
@@ -178,6 +220,21 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `Undo` leaves the line at once. **Fail:** a click does nothing,
       the line loses its `Undo` when the surface changes, or after a
       letter the button stays or takes the letter back.
+- [ ] **The removal's Undo while a name is written.** Remove an object
+      with two presses. Before the line clears, open another object's
+      name field, type a letter, and click the line's `Undo`. **Pass:**
+      the line reads `a name or note is being written, so the removal
+      was not undone.`, the object stays off the page and the field
+      keeps its draft. **Fail:** the object comes back while the field
+      is open, or the draft is lost.
+- [ ] **Remove protected content and its Undo.** Choose *Remove
+      protected content* from a named object's `···` menu, then click
+      the line's `Undo`. Remove it the same way again and press ⌘Z.
+      **Pass:** each removal shows `protected content removed.` with
+      `Undo`; the click and ⌘Z each stand the same object again with its
+      name and note, and the ledger gains no record for either removal.
+      **Fail:** the object returns as a fresh seal or without its name
+      or note, or the line offers no `Undo`.
 - [ ] **A drag inside the page.** Name a sealed object and give it a
       note. Select `before`, the object and `after`, then drag the
       selection to the end of the page and drop it. **Pass:** while
@@ -222,6 +279,17 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `sealed` appears. **Fail:** any drop becomes a sealed object, or
       the note's drop shows the line that a name or note is being
       written.
+- [ ] **A drag while a name is written.** On the card, open an object's
+      name field and type a letter. Press on a selected run of the same
+      page and drag it lower. Then, with the field open again, drag a
+      selection holding an object from the editor window's page onto the
+      card's page. **Pass:** the page never changes while the field still
+      shows its draft: the press either closes the field first, after
+      which the run moves as in *A drag inside the page*, or starts no
+      drag; a drop arriving while the draft shows lands nowhere and the
+      line reads `a name or note is being written, so the drop was not
+      placed.` **Fail:** a run moves or lands while the field still
+      shows its draft, or the draft is lost without the field closing.
 - [ ] **A page's drag onto a rename field.** Choose *Rename tab…* from
       a tab's menu, then drag a selection holding an object from the
       page onto the tab's field; repeat on the gutter's field (*Timeline*,
@@ -245,10 +313,13 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       pointer is an open hand, and off it the text cursor again. A click
       on the handle that does not move selects the object. Narrow the
       card until the handle would meet `SEALED CONTENT`: it is no longer
-      drawn, and the pointer there stays the text cursor. **Fail:** the
+      drawn, and the pointer there stays the text cursor. Switch the Mac
+      to the Dark appearance and point at the object again: the outline
+      and `drag decrypted` read as clearly as in Light. **Fail:** the
       block's contents shift, the handle overlaps the classification,
       the pointer does not change over the handle or stays an open hand
-      off it, or a still click starts a drag.
+      off it, a still click starts a drag, or the handle is hard to read
+      in either appearance.
 - [ ] **Decrypted drag into a form field.** Drag from the object's
       decrypted handle into a browser's text field; repeat in Safari and
       in one Chromium browser. **Pass:** the drag image shows only the
