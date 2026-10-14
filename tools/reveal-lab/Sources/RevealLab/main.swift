@@ -42,6 +42,7 @@ enum Mode: String, CaseIterable {
 }
 
 enum Side: String, CaseIterable { case right = "Right", left = "Left", top = "Top", bottom = "Bottom" }
+enum Phase: String { case idle, peek, card }
 
 struct EdgeGeometry {
     var frame: NSRect
@@ -229,7 +230,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     var side: Side { Side.allCases[sides.indexOfSelectedItem] }
     var screen: NSScreen { NSScreen.screens[min(max(0, displays.indexOfSelectedItem), NSScreen.screens.count - 1)] }
     var edge: EdgeGeometry { EdgeGeometry(frame: screen.frame, side: side, fraction: CGFloat(position.doubleValue)) }
-    var phase = "idle"
+    var phase: Phase = .idle
     var enteredAt: TimeInterval?
     var exitAt: TimeInterval?
     var shownAt: TimeInterval = 0
@@ -360,7 +361,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     @objc func showFallback() {
         guard editor?.isVisible != true else { log("Close mock editor first"); return }
         blocked = false; explicitAnchor = NSEvent.mouseLocation; enteredAt = now
-        show("card")
+        show(.card)
     }
     @objc func changed() {
         dismiss(block: false)
@@ -447,18 +448,18 @@ final class Lab: NSObject, NSApplicationDelegate {
         let time = now
         detectShift(time)
         let activeName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
-        telemetry.stringValue = "\(phase) | active: \(activeName) | outward Δ: \(String(format: "%.1f", lastDelta)) | push: \(String(format: "%.1f", push)) | click: \(card.open.isEnabled ? "armed" : "not armed")"
+        telemetry.stringValue = "\(phase.rawValue) | active: \(activeName) | outward Δ: \(String(format: "%.1f", lastDelta)) | push: \(String(format: "%.1f", push)) | click: \(card.open.isEnabled ? "armed" : "not armed")"
         guard pause.state == .off, editor?.isVisible != true else {
-            if phase != "idle" { dismiss(block: true) }
+            if phase != .idle { dismiss(block: true) }
             return
         }
         if mode == .modifier && !NSEvent.modifierFlags.contains(.option) {
-            if phase != "idle" { dismiss(block: false) }
+            if phase != .idle { dismiss(block: false) }
             enteredAt = nil
             return
         }
         if mode != .drag && NSEvent.pressedMouseButtons != 0 {
-            if phase == "idle" { enteredAt = nil }
+            if phase == .idle { enteredAt = nil }
             return
         }
         let source = sourceEligible(p)
@@ -466,10 +467,10 @@ final class Lab: NSObject, NSApplicationDelegate {
             if !source { blocked = false }
             return
         }
-        if phase == "idle" {
+        if phase == .idle {
             if source {
                 if enteredAt == nil { enteredAt = time; explicitAnchor = nil; push = 0 }
-                if time - enteredAt! >= 0.12 { show("peek") }
+                if time - enteredAt! >= 0.12 { show(.peek) }
             } else { enteredAt = nil; push = 0 }
         } else {
             let insideCard = reveal.frame.contains(p)
@@ -481,7 +482,7 @@ final class Lab: NSObject, NSApplicationDelegate {
             if keep { exitAt = nil }
             else if let exitAt, time - exitAt > 0.2 { dismiss(block: false) }
             else if exitAt == nil { exitAt = time }
-            if phase == "peek", let enteredAt {
+            if phase == .peek, let enteredAt {
                 let elapsed = time - enteredAt
                 let nearer = edge.distance(p) <= 4 && geometryEligible(p)
                 let intoPeek = insideCard && pointerWasOutside
@@ -492,7 +493,7 @@ final class Lab: NSObject, NSApplicationDelegate {
                 case .drag: expand = true
                 default: expand = elapsed >= 0.45 || (elapsed >= 0.24 && intoPeek)
                 }
-                if expand { show("card") }
+                if expand { show(.card) }
             }
         }
         push = max(0, push - 0.15)
@@ -502,7 +503,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     func updateCardInteraction(at point: NSPoint, time: TimeInterval) {
         let inside = reveal.frame.contains(point)
         if !inside { pointerWasOutside = true }
-        guard phase == "card", !card.acceptsDrop, !card.open.isEnabled else { return }
+        guard phase == .card, !card.acceptsDrop, !card.open.isEnabled else { return }
         let moved = hypot(point.x - armingOrigin.x, point.y - armingOrigin.y) >= 4
         if time - shownAt > 0.12 && inside && (pointerWasOutside || moved) {
             card.open.isEnabled = true
@@ -540,11 +541,11 @@ final class Lab: NSObject, NSApplicationDelegate {
         }
     }
 
-    func show(_ stage: String) {
-        let first = phase == "idle"
+    func show(_ stage: Phase) {
+        let first = phase == .idle
         if first { cardFrame = destination() }
         var frame = cardFrame
-        if stage == "peek" {
+        if stage == .peek {
             if mode == .status || side == .top { frame.origin.y = frame.maxY - 34; frame.size.height = 34 }
             else if side == .bottom || mode == .corner { frame.size.height = 34 }
             else if side == .left { frame.size.width = 34 }
@@ -554,9 +555,9 @@ final class Lab: NSObject, NSApplicationDelegate {
         armingOrigin = NSEvent.mouseLocation
         pointerWasOutside = !frame.contains(armingOrigin)
         card.open.isEnabled = false
-        card.acceptsDrop = mode == .drag && stage == "card"
+        card.acceptsDrop = mode == .drag && stage == .card
         card.detail.stringValue = card.acceptsDrop ? "Drop text or a file here.\nOnly the item count is used." : "Move your pointer into this card\nto enable opening."
-        reveal.ignoresMouseEvents = stage == "peek"
+        reveal.ignoresMouseEvents = stage == .peek
         if first || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { reveal.setFrame(frame, display: true) }
         else {
             NSAnimationContext.runAnimationGroup { context in
@@ -565,13 +566,13 @@ final class Lab: NSObject, NSApplicationDelegate {
             }
         }
         reveal.orderFront(nil)
-        log(stage)
+        log(stage.rawValue)
     }
 
     func dismiss(block: Bool) {
-        if phase != "idle" { log("dismiss") }
+        if phase != .idle { log("dismiss") }
         reveal.orderOut(nil)
-        phase = "idle"; enteredAt = nil; exitAt = nil; explicitAnchor = nil
+        phase = .idle; enteredAt = nil; exitAt = nil; explicitAnchor = nil
         blocked = block; push = 0; card.open.isEnabled = false; card.acceptsDrop = false
     }
 
@@ -579,7 +580,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         guard mode == .held, held != down else { return }
         held = down
         if down && pause.state == .off && editor?.isVisible != true {
-            blocked = false; enteredAt = now; explicitAnchor = nil; show("card")
+            blocked = false; enteredAt = now; explicitAnchor = nil; show(.card)
         } else if !down { dismiss(block: true) }
     }
     func pointerShortcut() {
@@ -587,7 +588,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         revealNearPointer()
     }
     func revealNearPointer() {
-        blocked = false; enteredAt = now; explicitAnchor = NSEvent.mouseLocation; show("card")
+        blocked = false; enteredAt = now; explicitAnchor = NSEvent.mouseLocation; show(.card)
     }
     func detectShift(_ time: TimeInterval) {
         let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -617,7 +618,7 @@ final class Lab: NSObject, NSApplicationDelegate {
             let sign: CGFloat = dx > 0 ? 1 : -1
             if shakeSign != 0 && sign != shakeSign { shakeReversals += 1 }
             shakeSign = sign; shakeTravel += abs(dx)
-            if shakeReversals >= 4 && shakeTravel > 90 && phase == "idle" {
+            if shakeReversals >= 4 && shakeTravel > 90 && phase == .idle {
                 revealNearPointer(); shakeReversals = 0; shakeTravel = 0
             }
         }
@@ -699,9 +700,9 @@ if CommandLine.arguments.contains("--self-test") {
                 precondition(delegate.guide.ignoresMouseEvents && !delegate.guide.canBecomeKey)
                 precondition(delegate.guide.isVisible == delegate.mode.hasEdgeTarget)
                 delegate.enteredAt = delegate.now
-                delegate.show("peek")
+                delegate.show(.peek)
                 precondition(delegate.reveal.ignoresMouseEvents)
-                delegate.show("card")
+                delegate.show(.card)
                 guard !delegate.reveal.ignoresMouseEvents else {
                     fputs("FAIL: fully revealed card passes clicks to the desktop before arming\n", stderr)
                     exit(1)
@@ -741,9 +742,9 @@ if CommandLine.arguments.contains("--self-test") {
             delegate.modes.selectItem(at: Mode.allCases.firstIndex(of: .held)!)
             delegate.changed()
             delegate.glance(true)
-            precondition(delegate.phase == "card")
+            precondition(delegate.phase == .card)
             delegate.glance(false)
-            precondition(delegate.phase == "idle")
+            precondition(delegate.phase == .idle)
             delegate.marker.state = .off
             delegate.updateGuide()
             precondition(!delegate.guide.isVisible)
