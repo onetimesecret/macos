@@ -98,17 +98,10 @@ impl Pasteboard for SystemPasteboard {
         kind: ContentKind,
         options: WriteOptions,
     ) -> ChangeCount {
-        let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
-        let png_type: &NSPasteboardType = unsafe { NSPasteboardTypePNG };
-        let content_type = match kind {
-            ContentKind::Text => string_type,
-            ContentKind::Image => png_type,
-        };
-
         let transient_marker = NSString::from_str(TRANSIENT_TYPE);
         let nspasteboard_concealed_marker = NSString::from_str(CONCEALED_TYPE);
 
-        let mut declared: Vec<&NSString> = vec![content_type, &transient_marker];
+        let mut declared: Vec<&NSString> = vec![content_type(kind), &transient_marker];
         if options.nspasteboard_concealed {
             declared.push(&nspasteboard_concealed_marker);
         }
@@ -118,17 +111,7 @@ impl Pasteboard for SystemPasteboard {
         // owner callbacks are needed.
         let new_count = unsafe { self.pasteboard.declareTypes_owner(&types_array, None) };
 
-        match kind {
-            ContentKind::Text => {
-                let text = String::from_utf8_lossy(&content);
-                self.pasteboard
-                    .setString_forType(&NSString::from_str(&text), string_type);
-            }
-            ContentKind::Image => {
-                self.pasteboard
-                    .setData_forType(Some(&NSData::with_bytes(&content)), png_type);
-            }
-        }
+        write_content(&*self.pasteboard, &content, kind);
 
         // nspasteboard.org markers carry empty data.
         let marker_data = NSData::with_bytes(&[]);
@@ -162,6 +145,45 @@ impl Pasteboard for SystemPasteboard {
         let string_type = unsafe { NSPasteboardTypeString }.to_string();
         let png_type = unsafe { NSPasteboardTypePNG }.to_string();
         types.iter().any(|t| *t == string_type || *t == png_type)
+    }
+}
+
+/// Where a plaintext is written: a whole pasteboard, or one of its items.
+trait ContentTarget {
+    fn set_string(&self, string: &NSString, kind: &NSPasteboardType) -> bool;
+    fn set_data(&self, data: &NSData, kind: &NSPasteboardType) -> bool;
+}
+
+impl ContentTarget for NSPasteboard {
+    fn set_string(&self, string: &NSString, kind: &NSPasteboardType) -> bool {
+        self.setString_forType(string, kind)
+    }
+
+    fn set_data(&self, data: &NSData, kind: &NSPasteboardType) -> bool {
+        self.setData_forType(Some(data), kind)
+    }
+}
+
+/// The pasteboard type a kind of plaintext is written under.
+fn content_type(kind: ContentKind) -> &'static NSPasteboardType {
+    // SAFETY: reading static extern pasteboard-type constants.
+    unsafe {
+        match kind {
+            ContentKind::Text => NSPasteboardTypeString,
+            ContentKind::Image => NSPasteboardTypePNG,
+        }
+    }
+}
+
+/// The one content write every decrypted egress shares: text as a string,
+/// an image as PNG data. Returns whether the target took it.
+fn write_content(target: &impl ContentTarget, content: &[u8], kind: ContentKind) -> bool {
+    match kind {
+        ContentKind::Text => {
+            let text = String::from_utf8_lossy(content);
+            target.set_string(&NSString::from_str(&text), content_type(kind))
+        }
+        ContentKind::Image => target.set_data(&NSData::with_bytes(content), content_type(kind)),
     }
 }
 
