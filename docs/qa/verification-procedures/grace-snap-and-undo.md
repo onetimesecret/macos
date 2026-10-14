@@ -102,7 +102,7 @@ carried to the core by `companion_set_grace_snap`
   (`crates/core/src/document.rs:162`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:794`),
   `companion_sheet_undo` (`crates/ffi/src/lib.rs:968`) and
-  `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:6463`).
+  `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:6461`).
   `canUndo` is what greys the Edit menu
   (`shell/Sources/CompanionKit/PageModel.swift:401`).
 - Undo **does not survive a relaunch, by design**. Every construction
@@ -322,7 +322,7 @@ the comment at `crates/core/src/document.rs:214`),
 `SheetDocument::import_snapshot`
 (`crates/core/src/document.rs:640`), `SheetStore::can_undo`
 (`crates/core/src/store.rs:820`) and the Edit menu binding at
-`shell/Sources/CompanionKit/PageModel.swift:6504`.
+`shell/Sources/CompanionKit/PageModel.swift:6502`.
 
 No clock work in this case, so it can be run first, on an honest
 machine.
