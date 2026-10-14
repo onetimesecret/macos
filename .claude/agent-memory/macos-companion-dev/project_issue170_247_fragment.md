@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
+description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste, two press removal and its Undo) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
 metadata:
   type: project
 ---
@@ -37,8 +37,8 @@ Seams for the editor half (all page ids, all refuse a file id):
 - Slot: `activeCut()` (page and faces) and `pasteActiveCut(sheet:range:)`;
   ADR-0047 point 12 makes it a standing line under the page with a
   Place button.
-- ⌘Z after a removal now reattaches; the removal line can offer Undo.
-  Backspace beside an object must select first (no test pins either).
+- ⌘Z after a removal now reattaches. The two presses and the line's
+  Undo are built (shell unit 5, `SealedRemovalTests`): see below.
 - Copy is built (shell unit 1): `InkTextView.copy` to
   `PageModel.copySelection`, written by `SealedFragment.write(to:)` onto
   `ambientPasteboard`; pinned in `SealedFragmentEditorTests`. NSTextView's
@@ -79,6 +79,16 @@ Seams for the editor half (all page ids, all refuse a file id):
   hold the fragment on the private board, or AppKit reads the real
   general one. Open trap still unfixed: ⇧⌘V and the summon offer would
   seal our own placeholder text.
+
+- Removal is built (shell unit 5): `InkTextView.deleting` runs ⌫ and ⌦
+  on a page; `Coordinator.selectObjectBeside` is the first press, and
+  `Coordinator.noteRemoval` ends the editing group (or a later deletion
+  merges into the removal's step) and stamps `(document, generation)`.
+  The line's Undo (`undoRemoval`) steps back only while the stamp holds;
+  `retireRemovalUndo` in `didProcessEditing` and `currentSheet`'s didSet
+  calls `PageModel.withdrawRemovalUndo`. Not covered: ⌥⌫, ⌘⌫, Edit >
+  Delete and typing over a selected object still remove with no line;
+  a torn down coordinator leaves a dead button (weak self).
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
