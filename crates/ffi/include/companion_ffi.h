@@ -458,7 +458,9 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
  * that parses is validated whole against the page and applied
  * atomically or not at all. Chip liveness follows the document: a
  * delete that swallows a chip's sentinel detaches the chip, and a chip
- * op naming one of the page's detached chips reattaches it (ADR-0047). Returns
+ * op naming one of the page's detached chips reattaches it (ADR-0047).
+ * An "ins" whose text holds U+FFFC refuses the batch whole: only a chip
+ * op stands that character (Law 0001). Returns
  * whether the batch applied; on false, restate the page through
  * companion_sheet_sync_document (the recovery path).
  */
@@ -547,8 +549,8 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
  * deleted in the editor and is detached here, and a detached chip it
  * names reattaches (ADR-0047). Malformed snapshots (bad
- * JSON, foreign chip, duplicate reference) are rejected whole. Returns
- * acceptance.
+ * JSON, foreign chip, duplicate reference, ink holding U+FFFC) are
+ * rejected whole. Returns acceptance.
  */
 bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
                                    const char *json);
@@ -677,8 +679,9 @@ char *companion_chip_note_runs_json(CompanionHandle *handle, uint64_t chip);
 /*
  * Apply an edit batch to the note, with the TextKit gesture and
  * selections companion_sheet_apply_ops_with_intent() takes. Whole or not
- * at all; a chip op is refused, since sealed objects do not nest. The
- * first accepted batch makes the note.
+ * at all; a chip op is refused, since sealed objects do not nest, and so
+ * is an "ins" whose text holds U+FFFC. The first accepted batch makes
+ * the note.
  */
 bool companion_chip_note_apply_ops_with_intent(CompanionHandle *handle,
                                                uint64_t chip,
@@ -768,7 +771,9 @@ char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
  * and note; else the ledger's newest terminal record places
  * "[sealed content · expired]" or "[sealed content · burned]"; else
  * "[sealed content · unavailable]". An envelope the core cannot read
- * places `plain` (nullable) instead. Before an envelope naming an
+ * places `plain` (nullable) instead. The envelope's ink and notes and
+ * `plain` lose every U+FFFC, which only an object stands as (Law 0001).
+ * Before an envelope naming an
  * object resolves, every page past its deadline is swept, as
  * companion_expire_due() does (ADR-0048). Returns
  *   {"location_utf16": u32, "length_utf16": u32, "reattached": n,

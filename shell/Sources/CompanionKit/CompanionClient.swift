@@ -1092,8 +1092,8 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Apply an ordered edit batch (JSON operations, UTF-16 offsets)
     /// to the page's body core-side, the ADR-0013 operation path.
-    /// False means the batch was rejected whole and nothing moved;
-    /// the caller re-converges through `syncDocument`.
+    /// False means the batch was rejected whole and nothing moved, as for
+    /// ink holding U+FFFC; the caller re-converges through `syncDocument`.
     ///
     /// `intent` supplies the editing gesture; the core owns grouping.
     @discardableResult
@@ -1396,7 +1396,7 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Apply an edit batch to the note. False means it was refused whole
-    /// and nothing moved; a batch with a chip op is refused.
+    /// and nothing moved; a chip op or ink holding U+FFFC is refused.
     @discardableResult
     public func applyNoteOps(
         chip: UInt64,
