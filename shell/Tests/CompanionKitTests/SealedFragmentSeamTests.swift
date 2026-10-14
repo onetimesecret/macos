@@ -127,6 +127,30 @@ final class SealedFragmentSeamTests: XCTestCase {
         XCTAssertEqual(client.expireDue(), 0, "nothing left for the timer")
     }
 
+    func testAPagePastItsDeadlineGivesNothingOutAndTheSettleSweepsIt() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        _ = try page(client)
+        let tab = try XCTUnwrap(client.tabs().last?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        let sheet = try XCTUnwrap(client.tabs().last?.pageID)
+        let chip = try XCTUnwrap(chips(client, sheet: sheet).first?.chipId)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let item = NSPasteboardItem()
+        let plain = NSPasteboard.PasteboardType.string.rawValue
+
+        XCTAssertFalse(client.copyOutChip(id: chip))
+        XCTAssertNil(client.copyFragment(sheet: sheet, range: whole))
+        XCTAssertNil(client.cutFragment(sheet: sheet, range: whole))
+        XCTAssertFalse(
+            client.provideDecryptedDrag(chip: chip, pasteboard: board, item: item, type: plain))
+        XCTAssertNil(item.string(forType: .string))
+        XCTAssertTrue(client.ledger().filter { $0.event == "sent" }.isEmpty)
+        XCTAssertEqual(client.expireDue(), 1, "the settle a refusal asks for sweeps it")
+    }
+
     func testADecryptedDragWritesTheItemCoreSideAndRecordsADrag() throws {
         let client = CompanionClient.ephemeral(tag: #function)
         let (_, chip) = try page(client)

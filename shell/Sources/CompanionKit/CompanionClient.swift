@@ -1167,6 +1167,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Copy a chip back out. The core writes the pasteboard itself,
     /// marked transient + concealed; this process never holds the bytes.
+    /// False for an unknown chip or a page past its deadline (ADR-0052).
     @discardableResult
     public func copyOutChip(id: UInt64) -> Bool {
         companion_chip_copy_out(handle, id)
@@ -1175,7 +1176,7 @@ public class CompanionClient: @unchecked Sendable {
     /// Copy `NAME=<plaintext>` by `copyOutChip`'s route: the core composes
     /// and writes it and records one `sent`, so the caller arms the same
     /// guarded clear. False, with nothing written, for an unknown, unnamed
-    /// or image chip.
+    /// or image chip, or a page past its deadline (ADR-0052).
     @discardableResult
     public func copyNameValue(chip: UInt64) -> Bool {
         companion_chip_copy_name_value(handle, chip)
@@ -1235,7 +1236,8 @@ public class CompanionClient: @unchecked Sendable {
         #endif
     }
 
-    /// Copy a UTF-16 range of a page. Nil for an empty or bad range.
+    /// Copy a UTF-16 range of a page. Nil for an empty or bad range, or a
+    /// page past its deadline (ADR-0052).
     public func copyFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
         guard let wire = selectionWire(range) else { return nil }
         return fragment(from: companion_sheet_copy_fragment(handle, sheet, wire.0, wire.1))
@@ -1307,6 +1309,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Decrypted drag, from a data provider: the core writes the chip's payload
     /// into `item` on `pasteboard` under `type` and records one `sent` to `drag`.
+    /// False, doing neither, for a removed chip or a page past its deadline.
     @discardableResult
     public func provideDecryptedDrag(
         chip: UInt64, pasteboard: AnyObject, item: AnyObject, type: String
@@ -1331,7 +1334,8 @@ public class CompanionClient: @unchecked Sendable {
     // MARK: A sealed object's note (ADR-0043)
 
     /// The note's runs, in the shape a page's and a file's arrive in;
-    /// empty without a note, and for an unknown chip.
+    /// empty without a note, and for an unknown chip or a page past its
+    /// deadline (ADR-0052).
     public func noteRuns(chip: UInt64) -> [RestoredRun] {
         decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip)) ?? []
     }
@@ -1468,7 +1472,7 @@ public class CompanionClient: @unchecked Sendable {
     /// travel core → client → transport and never enter this process;
     /// on success the link is on the clipboard and only the receipt id
     /// stays on the chip. **Blocks** for the round-trip — call off the
-    /// main actor.
+    /// main actor. A page past its deadline sends nothing (ADR-0052).
     public func concealChip(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {
@@ -1478,8 +1482,8 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Conceal the whole page (ink verbatim, sealed bytes inlined,
-    /// core-side). Refused when the page holds an image chip. **Blocks**
-    /// — call off the main actor.
+    /// core-side). Refused when the page holds an image chip or is past
+    /// its deadline (ADR-0052). **Blocks** — call off the main actor.
     public func concealSheet(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {

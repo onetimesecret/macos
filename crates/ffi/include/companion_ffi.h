@@ -28,6 +28,13 @@
  * companion_next_event_ms() — it folds page expiries AND pause-hold
  * lapses; when it fires call companion_expire_due() and re-arm.
  * -1 means nothing to schedule.
+ *
+ * Deadline rule (ADR-0052): a page past its deadline gives nothing out,
+ * whether or not a sweep has taken it. Copy decrypted, copy NAME=value,
+ * the decrypted drag, both conceals, the note's runs and the fragment's
+ * copy and cut refuse it as they refuse an unknown id, writing and
+ * recording nothing. The timer can be late, so after any refusal call
+ * companion_expire_due() and settle as when the timer fires.
  */
 
 #ifndef COMPANION_FFI_H
@@ -591,7 +598,8 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
  * Copy a chip back out: the core writes the pasteboard itself, marked
  * transient AND ConcealedType (a chip is sealed by definition). Does
  * not consume the chip — multi-paste is a core moment. Returns whether
- * the chip existed.
+ * the chip existed; false, writing and recording nothing, for a page
+ * past its deadline (ADR-0052).
  *
  * A successful copy-out is an auditable egress: it leaves one "sent"
  * ledger record with destination "clipboard". The pasteboard is the
@@ -609,7 +617,7 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
  * the tab's label as every record is, never the name. The shell never
  * holds the bytes.
  * Returns false, writing and recording nothing, for an unknown chip, an
- * unnamed one or an image.
+ * unnamed one, an image or a page past its deadline (ADR-0052).
  */
 bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
 
@@ -657,8 +665,8 @@ bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
 
 /*
  * The note as document runs: [] without one, else [{"ink": text}], the
- * shape companion_file_runs_json() answers. Null for an unknown chip.
- * Free with companion_string_free().
+ * shape companion_file_runs_json() answers. Null for an unknown chip or
+ * a page past its deadline (ADR-0052). Free with companion_string_free().
  */
 char *companion_chip_note_runs_json(CompanionHandle *handle, uint64_t chip);
 
@@ -725,7 +733,8 @@ char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);
  * envelope is null for ink alone, so the shell writes plain text and an
  * in-app paste keeps its ordinary path; "plain" is the ink with
  * "[sealed content · <size class>]" for each object, the public
- * representation. Null for an unknown page or an empty or bad range.
+ * representation. Null for an unknown page, a page past its deadline
+ * (ADR-0052) or an empty or bad range.
  */
 char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
                                     uint32_t at_utf16, uint32_t len_utf16);
@@ -803,9 +812,10 @@ char *companion_active_cut_json(CompanionHandle *handle);
  * (its NSPasteboard) under `type`, and record one "sent" to "drag". The
  * core writes the bytes, as copy decrypted does; the shell never holds
  * them. Returns false, writing and recording nothing, for an unknown
- * chip, a null or foreign pointer, the general pasteboard, or a type
- * other than the chip's own: "public.utf8-plain-text" for text,
- * "public.png" for an image. Always false off macOS.
+ * or removed chip, a page past its deadline (ADR-0052), a null or
+ * foreign pointer, the general pasteboard, or a type other than the
+ * chip's own: "public.utf8-plain-text" for text, "public.png" for an
+ * image. Always false off macOS.
  */
 bool companion_chip_provide_drag(CompanionHandle *handle, uint64_t chip,
                                  void *pasteboard, void *item,
@@ -1139,7 +1149,9 @@ char *companion_connection_test(CompanionHandle *handle);
  * and only the receipt id stays on the chip. BLOCKS for the round-trip
  * — call from a background queue; the core mutex is released during
  * the network call. Returns {"ok": true, "receipt_id"} or
- * {"ok": false, "error"}; free with companion_string_free().
+ * {"ok": false, "error"}; free with companion_string_free(). A chip on
+ * a page past its deadline sends nothing and answers the error "this
+ * page has expired" (ADR-0052).
  */
 char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
                              const char *opts_json);
@@ -1147,7 +1159,8 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 /*
  * Conceal the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
- * chip. Options, blocking, and result shape as companion_chip_conceal.
+ * chip, and a page past its deadline as companion_chip_conceal does.
+ * Options, blocking, and result shape as companion_chip_conceal.
  * No per-chip mark is set, the link stands for the page, but the
  * egress is recorded: one "sent" record against the page's own
  * identity, destination "link", with a size class and no content.
