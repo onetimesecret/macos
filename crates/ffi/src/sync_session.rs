@@ -1105,6 +1105,13 @@ impl SyncSession {
         true
     }
 
+    /// Whether a commit's frame is staged or owed and not yet handed to
+    /// [`SyncSession::take_frame`].
+    #[must_use]
+    pub fn frame_outstanding(&self) -> bool {
+        self.pending_frame.is_some() || self.owed_frame.is_some()
+    }
+
     /// Seal the frame a solo commit still owes, at the chain's epoch: the
     /// page's rebuild, or an empty frame where the store cuts none (client
     /// protocol §7.6). The page when the store rebuilt it, refused seal or

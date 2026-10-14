@@ -875,12 +875,18 @@ fn settle_frontier(
 }
 
 /// Build the publish request and, for a newly sealed batch, record each
-/// page's export cursor; a resend keeps the first record, and a batch
-/// the chain has moved past is dropped and its pages rewound (client
-/// protocol §4.4).
+/// page's export cursor; a resend keeps the first record, a batch the
+/// chain has moved past is dropped and its pages rewound, and nothing
+/// goes while this device's frame for the epoch waits (client protocol
+/// §4.4).
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
     let engine = companion.sync.engine.as_mut()?;
-    let EngineState { session, chain, .. } = engine;
+    let EngineState {
+        session,
+        chain,
+        unpublished_frame,
+        ..
+    } = engine;
     if session.drop_stale_batch(chain) {
         companion.sync.staged_batch = None;
         for (page, tracking) in &mut companion.sync.enrolled {
@@ -888,6 +894,11 @@ fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::H
                 session.withdraw_ops(*page);
             }
         }
+    }
+    // The relay refuses this epoch's deltas until it holds this epoch's frame.
+    let _ = crate::gop::take_stale(unpublished_frame, chain);
+    if unpublished_frame.is_some() || session.frame_outstanding() {
+        return None;
     }
     let request = session.publish_request(now_ms, chain)?;
     let batch = session.in_flight_batch();
@@ -2432,6 +2443,17 @@ mod tests {
         }
     }
 
+    /// Play the relay taking the frame PUT this turn owes, as the pump
+    /// clears it on a 2xx; the epoch the PUT named.
+    fn land_frame(companion: &mut Companion) -> Option<u64> {
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let request = stage_frame(engine)?;
+        engine.unpublished_frame = None;
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        body["epoch"].as_u64()
+    }
+
     #[test]
     fn a_sign_out_mid_session_keeps_the_unpublished_edits_for_the_next_attach() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
@@ -2964,6 +2986,56 @@ mod tests {
     }
 
     #[test]
+    fn no_batch_goes_out_at_an_epoch_before_the_relay_holds_its_frame() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "the page that comes due");
+        let tab = companion.store.tabs().next().unwrap().id();
+        let other = inked_page(&mut companion, "the other page");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, other, true));
+        let wire = crate::sync_session::page_wire_id(companion.store.sheet(other).unwrap().uuid());
+
+        // The sweep queues the other page's ops and rotates solo, and its
+        // seal refuses: the relay stays at epoch 0, so nothing goes.
+        companion.store.cycle_rung(tab).unwrap();
+        companion
+            .sync
+            .engine
+            .as_ref()
+            .unwrap()
+            .chain
+            .refuse_next_seal();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        assert!(
+            stage_publish(&mut companion, 0).is_none(),
+            "the frame is owed"
+        );
+
+        // Sealed next turn but unanswered, the frame still holds the batch.
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(stage_frame(engine).is_some());
+        assert!(stage_publish(&mut companion, 2_000).is_none(), "unanswered");
+
+        // Once the relay takes it, the batch follows at epoch 1.
+        assert_eq!(land_frame(&mut companion), Some(1));
+        let request = stage_publish(&mut companion, 4_000).expect("the held batch");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        assert!(
+            opened_envelopes(chain, &request)
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+    }
+
+    #[test]
     fn a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
         let mut companion = store_companion(Arc::clone(&credentials));
@@ -2986,8 +3058,12 @@ mod tests {
         sweep_outbound(&mut companion, 2_000, &mut events);
         assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
 
-        // Its resend would carry epoch 0's blobs: it is dropped, the page's
-        // cursor rewinds, and its expiry goes again at epoch 1.
+        // Its resend would carry epoch 0's blobs: it is dropped and the
+        // page's cursor rewinds. Once epoch 1's frame lands, its expiry goes
+        // again at epoch 1.
+        assert!(stage_publish(&mut companion, 4_000).is_none());
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, acked);
+        assert_eq!(land_frame(&mut companion), Some(1));
         let request = stage_publish(&mut companion, 4_000).expect("the restated facts");
         let body: serde_json::Value =
             serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
@@ -3055,8 +3131,9 @@ mod tests {
         assert_eq!(companion.sync.enrolled[&uuid].frontier, rebuilt);
         assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
 
-        // The kept batch was sealed at epoch 0, so only its restated facts go,
-        // and the rebuild is owed only as the frame.
+        // The kept batch was sealed at epoch 0, so after the frame only its
+        // restated facts go, and the rebuild is owed only as the frame.
+        assert_eq!(land_frame(&mut companion), Some(1));
         let request = stage_publish(&mut companion, 4_000).unwrap();
         let body: serde_json::Value =
             serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
