@@ -99,7 +99,7 @@ carried to the core by `companion_set_grace_snap`
   effective deadline is observed as "the local wall clock now, plus
   the remaining time shown".
 - Undo is the core's stack, bound to the document's peer id
-  (`crates/core/src/document.rs:130`), reached through
+  (`crates/core/src/document.rs:150`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:773`),
   `companion_sheet_undo` (`crates/ffi/src/lib.rs:968`) and
   `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:6458`).
@@ -107,14 +107,14 @@ carried to the core by `companion_set_grace_snap`
   (`shell/Sources/CompanionKit/PageModel.swift:401`).
 - Undo **does not survive a relaunch, by design**. Every construction
   path binds a fresh stack to a freshly minted peer
-  (`crates/core/src/document.rs:156`, and the comment at
-  `crates/core/src/document.rs:192`), and restore reads a snapshot
+  (`crates/core/src/document.rs:187`, and the comment at
+  `crates/core/src/document.rs:202`), and restore reads a snapshot
   into a document minted by that function
-  (`crates/core/src/document.rs:436`).
+  (`crates/core/src/document.rs:628`).
 - Undo **does not survive compaction** either: the ceremony rebuilds
   the body into a fresh document and then calls `forget_undo`
-  explicitly (`crates/core/src/document.rs:727`,
-  `crates/core/src/document.rs:324`), because the rebuild is itself
+  explicitly (`crates/core/src/document.rs:835`,
+  `crates/core/src/document.rs:469`), because the rebuild is itself
   typed in as local operations and would otherwise leave one step that
   undoes the whole page to nothing.
 - What triggers compaction **today** is a rung transition
@@ -317,10 +317,10 @@ arithmetic won over the elapsed arithmetic; a deadline landing on the
 
 ## Case D: undo does not survive a relaunch, and says so
 
-Exercises `SheetDocument::new` (`crates/core/src/document.rs:156`, and
-the comment at `crates/core/src/document.rs:192`),
+Exercises `SheetDocument::new` (`crates/core/src/document.rs:187`, and
+the comment at `crates/core/src/document.rs:202`),
 `SheetDocument::import_snapshot`
-(`crates/core/src/document.rs:436`), `SheetStore::can_undo`
+(`crates/core/src/document.rs:628`), `SheetStore::can_undo`
 (`crates/core/src/store.rs:799`) and the Edit menu binding at
 `shell/Sources/CompanionKit/PageModel.swift:6499`.
 
@@ -329,7 +329,7 @@ machine.
 
 1. Launch the app. Create a page and type three distinct bursts, with
    a pause of a few seconds between each so they cannot merge into one
-   step (`UNDO_MERGE_INTERVAL_MS`, `crates/core/src/document.rs:59`):
+   step (`UNDO_MERGE_INTERVAL_MS`, `crates/core/src/document.rs:27`):
    `alpha`, then `bravo`, then `charlie`.
 2. Press ⌘Z once. The page should read `alpha bravo` in whatever
    spacing was typed, and Edit ▸ Undo should still be enabled.
@@ -353,8 +353,8 @@ restored document carried a live stack into a rebound peer.
 ## Case E: undo does not survive compaction either
 
 Exercises `Sheet::compact` (`crates/core/src/sheet.rs:494`),
-`SheetDocument::compact` (`crates/core/src/document.rs:684`) and its
-explicit `forget_undo` at `crates/core/src/document.rs:727`, reached
+`SheetDocument::compact` (`crates/core/src/document.rs:801`) and its
+explicit `forget_undo` at `crates/core/src/document.rs:835`, reached
 from the rung transition at `crates/core/src/store.rs:1531` through
 `Sheet::compact_or_defer` (`crates/core/src/sheet.rs:507`).
 

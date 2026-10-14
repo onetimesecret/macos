@@ -35,7 +35,7 @@ Nothing of ADR-0032 is implemented. PR 183 changed documents only.
 - `BackdropStance.level(pinned:)` returns `.floating` for every raised surface (`shell/Sources/OnetimePad/BackdropStance.swift:24`).
 - `windowDidBecomeKey` and `windowDidResignKey` only set `model.holdsKeys` (`BackdropWindowController.swift:688`, `:711`). Level is written in `apply(_:)` and in the pin sink, nowhere else.
 - No keep above preference exists in the model, in defaults, or in Settings.
-- Settings picks its level once, at `show()`, from `stance == .raised || pinned` (`BackdropSettingsWindow.swift:138`). About gets no level rule at all (`BackdropApp.swift:790`).
+- Settings picks its level once, at `show()`, from `stance == .raised || pinned` (`BackdropSettingsWindow.swift:138`). About gets no level rule at all (`BackdropApp.swift:1111`).
 - `BackdropStanceTests` pins raised as floating at lines 63 and 165.
 - The background surface spec already carries the altitude table (commit `1f9d87d`).
 

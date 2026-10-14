@@ -405,9 +405,9 @@ The migration imports an explicitly stored relay URL without inventing one. Auth
 The bundled file is processed as a SwiftPM resource and copied explicitly by `scripts/package-app.sh`. The assembled application does not rely on SwiftPM's generated resource bundle. The existing keymap packaging behavior is visible at:
 
 - `shell/Package.swift:27-32`
-- `scripts/package-app.sh:171-187`
+- `scripts/package-app.sh:336-355`
 - `shell/Sources/CompanionKit/Keymap/Keymap.swift:245-263`
-- `shell/Tests/CompanionKitTests/BundledKeymapTests.swift:200-236`
+- `shell/Tests/CompanionKitTests/BundledKeymapTests.swift:250-286`
 
 The loader supports `Bundle.main` in the packaged application and the SwiftPM resource-bundle layout used by `swift run` and tests without using a resource accessor that traps when the bundle is missing.
 

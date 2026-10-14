@@ -221,7 +221,7 @@ may retain copies independently, and no erasure or retention claim is
 made for the drag pasteboard.
 
 The ledger's `sent` record keeps its shape. Its `DestinationClass`
-(`crates/core/src/ledger.rs:108`) names `Clipboard` and `OneTimeLink`
+(`crates/core/src/ledger.rs:91`) names `Clipboard` and `OneTimeLink`
 today; it gains a `Drag` class when issue 170 (the sealed object
 pasteboard model: private type, placeholder, detach on cut, reattach on
 paste, lazy decrypted drag) lands, written at the moment the drag's

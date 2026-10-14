@@ -281,7 +281,7 @@ Settle list, as of this date:
 - **The two derivation thresholds.** Open. Part 1 is not built: no
   `block_revisions` seam exists in `crates/`. The two second figure
   the idle gap would start from is at least settled and in the code
-  (`crates/core/src/document.rs:42`), argued at
+  (`crates/core/src/document.rs:27`), argued at
   [`2026-0901-pause-boundaries.md`](../spec/feature/block-revisions/2026-0901-pause-boundaries.md).
 - **Measured cost of the fork then checkout walk.** Open, and
   unmeasured. Nothing in the tree performs the walk.
@@ -309,18 +309,18 @@ Settle list, as of this date:
 Delivered by #132 and holding part 4:
 
 - Local only step, peer's operations left standing:
-  `crates/core/src/document.rs:1423`, `crates/core/src/store.rs:5725`.
+  `crates/core/src/document.rs:1594`, `crates/core/src/store.rs:5725`.
 - Nothing to step back through after a restore or a ceremony:
-  `crates/core/src/document.rs:1384`, `crates/core/src/document.rs:1405`,
+  `crates/core/src/document.rs:1562`, `crates/core/src/document.rs:1579`,
   `crates/core/src/store.rs:5669`.
 - The stack forgotten where a step would lie: a seal
   (`crates/core/src/store.rs:5018`), a deleted chip
-  (`crates/core/src/store.rs:5252`), a wholesale restate
+  (`crates/core/src/store.rs:5471`), a wholesale restate
   (`crates/core/src/store.rs:5652`), a peer's chip deletion
-  (`crates/core/src/store.rs:5312`).
+  (`crates/core/src/store.rs:5688`).
 - Two second merge interval and the automation's own step:
-  `crates/core/src/document.rs:1336`, `crates/core/src/document.rs:1368`.
-- The caret across the seam: `crates/core/src/document.rs:1319`,
+  `crates/core/src/document.rs:1501`, `crates/core/src/document.rs:1523`.
+- The caret across the seam: `crates/core/src/document.rs:1436`,
   `crates/ffi/src/lib.rs:5374`.
 
 **Part 2, "The page is history's retention unit (amends ADR-0013)",
