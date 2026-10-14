@@ -3404,9 +3404,12 @@ public struct InkEditorView: NSViewRepresentable {
                 guard found.location != NSNotFound else { break }
                 rest = NSRange(location: NSMaxRange(found), length: NSMaxRange(rest) - NSMaxRange(found))
                 var run = NSRange()
-                let value = storage.attribute(
-                    .attachment, at: found.location, longestEffectiveRange: &run, in: whole)
-                guard !fromBoard, let chip = value as? ChipAttachment,
+                guard !fromBoard,
+                      let chip = storage.attribute(.attachment, at: found.location, effectiveRange: nil)
+                        as? ChipAttachment,
+                      storage.attribute(
+                          .attachment, at: found.location, longestEffectiveRange: &run, in: whole)
+                        != nil,
                       !(run.location..<NSMaxRange(run)).contains(where: {
                           text.character(at: $0) != 0xFFFC
                       })
