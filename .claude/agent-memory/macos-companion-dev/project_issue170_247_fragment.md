@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0053, app 0.34.0; the deadline gate (readable_sheets); copy and cut refuse past an envelope cap; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets); copy and cut refuse past an envelope cap; the core move between pages (drop not wired); the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -91,6 +91,18 @@ Seams for the editor half (all page ids, all refuse a file id):
   reach the core, so the gate cannot cover them (ADR-0052 erratum).
   `age_by`/`ageForTests` stage a due page with no sweep; ids re-mint,
   so read them back. Core mutation checks by Edit ran unrefused.
+
+- Move between pages (ADR-0054, phase 4, core and seam only):
+  `SheetStore::move_range_to` / `companion_sheet_move_range_to` /
+  `client.moveRange(sheet:range:toSheet:at:)`. The source deletes and
+  settles first, then the shared `stand_plan` (which `place` also
+  uses) stands the plan on the destination and clears the source's
+  undo only when an object moved; ink alone keeps it. A destination
+  refusal rolls the source back, which clears its undo and rebuilds
+  its blocks (provenance resets), as a failed paste does. The drop is
+  not wired: the shell must call it under the `PageDrag` stamp,
+  restate both pages, and stop `endPageDrag` deleting the source run.
+  ⌥ between pages still pastes the copy fragment.
 
 - Paste is built (shell unit 4): `InkTextView.paste`, `pasteAsPlainText`
   and `pasteWithoutDetection` ask `Coordinator.pasteFragment()` first,
