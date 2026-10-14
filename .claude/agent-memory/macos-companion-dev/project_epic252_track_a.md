@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 Track A (#248 gutter, #250 strip, #249 pad list) built 2026-10-13 on feature/editing-seals; where the SwiftUI fields' state lives, the held notice #245 must reuse, and where the owed hand checks are written down
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, and what the close left open
 metadata:
   type: project
 ---
@@ -41,6 +41,20 @@ for review fixes; shell only.
   aside on `answersChords` while a rename field or the note holds the
   keys (ADR-0046). None of the epic's hand procedures (rename in place,
   sealed zones and note, sealed fragment) has been run.
+
+- Phase 4 (security review F1 to F3, critic W01 to W26) closed on
+  2026-10-14 at app 0.35.0, companion-core 0.32.0, companion-ffi 0.40.0,
+  with ADR-0052 to ADR-0054. Every unrun hand check in a law row reads
+  `owed: hand check, [procedure]`; keep that form. Still open at the
+  close: the Linux CI lane was audited by reading only (ring needs a
+  Linux C compiler here; `cargo clippy --target x86_64-unknown-linux-gnu
+  -p companion-core` passes), the yank defect in [[w03-removal-routes]],
+  the sync controller's `onRemoteChange` mark is counted by no suite,
+  and the PR body owes "closes #170, #240 to #252".
+- An earlier re-aim sweep shifted document.rs citations by a fixed
+  offset without reading them back, so five were wrong for weeks. Read
+  each cited line back against what it read when its doc line was
+  written (git blame the doc line, git show that commit's file).
 
 **Why:** these are the non-obvious seams; the focus, selection and
 popover behaviour of the SwiftUI fields was reasoned, not seen.
