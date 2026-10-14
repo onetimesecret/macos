@@ -413,7 +413,7 @@ struct BackdropRootView: View {
         } else {
             Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -532,7 +532,7 @@ struct BackdropRootView: View {
                 }
                 Text(state.saveWord)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(state.showsUnsavedDot ? Color.emberText : Color.secondary)
+                    .foregroundStyle(state.showsUnsavedDot ? Color.emberText : Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -547,14 +547,14 @@ struct BackdropRootView: View {
                 // carries meaning and must be readable as such.
                 Text(stamp)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             if !state.encodingAndFormat.isEmpty {
                 Text(state.encodingAndFormat)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -593,13 +593,13 @@ struct BackdropRootView: View {
             case .saving:
                 Text("saving")
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .help("Edits are waiting on the deferred write")
                     .accessibilityLabel(Text("Saving"))
             case .saved:
                 Text("saved")
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
                     .help("The sealed state file matches this session")
                     .accessibilityLabel(Text("Saved"))
             case .failed:

@@ -28,7 +28,7 @@ enum KeychainIntroduction {
             format: text("Saved pages: state-key\nPage history: ledger-key\nKeychain service: %@"),
             FormFactor.backdrop.credentialService))
         disclosure.font = .systemFont(ofSize: 11)
-        disclosure.textColor = .secondaryLabelColor
+        disclosure.textColor = .secondaryInk
         disclosure.isSelectable = true
         disclosure.setAccessibilityLabel(text("Keychain items used for saved pages and page history"))
         let detail = NSStackView(views: [graphic, disclosure])

@@ -143,7 +143,7 @@ public struct TabStripView: View {
                 .frame(width: 24, height: 22)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .help(Self.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
         .accessibilityLabel(Text("New page"))
     }
@@ -186,7 +186,7 @@ public struct TabStripView: View {
             .frame(height: 22)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .disabled(model.selectedPageID == nil || model.showingLedger)
         .help("Conceal this page into a one-time link")
         .accessibilityLabel(Text("Conceal page into one-time link"))
@@ -210,11 +210,11 @@ public struct TabStripView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 5)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3]))
-                    .foregroundStyle(model.showingLedger ? Color.ember : .secondary)
+                    .foregroundStyle(model.showingLedger ? Color.ember : Color.secondaryInk)
             )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .help(Self.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow)))
         .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
     }
@@ -267,7 +267,7 @@ public struct TimeStripView: View {
             if projection.hiddenBlankPages > 0 {
                 Text("\(projection.hiddenBlankPages) blank")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
                     .help(TimeRailView.hiddenPagesHelp(count: projection.hiddenBlankPages))
                     .accessibilityLabel(Text(TimeRailView.hiddenPagesHelp(
                         count: projection.hiddenBlankPages)))
@@ -302,7 +302,7 @@ private struct TimeUnitBottomTab: View {
                             .font(.system(size: 8, weight: .semibold))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .help(TimeUnitTab.newPageHelp(
                         chord: model.keymap.hintKeystroke(for: .pageNew)))
                     .accessibilityLabel(Text("New page"))
@@ -425,7 +425,7 @@ struct SheetTab: View {
                         .font(.system(size: 7, weight: .bold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .accessibilityLabel(Text("Close tab"))
@@ -506,7 +506,7 @@ struct SheetTab: View {
     private var reorderHandle: some View {
         Image(systemName: "line.3.horizontal")
             .font(.system(size: 8, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .frame(width: 12, height: 18)
             .contentShape(Rectangle())
             .help("Drag to reorder tab")
@@ -668,7 +668,7 @@ struct FileTab: View {
             HStack(spacing: 4) {
                 Image(systemName: "doc")
                     .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true) // the tab says "file" in words
                 Text(file.name)
                     .font(.system(.caption, design: .monospaced))
@@ -681,7 +681,7 @@ struct FileTab: View {
                         .font(.system(size: 7, weight: .bold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .accessibilityLabel(Text("Close file"))
@@ -783,7 +783,7 @@ struct HoldChip: View {
         .padding(.horizontal, 3)
         .padding(.vertical, 1)
         .background(Capsule().fill(Color.secondary.opacity(0.15)))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .fixedSize() // never squeezed by a long title
         .accessibilityHidden(true) // the tab speaks the hold in words
     }

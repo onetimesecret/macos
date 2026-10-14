@@ -32,7 +32,7 @@ public struct ConcealView: View {
             if let sealed = sealedItemsLine {
                 Text(sealed)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
             }
             if draft.receiptId != nil {
                 success
@@ -64,7 +64,7 @@ public struct ConcealView: View {
             Spacer()
             Text(destination)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
                 .help("The server this conceal goes to")
             Button {
                 model.dismissConceal()
@@ -185,7 +185,7 @@ public struct ConcealView: View {
     private var success: some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .accessibilityHidden(true)
             Text("the link is on the clipboard — paste it where it needs to go")
                 .font(.system(.caption, design: .monospaced))

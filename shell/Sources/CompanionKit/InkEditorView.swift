@@ -4454,7 +4454,7 @@ final class BlockMetadataField: NSTextField {
     /// dark carries them along.
     func refreshPillColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            textColor = .secondaryLabelColor
+            textColor = .secondaryInk
             backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
             layer?.borderColor = NSColor.separatorColor
                 .withAlphaComponent(0.35).cgColor
@@ -6413,21 +6413,29 @@ final class SealedBlockCell: NSTextAttachmentCell {
         )
     }
 
+    /// The block's quieter words: the secondary ink at rest, ink on a
+    /// selected block, where the selection highlight shows through the
+    /// fill and leaves the secondary label near 4:1 (record section 9, row 5).
+    nonisolated static func quietInk(selected: Bool) -> NSColor {
+        selected ? .labelColor : .secondaryInk
+    }
+
     @MainActor
-    private var classificationLabel: NSAttributedString {
+    private func classificationLabel(selected: Bool = false) -> NSAttributedString {
         NSAttributedString(
             string: Self.classification,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: Self.quietInk(selected: selected),
                 .kern: 1.15,
             ]
         )
     }
 
     @MainActor
-    private var metadata: NSAttributedString {
-        Self.seatString(Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: info.hasNote))
+    private func metadata(selected: Bool) -> NSAttributedString {
+        Self.seatString(
+            Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: info.hasNote), selected: selected)
     }
 
     /// The current core returns this closed vocabulary. Refuse to draw
@@ -6516,7 +6524,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// With `editingWidth` the name's seat is a field that wide (Law 0007),
     /// drawn by the field, and the row follows it whether named or not.
     @MainActor
-    func namedRow(in cellFrame: NSRect, editingWidth: CGFloat? = nil) -> NamedRow? {
+    func namedRow(
+        in cellFrame: NSRect, editingWidth: CGFloat? = nil, selected: Bool = false
+    ) -> NamedRow? {
         let name: String
         if editingWidth != nil {
             name = ""
@@ -6533,7 +6543,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             .font: InkStyle.chipFont, .foregroundColor: NSColor.labelColor,
         ]
         let equals = NSAttributedString(string: "=", attributes: [
-            .font: InkStyle.chipFont, .foregroundColor: NSColor.secondaryLabelColor,
+            .font: InkStyle.chipFont, .foregroundColor: Self.quietInk(selected: selected),
         ])
         let floor = NSAttributedString(
             string: String(name.prefix(Self.nameFloorCharacters)) + "…",
@@ -6587,12 +6597,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    static func seatString(_ text: String) -> NSAttributedString {
+    static func seatString(_ text: String, selected: Bool = false) -> NSAttributedString {
         NSAttributedString(
             string: text,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: quietInk(selected: selected),
             ]
         )
     }
@@ -6735,12 +6745,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    private var actions: NSAttributedString {
+    private func actions(selected: Bool) -> NSAttributedString {
         NSAttributedString(
             string: Self.actionsGlyph,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: Self.quietInk(selected: selected),
             ]
         )
     }
@@ -6770,7 +6780,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         guard DecryptedDrag.pasteboardType(forKind: info.kind) != nil else { return nil }
         return Self.decryptedDragRect(
             in: cellFrame, wordsWidth: Self.decryptedDragString.size().width,
-            labelWidth: classificationLabel.size().width)
+            labelWidth: classificationLabel().size().width)
     }
 
     @MainActor
@@ -6963,9 +6973,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
             )
         }
 
-        classificationLabel.draw(at: layout.labelOrigin)
+        classificationLabel(selected: selected).draw(at: layout.labelOrigin)
         if hovered || selected {
-            let glyph = actions
+            let glyph = actions(selected: selected)
             let size = glyph.size()
             let seat = Self.actionsRect(in: cellFrame)
             glyph.draw(at: NSPoint(
@@ -6977,8 +6987,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
             }
         }
 
-        guard let row = namedRow(in: cellFrame, editingWidth: editingWidth) else {
+        guard let row = namedRow(in: cellFrame, editingWidth: editingWidth, selected: selected)
+        else {
             let excerptLine = excerpt
+            let metadata = metadata(selected: selected)
             let metadataSize = metadata.size()
             excerptLine.draw(in: layout.excerptRect(
                 metadataWidth: metadataSize.width,
@@ -6997,7 +7009,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let hovered = editingWidth == nil ? zone : nil
         let copied = editingWidth == nil && beat != nil
         let seat = Self.seatString(Self.seatText(
-            sizeLabel: info.sizeLabel, hasNote: info.hasNote, hovered: hovered, copied: copied))
+            sizeLabel: info.sizeLabel, hasNote: info.hasNote, hovered: hovered, copied: copied),
+            selected: selected)
         seat.draw(at: layout.metadataOrigin(width: seat.size().width))
         if hovered == nil, !copied { drawDoorwayRule(in: cellFrame) }
     }

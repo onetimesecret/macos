@@ -217,6 +217,57 @@ final class ThemeContrastTests: XCTestCase {
         }
     }
 
+    // MARK: The quieter labels
+
+    /// Tertiary reads about 2:1 in both appearances and the system's
+    /// secondary label about 3.95:1 on white, which is why no text in
+    /// the shell wears either: help, headings, gutters and hints take
+    /// the secondary ink.
+    func testTheSystemsQuieterLabelsMissTheBarWhichIsWhyTheInkExists() {
+        for appearance in Self.appearances {
+            for (backingName, backing) in Self.backings {
+                let ratio = Self.contrastRatio(.tertiaryLabelColor, on: backing, appearance: appearance)
+                XCTAssertLessThan(
+                    ratio, 3, "tertiary on the \(backingName) under \(appearance.rawValue) reads \(ratio):1")
+            }
+        }
+        XCTAssertLessThan(
+            Self.contrastRatio(.secondaryLabelColor, on: .white, appearance: .aqua), Self.bar)
+    }
+
+    func testTheSecondaryInkClearsTheBarOnPageAndCard() {
+        assertClearsTheBar(.secondaryInk, named: "the secondary ink")
+    }
+
+    /// Under dark, and under Increase Contrast, the ink is the system's
+    /// own secondary label; only plain light is darkened.
+    func testTheSecondaryInkIsTheSystemsUnderDark() {
+        var ink: NSColor?
+        var system: NSColor?
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+            ink = Self.composite(.secondaryInk, over: .black)
+            system = Self.composite(.secondaryLabelColor, over: .black)
+        }
+        XCTAssertEqual(ink, system)
+    }
+
+    /// A selected sealed block lets the selection highlight through its
+    /// fill, and its quieter words go to ink there: the secondary label
+    /// over the highlight read near 4:1 in the audit.
+    func testASelectedSealedBlocksQuieterWordsClearTheBarOnTheHighlight() {
+        let layers: [NSColor] = [
+            .windowBackgroundColor, .selectedTextBackgroundColor,
+            NSColor.textBackgroundColor.withAlphaComponent(0.34),
+        ]
+        for appearance in Self.appearances {
+            let ratio = Self.contrastRatio(
+                SealedBlockCell.quietInk(selected: true), over: layers, appearance: appearance)
+            XCTAssertGreaterThanOrEqual(
+                ratio, Self.bar, "a selected block's words under \(appearance.rawValue) read \(ratio):1")
+        }
+        XCTAssertEqual(SealedBlockCell.quietInk(selected: false), .secondaryInk)
+    }
+
     /// The four are told apart by hue, not only by depth: no two share
     /// a shade in either appearance. A ramp that darkened them into one
     /// grey would pass the bar and lose the point of colouring.

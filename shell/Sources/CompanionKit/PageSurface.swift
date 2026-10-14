@@ -76,6 +76,7 @@ public struct PageContentView: View {
     private var content: some View {
         if !Self.mounts(surface: surface, owner: model.owner) {
             // A form factor's root view draws its own stand in for the
+                            .foregroundStyle(model.isPageExpanded ? Color.accentColor : Color.secondaryInk)
             // window that does not own, and never reaches this. It is
             // here so that a root which forgot to ask gets nothing,
             // where it would otherwise get a second editor, a second
@@ -160,10 +161,10 @@ public struct PageContentView: View {
                 VStack(spacing: 6) {
                     Text("No page here yet.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondaryInk)
                     Text(emptyHint)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                 }
                 .allowsHitTesting(false)
             }
@@ -301,7 +302,7 @@ public struct PageStatusStack: View {
             // which is a fact rather than a fault.
             Text(sentence)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondary)
+                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondaryInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,7 +318,7 @@ public struct PageStatusStack: View {
             // what the header's word is for.
             Text("another device is editing this page")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -336,7 +337,7 @@ public struct PageStatusStack: View {
             HStack(spacing: 8) {
                 Text("the clipboard holds content")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Button("seal it (⇧⌘V)") { model.performSealedPaste?() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
@@ -359,7 +360,7 @@ public struct PageStatusStack: View {
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Button("place here") { model.placeActiveCutAtCaret() }
@@ -382,7 +383,7 @@ public struct PageStatusStack: View {
                 Text(notice)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(
-                        model.noticeTone == .actionable ? Color.emberText : Color.secondary)
+                        model.noticeTone == .actionable ? Color.emberText : Color.secondaryInk)
                 if let action = model.noticeAction {
                     Button(action.label) { model.performNoticeAction() }
                         .font(.system(.caption, design: .monospaced))

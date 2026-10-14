@@ -1141,7 +1141,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                     ofSize: NSFont.smallSystemFontSize,
                     weight: .regular
                 ),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: NSColor.secondaryInk,
                 .paragraphStyle: paragraph,
             ]
         ))

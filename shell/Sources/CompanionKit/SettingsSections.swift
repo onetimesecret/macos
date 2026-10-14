@@ -55,7 +55,7 @@ private struct SettingsCaption: View {
     var body: some View {
         Text(text)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
     }
 }
 
@@ -553,7 +553,7 @@ public struct ConnectionSettingsView: View {
                 if let status {
                     Text(status)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(statusIsError ? Color.emberText : Color.secondary)
+                        .foregroundStyle(statusIsError ? Color.emberText : Color.secondaryInk)
                 }
                 Spacer()
                 Button("Save") { save() }

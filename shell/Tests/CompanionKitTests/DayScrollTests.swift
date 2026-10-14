@@ -1244,6 +1244,20 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(header.renameDraft, "second page")
     }
 
+    /// The gutter's day, time and name share one colour: ink on the
+    /// active page, the secondary ink elsewhere, so a name never
+    /// reads dimmer than its time and none of them wears tertiary.
+    func testAGuttersWordsWearInkWhenActiveAndTheSecondaryInkOtherwise() throws {
+        let model = try makeModel()
+        let header = DayHeaderView(model: model)
+        let secondary = Array(repeating: NSColor.secondaryInk as NSColor?, count: 3)
+        XCTAssertEqual(header.wordColors, secondary)
+        header.isActive = true
+        XCTAssertEqual(header.wordColors, Array(repeating: NSColor.labelColor as NSColor?, count: 3))
+        header.isActive = false
+        XCTAssertEqual(header.wordColors, secondary)
+    }
+
     /// A gutter's title field is drawn for a typed name and for the
     /// length of a rename, and for nothing else: a placeholder and a
     /// first line are both said already, beside or under the gutter.

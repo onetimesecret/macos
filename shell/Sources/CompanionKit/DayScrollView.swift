@@ -1468,15 +1468,15 @@ final class DayHeaderView: NSView {
         self.model = model
         super.init(frame: .zero)
         dayField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        dayField.textColor = .tertiaryLabelColor
+        dayField.textColor = Self.wordsColor(active: false)
         timeField.font = dayField.font
         timeField.textColor = dayField.textColor
         titleField.font = NSFont.systemFont(ofSize: 11)
-        titleField.textColor = .secondaryLabelColor
+        titleField.textColor = dayField.textColor
         titleField.usesSingleLineMode = true
         titleField.cell?.lineBreakMode = .byTruncatingTail
         remainingField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        remainingField.textColor = .tertiaryLabelColor
+        remainingField.textColor = .secondaryInk
         remainingField.alignment = .right
         titleField.isHidden = true
         addSubview(dayField)
@@ -1492,6 +1492,16 @@ final class DayHeaderView: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    /// The gutter's words, the day, the time and the name alike: ink on
+    /// the active page, the secondary ink elsewhere, never tertiary,
+    /// which reads about 2:1 (record section 9, row 5).
+    static func wordsColor(active: Bool) -> NSColor {
+        active ? .labelColor : .secondaryInk
+    }
+
+    /// The colours the gutter's three word fields wear, for a test.
+    var wordColors: [NSColor?] { [dayField.textColor, timeField.textColor, titleField.textColor] }
 
     // MARK: What a header says
 
@@ -2184,10 +2194,10 @@ final class EmptyTodayView: NSView {
         self.hint = NSTextField(labelWithString: hint)
         super.init(frame: .zero)
         lead.font = NSFont.preferredFont(forTextStyle: .callout)
-        lead.textColor = .secondaryLabelColor
+        lead.textColor = .secondaryInk
         lead.alignment = .center
         self.hint.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        self.hint.textColor = .tertiaryLabelColor
+        self.hint.textColor = .secondaryInk
         self.hint.alignment = .center
         addSubview(lead)
         addSubview(self.hint)

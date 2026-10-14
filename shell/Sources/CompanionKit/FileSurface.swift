@@ -170,7 +170,7 @@ public struct FileRenderSuggestionBanner: View {
         HStack(spacing: 8) {
             Text("render as \(suggestion.language)?")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
             Button("Use \(suggestion.language)") {
                 model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
             }

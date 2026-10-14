@@ -47,7 +47,7 @@ struct SyncSettingsSection: View {
                         ProgressView().controlSize(.small)
                         Text("waiting on the browser…")
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.secondaryInk)
                         Spacer()
                         Button("Give up") { sync.giveUpSignin() }
                             .controlSize(.small)
@@ -69,14 +69,14 @@ struct SyncSettingsSection: View {
         } header: {
             Text(syncCaption)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
         }
         if sync.enabled, sync.status?.signedIn == true {
             Section {
                 if sync.devices.isEmpty {
                     Text("no devices yet")
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondaryInk)
                 }
                 ForEach(sync.devices) { device in
                     SyncDeviceRow(device: device, sync: sync)
@@ -92,7 +92,7 @@ struct SyncSettingsSection: View {
             } header: {
                 Text(devicesCaption)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
             }
         }
     }
@@ -129,16 +129,16 @@ private struct SyncDeviceRow: View {
         HStack(spacing: 8) {
             Text(String(device.fingerprint.prefix(8)))
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
             Text(title)
                 .font(.caption)
             Text(seen)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
             Spacer()
             Text(badge)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(device.verified ? Color.secondary : Color.emberText)
+                .foregroundStyle(device.verified ? Color.secondaryInk : Color.emberText)
             if !device.thisDevice, device.verified {
                 Button("Revoke", role: .destructive) { confirmingRevoke = true }
                     .controlSize(.small)
@@ -208,7 +208,7 @@ private struct SyncPairingStatus: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Compare with the other device's screen. Continue only on a match.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Text(stage.sas ?? "")
                     .font(.system(.title2, design: .monospaced))
                     .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
@@ -232,7 +232,7 @@ private struct SyncPairingStatus: View {
             HStack {
                 Text(SyncController.pairingSentence(stage: stage.stage, reason: nil))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Spacer()
                 Button("Done") { sync.cancelPairing() }
                     .controlSize(.small)
@@ -242,7 +242,7 @@ private struct SyncPairingStatus: View {
                 ProgressView().controlSize(.small)
                 Text(SyncController.pairingSentence(stage: stage.stage, reason: nil))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Spacer()
                 Button("Cancel") { sync.cancelPairing() }
                     .controlSize(.small)

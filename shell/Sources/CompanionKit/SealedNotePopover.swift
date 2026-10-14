@@ -105,10 +105,10 @@ final class NotePopoverView: NSView {
         glyph.image = NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil)
         glyph.contentTintColor = .secondaryLabelColor
         title.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold)
-        title.textColor = .secondaryLabelColor
+        title.textColor = .secondaryInk
         for label in [hint, expandHint] {
             label.font = NSFont.systemFont(ofSize: 9)
-            label.textColor = .tertiaryLabelColor
+            label.textColor = .secondaryInk
         }
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
@@ -232,7 +232,7 @@ final class SealedNoteEditor: NSObject {
             string: face.name.map { "NOTE · \($0)" } ?? "NOTE",
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor, .kern: 1.15,
+                .foregroundColor: NSColor.secondaryInk, .kern: 1.15,
             ])
         overlay.frame = scroll.bounds
         scroll.addSubview(overlay)

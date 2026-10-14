@@ -186,7 +186,7 @@ public struct TimeRailView: View {
                 ForEach(projection.units) { unit in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 3) {
-                            Text(unit.railLabel).font(.caption).foregroundStyle(.secondary)
+                            Text(unit.railLabel).font(.caption).foregroundStyle(Color.secondaryInk)
                             Spacer(minLength: 0)
                             sortControl(
                                 direction: model.pads.checkpointSortDirection(
@@ -325,7 +325,7 @@ public struct TimeRailView: View {
         if let line = Self.hiddenPagesLine(count: count) {
             Text(line)
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
                 .lineLimit(1)
                 .help(Self.hiddenPagesHelp(count: count))
                 .accessibilityLabel(Text(Self.hiddenPagesHelp(count: count)))
@@ -555,7 +555,7 @@ struct StreamNavigatorView: View {
                 .frame(width: 7, height: 1)
             Text("7d")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
         }
         .offset(x: Metrics.trackX - 3, y: y - 6)
         .help("seven-day window ends here; the pages below are retained because they hold content")
@@ -572,7 +572,7 @@ struct StreamNavigatorView: View {
                 .frame(width: 5, height: 5)
             Text(StreamNavigator.emptyDaysLabel(count))
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
                 .lineLimit(1)
         }
         .offset(x: Metrics.trackX - 2, y: y)
@@ -636,20 +636,20 @@ struct StreamNavigatorView: View {
                 if first {
                     Text(node.dayLabel)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(node.active ? .primary : .secondary)
+                        .foregroundStyle(node.active ? Color.primary : Color.secondaryInk)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
                 if !node.stamp.isEmpty {
                     Text(node.stamp)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(node.active ? .secondary : .tertiary)
+                        .foregroundStyle(node.active ? Color.primary : Color.secondaryInk)
                         .lineLimit(1)
                 }
                 if node.trailing {
                     Text(StreamNavigator.retainedLabel)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                         .lineLimit(1)
                 }
                 if node.active, !node.trailing, node.hasPage {
@@ -960,13 +960,13 @@ public struct SlotRailView: View {
                     .frame(width: 24, height: 20)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
             .accessibilityLabel(Text("New page"))
             if blankCount > 0 {
                 Text("\(blankCount) blank")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityLabel(Text("\(blankCount) blank slot\(blankCount == 1 ? "" : "s")"))
             }
         }
@@ -1026,7 +1026,7 @@ private struct SlotRailRow: View {
                         .font(.system(size: 7, weight: .bold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .accessibilityLabel(Text("Close tab"))
@@ -1081,7 +1081,7 @@ private struct SlotRailRow: View {
     private var reorderHandle: some View {
         Image(systemName: "line.3.horizontal")
             .font(.system(size: 8, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .frame(width: 12, height: 18)
             .contentShape(Rectangle())
             .help("Drag to reorder tab")
@@ -1178,7 +1178,7 @@ struct FileShelfRow: View {
             HStack(spacing: 3) {
                 Image(systemName: "doc")
                     .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true)
                 Text(file.name)
                     .font(.system(.caption, design: .monospaced))
