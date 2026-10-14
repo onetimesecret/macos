@@ -12,10 +12,10 @@ runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-
 **Owner:** delano.
 **Status:** open; not yet run. The editor's copy and cut write the
 fragment, its paste reads it, the slot's button places a cut and two
-presses remove an object with Undo on the line, so every check above
-the drags can run; the drag checks are blocked until
-the editor drags and offers the decrypted drag handle (issue #170's
-shell half).
+presses remove an object with Undo on the line, and the page drags its
+selection as the fragment, so every check but the decrypted drag can
+run; the decrypted drag checks are blocked until the editor offers the
+handle (issue #170's shell half).
 
 ## Why by hand
 
@@ -88,9 +88,39 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       **Pass:** the `Undo` button leaves the line at once, and ⌘Z
       takes the letter back first and the removal on the next press.
       **Fail:** the button stays, or pressing it takes the letter back.
-- [ ] **Plain drag out.** Drag the selection into TextEdit. **Pass:**
-      TextEdit receives the same placeholder text as the copy did.
-      **Fail:** the sealed word arrives.
+- [ ] **A drag inside the page.** Name a sealed object and give it a
+      note. Select `before`, the object and `after`, then drag the
+      selection to the end of the page and drop it. **Pass:** while
+      dragging, an insertion line shows where the run will land, and the
+      drag image shows the block as the page draws it and nothing more
+      of the sealed word; the run lands there with the object's name and
+      note; ⌘Z puts the whole run back in one step. Dropping the
+      selection onto itself changes nothing. **Fail:** no insertion
+      line, the object returns without its name or note, the image
+      shows more than the block does, or ⌘Z takes back only part of it.
+- [ ] **A drag that starts on the object.** Click a sealed object once
+      so it is selected, then drag it from its block and drop it lower
+      on the page. **Pass:** the object moves with its name and nothing
+      else changes. **Fail:** nothing drags, or the drop seals new
+      content.
+- [ ] **⌥ drag.** Select the object with some ink, start the drag, hold
+      ⌥ and drop below. **Pass:** the cursor shows a copy, a copy of the
+      run lands with the object's name, the original stays, and the
+      ledger gains one `sealed`; ⌘Z takes the copy back. **Fail:** the
+      original moves, or the copy lands as placeholder text.
+- [ ] **A drag between pages.** Where two pages show at once (the
+      editor window and the card), drag a selection holding an object
+      from one page to the other. **Pass:** the run lands on the second
+      page with the object's name, and leaves the first; ⌘Z on the
+      first page brings the same object back. With ⌥ held, the first
+      page keeps its run. **Fail:** the drop seals the text
+      `[sealed content · tiny]` as a new object, or the first page
+      keeps its run after a plain drop.
+- [ ] **Plain drag out.** Drag the selection into TextEdit, then drag it
+      onto the Trash in the Dock. **Pass:** TextEdit receives the same
+      placeholder text as the copy did, the page keeps its run both
+      times, and the Trash takes nothing. **Fail:** the sealed word
+      arrives, or the run leaves the page.
 - [ ] **Decrypted drag into a form field.** Drag from the object's
       decrypted handle into a browser's text field. **Pass:** the field
       receives the sealed word, the object stays on the page, the ledger
