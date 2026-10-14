@@ -1003,6 +1003,82 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.model.notice, PageModel.pasteRefusedLine)
     }
 
+    // MARK: The sealed paste and its offer
+
+    /// A core whose board always holds what a sealed paste could take, and which
+    /// counts the takes it is asked for rather than reading any board.
+    private final class SealWitness: CompanionClient, @unchecked Sendable {
+        private(set) var takes = 0
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func pasteboardHasContent() -> Bool { true }
+
+        override func sealFromPasteboard(
+            sheet: UInt64, at: UInt32, length: UInt32
+        ) -> (chip: ChipInfo?, cleared: Bool) {
+            takes += 1
+            return (nil, false)
+        }
+    }
+
+    /// ⇧⌘V as the bundled keymap binds it.
+    private func sealChord(in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "v",
+            charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+    }
+
+    /// A board holding this app's own copy or cut holds nothing to seal: no
+    /// offer is made, and ⇧⌘V and the offer's button take nothing and point at ⌘V.
+    func testThisAppsOwnCopyOnTheBoardOffersNothingToSeal() throws {
+        let client = SealWitness(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.announce(page.textView)
+        let caret = NSRange(location: 0, length: 0)
+
+        func offerAnotherAppsText() {
+            page.pasteboard.clearContents()
+            page.pasteboard.setString("another app's text", forType: .string)
+            page.model.refreshPasteboardOffer(from: .panel)
+            XCTAssertTrue(page.model.pasteboardOffer, "the control: another app's text is offered")
+        }
+
+        for act in ["copy", "cut"] {
+            offerAnotherAppsText()
+            page.textView.setSelectedRange(NSRange(location: 0, length: 4))
+            if act == "copy" { page.textView.copy(nil) } else { page.textView.cut(nil) }
+            XCTAssertNotNil(SealedFragment.item(on: page.pasteboard), "\(act) wrote no fragment")
+            let board = page.pasteboard.changeCount
+            let length = page.textView.textStorage?.length
+            let objects = chips(page).map(\.chipId)
+            page.textView.setSelectedRange(caret)
+
+            page.model.performSealedPaste?()
+            XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "\(act): the button")
+            XCTAssertFalse(page.model.pasteboardOffer, "\(act): the refused button's offer stood")
+            page.model.flash("before the chord")
+            XCTAssertTrue(
+                page.textView.performKeyEquivalent(with: try sealChord(in: page.window)), act)
+            XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "\(act): the chord")
+            page.model.refreshPasteboardOffer(from: .panel)
+            XCTAssertFalse(page.model.pasteboardOffer, "\(act): an offer was made over our own")
+
+            XCTAssertEqual(client.takes, 0, "\(act): the core was asked to take our own")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(act): the board was touched")
+            XCTAssertNotNil(SealedFragment.item(on: page.pasteboard), act)
+            XCTAssertEqual(page.textView.textStorage?.length, length, act)
+            XCTAssertEqual(chips(page).map(\.chipId), objects, act)
+        }
+
+        offerAnotherAppsText()
+        XCTAssertNil(page.model.sealPasteboard(replacing: caret))
+        XCTAssertEqual(client.takes, 1, "the control: another app's text goes to the core")
+    }
+
     // MARK: Past an envelope cap (ADR-0053)
 
     /// A copy, cut or drag whose envelope would pass a cap writes, deletes and detaches

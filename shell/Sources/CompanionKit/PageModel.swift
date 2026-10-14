@@ -5650,6 +5650,11 @@ public final class PageModel: ObservableObject {
     public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
         clearNotice()
         guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
+        guard !boardHoldsOwnCopy else {
+            pasteboardOffer = false
+            flash(Self.ownCopySealLine)
+            return nil
+        }
         let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
             flash("nothing to seal")
@@ -5699,8 +5704,16 @@ public final class PageModel: ObservableObject {
     /// page, so only the owner makes one.
     public func refreshPasteboardOffer(from surface: PresentationOwner) {
         guard admits(.pasteboardOffer, from: surface) else { return }
-        pasteboardOffer = client.pasteboardHasContent()
+        pasteboardOffer = !boardHoldsOwnCopy && client.pasteboardHasContent()
     }
+
+    /// Whether an item on the board carries this app's sealed fragment: a copy
+    /// or cut of ours, which ⌘V pastes and which holds nothing to seal.
+    var boardHoldsOwnCopy: Bool { SealedFragment.item(on: ambientPasteboard) != nil }
+
+    /// The line when ⇧⌘V or the offer's button meets this app's own copy on the board.
+    public static let ownCopySealLine =
+        "nothing to seal: the clipboard holds this app's own copy, which ⌘V pastes."
 
     /// Withdrawing is a release and asks nobody: an offer nobody is
     /// making is the safe state, and the surface that made this one may
