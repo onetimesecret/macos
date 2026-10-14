@@ -3446,6 +3446,7 @@ fn summary_json(
         "uuid": tab.uuid().to_string(),
         "has_page": page.is_some(),
         "page_id": page.map(|sheet| sheet.id().raw()),
+        "page_uuid": page.map(|sheet| sheet.uuid().to_string()),
         "title": tab.label(utc_offset_seconds),
         // `name`, `derived` or `placeholder`, so the shell can skip a redundant label.
         "title_source": tab.label_source().as_str(),
@@ -3890,6 +3891,75 @@ mod tests {
             assert_eq!(restored[1]["id"], 2);
             assert_eq!(restored[1]["uuid"], second_uuid);
             assert_ne!(second, 0);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn page_summary_uuid_matches_the_sheet_not_the_tab() {
+        unsafe {
+            let handle = handle();
+            let (_tab, page) = new_page(handle);
+            let summary = &strip(handle)[0];
+            let page_uuid = summary["page_uuid"].as_str().unwrap();
+            assert_eq!(page_uuid.len(), 36);
+            assert_ne!(summary["page_uuid"], summary["uuid"]);
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let sheet = guard.store.sheet(SheetId::from_raw(page)).unwrap();
+                assert_eq!(page_uuid, sheet.uuid().to_string());
+            }
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn page_summary_uuid_survives_reorder_and_dense_restore_ids() {
+        unsafe {
+            let handle = handle();
+            let first = companion_tab_new(handle);
+            let second = companion_tab_new(handle);
+            let third = companion_tab_new(handle);
+            let before = strip(handle);
+            let second_uuid = before[1]["page_uuid"].as_str().unwrap().to_string();
+            let third_uuid = before[2]["page_uuid"].as_str().unwrap().to_string();
+            assert_ne!(second_uuid, third_uuid);
+            assert!(companion_tab_close(handle, first));
+            assert!(companion_tab_move(handle, third, 0));
+            age_by(handle, 0);
+            let restored = strip(handle);
+            assert_eq!(restored[0]["page_id"], 1);
+            assert_ne!(restored[0]["page_id"], before[2]["page_id"]);
+            assert_eq!(restored[0]["page_uuid"], third_uuid);
+            assert_eq!(restored[1]["page_id"], 2);
+            assert_eq!(restored[1]["page_uuid"], second_uuid);
+            assert_ne!(second, 0);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn page_summary_uuid_is_null_when_empty_and_changes_for_a_replacement() {
+        unsafe {
+            let handle = handle();
+            let (tab, page) = new_page(handle);
+            let before = strip(handle);
+            let page_uuid = before[0]["page_uuid"].as_str().unwrap().to_string();
+            let tab_uuid = before[0]["uuid"].as_str().unwrap().to_string();
+            assert!(companion_page_discard(handle, page));
+            let empty = strip(handle);
+            assert_eq!(empty[0]["id"], tab);
+            assert_eq!(empty[0]["uuid"], tab_uuid);
+            assert!(empty[0].get("page_uuid").unwrap().is_null());
+            let replacement = companion_tab_open_page(handle, tab);
+            assert_ne!(replacement, 0);
+            let after = strip(handle);
+            assert_eq!(after[0]["id"], tab);
+            assert_eq!(after[0]["uuid"], tab_uuid);
+            assert_eq!(after[0]["page_id"], replacement);
+            let replacement_uuid = after[0]["page_uuid"].as_str().unwrap();
+            assert_ne!(replacement_uuid, page_uuid);
+            assert_ne!(replacement_uuid, tab_uuid);
             companion_free(handle);
         }
     }
@@ -5987,6 +6057,7 @@ mod tests {
             assert_eq!(after[0]["has_page"].as_bool(), Some(false));
             assert_eq!(after[0]["title"].as_str(), Some("payroll"));
             assert!(after[0]["page_day_offset"].is_null(), "{:?}", after[0]);
+            assert!(after[0].get("page_uuid").unwrap().is_null());
             assert_eq!(after[0]["page_has_content"].as_bool(), Some(false));
             companion_free(handle);
         }
@@ -6012,6 +6083,7 @@ mod tests {
                 "uuid",
                 "has_page",
                 "page_id",
+                "page_uuid",
                 "title",
                 "title_source",
                 "rung_code",
