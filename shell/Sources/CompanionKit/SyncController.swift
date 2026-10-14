@@ -100,6 +100,9 @@ public final class SyncController: ObservableObject {
     /// refreshes and marks the store dirty, so a peer's edit both
     /// shows and persists.
     public var onRemoteChange: (() -> Void)?
+    /// What a refused enrolment should do: the model settles as the timer would, since
+    /// a page past its deadline refuses (ADR-0052), and says so.
+    public var onEnrolRefused: ((UInt64) -> Void)?
     /// Where the conceal server URL lives, for endpoint derivation.
     public var serverUrlProvider: () -> String = { "" }
     /// How the authorize URL reaches the system browser, never a web
@@ -553,7 +556,10 @@ public final class SyncController: ObservableObject {
     /// Enrol a page into the channel or withdraw it — the per-page
     /// opt-in of relay protocol §1.
     public func enrol(page: UInt64, on: Bool) {
-        guard client.syncEnrolPage(id: page, enrolled: on) else { return }
+        guard client.syncEnrolPage(id: page, enrolled: on) else {
+            onEnrolRefused?(page)
+            return
+        }
         if on {
             enrolledPages.insert(page)
         } else {

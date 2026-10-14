@@ -1511,6 +1511,23 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
+    /// The core refuses to enrol a page past its deadline in sync, and that refusal
+    /// settles the page with its line as every other does; a standing page enrols.
+    func testARefusedEnrolmentOfAPagePastItsDeadlineSettlesIt() throws {
+        let standing = try makePage()
+        standing.model.sync.enrol(page: standing.sheet, on: true)
+        XCTAssertTrue(standing.model.sync.isEnrolled(standing.sheet), "the control: it enrols")
+        XCTAssertNotEqual(standing.model.notice, PageModel.pageExpiredLine)
+
+        let page = try makePage()
+        try age(page)
+        page.model.sync.enrol(page: page.sheet, on: true)
+
+        XCTAssertFalse(page.model.sync.isEnrolled(page.sheet))
+        XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine)
+        XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, "no settle")
+    }
+
     /// A conceal of a page or an object past its deadline sends nothing, and its
     /// refusal settles: the draft goes with its subject and the line says why.
     func testAConcealPastTheDeadlineSendsNothingAndTheSettleTakesThePage() throws {

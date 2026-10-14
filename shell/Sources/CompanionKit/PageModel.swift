@@ -1547,6 +1547,7 @@ public final class PageModel: ObservableObject {
             self?.markDirty()
             self?.refresh()
         }
+        sync.onEnrolRefused = { [weak self] page in self?.settleRefusal(sheet: page, told: true) }
         lastPadID = pads.activeID
         lastPadsEnabled = pads.isEnabled
         pads.onChange = { [weak self] in self?.padCatalogChanged() }
