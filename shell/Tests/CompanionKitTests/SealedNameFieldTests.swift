@@ -255,6 +255,34 @@ final class SealedNameFieldTests: XCTestCase {
         )
     }
 
+    // MARK: The write a name arms (ADR-0043 point 5)
+
+    /// A name set or cleared and a note edited each mark the page dirty;
+    /// a name the core refuses marks nothing.
+    func testANameOrANoteEditArmsAWriteAndARefusalArmsNone() throws {
+        let page = try makePage()
+        var marks = page.model.dirtyMarks
+        XCTAssertTrue(page.model.setChipName("DB_PASSWORD", chip: page.chip, sheet: page.sheet))
+        XCTAssertEqual(coreName(page), "DB_PASSWORD")
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "a name armed no write")
+
+        marks = page.model.dirtyMarks
+        XCTAssertFalse(page.model.setChipName("db.password", chip: page.chip, sheet: page.sheet))
+        XCTAssertEqual(coreName(page), "DB_PASSWORD")
+        XCTAssertEqual(page.model.dirtyMarks, marks, "a refused name armed a write")
+
+        XCTAssertTrue(page.model.setChipName("", chip: page.chip, sheet: page.sheet))
+        XCTAssertNil(coreName(page))
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "a cleared name armed no write")
+
+        marks = page.model.dirtyMarks
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chip, json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "rotate monthly")
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "a note edit armed no write")
+    }
+
     // MARK: Keeping when the seat goes
 
     /// The object leaving the page, the page leaving the editor, and the
