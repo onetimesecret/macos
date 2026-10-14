@@ -49,7 +49,7 @@ public struct TabStripView: View {
             // spacing, and `stripGroupsAreAbsentWithNoFileOpen` holds
             // the model side of that.
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileTab(
                         file: file,
@@ -57,7 +57,7 @@ public struct TabStripView: View {
                         model: model
                     )
                 }
-                GroupLabel(text: "PAD")
+                GroupLabel(text: "Pad")
             }
             // The slots scroll as one run. The frames the reorder reads
             // are taken in the strip's own space, which the scroll offset
@@ -237,7 +237,7 @@ public struct TimeStripView: View {
             projection: projection, selection: model.selection)
         HStack(spacing: 2) {
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileTab(
                         file: file,
@@ -245,7 +245,7 @@ public struct TimeStripView: View {
                         model: model
                     )
                 }
-                GroupLabel(text: "PAD")
+                GroupLabel(text: "Pad")
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
@@ -730,14 +730,15 @@ struct FileTab: View {
 ///
 /// Exposed to VoiceOver as the group's name rather than hidden, which
 /// is what makes the two named groups the specification asks for.
+/// Set as a sidebar section header: title case in the system font, in
+/// the secondary label, which clears 4.5:1 where tertiary reads 2:1.
 struct GroupLabel: View {
     let text: String
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .tracking(1.3)
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.secondaryInk)
             .padding(.horizontal, 4)
             .accessibilityLabel(Text("\(text.lowercased()) group"))
     }

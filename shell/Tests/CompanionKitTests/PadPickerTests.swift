@@ -293,6 +293,15 @@ final class PadPickerTests: XCTestCase {
         }
     }
 
+    /// Section headings are title case, as sidebar sections are, and the
+    /// Applications pop-up carries no ellipsis: it is a menu, not a window.
+    func testHeadingsAreTitleCaseAndTheApplicationsPopUpHasNoEllipsis() {
+        XCTAssertEqual(CompanionL10n.string("pad.picker.heading"), "Pads")
+        XCTAssertEqual(CompanionL10n.string("pad.timeline.heading"), "Timeline")
+        XCTAssertEqual(CompanionL10n.string("pad.files.heading"), "Files")
+        XCTAssertEqual(CompanionL10n.string("pad.app.menu"), "Applications")
+    }
+
     func testPadShortcutsYieldToSheetAttachedToAnotherWindow() {
         _ = NSApplication.shared
         let windows = (0..<3).map { _ in

@@ -132,7 +132,7 @@ public struct TimeRailView: View {
             // is the ADR-0020 guarantee kept structurally: a file never
             // enters `tabs`, so the projection cannot see one.
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileShelfRow(
                         file: file,
@@ -264,7 +264,7 @@ public struct TimeRailView: View {
     /// two ways.
     private var padHeading: some View {
         HStack(spacing: 0) {
-            GroupLabel(text: "PAD")
+            GroupLabel(text: "Pad")
             Spacer(minLength: 0)
             Button(action: model.newPage) {
                 Image(systemName: "plus")
@@ -919,7 +919,7 @@ public struct SlotRailView: View {
         // them must not make the Files and Pad labels jump sideways.
         VStack(alignment: .leading, spacing: 2) {
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileShelfRow(
                         file: file,
@@ -927,7 +927,7 @@ public struct SlotRailView: View {
                         model: model
                     )
                 }
-                GroupLabel(text: "PAD")
+                GroupLabel(text: "Pad")
             }
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 2) {
