@@ -44,6 +44,16 @@ enum Mode: String, CaseIterable {
 enum Side: String, CaseIterable { case right = "Right", left = "Left", top = "Top", bottom = "Bottom" }
 enum Phase: String { case idle, peek, card }
 
+func stagedFrame(_ card: NSRect, stage: Phase, mode: Mode, side: Side) -> NSRect {
+    guard stage == .peek else { return card }
+    var frame = card
+    if mode == .status || side == .top { frame.origin.y = frame.maxY - 34; frame.size.height = 34 }
+    else if side == .bottom || mode == .corner { frame.size.height = 34 }
+    else if side == .left { frame.size.width = 34 }
+    else { frame.origin.x = frame.maxX - 34; frame.size.width = 34 }
+    return frame
+}
+
 struct EdgeGeometry {
     var frame: NSRect
     var side: Side
@@ -544,13 +554,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     func show(_ stage: Phase) {
         let first = phase == .idle
         if first { cardFrame = destination() }
-        var frame = cardFrame
-        if stage == .peek {
-            if mode == .status || side == .top { frame.origin.y = frame.maxY - 34; frame.size.height = 34 }
-            else if side == .bottom || mode == .corner { frame.size.height = 34 }
-            else if side == .left { frame.size.width = 34 }
-            else { frame.origin.x = frame.maxX - 34; frame.size.width = 34 }
-        }
+        let frame = stagedFrame(cardFrame, stage: stage, mode: mode, side: side)
         phase = stage; shownAt = now; exitAt = nil
         armingOrigin = NSEvent.mouseLocation
         pointerWasOutside = !frame.contains(armingOrigin)
