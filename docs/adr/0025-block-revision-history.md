@@ -288,19 +288,19 @@ Settle list, as of this date:
 - **Key-frame emission and local discard.** Determined, and against
   the hoped-for answer. Emission and compaction are one event by
   construction: both sites that stage a frame call
-  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:981` for a
-  confirmed ballot and `crates/ffi/src/sync_session.rs:1088` for the
+  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:952` for a
+  confirmed ballot and `crates/ffi/src/sync_session.rs:1051` for the
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
-  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1003`).
+  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1015`).
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
   (`crates/ffi/src/gop.rs:277`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
-  (`crates/core/src/store.rs:4903`). The joining side discards too, by
+  (`crates/core/src/store.rs:5095`). The joining side discards too, by
   a separate rule: a frame lands only on a pristine page
-  (`crates/core/src/store.rs:4641`), so a device carrying
+  (`crates/core/src/store.rs:4833`), so a device carrying
   pre-ceremony history drops it and rejoins empty
-  (`crates/core/src/store.rs:4592`). **Unverified; no test exercises
+  (`crates/core/src/store.rs:4784`). **Unverified; no test exercises
   a key frame emitted without a local discard**, and no code path
   offers one. Whether part 2's schedule change removes the occasion
   rather than the coupling is the question left standing.
@@ -309,15 +309,15 @@ Settle list, as of this date:
 Delivered by #132 and holding part 4:
 
 - Local only step, peer's operations left standing:
-  `crates/core/src/document.rs:1594`, `crates/core/src/store.rs:5725`.
+  `crates/core/src/document.rs:1594`, `crates/core/src/store.rs:5917`.
 - Nothing to step back through after a restore or a ceremony:
   `crates/core/src/document.rs:1562`, `crates/core/src/document.rs:1579`,
-  `crates/core/src/store.rs:5669`.
+  `crates/core/src/store.rs:5861`.
 - The stack forgotten where a step would lie: a seal
-  (`crates/core/src/store.rs:5018`), a deleted chip
-  (`crates/core/src/store.rs:5471`), a wholesale restate
-  (`crates/core/src/store.rs:5652`), a peer's chip deletion
-  (`crates/core/src/store.rs:5688`).
+  (`crates/core/src/store.rs:5210`), a deleted chip
+  (`crates/core/src/store.rs:5663`), a wholesale restate
+  (`crates/core/src/store.rs:5844`), a peer's chip deletion
+  (`crates/core/src/store.rs:5880`).
 - Two second merge interval and the automation's own step:
   `crates/core/src/document.rs:1501`, `crates/core/src/document.rs:1523`.
 - The caret across the seam: `crates/core/src/document.rs:1436`,
