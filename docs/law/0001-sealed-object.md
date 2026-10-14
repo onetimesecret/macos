@@ -12,10 +12,14 @@ consumed-by:
   - docs/adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md (the envelope, the detached store, the active cut, resolution, the decrypted drag's write, the clipboard slot)
   - docs/adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md (a page past its deadline gives no object to a paste, move or clone)
   - docs/adr/0049-a-pasted-envelope-is-bounded.md (the envelope's length and references, and one object named once)
+  - docs/adr/0050-a-decrypted-drag-lands-only-in-another-app.md (which asks the decrypted drag's provider answers)
+  - docs/adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md (the handle's seat, look and press)
 sources:
   - docs/adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md (what the fragment, lifecycle and drag rows left open)
   - docs/adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md (the cut row's clock and the expiry row, between a deadline and its sweep)
   - docs/adr/0049-a-pasted-envelope-is-bounded.md (what a crafted envelope can clone)
+  - docs/adr/0050-a-decrypted-drag-lands-only-in-another-app.md (what the decrypted drag row left open about its destinations)
+  - docs/adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md (where the handle stands with no move handle beside it)
   - crates/core/src/fragment.rs (the envelope and the public text, from one walk)
   - crates/core/src/transfer.rs (cut, paste, the slot's route, the drags inside a page, resolution and the transaction)
   - crates/pasteboard/src/macos.rs (`SystemDragItem`, the decrypted drag's write into its item)
@@ -35,11 +39,12 @@ sources:
   - crates/core/src/note.rs (the note's own document and undo)
   - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections; the name and note routes)
   - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt, ChipInfo.name, ChipInfo.hasNote)
-  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands; `makeSurface`, the page's and the note's one writing surface; `selectObjectBeside` and `undoRemoval`, the two presses and the removal line's Undo; `beginPageDrag`, `dropPageDrag`, `dropFragment` and `endPageDrag`, the page's drags)
-  - shell/Sources/CompanionKit/SealedBlockLayout.swift (the named row's zones, pill and allotment)
+  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the named row and its zones, the doorway, the chip menu, the seal commands; `makeSurface`, the page's and the note's one writing surface; `selectObjectBeside` and `undoRemoval`, the two presses and the removal line's Undo; `beginPageDrag`, `dropPageDrag`, `dropFragment` and `endPageDrag`, the page's drags; `decryptedDragRect`, `startsDecryptedDrag` and `beginDecryptedDrag`, the decrypted drag's handle, and `isDecryptedDrag`, its refusal)
+  - shell/Sources/CompanionKit/DecryptedDrag.swift (the decrypted drag's source and data provider)
+  - shell/Sources/CompanionKit/SealedBlockLayout.swift (the named row's zones, pill and allotment; the handle's clearances)
   - shell/Sources/CompanionKit/SealedNameField.swift (the name's field)
   - shell/Sources/CompanionKit/SealedNotePopover.swift (`NotePopoverLayout.minimumWidth`, the note's popover)
-  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes; `InkDocument`, the routes by document; `cutSelection`, `placeActiveCut`, `cutSlotSentence`, the cut and the clipboard slot; `pasteFragment`, the paste; `noteRemoval` and `withdrawRemovalUndo`, the removal line)
+  - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes; `InkDocument`, the routes by document; `cutSelection`, `placeActiveCut`, `cutSlotSentence`, the cut and the clipboard slot; `pasteFragment`, the paste; `noteRemoval` and `withdrawRemovalUndo`, the removal line; `provideDecryptedDrag`, the provider's route)
   - shell/Sources/CompanionKit/PageSurface.swift (`PageStatusStack`, the clipboard slot's line)
   - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
@@ -138,7 +143,7 @@ without a test says what it is owed by.
 | drag, inside the document | structural editing | moves the selected objects and ink atomically with a clear insertion line; contents never preview | the core's move: `transfer.rs` `a_drag_inside_a_page_moves_ink_and_objects_in_one_step_keeping_identity`; `SealedFragmentSeamTests.swift` `testTheSlotTheMoveAndTheCloneRoutes`; an editor's move in two batches keeps the object: `store.rs` `an_editor_move_in_two_batches_detaches_and_then_reattaches_the_chip`; refused on a page past its deadline: `transfer.rs` `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`; the editor's drop on its own page: `SealedDragTests.swift` `testADragInsideThePageMovesInkAndObjectsAsOneStepKeepingThem`, `testADropOntoItsOwnRangeOrAChangedPageChangesNothing`, `testTheViewsDropRoutesAFragmentAndTheOwnDragThroughTheCore`; a drag to another page pastes there and its move removes the source run, which detaches: `testADragToAnotherPagePastesThereAndTheMoveRemovesItsSource`; standing aside while a field or the note holds the keys: `testDragsStandAsideWhileAFieldOrTheNoteHoldsTheKeys`; the gesture under a real pointer, its insertion line and its image: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | ⌥ drag | structural editing | clones all selected sealed objects core-side as one operation, following the macOS copy-drag convention | the core's clone: `transfer.rs` `an_option_drag_clones_every_object_in_one_step`; refused on a page past its deadline: `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`; the editor's ⌥ drop: `SealedDragTests.swift` `testAnOptionDragClonesEveryObjectCoreSide`, `testADragOffersAMoveOnlyInsideTheAppAndOptionNarrowsItToACopy`; its clones arm a write: `LedgerAppendArmingTests.swift`; ⌥ under a real pointer: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | plain drag, outside | ambient observation | exposes only ordered ink and placeholders | the public text it carries is the copy's (the copy row); the drag's one item, the copy's fragment, with nothing else written and the ordinary pasteboard untouched: `SealedDragTests.swift` `testThePlainDragCarriesTheCopysFragmentAndNothingElse`, `testInkAloneDragsAsPlainTextAndSeveralStretchesWithAnObjectDoNot`; only a copy offered outside the app, and no run removed on another app's answer: `testADragOffersAMoveOnlyInsideTheAppAndOptionNarrowsItToACopy`, `testACopiedCancelledOrForeignDragLeavesItsSource`; what another app receives: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
-| decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | the core's write into the drag item, its refusals and its record: `lib.rs` `a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag`, `a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`, `the_fragment_routes_fail_closed`; `crates/pasteboard/src/macos.rs` `a_drag_item_takes_the_plaintext_under_its_kinds_type`, `a_drag_item_on_the_general_pasteboard_says_so`, `a_drag_item_refuses_null_and_objects_of_another_class`; `SealedFragmentSeamTests.swift` `testADecryptedDragWritesTheItemCoreSideAndRecordsADrag`; its buffer: `store.rs` `a_copy_out_is_written_at_its_exact_size`; the `Drag` class at rest: `persist.rs` `every_destination_class_round_trips_in_the_ledger`; the handle and its data provider, owed: issue 170, the editor's half; a drop into another app, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | the core's write into the drag item, its refusals and its record: `lib.rs` `a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag`, `a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`, `the_fragment_routes_fail_closed`; `crates/pasteboard/src/macos.rs` `a_drag_item_takes_the_plaintext_under_its_kinds_type`, `a_drag_item_on_the_general_pasteboard_says_so`, `a_drag_item_refuses_null_and_objects_of_another_class`; `SealedFragmentSeamTests.swift` `testADecryptedDragWritesTheItemCoreSideAndRecordsADrag`; its buffer: `store.rs` `a_copy_out_is_written_at_its_exact_size`; the `Drag` class at rest: `persist.rs` `every_destination_class_round_trips_in_the_ledger`; the handle's seat and press ([ADR-0051](../adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md)): `SealedDecryptedDragTests.swift` `testTheHandleSitsBeforeTheActionsSeatAndOnlyWhereItFits`, `testTheHandleDragsTheChipsOwnTypeAndAnUnknownKindHasNone`, `testOnlyAFirstPlainPressOnADrawnHandleStartsTheDrag`; its data provider, the core's write on a destination's ask, its record arming a write and the object left standing: `testADestinationsAskIsWrittenByTheCoreAndRecordsOneDrag`, `LedgerAppendArmingTests`; a cancelled session and a foreign ask refused: `testACancelledDragAndAForeignAskAreRefused`; a copy outside the app and no drop on the page or the note ([ADR-0050](../adr/0050-a-decrypted-drag-lands-only-in-another-app.md)): `testTheDragOffersACopyToAnotherAppAndNothingInsideThisOne`, `testTheDecryptedDragLandsOnNoPageOfThisApp`; standing aside: `testTheDecryptedDragStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`; the handle under a real pointer, a drop into another app, a cancel and the app's other fields: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | backspace beside it | structural editing | the first press selects the object, the second removes it from the page | the editor's two presses, and a forward delete before the object alike: `SealedRemovalTests.swift` `testTheFirstBackspaceBesideAnObjectSelectsItAndTheSecondRemovesIt`, `testTheFirstForwardDeleteBeforeAnObjectSelectsItAndTheSecondRemovesIt`; a press beside ink deletes one character, `testAPressBesideInkDeletesOneCharacter`; standing aside while a field or the note holds the keys (ADR-0046) `testBackspaceAndTheUndoStandAsideWhileAFieldOrTheNoteHoldsTheKeys`; the real keys on the raised card, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | backspace, selected | structural editing | detaches it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; the detach and the undo: `store.rs` `deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`, `undo_stands_a_removed_chip_again_from_the_detached_store`; through the editor: `DocumentOpsTests.swift` `testUndoAfterRemovingAChipStandsTheSameObjectAgain`, `testPuttingARemovedChipsAttachmentBackReattachesIt`; the removal line's Undo, which stands the same object again and leaves the line once the page moves past the removal: `SealedRemovalTests.swift` `testTheRemovalLinesUndoStandsTheSameObjectAgain`, `testASelectionHoldingAnObjectGoesInOnePressWithUndo`, `testARemovalIsItsOwnStep`, `testTheUndoGoesOnceThePageMovesPastTheRemoval`, `testTheMenusRemovalOffersTheSameUndo`; `SealedCapsuleTests.swift` `testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords`; the line's button on the raised card, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | find, word count | ambient observation | does not inspect the payload; may count one protected object | `WrapTests.swift` `testUseSelectionForFindRefusesAChip`; no word count exists |
@@ -519,8 +524,13 @@ fragment alone, a move offered only inside the app, the drop on its
 own page moving or with ⌥ cloning through the core as one step, a drop
 on another page pasting there and its move removing the source run,
 and their standing aside while a field or the note holds the keys),
-`LedgerAppendArmingTests` (a paste's and a ⌥ drag's clones arm a
-write).
+`SealedDecryptedDragTests` (the handle's seat and press, the decrypted
+drag's one promised type, its provider writing through the core on a
+destination's ask and refusing after a cancel, a copy offered only
+outside the app and refused by the page and the note, and its standing
+aside while a field or the note holds the keys),
+`LedgerAppendArmingTests` (a paste's and a ⌥ drag's clones and a
+provided decrypted drag's `sent` arm a write).
 
 By hand: the [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md)
 procedure, for the zones under a real pointer, the beat on a display,
@@ -539,10 +549,9 @@ pinned the removal line without its Undo was rewritten as
 `burning_a_chip_takes_the_stack_with_it` stands, since a burn is not a
 removal.
 
-Owed: issue 170, the editor's half: the decrypted drag
-handle and its data provider, over the core's
-routes and tests named in the rows; a first run of the sealed zones and
-note procedure and of the sealed fragment procedure. Issues 169
+Owed: a first run of the sealed zones and note procedure and of the
+sealed fragment procedure, which alone sees the decrypted drag's handle
+under a real pointer and its drop into another app. Issues 169
 (`SealedBlockTests`) and 172 (the interrupting dialogs) are closed;
 D-14 is strict and the seal, remove, copy decrypted, naming and note
 paths must stay dialog free.
@@ -787,3 +796,20 @@ paths must stay dialog free.
   what another app receives go to the sealed fragment procedure.
   `LedgerAppendArmingTests` gains the ⌥ drag's clones. The owed list
   drops the plain drags and the settle after a move or clone.
+- 2026-10-13: Editor decrypted drag amendment (issue 170's editor
+  half). The decrypted drag row replaces its owed clause with
+  `SealedDecryptedDragTests`. The handle stands on the block's top row
+  before the actions glyph ([ADR-0051](../adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md)),
+  since no move handle exists to stand beside. Its drag carries one
+  item promising the chip's own type, and the provider hands each ask
+  to the core's write. A decrypted drag dropped on the app's own page
+  met drop to seal, whose core read would ask the provider while the
+  core held the lock the provider's write takes; it now lands only in
+  another app ([ADR-0050](../adr/0050-a-decrypted-drag-lands-only-in-another-app.md)):
+  no operation is offered inside the app, the page and the note refuse
+  it before drop to seal reads the board, and a cancelled session
+  answers no later ask. The handle stands aside while a field or the
+  note holds the keys. `LedgerAppendArmingTests` gains the provided
+  drag's `sent`. The pointer, another app's drop and the app's other
+  fields go to the sealed fragment procedure. The owed list drops the
+  handle and its data provider.
