@@ -180,3 +180,7 @@ the core writes a decrypted drag into the drag item the shell hands it.
 ## Decision history
 
 - 2026-10-13: Accepted for issues #170 and #247, before their code.
+- 2026-10-13: [ADR-0048](0048-a-transfer-sweeps-due-pages-before-it-resolves.md)
+  sweeps due pages before point 6 resolves and refuses a due page to a
+  paste, move or clone; [ADR-0049](0049-a-pasted-envelope-is-bounded.md)
+  bounds the envelope point 3 reads. The decisions above stand.
