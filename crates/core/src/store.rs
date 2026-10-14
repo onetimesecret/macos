@@ -4597,6 +4597,41 @@ mod tests {
     }
 
     #[test]
+    fn a_peers_batch_holding_an_unmarked_object_character_lands_and_a_delete_takes_it_out() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().1;
+        let b = beta.new_tab().1;
+        // An earlier build took U+FFFC as ink: write it below this build's guard.
+        let sheet = alpha.sheet_mut(a).unwrap();
+        crate::ink::apply_batch(
+            &mut sheet.document,
+            &typed(0, "x\u{FFFC}y"),
+            EditIntent::Paste,
+            None,
+        )
+        .unwrap();
+        alpha.settle_document(a);
+
+        // Refusing it would stall the page's sync (client protocol 10.31).
+        ship(&alpha, a, &mut beta, b).unwrap();
+        let ink = |text: &str| vec![Segment::Ink(text.into())];
+        assert_eq!(beta.sheet(b).unwrap().segments(), ink("x\u{FFFC}y"));
+
+        // The editor takes it out as an ordinary delete, which reaches the peer.
+        assert!(beta.apply_ops(
+            b,
+            &[EditOp::Delete {
+                pos_u16: 1,
+                len_u16: 1
+            }]
+        ));
+        assert_eq!(beta.sheet(b).unwrap().segments(), ink("xy"));
+        ship(&beta, b, &mut alpha, a).unwrap();
+        assert_eq!(alpha.sheet(a).unwrap().segments(), ink("xy"));
+    }
+
+    #[test]
     fn a_peers_updates_land_and_settle_like_local_edits() {
         let (mut alpha, _) = store();
         let (mut beta, _) = store();
