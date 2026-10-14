@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste, two press removal and its Undo, drags) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
+description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste, two press removal and its Undo, drags, decrypted drag) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry)
 metadata:
   type: project
 ---
@@ -98,10 +98,23 @@ Seams for the editor half (all page ids, all refuse a file id):
   pastes, then tells the source `pageDragMovedAway()`, and only then does
   `endPageDrag(.move)` delete the source run. Both check the
   `(document, generation)` stamp. `dragOperation(for:type:)` feeds
-  AppKit's drop caret (unobserved). Trap for the decrypted drag: a drag
-  whose source is the page with no `pageDrag` falls to
-  `super.performDragOperation`, which would read its plaintext in as ink.
+  AppKit's drop caret (unobserved). A drag whose source is the page with
+  no `pageDrag` still falls to `super.performDragOperation`; never make
+  the page a decrypted drag's source.
   `FakeDrag` stands in for NSDraggingInfo; never pass it to a super call.
+
+- Decrypted drag is built (shell unit 7, `SealedDecryptedDragTests`,
+  ADR-0050 and ADR-0051): `DecryptedDrag` is the session's source and
+  the item's provider; `Coordinator.beginDecryptedDrag(at:)` makes both;
+  `InkTextView.mouseDown` sends a first plain press on a drawn handle
+  (`SealedBlockCell.decryptedDragRect`) to `trackDecryptedDrag`. Probed
+  2026-10-13 with swiftc: an item retains its provider until the
+  promise is met; a standalone item's read asks with a nil pasteboard;
+  an in-process read asks synchronously on main inside the read. So
+  drop to seal on our own decrypted drag would relock the core's Mutex:
+  `isDecryptedDrag` refuses first, and the in-app mask is empty. A test
+  of the refusal must assert `draggingEntered` before calling perform,
+  or a regression reads the real system drag board.
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
