@@ -5976,11 +5976,11 @@ public final class PageModel: ObservableObject {
         return .cut(selecting: selecting)
     }
 
-    /// The slot's route: place the active cut over `range` on `sheet`
+    /// The slot's route: place the active cut over the selection on `sheet`
     /// (ADR-0047 point 12). Nil when the core refuses, settled as `settlingRefusal` says.
     @discardableResult
-    public func placeActiveCut(sheet: UInt64, range: NSRange) -> PlacedFragment? {
-        guard !sheet.isFileID else { return nil }
+    public func placeActiveCut(sheet: UInt64, ranges: [NSRange]) -> PlacedFragment? {
+        guard !sheet.isFileID, let range = pasteRange(ranges) else { return nil }
         guard let placed = settlingRefusal({ client.pasteActiveCut(sheet: sheet, range: range) })
         else {
             if !livePageIDs.contains(sheet) { flash(Self.pageExpiredLine) }
@@ -6012,16 +6012,29 @@ public final class PageModel: ObservableObject {
         case refused
     }
 
-    /// Paste the fragment on `pasteboard` over `range` through the core as one
-    /// undo step (ADR-0047 points 3, 6 and 8), with its item's text as the fallback.
+    /// The line when a fragment meets a selection of several stretches.
+    public static let severalStretchesPasteLine =
+        "sealed objects paste into one selection, not several."
+
+    /// The one range a paste places over; several stretches refuse with their line, since
+    /// the core places one range as copy, cut and drag compose one (ADR-0047 point 2).
+    private func pasteRange(_ ranges: [NSRange]) -> NSRange? {
+        guard ranges.count > 1 else { return ranges.first }
+        flash(Self.severalStretchesPasteLine)
+        return nil
+    }
+
+    /// Paste the fragment on `pasteboard` over the selection's one range through the core
+    /// as one undo step (ADR-0047 points 3, 6 and 8), with its item's text as the fallback.
     @discardableResult
     public func pasteFragment(
-        from pasteboard: NSPasteboard, sheet: UInt64, range: NSRange
+        from pasteboard: NSPasteboard, sheet: UInt64, ranges: [NSRange]
     ) -> PasteOutcome {
         // A file takes the public text, as another app does.
         guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard),
               let envelope = item.data(forType: SealedFragment.pasteboardType)
         else { return .ordinary }
+        guard let range = pasteRange(ranges) else { return .refused }
         guard let placed = settlingRefusal({
             client.pasteFragment(
                 sheet: sheet, range: range, envelope: envelope,

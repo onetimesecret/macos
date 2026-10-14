@@ -2770,8 +2770,8 @@ public struct InkEditorView: NSViewRepresentable {
             }
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
-            guard let placed = model.placeActiveCut(sheet: sheet, range: textView.selectedRange())
-            else { return false }
+            let ranges = textView.selectedRanges.map(\.rangeValue)
+            guard let placed = model.placeActiveCut(sheet: sheet, ranges: ranges) else { return false }
             settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
             return true
         }
@@ -2787,7 +2787,8 @@ public struct InkEditorView: NSViewRepresentable {
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
             let outcome = model.pasteFragment(
-                from: model.ambientPasteboard, sheet: sheet, range: textView.selectedRange())
+                from: model.ambientPasteboard, sheet: sheet,
+                ranges: textView.selectedRanges.map(\.rangeValue))
             switch outcome {
             case .ordinary:
                 return false
@@ -2915,7 +2916,7 @@ public struct InkEditorView: NSViewRepresentable {
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
             guard case .placed(let placed) = model.pasteFragment(
-                from: board, sheet: sheet, range: NSRange(location: index, length: 0))
+                from: board, sheet: sheet, ranges: [NSRange(location: index, length: 0)])
             else { return false }
             settleRewrite(selecting: placed.range)
             return true

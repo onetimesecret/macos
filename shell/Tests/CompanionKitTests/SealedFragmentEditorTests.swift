@@ -708,7 +708,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         let file = page.sheet | CompanionClient.fileIDTag
         XCTAssertEqual(
             page.model.pasteFragment(
-                from: page.pasteboard, sheet: file, range: NSRange(location: 0, length: 0)),
+                from: page.pasteboard, sheet: file, ranges: [NSRange(location: 0, length: 0)]),
             .ordinary)
 
         page.coordinator.beginNote(at: 3)
@@ -784,12 +784,54 @@ final class SealedFragmentEditorTests: XCTestCase {
             page.model.tabs.contains { $0.pageID == page.sheet }, "the control: the page still shows")
 
         let outcome = page.model.pasteFragment(
-            from: page.pasteboard, sheet: fresh, range: NSRange(location: 0, length: 0))
+            from: page.pasteboard, sheet: fresh, ranges: [NSRange(location: 0, length: 0)])
         guard case .placed(let placed) = outcome else { return XCTFail("placed nothing") }
         XCTAssertEqual(placed.pagesExpired, 1)
         XCTAssertEqual(placed.expired, 2)
         XCTAssertFalse(
             page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
+    }
+
+    /// A fragment or the slot's cut over several stretches places nothing and says so, as
+    /// copy, cut and drag refuse them; a board of ink alone is left to AppKit's paste.
+    func testAFragmentPastesIntoOneSelectionNotSeveral() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.cut(nil)
+        let standing = try XCTUnwrap(page.model.activeCut)
+        let stretches = [
+            NSValue(range: NSRange(location: 0, length: 2)),
+            NSValue(range: NSRange(location: 4, length: 2)),
+        ]
+        let text = page.textView.string
+        let objects = chips(page).map(\.chipId)
+        let records = page.model.coreClient.ledger().count
+        let marks = page.model.dirtyMarks
+        let commands: [(name: String, run: (InkTextView) -> Void)] = [
+            ("Paste", { $0.paste(nil) }),
+            ("Paste and Match Style", { $0.pasteAsPlainText(nil) }),
+            ("Paste Without Detection", { $0.pasteWithoutDetection(nil) }),
+            ("the slot's Place", { XCTAssertFalse($0.coordinator?.placeActiveCut() ?? true) }),
+        ]
+        for command in commands {
+            page.model.notice = nil
+            page.textView.selectedRanges = stretches
+            command.run(page.textView)
+            XCTAssertEqual(page.model.notice, PageModel.severalStretchesPasteLine, command.name)
+            XCTAssertEqual(page.textView.string, text, "\(command.name) changed the page")
+            XCTAssertEqual(page.textView.selectedRanges, stretches, command.name)
+        }
+        XCTAssertEqual(chips(page).map(\.chipId), objects)
+        XCTAssertEqual(page.model.activeCut, standing, "the refusal ended the cut")
+        XCTAssertEqual(page.model.coreClient.ledger().count, records)
+        XCTAssertEqual(page.model.dirtyMarks, marks, "a refusal armed a write")
+
+        page.pasteboard.clearContents()
+        XCTAssertTrue(page.pasteboard.setString("zz", forType: .string))
+        page.model.notice = nil
+        page.textView.selectedRanges = stretches
+        XCTAssertEqual(page.coordinator.pasteFragment(), false, "ink alone was not left to AppKit")
+        XCTAssertNil(page.model.notice)
     }
 
     /// A refused paste or place with nothing due changed nothing, so it arms no write;
@@ -857,7 +899,7 @@ final class SealedFragmentEditorTests: XCTestCase {
 
         XCTAssertEqual(
             page.model.pasteFragment(
-                from: page.pasteboard, sheet: fresh, range: NSRange(location: 0, length: 0)),
+                from: page.pasteboard, sheet: fresh, ranges: [NSRange(location: 0, length: 0)]),
             .refused)
 
         XCTAssertEqual(client.pagesSwept, 1, "the control: the paste's own sweep took the page")

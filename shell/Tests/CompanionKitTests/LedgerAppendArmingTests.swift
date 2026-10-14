@@ -64,7 +64,7 @@ final class LedgerAppendArmingTests: XCTestCase {
                       fragment.write(to: board)
                 else { return }
                 model.pasteFragment(
-                    from: board, sheet: sheet, range: NSRange(location: 1, length: 0))
+                    from: board, sheet: sheet, ranges: [NSRange(location: 1, length: 0)])
             }),
             // The ⌥ drag clones its objects core side (ADR-0047 point 10).
             ("dropRange cloning appends sealed for each clone", {
