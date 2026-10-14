@@ -369,7 +369,8 @@ fn wall_now_ms() -> u64 {
 }
 
 /// Enrol a page into the channel, or withdraw it, which performs any due
-/// ceremony on the spot (client protocol §2).
+/// ceremony on the spot (client protocol §2). A page past its deadline
+/// does not enrol (ADR-0052).
 pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bool) -> bool {
     let Some(page) = companion
         .store
@@ -379,6 +380,9 @@ pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bo
         return false;
     };
     if enrolled {
+        if companion.store.is_due(sheet) {
+            return false;
+        }
         if !companion.store.set_compaction_deferred(sheet, true) {
             return false;
         }
@@ -2982,6 +2986,55 @@ mod tests {
         );
     }
 
+    /// Stage the next publish and open what it seals, as a peer would.
+    fn staged_envelopes(companion: &mut Companion, now_ms: u64) -> Vec<DeltaEnvelope> {
+        let EngineState { session, chain, .. } = companion.sync.engine.as_mut().unwrap();
+        let Some(request) = session.publish_request(now_ms, chain) else {
+            return Vec::new();
+        };
+        let mut body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        body["next_seq"] = 0.into();
+        let batch = companion_sync::relay::RelayApi::parse_deltas(&HttpResponse {
+            status: 200,
+            body: body.to_string().into_bytes(),
+        })
+        .unwrap();
+        batch
+            .blobs
+            .iter()
+            .map(|blob| {
+                let plaintext = chain.open(blob).unwrap();
+                DeltaEnvelope::decode(companion_sync::pad::unpad(&plaintext).unwrap()).unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let uuid = short_lived_page(&mut companion, "hunter2, typed before the deadline");
+        age_by(&mut companion, THREE_HOURS_MS);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        companion.sync.engine = Some(attached_engine(&*credentials));
+
+        assert!(!enrol_page(&mut companion, page, true));
+        assert!(companion.sync.enrolled.is_empty());
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            staged_envelopes(&mut companion, 0).is_empty(),
+            "no publish is staged"
+        );
+        assert!(events.is_empty(), "and no ceremony");
+        assert!(
+            enrol_page(&mut companion, page, false),
+            "withdrawing answers"
+        );
+    }
+
     #[test]
     fn a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
@@ -2997,11 +3050,16 @@ mod tests {
         };
         let gone = inked_page(&mut companion, "closed here");
         let gone = companion.store.sheet(gone).unwrap().uuid();
-        age_by(&mut companion, THREE_HOURS_MS);
         companion.sync.engine = Some(attached_engine(&*credentials));
         for page in [due, live, gone] {
             let sheet = companion.store.sheet_id_of(page).unwrap();
             assert!(enrol_page(&mut companion, sheet, true));
+        }
+        // A restore defers no ceremony, so enrol again; the due page refuses.
+        age_by(&mut companion, THREE_HOURS_MS);
+        for page in [due, live, gone] {
+            let sheet = companion.store.sheet_id_of(page).unwrap();
+            assert_eq!(enrol_page(&mut companion, sheet, true), page != due);
         }
         assert!(
             companion

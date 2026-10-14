@@ -1300,8 +1300,8 @@ bool companion_sync_signout(CompanionHandle *handle);
  * Enrol a page into the sync channel, or withdraw it; per page and off
  * by default (relay protocol section 1). Enrolling defers its
  * compaction to the coordinated ceremony and starts its cursor at the
- * beginning; withdrawing performs any due ceremony on the spot. page
- * is the PAGE id.
+ * beginning; withdrawing performs any due ceremony on the spot. A page
+ * past its deadline does not enrol (ADR-0052). page is the PAGE id.
  */
 bool companion_sync_enrol_page(CompanionHandle *handle, uint64_t page,
                                bool enrolled);
