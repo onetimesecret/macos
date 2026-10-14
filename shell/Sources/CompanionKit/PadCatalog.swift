@@ -2,8 +2,23 @@ import Foundation
 import Combine
 
 public enum PadSortDirection: String, Codable, Sendable {
-    case chronological, reverseChronological
-    public var reversed: Self { self == .chronological ? .reverseChronological : .chronological }
+    case natural, chronological, reverseChronological
+
+    public var reversed: Self {
+        switch self {
+        case .natural: return .natural
+        case .chronological: return .reverseChronological
+        case .reverseChronological: return .chronological
+        }
+    }
+
+    public var next: Self {
+        switch self {
+        case .natural: return .chronological
+        case .chronological: return .reverseChronological
+        case .reverseChronological: return .natural
+        }
+    }
 }
 
 public struct PadEntry: Identifiable, Codable, Equatable, Sendable {
@@ -299,16 +314,24 @@ public final class PadCatalog: ObservableObject {
     }
     public func daySortDirection(for id: UUID) -> PadSortDirection { daySort[id] ?? .reverseChronological }
     public func checkpointSortDirection(for id: UUID, onDate date: String) -> PadSortDirection {
-        checkpointSort[id.uuidString + "/" + date] ?? .chronological
+        checkpointSort[id.uuidString + "/" + date] ?? .natural
     }
     public func toggleDaySort(for id: UUID) {
-        guard loadFailure == nil, entries.contains(where: { $0.id == id }) else { return }
-        daySort[id] = daySortDirection(for: id).reversed
+        setDaySort(daySortDirection(for: id).next, for: id)
+    }
+    public func setDaySort(_ direction: PadSortDirection, for id: UUID) {
+        guard loadFailure == nil, entries.contains(where: { $0.id == id }),
+              daySortDirection(for: id) != direction else { return }
+        daySort[id] = direction
         changed()
     }
     public func toggleCheckpointSort(for id: UUID, onDate date: String) {
-        guard loadFailure == nil, entries.contains(where: { $0.id == id }) else { return }
-        checkpointSort[id.uuidString + "/" + date] = checkpointSortDirection(for: id, onDate: date).reversed
+        setCheckpointSort(checkpointSortDirection(for: id, onDate: date).next, for: id, onDate: date)
+    }
+    public func setCheckpointSort(_ direction: PadSortDirection, for id: UUID, onDate date: String) {
+        guard loadFailure == nil, entries.contains(where: { $0.id == id }),
+              checkpointSortDirection(for: id, onDate: date) != direction else { return }
+        checkpointSort[id.uuidString + "/" + date] = direction
         changed()
     }
     public static func validatedName(_ name: String) -> String? {

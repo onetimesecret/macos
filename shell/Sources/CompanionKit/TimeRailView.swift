@@ -164,6 +164,7 @@ public struct TimeRailView: View {
     /// They do not reorder slots or change a page's creation day.
     private var experimentalRail: some View {
         let projection = model.timeUnits
+        let dayDirection = model.pads.daySortDirection(for: model.pads.activeID)
         let showingRoll = !model.showingLedger && model.selectedFile == nil
         let nodes = StreamNavigator.nodes(
             projection: projection, tabs: model.navigationTabs,
@@ -176,7 +177,7 @@ public struct TimeRailView: View {
                     GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
                     Spacer(minLength: 0)
                     sortControl(
-                        direction: model.pads.daySortDirection(for: model.pads.activeID),
+                        direction: dayDirection,
                         label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort
                     )
                     Button(action: model.newPage) { Image(systemName: "plus") }
@@ -197,7 +198,7 @@ public struct TimeRailView: View {
                                 action: { model.toggleCheckpointSort(dayBucket: unit.bucket) }
                             )
                         }
-                        ForEach(nodes.filter { $0.bucket == unit.bucket }) { node in
+                        ForEach(Self.nodes(for: unit, in: nodes)) { node in
                             Button {
                                 model.select(target: node.target)
                                 if Self.drivesRoll(surface: surface, owner: model.owner),
@@ -239,12 +240,21 @@ public struct TimeRailView: View {
         .frame(width: Self.width(experimental: true)).background(Color.panelBackground)
     }
 
+    static func nodes(for unit: TimeUnitProjection.Unit, in nodes: [StreamNavigator.Node]) -> [StreamNavigator.Node] {
+        let pages = Set(unit.pageIDs)
+        return nodes.filter { node in
+            if let page = node.page { return pages.contains(page) }
+            return pages.isEmpty && node.bucket == unit.bucket
+        }
+    }
+
     private func sortControl(
-        direction: PadSortDirection, label: String, action: @escaping () -> Void
+        direction: PadSortDirection, next: PadSortDirection? = nil,
+        label: String, action: @escaping () -> Void
     ) -> some View {
-        let copy = PadSortCopy(direction: direction, subject: label)
+        let copy = PadSortCopy(direction: direction, subject: label, next: next)
         return Button(action: action) {
-            Image(systemName: direction == .chronological ? "arrow.down" : "arrow.up")
+            Image(systemName: copy.symbolName)
                 .font(.system(size: 10)).frame(width: 18, height: 18)
         }
         .buttonStyle(.plain).help(copy.action)
@@ -1138,13 +1148,35 @@ private struct SlotRailRow: View {
 struct PadSortCopy {
     let direction: PadSortDirection
     let subject: String
+    let next: PadSortDirection
+
+    init(direction: PadSortDirection, subject: String, next: PadSortDirection? = nil) {
+        self.direction = direction
+        self.subject = subject
+        self.next = next ?? direction.next
+    }
 
     var label: String { CompanionL10n.format("pad.sort.label", subject) }
     var currentOrder: String {
-        CompanionL10n.string(direction == .chronological ? "pad.sort.oldest" : "pad.sort.newest")
+        switch direction {
+        case .natural: return CompanionL10n.string("pad.sort.natural")
+        case .chronological: return CompanionL10n.string("pad.sort.oldest")
+        case .reverseChronological: return CompanionL10n.string("pad.sort.newest")
+        }
     }
     var action: String {
-        CompanionL10n.format(direction == .chronological ? "pad.sort.toNewest" : "pad.sort.toOldest", subject)
+        switch next {
+        case .natural: return CompanionL10n.format("pad.sort.toNatural", subject)
+        case .chronological: return CompanionL10n.format("pad.sort.toOldest", subject)
+        case .reverseChronological: return CompanionL10n.format("pad.sort.toNewest", subject)
+        }
+    }
+    var symbolName: String {
+        switch direction {
+        case .natural: return "list.bullet"
+        case .chronological: return "arrow.down"
+        case .reverseChronological: return "arrow.up"
+        }
     }
 }
 

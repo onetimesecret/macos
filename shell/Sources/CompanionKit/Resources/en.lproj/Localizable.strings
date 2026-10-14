@@ -64,8 +64,10 @@
 "pad.sort.days" = "days";
 "pad.sort.checkpoints" = "%@ checkpoints";
 "pad.sort.label" = "%@ sort order";
+"pad.sort.natural" = "Natural order";
 "pad.sort.oldest" = "Oldest first";
 "pad.sort.newest" = "Newest first";
+"pad.sort.toNatural" = "Activate to sort %@ in natural order";
 "pad.sort.toNewest" = "Activate to sort %@ newest first";
 "pad.sort.toOldest" = "Activate to sort %@ oldest first";
 "pad.page.new" = "New page";

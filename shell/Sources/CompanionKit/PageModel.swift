@@ -2975,9 +2975,12 @@ public final class PageModel: ObservableObject {
     private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
         guard pads.isEnabled else { return projection }
         let summaries = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-        var units = projection.units.map { unit in
+        let dayDirection = pads.daySortDirection(for: pads.activeID)
+        let grouped = dayDirection == .natural ? projection.inNaturalOrder(tabs: navigationTabs) : projection
+        var units = grouped.units.map { unit in
             let direction = pads.checkpointSortDirection(for: pads.activeID, onDate: dateKey(forDayBucket: unit.bucket))
-            let ordered = zip(unit.tabIDs, unit.pageIDs).sorted { a, b in
+            let natural = Array(zip(unit.tabIDs, unit.pageIDs))
+            let ordered = direction == .natural ? natural : natural.sorted { a, b in
                 let lhs = summaries[a.0]?.pageCreatedMs ?? 0, rhs = summaries[b.0]?.pageCreatedMs ?? 0
                 if lhs == rhs {
                     let left = summaries[a.0]?.uuid ?? String(a.0)
@@ -2989,9 +2992,10 @@ public final class PageModel: ObservableObject {
             return TimeUnitProjection.Unit(bucket: unit.bucket, label: unit.label, spokenLabel: unit.spokenLabel,
                 railLabel: unit.railLabel, pageIDs: ordered.map { $0.1 }, tabIDs: ordered.map { $0.0 },
                 fractionRemaining: unit.fractionRemaining, paused: unit.paused, toppedUp: unit.toppedUp,
-                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining)
+                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining,
+                sequenceID: unit.sequenceID)
         }
-        if pads.daySortDirection(for: pads.activeID) == .chronological { units.reverse() }
+        if dayDirection == .chronological { units.reverse() }
         return TimeUnitProjection(units: units, hiddenBlankPages: projection.hiddenBlankPages)
     }
 

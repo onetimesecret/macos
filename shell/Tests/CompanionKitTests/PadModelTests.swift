@@ -426,12 +426,12 @@ final class PadModelTests: XCTestCase {
         let uuid = try XCTUnwrap(model.selectedTab?.uuid)
         let date = model.dateKey(forDayBucket: 0)
         model.toggleCheckpointSort(dayBucket: 0)
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .chronological)
         XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
         model.coreClient.ageForTests(byMs: 3 * 24 * 60 * 60 * 1_000)
         model.coreClient.expireDue()
         model.refresh()
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .chronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .natural)
         XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), pad)
         model.closeCurrent()
         XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), PadCatalog.scratchID)
@@ -487,14 +487,14 @@ final class PadModelTests: XCTestCase {
         catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-02")
         catalog.assign(tabUUID: "closed", to: pad)
         catalog.reconcileTabs([], checkpointKeys: nil)
-        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .chronological)
         XCTAssertEqual(catalog.owner(ofTabUUID: "closed"), PadCatalog.scratchID)
         let stableReference = try XCTUnwrap(PageModel.validatedPadRosterDate(readStartedAt: after, readFinishedAt: after.addingTimeInterval(1), calendar: calendar, finishedCalendar: calendar))
         let stableKey = pad.uuidString + "/" + PageModel.padDateKey(forDayBucket: -1, now: stableReference, calendar: calendar)
         catalog.reconcileTabs([], checkpointKeys: [stableKey])
-        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
-        catalog.reconcileTabs([], checkpointKeys: [])
         XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .chronological)
+        catalog.reconcileTabs([], checkpointKeys: [])
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .natural)
     }
     func testRosterDateValidationRejectsTimezoneAndBackwardsClockChanges() throws {
         var calendar = Calendar(identifier: .gregorian)
@@ -541,7 +541,7 @@ final class PadModelTests: XCTestCase {
         let catalog = PadCatalog(defaults: try defaults())
         catalog.toggleCheckpointSort(for: owner, onDate: "2026-10-02")
         catalog.reconcileTabs([], checkpointKeys: onlyFuture)
-        XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-02"), .reverseChronological)
+        XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-02"), .chronological)
     }
 
     func testFailedContentRestoreDoesNotPruneSavedPadOwnership() throws {
@@ -563,7 +563,7 @@ final class PadModelTests: XCTestCase {
         model.refresh()
         XCTAssertEqual(model.pads.owner(ofTabUUID: "unrestored-tab"), pad)
         XCTAssertEqual(model.pads.rememberedTab(for: pad), "unrestored-tab")
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
     }
 
 }

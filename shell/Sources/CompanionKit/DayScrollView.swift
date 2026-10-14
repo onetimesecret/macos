@@ -625,7 +625,7 @@ final class DayStackView: NSView {
         var wantedPages: Set<UInt64> = []
         var isFirstOnRoll = true
         var emptyToday: EmptyTodayView?
-        for unit in projection.units {
+        for (unitIndex, unit) in projection.units.enumerated() {
             if unit.pageIDs.isEmpty {
                 // Only today can be a day with no page on it: every
                 // other day exists because a live page is keyed to it.
@@ -648,7 +648,7 @@ final class DayStackView: NSView {
                     body: place,
                     bucket: unit.bucket,
                     page: nil,
-                    fillsViewport: unit.bucket == projection.units.last?.bucket
+                    fillsViewport: unitIndex == projection.units.count - 1
                 ))
                 isFirstOnRoll = false
                 continue
@@ -1334,28 +1334,25 @@ final class DayStackView: NSView {
     /// for another reason (Greptile P1 #1).
     private func refreshGutters() {
         let units = model.timeUnits.units
-        let unitByBucket = Dictionary(uniqueKeysWithValues: units.map { ($0.bucket, $0) })
-        var stampsByBucket: [Int: [String]] = [:]
+        var pageWords: [UInt64: (unit: TimeUnitProjection.Unit, index: Int, stamp: String)] = [:]
         for unit in units where !unit.pageIDs.isEmpty {
             let summaries = unit.tabIDs.map { summary(ofTab: $0) }
-            stampsByBucket[unit.bucket] = StreamNavigator.stamps(
-                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat
-            )
+            let stamps = StreamNavigator.stamps(
+                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat)
+            for (index, page) in unit.pageIDs.enumerated() {
+                pageWords[page] = (unit, index, stamps[index])
+            }
         }
         for row in rows {
-            let unit = unitByBucket[row.bucket]
-            let spokenLabel = unit?.spokenLabel ?? ""
             let words: DayHeaderView.Words
             let rowSummary: TabSummary?
-            if let page = row.page, let unit,
-               let index = unit.pageIDs.firstIndex(of: page)
-            {
-                let stamp = stampsByBucket[unit.bucket]?[index] ?? ""
+            if let page = row.page, let reading = pageWords[page] {
                 words = DayHeaderView.words(
-                    spokenLabel: spokenLabel, stamp: stamp, firstOfDay: index == 0
-                )
-                rowSummary = summary(ofTab: unit.tabIDs[index])
+                    spokenLabel: reading.unit.spokenLabel, stamp: reading.stamp,
+                    firstOfDay: reading.index == 0)
+                rowSummary = summary(ofTab: reading.unit.tabIDs[reading.index])
             } else {
+                let spokenLabel = units.first { $0.bucket == row.bucket }?.spokenLabel ?? ""
                 words = DayHeaderView.words(spokenLabel: spokenLabel, stamp: nil)
                 rowSummary = row.header.tab.flatMap { summary(ofTab: $0) }
             }

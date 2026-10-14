@@ -311,7 +311,35 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(oldest.action, "Activate to sort days newest first")
         let newest = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
         XCTAssertEqual(newest.currentOrder, "Newest first")
-        XCTAssertEqual(newest.action, "Activate to sort today checkpoints oldest first")
+        XCTAssertEqual(newest.action, "Activate to sort today checkpoints in natural order")
+        XCTAssertEqual(oldest.symbolName, "arrow.down")
+        XCTAssertEqual(newest.symbolName, "arrow.up")
+        let natural = PadSortCopy(direction: .natural, subject: "today checkpoints")
+        XCTAssertEqual(natural.label, "today checkpoints sort order")
+        XCTAssertEqual(natural.currentOrder, "Natural order")
+        XCTAssertEqual(natural.action, "Activate to sort today checkpoints oldest first")
+        XCTAssertEqual(natural.symbolName, "list.bullet")
+    }
+
+    func testDaySortAccessibilityCyclesThroughNaturalOrder() {
+        let cases: [(PadSortDirection, String, String, String)] = [
+            (.natural, "Natural order", "Activate to sort days oldest first", "list.bullet"),
+            (.chronological, "Oldest first", "Activate to sort days newest first", "arrow.down"),
+            (.reverseChronological, "Newest first", "Activate to sort days in natural order", "arrow.up")
+        ]
+        for (direction, value, action, symbol) in cases {
+            let copy = PadSortCopy(direction: direction, subject: "days")
+            XCTAssertEqual(copy.label, "days sort order")
+            XCTAssertEqual(copy.currentOrder, value)
+            XCTAssertEqual(copy.action, action)
+            XCTAssertEqual(copy.symbolName, symbol)
+        }
+    }
+
+    func testSortAccessibilityRetainsExplicitNextOverride() {
+        let copy = PadSortCopy(direction: .reverseChronological, subject: "days", next: .chronological)
+        XCTAssertEqual(copy.currentOrder, "Newest first")
+        XCTAssertEqual(copy.action, "Activate to sort days oldest first")
     }
 
     func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {
@@ -348,6 +376,7 @@ final class PadPickerTests: XCTestCase {
             XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: "[{\"ink\":\"\(text)\"}]"))
             model.refresh()
         }
+        model.toggleCheckpointSort(dayBucket: 0)
         let coordinator = InkEditorView.Coordinator(model: model)
         coordinator.surface = model.owner
         let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "Start writing")
