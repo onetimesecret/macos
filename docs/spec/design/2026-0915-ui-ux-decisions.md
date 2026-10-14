@@ -774,6 +774,12 @@ General and Code save on each flip; Connection holds fields in draft
 until Save, because a half-typed server URL is not a setting anyone
 wants applied.
 
+*Amended 2026-10-14:* a fifth form, Pads, stands after Code while the
+pads experiment exists: its switch, moved from General, and the pads with
+their folders and apps, saved on each change
+([ADR-0039](../../adr/0039-pad-selection-and-associations.md) Amendment 1,
+proposed).
+
 Copy the forms carry:
 
 - Font (General), default System Monospaced 13: "The page's face and

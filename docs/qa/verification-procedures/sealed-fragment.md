@@ -162,11 +162,11 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `sealed` appears. **Fail:** any drop becomes a sealed object, or
       the note's drop shows the line that a name or note is being
       written.
-- [ ] **A page's drag onto a rename field.** Choose *Rename tab…* from
+- [ ] **A page's drag onto a rename field.** Choose *Rename Tab* from
       a tab's menu, then drag a selection holding an object from the
       page onto the tab's field; repeat on the gutter's field (*Timeline*,
-      click a page's time) and on a pad's field (*Rename pad…* in the pad
-      list). **Pass:** each field takes
+      click a page's time) and on a pad's field (*Rename* on a pad's row
+      in the Pads tab of Settings). **Pass:** each field takes
       `[sealed content · tiny]` and the ink around it as plain text, and
       the page keeps its run. **Fail:** the field takes any of the
       sealed word, or the run leaves the page.
