@@ -1243,6 +1243,60 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
+    /// A core that refuses both decrypted copies of a live object, as a failed
+    /// pasteboard write would.
+    private final class RefusedCopyClient: CompanionClient, @unchecked Sendable {
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func copyOutChip(id: UInt64) -> Bool { false }
+        override func copyNameValue(chip: UInt64) -> Bool { false }
+    }
+
+    /// An object's copy or conceal refused for its own reason, while another page's
+    /// late timer is due, settles that page but never says this one expired.
+    func testAnObjectsRefusalSaysExpiredOnlyWhenItsOwnPageWent() throws {
+        let routes: [(name: String, line: String?, run: (Page) -> Void)] = [
+            ("copy decrypted", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.coordinator.copyOutChip(at: 3))
+            }),
+            ("copy NAME=value", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.coordinator.copyNameValue(at: 3))
+            }),
+            ("conceal", nil, { page in
+                let target = ConcealDraft.Target.chip(page.chips[0])
+                page.model.beginConceal(target)
+                guard let draft = page.model.concealDraft else { return XCTFail("no draft") }
+                page.model.finishConceal(
+                    ConcealOutcome(ok: false, receiptId: nil, error: "the server did not answer"),
+                    for: target, draftID: draft.id)
+                XCTAssertNotNil(page.model.concealDraft, "the draft went with another page")
+            }),
+        ]
+        for route in routes {
+            let client = RefusedCopyClient(tag: UUID().uuidString)
+            let page = try makePage(client: client)
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+            page.model.newPage()
+            let other = try XCTUnwrap(page.model.selectedPageID)
+            XCTAssertTrue(client.applyOps(sheet: other, json: #"[{"ins":{"at":0,"text":"due"}}]"#))
+            let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == other }?.id)
+            XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+            XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+            XCTAssertTrue(client.tabs().contains { $0.pageID == other }, "the control: a sweep ran")
+            let notice = page.model.notice
+
+            route.run(page)
+
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == other }, "\(route.name): no settle")
+            XCTAssertTrue(
+                page.model.tabs.contains { $0.pageID == page.sheet }, "\(route.name) took its page")
+            XCTAssertEqual(page.model.notice, route.line ?? notice, route.name)
+        }
+    }
+
     /// AppKit's own ways out, which no core route sees, ask first: past the deadline a
     /// service's write of ink alone, a drag of ink stretches and the note's copy, cut,
     /// drag and service give nothing out, and the settle takes the page with its line.

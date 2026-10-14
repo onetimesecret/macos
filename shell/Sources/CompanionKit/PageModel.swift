@@ -5540,6 +5540,11 @@ public final class PageModel: ObservableObject {
         })
     }
 
+    /// The live page object `chip` stands on, asked of the core; nil when none holds it.
+    private func pageHolding(_ chip: UInt64) -> UInt64? {
+        livePageIDs.first { chipIds(onSheet: $0).contains(chip) }
+    }
+
     /// ⌘W closes what's showing, the macOS convention: the ledger view
     /// steps aside; a page goes to rest in the ledger.
     public func closeCurrent() {
@@ -5779,7 +5784,7 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func copyOutChip(_ id: UInt64, size: String? = nil) -> Bool {
         guard client.copyOutChip(id: id) else {
-            settleRefusal(told: true)
+            settleRefusal(chip: id, otherwise: Self.copyRefusedLine)
             return false
         }
         markDirty()
@@ -5793,7 +5798,7 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func copyChipNameValue(_ id: UInt64, size: String? = nil) -> Bool {
         guard client.copyNameValue(chip: id) else {
-            settleRefusal(told: true)
+            settleRefusal(chip: id, otherwise: Self.copyRefusedLine)
             return false
         }
         markDirty()
@@ -6747,8 +6752,10 @@ public final class PageModel: ObservableObject {
         if outcome.ok { armClipboardClear() }
         // A refusal may be a page past its deadline (ADR-0052): settle as the timer would.
         if !outcome.ok {
-            let page: UInt64? = if case .page(let id) = target { id } else { nil }
-            settleRefusal(sheet: page, told: true)
+            switch target {
+            case .page(let id): settleRefusal(sheet: id, told: true)
+            case .chip(let id): settleRefusal(chip: id, otherwise: nil)
+            }
         }
         // The confirmation may have been dismissed — or reopened on a
         // new offer for the same target — while the call was out; a stale outcome
@@ -6809,7 +6816,7 @@ public final class PageModel: ObservableObject {
         // day the editor has never visited: that page has a rendering on
         // the roll and no storage at all, so the loop would find nothing
         // and the burned chip would go on being drawn there.
-        let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
+        let host = pageHolding(chipId)
         _ = client.deleteChip(id: chipId)
         if let host {
             countEdit(.sheet(host))
@@ -7178,6 +7185,19 @@ public final class PageModel: ObservableObject {
     /// past its deadline refuses (ADR-0052 point 4), and tell a person who acted.
     func settleRefusal(sheet: UInt64? = nil, told: Bool) {
         if settleIfDue(sheet: sheet), told { flash(Self.pageExpiredLine) }
+    }
+
+    /// The line when the core refused to copy an object whose page still stands.
+    public static let copyRefusedLine = "the sealed content could not be copied."
+
+    /// A core route refused object `chip`: settle, and say the page expired only when the
+    /// object's own page went with it (ADR-0052); otherwise `line`, when there is one.
+    func settleRefusal(chip: UInt64, otherwise line: String?) {
+        if settleIfDue(), pageHolding(chip) == nil {
+            flash(Self.pageExpiredLine)
+        } else if let line {
+            flash(line)
+        }
     }
 
     /// Whether text the shell already shows from page `sheet` may leave by AppKit, which

@@ -904,6 +904,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or note, where ⇧⌘V stands aside. It now seals nothing there and says
   why.
 
+- **A refused object copy says why, and says expired only for its own
+  page** (app 0.35.0; Law 0001, ADR-0052, issue #170). Copy decrypted
+  and copy `NAME=value` refused while some other page came due said
+  `this page has expired.` though the object's page still stood, and a
+  copy refused for any other reason said nothing. The line now names
+  the expiry only when the object's own page went, and otherwise says
+  `the sealed content could not be copied.` A refused conceal of an
+  object keeps its draft's error in the same case.
+
 - **A paste takes nothing from a page past its deadline**
   (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
   issue #170). Between a page's deadline and the timer's sweep, a paste,
