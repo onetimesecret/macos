@@ -9,7 +9,8 @@ with no Print…, text menus with no Share…, Writing Tools, Look Up,
 Translate, Speech, Spelling and Grammar or Search With Google, the
 route a real look up takes to the page's gate, Transformations and
 Substitutions over an object, inline predictions and a Touch Bar's
-typing suggestions, and
+typing suggestions, a link's ⌘-click, menu and drag, the spelling
+panel and data detectors, and
 text holding U+FFFC landing beside an object.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
@@ -124,6 +125,43 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       Bar shows no typing suggestions over the page or the note; the
       file shows them. **Fail:** a prediction or a suggestion shows over
       the page or the note.
+- [ ] **A link opens only through the page** (Law 0001, link and
+      spelling panel amendment). On a page type
+      `[docs](https://example.com/?t=1)`. ⌘-click the link; then Control
+      click it and choose Open Link, then Copy Link, and paste in
+      TextEdit. Seal a word on the page, open its note, type the same
+      link in the note and repeat there. Last, open a Markdown file
+      holding the link and Control click it. **Pass:** on the page and
+      in the note, a plain click only moves the caret, ⌘-click and Open
+      Link each open the browser at the URL, Copy Link pastes the URL,
+      and the menu holds no Open With; the file's menu holds Open With,
+      and its Open Link opens the browser. **Fail:** Open With shows
+      over the page or the note, a plain click opens the link, or Open
+      Link does nothing anywhere.
+- [ ] **A link dragged off a page** (Law 0001, the link rows). Press and
+      hold on the page's link without moving, then drag it into
+      TextEdit. **Pass:** TextEdit receives
+      `[docs](https://example.com/?t=1)`, the page's own drag of that
+      ink, and the page keeps it. **Fail:** no drag starts, or TextEdit
+      receives anything else.
+- [ ] **No spelling panel over a page, a note or a name** (Law 0001,
+      link and spelling panel amendment). Click into a page and open
+      Edit > Spelling and Grammar; do the same in a note and in a name
+      field while it is open, then in a regular text file. In the file,
+      choose Show Spelling and Grammar to open the panel, click into the
+      page after typing `wrnog` there, and press the panel's Find Next,
+      then ⌘;. **Pass:** Show Spelling and Grammar is unavailable over
+      the page, the note and the name and available over the file; with
+      the panel up, Find Next and ⌘; on the page leave the panel showing
+      no word of the page and select nothing. **Fail:** the panel opens
+      over a page, a note or a name, or shows `wrnog` from the page.
+- [ ] **No data detectors over a page** (Law 0001, data detectors row).
+      Control click a page's text and choose Substitutions > Data
+      Detectors, type `lunch tomorrow at 1 Infinite Loop`, then do the
+      same in a regular text file. **Pass:** the page's item stays
+      unticked and nothing on the page is marked as a date or a place;
+      the file's ticks and marks them. **Fail:** the page marks a date
+      or a place.
 - [ ] **Cut and paste in place.** Cut the selection, note the slot's
       line under the page, then paste further down. **Pass:** the line
       names the cut object by its face and goes when the paste lands;
