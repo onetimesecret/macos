@@ -7,6 +7,7 @@ documentation_status: needs-review
 - **Status:** accepted
 - **Date:** 2026-10-13
 - **Depends on:** [ADR-0011](0011-ttl-choices.md), whose deadline admits no grace after expiry, and [ADR-0047](0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md), whose paste, move and clone this record guards.
+- **Superseded in part by:** [ADR-0052](0052-a-page-past-its-deadline-gives-nothing-out.md), which replaces the consequence that copy, cut, copy decrypted and the decrypted drag still read a page past its deadline. The decision and the other consequences stand.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -81,3 +82,9 @@ deadline.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, before its code.
+- 2026-10-13: Superseded in part by
+  [ADR-0052](0052-a-page-past-its-deadline-gives-nothing-out.md). Its
+  fourth consequence, that copy, cut, copy decrypted and the decrypted
+  drag still read a page past its deadline, is replaced: every route
+  that gives a page out now refuses it from its deadline, swept or not.
+  The decision and the other consequences stand.
