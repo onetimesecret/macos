@@ -1243,6 +1243,46 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
+    /// A core that refuses every note batch once asked to, as a batch it cannot place.
+    private final class NoteRefusingClient: CompanionClient, @unchecked Sendable {
+        var refusesNoteBatches = false
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func applyNoteOps(
+            chip: UInt64, json: String, intent: EditorEditIntent = .typing,
+            selection: EditorEditSelection? = nil
+        ) -> Bool {
+            !refusesNoteBatches
+                && super.applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        }
+    }
+
+    /// An open note whose text the core refuses after a refused batch closes rather
+    /// than standing empty, and the settle takes its page with the line (ADR-0052).
+    func testAnOpenNoteTheCoreRefusesClosesAndTheSettleTakesItsPage() throws {
+        let client = NoteRefusingClient(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        note.textView.insertText("rotate", replacementRange: NSRange(location: NSNotFound, length: 0))
+        drainMainQueue()
+        XCTAssertEqual(page.model.noteText(chip: page.chips[0]), "rotate", "the control")
+        try age(page)
+        client.refusesNoteBatches = true
+
+        note.textView.insertText("!", replacementRange: NSRange(location: NSNotFound, length: 0))
+        drainMainQueue()
+
+        XCTAssertFalse(note.isOpen, "the refused note stood open")
+        XCTAssertEqual(note.textView.string, "", "the closed note kept ink")
+        XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine)
+        XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, "no settle")
+    }
+
     /// A core that refuses both decrypted copies of a live object, as a failed
     /// pasteboard write would.
     private final class RefusedCopyClient: CompanionClient, @unchecked Sendable {

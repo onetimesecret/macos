@@ -3199,12 +3199,13 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The note's text from the core, with no edit crossing for it. A refusal
-        /// empties the surface and settles as the timer would (ADR-0052).
+        /// closes the note and settles as the timer would (ADR-0052).
         private func restateNote() {
             guard let noteChip else { return }
             guard let text = model.noteText(chip: noteChip) else {
-                showNote("")
-                model.settleRefusal(sheet: noteHost?.sheet, told: true)
+                let sheet = noteHost?.sheet
+                if let host = noteHost { host.close(returningKeys: host.holdsKeys) } else { unloadNote() }
+                model.settleRefusal(sheet: sheet, told: true)
                 return
             }
             showNote(text)
