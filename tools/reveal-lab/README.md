@@ -31,8 +31,9 @@ need to press Start. The other gestures are inactive.
    display**, halfway up the screen. Move your pointer into that strip. Do not
    click or drag; hold it there for about half a second.
 3. A narrow **RL** peek should appear, then expand into a card. Move the pointer
-   a little away from the edge and back into the card, then click **Open mock
-   editor**. To dismiss without opening, move farther away from the card.
+   toward the inside of the card, then click the card or **Open mock editor**.
+   You do not need to leave and re-enter it. To dismiss without opening, move
+   farther away from the card.
 
 The orange strip is a location guide, not a button. Uncheck **Show orange target
 marker on screen** once you know where to aim and want to test an invisible
@@ -71,10 +72,16 @@ edge; the midpoint means halfway along that edge.
 | Mouse shake         | Move your mouse or trackpad finger quickly left-right-left-right several times; look for a card beside the pointer.                                                                                                  |
 | Double Shift        | Tap/release Shift twice within 400 ms, with taps under 300 ms. Sampled at 30 Hz, so very fast taps may be missed.                                                      |
 
-The peek passes clicks through. Normal cards start mouse-transparent and become
-clickable only after settling for 120 ms and the pointer has been outside then
-inside their target. **If a card expands beneath your stationary pointer, move
-out and back in before clicking.** Drag cards instead accept a drop as soon as
+The narrow peek passes clicks through, so clicking it can trigger your system's
+click-desktop-to-show-desktop action. Wait for the full card before clicking.
+
+A full card catches clicks immediately, including clicks before opening is
+armed. Those early clicks do not open the editor. After the card settles for
+120 ms, entering it or moving at least 4 points inside it enables opening.
+Click its background, title, or **Open mock editor** to open; **×** dismisses.
+If it expanded beneath your stationary pointer, move a little toward its center
+first—no leave-and-re-enter step is needed. The card's text and enabled Open
+button indicate when opening is armed. Drag cards accept a drop as soon as
 they expand. Edge/tab/menu modes use a connected reach corridor and 200 ms exit
 grace. Held glance lasts until release; pointer-local/shake/double-Shift cards
 dismiss on retreat from a 45 pt padded card region.

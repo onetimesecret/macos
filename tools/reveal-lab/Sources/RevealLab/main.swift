@@ -108,11 +108,15 @@ final class RevealPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class CardButton: NSButton {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class CardView: NSView {
     let title = NSTextField(labelWithString: "Reveal Lab")
     let detail = NSTextField(wrappingLabelWithString: "Content-free prototype")
-    let open = NSButton(title: "Open mock editor", target: nil, action: nil)
-    let dismiss = NSButton(title: "×", target: nil, action: nil)
+    let open = CardButton(title: "Open mock editor", target: nil, action: nil)
+    let dismiss = CardButton(title: "×", target: nil, action: nil)
     var commit: (() -> Void)?
     var cancel: (() -> Void)?
     var dropped: ((Int) -> Void)?
@@ -144,7 +148,16 @@ final class CardView: NSView {
         dismiss.frame = NSRect(x: bounds.width - 32, y: bounds.height - 30, width: 24, height: 24)
         detail.isHidden = peek; open.isHidden = peek; dismiss.isHidden = peek
     }
-    @objc func openClicked() { commit?() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        if hit === open || hit.isDescendant(of: open) || hit === dismiss || hit.isDescendant(of: dismiss) { return hit }
+        return self
+    }
+    override func mouseDown(with event: NSEvent) {
+        if open.isEnabled && !acceptsDrop { commit?() }
+    }
+    @objc func openClicked() { if open.isEnabled { commit?() } }
     @objc func cancelClicked() { cancel?() }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { acceptsDrop ? .copy : [] }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { acceptsDrop ? .copy : [] }
@@ -223,6 +236,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     var cardFrame = NSRect.zero
     var blocked = false
     var pointerWasOutside = false
+    var armingOrigin = NSPoint.zero
     var hoveringStatus = false
     var hoveringHandle = false
     var held = false
@@ -324,7 +338,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         events.heightAnchor.constraint(equalToConstant: 64).isActive = true
         telemetry.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         events.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        let scope = NSTextField(wrappingLabelWithString: "When a card appears, move out and back into it before clicking Open mock editor. Close the mock editor before trying another gesture. Click RL in the menu bar to reopen these controls.")
+        let scope = NSTextField(wrappingLabelWithString: "When a card appears, move your pointer into it, then click the card or Open mock editor. Close the mock editor before trying another gesture. Click RL in the menu bar to reopen these controls.")
         for view in [intro, gestureRow, instructions, geometryRow, positionRow, location, marker, pause, actions, telemetry, events, scope] {
             stack.addArrangedSubview(view)
         }
@@ -459,12 +473,7 @@ final class Lab: NSObject, NSApplicationDelegate {
             } else { enteredAt = nil; push = 0 }
         } else {
             let insideCard = reveal.frame.contains(p)
-            if !insideCard { pointerWasOutside = true }
-            let settled = time - shownAt > 0.12
-            if phase == "card" && settled && pointerWasOutside && insideCard {
-                card.open.isEnabled = true
-                reveal.ignoresMouseEvents = false
-            }
+            updateCardInteraction(at: p, time: time)
             let corridor = mode == .held || mode == .pointer || mode == .shake || mode == .doubleShift
                 ? reveal.frame.insetBy(dx: -45, dy: -45)
                 : reveal.frame.union(sourceFrame()).insetBy(dx: -16, dy: -16)
@@ -488,6 +497,17 @@ final class Lab: NSObject, NSApplicationDelegate {
         }
         push = max(0, push - 0.15)
 
+    }
+
+    func updateCardInteraction(at point: NSPoint, time: TimeInterval) {
+        let inside = reveal.frame.contains(point)
+        if !inside { pointerWasOutside = true }
+        guard phase == "card", !card.acceptsDrop, !card.open.isEnabled else { return }
+        let moved = hypot(point.x - armingOrigin.x, point.y - armingOrigin.y) >= 4
+        if time - shownAt > 0.12 && inside && (pointerWasOutside || moved) {
+            card.open.isEnabled = true
+            card.detail.stringValue = "Click this card to open\nthe mock editor."
+        }
     }
 
     func sourceFrame() -> NSRect {
@@ -531,11 +551,12 @@ final class Lab: NSObject, NSApplicationDelegate {
             else { frame.origin.x = frame.maxX - 34; frame.size.width = 34 }
         }
         phase = stage; shownAt = now; exitAt = nil
-        pointerWasOutside = !frame.contains(NSEvent.mouseLocation)
+        armingOrigin = NSEvent.mouseLocation
+        pointerWasOutside = !frame.contains(armingOrigin)
         card.open.isEnabled = false
         card.acceptsDrop = mode == .drag && stage == "card"
-        card.detail.stringValue = card.acceptsDrop ? "Drop text or a file here.\nOnly the item count is used." : "Content-free affordance.\nMove into this card, then click."
-        reveal.ignoresMouseEvents = !card.acceptsDrop
+        card.detail.stringValue = card.acceptsDrop ? "Drop text or a file here.\nOnly the item count is used." : "Move your pointer into this card\nto enable opening."
+        reveal.ignoresMouseEvents = stage == "peek"
         if first || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { reveal.setFrame(frame, display: true) }
         else {
             NSAnimationContext.runAnimationGroup { context in
@@ -681,7 +702,38 @@ if CommandLine.arguments.contains("--self-test") {
                 delegate.show("peek")
                 precondition(delegate.reveal.ignoresMouseEvents)
                 delegate.show("card")
+                guard !delegate.reveal.ignoresMouseEvents else {
+                    fputs("FAIL: fully revealed card passes clicks to the desktop before arming\n", stderr)
+                    exit(1)
+                }
                 precondition(!delegate.reveal.canBecomeKey && !delegate.reveal.canBecomeMain)
+                delegate.reveal.setFrame(delegate.cardFrame, display: true)
+                delegate.card.layoutSubtreeIfNeeded()
+                let point = NSPoint(x: delegate.cardFrame.midX - 10, y: delegate.cardFrame.midY)
+                delegate.armingOrigin = point
+                delegate.pointerWasOutside = false
+                let click = NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 30, y: 100),
+                                              modifierFlags: [], timestamp: delegate.now,
+                                              windowNumber: delegate.reveal.windowNumber, context: nil,
+                                              eventNumber: 0, clickCount: 1, pressure: 1)!
+                var commits = 0
+                let originalCommit = delegate.card.commit
+                delegate.card.commit = { commits += 1 }
+                precondition(delegate.card.acceptsFirstMouse(for: click))
+                precondition(delegate.card.hitTest(NSPoint(x: 30, y: 100)) === delegate.card)
+                delegate.card.mouseDown(with: click)
+                precondition(commits == 0)
+                delegate.updateCardInteraction(at: point, time: delegate.shownAt + 0.2)
+                precondition(!delegate.card.open.isEnabled)
+                delegate.updateCardInteraction(at: NSPoint(x: point.x + 2, y: point.y), time: delegate.shownAt + 0.2)
+                precondition(!delegate.card.open.isEnabled)
+                delegate.updateCardInteraction(at: NSPoint(x: point.x + 6, y: point.y), time: delegate.shownAt + 0.2)
+                if delegate.mode != .drag {
+                    precondition(delegate.card.open.isEnabled)
+                    delegate.card.mouseDown(with: click)
+                    precondition(commits == 1)
+                } else { precondition(delegate.card.acceptsDrop) }
+                delegate.card.commit = originalCommit
                 precondition(app.keyWindow === keyWindow)
                 delegate.dismiss(block: false)
                 precondition(!delegate.reveal.isVisible)
@@ -695,7 +747,7 @@ if CommandLine.arguments.contains("--self-test") {
             delegate.marker.state = .off
             delegate.updateGuide()
             precondition(!delegate.guide.isVisible)
-            print("PASS: AppKit startup, 12 mode instructions/target-guide/render/reset cycles, mouse-transparent guides and peeks, unchanged key window during reveal, simulated held press/release")
+            print("PASS: AppKit startup, 12 mode render/reset cycles, click-catching cards, stationary/jitter rejection, deliberate motion arming, simulated card clicks, unchanged key window during reveal, simulated held press/release")
             app.terminate(nil)
         }
     }
