@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, and what the close left open
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, and that sync carries no sealed object
 metadata:
   type: project
 ---
@@ -51,6 +51,17 @@ for review fixes; shell only.
   -p companion-core` passes), the yank defect in [[w03-removal-routes]],
   the sync controller's `onRemoteChange` mark is counted by no suite,
   and the PR body owes "closes #170, #240 to #252".
+- Phase 5 unit 1 (2026-10-14): sync carries no sealed object. No
+  envelope holds one and `apply_remote_update` refuses a batch standing
+  a sentinel the page does not own, so a page holding an object stops
+  reaching its peers (client protocol 10.31, Law 0001 sync move
+  amendment); the `TwoPages` tests in store.rs pin it and must change
+  when objects travel. The ADR-0052 gate now covers sync:
+  `export_document_updates`, `perform_ceremony` and `ceremony_due` read
+  through `readable_sheet`, the sweep withdraws a due or gone page's
+  unsealed ops, a device stays out of a ballot for its due page. The
+  seam's store runs on the system clock and a restore (`age_by`) drops a
+  deferred ceremony, so test a due page's ceremony in the core.
 - An earlier re-aim sweep shifted document.rs citations by a fixed
   offset without reading them back, so five were wrong for weeks. Read
   each cited line back against what it read when its doc line was
