@@ -67,7 +67,7 @@ duration; this lets the deadline land where the clock does"
 "Round a page's deadline up to the hour, or to midnight". It defaults
 to on (`shell/Sources/CompanionKit/PageModel.swift:1514`) and is
 carried to the core by `companion_set_grace_snap`
-(`crates/ffi/src/lib.rs:2528`).
+(`crates/ffi/src/lib.rs:2564`).
 
 ## What the code actually promises, so the expectations below are not guesses
 
