@@ -844,6 +844,29 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(coreInk(model, quiet), "xy")
     }
 
+    /// A page whose storage was kept, shown again after a peer's batch left U+FFFC in it as
+    /// ink, loses it at that showing, as an edit the save follows and no Undo puts back.
+    func testAKeptPagesObjectCharacterLeavesItWhenItIsNextShown() throws {
+        let page = try makePage()
+        let (model, client) = (page.model, page.model.coreClient)
+        model.newPage()
+        XCTAssertTrue(client.inkBelowTheGuardForTests(sheet: page.sheet, at: 0, "\u{FFFC}"))
+        XCTAssertEqual(coreInk(page), "\u{FFFC}ab  cd  ef", "the control: the seam stood it")
+        let kept = try XCTUnwrap(page.textView.textStorage)
+        let marks = model.dirtyMarks
+
+        let shown = try mount(model, page.sheet, chips: page.chips)
+
+        XCTAssertTrue(shown.textView.textStorage === kept, "the page did not keep its storage")
+        XCTAssertEqual(coreInk(page), "ab  cd  ef")
+        XCTAssertEqual(chips(page), page.chips)
+        try assertParity(shown, "at the showing")
+        drainMainQueue()
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the take out was never saved")
+        shown.coordinator.step(back: true)
+        XCTAssertFalse(coreInk(page).contains("\u{FFFC}"), "an Undo put it back")
+    }
+
     /// A recovery keeps an object the storage stands at two indices once, at the first,
     /// and detaches nothing.
     func testTheRecoveryKeepsAnObjectStandingTwiceOnce() throws {

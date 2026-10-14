@@ -3163,17 +3163,23 @@ public final class PageModel: ObservableObject {
     }
 
     /// A U+FFFC a page holds as ink, a peer's or an earlier build's, leaves it as an edit
-    /// its peers receive (Law 0001); the save is marked a turn later.
-    private func takeOutObjectCharacters(sheet: UInt64) {
-        guard client.takeOutObjectCharacters(sheet: sheet) else { return }
+    /// its peers receive (Law 0001); the save is marked a turn later. True when one left.
+    @discardableResult
+    private func takeOutObjectCharacters(sheet: UInt64) -> Bool {
+        guard client.takeOutObjectCharacters(sheet: sheet) else { return false }
         countEdit(.sheet(sheet))
         invalidateQuietRendering(for: sheet)
         // A projection can run inside a view update, where publishing is refused.
         DispatchQueue.main.async { [weak self] in self?.markDirty() }
+        return true
     }
 
     public func storage(for id: UInt64) -> NSTextStorage {
-        if let existing = storages[id] { return existing }
+        if let existing = storages[id] {
+            // A page shown again from the storage it kept loses one a peer left since.
+            if !id.isFileID, takeOutObjectCharacters(sheet: id) { restateStorage(sheet: id) }
+            return existing
+        }
         let created = NSTextStorage()
         for run in runs(of: id) {
             switch run {
