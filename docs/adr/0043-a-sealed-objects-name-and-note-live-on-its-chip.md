@@ -128,3 +128,8 @@ fields of its chip record and reached over the FFI by chip id.
 ## Decision history
 
 - 2026-10-13: Accepted for issues #241, #242 and #243, before their code.
+- 2026-10-13: Issue #247 carries the name and note in the fragment under
+  [ADR-0047](0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)
+  with no further field on the chip record. A removal now detaches the
+  chip, so its name and note are kept with it until its page ends or it
+  is burned.
