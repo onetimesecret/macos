@@ -987,9 +987,9 @@ paths must stay dialog free.
 - 2026-10-14: Refusal settle amendment (issue 170, following
   [ADR-0048](../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md)).
   A refused paste, place, drop or move settles as the timer would only
-  when an event was due as it began, since only then can its sweep or
-  its settle change the store, so a refusal that changed nothing arms
-  no write. A refused paste or place whose settle took its page says
+  when an event was due as it began, since the sweep a paste runs
+  before it may refuse takes nothing otherwise; a refusal with nothing
+  due arms no write. A refused paste or place whose settle took its page says
   `this page has expired.`, as the move between pages does. The inside
   paste row cites the tests.
 - 2026-10-14: Note and file copy amendment (issue 170). A note's and a
