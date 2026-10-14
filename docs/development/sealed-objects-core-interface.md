@@ -20,10 +20,11 @@ The looks and words are in the
 [sealed row, note and handles](../spec/feature/sealed-content/sealed-row-note-and-handles.md)
 spec.
 
-These notes were first written into the drafts ADR-0043, ADR-0046,
-ADR-0047, ADR-0049, ADR-0052 and ADR-0053 of 2026-10-13, withdrawn on
-2026-10-14 without ratification. The code is the authority; where this
-file and the code disagree, fix this file.
+These notes were first written into six drafts of 2026-10-13, withdrawn
+on 2026-10-14 without ratification:
+draft ADR-0043, ADR-0046, ADR-0047, ADR-0049, ADR-0052 and ADR-0053.
+Where this file and the code disagree, the code is right and this file
+is fixed.
 
 ## The pieces, and where they live
 
