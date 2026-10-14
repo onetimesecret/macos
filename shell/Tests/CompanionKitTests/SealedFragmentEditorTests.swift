@@ -1079,6 +1079,45 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(client.takes, 1, "the control: another app's text goes to the core")
     }
 
+    /// While a field or the note holds the keys the offer's button seals nothing
+    /// and says why, as the slot's place does (ADR-0046).
+    func testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let client = SealWitness(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.announce(page.textView)
+        page.pasteboard.clearContents()
+        page.pasteboard.setString("another app's text", forType: .string)
+        page.model.refreshPasteboardOffer(from: .panel)
+        XCTAssertTrue(page.model.pasteboardOffer, "the fixture made no offer")
+        let length = page.textView.textStorage?.length
+
+        func standsAside(_ holder: String) {
+            page.model.flash("before the press")
+            page.model.performSealedPaste?()
+            XCTAssertEqual(page.model.notice, PageModel.sealWaitsLine, holder)
+            XCTAssertEqual(client.takes, 0, "the button sealed under the \(holder)")
+            XCTAssertEqual(page.textView.textStorage?.length, length, holder)
+            XCTAssertTrue(page.model.pasteboardOffer, "the \(holder)'s wait withdrew the offer")
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        standsAside("field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        standsAside("note")
+
+        note.escape()
+        drainMainQueue()
+        XCTAssertTrue(page.window.firstResponder === page.textView)
+        page.model.performSealedPaste?()
+        XCTAssertEqual(client.takes, 1, "the button did not come back")
+    }
+
     // MARK: Past an envelope cap (ADR-0053)
 
     /// A copy, cut or drag whose envelope would pass a cap writes, deletes and detaches

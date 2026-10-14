@@ -2445,6 +2445,11 @@ public struct InkEditorView: NSViewRepresentable {
         /// bytes.
         func sealedPaste() {
             guard sealsHere, let textView, let storage = textView.textStorage else { return }
+            // The offer's button is not a chord, so it asks the holder here (ADR-0046).
+            guard textView.answersChords else {
+                model.flash(PageModel.sealWaitsLine)
+                return
+            }
             // Captured at gesture time and passed whole. The seal call
             // is synchronous on the main actor from here through the C
             // seam, so no event can move the caret between this capture

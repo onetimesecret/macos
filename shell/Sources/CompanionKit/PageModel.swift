@@ -5715,6 +5715,10 @@ public final class PageModel: ObservableObject {
     public static let ownCopySealLine =
         "nothing to seal: the clipboard holds this app's own copy, which ⌘V pastes."
 
+    /// The line when the offer's button meets a name or note holding the keys (ADR-0046).
+    public static let sealWaitsLine =
+        "a name or note is being written, so the clipboard was not sealed."
+
     /// Withdrawing is a release and asks nobody: an offer nobody is
     /// making is the safe state, and the surface that made this one may
     /// already have handed ownership on.
