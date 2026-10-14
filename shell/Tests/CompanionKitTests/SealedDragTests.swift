@@ -231,7 +231,7 @@ final class SealedDragTests: XCTestCase {
         XCTAssertGreaterThan(model.dirtyMarks, marks, "the move armed no write")
         XCTAssertEqual(model.coreClient.ledger().count, records, "a move recorded something")
 
-        page.coordinator.endPageDrag(operation: .move)
+        page.coordinator.endPageDrag()
         XCTAssertEqual(shape(page), " cd # efab #", "the session's end removed the moved run")
         page.coordinator.step(back: true)
         XCTAssertEqual(shape(page), "ab # cd # ef", "one undo did not take the move back")
@@ -261,7 +261,7 @@ final class SealedDragTests: XCTestCase {
         XCTAssertGreaterThan(model.dirtyMarks, marks, "the clone armed no write")
         XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 12, length: 4))
 
-        page.coordinator.endPageDrag(operation: .copy)
+        page.coordinator.endPageDrag()
         page.coordinator.step(back: true)
         XCTAssertEqual(shape(page), "ab # cd # ef", "one undo did not take the clone back")
         XCTAssertEqual(chips(page).map(\.chipId), ids)
@@ -287,65 +287,128 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(page.coordinator.pageDragOperation(at: 13, offered: move), [])
         XCTAssertFalse(page.coordinator.dropPageDrag(at: 13, offered: move))
         XCTAssertEqual(shape(page), "zab # cd # ef", "a stale drag moved the wrong run")
-        page.coordinator.endPageDrag(operation: .move)
+        page.coordinator.endPageDrag()
         XCTAssertEqual(shape(page), "zab # cd # ef", "a stale drag's end removed a run")
     }
 
     // MARK: Between pages
 
-    /// A fragment dragged from another page pastes there through the core, as a
-    /// clone while its source still stands; the move's end then removes the source
-    /// run, which detaches, so ⌘Z there stands the same object again.
-    func testADragToAnotherPagePastesThereAndTheMoveRemovesItsSource() throws {
+    /// A drag dropped on another page moves there through the core as one
+    /// transaction: the same objects with their names, both pages restated, no
+    /// `sealed` record, and ⌘Z on the source leaves one of each (ADR-0054).
+    func testADragToAnotherPageMovesTheSameObjectsAndTheSourceUndoLeavesOne() throws {
         let (model, _) = try makeModel()
         let source = try mountPage(on: model)
         let ids = chips(source).map(\.chipId)
         XCTAssertTrue(model.setChipName("API_KEY", chip: ids[0], sheet: source.sheet))
         let target = try mountPage(on: model, text: "xy", seals: [])
-        let board = try beginDrag(source, NSRange(location: 0, length: 4))
+        _ = try beginDrag(source, NSRange(location: 0, length: 4))
+        let records = model.coreClient.ledger().count
+        let marks = model.dirtyMarks
 
-        XCTAssertTrue(target.coordinator.dropFragment(from: board, at: 2))
-        XCTAssertEqual(shape(target), "xyab #", "the drop did not paste the fragment")
-        let clone = try XCTUnwrap(chips(target).first)
-        XCTAssertFalse(ids.contains(clone.chipId))
-        XCTAssertEqual(clone.name, "API_KEY")
+        XCTAssertTrue(target.coordinator.dropMovedPageDrag(from: source.coordinator, at: 2, offered: move))
+        XCTAssertEqual(shape(target), "xyab #", "the drop did not stand the run")
+        XCTAssertEqual(chips(target).map(\.chipId), [ids[0]], "the move took a new identity")
+        XCTAssertEqual(chips(target).first?.name, "API_KEY")
         XCTAssertFalse(target.textView.string.contains(placeholder), "the public text landed")
-
-        source.coordinator.pageDragMovedAway()
-        source.coordinator.endPageDrag(operation: .move)
+        XCTAssertNotNil(target.coordinator.chipAttachment(at: 5), "the destination was not restated")
+        XCTAssertEqual(target.textView.selectedRange(), NSRange(location: 2, length: 4))
         XCTAssertEqual(shape(source), " cd # ef", "the move left its source run")
+        XCTAssertEqual(source.textView.textStorage?.length, 8, "the source was not restated")
         XCTAssertEqual(chips(source).map(\.chipId), [ids[1]])
+        XCTAssertEqual(model.coreClient.ledger().count, records, "a move recorded something")
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the move armed no write")
+
+        source.coordinator.endPageDrag()
+        XCTAssertEqual(shape(source), " cd # ef", "the session's end removed a run")
         XCTAssertFalse(source.coordinator.dragsPageSelection)
         source.coordinator.step(back: true)
-        XCTAssertEqual(shape(source), "ab # cd # ef")
-        XCTAssertEqual(chips(source).map(\.chipId), ids, "the removal did not detach")
-        XCTAssertEqual(chips(source).first?.name, "API_KEY")
+        XCTAssertEqual(shape(source), " cd # ef", "⌘Z on the source stood a run again")
+        XCTAssertEqual(
+            (chips(source) + chips(target)).map(\.chipId).sorted(), ids.sorted(),
+            "an object stands twice")
+        target.coordinator.step(back: true)
+        XCTAssertEqual(shape(target), "xy", "one ⌘Z on the destination left part of the run")
     }
 
-    /// A drag another page copied, no destination took, or another app answered
-    /// with a move leaves its source: only a page of this app moves a run away.
-    func testACopiedCancelledOrForeignDragLeavesItsSource() throws {
+    /// ⌥, or a source that changed under its drag, pastes the drag's copy fragment on
+    /// the other page, cloning its objects, and the source keeps its run (ADR-0054 point 5).
+    func testAnOptionOrStaleDragToAnotherPagePastesACopyAndLeavesItsSource() throws {
+        let (model, _) = try makeModel()
+        let source = try mountPage(on: model)
+        let ids = chips(source).map(\.chipId)
+        let target = try mountPage(on: model, text: "xy", seals: [])
+        let point = target.textView.convert(
+            NSPoint(x: 10, y: target.textView.bounds.maxY - 2), to: nil)
+
+        let option = try beginDrag(source, NSRange(location: 0, length: 4))
+        let copy = FakeDrag(source: source.textView, board: option, mask: .copy, location: point)
+        XCTAssertEqual(target.textView.dropRoute(for: copy), .fragment)
+        XCTAssertEqual(target.textView.dragOperation(for: copy, type: .string), .copy)
+        XCTAssertTrue(target.textView.performDragOperation(copy))
+        source.coordinator.endPageDrag()
+        XCTAssertEqual(shape(target), "xyab #")
+        XCTAssertFalse(ids.contains(try XCTUnwrap(chips(target).first).chipId), "⌥ kept an identity")
+        XCTAssertEqual(shape(source), "ab # cd # ef", "⌥ took the source run")
+
+        let stale = try beginDrag(source, NSRange(location: 0, length: 4))
+        source.textView.insertText("z", replacementRange: NSRange(location: 0, length: 0))
+        let moved = FakeDrag(source: source.textView, board: stale, mask: move, location: point)
+        XCTAssertNil(target.coordinator.pageDragToMove(from: source.coordinator, offered: move))
+        XCTAssertEqual(target.textView.dropRoute(for: moved), .fragment)
+        XCTAssertEqual(target.textView.dragOperation(for: moved, type: .string), .copy)
+        XCTAssertTrue(target.textView.performDragOperation(moved))
+        source.coordinator.endPageDrag()
+        XCTAssertEqual(shape(target), "xyab #ab #", "the stale drag placed no copy")
+        XCTAssertEqual(shape(source), "zab # cd # ef", "a stale drag moved or removed a run")
+        XCTAssertEqual(chips(source).map(\.chipId), ids)
+    }
+
+    /// A drag no page took, or one a rename field or another app took the public text
+    /// of, leaves its source whatever the session's answer: only a page's drop moves a run.
+    func testADragNoPageTookLeavesItsSource() throws {
         let (model, _) = try makeModel()
         let page = try mountPage(on: model)
-        for (operation, movedAway): (NSDragOperation, Bool) in [
-            (.copy, true), ([], true), ([], false), (.move, false),
-        ] {
+        for _ in 0..<2 {
             _ = try beginDrag(page, NSRange(location: 0, length: 4))
-            if movedAway { page.coordinator.pageDragMovedAway() }
-            page.coordinator.endPageDrag(operation: operation)
-            XCTAssertEqual(
-                shape(page), "ab # cd # ef",
-                "\(operation.rawValue), moved away \(movedAway): the run was removed")
+            XCTAssertTrue(page.coordinator.dragsPageSelection)
+            page.coordinator.endPageDrag()
+            XCTAssertEqual(shape(page), "ab # cd # ef", "the session's end removed the run")
             XCTAssertFalse(page.coordinator.dragsPageSelection)
         }
     }
 
-    /// Through the view's own drop: a fragment from another page is pasted, never
-    /// sealed as its public text, and the page's own drag moves through the core.
+    /// A move from a page past its deadline is refused at the drop: the sweep takes
+    /// that page at once, the line says so, and the destination keeps what it had.
+    func testAMoveFromAPagePastItsDeadlineSettlesAndChangesNothing() throws {
+        let (model, _) = try makeModel()
+        let source = try mountPage(on: model)
+        let client = model.coreClient
+        let tab = try XCTUnwrap(model.tabs.first { $0.pageID == source.sheet }?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        _ = try beginDrag(source, NSRange(location: 0, length: 4))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        let target = try mountPage(on: model, text: "xy", seals: [])
+        XCTAssertTrue(
+            model.tabs.contains { $0.pageID == source.sheet }, "the control: the page still shows")
+        let records = client.ledger().count
+
+        XCTAssertNotNil(target.coordinator.pageDragToMove(from: source.coordinator, offered: move))
+        XCTAssertFalse(target.coordinator.dropMovedPageDrag(from: source.coordinator, at: 2, offered: move))
+        XCTAssertEqual(shape(target), "xy", "the destination changed")
+        XCTAssertTrue(chips(target).isEmpty)
+        XCTAssertFalse(model.tabs.contains { $0.pageID == source.sheet }, "the due page stayed")
+        XCTAssertEqual(model.notice, PageModel.pageExpiredLine)
+        XCTAssertGreaterThan(client.ledger().count, records, "the sweep recorded nothing")
+    }
+
+    /// Through the view's own drop: another page's drag moves through the core, never
+    /// sealed as its public text, and the page's own drag moves in place.
     func testTheViewsDropRoutesAFragmentAndTheOwnDragThroughTheCore() throws {
         let (model, _) = try makeModel()
         let source = try mountPage(on: model)
         let target = try mountPage(on: model, text: "xy", seals: [])
+        let ids = chips(source).map(\.chipId)
         let board = try beginDrag(source, NSRange(location: 0, length: 4))
 
         let below = NSPoint(x: 10, y: target.textView.bounds.maxY - 2)
@@ -353,11 +416,13 @@ final class SealedDragTests: XCTestCase {
         let foreign = FakeDrag(
             source: source.textView, board: board, mask: move,
             location: target.textView.convert(below, to: nil))
+        XCTAssertEqual(target.textView.dropRoute(for: foreign), .move)
         XCTAssertEqual(target.textView.dragOperation(for: foreign, type: .string), .move)
         XCTAssertTrue(target.textView.performDragOperation(foreign))
-        XCTAssertEqual(shape(target), "xyab #", "a fragment from another page was not pasted")
-        source.coordinator.endPageDrag(operation: .move)
-        XCTAssertEqual(shape(source), " cd # ef", "the move's end left its source run")
+        XCTAssertEqual(shape(target), "xyab #", "another page's drag did not move here")
+        XCTAssertEqual(chips(target).map(\.chipId), [ids[0]])
+        XCTAssertEqual(shape(source), " cd # ef", "the move left its source run")
+        source.coordinator.endPageDrag()
 
         let end = NSPoint(x: 10, y: source.textView.bounds.maxY - 2)
         XCTAssertEqual(source.textView.characterIndexForInsertion(at: end), 8)
@@ -378,13 +443,12 @@ final class SealedDragTests: XCTestCase {
     // MARK: Standing aside (ADR-0046)
 
     /// While a name field or the note holds the keys, the page starts no drag and
-    /// takes no drop, its own or another page's, and the line says why.
+    /// takes no drop, its own, another page's move or a fragment, and the line says why.
     func testDragsStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let (model, _) = try makeModel()
         let page = try mountPage(on: model)
         let other = try mountPage(on: model)
         let foreign = try beginDrag(other, NSRange(location: 0, length: 4))
-        other.coordinator.endPageDrag(operation: .copy)
         XCTAssertNotNil(SealedFragment.item(on: foreign), "the control: a fragment to drop")
         _ = try beginDrag(page, NSRange(location: 0, length: 4))
 
@@ -392,8 +456,17 @@ final class SealedDragTests: XCTestCase {
             model.notice = nil
             XCTAssertFalse(page.coordinator.dropPageDrag(at: 12, offered: move), holder)
             XCTAssertEqual(model.notice, PageModel.dropWaitsLine, holder)
+            model.notice = nil
+            XCTAssertNotNil(
+                page.coordinator.pageDragToMove(from: other.coordinator, offered: move),
+                "the control: a move to drop under the \(holder)")
+            XCTAssertFalse(
+                page.coordinator.dropMovedPageDrag(from: other.coordinator, at: 12, offered: move),
+                holder)
+            XCTAssertEqual(model.notice, PageModel.dropWaitsLine, holder)
             XCTAssertFalse(page.coordinator.dropFragment(from: foreign, at: 12), holder)
             XCTAssertEqual(shape(page), "ab # cd # ef", "the page took a drop under the \(holder)")
+            XCTAssertEqual(shape(other), "ab # cd # ef", "a run left the other page under the \(holder)")
         }
 
         XCTAssertTrue(page.window.makeFirstResponder(page.field))
@@ -420,8 +493,13 @@ final class SealedDragTests: XCTestCase {
         _ = try beginDrag(page, NSRange(location: 0, length: 4))
         XCTAssertTrue(page.coordinator.dropPageDrag(at: 12, offered: move), "the drop did not come back")
         XCTAssertEqual(shape(page), " cd # efab #")
-        XCTAssertTrue(page.coordinator.dropFragment(from: foreign, at: 0), "nor the other page's")
+        XCTAssertTrue(page.coordinator.dropFragment(from: foreign, at: 0), "nor the fragment")
         XCTAssertEqual(shape(page), "ab # cd # efab #")
+        XCTAssertTrue(
+            page.coordinator.dropMovedPageDrag(from: other.coordinator, at: 0, offered: move),
+            "nor the other page's move")
+        XCTAssertEqual(shape(page), "ab #ab # cd # efab #")
+        XCTAssertEqual(shape(other), " cd # ef")
     }
 }
 

@@ -6071,6 +6071,26 @@ public final class PageModel: ObservableObject {
         return placed
     }
 
+    /// A page's drag dropped on page `dest` at `index`: the range moved there through the
+    /// core keeping every object, and both pages restated (ADR-0054). Nil, settled, on a refusal.
+    @discardableResult
+    public func dropRange(
+        _ range: NSRange, sheet: UInt64, onto dest: UInt64, at index: Int
+    ) -> PlacedFragment? {
+        guard !sheet.isFileID, !dest.isFileID else { return nil }
+        guard let placed = client.moveRange(sheet: sheet, range: range, toSheet: dest, at: index)
+        else {
+            // A page past its deadline at either end refuses; the sweep takes it now (ADR-0052).
+            settleCoreEvent()
+            if !livePageIDs.contains(sheet) || !livePageIDs.contains(dest) {
+                flash(Self.pageExpiredLine)
+            }
+            return nil
+        }
+        settleTransfer(sheet, dest)
+        return placed
+    }
+
     /// The line when the decrypted drag meets a name or note holding the keys (ADR-0046).
     public static let decryptedDragWaitsLine =
         "a name or note is being written, so the drag did not start."

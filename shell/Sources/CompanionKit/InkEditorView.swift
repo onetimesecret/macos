@@ -2806,8 +2806,6 @@ public struct InkEditorView: NSViewRepresentable {
             let range: NSRange
             let document: InkDocument
             let generation: Int
-            /// Another page of this app pasted the drag as a move.
-            var movedAway = false
         }
 
         private var pageDrag: PageDrag?
@@ -2881,12 +2879,8 @@ public struct InkEditorView: NSViewRepresentable {
         func dropPageDrag(at index: Int, offered mask: NSDragOperation) -> Bool {
             let operation = pageDragOperation(at: index, offered: mask)
             guard operation != [], let drag = standingPageDrag, let textView,
-                  let sheet = currentSheet
+                  let sheet = currentSheet, admitsDrop(from: textView)
             else { return false }
-            guard textView.answersChords else {
-                model.flash(PageModel.dropWaitsLine)
-                return false
-            }
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
             guard let placed = model.dropRange(
@@ -2903,14 +2897,21 @@ public struct InkEditorView: NSViewRepresentable {
             return !sheet.isFileID
         }
 
+        /// Whether a drop from `source` may land here: not while a field or note other
+        /// than the drag's own source holds the keys (ADR-0046), and the line says why.
+        func admitsDrop(from source: NSView?) -> Bool {
+            guard let textView else { return false }
+            guard textView.yieldsKeys(toAnyBut: source) else { return true }
+            model.flash(PageModel.dropWaitsLine)
+            return false
+        }
+
         /// A fragment dragged from another page or app, dropped at `index`: pasted
         /// through the core as ⌘V pastes it, never sealed as its public text.
-        func dropFragment(from board: NSPasteboard, at index: Int) -> Bool {
-            guard takesFragmentDrop, let textView, let sheet = currentSheet else { return false }
-            guard textView.answersChords else {
-                model.flash(PageModel.dropWaitsLine)
-                return false
-            }
+        func dropFragment(from board: NSPasteboard, at index: Int, source: NSView? = nil) -> Bool {
+            guard takesFragmentDrop, let textView, let sheet = currentSheet,
+                  admitsDrop(from: source)
+            else { return false }
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
             guard case .placed(let placed) = model.pasteFragment(
@@ -2920,28 +2921,41 @@ public struct InkEditorView: NSViewRepresentable {
             return true
         }
 
-        /// Another page pasted this page's drag as a move, so its end takes the run off here.
-        func pageDragMovedAway() {
-            pageDrag?.movedAway = true
+        /// The page and range of another page's drag that a drop here moves through the
+        /// core (ADR-0054 point 5): a move, while that drag stands, between two pages.
+        func pageDragToMove(
+            from source: Coordinator?, offered mask: NSDragOperation
+        ) -> (sheet: UInt64, range: NSRange)? {
+            guard InkTextView.pageDropOperation(offered: mask) == .move, takesFragmentDrop,
+                  let source, source !== self, source.model === model,
+                  let drag = source.standingPageDrag, case .sheet(let from) = drag.document,
+                  let sheet = currentSheet, from != sheet
+            else { return nil }
+            return (from, drag.range)
         }
 
-        /// The page's drag ended. A move another page took leaves this page by an
-        /// ordinary deletion, which detaches its objects (ADR-0047 points 4 and 10);
-        /// another app's answer removes nothing.
-        func endPageDrag(operation: NSDragOperation) {
-            let drag = standingPageDrag
+        /// Another page's drag dropped here at `index` as a move: the core takes its range
+        /// off that page and stands it here keeping every object, and both pages restate.
+        func dropMovedPageDrag(
+            from source: Coordinator, at index: Int, offered mask: NSDragOperation
+        ) -> Bool {
+            guard let drag = pageDragToMove(from: source, offered: mask), let textView,
+                  let sheet = currentSheet, admitsDrop(from: source.textView)
+            else { return false }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard let placed = model.dropRange(drag.range, sheet: drag.sheet, onto: sheet, at: index)
+            else { return false }
+            source.invalidateOrdinaryPasteMeasurement()
+            source.settleRewrite(selecting: NSRange(location: drag.range.location, length: 0))
+            settleRewrite(selecting: placed.range)
+            return true
+        }
+
+        /// The page's drag ended. A move between pages went through the core at the drop
+        /// (ADR-0054), so the end removes nothing here, whatever the destination answered.
+        func endPageDrag() {
             pageDrag = nil
-            guard let drag, drag.movedAway, operation.contains(.move), let textView,
-                  textView.isEditable, let storage = textView.textStorage,
-                  NSMaxRange(drag.range) <= storage.length
-            else { return }
-            withEditIntent(.deletion) {
-                if textView.shouldChangeText(in: drag.range, replacementString: "") {
-                    storage.replaceCharacters(in: drag.range, with: "")
-                    textView.didChangeText()
-                }
-            }
-            model.finishEditingGroup(drag.document, selection: textView.selectedRange())
         }
 
         // MARK: The decrypted drag from a block's handle (ADR-0047 point 11, ADR-0050)
@@ -6102,30 +6116,52 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     // MARK: Drop-to-seal
 
-    /// An external drag seals, and only where a seal can land. Anywhere
-    /// else (over a file, or a view that takes no edits) this view takes
-    /// nothing: dragging onto this pad means "stage this", and over a
-    /// file the alternative was writing what was dragged into the file
-    /// as plaintext the next save puts on disk. The cursor says so
-    /// rather than promising a seal.
-    private func sealsExternalDrag(_ sender: NSDraggingInfo) -> Bool {
-        isExternalDrag(sender) && coordinator?.sealsHere == true
+    /// Where a drop on this surface goes, one answer for the cursor and the drop.
+    enum DropRoute: Equatable {
+        /// Nothing lands: a decrypted drag (ADR-0050), another surface's drag on a
+        /// note (ADR-0044 point 4), or another app's where no seal can stand.
+        case refused
+        /// The page's own drag, moved or cloned in place through the core.
+        case ownDrag
+        /// Another page's standing drag, moved here through the core (ADR-0054).
+        case move
+        /// A copy fragment, pasted through the core as ⌘V pastes it.
+        case fragment
+        /// This surface's own drag that is not the page's, which AppKit drops.
+        case ink
+        /// Any other drag, sealed where a seal can land.
+        case seal
+    }
+
+    /// The route a drop from `sender` takes here. A drag from elsewhere seals, and only
+    /// where a seal can land: over a file it would write plaintext the next save keeps.
+    func dropRoute(for sender: NSDraggingInfo) -> DropRoute {
+        if isDecryptedDrag(sender) { return .refused }
+        let editor = sender.draggingSource as? InkTextView
+        if editor === self { return coordinator?.dragsPageSelection == true ? .ownDrag : .ink }
+        guard let coordinator, !coordinator.writesNote else { return .refused }
+        let mask = sender.draggingSourceOperationMask
+        if coordinator.pageDragToMove(from: editor?.coordinator, offered: mask) != nil {
+            return .move
+        }
+        if carriesFragment(sender) { return coordinator.takesFragmentDrop ? .fragment : .refused }
+        return coordinator.sealsHere ? .seal : .refused
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if isDecryptedDrag(sender) { return [] }
-        guard isExternalDrag(sender), !carriesFragment(sender) else {
-            return super.draggingEntered(sender)
+        switch dropRoute(for: sender) {
+        case .refused: []
+        case .seal: .copy
+        case .ownDrag, .move, .fragment, .ink: super.draggingEntered(sender)
         }
-        return sealsExternalDrag(sender) ? .copy : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if isDecryptedDrag(sender) { return [] }
-        guard isExternalDrag(sender), !carriesFragment(sender) else {
-            return super.draggingUpdated(sender)
+        switch dropRoute(for: sender) {
+        case .refused: []
+        case .seal: .copy
+        case .ownDrag, .move, .fragment, .ink: super.draggingUpdated(sender)
         }
-        return sealsExternalDrag(sender) ? .copy : []
     }
 
     /// Dragging content to a secrecy tool is already the "stage this"
@@ -6133,36 +6169,31 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// pasteboard itself — the dropped bytes never enter this process.
     /// The page's own drag and a fragment go through the core instead.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        // Before drop to seal reads the drag board, which would ask this app's provider.
-        if isDecryptedDrag(sender) { return false }
+        // Read before drop to seal touches the drag board, which would ask our provider.
+        let route = dropRoute(for: sender)
         let index = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
-        if isOwnPageDrag(sender) {
-            return coordinator?.dropPageDrag(
-                at: index, offered: sender.draggingSourceOperationMask) ?? false
-        }
-        if carriesFragment(sender) {
-            guard coordinator?.dropFragment(from: sender.draggingPasteboard, at: index) == true
-            else { return false }
-            if Self.pageDropOperation(offered: sender.draggingSourceOperationMask) == .move,
-               let source = sender.draggingSource as? InkTextView, source !== self
-            {
-                source.coordinator?.pageDragMovedAway()
-            }
-            return true
-        }
-        guard isExternalDrag(sender) else {
+        let mask = sender.draggingSourceOperationMask
+        let editor = sender.draggingSource as? InkTextView
+        switch route {
+        case .refused:
+            return false
+        case .ownDrag:
+            return coordinator?.dropPageDrag(at: index, offered: mask) ?? false
+        case .move:
+            guard let source = editor?.coordinator else { return false }
+            return coordinator?.dropMovedPageDrag(from: source, at: index, offered: mask) ?? false
+        case .fragment:
+            return coordinator?.dropFragment(
+                from: sender.draggingPasteboard, at: index, source: editor) ?? false
+        case .ink:
             return super.performDragOperation(sender)
+        case .seal:
+            return coordinator?.sealDrop(at: index) ?? false
         }
-        guard sealsExternalDrag(sender) else { return false }
-        return coordinator?.sealDrop(at: index) ?? false
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
         isDecryptedDrag(sender) ? false : super.prepareForDragOperation(sender)
-    }
-
-    private func isExternalDrag(_ sender: NSDraggingInfo) -> Bool {
-        (sender.draggingSource as? NSView) !== self
     }
 
     /// This app's own decrypted drag, which the page and the note refuse (ADR-0050 point 2).
@@ -6217,31 +6248,29 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         guard let coordinator, coordinator.dragsPageSelection else {
             return super.draggingSession(session, endedAt: screenPoint, operation: operation)
         }
-        coordinator.endPageDrag(operation: operation)
+        coordinator.endPageDrag()
     }
 
-    /// The operation AppKit's drop caret follows for the page's own drag or a fragment;
-    /// any other drag keeps AppKit's answer.
+    /// The operation AppKit's drop caret follows for the page's own drag, a move or a
+    /// fragment, which removes nothing from its source; any other drag keeps AppKit's answer.
     override func dragOperation(
         for dragInfo: NSDraggingInfo, type: NSPasteboard.PasteboardType
     ) -> NSDragOperation {
-        if isDecryptedDrag(dragInfo) { return [] }
-        guard let coordinator else { return super.dragOperation(for: dragInfo, type: type) }
-        if isOwnPageDrag(dragInfo) {
+        let mask = dragInfo.draggingSourceOperationMask
+        switch dropRoute(for: dragInfo) {
+        case .refused:
+            return []
+        case .ownDrag:
             let index = characterIndexForInsertion(
                 at: convert(dragInfo.draggingLocation, from: nil))
-            return coordinator.pageDragOperation(
-                at: index, offered: dragInfo.draggingSourceOperationMask)
+            return coordinator?.pageDragOperation(at: index, offered: mask) ?? []
+        case .move:
+            return .move
+        case .fragment:
+            return mask.contains(.copy) ? .copy : []
+        case .ink, .seal:
+            return super.dragOperation(for: dragInfo, type: type)
         }
-        if carriesFragment(dragInfo) {
-            guard coordinator.takesFragmentDrop else { return [] }
-            return Self.pageDropOperation(offered: dragInfo.draggingSourceOperationMask)
-        }
-        return super.dragOperation(for: dragInfo, type: type)
-    }
-
-    private func isOwnPageDrag(_ sender: NSDraggingInfo) -> Bool {
-        (sender.draggingSource as? NSView) === self && coordinator?.dragsPageSelection == true
     }
 
     private func carriesFragment(_ sender: NSDraggingInfo) -> Bool {
