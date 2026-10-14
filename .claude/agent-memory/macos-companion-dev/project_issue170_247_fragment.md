@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names, a nil control view under the drag image, drop to seal reading the real drag board)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the closed ⇧⌘V own copy trap and the offer's wait, print with no path, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names, a nil control view under the drag image, drop to seal reading the real drag board)
 metadata:
   type: project
 ---
@@ -55,8 +55,12 @@ Seams for the editor half (all page ids, all refuse a file id):
   `placeActiveCutAtCaret`. A failed write is tested through
   `Seams.writeCutFragment`: NSPasteboard cannot be subclassed
   (allocWithZone throws) and a released board still takes writes.
-  Open trap: after our copy or cut, `holds_external_content` sees
-  `.string`, so the summon offer would seal the placeholder text.
+  The own copy trap is closed (phase 4 unit 10): the shell's
+  `PageModel.boardHoldsOwnCopy` (the same `SealedFragment.item(on:)`
+  ⌘V reads) gates `refreshPasteboardOffer` and `sealPasteboard`; the
+  core's `holds_external_content` still sees only `.string`. A debug
+  build's fragment type differs, so a release build reads a debug
+  build's copy as external text and still offers to seal it.
   Mutation test runs are refused by the auto mode classifier.
 
 - Core guards (unit 2, ADR-0048 and ADR-0049, core 0.31.1, ffi 0.39.0):
@@ -136,8 +140,7 @@ Seams for the editor half (all page ids, all refuse a file id):
   even when refused; a note falls through to AppKit's public text.
   Every paste route now guards `answersChords`. Tests that paste must
   hold the fragment on the private board, or AppKit reads the real
-  general one. Open trap still unfixed: ⇧⌘V and the summon offer would
-  seal our own placeholder text.
+  general one. The ⇧⌘V own copy trap is closed (see above).
   Phase 4 unit 6: paste and `placeActiveCut(sheet:ranges:)` share
   `pasteRange`, which refuses several stretches with
   `severalStretchesPasteLine` before any data read or core call. An item
@@ -205,11 +208,18 @@ Seams for the editor half (all page ids, all refuse a file id):
   copy. NSTextView names its types the legacy way (`NSStringPboardType`,
   `NeXT Rich Text Format v1.0 pasteboard type`), and its own
   `writeSelection` refuses the modern `.string`/`.rtf` names, so a test
-  asking AppKit by those names sees false. Still open, no accepted
-  record: ⇧⌘V and the summon offer seal our own placeholder text after
-  our copy; ⌥⌫, ⌘⌫, Edit > Delete and typing over an object remove it
-  with no line; Share's item source is unverified; no hand procedure
-  has been run.
+  asking AppKit by those names sees false. Still open: Share's item
+  source is unverified; no hand procedure has been run.
+  Phase 4 unit 10: the offer's button waits under `answersChords` in
+  `Coordinator.sealedPaste`. Testing the offer: the shell reads the
+  test's unique board while the core reads its memory board, so use a
+  `CompanionClient` subclass overriding `pasteboardHasContent` and
+  `sealFromPasteboard` (`SealWitness`). Print has no path: a throwaway
+  SwiftUI probe of this scene shape (Settings only, `swiftc
+  -parse-as-library -target arm64-apple-macos14`, accessory policy,
+  dump `NSApp.mainMenu` and `NSTextView.defaultMenu`, `exit` after 1 s)
+  listed no Print…; `CommandGroup(replacing: .printItem) {}` changed
+  nothing in the dump. The runner cannot build the SwiftUI menu bar.
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
