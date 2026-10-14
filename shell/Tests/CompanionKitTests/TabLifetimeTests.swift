@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import CompanionKit
@@ -13,7 +14,7 @@ import XCTest
 /// store, which is the issue #53 seam.
 @MainActor
 final class TabLifetimeTests: XCTestCase {
-    private func makeModel() throws -> PageModel {
+    private func makeModel(wake: NotificationCenter? = nil) throws -> PageModel {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-tabs-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -29,7 +30,8 @@ final class TabLifetimeTests: XCTestCase {
             seams: .init(
                 stateDirectory: tempDir,
                 client: .ephemeral(tag: "tabs-\(UUID().uuidString)"),
-                saveDebounce: 0.05
+                saveDebounce: 0.05,
+                wakeNotifications: wake
             )
         )
     }
@@ -393,6 +395,27 @@ final class TabLifetimeTests: XCTestCase {
                 noTabsRemain: afterClose.hasNoTabs),
             "with no strip left to reseal the file goes instead"
         )
+    }
+
+    /// The event timer does not count sleep, so the system's wake settles as the
+    /// timer would: a page that came due asleep goes at once, with its write armed (ADR-0052).
+    func testAWakeSettlesAPageThatCameDueWhileTheMachineSlept() throws {
+        let wake = NotificationCenter()
+        let model = try makeModel(wake: wake)
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+        XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
+        // No refresh here: the shell's timer stays armed for the page's old hour.
+        model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000)
+        XCTAssertEqual(model.coreClient.tabs().first?.hasPage, true, "the control: no sweep ran")
+        let marks = model.dirtyMarks
+
+        wake.post(name: NSWorkspace.didWakeNotification, object: nil)
+        drainMainQueue()
+
+        XCTAssertNil(model.selectedPageID, "the page that came due asleep outlived the wake")
+        XCTAssertFalse(try XCTUnwrap(model.tabs.first).hasPage)
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the wake's sweep armed no write")
     }
 }
 

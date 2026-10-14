@@ -1338,6 +1338,9 @@ public final class PageModel: ObservableObject {
         let ambientPasteboard: NSPasteboard?
         /// A cut's fragment write that refuses, since no real board can be made to (Law 0002).
         let writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)?
+        /// Where the system's wake is heard: a center of the test's own, so a
+        /// suite can post one; nil is the shared workspace's.
+        let wakeNotifications: NotificationCenter?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1352,7 +1355,8 @@ public final class PageModel: ObservableObject {
                 @MainActor (PresentationField, PresentationOwner) -> Void
             )? = nil,
             ambientPasteboard: NSPasteboard? = nil,
-            writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil
+            writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
+            wakeNotifications: NotificationCenter? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1365,6 +1369,7 @@ public final class PageModel: ObservableObject {
             self.declinedPresentationWrite = declinedPresentationWrite
             self.ambientPasteboard = ambientPasteboard
             self.writeCutFragment = writeCutFragment
+            self.wakeNotifications = wakeNotifications
         }
     }
 
@@ -1447,6 +1452,7 @@ public final class PageModel: ObservableObject {
         declinedPresentationWrite = seams.declinedPresentationWrite
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
+        wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
         // Resolved once, here, so the surface and the page's text view
@@ -1553,6 +1559,12 @@ public final class PageModel: ObservableObject {
             // owed check instead, after it has finished with that answer.
             MainActor.assumeIsolated { self?.consumeOwedActivationCheck() }
         }
+        // The event timer does not count sleep, so a page that came due asleep goes on wake (ADR-0052).
+        wakeObserver = wakeCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { _ = self?.settleCoreEvent() }
+        }
     }
 
     /// The one route to a system file panel, a bookmark, a security
@@ -1579,6 +1591,9 @@ public final class PageModel: ObservableObject {
     // removeObserver is thread-safe; every other access is main-actor
     // isolated, but Swift 6 deinit is nonisolated.
     private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
+    /// The wake's observer, on the center it was added to; removed in deinit as above.
+    private nonisolated(unsafe) var wakeObserver: NSObjectProtocol?
+    private nonisolated(unsafe) let wakeCenter: NotificationCenter
 
     /// Whether the drafts file owes a write.
     ///
@@ -2754,6 +2769,7 @@ public final class PageModel: ObservableObject {
 
     deinit {
         if let modalEndObserver { NotificationCenter.default.removeObserver(modalEndObserver) }
+        if let wakeObserver { wakeCenter.removeObserver(wakeObserver) }
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
         if clipboardClearTimer != nil {
