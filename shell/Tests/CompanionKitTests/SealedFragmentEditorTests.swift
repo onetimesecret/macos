@@ -497,11 +497,16 @@ final class SealedFragmentEditorTests: XCTestCase {
         withExtendedLifetime(fileCoordinator) {}
     }
 
-    /// Over a word continuous spelling marked, AppKit heads the menu with its guesses,
-    /// Ignore Spelling and Learn Spelling; the filter takes them with the submenu.
+    /// Over a word continuous spelling marked, AppKit heads the menu with its guesses, two
+    /// Provide Feedback items, Ignore Spelling and Learn Spelling, by these actions on
+    /// macOS 27.2; the filter takes them with the submenu.
     func testTheSpellingItemsOverAMisspelledWordLeaveWithTheSubmenu() {
         let menu = NSMenu()
-        for action in ["_changeSpellingFromMenu:", "_ignoreSpellingFromMenu:", "_learnSpellingFromMenu:"] {
+        for action in [
+            "_changeSpellingFromMenu:", "_invokeProofreadingFeedbackThumbsUp:",
+            "_invokeProofreadingFeedbackThumbsDown:", "_ignoreSpellingFromMenu:",
+            "_learnSpellingFromMenu:",
+        ] {
             menu.addItem(NSMenuItem(title: action, action: Selector((action)), keyEquivalent: ""))
         }
         menu.addItem(.separator())

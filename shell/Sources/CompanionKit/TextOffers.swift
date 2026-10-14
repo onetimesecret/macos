@@ -40,10 +40,12 @@ enum TextOffers {
         item.submenu?.items.contains { $0.action == #selector(NSTextView.startSpeaking(_:)) } == true
     }
 
-    /// Spelling and Grammar, and the guesses, Ignore Spelling and Learn Spelling AppKit
-    /// heads the menu with over a misspelled word, which hand the word to the spell server.
+    /// Spelling and Grammar, and the guesses, Provide Feedback, Ignore Spelling and Learn
+    /// Spelling AppKit heads the menu with over a misspelled word, which send the word out.
     static func isSpelling(_ item: NSMenuItem) -> Bool {
-        if let action = item.action.map(NSStringFromSelector), spellingItems.contains(action) {
+        if let action = item.action.map(NSStringFromSelector),
+           spellingItems.contains(action) || action.hasPrefix("_invokeProofreadingFeedback")
+        {
             return true
         }
         return item.submenu?.items.contains {

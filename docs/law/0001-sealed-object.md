@@ -351,7 +351,7 @@ The tests are in `SealedFragmentEditorTests.swift` (fragment) and
 | `copyFont:`, `copyRuler:` | no menu here holds Copy Style or Copy Ruler, and no key binds them | asks first | the same three tests |
 | Share… (`_performStandardShareMenuItem:`, its picker) and `orderFrontSharingServicePicker:` | the text menu; nothing here sends the action, and NSTextView's Touch Bar holds no share item | removed; the action is refused | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions`; the action has no test, since a picker that showed would hold the test's run loop |
 | Look Up “…” and Translate “…” (`_rvMenuItemAction`), the Speech submenu | the text menu, titled with or reading the selection | removed | fragment `testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling` |
-| Spelling and Grammar, and the guesses, Ignore Spelling and Learn Spelling over a misspelled word (`_changeSpellingFromMenu:`, `_ignoreSpellingFromMenu:`, `_learnSpellingFromMenu:`) | the text menu | removed | fragment `testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling`, `testTheSpellingItemsOverAMisspelledWordLeaveWithTheSubmenu` |
+| Spelling and Grammar, and the guesses, Provide Feedback, Ignore Spelling and Learn Spelling over a misspelled word (`_changeSpellingFromMenu:`, `_invokeProofreadingFeedbackThumbsUp:` and its thumbs down, `_ignoreSpellingFromMenu:`, `_learnSpellingFromMenu:`, as AppKit's menu over a misspelled word named them) | the text menu | removed | fragment `testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling`, `testTheSpellingItemsOverAMisspelledWordLeaveWithTheSubmenu` |
 | Search With Google (`_searchWithGoogleFromMenu:`) | the text menu | removed | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions` |
 | Writing Tools (`showWritingTools:`), typing suggestions (`toggleAutomaticTextCompletion:`, the Touch Bar's candidates) | the text menu, Edit, the Touch Bar, at every caret move | off, and the toggle refused | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions`; a Touch Bar, a hand check |
 | Convert to Full Width and the other conversions AppKit adds to Transformations for some input sources | a page's text menu | removed from a page's menu; a note keeps them, holding no object | fragment `testAPagesTransformationsAreTheThreeItsRewriteCarries` |
@@ -1474,8 +1474,9 @@ paths must stay dialog free.
   paragraph after typing. So the routes are now sorted in the AppKit
   text routes table under the contract, from the SDK headers and the
   menus AppKit builds, and every route the table found unguarded is
-  closed. Spelling and Grammar, with the guesses, Ignore Spelling and
-  Learn Spelling, and Search With Google leave a page's, a note's and a
+  closed. Spelling and Grammar, with the guesses, Provide Feedback,
+  Ignore Spelling and Learn Spelling, and Search With Google leave a
+  page's, a note's and a
   name's text menu; typing suggestions go off beside Writing Tools; the
   spelling and Substitutions actions, every check AppKit runs as the
   text changes, completion, Quick Look Attachments and the style copies

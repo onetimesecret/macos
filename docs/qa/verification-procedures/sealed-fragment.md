@@ -100,7 +100,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       same in an object's note and in its name field while it is open,
       then in a regular text file. **Pass:** the page's, the note's and
       the name's menus hold no Spelling and Grammar submenu, no guesses,
-      no Ignore Spelling, no Learn Spelling and no Search With Google;
+      no Provide Feedback, no Ignore Spelling, no Learn Spelling and no
+      Search With Google;
       the file's menu holds them. **Fail:** any of them shows over a
       page, a note or a name, or the file's menu has lost one.
 - [ ] **Transformations and Substitutions keep every object** (Law
