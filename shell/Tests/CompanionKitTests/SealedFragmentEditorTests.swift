@@ -646,6 +646,23 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(
             page.textView.selectedRange(), NSRange(location: 0, length: 5),
             "the control: with the panel down the check selects the misspelling")
+        XCTAssertFalse(panelShows("wrnog", in: panel), "the hidden panel kept the page's word")
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.string = "wrnog line"
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        file.setSelectedRange(start)
+        file.checkSpelling(nil)
+        XCTAssertTrue(panelShows("wrnog", in: panel), "the control: the hidden panel keeps a file's word")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// Whether any field of the spelling panel reads `word`.
+    private func panelShows(_ word: String, in panel: NSPanel) -> Bool {
+        func fields(in view: NSView) -> [NSTextField] {
+            ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(fields(in:))
+        }
+        return panel.contentView.map(fields(in:))?.contains { $0.stringValue == word } == true
     }
 
     /// A page's Transformations keep the three its rewrite carries round an object; the

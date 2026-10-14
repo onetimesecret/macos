@@ -222,6 +222,8 @@ class AskingTextView: NSTextView {
     override func checkSpelling(_ sender: Any?) {
         guard mayReadOut, keepsSelectionReaders || !TextOffers.spellingPanelShows else { return }
         super.checkSpelling(sender)
+        // A hidden panel keeps the word for a later showing over a file; leave it none of ours.
+        if !keepsSelectionReaders { NSSpellChecker.shared.updateSpellingPanel(withMisspelledWord: "") }
     }
 
     /// Show Spelling and Grammar, never over a page's, a note's or a name's text: a panel

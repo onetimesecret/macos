@@ -348,7 +348,7 @@ whose Learn was never pressed. The tests are in
 | `copy:`, `cut:`, the drag, `writeSelectionToPasteboard:` | ⌘C, ⌘X, a drag, the Services menu | a page's go through the core, which refuses past the deadline, and AppKit's own ask first; a selection holding an object gives the copy's public text alone | the expiry and export rows |
 | `performFindPanelAction:`, `performTextFinderAction:` for Use Selection for Find | Edit > Find, ⌘E | asks first | the expiry row |
 | `startSpeaking:`, `quickLookWithEvent:`, `quickLookPreviewItems:`, both `showDefinitionForAttributedString` methods | Edit > Speech, a force click or three finger tap, Quick Look by key, ⌃⌘D | asks first | fragment `testEveryWayOutOfAPagePastItsDeadlineRefusesAndTheSettleTakesIt`, `testAppKitsReadersStandAsideForTheKeysAndRefusePastTheDeadline`, `testANamePastItsPagesDeadlineGivesNothingOutAndTheSettleTakesThePage`; ⌃⌘D and a force click, a hand check |
-| `checkSpelling:`, `ignoreSpelling:` | Edit > Spelling and Grammar's Check Document Now, the spelling panel's Find Next and Ignore | asks first; on a page, a note and a name, Check Document Now and Find Next also stand aside while the panel is up, since they would show a word of the text in it | the same three tests; with the panel up, fragment `testAPagesSpellingCheckStandsAsideWhileThePanelIsUp` |
+| `checkSpelling:`, `ignoreSpelling:` | Edit > Spelling and Grammar's Check Document Now, the spelling panel's Find Next and Ignore | asks first; on a page, a note and a name, Check Document Now and Find Next also stand aside while the panel is up, since they would show a word of the text in it, and a check made while it is hidden leaves it no word, since a hidden panel keeps its word for its next showing | the same three tests; the panel up and hidden, fragment `testAPagesSpellingCheckStandsAsideWhileThePanelIsUp` |
 | `showGuessPanel:` | Edit > Spelling and Grammar > Show Spelling and Grammar | refused over a page, a note and a name, and Edit's item for it unavailable there, so no panel shows their words; a file keeps it | fragment `testAPageANoteAndANameNeverShowTheSpellingPanel`; Edit's item on the real menu bar, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | the spelling panel's Learn (`_learn:`) and Define (`_define:`) | the panel's buttons, aimed at `NSSpellChecker` itself rather than at the text view | known, not gated: they reach no text view, so a word the panel shows leaves by them past any deadline; the two rows above keep every word of a page, a note and a name out of the panel | the two rows above |
 | `checkTextInDocument:`, `checkTextInSelection:` | the Substitutions panel's Replace All and Replace in Selection | asks first | the same three tests |
@@ -1535,8 +1535,9 @@ paths must stay dialog free.
   a panel held open past a deadline could give a word of the page out by
   a route no gate sees, as Share's picker could. A page, a note and a
   name never show the panel, Edit's item for it is unavailable over
-  them, and their spelling checks stand aside while a panel opened over
-  a file is up. Data detectors, whose finds a later click hands to
+  them, their spelling checks stand aside while a panel opened over a
+  file is up, and a check made while it is hidden leaves it no word of
+  theirs for its next showing. Data detectors, whose finds a later click hands to
   another app, are off there and their toggle refused. The table now
   also sorts the routes the text system drives from attributes and
   delegates: the link's click, menu items, drag and tooltip, link
