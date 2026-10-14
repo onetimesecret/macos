@@ -1083,6 +1083,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the page still stands before they read it, and wait while a name or
   a note holds the keys.
 
+- **Spelling and Grammar, Search With Google and typing suggestions give
+  nothing of a page away** (app 0.35.0; Law 0001, issue #170). Spelling
+  and Grammar handed a page's text to the system's spell server, a
+  separate process, even past the page's deadline, and Search With
+  Google handed a selection to the browser. Neither is offered in the
+  text menu of a page, a note or a name field any more, and a Touch
+  Bar's typing suggestions are off there, as Writing Tools is; a regular
+  text file keeps them all. Edit > Spelling and Grammar, the
+  Substitutions panel, completion with ⌥Esc, Quick Look Attachments and
+  every check that runs as you type, Check Spelling While Typing
+  included, ask whether the page still stands before they read it, so
+  a page past its deadline goes at the first of them, and they wait
+  while a name or a note holds the keys.
+
+- **Transformations keep a sealed object** (app 0.35.0; Law 0001,
+  issue #170). Make Upper Case, Make Lower Case or Capitalize over a
+  selection holding a sealed object removed the object without its two
+  presses. Each now changes the ink around the objects and leaves every
+  object where it was, and one ⌘Z takes the change back whole, as it
+  does for Substitutions' replace actions. A spelling change over a
+  selection holding an object is not made, and says `the change would
+  replace a sealed object, so it was not made.`
+
 - **Sync sends nothing of a page past its deadline** (app 0.35.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
   issue #170). With sync on, a page past its deadline but not yet swept
