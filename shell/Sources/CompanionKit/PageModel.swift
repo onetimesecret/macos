@@ -5819,23 +5819,44 @@ public final class PageModel: ObservableObject {
     /// The line when a selection of several stretches holds a sealed object.
     public static let severalStretchesLine = "sealed objects copy from one selection, not several."
 
+    /// A page's selected ranges as the core composes them (ADR-0047 point 2).
+    public enum SelectionComposition: Equatable, Sendable {
+        case composed(SealedFragment)
+        /// One envelope holds one range, so several stretches carry no object.
+        case severalStretchesHoldAnObject
+        case refused
+    }
+
+    /// Compose a page's selected ranges for a copy or a service; writes nothing.
+    public func composeSelection(_ ranges: [NSRange], sheet: UInt64) -> SelectionComposition {
+        guard !sheet.isFileID, !ranges.isEmpty else { return .refused }
+        var fragments: [SealedFragment] = []
+        for range in ranges {
+            guard let fragment = client.copyFragment(sheet: sheet, range: range) else {
+                return .refused
+            }
+            fragments.append(fragment)
+        }
+        guard fragments.count > 1 else { return .composed(fragments[0]) }
+        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+            return .severalStretchesHoldAnObject
+        }
+        return .composed(SealedFragment(joining: fragments))
+    }
+
     /// Copy a page's selected ranges to the ordinary pasteboard as the core
     /// composes them (ADR-0047 point 2); nothing is written if one is refused.
     @discardableResult
     public func copySelection(_ ranges: [NSRange], sheet: UInt64) -> Bool {
-        guard !sheet.isFileID, !ranges.isEmpty else { return false }
-        var fragments: [SealedFragment] = []
-        for range in ranges {
-            guard let fragment = client.copyFragment(sheet: sheet, range: range) else { return false }
-            fragments.append(fragment)
-        }
-        guard fragments.count > 1 else { return fragments[0].write(to: ambientPasteboard) }
-        // One envelope holds one range, so several stretches carry no object.
-        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+        switch composeSelection(ranges, sheet: sheet) {
+        case .composed(let fragment):
+            return fragment.write(to: ambientPasteboard)
+        case .severalStretchesHoldAnObject:
             flash(Self.severalStretchesLine)
             return false
+        case .refused:
+            return false
         }
-        return SealedFragment(joining: fragments).write(to: ambientPasteboard)
     }
 
     /// The line when a cut's several stretches hold a sealed object.

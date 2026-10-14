@@ -39,6 +39,9 @@ final class SealedFragmentEditorTests: XCTestCase {
 
     private let whole = NSRange(location: 0, length: 12)
     private let placeholder = "[sealed content · tiny]"
+    /// Rich text by the name NSTextView offers it to a service.
+    private static let legacyRTF = NSPasteboard.PasteboardType(
+        "NeXT Rich Text Format v1.0 pasteboard type")
 
     /// `ab <SECRET> cd <TOKEN> ef`, twelve units, the page holding the keys.
     private func makePage(
@@ -203,6 +206,106 @@ final class SealedFragmentEditorTests: XCTestCase {
         page.textView.copy(nil)
         XCTAssertEqual(page.pasteboard.changeCount, before, "objects left as placeholder ink")
         XCTAssertEqual(page.model.notice, PageModel.severalStretchesLine)
+    }
+
+    // MARK: Services
+
+    /// A service asking for a selection holding an object gets the copy's
+    /// public text alone, and one that writes back over it is not offered.
+    func testAServiceTakesThePublicTextAndNoServiceWritesOverAnObject() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        let ambient = page.pasteboard.changeCount
+        page.textView.setSelectedRange(whole)
+
+        let legacy = SealedFragment.legacyStringType
+        XCTAssertEqual(
+            page.textView.writablePasteboardTypes,
+            [SealedFragment.pasteboardType, .string, legacy])
+        XCTAssertNil(page.textView.validRequestor(forSendType: Self.legacyRTF, returnType: nil))
+        XCTAssertNil(page.textView.validRequestor(forSendType: legacy, returnType: legacy))
+        XCTAssertTrue(
+            page.textView.validRequestor(forSendType: legacy, returnType: nil) as? InkTextView
+                === page.textView)
+
+        XCTAssertTrue(page.textView.writeSelection(
+            to: board, types: [Self.legacyRTF, .rtfd, .rtf, legacy]))
+        XCTAssertEqual(board.pasteboardItems?.count, 1)
+        XCTAssertEqual(board.pasteboardItems?.first?.types, [.string], "a rich type was written")
+        XCTAssertEqual(board.string(forType: .string), "ab \(placeholder) cd \(placeholder) ef")
+        let all = everything(on: board)
+        XCTAssertFalse(all.contains("SECRET") || all.contains("TOKEN"), "a payload left the page")
+        let written = board.changeCount
+        XCTAssertFalse(page.textView.writeSelection(to: board, types: [Self.legacyRTF, .rtf]))
+        XCTAssertEqual(board.changeCount, written, "a refused request wrote")
+
+        board.clearContents()
+        XCTAssertFalse(page.textView.writeSelection(to: board, type: Self.legacyRTF))
+        XCTAssertTrue(page.textView.writeSelection(to: board, type: legacy))
+        XCTAssertEqual(board.string(forType: .string), "ab \(placeholder) cd \(placeholder) ef")
+        XCTAssertNil(board.data(forType: .rtf))
+        XCTAssertEqual(page.pasteboard.changeCount, ambient, "the ordinary pasteboard moved")
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips, "a service changed the page")
+    }
+
+    /// Ink alone offers what AppKit offers, and several stretches holding an
+    /// object write nothing, as the copy does.
+    func testAServiceTakesInkAsAppKitWritesItAndSeveralStretchesNotAtAll() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let types = page.textView.writablePasteboardTypes
+        XCTAssertTrue(types.contains(Self.legacyRTF))
+        XCTAssertTrue(page.textView.writeSelection(to: board, types: types))
+        XCTAssertEqual(board.string(forType: .string), "ab")
+        XCTAssertNotNil(board.data(forType: .rtf), "ink lost AppKit's rich text")
+
+        board.clearContents()
+        let cleared = board.changeCount
+        page.textView.selectedRanges = [
+            NSValue(range: NSRange(location: 0, length: 4)),
+            NSValue(range: NSRange(location: 8, length: 4)),
+        ]
+        XCTAssertFalse(page.textView.writeSelection(to: board, types: [.string]))
+        XCTAssertEqual(board.changeCount, cleared, "several stretches with an object wrote")
+    }
+
+    /// No service reaches the page, and the page writes nothing for one,
+    /// while a field or the note holds the keys (ADR-0046).
+    func testServicesStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        let legacy = SealedFragment.legacyStringType
+        page.textView.setSelectedRange(whole)
+        XCTAssertNotNil(
+            page.textView.validRequestor(forSendType: legacy, returnType: nil), "the control")
+        let before = board.changeCount
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertFalse(page.textView.answersChords)
+        XCTAssertNil(page.textView.validRequestor(forSendType: legacy, returnType: nil))
+        XCTAssertFalse(page.textView.writeSelection(to: board, types: [legacy]))
+        XCTAssertFalse(page.textView.writeSelection(to: board, type: legacy))
+        XCTAssertEqual(board.changeCount, before, "the page wrote for a service under the field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        page.textView.setSelectedRange(whole)
+        XCTAssertNil(page.textView.validRequestor(forSendType: legacy, returnType: nil))
+        XCTAssertFalse(page.textView.writeSelection(to: board, types: [legacy]))
+        XCTAssertEqual(board.changeCount, before, "the page wrote for a service under the note")
+
+        note.escape()
+        drainMainQueue()
+        XCTAssertTrue(page.textView.writeSelection(to: board, types: [legacy]))
+        XCTAssertEqual(board.string(forType: .string), "ab \(placeholder) cd \(placeholder) ef")
     }
 
     // MARK: Select all

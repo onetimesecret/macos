@@ -2727,6 +2727,15 @@ public struct InkEditorView: NSViewRepresentable {
             return model.copySelection(ranges, sheet: sheet)
         }
 
+        /// The page's selection as the copy composes it, for a service or another
+        /// requester; nil on a note or a file, which AppKit writes.
+        func composeSelection() -> PageModel.SelectionComposition? {
+            guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
+            else { return nil }
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            return model.composeSelection(ranges, sheet: sheet)
+        }
+
         /// Cut the page's selection through the core (ADR-0047 point 5).
         @discardableResult
         func cutSelection() -> PageModel.CutOutcome {
@@ -5527,6 +5536,63 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         withEditIntent(.cut) {
             super.cut(sender)
         }
+    }
+
+    // MARK: Services and other requesters of the page's selection (Law 0001)
+
+    /// A selection holding an object offers a requester the copy's two types alone.
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        guard coordinator?.selectionHoldsObject == true else { return super.writablePasteboardTypes }
+        return [SealedFragment.pasteboardType, .string, SealedFragment.legacyStringType]
+    }
+
+    /// No service is offered while another surface holds the keys (ADR-0046), nor
+    /// one that would write its answer over a selection holding an object.
+    override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        guard answersChords else { return nil }
+        if returnType != nil, coordinator?.selectionHoldsObject == true { return nil }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    /// A selection holding an object is written as the copy composes it, in whichever
+    /// of its two types were asked for; any other selection writes as AppKit does.
+    override func writeSelection(
+        to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        guard let composition = requestedComposition() else {
+            return super.writeSelection(to: pboard, types: types)
+        }
+        guard case .composed(let fragment) = composition,
+              let item = fragment.pasteboardItem(offering: types)
+        else { return false }
+        pboard.clearContents()
+        return pboard.writeObjects([item])
+    }
+
+    override func writeSelection(
+        to pboard: NSPasteboard, type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        guard let composition = requestedComposition() else {
+            return super.writeSelection(to: pboard, type: type)
+        }
+        guard case .composed(let fragment) = composition else { return false }
+        if type == .string || type == SealedFragment.legacyStringType {
+            return pboard.setString(fragment.plainText, forType: .string)
+        }
+        guard type == SealedFragment.pasteboardType, let envelope = fragment.envelope
+        else { return false }
+        return pboard.setData(envelope, forType: type)
+    }
+
+    /// The copy's composition of a page selection holding an object; nil for AppKit
+    /// to write any other, and refused whole while another surface holds the keys.
+    private func requestedComposition() -> PageModel.SelectionComposition? {
+        guard answersChords else { return .refused }
+        guard let coordinator, coordinator.selectionHoldsObject else { return nil }
+        return coordinator.composeSelection()
     }
 
     override func deleteBackward(_ sender: Any?) {

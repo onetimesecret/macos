@@ -21,10 +21,23 @@ extension SealedFragment {
     /// The one item a copy writes and a drag carries: the envelope under the
     /// private type beside the public text, or the text alone for ink.
     func pasteboardItem() -> NSPasteboardItem? {
+        pasteboardItem(offering: [Self.pasteboardType, .string])
+    }
+
+    /// Plain text by the name a text view's requesters may still ask for it.
+    static let legacyStringType = NSPasteboard.PasteboardType("NSStringPboardType")
+
+    /// That item narrowed to the types a requester such as a service asked
+    /// for; nil when it asked for neither or a write was refused.
+    func pasteboardItem(offering types: [NSPasteboard.PasteboardType]) -> NSPasteboardItem? {
         let item = NSPasteboardItem()
-        if let envelope, !item.setData(envelope, forType: Self.pasteboardType) { return nil }
-        guard item.setString(plainText, forType: .string) else { return nil }
-        return item
+        if let envelope, types.contains(Self.pasteboardType),
+           !item.setData(envelope, forType: Self.pasteboardType)
+        { return nil }
+        if types.contains(.string) || types.contains(Self.legacyStringType),
+           !item.setString(plainText, forType: .string)
+        { return nil }
+        return item.types.isEmpty ? nil : item
     }
 
     /// The item alone on `pasteboard`. False when the board refused.
