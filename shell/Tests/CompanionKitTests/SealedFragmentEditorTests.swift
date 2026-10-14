@@ -362,6 +362,75 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(board.string(forType: .string), "ab \(placeholder) cd \(placeholder) ef")
     }
 
+    // MARK: Share and Writing Tools
+
+    /// A secondary click near the view's top left corner, over ink and no object.
+    private func secondaryClick(in view: NSView) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: view.convert(NSPoint(x: 4, y: 4), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    /// A file over its own coordinator, as a mount over a file stands it; the view
+    /// holds its coordinator weakly, so the caller keeps both.
+    private func fileView(beside page: Page) -> (InkTextView, InkEditorView.Coordinator) {
+        let storage = NSTextStorage(string: "line one\nline two\n")
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 200, height: 200))
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        let file = InkTextView(
+            frame: NSRect(x: 220, y: 8, width: 200, height: 24), textContainer: container)
+        let coordinator = InkEditorView.Coordinator(model: page.model)
+        file.coordinator = coordinator
+        coordinator.textView = file
+        coordinator.currentSheet = CompanionClient.fileIDTag | 9_001
+        page.window.contentView?.addSubview(file)
+        return (file, coordinator)
+    }
+
+    /// Share… builds its picker over the selection with the menu, before any gate is
+    /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
+    /// page's and a note's text offer neither; a file keeps both as AppKit offers them.
+    func testAPageAndANoteOfferNoShareAndNoWritingTools() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.setSelectedRange(NSRange(location: 0, length: 4))
+        let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
+        XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isShare), "the control: a file shares")
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        XCTAssertFalse(pageMenu.items.contains(where: TextOffers.isShare), "the page shares")
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        note.selectAll(nil)
+        let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
+        XCTAssertFalse(noteMenu.items.contains(where: TextOffers.isShare), "the note shares")
+        for menu in [pageMenu, noteMenu] {
+            XCTAssertFalse(zip(menu.items, menu.items.dropFirst()).contains {
+                $0.isSeparatorItem && $1.isSeparatorItem
+            }, "Share left a doubled separator")
+        }
+
+        guard #available(macOS 15.0, *) else { return }
+        let writingTools = Selector(("showWritingTools:"))
+        XCTAssertTrue(fileMenu.items.contains { $0.action == writingTools }, "the control")
+        XCTAssertEqual(file.writingToolsBehavior, .default)
+        XCTAssertEqual(page.textView.writingToolsBehavior, .none, "the page")
+        XCTAssertEqual(note.writingToolsBehavior, .none, "the note")
+        for menu in [pageMenu, noteMenu] {
+            XCTAssertFalse(menu.items.contains { $0.action == writingTools }, "Writing Tools offered")
+        }
+        fileCoordinator.currentSheet = page.sheet
+        XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
+    }
+
     // MARK: Select all
 
     /// Select all takes each object whole, and its copy carries every

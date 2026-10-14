@@ -275,6 +275,9 @@ public struct InkEditorView: NSViewRepresentable {
         // The list automation's grouping calls survive as no-ops and
         // are documented where they stand.
         textView.allowsUndo = false
+        // Writing Tools reads past every gate and rewrites across an object (Law 0001);
+        // a file's mount gives it back.
+        TextOffers.offerWritingTools(false, on: textView)
         Self.enableFinding(on: textView)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -526,6 +529,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// whose page only paths key on it (ADR-0045).
         var currentSheet: UInt64? {
             didSet {
+                if let currentSheet, let textView {
+                    TextOffers.offerWritingTools(currentSheet.isFileID, on: textView)
+                }
                 // A teardown parks on no page and keeps the Undo; a mount of another page retires it.
                 if let currentSheet, currentSheet != oldValue {
                     model.surfaceMounted(page: currentSheet)
@@ -547,6 +553,9 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Whether this is a note's surface rather than the page's.
         var writesNote: Bool { noteHost != nil }
+
+        /// Whether the surface writes a file, whose text keeps AppKit's own offers.
+        var writesFile: Bool { !writesNote && currentSheet?.isFileID == true }
 
         /// Which content window this coordinator's mount stands in
         /// (ADR-0033), named on every presentation write it makes so
@@ -5425,6 +5434,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return coordinator.chipMenu(at: index)
         }
         let menu = super.menu(for: event) ?? NSMenu()
+        // Share's picker holds the selection before any gate is asked (Law 0001).
+        if coordinator?.writesFile != true { TextOffers.removeShare(from: menu) }
         coordinator?.appendSealItem(to: menu)
         coordinator?.appendLanguageItems(to: menu)
         return menu
