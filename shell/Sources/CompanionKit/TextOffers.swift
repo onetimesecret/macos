@@ -4,16 +4,18 @@ import AppKit
 /// selection where no gate sees it (Law 0001, the export, print, share row).
 @MainActor
 enum TextOffers {
-    /// Takes AppKit's Share… out of a text menu, and the separator it leaves doubled.
+    /// Takes AppKit's Share… out of a text menu, then folds each run of separators to one.
     static func removeShare(from menu: NSMenu) {
-        while let index = menu.items.firstIndex(where: isShare) {
-            menu.removeItem(at: index)
-            let items = menu.items
-            if index > 0, index < items.count,
-               items[index].isSeparatorItem, items[index - 1].isSeparatorItem {
-                menu.removeItem(at: index)
+        menu.items.filter(isShare).forEach(menu.removeItem)
+        var previousIsSeparator = true
+        for item in menu.items {
+            if item.isSeparatorItem, previousIsSeparator {
+                menu.removeItem(item)
+            } else {
+                previousIsSeparator = item.isSeparatorItem
             }
         }
+        if menu.items.last?.isSeparatorItem == true { menu.removeItem(at: menu.items.count - 1) }
     }
 
     /// AppKit's Share… carries its picker, already holding the selection, on the item.

@@ -3078,11 +3078,12 @@ public struct InkEditorView: NSViewRepresentable {
             )
         }
 
-        /// Copy the name of the chip at `index`, which is ambient ink.
+        /// Copy the name of the chip at `index`, which is ambient ink of this page.
         @discardableResult
         func copyName(at index: Int) -> Bool {
-            guard let name = chipAttachment(at: index)?.info.name else { return false }
-            return model.copyChipName(name)
+            guard let sheet = currentSheet, let name = chipAttachment(at: index)?.info.name
+            else { return false }
+            return model.copyChipName(name, onPage: sheet)
         }
 
         /// Copy `NAME=value` for the chip at `index` by copy decrypted's

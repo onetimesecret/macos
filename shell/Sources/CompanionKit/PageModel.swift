@@ -5866,8 +5866,10 @@ public final class PageModel: ObservableObject {
 
     /// Copy a sealed object's name, which is ambient ink (Law 0001), to
     /// the ordinary pasteboard. No clear is armed and nothing is recorded.
+    /// The name is part of its page `sheet`, which is asked first (ADR-0052).
     @discardableResult
-    public func copyChipName(_ name: String) -> Bool {
+    public func copyChipName(_ name: String, onPage sheet: UInt64) -> Bool {
+        guard givesOut(sheet: sheet) else { return false }
         ambientPasteboard.clearContents()
         guard ambientPasteboard.setString(name, forType: .string) else { return false }
         flash(Self.copiedNameLine)

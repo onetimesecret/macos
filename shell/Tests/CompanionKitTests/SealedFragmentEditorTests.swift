@@ -392,8 +392,8 @@ final class SealedFragmentEditorTests: XCTestCase {
 
     /// Share… builds its picker over the selection with the menu, before any gate is
     /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
-    /// page's and a note's text offer neither; a file keeps both as AppKit offers them.
-    func testAPageAndANoteOfferNoShareAndNoWritingTools() throws {
+    /// page's, a sealed name's and a note's text offer neither; a file keeps both.
+    func testAPageANameAndANoteOfferNoShareAndNoWritingTools() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.applyNoteOps(
             chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
@@ -406,13 +406,18 @@ final class SealedFragmentEditorTests: XCTestCase {
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))
         let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
         XCTAssertFalse(pageMenu.items.contains(where: TextOffers.isShare), "the page shares")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        let name = try openNameField(page)
+        let nameMenu = try XCTUnwrap(name.menu(for: secondaryClick(in: name)))
+        XCTAssertFalse(nameMenu.items.contains(where: TextOffers.isShare), "the name shares")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
         page.coordinator.beginNote(at: 3)
         drainMainQueue()
         let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
         note.selectAll(nil)
         let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
         XCTAssertFalse(noteMenu.items.contains(where: TextOffers.isShare), "the note shares")
-        for menu in [pageMenu, noteMenu] {
+        for menu in [pageMenu, nameMenu, noteMenu] {
             XCTAssertFalse(zip(menu.items, menu.items.dropFirst()).contains {
                 $0.isSeparatorItem && $1.isSeparatorItem
             }, "Share left a doubled separator")
@@ -424,7 +429,8 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(file.writingToolsBehavior, .default)
         XCTAssertEqual(page.textView.writingToolsBehavior, .none, "the page")
         XCTAssertEqual(note.writingToolsBehavior, .none, "the note")
-        for menu in [pageMenu, noteMenu] {
+        XCTAssertEqual(name.writingToolsBehavior, .none, "the name")
+        for menu in [pageMenu, nameMenu, noteMenu] {
             XCTAssertFalse(menu.items.contains { $0.action == writingTools }, "Writing Tools offered")
         }
         fileCoordinator.currentSheet = page.sheet
@@ -1362,6 +1368,7 @@ final class SealedFragmentEditorTests: XCTestCase {
             }),
             ("copy decrypted", { XCTAssertFalse($0.coordinator.copyOutChip(at: 3)) }),
             ("copy NAME=value", { XCTAssertFalse($0.coordinator.copyNameValue(at: 3)) }),
+            ("copy name", { XCTAssertFalse($0.coordinator.copyName(at: 3)) }),
             ("the note", {
                 $0.coordinator.beginNote(at: 3)
                 XCTAssertNotEqual($0.coordinator.noteEditor?.isOpen, true, "the note opened")
@@ -1610,6 +1617,76 @@ final class SealedFragmentEditorTests: XCTestCase {
             try ask.run(page)
 
             XCTAssertEqual(board.changeCount, written, "\(ask.name) wrote a page past its deadline")
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, ask.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet }, "\(ask.name): no settle")
+        }
+    }
+
+    /// The name field's own editor over the object at 3, holding the keys, its draft selected.
+    private func openNameField(_ page: Page) throws -> SealedNameTextView {
+        page.coordinator.beginNaming(at: 3)
+        drainMainQueue()
+        let field = try XCTUnwrap(page.coordinator.nameEditor?.field, "no field opened")
+        let editor = try XCTUnwrap(field.currentEditor() as? SealedNameTextView, "not its own")
+        editor.selectAll(nil)
+        return editor
+    }
+
+    /// While its page stands a name leaves as a person asks: Copy name and the name
+    /// field's copy and cut write it on the ambient board, and the field serves it.
+    func testANameCopiesFromTheZoneAndTheFieldWhileItsPageStands() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        XCTAssertTrue(page.coordinator.copyName(at: 3))
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "API_KEY")
+        XCTAssertEqual(page.model.notice, PageModel.copiedNameLine)
+
+        let editor = try openNameField(page)
+        page.pasteboard.clearContents()
+        editor.copy(nil)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "API_KEY", "the field's copy")
+        XCTAssertTrue(editor.givesOut, "the field's drag")
+        XCTAssertTrue(editor.writeSelection(to: board, types: editor.writablePasteboardTypes))
+        XCTAssertEqual(board.string(forType: .string), "API_KEY", "the field's service")
+        page.pasteboard.clearContents()
+        editor.cut(nil)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "API_KEY", "the field's cut")
+        XCTAssertEqual(editor.string, "", "the cut took the draft")
+        XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet })
+    }
+
+    /// A name is part of its page: past the deadline Copy name (above) and the name
+    /// field's copy, cut, drag and service give nothing out, and the settle takes the
+    /// page with its line. The drag is asked only through its gate, as a drag that ran
+    /// would write the system's drag board.
+    func testANamePastItsPagesDeadlineGivesNothingOutAndTheSettleTakesThePage() throws {
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        let asks: [(name: String, run: (SealedNameTextView) -> Void)] = [
+            ("the field's copy", { $0.copy(nil) }),
+            ("the field's cut", { $0.cut(nil) }),
+            ("the field's service", {
+                let legacy = SealedFragment.legacyStringType
+                XCTAssertFalse($0.writeSelection(to: board, types: $0.writablePasteboardTypes))
+                XCTAssertFalse($0.writeSelection(to: board, type: legacy), "once gone")
+            }),
+            ("the field's drag", { XCTAssertFalse($0.givesOut, "AppKit's drag would run") }),
+        ]
+        for ask in asks {
+            let page = try makePage()
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+            let editor = try openNameField(page)
+            XCTAssertEqual(editor.string, "API_KEY", "the control: the field holds the name")
+            try age(page)
+            let written = (page.pasteboard.changeCount, board.changeCount)
+
+            ask.run(editor)
+
+            XCTAssertEqual(page.pasteboard.changeCount, written.0, "\(ask.name) wrote the board")
+            XCTAssertEqual(board.changeCount, written.1, "\(ask.name) served the name")
             XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, ask.name)
             XCTAssertFalse(
                 page.model.tabs.contains { $0.pageID == page.sheet }, "\(ask.name): no settle")
