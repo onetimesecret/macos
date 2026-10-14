@@ -920,6 +920,19 @@ mod tests {
     }
 
     #[test]
+    fn burning_a_clones_source_leaves_the_clone() {
+        let (mut store, _) = store();
+        let (id, a, _) = mixed(&mut store);
+        let envelope = store.copy_fragment(id, 2, 1).unwrap().envelope.unwrap();
+        store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        let clone = standing_chip(&store, id, 0);
+        assert!(store.delete_chip(a));
+        assert_eq!(&**store.copy_out_chip(clone).unwrap().0, A.as_bytes());
+        assert!(store.delete_chip(clone));
+        assert!(store.live_object_by_id(clone).is_none());
+    }
+
+    #[test]
     fn a_reference_to_a_removed_object_clones_the_retained_one_and_undo_reattaches_it() {
         let (mut store, _) = store();
         let (id, a, _) = mixed(&mut store);
