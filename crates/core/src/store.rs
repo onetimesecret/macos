@@ -1369,17 +1369,23 @@ impl<C: Clock> SheetStore<C> {
     /// Returns whether the chip existed.
     pub fn record_sent(&mut self, chip: ChipId, destination: DestinationClass) -> bool {
         let offset = self.clock.local_offset_seconds();
-        let Some((sheet_id, sealed)) = self.chip_home(chip) else {
+        // Detached ones too: a conceal's send outlives a removal made mid-flight.
+        let Some((sheet_id, sealed)) = self
+            .sheets()
+            .find_map(|s| s.owned_chip(chip).map(|c| (s.id, c)))
+        else {
             return false;
         };
         let uuid = sealed.uuid;
         let size = SizeClass::of(sealed.bytes.len());
-        let host = self.tab_of(sheet_id).expect("chip_home found it");
+        let host = self
+            .tab_of(sheet_id)
+            .expect("the page was found a line above");
         let label = host.label(offset);
         let created = host
             .page
             .as_ref()
-            .expect("chip_home found the page in it")
+            .expect("the tab holds the page found")
             .created_wall_ms;
         self.record(LedgerEvent::Sent, uuid, label, created, size, destination);
         true
@@ -1413,7 +1419,8 @@ impl<C: Clock> SheetStore<C> {
     /// (doc 03 §5).
     pub fn mark_chip_concealed(&mut self, id: ChipId, receipt_id: String) -> bool {
         for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
-            if let Some(chip) = sheet.chips.iter_mut().find(|c| c.id == id) {
+            let mut owned = sheet.chips.iter_mut().chain(sheet.detached.iter_mut());
+            if let Some(chip) = owned.find(|c| c.id == id) {
                 chip.conceal = Some(Conceal { receipt_id });
                 return true;
             }
@@ -3537,6 +3544,22 @@ mod tests {
         );
         assert_eq!(&**store.chip_payload(chip).unwrap(), b"conceal me");
         assert!(!store.mark_chip_concealed(ChipId(999), "x".into()));
+    }
+
+    #[test]
+    fn a_conceal_finished_after_its_object_was_removed_still_lands() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "sent, then removed", 0, 0).unwrap();
+        // The send is on the wire when the object leaves the page.
+        remove_at(&mut store, id, 0);
+        assert!(store.mark_chip_concealed(chip, "9f2abc".into()));
+        assert!(store.record_sent(chip, DestinationClass::OneTimeLink));
+        let sent = store.ledger().next().unwrap();
+        assert_eq!(sent.destination(), DestinationClass::OneTimeLink);
+        assert!(store.undo(id));
+        let face = store.sheet(id).unwrap().chip(chip).unwrap();
+        assert_eq!(face.conceal().unwrap().receipt_id, "9f2abc");
     }
 
     #[test]
