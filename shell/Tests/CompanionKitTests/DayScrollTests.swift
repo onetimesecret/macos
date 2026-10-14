@@ -1275,8 +1275,8 @@ final class DayScrollTests: XCTestCase {
             spokenLabel: "today", mark: .none, summary: placeholder)
         XCTAssertFalse(header.titleIsDrawn, "a placeholder title was drawn beside its own stamp")
         XCTAssertTrue(
-            header.subviews.allSatisfy { $0 is NSTextField },
-            "the gutter hosts something besides its words: \(header.subviews)")
+            header.subviews.allSatisfy { $0 is NSTextField || $0 is NSButton },
+            "the gutter hosts something besides its words and preview toggle: \(header.subviews)")
         XCTAssertEqual(
             header.accessibilityLabel(),
             DayHeaderView.spokenHeader(

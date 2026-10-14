@@ -456,12 +456,8 @@ final class DayStackView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: clip
         )
-        // A rendering dependency moved under a page whose contents did
-        // not change (preview scope, syntax highlighting, typeface); the
-        // model has already dropped its quiet cache, and the roll picks
-        // up the change by reseeding every visible region. The mounted
-        // page is restyled by the coordinator on its own published side.
-        // Registered by selector so it retires with the view.
+        // Preview changes can restyle the editor without changing the global setting.
+        // Registered by selector so this observation retires with the view.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(quietRenderingsInvalidated),
@@ -505,13 +501,15 @@ final class DayStackView: NSView {
         publishGeometry()
     }
 
-    /// A rendering dependency moved (preview scope, syntax highlighting,
-    /// typeface). Every quiet region still on screen belongs to a page
-    /// whose cached rendering the model has already dropped, so a fresh
-    /// call to `quietRendering(for:)` builds under the new preference
-    /// and is handed back through `reseed`.
+    /// Refresh the mounted editor, header controls and quiet regions
+    /// after the model invalidates preview renderings.
     @objc private func quietRenderingsInvalidated(_ notification: Notification) {
+        if model.owner == coordinator.surface, let page = coordinator.currentSheet {
+            coordinator.applyPreviewRendering(model.previewRendering(for: page))
+        }
+        refreshGutters()
         refreshQuietRegions()
+        relayout()
     }
 
     // MARK: The pass
@@ -541,7 +539,9 @@ final class DayStackView: NSView {
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
-        coordinator.applyPreviewRendering(model.previewRendering)
+        if let page = selectedPage {
+            coordinator.applyPreviewRendering(model.previewRendering(for: page))
+        }
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
             // The countdowns in the gutters move every second and the
@@ -1396,6 +1396,7 @@ final class DayHeaderView: NSView {
     /// typed name takes: a click on it opens the field (Law 0007).
     private let timeField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
+    private let previewButton = NSButton()
     /// The retained words for a page past the window, and otherwise
     /// empty. The countdown that used to stand here became a gauge,
     /// and the gauge went too: a page's remaining life is drawn once,
@@ -1482,6 +1483,19 @@ final class DayHeaderView: NSView {
         addSubview(titleField)
         addSubview(timeField)
         addSubview(remainingField)
+        previewButton.setButtonType(.pushOnPushOff)
+        previewButton.bezelStyle = .inline
+        previewButton.controlSize = .small
+        previewButton.imagePosition = .imageOnly
+        previewButton.image = NSImage(systemSymbolName: "eye", accessibilityDescription: nil)
+        previewButton.refusesFirstResponder = true
+        previewButton.target = self
+        previewButton.action = #selector(toggleMarkdownPreview(_:))
+        previewButton.isHidden = true
+        previewButton.setAccessibilityLabel(NSLocalizedString(
+            "Markdown preview for this checkpoint", bundle: CompanionLocalization.bundle,
+            comment: "Checkpoint Markdown preview toggle"))
+        addSubview(previewButton)
         setAccessibilityElement(true)
     }
 
@@ -1530,16 +1544,17 @@ final class DayHeaderView: NSView {
         return hit
     }
 
-    // Mouse hit redirection must not replace the composed spoken header
-    // with an individual passive label. The editable rename field keeps
-    // its own accessibility target.
-    private enum AccessibilityHit: Sendable { case outside, header, rename }
+    // Passive labels use the composed header; rename and preview keep their own targets.
+    private enum AccessibilityHit: Sendable { case outside, header, rename, preview }
 
     override func accessibilityHitTest(_ point: NSPoint) -> Any? {
         let target: AccessibilityHit = MainActor.assumeIsolated {
             guard let window else { return .outside }
             let local = convert(window.convertPoint(fromScreen: point), from: nil)
             guard bounds.contains(local) else { return .outside }
+            if !previewButton.isHidden && previewButton.frame.contains(local) {
+                return .preview
+            }
             if titleField.isEditable && !titleField.isHidden && titleField.frame.contains(local) {
                 return .rename
             }
@@ -1548,8 +1563,16 @@ final class DayHeaderView: NSView {
         switch target {
         case .header: return self
         case .rename: return titleField
+        case .preview: return previewButton
         case .outside: return super.accessibilityHitTest(point)
         }
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        var controls: [NSView] = []
+        if titleField.isEditable && !titleField.isHidden { controls.append(titleField) }
+        if !previewButton.isHidden { controls.append(previewButton) }
+        return controls.isEmpty ? nil : controls
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1692,6 +1715,7 @@ final class DayHeaderView: NSView {
         paused = summary?.paused ?? false
         toppedUp = summary?.holdToppedUp ?? false
         pageID = summary?.pageID
+        refreshPreviewButton()
         spokenRemainingLabel = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
         summaryTitle = summary?.title ?? ""
         // Not while a draft is in the field: this pass runs every
@@ -1707,6 +1731,26 @@ final class DayHeaderView: NSView {
         compose()
         updateAccessibilityLabel()
         needsDisplay = true
+    }
+
+    private func refreshPreviewButton() {
+        previewButton.isHidden = !hasPage || pageID == nil
+        previewButton.isEnabled = !previewButton.isHidden
+        let enabled = pageID.map {
+            model.markdownPreviewEnabled(for: $0)
+        } ?? false
+        previewButton.state = enabled ? .on : .off
+        previewButton.toolTip = enabled ? NSLocalizedString(
+            "Turn Markdown preview off for this checkpoint", bundle: CompanionLocalization.bundle,
+            comment: "Checkpoint Markdown preview toggle tooltip") : NSLocalizedString(
+                "Turn Markdown preview on for this checkpoint", bundle: CompanionLocalization.bundle,
+                comment: "Checkpoint Markdown preview toggle tooltip")
+    }
+
+    @objc private func toggleMarkdownPreview(_ sender: NSButton) {
+        guard hasPage, let pageID else { return }
+        model.toggleMarkdownPreview(for: pageID)
+        refreshPreviewButton()
     }
 
     /// The day and time runs, re-joined to whatever the seat now holds.
@@ -1738,6 +1782,7 @@ final class DayHeaderView: NSView {
         let labelHeight = Self.gutterHeight - 6
         for field in [dayField, timeField, remainingField, titleField] { field.sizeToFit() }
         let remainingWidth = remainingField.frame.width
+        let previewRoom: CGFloat = previewButton.isHidden ? 0 : Self.previewWidth + Self.gap
         remainingField.frame = NSRect(
             x: max(bounds.width - Self.margin - remainingWidth, 0), y: top + 3,
             width: remainingWidth, height: labelHeight
@@ -1748,7 +1793,7 @@ final class DayHeaderView: NSView {
         if dayWidth > 0 { x += dayWidth + Self.gap }
         if !titleField.isHidden {
             let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width + Self.gap
-            let room = bounds.width - x - timeWidth - remainingWidth - Self.margin * 2
+            let room = bounds.width - x - timeWidth - previewRoom - remainingWidth - Self.margin * 2
             let wanted = titleField.frame.width + (titleField.isEditable ? Self.caretRoom : 0)
             let width = max(min(wanted, room), titleField.isEditable ? Self.caretRoom : 0)
             titleField.frame = NSRect(x: x, y: top + 2, width: width, height: Self.gutterHeight - 4)
@@ -1756,6 +1801,9 @@ final class DayHeaderView: NSView {
         }
         let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width
         timeField.frame = NSRect(x: x, y: top + 3, width: timeWidth, height: labelHeight)
+        if timeWidth > 0 { x += timeWidth + Self.gap }
+        previewButton.frame = NSRect(
+            x: x, y: top + 1, width: Self.previewWidth, height: Self.gutterHeight - 2)
     }
 
     /// The words as drawn, left to right by frame, so a test can pin the
@@ -1776,6 +1824,7 @@ final class DayHeaderView: NSView {
         place()
     }
 
+    private static let previewWidth: CGFloat = 22
     private static let margin: CGFloat = 12
     private static let gap: CGFloat = 4
     /// The width an open field keeps past its draft, so the caret and an

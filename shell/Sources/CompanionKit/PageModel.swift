@@ -789,6 +789,32 @@ public final class PageModel: ObservableObject {
         }
     }
     private static let previewRenderingKey = "previewRendering"
+    private static let pagePreviewKey = "pageMarkdownPreviewV1"
+    private var pagePreviewOverrides: [String: Bool] = [:]
+
+    private func pagePreviewIdentity(for id: UInt64) -> String? {
+        guard !id.isFileID else { return nil }
+        return tabs.first(where: { $0.pageID == id })?.pageUUID
+    }
+
+    public func previewRendering(for id: UInt64) -> PreviewRenderingScope {
+        guard let key = pagePreviewIdentity(for: id), let enabled = pagePreviewOverrides[key]
+        else { return previewRendering }
+        return enabled ? .allPages : .never
+    }
+
+    public func markdownPreviewEnabled(for id: UInt64, quiet: Bool = false) -> Bool {
+        let scope = previewRendering(for: id)
+        return quiet ? scope == .allPages : scope != .never
+    }
+
+    public func toggleMarkdownPreview(for id: UInt64) {
+        guard let key = pagePreviewIdentity(for: id) else { return }
+        objectWillChange.send()
+        pagePreviewOverrides[key] = !markdownPreviewEnabled(for: id)
+        defaults.set(pagePreviewOverrides, forKey: Self.pagePreviewKey)
+        invalidateQuietRenderings()
+    }
 
     /// Posted when a rendering dependency (preview scope, syntax highlighting,
     /// typeface) moves and the quiet cache has been dropped. The roll listens
@@ -1496,6 +1522,7 @@ public final class PageModel: ObservableObject {
         // eye expects of a page it can already read.
         previewRendering = (defaults.string(forKey: Self.previewRenderingKey)
             .flatMap(PreviewRenderingScope.init(rawValue:))) ?? .allPages
+        pagePreviewOverrides = defaults.dictionary(forKey: Self.pagePreviewKey) as? [String: Bool] ?? [:]
         languageDetectionEnabled =
             defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
         automaticallyFencePastes =
@@ -3031,6 +3058,14 @@ public final class PageModel: ObservableObject {
             }
             pads.reconcileTabs(Set(tabs.compactMap(\.uuid)), checkpointKeys: checkpointKeys)
         }
+        if stateLoaded && saveLicence {
+            let previewKeys = Set(tabs.compactMap { $0.pageID.flatMap(pagePreviewIdentity(for:)) })
+            let retained = pagePreviewOverrides.filter { previewKeys.contains($0.key) }
+            if retained != pagePreviewOverrides {
+                pagePreviewOverrides = retained
+                defaults.set(retained, forKey: Self.pagePreviewKey)
+            }
+        }
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
         // editor-side document. The filter is on the live PAGE
@@ -3255,7 +3290,7 @@ public final class PageModel: ObservableObject {
         // The payload carries the fence regions the styling walk returned
         // so a quiet region's `InkLayoutManager` can paint the same slab
         // the editor would. `.focusedOnly` and `.never` return plain ink.
-        if previewRendering == .allPages, !id.isFileID {
+        if markdownPreviewEnabled(for: id, quiet: true), !id.isFileID {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).

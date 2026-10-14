@@ -211,7 +211,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.currentSheet = sheetID
         coordinator.appliedTypeface = InkStyle.typeface
         coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
-        coordinator.appliedPreviewRendering = model.previewRendering
+        coordinator.appliedPreviewRendering = model.previewRendering(for: sheetID)
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
@@ -486,7 +486,7 @@ public struct InkEditorView: NSViewRepresentable {
         // nothing.
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
-        coordinator.applyPreviewRendering(model.previewRendering)
+        coordinator.applyPreviewRendering(model.previewRendering(for: sheetID))
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
         // The stance may have flipped editing on or off above, so the
@@ -1888,13 +1888,13 @@ public struct InkEditorView: NSViewRepresentable {
             restyle()
         }
 
-        /// Restyle the mounted page when the preview-rendering scope
-        /// changes. `.never` short-circuits to the plain-file path, and
-        /// the other two return to the block walk; the roll picks up its
-        /// own reseed through the notification the model posts.
+        /// Compare the mounted page's effective scope, including its override.
         func applyPreviewRendering(_ scope: PreviewRenderingScope) {
-            guard appliedPreviewRendering != scope else { return }
-            appliedPreviewRendering = scope
+            let effective = writesNote ? scope : currentSheet.map {
+                model.previewRendering(for: $0)
+            } ?? scope
+            guard appliedPreviewRendering != effective else { return }
+            appliedPreviewRendering = effective
             restyle()
         }
 
@@ -3322,7 +3322,11 @@ public struct InkEditorView: NSViewRepresentable {
             // `.never` uses the plain visual profile everywhere. Markdown-capable
             // pages still need the Markdown walk's classifications and fence ranges
             // for editing and paste safety, but neither result is rendered.
-            if model.previewRendering == .never {
+            let previewScope = writesNote ? model.previewRendering : currentSheet.map {
+                model.previewRendering(for: $0)
+            } ?? model.previewRendering
+            appliedPreviewRendering = previewScope
+            if previewScope == .never {
                 restylePlainFile(storage, preservingMarkdownStructure: file == nil)
                 return
             }
