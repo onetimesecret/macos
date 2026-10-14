@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, and why the next event asks is_due
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, and the find, name, Share and Writing Tools gates
 metadata:
   type: project
 ---
@@ -79,8 +79,8 @@ for review fixes; shell only.
   `performDragOperation`. `SealedFragment.anyBuildsItem` knows the
   release and debug type for the own copy check and the drop; reading
   an envelope stays per build. ADR-0055 records the handle's open hand.
-  `citecheck.py` misses relative citations such as
-  `(../../shell/...swift:N)`; grep those by hand.
+  `citecheck.py` resolves relative citations such as
+  `(../../shell/...swift:N)` since phase 6 unit 2.
 - Phase 6 unit 1 (2026-10-14): `Sheet::next_event` answers now once
   `Sheet::is_due` holds, since the shell settles only when
   `nextEventMs() == 0`; never restate the due predicate in a scheduler.
@@ -93,6 +93,22 @@ for review fixes; shell only.
   core's export gate; the sweep's own check is a second gate. The auto
   mode classifier refused a mutation of `export_document_updates`'s
   gate but allowed ones in sync_driver.rs.
+- Phase 6 unit 2 (2026-10-14): Use Selection for Find, Copy name and
+  the name field's editor (`SealedNameTextView`) ask the page first;
+  pages, notes and name fields offer no Share… or Writing Tools
+  (`TextOffers`), files keep both. There is no Use Selection for
+  Replace: `NSTextFinder.Action` has no such case and SwiftUI's
+  MainMenu.loctable lists none. A field editor's
+  `setUpFieldEditorAttributes` resets `writingToolsBehavior` to
+  `.limited`, so refuse after super. AppKit builds Share… under xctest,
+  so a file view is the control; `InkTextView.coordinator` is weak,
+  so keep a test's coordinator alive or `menu(for:)` runs without one.
+  A field editor writes only `NSStringPboardType`, so `.string` writes
+  fail. `isolatedModel`'s ambient board is the general one; copy tests
+  belong in `SealedFragmentEditorTests`' unique board fixture. An
+  object refusal asks `chipStands` (ungated) before and after the
+  settle. Still ungated and undecided: Look Up, Translate and Speech
+  on the page's text menu, whose titles carry the selection.
 - Test traps: the DEBUG `assertProjectionParity` traps and xctest hangs
   with no output, so run mutation checks under `timeout`. `ageForTests`
   re-mints the store and drops every undo stack; reach a refused note
