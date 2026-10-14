@@ -41,13 +41,11 @@ public struct ConcealView: View {
             }
         }
         .padding(10)
+        // No fill of its own: a fill in the fields' own colour left their
+        // bezels at 1.3:1, so the sheet stands on the surface's background.
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.cellBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.ember.opacity(0.5), lineWidth: 1)
-                )
+                .strokeBorder(Color.ember.opacity(0.5), lineWidth: 1)
         )
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
@@ -66,15 +64,6 @@ public struct ConcealView: View {
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
                 .help("The server this conceal goes to")
-            Button {
-                model.dismissConceal()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel(Text("Dismiss"))
         }
     }
 
@@ -122,45 +111,56 @@ public struct ConcealView: View {
         return "\(host) · \(who)"
     }
 
+    /// Labels and help in the system font, monospace kept for the
+    /// app-written lines above (record D-23); each field has a label of
+    /// its own, its placeholder only a hint.
     private var form: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("link lives")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Picker("Link time to live", selection: ttlBinding) {
-                    ForEach(Self.linkTtlChoices, id: \.secs) { rung in
-                        Text(rung.label).tag(rung.secs)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("Expires after:")
+                        .gridColumnAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Picker("Expires after", selection: ttlBinding) {
+                            ForEach(Self.linkTtlChoices, id: \.secs) { rung in
+                                Text(rung.label).tag(rung.secs)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        Text(Self.ttlHelp)
+                            .foregroundStyle(Color.secondaryInk)
                     }
                 }
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(maxWidth: 110)
-                Text("· defaults to the link's own 7 days; the page's clock is not an input")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                GridRow {
+                    Text("Passphrase:")
+                    SecureField("optional", text: fieldBinding(\.passphrase))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
+                GridRow {
+                    Text("Recipient:")
+                    TextField("email address, optional", text: fieldBinding(\.recipient))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
             }
-            HStack(spacing: 8) {
-                SecureField("passphrase (optional)", text: fieldBinding(\.passphrase))
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                    .frame(maxWidth: 160)
-                TextField("recipient email (optional)", text: fieldBinding(\.recipient))
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                    .frame(maxWidth: 190)
-            }
+            .font(.caption)
+            .controlSize(.small)
             if let error = draft.error {
                 Text(error)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
                     .accessibilityLabel(Text("Conceal failed: \(error)"))
             }
-            HStack {
+            HStack(spacing: 8) {
                 if !isConfigured {
-                    Text("guest route — add an account in Settings → Connection")
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                    Text(Self.guestLine)
+                        .font(.caption)
+                        .foregroundStyle(Color.secondaryInk)
+                    Button("Connection Settings…") { model.openSettings(.connection) }
+                        .buttonStyle(.link)
+                        .font(.caption)
                 }
                 Spacer()
                 if draft.inFlight {
@@ -168,6 +168,13 @@ public struct ConcealView: View {
                         .controlSize(.small)
                         .accessibilityLabel(Text("Sending"))
                 }
+                // Cancel sits left of the default button and answers
+                // Escape. A request already sent is not cancelled by
+                // closing the sheet, so the button waits it out.
+                Button("Cancel") { model.dismissConceal() }
+                    .controlSize(.small)
+                    .disabled(draft.inFlight)
+                    .keyboardShortcut(.cancelAction)
                 Button(draft.error == nil ? "Create Link" : "Retry") {
                     model.confirmConceal()
                 }
@@ -177,6 +184,14 @@ public struct ConcealView: View {
             }
         }
     }
+
+    /// The link's lifetime help, in the reader's words rather than the
+    /// model's: the default, and that the page's time left is not it (ADR-0026).
+    nonisolated static let ttlHelp = "defaults to 7 days, however long the page has left"
+
+    /// What the footer says when no account is configured, beside the
+    /// button that opens the Connection settings.
+    nonisolated static let guestLine = "sending as a guest"
 
     private var isConfigured: Bool {
         (model.connection?.hasToken ?? false) && !(model.connection?.extid.isEmpty ?? true)
