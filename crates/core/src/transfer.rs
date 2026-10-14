@@ -1701,7 +1701,7 @@ mod tests {
         assert!(store.can_undo(home));
         let away = store.new_tab().1;
 
-        store.move_range_to(home, 7, 1, away, 0).unwrap();
+        store.move_range_to(home, 6, 3, away, 0).unwrap();
         assert!(!store.can_undo(home) && !store.can_redo(home));
         assert!(!store.undo(home), "no step there stands it again");
         let stand = [EditOp::InsertChip {
@@ -1715,11 +1715,34 @@ mod tests {
         assert_eq!(copies(&store, uuid), 1);
 
         assert!(store.undo(away), "the move is one step where it landed");
+        assert_eq!(body(&store, away), "");
+        assert!(!store.can_undo(away));
         assert_eq!(detached(&store, away), vec![uuid]);
         assert_eq!(copies(&store, uuid), 1);
         assert!(store.redo(away));
+        assert_eq!(body(&store, away), "b\u{FFFC}c");
         assert_eq!(standing(&store, away), vec![uuid]);
         assert_eq!(copies(&store, uuid), 1);
+    }
+
+    #[test]
+    fn a_moved_object_ends_with_the_page_it_landed_on() {
+        let (mut store, clock) = store();
+        let (home, a, _) = mixed(&mut store);
+        let uuid = uuid_of(&store, a);
+        clock.advance(HOUR / 2);
+        let away = store.new_tab().1;
+        store.move_range_to(home, 2, 1, away, 0).unwrap();
+
+        clock.advance(HOUR / 2);
+        assert_eq!(store.expire_due(), vec![home]);
+        assert_eq!(copies(&store, uuid), 1, "its old page's death leaves it");
+        assert!(!expired_on_record(&store, uuid));
+
+        clock.advance(HOUR / 2);
+        assert_eq!(store.expire_due(), vec![away]);
+        assert_eq!(copies(&store, uuid), 0);
+        assert!(expired_on_record(&store, uuid), "its death is on record");
     }
 
     #[test]
