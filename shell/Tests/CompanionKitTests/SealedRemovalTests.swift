@@ -18,8 +18,8 @@ final class SealedRemovalTests: XCTestCase {
         let chips: [UInt64]
     }
 
-    /// `ab <SECRET> cd <TOKEN> ef`, twelve units, objects at 3 and 8, the page holding the keys.
-    private func makePage() throws -> Page {
+    /// `ab <SECRET> cd <TOKEN> ef` and `tail`, objects at 3 and 8, the page holding the keys.
+    private func makePage(tail: String = "") throws -> Page {
         let suite = "companion-sealed-removal-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -53,7 +53,7 @@ final class SealedRemovalTests: XCTestCase {
         window.contentView = content
         textView.isEditable = true
         textView.insertText(
-            "ab SECRET cd TOKEN ef", replacementRange: NSRange(location: NSNotFound, length: 0))
+            "ab SECRET cd TOKEN ef" + tail, replacementRange: NSRange(location: NSNotFound, length: 0))
         textView.setSelectedRange(NSRange(location: 3, length: 6))
         coordinator.sealSelectionOrLine()
         textView.setSelectedRange(NSRange(location: 8, length: 5))
@@ -240,6 +240,62 @@ final class SealedRemovalTests: XCTestCase {
 
     // MARK: Every deletion
 
+    /// Each caret command whose first character in its direction is an object selects it
+    /// and removes nothing; its second press removes it with the line (D-30).
+    func testEveryCaretDeletionBesideAnObjectSelectsItFirst() throws {
+        let presses: [(String, Int, NSRange, (InkTextView) -> Void)] = [
+            ("⌥⌫", 4, NSRange(location: 3, length: 1), { $0.deleteWordBackward(nil) }),
+            ("⌥⌦", 8, NSRange(location: 8, length: 1), { $0.deleteWordForward(nil) }),
+            ("⌃⌫", 4, NSRange(location: 3, length: 1), {
+                $0.deleteBackwardByDecomposingPreviousCharacter(nil)
+            }),
+            ("⌘⌫", 4, NSRange(location: 3, length: 1), { $0.deleteToBeginningOfLine(nil) }),
+            ("to the paragraph's start", 4, NSRange(location: 3, length: 1), {
+                $0.deleteToBeginningOfParagraph(nil)
+            }),
+            ("to the line's end", 3, NSRange(location: 3, length: 1), { $0.deleteToEndOfLine(nil) }),
+            ("⌃K", 3, NSRange(location: 3, length: 1), { $0.deleteToEndOfParagraph(nil) }),
+        ]
+        for (name, caret, object, press) in presses {
+            let page = try makePage()
+            page.textView.setSelectedRange(NSRange(location: caret, length: 0))
+            press(page.textView)
+            XCTAssertEqual(page.textView.selectedRange(), object, name)
+            XCTAssertEqual(chips(page), page.chips, "\(name): the first press removed the object")
+            XCTAssertEqual(length(page), 12, name)
+            XCTAssertNil(page.model.notice, "\(name): the first press said something")
+
+            press(page.textView)
+            XCTAssertEqual(chips(page).count, 1, name)
+            XCTAssertEqual(length(page), 11, "\(name): the second press took more than the object")
+            assertRemovalLine(page, name)
+        }
+    }
+
+    /// A caret command whose reach runs past ink to an object takes it in that press,
+    /// with the line, and the line's Undo stands every object it took again.
+    func testADeletionReachingPastInkTakesItsObjectsWithTheLine() throws {
+        let presses: [(String, Int, (InkTextView) -> Void)] = [
+            ("⌥⌫ over a space", 5, { $0.deleteWordBackward(nil) }),
+            ("⌥⌦ over a space", 7, { $0.deleteWordForward(nil) }),
+            ("⌃K over the paragraph", 0, { $0.deleteToEndOfParagraph(nil) }),
+            ("to the paragraph's start", 12, { $0.deleteToBeginningOfParagraph(nil) }),
+            ("to the mark", 12, { $0.deleteToMark(nil) }),
+        ]
+        for (name, caret, press) in presses {
+            let page = try makePage()
+            page.textView.setMark(nil)
+            page.textView.setSelectedRange(NSRange(location: caret, length: 0))
+            press(page.textView)
+            XCTAssertLessThan(chips(page).count, 2, "\(name) took no object")
+            assertRemovalLine(page, name)
+
+            page.model.performNoticeAction()
+            XCTAssertEqual(chips(page), page.chips, "\(name): the Undo did not stand them again")
+            XCTAssertEqual(length(page), 12, name)
+        }
+    }
+
     /// A removal that follows a deletion run is a step of its own: the line's Undo stands
     /// the objects and leaves the ink deleted before, which the next ⌘Z brings back.
     func testARemovalByReachIsItsOwnStepAfterADeletionRun() throws {
@@ -257,6 +313,41 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(length(page), 11, "one Undo took the removal and the ink before it")
         page.coordinator.step(back: true)
         XCTAssertEqual(length(page), 12)
+    }
+
+    /// Edit > Delete takes a selected object with the line; at a caret it takes nothing.
+    func testEditDeleteTakesASelectedObjectWithTheLine() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 4, length: 0))
+        page.textView.delete(nil)
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(length(page), 12)
+        XCTAssertNil(page.model.notice)
+
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.delete(nil)
+        XCTAssertEqual(chips(page), [page.chips[1]])
+        assertRemovalLine(page, "Edit > Delete")
+        page.model.performNoticeAction()
+        XCTAssertEqual(chips(page), page.chips)
+    }
+
+    /// ⌃Y over a selected object writes the kill buffer there and takes the object with the line.
+    func testAYankOverASelectedObjectTakesItWithTheLine() throws {
+        let page = try makePage(tail: "\nxy")
+        page.textView.setSelectedRange(NSRange(location: 13, length: 0))
+        page.textView.deleteToEndOfParagraph(nil)
+        XCTAssertEqual(length(page), 13)
+        XCTAssertNil(page.model.notice, "killing ink said something")
+
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        page.textView.yank(nil)
+        XCTAssertEqual(chips(page), [page.chips[1]])
+        XCTAssertEqual(page.textView.string.prefix(6), "ab xy ")
+        assertRemovalLine(page, "⌃Y")
+        page.model.performNoticeAction()
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(length(page), 13)
     }
 
     /// Typing or Return over a selected object takes it as one step with the line; the
@@ -367,5 +458,58 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertTrue(page.window.firstResponder === page.textView)
         page.coordinator.step(back: true)
         XCTAssertEqual(chips(page), page.chips, "the removal did not come back")
+    }
+
+    /// While a field or the note holds the keys, no other deletion, ⌃Y or typing over a
+    /// selected object selects or removes anything on the page (ADR-0046).
+    func testEveryDeletionYankAndTypingStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let page = try makePage(tail: "\nxy")
+        page.textView.setSelectedRange(NSRange(location: 13, length: 0))
+        page.textView.deleteToEndOfParagraph(nil) // the kill buffer holds `xy` for ⌃Y
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.setMark(nil)
+        let object = NSRange(location: 3, length: 1)
+        let presses: [(String, NSRange, (InkTextView) -> Void)] = [
+            ("⌥⌫", NSRange(location: 4, length: 0), { $0.deleteWordBackward(nil) }),
+            ("⌥⌫ over a space", NSRange(location: 5, length: 0), { $0.deleteWordBackward(nil) }),
+            ("⌥⌦", NSRange(location: 8, length: 0), { $0.deleteWordForward(nil) }),
+            ("⌃⌫", NSRange(location: 4, length: 0), {
+                $0.deleteBackwardByDecomposingPreviousCharacter(nil)
+            }),
+            ("⌘⌫", NSRange(location: 4, length: 0), { $0.deleteToBeginningOfLine(nil) }),
+            ("to the paragraph's start", NSRange(location: 12, length: 0), {
+                $0.deleteToBeginningOfParagraph(nil)
+            }),
+            ("to the line's end", NSRange(location: 3, length: 0), { $0.deleteToEndOfLine(nil) }),
+            ("⌃K", NSRange(location: 0, length: 0), { $0.deleteToEndOfParagraph(nil) }),
+            ("to the mark", NSRange(location: 12, length: 0), { $0.deleteToMark(nil) }),
+            ("Edit > Delete", object, { $0.delete(nil) }),
+            ("⌃Y", object, { $0.yank(nil) }),
+            ("typing", object, { $0.insertText("x", replacementRange: Self.noReplacement) }),
+        ]
+        func standsAside(_ holder: String) {
+            XCTAssertFalse(page.textView.answersChords, holder)
+            for (name, range, press) in presses {
+                page.textView.setSelectedRange(range)
+                press(page.textView)
+                XCTAssertEqual(page.textView.selectedRange(), range, "\(holder): \(name)")
+                XCTAssertEqual(chips(page), page.chips, "\(holder): \(name)")
+                XCTAssertEqual(length(page), 13, "\(holder): \(name)")
+                XCTAssertNil(page.model.notice, "\(holder): \(name)")
+            }
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        standsAside("field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        standsAside("note")
+        note.escape()
+        drainMainQueue()
     }
 }

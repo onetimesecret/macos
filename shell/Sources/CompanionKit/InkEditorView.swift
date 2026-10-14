@@ -5752,15 +5752,60 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         deleting(forward: true) { super.deleteForward(sender) }
     }
 
-    /// On a page the first press beside an object selects it and the second removes it (D-30);
-    /// the page's delete stands aside while another surface holds the keys (ADR-0046).
-    private func deleting(forward: Bool, _ delete: () -> Void) {
+    override func deleteBackwardByDecomposingPreviousCharacter(_ sender: Any?) {
+        deleting(forward: false) { super.deleteBackwardByDecomposingPreviousCharacter(sender) }
+    }
+
+    override func deleteWordBackward(_ sender: Any?) {
+        deleting(forward: false) { super.deleteWordBackward(sender) }
+    }
+
+    override func deleteWordForward(_ sender: Any?) {
+        deleting(forward: true) { super.deleteWordForward(sender) }
+    }
+
+    override func deleteToBeginningOfLine(_ sender: Any?) {
+        deleting(forward: false) { super.deleteToBeginningOfLine(sender) }
+    }
+
+    override func deleteToBeginningOfParagraph(_ sender: Any?) {
+        deleting(forward: false) { super.deleteToBeginningOfParagraph(sender) }
+    }
+
+    override func deleteToEndOfLine(_ sender: Any?) {
+        deleting(forward: true) { super.deleteToEndOfLine(sender) }
+    }
+
+    override func deleteToEndOfParagraph(_ sender: Any?) {
+        deleting(forward: true) { super.deleteToEndOfParagraph(sender) }
+    }
+
+    /// The mark may stand on either side of the caret, so no first press is taken.
+    override func deleteToMark(_ sender: Any?) {
+        deleting(forward: nil) { super.deleteToMark(sender) }
+    }
+
+    /// Edit > Delete takes the selection alone; a caret deletes nothing.
+    override func delete(_ sender: Any?) {
+        deleting(forward: nil) { super.delete(sender) }
+    }
+
+    /// ⌃Y writes the kill buffer over the selection, which may hold an object.
+    override func yank(_ sender: Any?) {
+        deleting(forward: nil, intent: .paste) { super.yank(sender) }
+    }
+
+    /// Every page deletion: a caret beside an object in `forward`'s direction selects it (D-30),
+    /// and nothing goes while another surface holds the keys (ADR-0046).
+    private func deleting(
+        forward: Bool?, intent: EditorEditIntent = .deletion, _ delete: () -> Void
+    ) {
         guard let coordinator, !coordinator.writesNote else {
-            return withEditIntent(.deletion, perform: delete)
+            return withEditIntent(intent, perform: delete)
         }
         guard answersChords else { return }
-        if coordinator.selectObjectBeside(forward: forward) { return }
-        withEditIntent(.deletion, perform: delete)
+        if let forward, coordinator.selectObjectBeside(forward: forward) { return }
+        withEditIntent(intent, perform: delete)
     }
 
     var canDetectCodeLanguage: Bool {
@@ -6155,6 +6200,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// as one diffed batch against the pre-composition baseline.
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let target = replacementRange.location == NSNotFound ? selectedRange() : replacementRange
+        // Typing over an object removes it, which waits while another surface holds the keys.
+        if coordinator?.writesNote == false, !answersChords,
+           coordinator?.rangesHoldObject([target]) == true
+        { return }
         let intent: EditorEditIntent
         if coordinator?.imeComposition != nil || hasMarkedText() {
             intent = .composition
