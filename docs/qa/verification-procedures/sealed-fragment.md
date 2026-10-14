@@ -140,16 +140,36 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       ledger gains one `sealed`; ⌘Z takes the copy back. **Fail:** the
       original moves, or the copy lands as placeholder text.
 - [ ] **A drag between pages.** Where two pages show at once (the
-      editor window and the card), drag a selection holding an object
-      from one page to the other (ADR-0054; needs issue 170's shell
-      half to wire the drop). **Pass:** the run lands on the second
-      page with the object's name and note, leaves the first, and the
-      ledger gains no `sealed`; ⌘Z on the first page brings nothing
-      back, and ⌘Z on the second takes the run off it. With ⌥ held, the
-      first page keeps its run and the ledger gains one `sealed`.
-      **Fail:** the drop seals the text `[sealed content · tiny]` as a
-      new object, the first page keeps its run after a plain drop, or
-      ⌘Z on the first page stands the object again.
+      editor window and the card), click into the first page so its
+      window holds the keys, then drag a selection holding a named
+      object with a note from it to the other page (ADR-0054). Do it
+      once from the card to the editor window and once back. **Pass:**
+      the run lands on the second page with the object's name and note,
+      leaves the first, and the ledger gains no `sealed`; ⌘Z on the
+      first page brings nothing back, and ⌘Z on the second takes the
+      run off it. With ⌥ held, the cursor shows a copy, the first page
+      keeps its run and the ledger gains one `sealed`. **Fail:** the
+      line `a name or note is being written, so the drop was not
+      placed.` shows, the drop seals the text `[sealed content · tiny]`
+      as a new object, the first page keeps its run after a plain drop,
+      or ⌘Z on the first page stands the object again.
+- [ ] **Ink between pages and from the note.** With both windows
+      showing pages, drag a word of plain ink from one page to the
+      other, then open an object's note, type a word, select it and
+      drag it onto its own page and onto the other window's page.
+      **Pass:** each word lands as ink where dropped; the page's word
+      leaves its page, the note keeps its word, and no new object or
+      `sealed` appears. **Fail:** any drop becomes a sealed object, or
+      the note's drop shows the line that a name or note is being
+      written.
+- [ ] **A page's drag onto a rename field.** Choose *Rename tab…* from
+      a tab's menu, then drag a selection holding an object from the
+      page onto the tab's field; repeat on the gutter's field (*Timeline*,
+      click a page's time) and on a pad's field (*Rename pad…* in the pad
+      list). **Pass:** each field takes
+      `[sealed content · tiny]` and the ink around it as plain text, and
+      the page keeps its run. **Fail:** the field takes any of the
+      sealed word, or the run leaves the page.
 - [ ] **Plain drag out.** Drag the selection into TextEdit, then drag it
       onto the Trash in the Dock. **Pass:** TextEdit receives the same
       placeholder text as the copy did, the page keeps its run both
