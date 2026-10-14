@@ -56,6 +56,26 @@ impl ItemId {
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
+
+    /// Parse the 8-4-4-4-12 hex form, the inverse of `Display`.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        if text.len() != 36 {
+            return None;
+        }
+        let hex: Vec<u32> = text
+            .bytes()
+            .filter(|byte| *byte != b'-')
+            .map(|byte| (byte as char).to_digit(16))
+            .collect::<Option<_>>()?;
+        if hex.len() != 32 {
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        for (index, pair) in hex.chunks(2).enumerate() {
+            bytes[index] = ((pair[0] << 4) | pair[1]) as u8;
+        }
+        Some(Self(bytes))
+    }
 }
 
 /// Lowercase hyphenated 8-4-4-4-12 hex, the form that crosses the FFI seam.
@@ -1023,6 +1043,16 @@ mod tests {
                 .all(|c| c == '-' || c.is_ascii_digit() || ('a'..='f').contains(&c))
         );
         assert_eq!(ItemId::from_bytes(*id.as_bytes()), id);
+    }
+
+    #[test]
+    fn an_item_id_parses_back_from_the_form_it_displays() {
+        let id = ItemId::random();
+        assert_eq!(ItemId::parse(&id.to_string()), Some(id));
+        assert_eq!(ItemId::parse(&id.to_string().to_uppercase()), Some(id));
+        assert_eq!(ItemId::parse(""), None);
+        assert_eq!(ItemId::parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398"), None);
+        assert_eq!(ItemId::parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398g"), None);
     }
 
     #[test]

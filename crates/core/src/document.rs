@@ -1064,27 +1064,7 @@ fn parse_mark_value(value: &LoroValue) -> Option<ItemId> {
     let LoroValue::String(text) = value else {
         return None;
     };
-    parse_item_id(text)
-}
-
-/// Parse the 8-4-4-4-12 hex form, the inverse of [`ItemId`]'s `Display`.
-fn parse_item_id(text: &str) -> Option<ItemId> {
-    if text.len() != 36 {
-        return None;
-    }
-    let hex: Vec<u32> = text
-        .bytes()
-        .filter(|byte| *byte != b'-')
-        .map(|byte| (byte as char).to_digit(16))
-        .collect::<Option<_>>()?;
-    if hex.len() != 32 {
-        return None;
-    }
-    let mut bytes = [0u8; 16];
-    for (index, pair) in hex.chunks(2).enumerate() {
-        bytes[index] = ((pair[0] << 4) | pair[1]) as u8;
-    }
-    Some(ItemId::from_bytes(bytes))
+    ItemId::parse(text)
 }
 
 #[cfg(test)]
