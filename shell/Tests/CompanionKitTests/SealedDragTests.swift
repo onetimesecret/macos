@@ -315,6 +315,7 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(target.textView.selectedRange(), NSRange(location: 2, length: 4))
         XCTAssertEqual(shape(source), " cd # ef", "the move left its source run")
         XCTAssertEqual(source.textView.textStorage?.length, 8, "the source was not restated")
+        XCTAssertEqual(source.textView.selectedRange(), NSRange(location: 0, length: 0))
         XCTAssertEqual(chips(source).map(\.chipId), [ids[1]])
         XCTAssertEqual(model.coreClient.ledger().count, records, "a move recorded something")
         XCTAssertGreaterThan(model.dirtyMarks, marks, "the move armed no write")
@@ -496,6 +497,12 @@ final class SealedDragTests: XCTestCase {
         XCTAssertTrue(chips(target).isEmpty, "ink from another page was sealed")
         XCTAssertEqual(chips(source).map(\.chipId), ids)
         XCTAssertEqual(model.coreClient.ledger().count, records, "a seal was recorded")
+
+        target.textView.isEditable = false
+        XCTAssertEqual(target.textView.dropRoute(for: option), .refused)
+        XCTAssertEqual(target.textView.draggingEntered(option), [])
+        XCTAssertFalse(target.textView.performDragOperation(option))
+        XCTAssertEqual(shape(target), "xyabcd", "a read only page took ink")
     }
 
     /// The note's ink, dragged onto its own page or another, lands as ink and never
