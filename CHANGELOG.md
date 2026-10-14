@@ -923,7 +923,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   object keeps its draft's error in the same case.
 
 - **⌃Y after ⌃K over an object no longer writes a false object**
-  (app 0.35.0, `companion-core` 0.32.0; Law 0001, issue #170). AppKit's
+  (app 0.35.0, `companion-core` 0.32.0, `companion-ffi` 0.40.0;
+  Law 0001, issue #170). AppKit's
   kill buffer holds an object as the plain character U+FFFC, so ⌃Y
   wrote that character into the page as ink that looked like an object
   and was none. The editor now takes every U+FFFC no object carries out
@@ -931,7 +932,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drop, a service or typing, in a page or a note; the rest lands with
   the caret after it. The core refuses a page's or a note's edit that
   would write the character as ink, and drops it from a pasted
-  fragment. A file keeps it as its own text.
+  fragment. A file keeps it as its own text. A page an earlier build
+  saved with the character in it, or a peer's sync batch holding one,
+  loses it when the page is next shown, as an edit that syncs back and
+  that ⌘Z does not undo.
+
+- **Text dropped or pasted right after a sealed object no longer
+  doubles it** (app 0.35.0; Law 0001, issue #170). Text holding U+FFFC,
+  dropped from a regular text file or pasted or answered by a service
+  right after an object, took on that object, so the page showed it
+  twice while the core held it once. Every later edit then landed in
+  the wrong place, and a backspace of ink could remove another object
+  without a line. Such text now lands without the character beside an
+  object as anywhere else, and each object stands once.
 
 - **A paste takes nothing from a page past its deadline**
   (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
@@ -1055,14 +1068,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   services ask too. The page's drawing is not gated, so it shows until
   the settle.
 
-- **A page, a note and a sealed name offer no Share… or Writing Tools**
-  (app 0.35.0; Law 0001, issue #170). The text menu's Share… built its
-  picker over the selection before anything could ask whether the page
-  still stood, so a menu left open past a page's deadline could still
-  share it, and Writing Tools read a selection past every check and
-  could rewrite across a sealed object without its two presses. Neither
-  is offered over a page, a note or a name field any more; a regular
-  text file keeps both.
+- **A page, a note and a sealed name offer no Share…, Writing Tools,
+  Look Up, Translate or Speech** (app 0.35.0; Law 0001, issue #170).
+  The text menu's Share… built its picker over the selection before
+  anything could ask whether the page still stood, so a menu left open
+  past a page's deadline could still share it, and Writing Tools read a
+  selection past every check and could rewrite across a sealed object
+  without its two presses. Look Up and Translate were built holding the
+  selection in their titles, and Speech read it aloud, in the same way.
+  None of them is offered over a page, a note or a name field any more;
+  a regular text file keeps them all. Edit > Speech > Start Speaking, a
+  force click or three finger tap, and Quick Look by key ask whether
+  the page still stands before they read it, and wait while a name or
+  a note holds the keys.
 
 - **Sync sends nothing of a page past its deadline** (app 0.35.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
