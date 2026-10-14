@@ -21,8 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file, and a page past its deadline at either end. A drop whose drag
   no longer stands pastes a copy and removes nothing.
 
-- **Anything dragged from inside this app lands as ink** (app 0.35.0;
-  Law 0001, issue #170). A drag of ink from another page or from a
+- **A drop never seals what was dragged from inside this app** (app
+  0.35.0; Law 0001, issue #170). A drag of ink from another page or from a
   note, or of text from a rename field, a name field, the pad list or
   Settings, no longer meets drop to seal: it lands on the page as ink,
   the note or field keeping its text. A drag from another app still
