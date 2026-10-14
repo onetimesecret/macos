@@ -10,10 +10,10 @@ runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-
 [ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md).
 **Owner:** delano.
 **Status:** open; not yet run. The editor's copy and cut write the
-fragment and the slot's button places a cut, so the first two checks
-and the slot's check can run; the rest are blocked until the editor
-pastes, drags and offers the decrypted drag handle (issue #170's shell
-half).
+fragment, its paste reads it and the slot's button places a cut, so
+every check above the drags can run; the drag checks are blocked until
+the editor drags and offers the decrypted drag handle (issue #170's
+shell half).
 
 ## Why by hand
 
@@ -65,6 +65,11 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       stands empty, the slot's line is gone, and the ledger shows the
       object expired. **Fail:** the object returns, or the first page
       still shows its ink after the paste.
+- [ ] **A fragment pasted into a note.** Copy a sealed object with some
+      ink, open another object's note and paste with ⌘V. **Pass:** the
+      note shows the ink with `[sealed content · tiny]` where the object
+      stood, and the page is unchanged. **Fail:** the note shows the
+      sealed word or a block, or the paste lands on the page.
 - [ ] **Plain drag out.** Drag the selection into TextEdit. **Pass:**
       TextEdit receives the same placeholder text as the copy did.
       **Fail:** the sealed word arrives.
