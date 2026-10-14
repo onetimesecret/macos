@@ -39,6 +39,11 @@ Seams for the editor half (all page ids, all refuse a file id):
   Place button.
 - ⌘Z after a removal now reattaches; the removal line can offer Undo.
   Backspace beside an object must select first (no test pins either).
+- Copy is built (shell unit 1): `InkTextView.copy` to
+  `PageModel.copySelection`, written by `SealedFragment.write(to:)` onto
+  `ambientPasteboard`; pinned in `SealedFragmentEditorTests`. NSTextView's
+  `cut:` calls `copy:` then deletes (probed), so the editor's cut must not
+  call `super.cut`, or it writes the copy fragment and detaches as a removal.
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
