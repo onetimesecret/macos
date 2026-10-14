@@ -7,6 +7,7 @@ documentation_status: needs-review
 - **Status:** accepted
 - **Date:** 2026-10-13
 - **Depends on:** [ADR-0047](0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md), whose point 3 says what an unreadable envelope pastes.
+- **Superseded in part by:** [ADR-0053](0053-a-copy-or-cut-past-an-envelope-cap-composes-nothing.md), which replaces the consequence that a selection past a cap still copies and cuts. The decision and the other consequences stand.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -60,3 +61,8 @@ object twice.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, before its code.
+- 2026-10-13: Superseded in part by
+  [ADR-0053](0053-a-copy-or-cut-past-an-envelope-cap-composes-nothing.md).
+  Its second consequence, that a selection longer than 8 MiB or holding
+  more than 1024 objects still copies and cuts, is replaced: a copy or a
+  cut past either cap now composes nothing and changes nothing.
