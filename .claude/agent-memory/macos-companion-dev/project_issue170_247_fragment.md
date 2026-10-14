@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the core move between pages (drop not wired); the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -111,10 +111,21 @@ Seams for the editor half (all page ids, all refuse a file id):
   uses) stands the plan on the destination and clears the source's
   undo only when an object moved; ink alone keeps it. A destination
   refusal rolls the source back, which clears its undo and rebuilds
-  its blocks (provenance resets), as a failed paste does. The drop is
-  not wired: the shell must call it under the `PageDrag` stamp,
-  restate both pages, and stop `endPageDrag` deleting the source run.
-  ⌥ between pages still pastes the copy fragment.
+  its blocks (provenance resets), as a failed paste does. Wired in
+  phase 4 unit 5: `InkTextView.dropRoute(for:)` is the one answer the
+  cursor and the drop read (refused, ownDrag, move, fragment, ink,
+  seal). `.move` is `Coordinator.pageDragToMove` (a move mask, the
+  source's standing stamp, two pages of one model) and runs
+  `dropMovedPageDrag` to `PageModel.dropRange(_:sheet:onto:at:)`;
+  `endPageDrag()` only clears the stamp. ⌥ or a stale stamp is
+  `.fragment`, a copy. Ink from any InkTextView of this app is `.ink`
+  (AppKit's drop, which answers `.copy` between two text views), never
+  drop to seal; another app's drag is `.seal`. Drops stand aside via
+  `admitsDrop(from:)` = `yieldsKeys(toAnyBut: source)`: on hardware the
+  source page holds the key window's keys, so the old `answersChords`
+  guard refused every drop between the card and the editor window.
+  A test may call `performDragOperation` only after asserting the
+  route is not `.seal`, or a regression reads the system drag board.
 
 - Paste is built (shell unit 4): `InkTextView.paste`, `pasteAsPlainText`
   and `pasteWithoutDetection` ask `Coordinator.pasteFragment()` first,
@@ -141,9 +152,8 @@ Seams for the editor half (all page ids, all refuse a file id):
   dragSelection` begins its own session with `Coordinator.beginPageDrag`'s
   one item (`SealedFragment.pasteboardItem()`); the `draggedCell` delegate
   sends a drag starting on an object there. Own drop: `dropPageDrag` to
-  `PageModel.dropRange` (core move or clone). Another page: `dropFragment`
-  pastes, then tells the source `pageDragMovedAway()`, and only then does
-  `endPageDrag(.move)` delete the source run. Both check the
+  `PageModel.dropRange` (core move or clone). Another page: the core
+  move between pages (see the ADR-0054 paragraph above); both check the
   `(document, generation)` stamp. `dragOperation(for:type:)` feeds
   AppKit's drop caret (unobserved). A drag whose source is the page with
   no `pageDrag` still falls to `super.performDragOperation`; never make
