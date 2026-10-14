@@ -44,6 +44,26 @@ enum Mode: String, CaseIterable {
 enum Side: String, CaseIterable { case right = "Right", left = "Left", top = "Top", bottom = "Bottom" }
 enum Phase: String { case idle, peek, card }
 
+struct DisplaySnapshot {
+    let id: CGDirectDisplayID
+    let name: String
+    let frame: NSRect
+    let visibleFrame: NSRect
+
+    static func current() -> [DisplaySnapshot] {
+        NSScreen.screens.compactMap { screen in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            return DisplaySnapshot(id: number.uint32Value, name: screen.localizedName,
+                                   frame: screen.frame, visibleFrame: screen.visibleFrame)
+        }
+    }
+
+    static func selectedID(previous: CGDirectDisplayID?, in screens: [DisplaySnapshot]) -> CGDirectDisplayID? {
+        if let previous, screens.contains(where: { $0.id == previous }) { return previous }
+        return screens.first?.id
+    }
+}
+
 func stagedFrame(_ card: NSRect, stage: Phase, mode: Mode, side: Side) -> NSRect {
     guard stage == .peek else { return card }
     var frame = card
@@ -240,8 +260,15 @@ final class Lab: NSObject, NSApplicationDelegate {
     var editor: NSWindow?
     var mode: Mode { Mode.allCases[modes.indexOfSelectedItem] }
     var side: Side { Side.allCases[sides.indexOfSelectedItem] }
-    var screen: NSScreen { NSScreen.screens[min(max(0, displays.indexOfSelectedItem), NSScreen.screens.count - 1)] }
-    var edge: EdgeGeometry { EdgeGeometry(frame: screen.frame, side: side, fraction: CGFloat(position.doubleValue)) }
+    var displayProvider: () -> [DisplaySnapshot] = DisplaySnapshot.current
+    var displaySnapshots: [DisplaySnapshot] = []
+    var screen: DisplaySnapshot? {
+        let index = displays.indexOfSelectedItem
+        return displaySnapshots.indices.contains(index) ? displaySnapshots[index] : nil
+    }
+    var edge: EdgeGeometry? { screen.map { EdgeGeometry(frame: $0.frame, side: side, fraction: CGFloat(position.doubleValue)) } }
+    var sleeping = false
+    var triggersAvailable: Bool { !sleeping && screen != nil && pause.state == .off && editor?.isVisible != true }
     var phase: Phase = .idle
     var enteredAt: TimeInterval?
     var exitAt: TimeInterval?
@@ -309,8 +336,9 @@ final class Lab: NSObject, NSApplicationDelegate {
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
         NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(cancelForWorkspace), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(cancelForWorkspace), name: NSWorkspace.willSleepNotification, object: nil)
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(workspaceChanged(_:)), name: name, object: nil)
+        }
         changed()
         showControls()
     }
@@ -362,30 +390,44 @@ final class Lab: NSObject, NSApplicationDelegate {
     }
 
     func refreshDisplays() {
+        let previous = screen?.id
+        displaySnapshots = displayProvider()
+        let selected = DisplaySnapshot.selectedID(previous: previous, in: displaySnapshots)
         displays.removeAllItems()
-        displays.addItems(withTitles: NSScreen.screens.enumerated().map { "\($0.offset + 1): \($0.element.localizedName)" })
+        displays.addItems(withTitles: displaySnapshots.enumerated().map { "\($0.offset + 1): \($0.element.name)" })
+        if let index = displaySnapshots.firstIndex(where: { $0.id == selected }) { displays.selectItem(at: index) }
     }
     @objc func layoutChanged() { refreshDisplays(); changed() }
-    @objc func cancelForWorkspace() { dismiss(block: true); held = false; guide.orderOut(nil) }
+    @objc func workspaceChanged(_ notification: Notification) {
+        if notification.name == NSWorkspace.willSleepNotification { sleeping = true }
+        if notification.name == NSWorkspace.didWakeNotification { sleeping = false; refreshDisplays() }
+        changed()
+        blocked = true
+    }
     @objc func showControls() { controls.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     @objc func quit() { NSApp.terminate(nil) }
     @objc func editFallback() { openEditor() }
     @objc func showFallback() {
-        guard editor?.isVisible != true else { log("Close mock editor first"); return }
-        blocked = false; explicitAnchor = NSEvent.mouseLocation; enteredAt = now
-        show(.card)
+        guard triggersAvailable else { log("Card unavailable: paused, sleeping, no display, or mock editor open"); return }
+        revealNearPointer()
     }
     @objc func changed() {
         dismiss(block: false)
-        held = false; explicitAnchor = nil; hoveringHandle = false
+        held = false; explicitAnchor = nil; hoveringHandle = false; hoveringStatus = false
         lastShiftTap = -10; shakeReversals = 0; shakeTravel = 0
         instructions.stringValue = mode.instructions
+        guard let screen, let edge else {
+            handle.orderOut(nil); guide.orderOut(nil)
+            displays.isEnabled = false; sides.isEnabled = false; position.isEnabled = false; marker.isEnabled = false
+            location.stringValue = "No displays available. Reveal triggers are suspended."
+            return
+        }
         let target = edge.center
         let vertical = side == .left || side == .right
         let rect = clamped(NSRect(x: target.x - (vertical ? 10 : 35), y: target.y - (vertical ? 35 : 10),
                                  width: vertical ? 20 : 70, height: vertical ? 70 : 20), to: screen.visibleFrame)
         handle.setFrame(rect, display: true)
-        if pause.state == .off && (mode == .tab || mode == .drag) { handle.orderFront(nil) }
+        if !sleeping && pause.state == .off && (mode == .tab || mode == .drag) { handle.orderFront(nil) }
         else { handle.orderOut(nil) }
         let usesEdgePlacement = mode.hasEdgeTarget || mode == .held
         displays.isEnabled = usesEdgePlacement
@@ -393,16 +435,16 @@ final class Lab: NSObject, NSApplicationDelegate {
         position.isEnabled = sides.isEnabled
         marker.isEnabled = mode.hasEdgeTarget
         if mode == .corner {
-            location.stringValue = "Target: bottom-right corner of \(screen.localizedName)."
+            location.stringValue = "Target: bottom-right corner of \(screen.name)."
         } else if usesEdgePlacement {
             let direction = side == .left || side == .right ? "up from the bottom" : "across from the left"
-            location.stringValue = "Target: \(side.rawValue.lowercased()) edge of \(screen.localizedName), \(Int(position.doubleValue * 100))% \(direction).\nMove the pointer to this screen location to try the edge gesture."
-            if mode == .held { location.stringValue = "Card location: \(side.rawValue.lowercased()) edge of \(screen.localizedName). Use the held shortcut, not edge hover." }
+            location.stringValue = "Target: \(side.rawValue.lowercased()) edge of \(screen.name), \(Int(position.doubleValue * 100))% \(direction).\nMove the pointer to this screen location to try the edge gesture."
+            if mode == .held { location.stringValue = "Card location: \(side.rawValue.lowercased()) edge of \(screen.name). Use the held shortcut, not edge hover." }
         } else {
             location.stringValue = mode == .status ? "Target: RL in the macOS menu bar. Edge and display settings do not apply." : "No screen-edge target. Use the gesture above; the card appears beside your pointer."
         }
         if mode.hasEdgeTarget && mode != .corner {
-            let others = NSScreen.screens.filter { $0 !== screen }.map(\.frame)
+            let others = displaySnapshots.filter { $0.id != screen.id }.map(\.frame)
             if !edge.isExposed(at: edge.center, others: others) {
                 location.stringValue = "Target borders another display at its center. Choose an outside edge or move the slider to an exposed part of this edge."
             }
@@ -411,12 +453,15 @@ final class Lab: NSObject, NSApplicationDelegate {
         log("Mode: \(mode.rawValue)")
     }
     @objc func updateGuide() {
-        guard marker.state == .on, mode.hasEdgeTarget, pause.state == .off else {
+        guard let screen, let edge, !sleeping, marker.state == .on, mode.hasEdgeTarget, pause.state == .off else {
             guide.orderOut(nil)
             return
         }
         let rect: NSRect
-        if mode == .corner { rect = sourceFrame() }
+        if mode == .corner {
+            guard let source = sourceFrame() else { guide.orderOut(nil); return }
+            rect = source
+        }
         else if mode == .tab || mode == .drag { rect = handle.frame.insetBy(dx: -5, dy: -5) }
         else { rect = edge.entryFrame }
         guide.setFrame(rect.intersection(screen.frame), display: true)
@@ -432,7 +477,8 @@ final class Lab: NSObject, NSApplicationDelegate {
     }
 
     func geometryEligible(_ p: NSPoint, exit: Bool = false) -> Bool {
-        let others = NSScreen.screens.filter { $0 !== screen }.map(\.frame)
+        guard let screen, let edge else { return false }
+        let others = displaySnapshots.filter { $0.id != screen.id }.map(\.frame)
         if mode == .corner {
             let right = EdgeGeometry(frame: screen.frame, side: .right, fraction: 0)
             let bottom = EdgeGeometry(frame: screen.frame, side: .bottom, fraction: 1)
@@ -444,6 +490,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     }
 
     func sourceEligible(_ p: NSPoint, exit: Bool = false) -> Bool {
+        guard triggersAvailable else { return false }
         switch mode {
         case .status: return hoveringStatus
         case .tab: return hoveringHandle
@@ -461,7 +508,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         detectShift(time)
         let activeName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         telemetry.stringValue = "\(phase.rawValue) | active: \(activeName) | outward Δ: \(String(format: "%.1f", lastDelta)) | push: \(String(format: "%.1f", push)) | click: \(card.open.isEnabled ? "armed" : "not armed")"
-        guard pause.state == .off, editor?.isVisible != true else {
+        guard triggersAvailable else {
             if phase != .idle { dismiss(block: true) }
             return
         }
@@ -487,16 +534,17 @@ final class Lab: NSObject, NSApplicationDelegate {
         } else {
             let insideCard = reveal.frame.contains(p)
             updateCardInteraction(at: p, time: time)
+            guard let sourceFrame = sourceFrame() else { dismiss(block: false); return }
             let corridor = mode == .held || mode == .pointer || mode == .shake || mode == .doubleShift
                 ? reveal.frame.insetBy(dx: -45, dy: -45)
-                : reveal.frame.union(sourceFrame()).insetBy(dx: -16, dy: -16)
+                : reveal.frame.union(sourceFrame).insetBy(dx: -16, dy: -16)
             let keep = sourceEligible(p, exit: true) || corridor.contains(p)
             if keep { exitAt = nil }
             else if let exitAt, time - exitAt > 0.2 { dismiss(block: false) }
             else if exitAt == nil { exitAt = time }
             if phase == .peek, let enteredAt {
                 let elapsed = time - enteredAt
-                let nearer = edge.distance(p) <= 4 && geometryEligible(p)
+                let nearer = (edge?.distance(p)).map { $0 <= 4 } == true && geometryEligible(p)
                 let intoPeek = insideCard && pointerWasOutside
                 let expand: Bool
                 switch mode {
@@ -523,7 +571,8 @@ final class Lab: NSObject, NSApplicationDelegate {
         }
     }
 
-    func sourceFrame() -> NSRect {
+    func sourceFrame() -> NSRect? {
+        guard let screen, let edge else { return nil }
         if mode == .status, let button = status.button, let window = button.window {
             return window.convertToScreen(button.convert(button.bounds, to: nil))
         }
@@ -534,13 +583,14 @@ final class Lab: NSObject, NSApplicationDelegate {
         return NSRect(x: c.x - (vertical ? 24 : 70), y: c.y - (vertical ? 70 : 24), width: vertical ? 48 : 140, height: vertical ? 140 : 48)
     }
 
-    func destination() -> NSRect {
+    func destination() -> NSRect? {
+        guard let screen, let edge else { return nil }
         let bounds = screen.visibleFrame
         let size = NSSize(width: 248, height: 132)
-        if let p = explicitAnchor { return clamped(NSRect(origin: NSPoint(x: p.x + 18, y: p.y - 70), size: size), to: (NSScreen.screens.first { $0.frame.contains(p) } ?? screen).visibleFrame) }
+        if let p = explicitAnchor { return clamped(NSRect(origin: NSPoint(x: p.x + 18, y: p.y - 70), size: size), to: (displaySnapshots.first { $0.frame.contains(p) } ?? screen).visibleFrame) }
         if mode == .status {
-            let source = sourceFrame()
-            let targetScreen = NSScreen.screens.first { $0.frame.contains(NSPoint(x: source.midX, y: source.midY)) } ?? screen
+            guard let source = sourceFrame() else { return nil }
+            let targetScreen = displaySnapshots.first { $0.frame.contains(NSPoint(x: source.midX, y: source.midY)) } ?? screen
             return clamped(NSRect(x: source.midX - 124, y: source.minY - 136, width: size.width, height: size.height), to: targetScreen.visibleFrame)
         }
         if mode == .corner { return NSRect(x: bounds.maxX - 248, y: bounds.minY, width: 248, height: 132) }
@@ -554,8 +604,9 @@ final class Lab: NSObject, NSApplicationDelegate {
     }
 
     func show(_ stage: Phase) {
+        guard stage != .idle, triggersAvailable, let destination = destination() else { return }
         let first = phase == .idle
-        if first { cardFrame = destination() }
+        if first { cardFrame = destination }
         let frame = stagedFrame(cardFrame, stage: stage, mode: mode, side: side)
         phase = stage; card.stage = stage; shownAt = now; exitAt = nil
         armingOrigin = NSEvent.mouseLocation
@@ -584,22 +635,23 @@ final class Lab: NSObject, NSApplicationDelegate {
 
     func glance(_ down: Bool) {
         guard mode == .held, held != down else { return }
+        guard triggersAvailable else { held = false; return }
         held = down
-        if down && pause.state == .off && editor?.isVisible != true {
+        if down {
             blocked = false; enteredAt = now; explicitAnchor = nil; show(.card)
         } else if !down { dismiss(block: true) }
     }
     func pointerShortcut() {
-        guard mode == .pointer, pause.state == .off, editor?.isVisible != true else { return }
+        guard mode == .pointer, triggersAvailable else { return }
         revealNearPointer()
     }
     func revealNearPointer() {
+        guard triggersAvailable else { return }
         blocked = false; enteredAt = now; explicitAnchor = NSEvent.mouseLocation; show(.card)
     }
-    func detectShift(_ time: TimeInterval) {
-        let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    func detectShift(_ time: TimeInterval, flags: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
         let shift = flags.contains(.shift)
-        if mode == .doubleShift && pause.state == .off && editor?.isVisible != true {
+        if mode == .doubleShift && triggersAvailable {
             if shift && !lastShift { shiftPressedAt = time }
             if !shift && lastShift && time - shiftPressedAt < 0.3 && flags.intersection([.command, .option, .control]).isEmpty {
                 if time - lastShiftTap < 0.4 { revealNearPointer(); lastShiftTap = -10 }
@@ -609,7 +661,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         lastShift = shift
     }
     func mouseMoved(_ event: NSEvent) {
-        guard pause.state == .off, editor?.isVisible != true else { return }
+        guard triggersAvailable, let edge else { return }
         if mode == .push {
             lastDelta = edge.outward(event)
             if geometryEligible(NSEvent.mouseLocation) && edge.distance(NSEvent.mouseLocation) <= 2 {
@@ -704,16 +756,31 @@ func selfTest() {
     }
     let bounds = NSRect(x: -1000, y: 30, width: 1000, height: 740)
     test.expect(bounds.contains(clamped(NSRect(x: 0, y: -100, width: 248, height: 132), to: bounds)), "Card must clamp to visible bounds")
+
+    let a = DisplaySnapshot(id: 11, name: "Same name", frame: frame, visibleFrame: bounds)
+    let b = DisplaySnapshot(id: 22, name: "Same name", frame: frame, visibleFrame: bounds)
+    let displays = TestContext(name: "self-test display selection")
+    displays.expect(DisplaySnapshot.selectedID(previous: nil, in: [a, b]) == a.id, "Initial selection must use the first display")
+    displays.expect(DisplaySnapshot.selectedID(previous: a.id, in: [b, a]) == a.id, "Reordering duplicate names must preserve display ID")
+    displays.expect(DisplaySnapshot.selectedID(previous: a.id, in: [b]) == b.id, "Removing the selected display must select an available display")
+    displays.expect(DisplaySnapshot.selectedID(previous: a.id, in: []) == nil, "Empty displays must have no selection")
+    displays.expect(DisplaySnapshot.selectedID(previous: nil, in: [b]) == b.id, "Displays returning after an empty snapshot must recover")
     print("PASS: entry/exit bands, negative display origins, all four edges, shared/partial seams, card clamping")
 }
 
 func smokeTest(_ lab: Lab, app: NSApplication) {
     lab.timer?.invalidate()
     let startup = TestContext(name: "smoke startup")
+    let originalProvider = lab.displayProvider
+    let snapshots = lab.displaySnapshots
+    startup.expect(!snapshots.isEmpty, "AppKit smoke tests require an available display")
     let keyWindow = app.keyWindow
     func select(_ mode: Mode) {
         lab.modes.selectItem(at: startup.require(Mode.allCases.firstIndex(of: mode), "Mode missing from popup"))
         lab.changed()
+    }
+    func post(_ name: Notification.Name) {
+        NSWorkspace.shared.notificationCenter.post(name: name, object: nil)
     }
     for mode in Mode.allCases {
         let test = TestContext(name: "smoke mode=\(mode.rawValue)")
@@ -803,9 +870,66 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
     lab.glance(false)
     held.expect(lab.phase == .idle, "Held release must dismiss")
 
-    lab.marker.state = .off
-    lab.updateGuide()
-    held.expect(!lab.guide.isVisible, "Disabled marker must hide the guide")
+    for mode in [Mode.dwell, .tab] {
+        for marker in [NSControl.StateValue.on, .off] {
+            for pause in [NSControl.StateValue.off, .on] {
+                let test = TestContext(name: "smoke mode=\(mode.rawValue) workspace marker=\(marker.rawValue) pause=\(pause.rawValue)")
+                lab.marker.state = marker; lab.pause.state = pause
+                select(mode)
+                post(NSWorkspace.activeSpaceDidChangeNotification)
+                let guideExpected = marker == .on && pause == .off
+                let handleExpected = mode == .tab && pause == .off
+                test.expect(lab.guide.isVisible == guideExpected, "Space change must restore the eligible guide")
+                test.expect(lab.handle.isVisible == handleExpected, "Space change must restore only eligible handles")
+                lab.show(.card)
+                post(NSWorkspace.willSleepNotification)
+                test.expect(lab.sleeping && lab.phase == .idle && !lab.guide.isVisible && !lab.handle.isVisible, "Sleep must cancel reveal and hide guide/handle")
+                post(NSWorkspace.activeSpaceDidChangeNotification)
+                lab.pointerShortcut(); lab.revealNearPointer(); lab.show(.card); lab.tick()
+                test.expect(lab.phase == .idle && !lab.guide.isVisible && !lab.handle.isVisible, "Space/polling/explicit reveal must not resume while sleeping")
+                post(NSWorkspace.didWakeNotification)
+                test.expect(!lab.sleeping && lab.guide.isVisible == guideExpected, "Wake must restore guide according to marker/pause")
+                test.expect(lab.handle.isVisible == handleExpected, "Wake must restore only eligible handles")
+            }
+        }
+    }
+    lab.marker.state = .on; lab.pause.state = .off
+    for mode in [Mode.held, .pointer, .doubleShift] {
+        let test = TestContext(name: "smoke mode=\(mode.rawValue) sleeping shortcuts")
+        select(mode)
+        lab.revealNearPointer()
+        post(NSWorkspace.willSleepNotification)
+        post(NSWorkspace.activeSpaceDidChangeNotification)
+        lab.layoutChanged()
+        lab.glance(true); lab.pointerShortcut(); lab.showFallback()
+        lab.detectShift(20, flags: .shift); lab.detectShift(20.05, flags: [])
+        lab.detectShift(20.1, flags: .shift); lab.detectShift(20.15, flags: [])
+        lab.tick()
+        test.expect(lab.sleeping && !lab.held && lab.phase == .idle && !lab.reveal.isVisible,
+                    "Sleeping shortcuts/fallbacks must not resume a card after Space/display notifications")
+        post(NSWorkspace.didWakeNotification)
+        test.expect(lab.triggersAvailable && lab.phase == .idle && !lab.held, "Wake must restore availability without replaying sleeping input")
+    }
+
+    let unavailable = TestContext(name: "smoke injected empty display snapshot")
+    lab.displayProvider = { [] }
+    lab.layoutChanged()
+    unavailable.expect(lab.screen == nil && lab.edge == nil && lab.destination() == nil && lab.sourceFrame() == nil, "Empty snapshot must yield absent geometry, not a fabricated rectangle")
+    unavailable.expect(lab.displays.numberOfItems == 0 && !lab.displays.isEnabled, "Empty snapshot must clear and disable the display picker")
+    for mode in Mode.allCases {
+        let test = TestContext(name: "smoke no displays mode=\(mode.rawValue)")
+        select(mode)
+        lab.show(.peek); lab.show(.card); lab.showFallback(); lab.glance(true); lab.pointerShortcut(); lab.tick()
+        test.expect(!lab.geometryEligible(.zero) && !lab.sourceEligible(.zero), "No display must disable geometry and sources")
+        test.expect(lab.phase == .idle && !lab.reveal.isVisible && !lab.guide.isVisible && !lab.handle.isVisible, "No display must suspend all reveal panels")
+    }
+    post(NSWorkspace.willSleepNotification); post(NSWorkspace.didWakeNotification)
+    unavailable.expect(!lab.guide.isVisible && !lab.triggersAvailable, "Wake without displays must remain suspended")
+    lab.displayProvider = originalProvider
+    lab.layoutChanged()
+    select(.tab)
+    unavailable.expect(lab.screen != nil && lab.triggersAvailable && lab.guide.isVisible && lab.handle.isVisible, "Returning displays must restore geometry, triggers, guide, and handle")
+
     print("PASS: AppKit startup, 12 mode render/reset cycles, click-catching cards, stationary/jitter rejection, deliberate motion arming, simulated card clicks, unchanged key window during reveal, simulated held press/release")
     app.terminate(nil)
 }
