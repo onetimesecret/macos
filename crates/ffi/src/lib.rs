@@ -1634,7 +1634,7 @@ pub unsafe extern "C" fn companion_store_emptiness(
 /// - `at_ms`: when it happened, Unix epoch milliseconds
 /// - `created_at_ms`: when the item's page was created, epoch ms
 /// - `size`: `tiny` | `small` | `medium` | `large` | `huge`
-/// - `destination`: `none` | `clipboard` | `link`
+/// - `destination`: `none` | `clipboard` | `link` | `drag`
 ///
 /// Free with [`companion_string_free`]; null on error.
 ///
@@ -1665,11 +1665,8 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
                 "at_ms": record.at_wall_ms(),
                 "created_at_ms": record.item_created_wall_ms(),
                 "size": record.size().as_str(),
-                "destination": match record.destination() {
-                    DestinationClass::None => "none",
-                    DestinationClass::Clipboard => "clipboard",
-                    DestinationClass::OneTimeLink => "link",
-                },
+                // The ledger's own vocabulary, so a new class cannot skip the seam.
+                "destination": record.destination().to_string(),
             })
         })
         .collect();

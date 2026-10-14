@@ -259,7 +259,7 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertTrue(
             ["created", "sealed", "sent", "expired", "discarded"].contains(record.event))
         XCTAssertTrue(["tiny", "small", "medium", "large", "huge"].contains(record.size))
-        XCTAssertTrue(["none", "clipboard", "link"].contains(record.destination))
+        XCTAssertTrue(["none", "clipboard", "link", "drag"].contains(record.destination))
         XCTAssertLessThanOrEqual(record.title.count, 80)
     }
 

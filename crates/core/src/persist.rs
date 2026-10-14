@@ -566,6 +566,7 @@ fn emit_ledger<C: Clock>(store: &SheetStore<C>, out: &mut dyn Sink) {
                 DestinationClass::None => 0,
                 DestinationClass::Clipboard => 1,
                 DestinationClass::OneTimeLink => 2,
+                DestinationClass::Drag => 3,
             });
         });
     }
@@ -1007,6 +1008,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         0 => DestinationClass::None,
         1 => DestinationClass::Clipboard,
         2 => DestinationClass::OneTimeLink,
+        3 => DestinationClass::Drag,
         _ => return Err(Malformed),
     };
     Ok(LedgerRecord {
@@ -1740,6 +1742,31 @@ mod tests {
             Err(RestoreError::UnknownFormat),
             "a ledger snapshot is not a content snapshot"
         );
+    }
+
+    #[test]
+    fn every_destination_class_round_trips_in_the_ledger() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "sent three ways", 0, 0).unwrap();
+        let classes = [
+            DestinationClass::Clipboard,
+            DestinationClass::OneTimeLink,
+            DestinationClass::Drag,
+        ];
+        for class in classes {
+            assert!(store.record_sent(chip, class));
+        }
+        let mut revived = store_on(clock.clone());
+        revived
+            .restore_ledger(&store.ledger_snapshot(), clock.wall_ms())
+            .unwrap();
+        let sent: Vec<DestinationClass> = revived
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Sent)
+            .map(LedgerRecord::destination)
+            .collect();
+        assert_eq!(sent, [classes[2], classes[1], classes[0]], "newest first");
     }
 
     #[test]

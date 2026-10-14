@@ -526,7 +526,7 @@ public struct LedgerEntry: Codable, Hashable, Sendable, Identifiable {
     /// tiny | small | medium | large | huge: a coarse bucket, never a
     /// byte count.
     public let size: String
-    /// none | clipboard | link
+    /// none | clipboard | link | drag
     public let destination: String
 
     /// One item can produce several records, so identity is the item,

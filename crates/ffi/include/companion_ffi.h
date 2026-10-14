@@ -797,7 +797,7 @@ bool companion_tab_pause_press(CompanionHandle *handle, uint64_t tab);
  *   created_at_ms when the item's page was created, epoch milliseconds
  *   size          "tiny"|"small"|"medium"|"large"|"huge", a coarse
  *                 bucket, never a byte count
- *   destination   "none"|"clipboard"|"link"
+ *   destination   "none"|"clipboard"|"link"|"drag"
  *
  * Records accumulate on ordinary use, not only on death: a page's
  * creation, each seal, each egress, each discard. Do not assume an

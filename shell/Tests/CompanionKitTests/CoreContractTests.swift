@@ -116,7 +116,7 @@ final class CoreContractTests: XCTestCase {
             XCTAssertEqual(record.item, record.item.lowercased())
             XCTAssertGreaterThan(record.atMs, 0)
             XCTAssertGreaterThan(record.createdAtMs, 0)
-            XCTAssertTrue(["none", "clipboard", "link"].contains(record.destination))
+            XCTAssertTrue(["none", "clipboard", "link", "drag"].contains(record.destination))
         }
 
         // The title travels: the page was named by the time it died,

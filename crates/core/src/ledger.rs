@@ -95,6 +95,9 @@ pub enum DestinationClass {
     Clipboard,
     /// A one-time link.
     OneTimeLink,
+    /// A decrypted drag's pasteboard item, written when a destination asks
+    /// (ADR-0012 Amendment 1, ADR-0047).
+    Drag,
 }
 
 impl std::fmt::Display for DestinationClass {
@@ -103,6 +106,7 @@ impl std::fmt::Display for DestinationClass {
             DestinationClass::None => "none",
             DestinationClass::Clipboard => "clipboard",
             DestinationClass::OneTimeLink => "link",
+            DestinationClass::Drag => "drag",
         })
     }
 }
