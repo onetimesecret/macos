@@ -1,5 +1,6 @@
-//! Copy, cut, paste and the drags inside a page (Law 0001, ADR-0047): the
-//! fragment's routes, the one active cut, and how a reference resolves.
+//! Copy, cut, paste and the drags inside a page and between pages (Law 0001,
+//! ADR-0047, ADR-0054): the fragment's routes, the one active cut, and how a
+//! reference resolves.
 
 use zeroize::Zeroizing;
 
@@ -206,6 +207,57 @@ impl<C: Clock> SheetStore<C> {
         });
         self.settle_document(id);
         stood.then_some(placed)
+    }
+
+    /// A drag between pages (ADR-0054): move a range from `source` to `at` on
+    /// `dest` as one transaction keeping every object. `None`, changing
+    /// neither page, for one page, a bad range or point, or a due page.
+    pub fn move_range_to(
+        &mut self,
+        source: SheetId,
+        from_u16: u32,
+        len_u16: u32,
+        dest: SheetId,
+        at_u16: u32,
+    ) -> Option<Placed> {
+        if source == dest
+            || len_u16 == 0
+            || self.is_due(dest)
+            || !range_in_body(&self.sheet(dest)?.segments, at_u16, 0)
+        {
+            return None;
+        }
+        let (fragment, _) = self.selected(source, from_u16, len_u16).ok()?;
+        let plan = reattaching(&fragment, source);
+        let placed = Placed {
+            location_u16: at_u16,
+            reattached: reattached(&plan),
+            ..Placed::default()
+        };
+        let sheet = self.sheet_mut(source)?;
+        let checkpoint = sheet.document.checkpoint();
+        let selection = selection(from_u16, len_u16, from_u16, 0);
+        let stood = edit_body(sheet, EditIntent::Replacement, selection, |sheet| {
+            sheet.document.delete(from_u16 as usize, len_u16 as usize)?;
+            sheet
+                .blocks
+                .note_delete(from_u16 as usize, len_u16 as usize);
+            Ok(())
+        });
+        // Detached here, the range's objects are where the stand takes them from.
+        self.settle_document(source);
+        if !stood {
+            return None;
+        }
+        let moved = self.stand_plan(dest, at_u16, 0, EditIntent::Replacement, plan, placed);
+        if moved.is_none() {
+            // The destination refused, so the source takes its range back.
+            if let Some(sheet) = self.sheet_mut(source) {
+                sheet.document.rollback(&checkpoint);
+            }
+            self.settle_document(source);
+        }
+        moved
     }
 
     /// The ⌥ drag inside a page: a copy of a range at `to`, every object
@@ -1590,6 +1642,190 @@ mod tests {
         assert!(!originals.contains(&all[2]) && !originals.contains(&all[3]));
         assert!(store.undo(id));
         assert_eq!(standing(&store, id), originals);
+    }
+
+    /// How many live objects carry an identity, attached or detached, on any page.
+    fn copies(store: &SheetStore<ManualClock>, uuid: ItemId) -> usize {
+        store
+            .sheets()
+            .flat_map(|sheet| sheet.chips.iter().chain(&sheet.detached))
+            .filter(|chip| chip.uuid == uuid)
+            .count()
+    }
+
+    fn type_at(store: &mut SheetStore<ManualClock>, id: SheetId, pos_u16: u32, text: &str) {
+        let ops = [EditOp::Insert {
+            pos_u16,
+            text: text.into(),
+        }];
+        assert!(store.apply_ops(id, &ops));
+    }
+
+    #[test]
+    fn a_drag_between_pages_moves_ink_and_objects_keeping_identity_name_and_note() {
+        let (mut store, _) = store();
+        let (home, a, b) = mixed(&mut store);
+        name_and_note(&mut store, a, "API_KEY", "rotate monthly");
+        let (uuid_a, uuid_b) = (uuid_of(&store, a), uuid_of(&store, b));
+        let away = store.new_tab().1;
+        type_at(&mut store, away, 0, "xy");
+        let records = store.ledger().count();
+
+        let placed = store.move_range_to(home, 1, 3, away, 1).unwrap();
+        assert_eq!(
+            (placed.location_u16, placed.length_u16),
+            (1, 3),
+            "where it landed"
+        );
+        assert_eq!((placed.reattached, placed.cloned), (1, 0));
+        assert_eq!(body(&store, home), "ad\u{FFFC}ef");
+        assert_eq!(body(&store, away), "xb\u{FFFC}cy");
+        assert_eq!(standing(&store, home), vec![uuid_b]);
+        assert_eq!(standing(&store, away), vec![uuid_a]);
+        assert!(detached(&store, home).is_empty() && detached(&store, away).is_empty());
+        assert_eq!(store.ledger().count(), records, "a move records nothing");
+
+        let face = store.sheet(away).unwrap().chip(a).expect("the same chip");
+        assert_eq!(face.name(), Some("API_KEY"));
+        assert_eq!(&**store.note_text(a).unwrap(), "rotate monthly");
+        assert!(store.note_can_undo(a), "its own note, history and all");
+        assert_eq!(store.copy_out_chip(a).unwrap().0.as_slice(), A.as_bytes());
+    }
+
+    #[test]
+    fn a_drag_between_pages_clears_the_source_undo_so_nothing_stands_a_second_copy() {
+        let (mut store, _) = store();
+        let (home, a, _) = mixed(&mut store);
+        let uuid = uuid_of(&store, a);
+        type_at(&mut store, home, 0, "typed");
+        assert!(store.can_undo(home));
+        let away = store.new_tab().1;
+
+        store.move_range_to(home, 7, 1, away, 0).unwrap();
+        assert!(!store.can_undo(home) && !store.can_redo(home));
+        assert!(!store.undo(home), "no step there stands it again");
+        let stand = [EditOp::InsertChip {
+            pos_u16: 0,
+            chip: a,
+        }];
+        assert!(
+            !store.apply_ops(home, &stand),
+            "nor can the source's editor"
+        );
+        assert_eq!(copies(&store, uuid), 1);
+
+        assert!(store.undo(away), "the move is one step where it landed");
+        assert_eq!(detached(&store, away), vec![uuid]);
+        assert_eq!(copies(&store, uuid), 1);
+        assert!(store.redo(away));
+        assert_eq!(standing(&store, away), vec![uuid]);
+        assert_eq!(copies(&store, uuid), 1);
+    }
+
+    #[test]
+    fn a_drag_of_ink_alone_between_pages_keeps_the_source_undo() {
+        let (mut store, _) = store();
+        let (home, ..) = mixed(&mut store);
+        let away = store.new_tab().1;
+        let placed = store.move_range_to(home, 0, 2, away, 0).unwrap();
+        assert_eq!(placed.reattached, 0);
+        assert_eq!(body(&store, away), "ab");
+        assert_eq!(body(&store, home), "\u{FFFC}cd\u{FFFC}ef");
+        assert!(store.undo(home), "no object left, so its step stands");
+        assert_eq!(body(&store, home), "ab\u{FFFC}cd\u{FFFC}ef");
+    }
+
+    #[test]
+    fn a_drag_between_pages_refuses_one_page_a_bad_range_or_a_bad_point() {
+        let (mut store, _) = store();
+        let (home, ..) = mixed(&mut store);
+        let away = store.new_tab().1;
+        let unknown = SheetId::from_raw(4_242);
+        assert!(
+            store.move_range_to(home, 1, 3, home, 7).is_none(),
+            "one page"
+        );
+        assert!(
+            store.move_range_to(home, 6, 5, away, 0).is_none(),
+            "past the body"
+        );
+        assert!(
+            store.move_range_to(home, 1, 0, away, 0).is_none(),
+            "nothing"
+        );
+        assert!(
+            store.move_range_to(home, 1, 3, away, 1).is_none(),
+            "past its body"
+        );
+        assert!(store.move_range_to(home, 1, 3, unknown, 0).is_none());
+        assert!(store.move_range_to(unknown, 0, 1, away, 0).is_none());
+        assert_eq!(body(&store, home), "ab\u{FFFC}cd\u{FFFC}ef");
+        assert_eq!(body(&store, away), "");
+        assert!(detached(&store, home).is_empty() && detached(&store, away).is_empty());
+    }
+
+    #[test]
+    fn a_drag_between_pages_refuses_a_page_past_its_deadline_and_changes_neither() {
+        let (mut store, clock) = store();
+        let (doomed, ..) = mixed(&mut store);
+        clock.advance(HOUR / 2);
+        let (live, ..) = mixed(&mut store);
+        type_at(&mut store, live, 0, "x");
+        clock.advance(HOUR / 2);
+        let before = (body(&store, doomed), body(&store, live));
+        let records = store.ledger().count();
+
+        assert!(
+            store.move_range_to(doomed, 2, 1, live, 0).is_none(),
+            "from it"
+        );
+        assert!(
+            store.move_range_to(live, 3, 1, doomed, 0).is_none(),
+            "onto it"
+        );
+        assert_eq!((body(&store, doomed), body(&store, live)), before);
+        assert!(store.can_undo(live), "the live page keeps its step");
+        assert_eq!(store.ledger().count(), records);
+        assert_eq!(store.expire_due(), vec![doomed], "the timer still reaps it");
+    }
+
+    #[test]
+    fn a_drag_between_pages_either_body_refuses_changes_neither_page() {
+        let (mut store, _) = store();
+        let (home, a, b) = mixed(&mut store);
+        let (uuid_a, uuid_b) = (uuid_of(&store, a), uuid_of(&store, b));
+        let away = store.new_tab().1;
+        type_at(&mut store, away, 0, "x");
+        store.cut_fragment(home, 5, 1).unwrap();
+        let home_body = body(&store, home);
+        let records = store.ledger().count();
+        let unchanged = |store: &SheetStore<ManualClock>| {
+            assert_eq!(body(store, home), home_body);
+            assert_eq!(body(store, away), "x");
+            assert_eq!(standing(store, home), vec![uuid_a]);
+            assert_eq!(detached(store, home), vec![uuid_b]);
+            assert!(detached(store, away).is_empty());
+            let (page, objects) = store.active_cut().expect("the cut still stands");
+            assert_eq!(page, home);
+            assert_eq!(objects.iter().map(|c| c.uuid).collect::<Vec<_>>(), [uuid_b]);
+            assert_eq!(store.ledger().count(), records);
+            assert_eq!(copies(store, uuid_a), 1);
+        };
+
+        // The ink stands on the destination; the object's sentinel is refused.
+        store.sheet_mut(away).unwrap().document.fail_writes_after(1);
+        assert!(store.move_range_to(home, 1, 3, away, 1).is_none());
+        unchanged(&store);
+
+        // The source refuses its own deletion.
+        store.sheet_mut(home).unwrap().document.fail_writes_after(0);
+        assert!(store.move_range_to(home, 1, 3, away, 1).is_none());
+        unchanged(&store);
+
+        // And the move runs whole once nothing refuses.
+        let placed = store.move_range_to(home, 1, 3, away, 1).unwrap();
+        assert_eq!(placed.reattached, 1);
+        assert_eq!(standing(&store, away), vec![uuid_a]);
     }
 
     #[test]
