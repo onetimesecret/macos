@@ -1,8 +1,8 @@
 # Reveal Lab
 
-Twelve selectable, standalone AppKit interaction prototypes based on the
-[ambient reveal research](../../docs/spec/design/2026-1013-ambient-panel-reveal-research.md).
-This is a throwaway mechanics harness, not an implementation in OnetimePad.
+Twelve selectable, standalone AppKit interaction prototypes for comparing
+panel-reveal gestures. This is a throwaway mechanics harness, not an
+implementation in OnetimePad.
 
 ## Purpose and design approach
 
@@ -33,8 +33,8 @@ accepted project policy or a requirement for the finished product.
 
 The orange target marker is a teaching aid, not necessarily a product feature.
 The click-through peek, timings, thresholds, and click-arming rule are
-experimental choices to question during testing, not conclusions of the
-research. Feedback about these choices is part of the result.
+experimental choices to question during testing, not established design
+conclusions. Feedback about these choices is part of the result.
 
 ## Run
 
@@ -151,9 +151,12 @@ They do not display keyboard destination; the typing check above is manual.
 - These are content-free affordances and a dummy text view. No real document,
   ownership, roll position, clipboard offer, or activation route is exercised.
 - Ordinary geometry uses a 30 Hz pointer/modifier polling timer, including a
-  pressed-button veto. Mouse-only local/global monitors supply deltas for the
-  push and shake probes; status/tab hover uses `NSTrackingArea`. This is not an
-  energy-efficiency experiment or a production reducer.
+  pressed-button veto. Double Shift polls global `NSEvent.modifierFlags` and
+  rejects taps when Command, Option, or Control is observed during the tap.
+  Taps or modifier changes entirely between samples can be missed. Mouse-only
+  local/global monitors supply deltas for the push and shake probes;
+  status/tab hover uses `NSTrackingArea`. This is not an energy-efficiency
+  experiment or a production reducer.
 - The reveal panels refuse key/main status and use `orderFront`, while explicit
   editor opening uses activation. This setup still needs cross-app typing tests;
   the build and smoke tests do not establish a system-wide focus guarantee.
@@ -173,10 +176,10 @@ They do not display keyboard destination; the typing check above is manual.
   resizing, scrollbars, and other windows is part of what this test should reveal.
 - Reduced Motion removes frame animation. No claim of capture exclusion,
   secure erasure, or persistence behavior for real pad content is made here.
-- Clipboard/selection/app-switch/idle-triggered offers are intentionally omitted,
-  consistent with the research's initial-experiment scope. Arbitrary system-wide
-  trackpad gestures are omitted: AppKit recognizers are not a global registration
-  API, and lower-level input machinery is outside this time-boxed pass.
+- Clipboard/selection/app-switch/idle-triggered offers are intentionally omitted
+  from this experiment. Arbitrary system-wide trackpad gestures are omitted:
+  AppKit recognizers are not a global registration API, and lower-level input
+  machinery is outside this time-boxed pass.
 
 ## Checks
 
@@ -189,13 +192,19 @@ swift run --package-path tools/reveal-lab RevealLab --smoke-test
 sh tools/reveal-lab/run.sh --build-only
 ```
 
-The self-test checks geometry, target-marker placement, negative screen origins,
-shared/partial seams, and card clamping. The smoke test briefly creates real
-AppKit windows, checks the per-mode instructions and target-guide visibility,
-cycles all mode render/reset paths, checks that reveal leaves the lab's current key
-window unchanged, and simulates held press/release callbacks. It exits itself.
+The self-test checks edge geometry, negative screen origins, shared/partial
+seams, card clamping, corner peek placement, display-ID selection, and sampled
+Shift-tap timing and chord rejection. It does not create a target-marker window.
+The smoke test briefly creates real AppKit windows, checks per-mode instructions
+and target-guide visibility and placement, cycles all mode render/reset paths,
+checks click arming and hover selector dispatch, and tests local fallback
+retention. It also checks that reveal leaves the lab's current key window
+unchanged and simulates held callbacks, Space/sleep/wake notifications, and
+empty-display recovery. Both tests exit themselves.
 Neither test generates physical gestures, verifies OS shortcut delivery,
-performs real external drag/drop, or checks typing in another app.
+performs real external drag/drop, or checks typing in another app. Display
+unplugging, sleep/wake, Space transitions, and inactive-app click delivery still
+need manual checks; the smoke test exercises simulated inputs for those paths.
 
 The macOS [CI workflow](../../.github/workflows/ci.yml) builds this package,
 runs the self-test, and checks bundle assembly. The AppKit smoke test remains
