@@ -142,6 +142,19 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       **Pass:** the `Undo` button leaves the line at once, and ⌘Z
       takes the letter back first and the removal on the next press.
       **Fail:** the button stays, or pressing it takes the letter back.
+- [ ] **The removal's Undo on another surface.** On the raised card,
+      remove an object with two presses. Before the line clears, click
+      the Dock tile so the editor window opens on the same page, and
+      click the line's `Undo` there. Then remove an object again, go
+      the same way to the editor window, and type a letter on the page.
+      With `ledger::Show` bound in your own keymap, as
+      [hardware verification](../hardware-verification.md) says, do
+      both again on the card alone, opening the ledger and pressing Esc
+      in place of the Dock tile. **Pass:** each click stands the same
+      object again, selected, with its name; after each letter the
+      `Undo` leaves the line at once. **Fail:** a click does nothing,
+      the line loses its `Undo` when the surface changes, or after a
+      letter the button stays or takes the letter back.
 - [ ] **A drag inside the page.** Name a sealed object and give it a
       note. Select `before`, the object and `after`, then drag the
       selection to the end of the page and drop it. **Pass:** while
