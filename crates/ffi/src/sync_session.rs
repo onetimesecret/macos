@@ -936,33 +936,22 @@ impl SyncSession {
                     return;
                 };
                 let _ = channel.accept_ceremony(ballot_token(&device_fingerprint));
-                if channel.ceremony_confirmed() {
-                    let entropy = self
-                        .proposed_entropy
-                        .take()
-                        .or(self.received_entropy.take())
-                        .map(|(_, entropy)| entropy);
-                    let Some(entropy) = entropy else {
-                        return;
-                    };
-                    let Some(sheet_id) = sheet_of(store, page) else {
-                        return;
-                    };
-                    if let Some(frame) =
-                        crate::gop::ceremony_commit(store, sheet_id, chain, &entropy)
-                        && channel.complete_ceremony()
-                    {
-                        // Client protocol §7.6: the chain is
-                        // channel-wide, so every existing page channel
-                        // adopts the new epoch.
-                        for other in self.channels.values_mut() {
-                            other.rejoin_at_epoch(chain.epoch());
-                        }
-                        self.pending_frame = Some(frame);
-                        self.ballot_scope = None;
-                        events.push(SyncEvent::CeremonyCommitted(page));
-                    }
+                if !channel.ceremony_confirmed() {
+                    return;
                 }
+                let entropy = self
+                    .proposed_entropy
+                    .take()
+                    .or(self.received_entropy.take())
+                    .map(|(_, entropy)| entropy);
+                let Some(entropy) = entropy else {
+                    return;
+                };
+                // Every member advances on this accept, so a page the store
+                // will not rebuild here (ADR-0052) still advances the chain.
+                let rebuild = sheet_of(store, page).and_then(|sheet| store.perform_ceremony(sheet));
+                self.commit_advance(page, chain, &entropy, rebuild.as_deref().map(Vec::as_slice));
+                events.push(SyncEvent::CeremonyCommitted(page));
             }
         }
     }
@@ -1031,7 +1020,8 @@ impl SyncSession {
     /// A ceremony with no verified peer in the room: compact, advance
     /// and stage the frame at once, every page channel adopting the new
     /// epoch (client protocol §7.2). False when a ballot is in flight,
-    /// the page is unknown or not deferred, or the RNG refuses.
+    /// the page is unknown, not deferred or past its deadline, or the
+    /// RNG refuses.
     pub fn solo_ceremony<C: Clock>(
         &mut self,
         page: ItemId,
@@ -1045,12 +1035,25 @@ impl SyncSession {
         if SystemRandom::new().fill(&mut entropy).is_err() {
             return false;
         }
-        let Some(sheet) = sheet_of(store, page) else {
+        // No peer holds this entropy, so a refused rebuild advances nothing.
+        let Some(rebuild) = sheet_of(store, page).and_then(|sheet| store.perform_ceremony(sheet))
+        else {
             return false;
         };
-        let Some(frame) = crate::gop::ceremony_commit(store, sheet, chain, &entropy) else {
-            return false;
-        };
+        self.commit_advance(page, chain, &entropy, Some(rebuild.as_slice()));
+        true
+    }
+
+    /// Keep this device in step: advance the chain, move every page
+    /// channel to its epoch, stage this frame (client protocol §7.6).
+    fn commit_advance(
+        &mut self,
+        page: ItemId,
+        chain: &mut crate::gop::GopKeyChain,
+        entropy: &[u8],
+        rebuild: Option<&[u8]>,
+    ) {
+        self.pending_frame = crate::gop::ceremony_commit(chain, entropy, rebuild);
         for channel in self.channels.values_mut() {
             channel.rejoin_at_epoch(chain.epoch());
         }
@@ -1058,8 +1061,7 @@ impl SyncSession {
             .entry(page)
             .or_default()
             .rejoin_at_epoch(chain.epoch());
-        self.pending_frame = Some(frame);
-        true
+        self.ballot_scope = None;
     }
 
     /// `POST /channel/pairing` — one §7 mailbox message, already in
@@ -1819,6 +1821,231 @@ mod tests {
         relay.epoch = 1;
         let request = a.publish_frame_request(&chain_a, &frame).unwrap();
         assert!(request.url.ends_with("/channel/frame"));
+    }
+
+    /// Two devices holding one deferred page, both accepts for A's ballot
+    /// on the stream and neither drained yet.
+    struct JoinedBallot {
+        clock: ManualClock,
+        uuid: ItemId,
+        stores: [SheetStore<ManualClock>; 2],
+        pages: [SheetId; 2],
+        chains: [GopKeyChain; 2],
+        sessions: [SyncSession; 2],
+        packages: [KeyPackageKeeper; 2],
+        relay: FakeRelay,
+    }
+
+    impl JoinedBallot {
+        fn new() -> Self {
+            let clock = ManualClock::new();
+            let mut store_a = SheetStore::new(clock.clone());
+            let page_a = store_a.new_tab().1;
+            assert!(store_a.apply_ops(
+                page_a,
+                &[EditOp::Insert {
+                    pos_u16: 0,
+                    text: "keep DOOMED".into()
+                }]
+            ));
+            let uuid = store_a.sheet(page_a).unwrap().uuid();
+            let mut store_b = SheetStore::new(clock.clone());
+            let page_b = store_b.new_tab().1;
+            let pristine = store_b.document_version(page_b).unwrap();
+            let full = store_a.export_document_updates(page_a, &pristine).unwrap();
+            store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
+            for (store, page) in [(&mut store_a, page_a), (&mut store_b, page_b)] {
+                assert!(store.set_compaction_deferred(page, true));
+                let tab = store.tabs().next().unwrap().id();
+                store.cycle_rung(tab).unwrap();
+            }
+            let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+            let mut a = session("fp-a");
+            let mut b = session("fp-b");
+            let mut packages_b = KeyPackageKeeper::mint(&identity().0).unwrap();
+            let packages_a = KeyPackageKeeper::mint(&identity().0).unwrap();
+            let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+            let mut relay = FakeRelay::default();
+
+            a.queue_ops(uuid, &full);
+            let request = a.publish_request(0, &chain_a).unwrap();
+            a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+            b.absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &mut None,
+                &[],
+                0,
+            )
+            .unwrap();
+            assert!(a.propose_ceremony(
+                uuid,
+                &[CeremonyPeer {
+                    fingerprint: "fp-b".into(),
+                    package: packages_b.package().clone(),
+                }],
+                &packages_a.package().clone(),
+                0,
+            ));
+            let request = a.publish_request(2_000, &chain_a).unwrap();
+            a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+            b.absorb_deltas(
+                &relay.serve_fetch(1),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &mut None,
+                &[],
+                0,
+            )
+            .unwrap();
+            assert!(b.ballot_in_flight(), "B joined while the page stood");
+            let request = b.publish_request(2_000, &chain_b).unwrap();
+            b.absorb_publish(&relay.accept_publish(&request)).unwrap();
+            Self {
+                clock,
+                uuid,
+                stores: [store_a, store_b],
+                pages: [page_a, page_b],
+                chains: [chain_a, chain_b],
+                sessions: [a, b],
+                packages: [packages_a, packages_b],
+                relay,
+            }
+        }
+
+        /// Device `i` (A is 0, B is 1) drains the stream up to the completing accept.
+        fn drain(&mut self, i: usize) -> Vec<SyncEvent> {
+            let since = [1, 3][i];
+            self.sessions[i]
+                .absorb_deltas(
+                    &self.relay.serve_fetch(since),
+                    &mut self.stores[i],
+                    &mut self.chains[i],
+                    &mut self.packages[i],
+                    &mut None,
+                    &[],
+                    0,
+                )
+                .unwrap()
+        }
+
+        fn past_the_deadline(&mut self) {
+            self.clock
+                .advance(std::time::Duration::from_secs(9 * 24 * 60 * 60));
+            assert!(self.stores.iter().zip(self.pages).all(|(s, p)| s.is_due(p)));
+        }
+
+        /// The frame PUT device `i` stages, with the epoch it names.
+        fn frame_put(&mut self, i: usize) -> (u64, Vec<u8>) {
+            let frame = self.sessions[i].take_frame().expect("a staged frame");
+            let request = self.sessions[i]
+                .publish_frame_request(&self.chains[i], &frame)
+                .unwrap();
+            let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+            (body["epoch"].as_u64().unwrap(), frame)
+        }
+    }
+
+    #[test]
+    fn a_deadline_between_two_devices_drains_keeps_both_on_one_epoch() {
+        let mut ballot = JoinedBallot::new();
+        let committed = SyncEvent::CeremonyCommitted(ballot.uuid);
+        // A drains before the page's deadline and cuts its frame then.
+        assert!(ballot.drain(0).contains(&committed));
+        ballot.past_the_deadline();
+        let before = ballot.stores[1].document_version(ballot.pages[1]);
+
+        // B's drain comes after it: B advances and cuts nothing of the page.
+        assert!(ballot.drain(1).contains(&committed));
+        assert_eq!(ballot.chains[0].epoch(), 1);
+        assert_eq!(ballot.chains[1].epoch(), 1);
+        assert!(!ballot.sessions[1].ballot_in_flight());
+        assert_eq!(
+            ballot.stores[1].document_version(ballot.pages[1]),
+            before,
+            "B rebuilt a page past its deadline"
+        );
+        let (epoch_a, frame_a) = ballot.frame_put(0);
+        let (epoch_b, frame_b) = ballot.frame_put(1);
+        assert_eq!((epoch_a, epoch_b), (1, 1));
+        assert!(
+            ballot.chains[1].open(&frame_a).is_some(),
+            "B shares A's key"
+        );
+        assert!(
+            ballot.chains[0].open(&frame_b).unwrap().is_empty(),
+            "B's frame held some of the page"
+        );
+    }
+
+    #[test]
+    fn a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay() {
+        let mut ballot = JoinedBallot::new();
+        ballot.past_the_deadline();
+        let before = ballot
+            .stores
+            .iter()
+            .zip(ballot.pages)
+            .map(|(store, page)| store.document_version(page))
+            .collect::<Vec<_>>();
+        for (i, version) in before.into_iter().enumerate() {
+            assert!(
+                ballot
+                    .drain(i)
+                    .contains(&SyncEvent::CeremonyCommitted(ballot.uuid))
+            );
+            assert_eq!(ballot.chains[i].epoch(), 1);
+            assert_eq!(
+                ballot.stores[i].document_version(ballot.pages[i]),
+                version,
+                "a device rebuilt a page past its deadline"
+            );
+        }
+        // Each stages a frame holding nothing, so the relay can still
+        // take epoch 1, and a publish there then passes its epoch gate.
+        for i in 0..2 {
+            let (epoch, frame) = ballot.frame_put(i);
+            assert_eq!(epoch, 1);
+            assert!(ballot.chains[1 - i].open(&frame).unwrap().is_empty());
+        }
+        ballot.relay.epoch = 1;
+        ballot.sessions[0].queue_ops(ItemId::random(), b"another page");
+        let request = ballot.sessions[0]
+            .publish_request(4_000, &ballot.chains[0])
+            .unwrap();
+        ballot.sessions[0]
+            .absorb_publish(&ballot.relay.accept_publish(&request))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_solo_ceremony_the_store_refuses_rotates_nothing() {
+        let clock = ManualClock::new();
+        let mut store = SheetStore::new(clock.clone());
+        let page = store.new_tab().1;
+        assert!(store.apply_ops(
+            page,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "ink".into()
+            }]
+        ));
+        let uuid = store.sheet(page).unwrap().uuid();
+        let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut solo = session("fp-a");
+
+        // Not deferred to a channel, then past its deadline: no peer holds
+        // the entropy, so neither refusal advances anything.
+        assert!(!solo.solo_ceremony(uuid, &mut store, &mut chain));
+        assert!(store.set_compaction_deferred(page, true));
+        clock.advance(std::time::Duration::from_secs(9 * 24 * 60 * 60));
+        assert!(store.is_due(page));
+        assert!(!solo.solo_ceremony(uuid, &mut store, &mut chain));
+        assert_eq!(chain.epoch(), 0);
+        assert!(solo.take_frame().is_none());
     }
 
     #[test]

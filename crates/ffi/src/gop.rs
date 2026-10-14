@@ -8,7 +8,6 @@
 //! rotation or was not named, though not the proposer (client protocol
 //! §7.9, §8). Formula, info string, salt and magic: Appendix A there.
 
-use companion_core::{Clock, SheetId, SheetStore};
 use ring::hkdf::{HKDF_SHA256, Salt};
 use zeroize::Zeroizing;
 
@@ -51,7 +50,7 @@ impl GopKeyChain {
     /// Rotate at the ceremony: expand the incoming key from the outgoing
     /// key and the ceremony's entropy, advance the epoch, and wipe the
     /// outgoing key. Pure derivation; it cannot fail, and must not:
-    /// [`ceremony_commit`] runs it after the irreversible rebuild.
+    /// [`ceremony_commit`] runs it after the store's irreversible rebuild.
     pub fn advance(&mut self, entropy: &[u8]) {
         let prk = Salt::new(HKDF_SHA256, &self.key).extract(entropy);
         let mut next = Zeroizing::new(vec![0u8; KEY_LEN]);
@@ -98,25 +97,20 @@ impl GopKeyChain {
     }
 }
 
-/// The ceremony's two halves: the store's rebuild runs first, so its
-/// refusal rotates nothing; then the rotation, and the frame sealed
-/// under the incoming key. The seal can still refuse after the
-/// rotation; callers then move no channel (client protocol §7.6). Run
-/// only on a confirmed ballot.
-pub fn ceremony_commit<C: Clock>(
-    store: &mut SheetStore<C>,
-    page: SheetId,
+/// What keeps a device in step: advance the chain, then seal the
+/// store's rebuild as the key frame, or an empty one (client protocol §7.6).
+pub fn ceremony_commit(
     chain: &mut GopKeyChain,
     entropy: &[u8],
+    rebuild: Option<&[u8]>,
 ) -> Option<Vec<u8>> {
-    let frame = store.perform_ceremony(page)?;
     chain.advance(entropy);
-    chain.seal(&frame)
+    chain.seal(rebuild.unwrap_or_default())
 }
 
 #[cfg(test)]
 mod tests {
-    use companion_core::{EditOp, ManualClock};
+    use companion_core::{EditOp, ManualClock, SheetStore};
     use companion_credentials::InMemoryCredentialStore;
 
     use super::*;
@@ -207,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all() {
+    fn the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key() {
         let mut store = SheetStore::new(ManualClock::new());
         let page = store.new_tab().1;
         assert!(store.apply_ops(
@@ -226,18 +220,13 @@ mod tests {
         ));
         let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
 
-        // A page not deferred to a channel refuses, and the refusal
-        // rotates nothing: no half-done state.
-        assert!(ceremony_commit(&mut store, page, &mut chain, b"entropy").is_none());
-        assert_eq!(chain.epoch(), 0);
-
-        // Deferred and confirmed, the one event runs both halves: the
-        // epoch advances, and the sealed frame opens under the
-        // incoming key with nothing from behind the boundary in it.
+        // The store's rebuild is sealed under the incoming key with
+        // nothing from behind the boundary in it.
         assert!(store.set_compaction_deferred(page, true));
         let tab = store.tabs().next().unwrap().id();
         store.cycle_rung(tab).unwrap();
-        let sealed = ceremony_commit(&mut store, page, &mut chain, b"entropy").unwrap();
+        let rebuild = store.perform_ceremony(page).unwrap();
+        let sealed = ceremony_commit(&mut chain, b"entropy", Some(rebuild.as_slice())).unwrap();
         assert_eq!(chain.epoch(), 1);
         let frame = chain.open(&sealed).unwrap();
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
@@ -252,5 +241,14 @@ mod tests {
             joiner.sheet(j).unwrap().segments(),
             store.sheet(page).unwrap().segments()
         );
+
+        // With no rebuild the chain still advances, and its frame holds
+        // nothing a joiner could land as the page.
+        let sealed = ceremony_commit(&mut chain, b"more entropy", None).unwrap();
+        assert_eq!(chain.epoch(), 2);
+        assert!(chain.open(&sealed).unwrap().is_empty());
+        let j = joiner.new_tab().1;
+        assert!(joiner.adopt_key_frame(j, uuid, &[]).is_err());
+        assert!(joiner.sheet(j).unwrap().segments().is_empty());
     }
 }
