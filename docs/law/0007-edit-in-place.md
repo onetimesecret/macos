@@ -4,15 +4,16 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 points 1, 3, 5 and 6; ADR-0043; ADR-0044; ADR-0046
+decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 and ADR-0043, proposed 2026-10-14, so the rows that cite them rest on a proposal; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered
 consumed-by:
-  - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment)
-  - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the sealed name's charset, the double click seats, the empty pad name)
+  - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment; its rows cite this law's keys row)
+  - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (proposed; the sealed name's charset, and an empty draft clearing it)
+  - docs/development/sealed-objects-core-interface.md (the name's routes and the keys holder's predicate)
   - docs/mockups/sealed-name-and-note.md (the drawn states; not authoritative)
 sources:
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
-  - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points this law left open)
-  - docs/adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md (the page's chords and Edit menu stand aside for any field holding the keys)
+  - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in proposed ADR-0042 and ADR-0043, and in the development note)
+  - docs/development/sealed-objects-core-interface.md (`InkTextView.answersChords`, the keys holder's predicate; the name's routes and refusal codes)
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
   - docs/spec/design/2026-0916-rail-redundancy.md, D-44 and D-46 (the gutter's time and typed name)
   - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending; `TabRename.Field`, the SwiftUI fields' state)
@@ -88,8 +89,8 @@ the first tenet (the app is furniture, never interrupts) forbids.
   the clock) or cannot arrive (a pad cell, whose click activates the pad
   and closes the list) only the verb opens. A zone whose first click
   copies plaintext ignores the clicks after it
-  ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
-  points 3 and 5). Opening is not a mutation.
+  ([Law 0001](0001-sealed-object.md)'s value and `=` zone rows).
+  Opening is not a mutation.
 - **Drafting**: keystrokes change the field and nothing else. The draft is
   what the seat shows and what VoiceOver hears; a periodic pass that
   rewrites the label never writes over a draft. Nothing persists.
@@ -106,7 +107,8 @@ the first tenet (the app is furniture, never interrupts) forbids.
   80 characters, said in the line under the page in
   `PadNameDraft.validationMessage`'s words; a sealed name outside its
   charset, 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, refused
-  core-side per [ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md))
+  core-side per [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
+  proposed)
   is said beside the seat or in the line under the page, with the field
   still open; it is never a dialog.
 - **Showing**: a typed name is drawn in the seat; a default is drawn in
@@ -130,7 +132,7 @@ without a test says what it is owed by.
 | Escape, or the keyboard leaving | keeping | the seat shows what it showed before | `TabRenameTests.swift` `testEscapeAndFocusLossKeepWhateverTheDraftSays` |
 | any opening | opening | no modal session is entered on the way in or out | `ModalSessionTests.swift` `testRenameNeverRunsAModalSession` |
 | the draft while open | drafting | VoiceOver hears the draft, not the label it replaced | `DayScrollTests.swift` `testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft` |
-| a chord or an Edit menu item while any seat's field holds the keys | drafting | it acts on the field or on nothing, never on the page: the page's chords, its Undo, Redo, seal and language items stand aside, and the menu greys the page's items until the field closes ([ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)); the summon offer's seal button seals nothing and says why | the gutter: `DayScrollTests.swift` `testTheGuttersFieldTakesThePagesChordsAndMenuAway`; the sealed name: `SealedNameFieldTests.swift` `testThePagesChordsStandAsideForTheField`, `testThePagesMenuActionsStandAsideForTheField`; any field in the page's window, the shape the strip's and the pad cell's SwiftUI fields edit through: `KeyHolderTests.swift` `testAFieldHoldingTheKeysTakesThePagesChordsAndMenuAway`; Choose Language sent down the responder chain: `LanguageDetectionMenuTests.swift` `testAChoiceGoesDownTheChainOrToTheFile`; the offer's button under a field and under the note: `SealedFragmentEditorTests.swift` `testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`, on the raised card by hand in the [sealed fragment](../qa/verification-procedures/sealed-fragment.md) procedure; the strip's and the pad cell's own fields, and the pad cell's popover as the key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| a chord or an Edit menu item while any seat's field holds the keys | drafting | it acts on the field or on nothing, never on the page: the page's chords, its Undo, Redo, seal and language items stand aside, and the menu greys the page's items until the field closes; any field holds the keys this way, the gutter's, the strip's, the slot rail's, the pad cell's, the sealed name's, the find bar's and a Settings field, in the page's window or in the key window over it, and so does a note's surface, which answers the page's chords and Edit menu only while it holds the keys itself; Choose Language goes to whoever holds the keys; the summon offer's seal button seals nothing and says why (the predicate, `InkTextView.answersChords`, is in the [core interface](../development/sealed-objects-core-interface.md)) | the gutter: `DayScrollTests.swift` `testTheGuttersFieldTakesThePagesChordsAndMenuAway`; the sealed name: `SealedNameFieldTests.swift` `testThePagesChordsStandAsideForTheField`, `testThePagesMenuActionsStandAsideForTheField`; any field in the page's window, the shape the strip's and the pad cell's SwiftUI fields edit through: `KeyHolderTests.swift` `testAFieldHoldingTheKeysTakesThePagesChordsAndMenuAway`; the note holding the keys: `SealedNoteTests.swift` `testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys`; Choose Language sent down the responder chain: `LanguageDetectionMenuTests.swift` `testAChoiceGoesDownTheChainOrToTheFile`; the offer's button under a field and under the note: `SealedFragmentEditorTests.swift` `testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`, on the raised card by hand in the [sealed fragment](../qa/verification-procedures/sealed-fragment.md) procedure; the strip's and the pad cell's own fields, and the pad cell's popover as the key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | the slot reassigned under the field | keeping | the field ends without renaming the replacement | `DayScrollTests.swift` `testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement` |
 | the gutter's hit target while open | opening | the field, not the composed header, takes the click | `DayScrollTests.swift` `testCheckpointAccessibilityHitUsesTheComposedHeaderExceptDuringRename` |
 | the gutter at rest | showing | the day once, then the time; only a typed name is drawn | `DayScrollProjectionTests.swift` `testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone`, `testTheGutterDrawsOnlyATypedName`; `DayScrollTests.swift` `testAGutterDrawsATypedNameAndNoGauge`; `StreamNavigatorTests.swift` `testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage` |
@@ -209,7 +211,9 @@ goes through the catalog (`PadCatalogTests`). The sealed object's is
 judged by `judge_name` (`crates/core/src/sheet.rs`), which
 `companion_chip_set_name` refuses by and `companion_chip_name_refusal`
 answers with, so a field can say why a draft will not take while it is
-typed ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)).
+typed ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md),
+proposed; the routes and codes in the
+[core interface](../development/sealed-objects-core-interface.md)).
 
 Tests that pin the contradicting build and are rewritten when the owed
 rows land: none.
@@ -222,8 +226,8 @@ Owed: a first run of the rename in place procedure.
   same day and the two records that already held the tab and gutter
   renames. The gutter's click, the pad list's field and the sealed
   object's name are owed rows.
-- 2026-10-13: ADR-0042 amendment.
-  [ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
+- 2026-10-13: Draft ADR-0042 amendment.
+  The draft ADR-0042 (withdrawn 2026-10-14)
   settles what this law left open. A pad cell is no longer a double click
   seat, since its first click activates the pad and closes the list; only
   *Rename pad…* opens it, as only *Rename tab…* opens the strip. On a
@@ -254,7 +258,7 @@ Owed: a first run of the rename in place procedure.
   under Acceptance becomes the tab's own name.
 - 2026-10-13: Core amendment (issue 241). The sealed name's two rows
   cite the core and seam tests of its setter and refusal, recorded in
-  [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md),
+  draft ADR-0043,
   and stay owed for the field. Acceptance names the one rule the setter
   and the handle free judge share.
 - 2026-10-13: Sealed name amendment (issue 245). The sealed object's
@@ -271,7 +275,7 @@ Owed: a first run of the rename in place procedure.
   menu's Undo.
 - 2026-10-13: Drop and draft amendment (issue 245). A drop from
   elsewhere lands nowhere in the sealed name's field
-  ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)), and a
+  (draft ADR-0044), and a
   shut field keeps no draft. The sealed object's opening row cites the
   two tests that pin them.
 - 2026-10-13: Held line amendment (issues 245 and 249). A keystroke
@@ -285,7 +289,7 @@ Owed: a first run of the rename in place procedure.
   title to judge against but the one it opened on. The test is renamed
   for what it pins, and the row names that signature.
 - 2026-10-13: Key holder amendment (epic 252).
-  [ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)
+  The draft ADR-0046 (withdrawn 2026-10-14)
   makes the page's chords and Edit menu stand aside for any field that
   holds the keys, where they had stood aside for the sealed name's field
   alone: ⌘Z under a gutter label's draft stepped the page, and Choose
@@ -303,13 +307,32 @@ Owed: a first run of the rename in place procedure.
   picker that top; the popover itself on a short card is owed to the
   procedure, which gains the check.
 - 2026-10-14: Offer button amendment (issue 170 and epic 252, applying
-  [ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)'s
+  draft ADR-0046's
   predicate, as Law 0001's amendment of this date records). The summon
   offer's seal button is not a chord or a menu item, and it sealed into
   the page while a seat's field held the keys. It now seals nothing
   there and says why. The keys row lists it and cites its test, which
   holds the keys in a field and in the note; the button on the raised
   card is a hand check in the sealed fragment procedure.
-- 2026-10-14: Record amendment (epic 252). `decisions` adds ADR-0043
-  and ADR-0044, which the sealed name's rows already build on: the core
+- 2026-10-14: Record amendment (epic 252). `decisions` adds draft ADR-0043
+  and draft ADR-0044, which the sealed name's rows already build on: the core
   judge and refusal, and no drop from elsewhere into the field.
+- 2026-10-14: Drafts withdrawn amendment. The drafts ADR-0042 to ADR-0055,
+  written on 2026-10-13, were marked accepted and never ratified, and
+  are withdrawn; the entries above name each as a draft. The sealed
+  name's charset and an empty draft clearing it rest on
+  [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md), and
+  the one rule the setter and the handle free judge share on
+  [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md),
+  both proposed. These now stand on this law itself: a pad cell opening
+  only through *Rename pad…* and an empty pad name refused in the line
+  (draft ADR-0042 points 5 and 6, already the pad rows); the name zone's
+  double click and the zones that ignore the clicks after their first
+  (draft ADR-0042 point 3, the Opening class, citing Law 0001's zone
+  rows); the field taking no drop from elsewhere (draft ADR-0044 point 4,
+  already the sealed object's opening row); and Drafting's keys row,
+  which now names every holder, the note's surface among them, and
+  Choose Language going to the holder (draft ADR-0046). The predicate's
+  name and how the page asks it went to the
+  [core interface](../development/sealed-objects-core-interface.md). The
+  `decisions`, `consumed-by` and `sources` lists follow.
