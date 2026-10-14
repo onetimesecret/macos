@@ -744,11 +744,15 @@ pub(crate) fn sweep_outbound(
     };
     let mut rotate = false;
     let mut due_target: Option<ItemId> = None;
-    let mut fallback: Option<ItemId> = None;
     for (page, tracking) in enrolled.iter_mut() {
         match sheet_of(store, *page) {
             Some(sheet) => {
-                if let Some(version) = store.document_version(sheet)
+                // ADR-0052: past its deadline a page gives the relay no ops,
+                // and none queued earlier reach a seal.
+                let past_deadline = store.is_due(sheet);
+                if past_deadline {
+                    engine.session.withdraw_ops(*page);
+                } else if let Some(version) = store.document_version(sheet)
                     && version != tracking.frontier
                     && let Some(update) = store.export_document_updates(sheet, &tracking.frontier)
                 {
@@ -773,14 +777,13 @@ pub(crate) fn sweep_outbound(
                 }
                 // Client protocol §7.1: a due page is the target; a live
                 // page only anchors the rotation a marker owes.
-                if store.ceremony_due(sheet) {
+                if !past_deadline && store.ceremony_due(sheet) {
                     rotate = true;
                     due_target = due_target.or(Some(*page));
-                } else {
-                    fallback = fallback.or(Some(*page));
                 }
             }
             None => {
+                engine.session.withdraw_ops(*page);
                 // The page died here: sign its marker every sweep until
                 // it queues, once per engine, then rotate (§6, §7.1).
                 if !tracking.terminal_sent
@@ -794,11 +797,24 @@ pub(crate) fn sweep_outbound(
         }
     }
     if rotate
-        && let Some(target) = due_target.or(fallback)
+        && let Some(target) = due_target.or_else(|| live_anchor(store, enrolled))
         && rotate_channel(store, engine, &**credentials, target, now_ms, events)
     {
         settle_frontier(store, enrolled, staged_batch, target);
     }
+}
+
+/// The first enrolled page that stands here before its deadline: the
+/// anchor of a rotation no page is owed. A page past its deadline would
+/// refuse the ceremony (ADR-0052).
+fn live_anchor(
+    store: &companion_core::SheetStore<companion_core::SystemClock>,
+    enrolled: &BTreeMap<ItemId, PageTracking>,
+) -> Option<ItemId> {
+    enrolled
+        .keys()
+        .copied()
+        .find(|page| sheet_of(store, *page).is_some_and(|sheet| !store.is_due(sheet)))
 }
 
 /// Whether a re-read hold register is a new fact. `until_wall_ms` is
@@ -1210,7 +1226,7 @@ fn publish_round(
                     engine, enrolled, ..
                 } = sync;
                 if let Some(engine) = engine.as_mut()
-                    && let Some(target) = enrolled.keys().next().copied()
+                    && let Some(target) = live_anchor(store, enrolled)
                 {
                     rotate_channel(store, engine, &**credentials, target, now, events);
                 }
@@ -1837,6 +1853,7 @@ mod tests {
     use std::sync::Arc;
 
     use companion_credentials::InMemoryCredentialStore;
+    use companion_sync::DeltaEnvelope;
     use ots_client::{HttpRequest, HttpResponse, TransportError};
 
     use super::*;
@@ -2872,6 +2889,161 @@ mod tests {
         sweep_outbound(&mut companion, 4_000, &mut events);
         let tracking = companion.sync.enrolled.values().next().unwrap();
         assert!(tracking.terminal_sent);
+    }
+
+    /// Age every page by `gap_ms` through snapshot and restore, as a launch
+    /// after a long sleep does. Local ids are re-minted; page uuids stand.
+    fn age_by(companion: &mut Companion, gap_ms: u64) {
+        let sealed_wall_ms = 1_700_000_000_000;
+        let snapshot = companion.store.snapshot(sealed_wall_ms);
+        companion
+            .store
+            .restore(&snapshot, sealed_wall_ms + gap_ms)
+            .expect("a store reads back its own snapshot");
+    }
+
+    const THREE_HOURS_MS: u64 = 3 * 60 * 60 * 1_000;
+
+    /// A page on the one hour rung, which [`THREE_HOURS_MS`] takes past its
+    /// deadline, unswept.
+    fn short_lived_page(companion: &mut Companion, text: &str) -> ItemId {
+        let page = inked_page(companion, text);
+        let tab = companion.store.tabs().last().unwrap().id();
+        assert!(
+            companion
+                .store
+                .set_rung(tab, companion_core::Ttl::MIN)
+                .is_some()
+        );
+        companion.store.sheet(page).unwrap().uuid()
+    }
+
+    /// Make the channel view current, as one drain does (client protocol §6).
+    fn drain_nothing(companion: &mut Companion) {
+        let empty = HttpResponse {
+            status: 200,
+            body: br#"{"epoch":0,"blobs":[],"next_seq":0}"#.to_vec(),
+        };
+        let Companion { store, sync, .. } = companion;
+        let EngineState {
+            session,
+            chain,
+            packages,
+            pending_packages,
+            ..
+        } = sync.engine.as_mut().unwrap();
+        session
+            .absorb_deltas(&empty, store, chain, packages, pending_packages, &[], 0)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let uuid = short_lived_page(&mut companion, "queued before the deadline");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        let page = companion.store.sheet_id_of(uuid).unwrap();
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let ops_for_it = |companion: &Companion| {
+            let wire = crate::sync_session::page_wire_id(uuid);
+            let session = &companion.sync.engine.as_ref().unwrap().session;
+            session
+                .queued()
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        };
+        assert!(ops_for_it(&companion), "queued while readable, not sealed");
+
+        // Past its deadline before the publish seals the queue, and written
+        // to since, as the seam's write routes still allow.
+        age_by(&mut companion, THREE_HOURS_MS);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "after the deadline ".into(),
+            }],
+        ));
+        let frontier = companion.sync.enrolled[&uuid].frontier.clone();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(!ops_for_it(&companion), "nothing of it reaches a seal");
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, frontier);
+        let session = &companion.sync.engine.as_ref().unwrap().session;
+        assert!(
+            session
+                .queued()
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Expiry { ttl_ms: 0, .. })),
+            "its deadline still goes, so a peer's copy dies too"
+        );
+    }
+
+    #[test]
+    fn a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (due, live) = loop {
+            let short = short_lived_page(&mut companion, "past its deadline");
+            let long = inked_page(&mut companion, "still readable");
+            let long = companion.store.sheet(long).unwrap().uuid();
+            // The page past its deadline iterates first, so a blind anchor fails.
+            if short < long {
+                break (short, long);
+            }
+        };
+        let gone = inked_page(&mut companion, "closed here");
+        let gone = companion.store.sheet(gone).unwrap().uuid();
+        age_by(&mut companion, THREE_HOURS_MS);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        for page in [due, live, gone] {
+            let sheet = companion.store.sheet_id_of(page).unwrap();
+            assert!(enrol_page(&mut companion, sheet, true));
+        }
+        assert!(
+            companion
+                .store
+                .is_due(companion.store.sheet_id_of(due).unwrap())
+        );
+        assert!(
+            !companion
+                .store
+                .is_due(companion.store.sheet_id_of(live).unwrap())
+        );
+
+        // A page closed with its ops still queued owes its marker a rotation
+        // once the view is current, and its ops never reach a seal.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            companion
+                .store
+                .discard_page(companion.store.sheet_id_of(gone).unwrap())
+        );
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        drain_nothing(&mut companion);
+        sweep_outbound(&mut companion, 4_000, &mut events);
+
+        let engine = companion.sync.engine.as_ref().unwrap();
+        let gone = crate::sync_session::page_wire_id(gone);
+        assert!(
+            !engine
+                .session
+                .queued()
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == gone))
+        );
+        assert_eq!(engine.chain.epoch(), 1, "the marker's rotation happened");
+        let wire = crate::sync_session::page_wire_id(live);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed" && event["page"] == wire)
+        );
     }
 
     fn mailbox_response(messages: &[serde_json::Value], next_seq: u64) -> HttpResponse {

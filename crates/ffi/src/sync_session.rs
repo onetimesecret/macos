@@ -536,6 +536,21 @@ impl SyncSession {
         });
     }
 
+    /// Drop a page's ops still waiting for a seal, as for a page past its
+    /// deadline or gone (ADR-0052). Its expiry, hold and marker stay queued.
+    pub fn withdraw_ops(&mut self, page: ItemId) {
+        let wire = page_wire_id(page);
+        self.outbox.retain(
+            |envelope| !matches!(envelope, DeltaEnvelope::Ops { page, .. } if *page == wire),
+        );
+    }
+
+    /// What the next publish would seal.
+    #[cfg(test)]
+    pub(crate) fn queued(&self) -> &[DeltaEnvelope] {
+        &self.outbox
+    }
+
     /// Queue a page's expiry policy — the policy, never the deadline.
     pub fn queue_expiry(&mut self, page: ItemId, policy: ExpiryPolicy) {
         self.outbox.push(DeltaEnvelope::Expiry {
@@ -862,7 +877,9 @@ impl SyncSession {
                 let Some(page) = page_from_wire(&page) else {
                     return;
                 };
-                if sheet_of(store, page).is_none()
+                // A page past its deadline here would refuse the commit
+                // (ADR-0052), so this device stays out as for one it lacks.
+                if sheet_of(store, page).is_none_or(|sheet| store.is_due(sheet))
                     || self
                         .channels
                         .get(&page)
@@ -1897,6 +1914,106 @@ mod tests {
         assert_eq!(
             packages_b.open_entropy(&sealed).unwrap().as_slice(),
             b"still mine"
+        );
+    }
+
+    #[test]
+    fn a_proposal_for_a_page_past_its_deadline_here_spends_nothing() {
+        let clock = ManualClock::new();
+        let mut store_a = SheetStore::new(clock.clone());
+        let page_a = store_a.new_tab().1;
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "shared text".into()
+            }]
+        ));
+        let uuid = store_a.sheet(page_a).unwrap().uuid();
+        let mut store_b = SheetStore::new(clock.clone());
+        let page_b = store_b.new_tab().1;
+        let pristine = store_b.document_version(page_b).unwrap();
+        let full = store_a.export_document_updates(page_a, &pristine).unwrap();
+        store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
+        assert!(store_b.set_compaction_deferred(page_b, true));
+        clock.advance(std::time::Duration::from_secs(9 * 24 * 60 * 60));
+        assert!(store_b.is_due(page_b), "past its deadline, not yet swept");
+
+        let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut a = session("fp-a");
+        let mut b = session("fp-b");
+        let (pkcs8_a, _) = identity();
+        let (pkcs8_b, _) = identity();
+        let packages_a = KeyPackageKeeper::mint(&pkcs8_a).unwrap();
+        let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let mut relay = FakeRelay::default();
+
+        assert!(a.propose_ceremony(
+            uuid,
+            &[CeremonyPeer {
+                fingerprint: "fp-b".into(),
+                package: packages_b.package().clone(),
+            }],
+            &packages_a.package().clone(),
+            0,
+        ));
+        let request = a.publish_request(0, &chain_a).unwrap();
+        a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+
+        // B joins no ballot it would refuse to commit, so no device splits.
+        b.absorb_deltas(
+            &relay.serve_fetch(0),
+            &mut store_b,
+            &mut chain_b,
+            &mut packages_b,
+            &mut None,
+            &[],
+            0,
+        )
+        .unwrap();
+        assert!(
+            b.publish_request(2_000, &chain_b).is_none(),
+            "no acceptance was queued"
+        );
+        assert!(!b.ballot_in_flight());
+        let sealed = packages_b.package().seal_entropy(b"still mine").unwrap();
+        assert_eq!(
+            packages_b.open_entropy(&sealed).unwrap().as_slice(),
+            b"still mine"
+        );
+    }
+
+    #[test]
+    fn withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued() {
+        let mut session = session("fp-a");
+        let (gone, kept) = (ItemId::random(), ItemId::random());
+        session.queue_ops(gone, b"ops past the deadline");
+        session.queue_ops(kept, b"ops still readable");
+        session.queue_expiry(
+            gone,
+            ExpiryPolicy {
+                anchor_wall_ms: 1,
+                ttl_ms: 0,
+            },
+        );
+        session.queue_ops(gone, b"more ops past the deadline");
+        session.withdraw_ops(gone);
+
+        // The queue is what the next publish seals.
+        assert_eq!(
+            session.outbox,
+            vec![
+                DeltaEnvelope::Ops {
+                    page: page_wire_id(kept),
+                    ops: ByteBlob(b"ops still readable".to_vec()),
+                },
+                DeltaEnvelope::Expiry {
+                    page: page_wire_id(gone),
+                    anchor_wall_ms: 1,
+                    ttl_ms: 0,
+                },
+            ]
         );
     }
 
