@@ -437,10 +437,11 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
     }
 
-    /// Look Up and Translate are built titled with the selection they hold, and Speech
-    /// reads it out, so no gate at the click can stop a menu held open past a deadline:
-    /// a page's, a sealed name's and a note's text menu offer none of them; a file keeps all.
-    func testAPageANameAndANoteOfferNoLookUpTranslateOrSpeech() throws {
+    /// Look Up and Translate are built titled with the selection they hold, Speech reads it
+    /// out and Spelling and Grammar hands it to the spell server, so no gate at the click
+    /// can stop a menu held open past a deadline: a page's, a sealed name's and a note's
+    /// text menu offer none of them; a file keeps all.
+    func testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.applyNoteOps(
             chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
@@ -449,12 +450,14 @@ final class SealedFragmentEditorTests: XCTestCase {
             var found: [String] = []
             if menu.items.contains(where: TextOffers.isLookUpOrTranslate) { found.append("Look Up") }
             if menu.items.contains(where: TextOffers.isSpeech) { found.append("Speech") }
+            if menu.items.contains(where: TextOffers.isSpelling) { found.append("Spelling") }
             return found
         }
         let (file, fileCoordinator) = fileView(beside: page)
         file.setSelectedRange(NSRange(location: 0, length: 4))
         let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
-        XCTAssertEqual(offers(fileMenu), ["Look Up", "Speech"], "the control: a file offers them")
+        XCTAssertEqual(
+            offers(fileMenu), ["Look Up", "Speech", "Spelling"], "the control: a file offers them")
         XCTAssertEqual(
             fileMenu.items.filter(TextOffers.isLookUpOrTranslate).count, 2,
             "the control: a file offers Look Up and Translate")
@@ -478,6 +481,52 @@ final class SealedFragmentEditorTests: XCTestCase {
             XCTAssertNotEqual(menu.items.first?.isSeparatorItem, true, "a separator led the menu")
         }
         withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// Over a word continuous spelling marked, AppKit heads the menu with its guesses,
+    /// Ignore Spelling and Learn Spelling; the filter takes them with the submenu.
+    func testTheSpellingItemsOverAMisspelledWordLeaveWithTheSubmenu() {
+        let menu = NSMenu()
+        for action in ["_changeSpellingFromMenu:", "_ignoreSpellingFromMenu:", "_learnSpellingFromMenu:"] {
+            menu.addItem(NSMenuItem(title: action, action: Selector((action)), keyEquivalent: ""))
+        }
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: ""))
+
+        TextOffers.removeSelectionReaders(from: menu)
+
+        XCTAssertEqual(menu.items.map(\.title), ["Cut"])
+    }
+
+    /// Continuous spelling reaches the spell server only through `checkTextInRange`, the
+    /// one method the asking views gate for it, so a change of AppKit's route fails here.
+    /// Its text is the test's own, never a page's.
+    func testContinuousSpellingChecksThroughTheOneGatedMethod() {
+        final class Checked: NSTextView {
+            var onCheck: (() -> Void)?
+            override func checkText(
+                in range: NSRange, types checkingTypes: NSTextCheckingTypes,
+                options: [NSSpellChecker.OptionKey: Any] = [:]
+            ) {
+                if checkingTypes & NSTextCheckingResult.CheckingType.spelling.rawValue != 0 {
+                    onCheck?()
+                }
+            }
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        let view = Checked(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        window.contentView?.addSubview(view)
+        XCTAssertTrue(window.makeFirstResponder(view))
+        view.isContinuousSpellCheckingEnabled = true
+        let checked = expectation(description: "a spelling check came through checkTextInRange")
+        checked.assertForOverFulfill = false
+        view.onCheck = { checked.fulfill() }
+
+        view.insertText("wrnog speling ", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        wait(for: [checked], timeout: 10)
     }
 
     // MARK: Select all
@@ -1422,7 +1471,7 @@ final class SealedFragmentEditorTests: XCTestCase {
                     return XCTFail("the drag began")
                 }
             }),
-        ] + lookUpAndSpeech.map { way in (way.name, { way.run($0.textView) }) }
+        ] + appKitReaders.map { way in (way.name, { way.run($0.textView) }) }
         for route in routes {
             let page = try makePage()
             XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
@@ -1441,11 +1490,12 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
-    /// AppKit's look up and speech outside the text menu, over the selection or the
-    /// text under the pointer. Run only where a gate refuses: one that ran would speak
-    /// or look up through a service.
-    private var lookUpAndSpeech: [(name: String, run: (NSTextView) -> Void)] {
-        [
+    /// AppKit's readers outside the text menu: look up, speech, spelling, grammar and text
+    /// checking. Run only where a gate refuses: one that ran would speak, look up or hand
+    /// the text to the spell server. A refused toggle leaves its setting as it stood.
+    private var appKitReaders: [(name: String, run: (NSTextView) -> Void)] {
+        let everything = { (view: NSTextView) in NSRange(location: 0, length: view.string.utf16.count) }
+        return [
             ("Speech", {
                 $0.selectAll(nil)
                 $0.startSpeaking(nil)
@@ -1470,14 +1520,34 @@ final class SealedFragmentEditorTests: XCTestCase {
             ("the definition at a point", {
                 $0.showDefinition(for: NSAttributedString(string: "ab"), at: .zero)
             }),
+            ("Check Document Now", { $0.checkSpelling(nil) }),
+            ("Show Spelling and Grammar", { $0.showGuessPanel(nil) }),
+            ("Replace All", { $0.checkTextInDocument(nil) }),
+            ("Replace in Selection", {
+                $0.selectAll(nil)
+                $0.checkTextInSelection(nil)
+            }),
+            ("Check Spelling While Typing", {
+                $0.toggleContinuousSpellChecking(nil)
+                XCTAssertFalse($0.isContinuousSpellCheckingEnabled, "it turned on")
+            }),
+            ("Check Grammar With Spelling", {
+                let grammar = $0.isGrammarCheckingEnabled
+                $0.toggleGrammarChecking(nil)
+                XCTAssertEqual($0.isGrammarCheckingEnabled, grammar, "it toggled")
+            }),
+            ("the spelling panel's Ignore", { $0.ignoreSpelling(NSTextField(string: "ab")) }),
+            ("a check as the text changes", {
+                $0.checkText(in: everything($0), types: NSTextCheckingAllTypes, options: [:])
+            }),
         ]
     }
 
-    /// While a field or the note holds the keys, the page's look up and speech stand
-    /// aside without asking the page (ADR-0046); the note's own, and the page's once
-    /// the keys come back, refuse past the deadline and settle (ADR-0052).
-    func testLookUpAndSpeechStandAsideForTheKeysAndRefusePastTheDeadline() throws {
-        for way in lookUpAndSpeech {
+    /// While a field or the note holds the keys, the page's readers stand aside without
+    /// asking the page (ADR-0046); the note's own, and the page's once the keys come
+    /// back, refuse past the deadline and settle (ADR-0052).
+    func testAppKitsReadersStandAsideForTheKeysAndRefusePastTheDeadline() throws {
+        for way in appKitReaders {
             let page = try makePage()
             page.coordinator.beginNote(at: 3)
             drainMainQueue()
@@ -1493,7 +1563,7 @@ final class SealedFragmentEditorTests: XCTestCase {
             XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, "the note's \(way.name)")
             XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
         }
-        for way in lookUpAndSpeech {
+        for way in appKitReaders {
             let page = try makePage()
             XCTAssertTrue(page.window.makeFirstResponder(page.field))
             drainMainQueue()
@@ -1789,7 +1859,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// A name is part of its page: past the deadline Copy name (above) and the name
-    /// field's copy, cut, drag, service, look up and speech give nothing out, and the
+    /// field's copy, cut, drag, service and AppKit's readers give nothing out, and the
     /// settle takes the page with its line. The drag is asked only through its gate, as
     /// a drag that ran would write the system's drag board.
     func testANamePastItsPagesDeadlineGivesNothingOutAndTheSettleTakesThePage() throws {
@@ -1804,7 +1874,7 @@ final class SealedFragmentEditorTests: XCTestCase {
                 XCTAssertFalse($0.writeSelection(to: board, type: legacy), "once gone")
             }),
             ("the field's drag", { XCTAssertFalse($0.givesOut, "AppKit's drag would run") }),
-        ] + lookUpAndSpeech.map { way in ("the field's \(way.name)", { way.run($0) }) }
+        ] + appKitReaders.map { way in ("the field's \(way.name)", { way.run($0) }) }
         for ask in asks {
             let page = try makePage()
             XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))

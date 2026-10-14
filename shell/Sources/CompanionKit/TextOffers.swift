@@ -5,10 +5,13 @@ import AppKit
 @MainActor
 enum TextOffers {
     /// Takes out the items that hold or read the selection for another process from the
-    /// menu's building on (Share…, Look Up, Translate, Speech), then folds the separators.
+    /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar), then
+    /// folds the separators.
     static func removeSelectionReaders(from menu: NSMenu) {
-        menu.items.filter { isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) }
-            .forEach(menu.removeItem)
+        menu.items.filter {
+            isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) || isSpelling($0)
+        }
+        .forEach(menu.removeItem)
         var previousIsSeparator = true
         for item in menu.items {
             if item.isSeparatorItem, previousIsSeparator {
@@ -35,6 +38,22 @@ enum TextOffers {
     static func isSpeech(_ item: NSMenuItem) -> Bool {
         item.submenu?.items.contains { $0.action == #selector(NSTextView.startSpeaking(_:)) } == true
     }
+
+    /// Spelling and Grammar, and the guesses, Ignore Spelling and Learn Spelling AppKit
+    /// heads the menu with over a misspelled word, which hand the word to the spell server.
+    static func isSpelling(_ item: NSMenuItem) -> Bool {
+        if let action = item.action.map(NSStringFromSelector), spellingItems.contains(action) {
+            return true
+        }
+        return item.submenu?.items.contains {
+            $0.action == #selector(NSText.checkSpelling(_:))
+                || $0.action == #selector(NSText.showGuessPanel(_:))
+        } == true
+    }
+
+    private static let spellingItems: Set<String> = [
+        "_changeSpellingFromMenu:", "_ignoreSpellingFromMenu:", "_learnSpellingFromMenu:",
+    ]
 
     /// Writing Tools on `textView`, which a file keeps and a page, note or name refuses.
     static func offerWritingTools(_ offers: Bool, on textView: NSTextView) {
@@ -92,5 +111,59 @@ class AskingTextView: NSTextView {
         super.showDefinition(
             for: attrString, range: targetRange, options: options,
             baselineOriginProvider: originProvider)
+    }
+
+    // MARK: Spelling, grammar and text checking, which hand the text to the spell server
+
+    /// Check Document Now, and the spelling panel's Find Next, read the text whole.
+    override func checkSpelling(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.checkSpelling(sender)
+    }
+
+    /// Show Spelling and Grammar checks from the selection on as its panel opens.
+    override func showGuessPanel(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.showGuessPanel(sender)
+    }
+
+    /// The Substitutions panel's Replace All.
+    override func checkTextInDocument(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.checkTextInDocument(sender)
+    }
+
+    /// The Substitutions panel's Replace in Selection.
+    override func checkTextInSelection(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.checkTextInSelection(sender)
+    }
+
+    /// Check Spelling While Typing, after which AppKit checks every edit.
+    override func toggleContinuousSpellChecking(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.toggleContinuousSpellChecking(sender)
+    }
+
+    /// Check Grammar With Spelling, which sends whole sentences with each check.
+    override func toggleGrammarChecking(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.toggleGrammarChecking(sender)
+    }
+
+    /// The spelling panel's Ignore, which hands the word to the spell server.
+    override func ignoreSpelling(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.ignoreSpelling(sender)
+    }
+
+    /// Every check AppKit runs as the text changes (continuous spelling, text replacement,
+    /// smart quotes and the rest) and the ones the actions above start come through here.
+    override func checkText(
+        in range: NSRange, types checkingTypes: NSTextCheckingTypes,
+        options: [NSSpellChecker.OptionKey: Any] = [:]
+    ) {
+        guard mayReadOut else { return }
+        super.checkText(in: range, types: checkingTypes, options: options)
     }
 }
