@@ -2247,6 +2247,18 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_out_is_written_at_its_exact_size() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        // Copy decrypted and the decrypted drag both write from this buffer.
+        for payload in ["x", "an eleven b", &"a long payload ".repeat(70)] {
+            let chip = seal(&mut store, id, payload);
+            let (bytes, _) = store.copy_out_chip(chip).unwrap();
+            assert_eq!(bytes.capacity(), bytes.len(), "{} bytes", payload.len());
+        }
+    }
+
+    #[test]
     fn expiry_is_scheduled_not_polled() {
         let (mut store, clock) = store();
         let id = store.new_tab().1;
