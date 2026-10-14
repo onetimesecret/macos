@@ -6,6 +6,7 @@ documentation_status: needs-review
 
 - **Status:** accepted
 - **Date:** 2026-10-13
+- **Superseded in part by:** [ADR-0055](0055-the-decrypted-drag-handle-shows-an-open-hand.md), which replaces the pointer half of the last consequence: an open hand shows over a drawn handle a press would drag from. The VoiceOver half and the decision stand.
 - **Depends on:** [ADR-0050](0050-a-decrypted-drag-lands-only-in-another-app.md), which says where the handle's drag may land.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -70,3 +71,7 @@ block's top row, ending 8 points before the actions seat.
   amendment shows an open hand over a drawn handle a press would drag
   from, so the last consequence's pointer half describes the build at
   acceptance. Its VoiceOver half stands.
+- 2026-10-14: Superseded in part by
+  [ADR-0055](0055-the-decrypted-drag-handle-shows-an-open-hand.md),
+  which replaces the pointer half of the last consequence only. The
+  VoiceOver half and points 1 to 5 stand.
