@@ -45,7 +45,8 @@ final class SealedFragmentEditorTests: XCTestCase {
 
     /// `ab <SECRET> cd <TOKEN> ef`, twelve units, the page holding the keys.
     private func makePage(
-        writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil
+        writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
+        client: CompanionClient? = nil
     ) throws -> Page {
         let suite = "companion-fragment-editor-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -53,7 +54,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-fragment-editor-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let client = CompanionClient.ephemeral(tag: UUID().uuidString)
+        let client = client ?? CompanionClient.ephemeral(tag: UUID().uuidString)
         XCTAssertTrue(client.useMemoryPasteboardForTests())
         let pasteboard = NSPasteboard.withUniqueName()
         addTeardownBlock { pasteboard.releaseGlobally() }
@@ -791,6 +792,81 @@ final class SealedFragmentEditorTests: XCTestCase {
             page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
     }
 
+    /// A refused paste or place with nothing due changed nothing, so it arms no write;
+    /// one a page past its deadline refused settles, takes the page and says why.
+    func testARefusedPasteOrPlaceArmsAWriteOnlyWhenItsSettleSweeps() throws {
+        let quiet = try makePage()
+        put("not an envelope", text: nil, on: quiet.pasteboard)
+        let marks = quiet.model.dirtyMarks
+        quiet.textView.paste(nil)
+        XCTAssertEqual(quiet.model.notice, PageModel.pasteRefusedLine)
+        XCTAssertNil(quiet.model.activeCut)
+        XCTAssertFalse(quiet.coordinator.placeActiveCut(), "a place with no cut standing")
+        XCTAssertEqual(quiet.model.dirtyMarks, marks, "a refusal that changed nothing armed a write")
+
+        let routes: [(name: String, run: (Page) -> Void)] = [
+            ("paste", { $0.textView.paste(nil) }),
+            ("place", { XCTAssertFalse($0.coordinator.placeActiveCut()) }),
+        ]
+        for route in routes {
+            let page = try makePage()
+            page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+            page.textView.cut(nil)
+            XCTAssertNotNil(page.model.activeCut, "\(route.name): the control")
+            try age(page, keepsChipIDs: false)
+            page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+            let marks = page.model.dirtyMarks
+
+            route.run(page)
+
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, route.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet }, "\(route.name): no settle")
+            XCTAssertGreaterThan(page.model.dirtyMarks, marks, "\(route.name): the sweep armed no write")
+        }
+    }
+
+    /// A core whose paste sweeps as one naming an object does (ADR-0048) and then
+    /// refuses, as a body refusing partway leaves it.
+    private final class SweepThenRefuseClient: CompanionClient, @unchecked Sendable {
+        private(set) var pagesSwept: UInt64 = 0
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func pasteFragment(
+            sheet: UInt64, range: NSRange, envelope: Data, plainText: String?
+        ) -> PlacedFragment? {
+            pagesSwept += expireDue()
+            return nil
+        }
+    }
+
+    /// A paste refused after its own sweep took a due page still settles, though
+    /// nothing is due by then: the page leaves and the sweep's write is armed.
+    func testAPasteRefusedAfterItsSweepStillSettles() throws {
+        let client = SweepThenRefuseClient(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        try age(page)
+        page.model.newPage()
+        let fresh = try XCTUnwrap(page.model.selectedPageID)
+        let marks = page.model.dirtyMarks
+
+        XCTAssertEqual(
+            page.model.pasteFragment(
+                from: page.pasteboard, sheet: fresh, range: NSRange(location: 0, length: 0)),
+            .refused)
+
+        XCTAssertEqual(client.pagesSwept, 1, "the control: the paste's own sweep took the page")
+        XCTAssertFalse(
+            page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "the sweep armed no write")
+        XCTAssertEqual(page.model.notice, PageModel.pasteRefusedLine)
+    }
+
     // MARK: Past an envelope cap (ADR-0053)
 
     /// A copy, cut or drag whose envelope would pass a cap writes, deletes and detaches
@@ -832,14 +908,15 @@ final class SealedFragmentEditorTests: XCTestCase {
     // MARK: A page past its deadline (ADR-0052)
 
     /// Puts `page` past its deadline with no sweep: a one hour rung, two hours on.
-    private func age(_ page: Page) throws {
+    /// After a cut the re-mint moves the chip ids, so `keepsChipIDs` is false there.
+    private func age(_ page: Page, keepsChipIDs: Bool = true) throws {
         let client = page.model.coreClient
         let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == page.sheet }?.id)
         XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
         XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
         // The re-mint is dense, so the editor's ids still name what the core holds.
         XCTAssertTrue(client.tabs().contains { $0.pageID == page.sheet }, "the page was swept")
-        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        if keepsChipIDs { XCTAssertEqual(chips(page).map(\.chipId), page.chips) }
     }
 
     private func sent(_ page: Page) -> [String] {

@@ -5977,13 +5977,13 @@ public final class PageModel: ObservableObject {
     }
 
     /// The slot's route: place the active cut over `range` on `sheet`
-    /// (ADR-0047 point 12). Nil, with the page settled, when the core refuses.
+    /// (ADR-0047 point 12). Nil when the core refuses, settled as `settlingRefusal` says.
     @discardableResult
     public func placeActiveCut(sheet: UInt64, range: NSRange) -> PlacedFragment? {
         guard !sheet.isFileID else { return nil }
-        guard let placed = client.pasteActiveCut(sheet: sheet, range: range) else {
-            // A refusal can follow a sweep the core made (ADR-0048).
-            settleCoreEvent()
+        guard let placed = settlingRefusal({ client.pasteActiveCut(sheet: sheet, range: range) })
+        else {
+            if !livePageIDs.contains(sheet) { flash(Self.pageExpiredLine) }
             return nil
         }
         settleTransfer(sheet)
@@ -6022,13 +6022,12 @@ public final class PageModel: ObservableObject {
         guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard),
               let envelope = item.data(forType: SealedFragment.pasteboardType)
         else { return .ordinary }
-        guard let placed = client.pasteFragment(
-            sheet: sheet, range: range, envelope: envelope,
-            plainText: item.string(forType: .string))
-        else {
-            // A refusal can follow a sweep the core made (ADR-0048).
-            settleCoreEvent()
-            flash(Self.pasteRefusedLine)
+        guard let placed = settlingRefusal({
+            client.pasteFragment(
+                sheet: sheet, range: range, envelope: envelope,
+                plainText: item.string(forType: .string))
+        }) else {
+            flash(livePageIDs.contains(sheet) ? Self.pasteRefusedLine : Self.pageExpiredLine)
             return .refused
         }
         settleTransfer(sheet)
@@ -6053,35 +6052,33 @@ public final class PageModel: ObservableObject {
     }
 
     /// A page's own drag dropped on it at `index`: the range moved, or cloned for ⌥,
-    /// through the core as one step (ADR-0047 point 10). Nil, settled, on a refusal.
+    /// through the core as one step (ADR-0047 point 10). Nil on a refusal.
     @discardableResult
     public func dropRange(
         _ range: NSRange, sheet: UInt64, at index: Int, cloning: Bool
     ) -> PlacedFragment? {
         guard !sheet.isFileID else { return nil }
-        let placed = cloning
-            ? client.cloneRange(sheet: sheet, range: range, to: index)
-            : client.moveRange(sheet: sheet, range: range, to: index)
-        guard let placed else {
-            // A page past its deadline refuses; the sweep takes it now (ADR-0048).
-            settleCoreEvent()
-            return nil
+        let placed = settlingRefusal {
+            cloning
+                ? client.cloneRange(sheet: sheet, range: range, to: index)
+                : client.moveRange(sheet: sheet, range: range, to: index)
         }
+        guard let placed else { return nil }
         settleTransfer(sheet)
         return placed
     }
 
     /// A page's drag dropped on page `dest` at `index`: the range moved there through the
-    /// core keeping every object, and both pages restated (ADR-0054). Nil, settled, on a refusal.
+    /// core keeping every object, and both pages restated (ADR-0054). Nil on a refusal.
     @discardableResult
     public func dropRange(
         _ range: NSRange, sheet: UInt64, onto dest: UInt64, at index: Int
     ) -> PlacedFragment? {
         guard !sheet.isFileID, !dest.isFileID else { return nil }
-        guard let placed = client.moveRange(sheet: sheet, range: range, toSheet: dest, at: index)
-        else {
-            // A page past its deadline at either end refuses; the sweep takes it now (ADR-0052).
-            settleCoreEvent()
+        guard let placed = settlingRefusal({
+            client.moveRange(sheet: sheet, range: range, toSheet: dest, at: index)
+        }) else {
+            // A page past its deadline at either end refuses, and the settle takes it (ADR-0052).
             if !livePageIDs.contains(sheet) || !livePageIDs.contains(dest) {
                 flash(Self.pageExpiredLine)
             }
@@ -7037,6 +7034,15 @@ public final class PageModel: ObservableObject {
         markDirty()
         refresh() // re-arms for the next event
         return expired
+    }
+
+    /// Run a core transfer, which may sweep before it refuses (ADR-0048); a refusal
+    /// settles as the timer would only when an event was due as it began.
+    private func settlingRefusal<T>(_ route: () -> T?) -> T? {
+        let wasDue = client.nextEventMs() == 0
+        let result = route()
+        if result == nil, wasDue { settleCoreEvent() }
+        return result
     }
 
     /// When the core's next event is due its timer is late, so settle as it fires.
