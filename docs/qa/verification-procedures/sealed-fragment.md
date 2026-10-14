@@ -155,10 +155,13 @@ SIGKILLs a live one), then `scripts/dev.sh`.
 - [ ] **A selection past an envelope cap** (ADR-0053). Put more than
       8 MiB of text on a page, for example by pasting the output of
       `head -c 9000000 /dev/zero | tr '\0' x | pbcopy`, seal a word in
-      it, select all, then try ⌘C, ⌘X and a drag. **Pass:** each leaves
+      it, select all, then try ⌘C, ⌘X, a drag and a service that takes
+      text (the app menu's Services, New TextEdit Window Containing
+      Selection). **Pass:** each leaves
       the line `a selection holding sealed objects can be at most 8 MiB,
       so nothing was copied.`, ending `nothing was cut.` for the cut and
-      `the drag did not start.` for the drag; the general pasteboard, the
+      `the drag did not start.` for the drag; the service opens no
+      window holding the selection; the general pasteboard, the
       page, the slot's line and the ledger stand as they were; selecting
       the ink alone still copies it as plain text. **Fail:** anything
       reaches the pasteboard, the page changes, or no line shows.

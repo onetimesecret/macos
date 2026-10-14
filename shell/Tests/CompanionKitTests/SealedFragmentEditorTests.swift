@@ -1156,6 +1156,73 @@ final class SealedFragmentEditorTests: XCTestCase {
             "a selection can hold at most 1024 sealed objects, so nothing was cut.")
     }
 
+    /// A core answering the object count cap for every copy and cut once asked to,
+    /// since sealing 1025 objects through the seam is too slow for a unit test.
+    private final class ObjectCapClient: CompanionClient, @unchecked Sendable {
+        var capped = false
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func copyFragmentResult(
+            sheet: UInt64, range: NSRange
+        ) -> Result<SealedFragment, FragmentRefusal> {
+            capped ? .failure(.tooManyObjects(limit: 1_024))
+                : super.copyFragmentResult(sheet: sheet, range: range)
+        }
+
+        override func cutFragmentResult(
+            sheet: UInt64, range: NSRange
+        ) -> Result<SealedFragment, FragmentRefusal> {
+            capped ? .failure(.tooManyObjects(limit: 1_024))
+                : super.cutFragmentResult(sheet: sheet, range: range)
+        }
+    }
+
+    /// The editor's copy, cut, drag and service write past the object count cap each
+    /// name the core's limit and change nothing, and an earlier cut stands.
+    func testEveryEditorRoutePastTheObjectCapNamesItsLimitAndChangesNothing() throws {
+        let client = ObjectCapClient(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        page.textView.cut(nil)
+        let standing = try XCTUnwrap(page.model.activeCut, "the control: the cut")
+        client.capped = true
+        let service = NSPasteboard.withUniqueName()
+        addTeardownBlock { service.releaseGlobally() }
+        let all = NSRange(location: 0, length: 11)
+        let capped = "a selection can hold at most 1024 sealed objects, so"
+        let routes: [(name: String, line: String, run: () -> Void)] = [
+            ("copy", "\(capped) nothing was copied.", { page.textView.copy(nil) }),
+            ("cut", "\(capped) nothing was cut.", { page.textView.cut(nil) }),
+            ("drag", "\(capped) the drag did not start.", {
+                guard case .refused = page.coordinator.beginPageDrag() else {
+                    return XCTFail("the drag began")
+                }
+            }),
+            ("service", "\(capped) nothing was copied.", {
+                XCTAssertFalse(page.textView.writeSelection(
+                    to: service, types: page.textView.writablePasteboardTypes))
+            }),
+        ]
+        for route in routes {
+            page.textView.setSelectedRange(all)
+            let board = page.pasteboard.changeCount
+            let written = service.changeCount
+            let text = page.textView.string
+
+            route.run()
+
+            XCTAssertEqual(page.model.notice, route.line, route.name)
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(route.name) wrote the board")
+            XCTAssertEqual(service.changeCount, written, "\(route.name) wrote the service's board")
+            XCTAssertEqual(page.textView.string, text, "\(route.name) changed the page")
+            XCTAssertEqual(chips(page).map(\.chipId), [page.chips[0]], route.name)
+            XCTAssertEqual(page.model.activeCut, standing, "\(route.name): the earlier cut went")
+        }
+    }
+
     // MARK: A page past its deadline (ADR-0052)
 
     /// Puts `page` past its deadline with no sweep: a one hour rung, two hours on.

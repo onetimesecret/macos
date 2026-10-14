@@ -862,9 +862,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the cap** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001, ADR-0053, issue #170). A selection holding sealed
   objects past 8 MiB or 1024 objects wrote an envelope this build then
-  refused to read. Its copy, cut and drag now write nothing, a cut
-  detaches nothing and an earlier cut stays, and the line under the
-  page names the limit. The seam answers `tooLarge` or
+  refused to read. Its copy, cut, drag and a service's request now
+  write nothing, a cut detaches nothing and an earlier cut stays, and
+  the line under the page names the limit. The seam answers `tooLarge` or
   `tooManyObjects` with the core's limit. Ink alone still copies.
 
 - **A paste over several stretches is refused** (app 0.35.0; Law 0001,
