@@ -881,6 +881,37 @@ mod tests {
     }
 
     #[test]
+    fn undo_ends_a_cut_and_redo_detaches_as_a_removal_whose_objects_a_later_paste_clones() {
+        let (mut store, _) = store();
+        let (id, a, b) = mixed(&mut store);
+        let uuids = vec![uuid_of(&store, a), uuid_of(&store, b)];
+        let envelope = store.cut_fragment(id, 0, 8).unwrap().envelope.unwrap();
+        assert!(store.undo(id));
+        assert!(store.active_cut().is_none(), "undo ended the cut");
+        assert_eq!(standing(&store, id), uuids);
+
+        let records = store.ledger().count();
+        assert!(store.redo(id));
+        assert_eq!(body(&store, id), "");
+        assert_eq!(detached(&store, id), uuids, "retained, not reaped");
+        assert!(store.active_cut().is_none(), "redo stands no cut again");
+        assert_eq!(store.ledger().count(), records, "a removal records nothing");
+
+        let placed = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!((placed.reattached, placed.cloned), (0, 2));
+        let clones = standing(&store, id);
+        assert_eq!(clones.len(), 2);
+        assert!(
+            clones.iter().all(|uuid| !uuids.contains(uuid)),
+            "new identities"
+        );
+        assert_eq!(payload_at(&store, id, 0), A.as_bytes());
+        assert_eq!(payload_at(&store, id, 1), B.as_bytes());
+        assert_eq!(detached(&store, id), uuids, "the retained objects stay");
+        assert_eq!(store.ledger().count(), records + 2, "one sealed per clone");
+    }
+
+    #[test]
     fn a_fragment_not_naming_the_cut_clones_its_objects_and_the_cut_stands() {
         let (mut store, _) = store();
         let (id, a, _) = mixed(&mut store);
