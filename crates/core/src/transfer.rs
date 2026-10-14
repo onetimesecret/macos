@@ -1089,6 +1089,28 @@ mod tests {
     }
 
     #[test]
+    fn a_crafted_envelope_naming_a_live_object_twice_clones_nothing() {
+        let (mut store, _) = store();
+        let (id, a, _) = mixed(&mut store);
+        let uuid = uuid_of(&store, a);
+        let crafted = format!(
+            r#"{{"version":1,"nodes":[{{"ref":{{"uuid":"{uuid}"}}}},{{"ref":{{"uuid":"{uuid}"}}}}]}}"#
+        );
+        let page = store.new_tab().1;
+        let records = store.ledger().count();
+
+        let placed = store
+            .paste_fragment(page, 0, 0, crafted.as_bytes(), Some("[x][y]"))
+            .unwrap();
+        assert!(placed.unreadable);
+        assert_eq!(placed.cloned, 0);
+        assert_eq!(body(&store, page), "[x][y]");
+        assert!(store.sheet(page).unwrap().chips().next().is_none());
+        assert_eq!(store.ledger().count(), records, "no clone was recorded");
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 2);
+    }
+
+    #[test]
     fn a_paste_is_one_step_and_replaces_the_selection_it_covers() {
         let (mut store, _) = store();
         let (id, a, b) = mixed(&mut store);

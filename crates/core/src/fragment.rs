@@ -2,16 +2,24 @@
 //! object references, composed and read only here, never payload.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::io::{self, Write};
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::files::FILE_SIZE_LIMIT;
 use crate::note::Note;
 use crate::sheet::{ItemId, SealedChip, Segment, Sheet};
 
 /// The one envelope version this build writes and reads.
 pub(crate) const VERSION: u32 = 1;
+
+/// The longest envelope this build reads: twice the largest file it opens (ADR-0049).
+pub(crate) const ENVELOPE_CAP: usize = 2 * FILE_SIZE_LIMIT;
+
+/// The most references one envelope may name (ADR-0049).
+pub(crate) const REFERENCE_CAP: usize = 1024;
 
 /// One run of a fragment, in selection order.
 pub(crate) enum Node {
@@ -111,8 +119,12 @@ impl Fragment {
     }
 
     /// Read an envelope. `None` when this build cannot: another version, an
-    /// unknown key, a malformed UUID, or bytes that are not UTF-8 JSON.
+    /// unknown key, a malformed UUID, bytes that are not UTF-8 JSON, or past
+    /// a cap of ADR-0049, which counts one object named twice.
     pub(crate) fn parse(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() > ENVELOPE_CAP {
+            return None;
+        }
         let wire: WireFragment<'_> = serde_json::from_slice(bytes).ok()?;
         if wire.version != VERSION {
             return None;
@@ -122,6 +134,7 @@ impl Fragment {
             Some(text) => Some(ItemId::parse(&text)?),
         };
         let mut nodes = Vec::with_capacity(wire.nodes.len());
+        let mut named: HashSet<ItemId> = HashSet::new();
         for node in wire.nodes {
             match node {
                 WireNode::Ink(text) if text.is_empty() => {}
@@ -130,16 +143,23 @@ impl Fragment {
                 WireNode::Ink(Cow::Borrowed(text)) => {
                     nodes.push(Node::Ink(Zeroizing::new(text.to_owned())));
                 }
-                WireNode::Ref(reference) => nodes.push(Node::Ref(Reference {
-                    uuid: ItemId::parse(&reference.uuid)?,
-                    name: reference.name.filter(|name| !name.is_empty()),
-                    note: reference.note.and_then(|text| match text {
-                        Cow::Borrowed("") => None,
-                        Cow::Owned(text) if text.is_empty() => None,
-                        Cow::Owned(text) => Some(Zeroizing::new(text)),
-                        Cow::Borrowed(text) => Some(Zeroizing::new(text.to_owned())),
-                    }),
-                })),
+                WireNode::Ref(reference) => {
+                    let uuid = ItemId::parse(&reference.uuid)?;
+                    // A second naming of one object would clone it twice (ADR-0049).
+                    if named.len() == REFERENCE_CAP || !named.insert(uuid) {
+                        return None;
+                    }
+                    nodes.push(Node::Ref(Reference {
+                        uuid,
+                        name: reference.name.filter(|name| !name.is_empty()),
+                        note: reference.note.and_then(|text| match text {
+                            Cow::Borrowed("") => None,
+                            Cow::Owned(text) if text.is_empty() => None,
+                            Cow::Owned(text) => Some(Zeroizing::new(text)),
+                            Cow::Borrowed(text) => Some(Zeroizing::new(text.to_owned())),
+                        }),
+                    }));
+                }
             }
         }
         Some(Self { cut, nodes })
@@ -540,5 +560,46 @@ mod tests {
             assert!(Fragment::parse(text.as_bytes()).is_none(), "read {text}");
         }
         assert!(Fragment::parse(&[0xff, 0xfe, b'{']).is_none(), "not UTF-8");
+    }
+
+    fn naming(uuids: &[ItemId]) -> String {
+        let nodes: Vec<String> = uuids
+            .iter()
+            .map(|uuid| format!(r#"{{"ref":{{"uuid":"{uuid}"}}}}"#))
+            .collect();
+        format!(r#"{{"version":1,"nodes":[{}]}}"#, nodes.join(","))
+    }
+
+    #[test]
+    fn an_envelope_past_a_cap_or_naming_one_object_twice_is_refused_whole() {
+        let at_cap: Vec<ItemId> = (0..REFERENCE_CAP).map(|_| ItemId::random()).collect();
+        let read = Fragment::parse(naming(&at_cap).as_bytes()).unwrap();
+        assert_eq!(read.references().count(), REFERENCE_CAP);
+        let mut past = at_cap.clone();
+        past.push(ItemId::random());
+        assert!(
+            Fragment::parse(naming(&past).as_bytes()).is_none(),
+            "one past the cap"
+        );
+
+        let uuid = ItemId::random();
+        assert!(
+            Fragment::parse(naming(&[uuid, uuid]).as_bytes()).is_none(),
+            "named twice"
+        );
+
+        let frame = r#"{"version":1,"nodes":[{"ink":""}]}"#.len();
+        let ink = |len: usize| {
+            format!(
+                r#"{{"version":1,"nodes":[{{"ink":"{}"}}]}}"#,
+                "x".repeat(len - frame)
+            )
+        };
+        assert_eq!(ink(ENVELOPE_CAP).len(), ENVELOPE_CAP);
+        assert!(Fragment::parse(ink(ENVELOPE_CAP).as_bytes()).is_some());
+        assert!(
+            Fragment::parse(ink(ENVELOPE_CAP + 1).as_bytes()).is_none(),
+            "one byte past"
+        );
     }
 }
