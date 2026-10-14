@@ -96,6 +96,11 @@ chrome.
   *Acceptance:* greyscale the surface and read every state (keyline
   present or absent, hatch, dot beside a word); ember text clears 4.5:1
   on page and card, light and dark.
+  *Amended 2026-10-14:* the system's `.secondary` reads 3.95:1 on white,
+  under section 9's row 5, so the quieter words wear a `secondaryInk`
+  token beside `emberText`: black at 60% under light, the system's
+  secondary label under dark and Increase Contrast. No text wears
+  `.tertiary`. `ThemeContrastTests` measures both.
 - **D-04 (open)** Is the resting card opaque or translucent? Today both
   stances share one material: `.ultraThinMaterial` in `BackdropRootView`
   (`BackdropRootView.swift:222`); the resting look is that material
