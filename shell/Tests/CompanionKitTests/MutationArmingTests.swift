@@ -18,21 +18,26 @@ import XCTest
 /// route stops mutating fails loudly here instead of passing on an
 /// arming call that now guards nothing.
 ///
-/// Three of the model's nineteen `markDirty` sites are not steps below,
-/// each for a stated reason rather than by omission:
+/// The model's other `markDirty` sites are pinned elsewhere, each named
+/// here with the suite that counts its mark:
 ///
-///   - `clearUnreadableStateFile` is covered in substance, and more
-///     strictly, by `RestoreFailureTests`: the discard's whole point is
-///     that this session's own seal replaces the unreadable file inside
-///     one debounce with no further gesture, which is the armed write
-///     observed at its far end rather than counted at its near one.
-///   - `finishConceal` lands only after a round trip to a live
-///     server, which a unit test must not make. Its arming call sits
-///     unconditionally ahead of the staleness guard, covering the
-///     success and failure arms alike.
-///   - `newTab`, `close`, `sealText`, `copyOutChip` and `applyOps` are
-///     the five the ledger suite already drives, and are left there
-///     rather than asserted twice.
+///   - `clearUnreadableStateFile`: `RestoreFailureTests`, which sees the
+///     armed write land as the file that replaces the unreadable one.
+///   - `finishConceal`: `ConcealWireTests`, on a stubbed wire.
+///   - `newTab`, `close`, `sealText`, `copyOutChip` and `applyOps`:
+///     `LedgerAppendArmingTests`.
+///   - `setChipName` and `applyNoteOps`: `SealedNameFieldTests`.
+///   - `provideDecryptedDrag`: `LedgerAppendArmingTests` and
+///     `SealedDecryptedDragTests`.
+///   - `settleTransfer`, behind the cut, the paste and the slot's place:
+///     `SealedFragmentEditorTests`; behind the drag inside a page, the ⌥
+///     clone and the move between pages: `SealedDragTests`.
+///   - `settleCoreEvent` reached from a wake: `TabLifetimeTests`; from a
+///     refused route: `SealedFragmentEditorTests` and
+///     `LedgerAppendArmingTests`.
+///
+/// The sync controller's `onRemoteChange` mark is not counted anywhere:
+/// it fires only from a relay session's pump, which no suite stands up.
 @MainActor
 final class MutationArmingTests: XCTestCase {
     func testEveryMutationSiteArmsAWrite() throws {
@@ -56,33 +61,17 @@ final class MutationArmingTests: XCTestCase {
         // the sealed files live in a directory this test owns and dies
         // with, and the core handle keeps its credentials in process
         // memory rather than the login Keychain (ADR-0018).
+        // The core's board is in process memory and the model's is the
+        // test's own, so no step reads or writes the person's clipboard.
+        let client = DragStandIn(tag: "mutation-arming-\(UUID().uuidString)")
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let ambient = NSPasteboard.withUniqueName()
+        addTeardownBlock { ambient.releaseGlobally() }
         let model = PageModel(
             formFactor: .backdrop,
             defaults: defaults,
-            seams: .init(
-                stateDirectory: tempDir,
-                client: .ephemeral(tag: "mutation-arming-\(UUID().uuidString)")
-            )
+            seams: .init(stateDirectory: tempDir, client: client, ambientPasteboard: ambient)
         )
-
-        // Two seal routes below write real pasteboards. The general
-        // board belongs to whoever is at the keyboard, so hold what
-        // they had and give it back; the drag board belongs to a drag
-        // session, and none is in flight while tests run.
-        let board = NSPasteboard.general
-        let held: [NSPasteboardItem] = (board.pasteboardItems ?? []).map { item in
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    copy.setData(data, forType: type)
-                }
-            }
-            return copy
-        }
-        defer {
-            board.clearContents()
-            if !held.isEmpty { board.writeObjects(held) }
-        }
 
         // Two tabs, because one of the steps is a reorder, and the
         // second is the selected one every page-level step lands on.
@@ -121,11 +110,35 @@ final class MutationArmingTests: XCTestCase {
                 return Self.ink(of: model.coreClient.documentRuns(sheet: page))
                     == "the deploy key rotates friday"
             }),
+            ("undoEdit, through step", {
+                // Typed through the client, so only the step's own mark counts.
+                guard client.applyOps(sheet: page, json: #"[{"ins":{"at":0,"text":"so "}}]"#)
+                else { return false }
+                return model.undoEdit(sheet: page).applied
+                    && Self.ink(of: client.documentRuns(sheet: page))
+                    == "the deploy key rotates friday"
+            }),
             ("sealPasteboard", {
-                board.clearContents()
-                board.setString("n0ts3cr3t", forType: .string)
+                // A copy out through the client fills the core's memory board.
+                guard let held = client.sealText(sheet: page, "n0ts3cr3t", at: 0, length: 0),
+                      client.copyOutChip(id: held.chipId)
+                else { return false }
                 chip = model.sealPasteboard(replacing: NSRange(location: 0, length: 0))
                 return chip != nil
+            }),
+            ("copyChipNameValue", {
+                guard let chipId = chip?.chipId, client.setChipName("DEPLOY_KEY", chip: chipId)
+                else { return false }
+                let before = client.ledger().count
+                return model.copyChipNameValue(chipId) && client.ledger().count > before
+            }),
+            ("stepNote", {
+                guard let chipId = chip?.chipId,
+                      client.applyNoteOps(
+                          chip: chipId, json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#)
+                else { return false }
+                return model.stepNote(chip: chipId, back: true).applied
+                    && model.noteText(chip: chipId) == ""
             }),
             ("burnConcealedCopy on a chip, through removeChipFromDocument", {
                 guard let chipId = chip?.chipId else { return false }
@@ -139,11 +152,7 @@ final class MutationArmingTests: XCTestCase {
                 return before > 0 && summary(tab)?.chipCount == before - 1
             }),
             ("sealDrag", {
-                let dragBoard = NSPasteboard(name: .drag)
-                dragBoard.clearContents()
-                dragBoard.setString("dropped in", forType: .string)
                 chip = model.sealDrag(replacing: NSRange(location: 0, length: 0))
-                dragBoard.clearContents()
                 return chip != nil
             }),
             ("burnConcealedCopy on a page", {
@@ -189,5 +198,17 @@ final class MutationArmingTests: XCTestCase {
 
     private static func ink(of runs: [RestoredRun]) -> String {
         runs.compactMap { if case .ink(let text) = $0 { text } else { nil } }.joined()
+    }
+
+    /// A client whose drop to seal stands its object from the test's own
+    /// text, so no step reads the system drag board.
+    private final class DragStandIn: CompanionClient, @unchecked Sendable {
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func sealFromDrag(sheet: UInt64, at: UInt32, length: UInt32) -> ChipInfo? {
+            sealText(sheet: sheet, "dropped in", at: at, length: length)
+        }
     }
 }
