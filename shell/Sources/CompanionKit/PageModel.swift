@@ -7001,4 +7001,16 @@ public final class PageModel: ObservableObject {
     func settleRefusal(sheet: UInt64? = nil, told: Bool) {
         if settleIfDue(sheet: sheet), told { flash(Self.pageExpiredLine) }
     }
+
+    /// Whether text the shell already shows from page `sheet` may leave by AppKit, which
+    /// no core route sees (ADR-0052): a late timer settles first, and a page gone says so.
+    public func givesOut(sheet: UInt64) -> Bool {
+        guard !sheet.isFileID else { return true }
+        settleIfDue()
+        guard livePageIDs.contains(sheet) else {
+            flash(Self.pageExpiredLine)
+            return false
+        }
+        return true
+    }
 }

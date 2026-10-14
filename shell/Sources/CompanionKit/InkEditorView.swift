@@ -2736,6 +2736,13 @@ public struct InkEditorView: NSViewRepresentable {
             return model.composeSelection(ranges, sheet: sheet)
         }
 
+        /// Whether AppKit may give out the text this surface shows, which no core route
+        /// sees (ADR-0052): the note's page or the page is asked; a file always may.
+        func givesOutShownText() -> Bool {
+            guard let sheet = writesNote ? noteHost?.sheet : currentSheet else { return !writesNote }
+            return model.givesOut(sheet: sheet)
+        }
+
         /// Cut the page's selection through the core (ADR-0047 point 5).
         @discardableResult
         func cutSelection() -> PageModel.CutOutcome {
@@ -5530,8 +5537,16 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         guard answersChords else { return }
         guard let coordinator, !coordinator.writesNote,
               let sheet = coordinator.currentSheet, !sheet.isFileID
-        else { return super.copy(sender) }
+        else {
+            guard givesOutShownText else { return }
+            return super.copy(sender)
+        }
         coordinator.copySelection()
+    }
+
+    /// Whether AppKit may write out what this view shows (ADR-0052); a bare view may.
+    private var givesOutShownText: Bool {
+        coordinator?.givesOutShownText() ?? true
     }
 
     /// The page's select all stands aside while another surface holds the keys.
@@ -5548,6 +5563,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
            let sheet = coordinator.currentSheet, !sheet.isFileID,
            coordinator.cutSelection() != .inkStretches
         { return }
+        guard givesOutShownText else { return }
         withEditIntent(.cut) {
             super.cut(sender)
         }
@@ -5578,6 +5594,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
     ) -> Bool {
         guard let composition = requestedComposition() else {
+            guard givesOutShownText else { return false }
             return super.writeSelection(to: pboard, types: types)
         }
         guard case .composed(let fragment) = composition,
@@ -5591,6 +5608,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         to pboard: NSPasteboard, type: NSPasteboard.PasteboardType
     ) -> Bool {
         guard let composition = requestedComposition() else {
+            guard givesOutShownText else { return false }
             return super.writeSelection(to: pboard, type: type)
         }
         guard case .composed(let fragment) = composition else { return false }
@@ -5607,7 +5625,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     private func requestedComposition() -> PageModel.SelectionComposition? {
         guard answersChords else { return .refused }
         guard let coordinator, coordinator.selectionHoldsObject else { return nil }
-        return coordinator.composeSelection()
+        let composition = coordinator.composeSelection()
+        if composition == .pageExpired { coordinator.model.flash(PageModel.pageExpiredLine) }
+        return composition
     }
 
     override func deleteBackward(_ sender: Any?) {
@@ -6154,6 +6174,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
         switch coordinator.beginPageDrag() {
         case .ordinary:
+            guard givesOutShownText else { return false }
             return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
         case .refused:
             return false

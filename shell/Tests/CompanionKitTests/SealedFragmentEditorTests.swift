@@ -876,6 +876,61 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
+    /// AppKit's own ways out, which no core route sees, ask first: past the deadline a
+    /// service's write of ink alone, a drag of ink stretches and the note's copy, cut,
+    /// drag and service give nothing out, and the settle takes the page with its line.
+    func testAppKitsWaysOutOfAPagePastItsDeadlineAskFirstAndSettle() throws {
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        let asks: [(name: String, run: (Page) throws -> Void)] = [
+            ("a service of ink alone", {
+                $0.textView.setSelectedRange(NSRange(location: 0, length: 2))
+                XCTAssertFalse($0.textView.writeSelection(
+                    to: board, types: $0.textView.writablePasteboardTypes))
+                XCTAssertFalse($0.textView.writeSelection(to: board, type: .string), "once gone")
+            }),
+            ("a drag of ink stretches", {
+                $0.textView.selectedRanges = [
+                    NSValue(range: NSRange(location: 0, length: 2)),
+                    NSValue(range: NSRange(location: 5, length: 2)),
+                ]
+                guard case .ordinary = $0.coordinator.beginPageDrag() else {
+                    return XCTFail("the core was asked for ink stretches")
+                }
+                XCTAssertFalse($0.coordinator.givesOutShownText(), "AppKit's drag would run")
+            }),
+            ("the note", {
+                let note = try XCTUnwrap($0.coordinator.noteEditor)
+                XCTAssertTrue(note.isOpen)
+                note.textView.selectAll(nil)
+                XCTAssertFalse(note.textView.writeSelection(to: board, types: [.string]))
+                XCTAssertEqual(
+                    note.textView.coordinator?.givesOutShownText(), false,
+                    "the note's copy, cut or drag would run")
+            }),
+        ]
+        for ask in asks {
+            let page = try makePage()
+            XCTAssertTrue(page.model.applyNoteOps(
+                chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+                intent: .typing, selection: nil))
+            if ask.name == "the note" {
+                page.coordinator.beginNote(at: 3)
+                drainMainQueue()
+            }
+            XCTAssertTrue(page.coordinator.givesOutShownText(), "\(ask.name): the control")
+            try age(page)
+            let written = board.changeCount
+
+            try ask.run(page)
+
+            XCTAssertEqual(board.changeCount, written, "\(ask.name) wrote a page past its deadline")
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, ask.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet }, "\(ask.name): no settle")
+        }
+    }
+
     /// What another app reads from a copy: a rich or a plain text reader gets
     /// the public text, with a placeholder where each object stood.
     func testAnotherAppReadsThePublicTextAlone() throws {
