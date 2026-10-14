@@ -7,6 +7,7 @@ documentation_status: needs-review
 - **Status:** accepted
 - **Date:** 2026-10-13
 - **Depends on:** [ADR-0043](0043-a-sealed-objects-name-and-note-live-on-its-chip.md), whose chip carries the name and note a reference carries, and [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md) Amendment 1, whose `Drag` destination class this record builds.
+- **Superseded in part by:** [ADR-0054](0054-a-drag-between-pages-moves-its-objects.md), which replaces point 10's last sentence: a drag between pages moves its objects. The other points stand.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -188,3 +189,9 @@ the core writes a decrypted drag into the drag item the shell hands it.
   says which asks point 11's provider answers, and
   [ADR-0051](0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md)
   places its handle. The decisions above stand.
+- 2026-10-13: Superseded in part by
+  [ADR-0054](0054-a-drag-between-pages-moves-its-objects.md). Point
+  10's last sentence, that a drag between pages pastes the copy
+  fragment and the source's removal detaches, is replaced: the drag
+  moves its range as one transaction keeping every object, and clears
+  the source page's undo. Point 10's drags inside a page stand.
