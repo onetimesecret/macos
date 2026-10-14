@@ -1593,7 +1593,7 @@ public final class PageModel: ObservableObject {
     private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
     /// The wake's observer, on the center it was added to; removed in deinit as above.
     private nonisolated(unsafe) var wakeObserver: NSObjectProtocol?
-    private nonisolated(unsafe) let wakeCenter: NotificationCenter
+    private let wakeCenter: NotificationCenter
 
     /// Whether the drafts file owes a write.
     ///
