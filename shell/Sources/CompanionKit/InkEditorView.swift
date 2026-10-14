@@ -673,6 +673,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// The keys moved to or from a surface or a window: the Edit menu's
         /// answers follow them on the next turn, once AppKit has settled.
         func keysMoved() {
+            textView?.handlesMayHaveMoved()
             DispatchQueue.main.async { [weak self] in
                 self?.refreshLanguageActionAvailability()
             }
@@ -829,6 +830,7 @@ public struct InkEditorView: NSViewRepresentable {
             if !selectionChangeIsIncidental, let document, let textView {
                 model.finishEditingGroup(document, selection: textView.selectedRange())
             }
+            textView?.handlesMayHaveMoved()
             refreshLanguageActionAvailability()
             if refreshBlockMetadataFocus() {
                 updateBlockLabelViews()
@@ -4768,6 +4770,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             for index in [oldValue, hoveredChipIndex].compactMap({ $0 }) {
                 redrawChip(at: index)
             }
+            handlesMayHaveMoved()
         }
     }
 
@@ -4966,6 +4969,39 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         applyHover(at: nil)
     }
 
+    /// Whether the block at `index` draws its decrypted drag handle: while it is hovered
+    /// or selected (ADR-0051 point 1).
+    func drawsDecryptedDragHandle(at index: Int) -> Bool {
+        hoveredChipIndex == index || selectedRange() == NSRange(location: index, length: 1)
+    }
+
+    /// Each drawn handle a press would start the decrypted drag from, so none while
+    /// another field or the note holds the keys (ADR-0051 point 4).
+    var decryptedDragCursorRects: [NSRect] {
+        guard answersChords else { return [] }
+        let blocks = Set([hoveredChipIndex, selectedRange().location].compactMap { $0 })
+        return blocks.sorted().filter(drawsDecryptedDragHandle(at:)).compactMap { index in
+            guard let frame = chipFrame(at: index),
+                  let handle = chipCell(at: index)?.decryptedDragRect(in: frame)
+            else { return nil }
+            let shown = handle.intersection(visibleRect)
+            return shown.isEmpty ? nil : shown
+        }
+    }
+
+    /// An open hand over each handle a press would drag from, the drag affordance macOS uses.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for rect in decryptedDragCursorRects {
+            addCursorRect(rect, cursor: .openHand)
+        }
+    }
+
+    /// The hover, the selection or the keys moved, so the handles' cursor rects are stale.
+    func handlesMayHaveMoved() {
+        window?.invalidateCursorRects(for: self)
+    }
+
     func redrawChip(at index: Int) {
         guard let layoutManager, let textContainer,
               let storage = textStorage, index < storage.length else { return }
@@ -5087,9 +5123,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         let cell = chipCell(at: index)
         if let handle = frame.flatMap({ cell?.decryptedDragRect(in: $0) }),
            Self.startsDecryptedDrag(
-               onHandle: handle.contains(point),
-               handleShown: hoveredChipIndex == index
-                   || selectedRange() == NSRange(location: index, length: 1),
+               onHandle: handle.contains(point), handleShown: drawsDecryptedDragHandle(at: index),
                clickCount: event.clickCount, modifierFlags: event.modifierFlags)
         {
             trackDecryptedDrag(from: event, chipAt: index, handle: handle)

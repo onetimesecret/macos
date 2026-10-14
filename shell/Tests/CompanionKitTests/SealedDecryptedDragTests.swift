@@ -170,6 +170,54 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertTrue(InkTextView.pressBecomesDrag(from: start, to: NSPoint(x: 13, y: 10)))
     }
 
+    /// The pointer turns to an open hand over the handle while it is drawn, hovered or
+    /// selected, and over none while a field or the note holds the keys (ADR-0046).
+    func testTheHandleShowsAnOpenHandWhereAPressWouldStartTheDrag() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let textView = page.textView
+        let frame = try XCTUnwrap(textView.chipFrame(at: object))
+        let handle = try XCTUnwrap(textView.chipCell(at: object)?.decryptedDragRect(in: frame))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "a handle not drawn")
+
+        func hover(_ point: NSPoint, holdsKeys: Bool = true) {
+            textView.hoverRefreshInput = (
+                page.window.convertPoint(toScreen: textView.convert(point, to: nil)),
+                holdsKeys, true)
+            textView.refreshHover()
+        }
+        hover(NSPoint(x: frame.midX, y: frame.midY))
+        XCTAssertEqual(textView.hoveredChipIndex, object)
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the hovered block")
+        hover(NSPoint(x: frame.midX, y: frame.midY), holdsKeys: false)
+        XCTAssertNil(textView.hoveredChipIndex)
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "the hover left")
+
+        textView.setSelectedRange(NSRange(location: 0, length: 2))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "ink is selected")
+        textView.setSelectedRange(NSRange(location: object, length: 0))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "a caret before the block")
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the selected block")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "under the field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(textView))
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        page.coordinator.beginNote(at: object)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "under the note")
+
+        note.escape()
+        drainMainQueue()
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the hand came back")
+    }
+
     // MARK: The drag and its provider
 
     /// The drag offers a copy to another app and nothing inside this one.
