@@ -64,6 +64,39 @@ struct DisplaySnapshot {
     }
 }
 
+struct ShiftTapDetector {
+    private var shiftDown = false
+    private var pressedAt: TimeInterval?
+    private var contaminated = false
+    private var lastTap: TimeInterval?
+
+    mutating func reset(flags: NSEvent.ModifierFlags) {
+        shiftDown = flags.contains(.shift)
+        pressedAt = nil; lastTap = nil; contaminated = shiftDown
+    }
+
+    mutating func sample(flags: NSEvent.ModifierFlags, at time: TimeInterval) -> Bool {
+        let shift = flags.contains(.shift)
+        let chord = !flags.intersection([.command, .option, .control]).isEmpty
+        if chord { lastTap = nil }
+        if shift && !shiftDown { pressedAt = time; contaminated = chord }
+        if shift && chord { contaminated = true }
+        defer { shiftDown = shift }
+        guard !shift && shiftDown else { return false }
+        defer { pressedAt = nil; contaminated = false }
+        guard let pressedAt, time >= pressedAt, time - pressedAt < 0.3, !contaminated, !chord else {
+            lastTap = nil
+            return false
+        }
+        if let lastTap, time >= lastTap, time - lastTap < 0.4 {
+            self.lastTap = nil
+            return true
+        }
+        lastTap = time
+        return false
+    }
+}
+
 func stagedFrame(_ card: NSRect, stage: Phase, mode: Mode, side: Side) -> NSRect {
     guard stage == .peek else { return card }
     var frame = card
@@ -284,9 +317,7 @@ final class Lab: NSObject, NSApplicationDelegate {
     var push: CGFloat = 0
     var lastDelta: CGFloat = 0
 
-    var lastShift = false
-    var shiftPressedAt: TimeInterval = 0
-    var lastShiftTap: TimeInterval = -10
+    var shiftTaps = ShiftTapDetector()
     var shakeStart: TimeInterval = 0
     var shakeSign: CGFloat = 0
     var shakeReversals = 0
@@ -414,7 +445,6 @@ final class Lab: NSObject, NSApplicationDelegate {
     @objc func changed() {
         dismiss(block: false)
         held = false; explicitAnchor = nil; hoveringHandle = false; hoveringStatus = false
-        lastShiftTap = -10; shakeReversals = 0; shakeTravel = 0
         instructions.stringValue = mode.instructions
         guard let screen, let edge else {
             handle.orderOut(nil); guide.orderOut(nil)
@@ -509,6 +539,7 @@ final class Lab: NSObject, NSApplicationDelegate {
         let activeName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         telemetry.stringValue = "\(phase.rawValue) | active: \(activeName) | outward Δ: \(String(format: "%.1f", lastDelta)) | push: \(String(format: "%.1f", push)) | click: \(card.open.isEnabled ? "armed" : "not armed")"
         guard triggersAvailable else {
+            shiftTaps.reset(flags: NSEvent.modifierFlags)
             if phase != .idle { dismiss(block: true) }
             return
         }
@@ -631,6 +662,8 @@ final class Lab: NSObject, NSApplicationDelegate {
         reveal.orderOut(nil)
         phase = .idle; card.stage = .idle; enteredAt = nil; exitAt = nil; explicitAnchor = nil
         blocked = block; push = 0; card.open.isEnabled = false; card.acceptsDrop = false
+        shiftTaps.reset(flags: NSEvent.modifierFlags)
+        shakeStart = 0; shakeSign = 0; shakeReversals = 0; shakeTravel = 0
     }
 
     func glance(_ down: Bool) {
@@ -650,15 +683,8 @@ final class Lab: NSObject, NSApplicationDelegate {
         blocked = false; enteredAt = now; explicitAnchor = NSEvent.mouseLocation; show(.card)
     }
     func detectShift(_ time: TimeInterval, flags: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
-        let shift = flags.contains(.shift)
-        if mode == .doubleShift && triggersAvailable {
-            if shift && !lastShift { shiftPressedAt = time }
-            if !shift && lastShift && time - shiftPressedAt < 0.3 && flags.intersection([.command, .option, .control]).isEmpty {
-                if time - lastShiftTap < 0.4 { revealNearPointer(); lastShiftTap = -10 }
-                else { lastShiftTap = time }
-            }
-        }
-        lastShift = shift
+        guard mode == .doubleShift, triggersAvailable else { shiftTaps.reset(flags: flags); return }
+        if shiftTaps.sample(flags: flags, at: time) { revealNearPointer() }
     }
     func mouseMoved(_ event: NSEvent) {
         guard triggersAvailable, let edge else { return }
@@ -765,6 +791,35 @@ func selfTest() {
     displays.expect(DisplaySnapshot.selectedID(previous: a.id, in: [b]) == b.id, "Removing the selected display must select an available display")
     displays.expect(DisplaySnapshot.selectedID(previous: a.id, in: []) == nil, "Empty displays must have no selection")
     displays.expect(DisplaySnapshot.selectedID(previous: nil, in: [b]) == b.id, "Displays returning after an empty snapshot must recover")
+
+    func fires(_ samples: [(TimeInterval, NSEvent.ModifierFlags)]) -> [TimeInterval] {
+        var detector = ShiftTapDetector()
+        return samples.compactMap { detector.sample(flags: $0.1, at: $0.0) ? $0.0 : nil }
+    }
+    let shift = TestContext(name: "self-test double Shift timing")
+    shift.expect(fires([(0, .shift), (0.05, []), (0.15, .shift), (0.2, [])]) == [0.2], "Two clean short taps must fire once")
+    shift.expect(fires([(0, .shift), (0.31, []), (0.4, .shift), (0.45, [])]).isEmpty, "Long Shift hold must invalidate the pair")
+    shift.expect(fires([(0, .shift), (0.05, []), (0.6, .shift), (0.65, [])]).isEmpty, "Widely separated taps must not fire")
+    for (name, modifier) in [("Command", NSEvent.ModifierFlags.command), ("Option", .option), ("Control", .control)] {
+        let test = TestContext(name: "self-test Shift+\(name)")
+        let chord = modifier.union(.shift)
+        for contaminatedTap: [(TimeInterval, NSEvent.ModifierFlags)] in [
+            [(0, chord), (0.02, .shift), (0.06, [])],
+            [(0, .shift), (0.02, chord), (0.04, .shift), (0.06, [])],
+            [(0, .shift), (0.02, chord), (0.06, modifier), (0.08, [])]
+        ] {
+            test.expect(fires(contaminatedTap + [(0.12, .shift), (0.16, [])]).isEmpty, "Chord contamination must survive releasing the other modifier before Shift")
+            test.expect(fires([(-0.1, .shift), (-0.05, [])] + contaminatedTap + [(0.12, .shift), (0.16, [])]).isEmpty, "Contaminated second tap must discard a pending first tap")
+        }
+        test.expect(fires([(0, .shift), (0.05, []), (0.08, modifier), (0.1, []), (0.12, .shift), (0.16, [])]).isEmpty, "An intervening modifier must discard a pending tap")
+    }
+    var detector = ShiftTapDetector()
+    _ = detector.sample(flags: .shift, at: 0)
+    _ = detector.sample(flags: [], at: 0.05)
+    detector.reset(flags: .shift)
+    shift.expect(!detector.sample(flags: [], at: 0.1), "Reset during a held Shift must ignore its release")
+    _ = detector.sample(flags: .shift, at: 0.15)
+    shift.expect(!detector.sample(flags: [], at: 0.2), "Reset must clear the pending first tap")
     print("PASS: entry/exit bands, negative display origins, all four edges, shared/partial seams, card clamping")
 }
 
@@ -929,6 +984,26 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
     lab.layoutChanged()
     select(.tab)
     unavailable.expect(lab.screen != nil && lab.triggersAvailable && lab.guide.isVisible && lab.handle.isVisible, "Returning displays must restore geometry, triggers, guide, and handle")
+
+    for cancellation in ["dismiss", "pause", "mode change", "Space change", "sleep/wake"] {
+        let test = TestContext(name: "smoke mode=Double Shift reset on \(cancellation)")
+        select(.doubleShift)
+        lab.shiftTaps.reset(flags: [])
+        lab.detectShift(10, flags: .shift); lab.detectShift(10.05, flags: [])
+        if cancellation == "dismiss" { lab.dismiss(block: true) }
+        else if cancellation == "pause" {
+            lab.pause.state = .on; lab.changed()
+            lab.detectShift(10.1, flags: .shift)
+            lab.pause.state = .off; lab.changed()
+        } else if cancellation == "mode change" { select(.dwell); select(.doubleShift) }
+        else if cancellation == "Space change" { post(NSWorkspace.activeSpaceDidChangeNotification) }
+        else { post(NSWorkspace.willSleepNotification); post(NSWorkspace.didWakeNotification) }
+        lab.detectShift(10.15, flags: .shift); lab.detectShift(10.2, flags: [])
+        test.expect(lab.phase == .idle, "Cancellation must discard the pending Shift tap")
+        lab.detectShift(10.25, flags: .shift); lab.detectShift(10.3, flags: [])
+        test.expect(lab.phase == .card, "Two fresh clean taps must work after cancellation")
+        lab.dismiss(block: false)
+    }
 
     print("PASS: AppKit startup, 12 mode render/reset cycles, click-catching cards, stationary/jitter rejection, deliberate motion arming, simulated card clicks, unchanged key window during reveal, simulated held press/release")
     app.terminate(nil)
