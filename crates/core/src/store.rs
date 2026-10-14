@@ -366,8 +366,8 @@ impl<C: Clock> SheetStore<C> {
         self.sheets().find(|s| s.id == id)
     }
 
-    /// The live pages whose countdown still runs; every read or egress of a
-    /// page, an object or a note finds it here (ADR-0052).
+    /// The live pages whose countdown still runs; every route that gives a
+    /// page, an object or a note out reads it here (ADR-0052).
     pub fn readable_sheets(&self) -> impl Iterator<Item = &Sheet> {
         let now = self.clock.now();
         self.sheets().filter(move |sheet| !sheet.is_due(now))

@@ -31,10 +31,14 @@
  *
  * Deadline rule (ADR-0052): a page past its deadline gives nothing out,
  * whether or not a sweep has taken it. Copy decrypted, copy NAME=value,
- * the decrypted drag, both conceals, the note's runs and the fragment's
- * copy and cut refuse it as they refuse an unknown id, writing and
- * recording nothing. The timer can be late, so after any refusal call
- * companion_expire_due() and settle as when the timer fires.
+ * the decrypted drag, the note's runs and the fragment's copy and cut
+ * refuse it as they refuse an unknown id; both conceals answer the
+ * error "this page has expired". Each writes, sends and records
+ * nothing. The timer can be late, so after any refusal call
+ * companion_expire_due() and settle as when the timer fires. Text the
+ * caller already holds, the open note's or a page's ink, never passes
+ * these routes, so the caller must not give it out past the deadline
+ * through AppKit's own copy, cut, drag or services either.
  */
 
 #ifndef COMPANION_FFI_H
