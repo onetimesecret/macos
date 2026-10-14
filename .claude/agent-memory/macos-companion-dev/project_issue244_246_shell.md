@@ -66,6 +66,14 @@ a range; `answerer(of:in:)` and `pageMenuActions` are shared in
 `ResponderChain.swift`; any test that sends ⇧⌘V or a seal must give its
 client `useMemoryPasteboardForTests()` first, in case the page answers.
 
+Left open after phase 3: the summon offer's button still seals into the
+page while a note is open (ADR-0045 keeps the offer the page's); the
+key window case (`keysHeldInAnotherWindow`, the pad popover) and every
+new procedure check were reasoned, not run; edits to this directory were
+committed within a minute as bodiless `docs(memory)` commits by
+something other than the session, so check `git log` before committing
+memory.
+
 **How to apply:** test traps: a zone press test must hover first
 (`hoverRefreshInput` then `refreshHover`); never synthesize a press that
 takes the `.select` path, since `super.mouseDown` waits for a mouse up
