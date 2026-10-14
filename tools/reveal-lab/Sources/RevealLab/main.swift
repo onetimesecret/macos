@@ -533,17 +533,24 @@ final class Lab: NSObject, NSApplicationDelegate {
         }
     }
 
-    func tick() {
-        let p = NSEvent.mouseLocation
-        let time = now
-        detectShift(time)
+    @discardableResult func updateTelemetry() -> Bool {
         let activeName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
-        telemetry.stringValue = "\(phase.rawValue) | active: \(activeName) | outward Δ: \(String(format: "%.1f", lastDelta)) | push: \(String(format: "%.1f", push)) | click: \(card.open.isEnabled ? "armed" : "not armed")"
+        let text = "\(phase.rawValue) | active: \(activeName) | outward Δ: \(String(format: "%.1f", lastDelta)) | push: \(String(format: "%.1f", push)) | click: \(card.open.isEnabled ? "armed" : "not armed")"
+        guard telemetry.stringValue != text else { return false }
+        telemetry.stringValue = text
+        return true
+    }
+
+    func tick() {
         guard triggersAvailable else {
             shiftTaps.reset(flags: NSEvent.modifierFlags)
             if phase != .idle { dismiss(block: true) }
             return
         }
+        defer { updateTelemetry() }
+        let p = NSEvent.mouseLocation
+        let time = now
+        detectShift(time)
         if mode == .modifier && !NSEvent.modifierFlags.contains(.option) {
             if phase != .idle { dismiss(block: false) }
             enteredAt = nil
@@ -585,7 +592,6 @@ final class Lab: NSObject, NSApplicationDelegate {
             }
         }
         push = max(0, push - 0.15)
-
     }
 
     func retainsCard(at point: NSPoint) -> Bool {
@@ -1054,7 +1060,18 @@ func smokeTest(_ lab: Lab, app: NSApplication) {
         lab.dismiss(block: false)
     }
 
-    print("PASS: AppKit startup, 12 mode render/reset cycles, click-catching cards, stationary/jitter rejection, deliberate motion arming, simulated card clicks, unchanged key window during reveal, simulated held press/release")
+    let telemetry = TestContext(name: "smoke telemetry polling")
+    select(.dwell)
+    lab.telemetry.stringValue = "sentinel"
+    telemetry.expect(lab.updateTelemetry(), "Changed telemetry must be written")
+    telemetry.expect(!lab.updateTelemetry(), "Unchanged telemetry must not be rewritten")
+    lab.pause.state = .on; lab.changed()
+    lab.telemetry.stringValue = "paused sentinel"
+    let logs = lab.events.stringValue
+    lab.tick(); lab.tick()
+    telemetry.expect(lab.telemetry.stringValue == "paused sentinel" && lab.events.stringValue == logs, "Paused polling must not write telemetry or events")
+    lab.pause.state = .off; lab.changed()
+    print("PASS: 12 AppKit mode cycles, marker placement, explicit stages, tracking selectors/dispatch, simulated first clicks, arming, local fallback retention, held shortcut, Space/sleep/wake, empty-display recovery, Shift cancellation, telemetry deduplication")
     app.terminate(nil)
 }
 
