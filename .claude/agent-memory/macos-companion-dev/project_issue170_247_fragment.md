@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste, two press removal and its Undo) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
+description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste, two press removal and its Undo, drags) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
 metadata:
   type: project
 ---
@@ -89,6 +89,19 @@ Seams for the editor half (all page ids, all refuse a file id):
   calls `PageModel.withdrawRemovalUndo`. Not covered: ⌥⌫, ⌘⌫, Edit >
   Delete and typing over a selected object still remove with no line;
   a torn down coordinator leaves a dead button (weak self).
+
+- Drags are built (shell unit 6, `SealedDragTests`): `InkTextView.
+  dragSelection` begins its own session with `Coordinator.beginPageDrag`'s
+  one item (`SealedFragment.pasteboardItem()`); the `draggedCell` delegate
+  sends a drag starting on an object there. Own drop: `dropPageDrag` to
+  `PageModel.dropRange` (core move or clone). Another page: `dropFragment`
+  pastes, then tells the source `pageDragMovedAway()`, and only then does
+  `endPageDrag(.move)` delete the source run. Both check the
+  `(document, generation)` stamp. `dragOperation(for:type:)` feeds
+  AppKit's drop caret (unobserved). Trap for the decrypted drag: a drag
+  whose source is the page with no `pageDrag` falls to
+  `super.performDragOperation`, which would read its plaintext in as ink.
+  `FakeDrag` stands in for NSDraggingInfo; never pass it to a super call.
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
