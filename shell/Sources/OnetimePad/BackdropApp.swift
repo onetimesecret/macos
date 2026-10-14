@@ -65,6 +65,9 @@ struct BackdropApp: App {
                         closeShortcut: appDelegate.shortcut(for: .pageClose)
                     )
                 }
+                // No Print… until a print that emits placeholders is designed
+                // (Law 0001, the export, print, share row); a later scene must not bring one.
+                CommandGroup(replacing: .printItem) {}
                 // These buttons establish the menu placement, labels and
                 // configured shortcuts. Once AppKit has built the menu,
                 // `routeUndoRedoThroughResponder` turns the items into
