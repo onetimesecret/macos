@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, why a trap under xctest hangs, and AskingTextView with Law 0001's AppKit text routes table, where every new AppKit reader or rewrite is sorted
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, why a trap under xctest hangs, and AskingTextView with Law 0001's AppKit text routes table, where every new AppKit reader or rewrite is sorted, and where links open (Coordinator.openLink, the openURL seam) and what the spelling panel's buttons reach
 metadata:
   type: project
 ---
@@ -183,6 +183,25 @@ for review fixes; shell only.
   hold the run loop. `storage(for:)` now takes a peer's U+FFFC out of a
   kept storage and restates it; a peer's change still never restates a
   mounted one.
+- Phase 9 unit 2 (2026-10-14): `Coordinator.openLink` is the one way a
+  link opens (⌘-click and the menu's Open Link, retargeted in
+  `InkTextView.aimLinkItems`), through `PageModel.Seams.openURL`; a
+  test that reaches it with default seams opens the browser, so
+  `makePage` passes a recorder. Probed: AppKit's `_openLinkFromMenu:`
+  calls the delegate with no current event, so it read as a plain
+  click; `copyLink:` writes through `writeSelection(to: .general,
+  types:)`; on a TextKit 1 page a held press on a link selects it and
+  calls `dragSelection` (a plain TextKit 2 NSTextView uses gesture
+  recognizers instead); the spelling panel's buttons are aimed at
+  NSSpellChecker (`_learn:`, `_define:`, `_findNext:`, `_ignore:`,
+  `_correct:`), and a hidden panel keeps its word until
+  `updateSpellingPanel(withMisspelledWord:)`. A view's own `menu` is
+  the base AppKit builds its text menu on, so `seededMenu` puts a
+  control item in that no runner's services decide;
+  `SpellCheckerOnTheRunner` skips where the spell checker answers
+  nothing. Data detection is per view and never persists. A test sets
+  `NSApp.currentEvent` by `postEvent` then `nextEvent(dequeue:)`. The
+  auto mode classifier refused an Edit that took `openLink`'s gate out.
 - Test traps: any Swift trap (assert, precondition) under xctest stops
   the process at `_assertionFailure` with no output until killed;
   `assertProjectionParity` now writes its line and exits instead, so a
