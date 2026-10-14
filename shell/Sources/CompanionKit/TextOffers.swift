@@ -94,10 +94,16 @@ enum TextOffers {
     /// AppKit's Copy Link, which writes the link to the general pasteboard.
     static let copyLinkAction = Selector(("copyLink:"))
 
-    /// The readers no click gates, which a file keeps and a page, note or name refuses:
-    /// Writing Tools, and the typing suggestions and inline predictions made from the
-    /// text around the caret as it moves.
+    /// Whether the spelling panel is up, whose Learn takes the word it shows to the spell
+    /// server by `NSSpellChecker` itself, with no text view asked.
+    static var spellingPanelShows: Bool {
+        NSSpellChecker.sharedSpellCheckerExists && NSSpellChecker.shared.spellingPanel.isVisible
+    }
+
+    /// The readers no click gates, which a file keeps and a page, note or name refuses: Writing
+    /// Tools, suggestions, predictions and data detectors, whose finds a later click hands out.
     static func offerUngatedReaders(_ offers: Bool, on textView: NSTextView) {
+        if !offers { textView.isAutomaticDataDetectionEnabled = false }
         textView.isAutomaticTextCompletionEnabled = offers
         if #available(macOS 14.0, *) { textView.inlinePredictionType = offers ? .default : .no }
         guard #available(macOS 15.0, *) else { return }
@@ -192,17 +198,31 @@ class AskingTextView: NSTextView {
         super.toggleAutomaticTextCompletion(sender)
     }
 
+    /// The data detectors `TextOffers.offerUngatedReaders` turned off stay off.
+    override func toggleAutomaticDataDetection(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.toggleAutomaticDataDetection(sender)
+    }
+
+    /// Edit's Show Spelling and Grammar is unavailable where the panel is never shown.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(NSText.showGuessPanel(_:)), !keepsSelectionReaders { return false }
+        return super.validateMenuItem(item)
+    }
+
     // MARK: Spelling, grammar and text checking, which hand the text to the spell server
 
-    /// Check Document Now, and the spelling panel's Find Next, read the text whole.
+    /// Check Document Now, and the spelling panel's Find Next, read the text whole; with the
+    /// panel up they would show a word of it there, which `showGuessPanel` refuses.
     override func checkSpelling(_ sender: Any?) {
-        guard mayReadOut else { return }
+        guard mayReadOut, keepsSelectionReaders || !TextOffers.spellingPanelShows else { return }
         super.checkSpelling(sender)
     }
 
-    /// Show Spelling and Grammar checks from the selection on as its panel opens.
+    /// Show Spelling and Grammar, never over a page's, a note's or a name's text: a panel
+    /// held open past the deadline gives its word to Learn, which asks nothing (Law 0001).
     override func showGuessPanel(_ sender: Any?) {
-        guard mayReadOut else { return }
+        guard keepsSelectionReaders, mayReadOut else { return }
         super.showGuessPanel(sender)
     }
 

@@ -442,6 +442,13 @@ final class SealedFragmentEditorTests: XCTestCase {
             view.toggleAutomaticTextCompletion(nil)
             XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface)'s toggle")
         }
+        file.toggleAutomaticDataDetection(nil)
+        XCTAssertTrue(file.isAutomaticDataDetectionEnabled, "the control: a file detects")
+        for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
+            XCTAssertFalse(view.isAutomaticDataDetectionEnabled, "the \(surface) detects")
+            view.toggleAutomaticDataDetection(nil)
+            XCTAssertFalse(view.isAutomaticDataDetectionEnabled, "the \(surface)'s toggle")
+        }
 
         guard #available(macOS 15.0, *) else { return }
         let writingTools = Selector(("showWritingTools:"))
@@ -461,6 +468,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
         XCTAssertFalse(file.isAutomaticTextCompletionEnabled, "a page mounted where a file stood")
         XCTAssertEqual(file.inlinePredictionType, .no, "a page mounted where a file stood")
+        XCTAssertFalse(file.isAutomaticDataDetectionEnabled, "a page mounted where a file stood")
     }
 
     /// Look Up and Translate are built titled with the selection they hold, Speech reads it
@@ -527,6 +535,83 @@ final class SealedFragmentEditorTests: XCTestCase {
         TextOffers.removeSelectionReaders(from: menu)
 
         XCTAssertEqual(menu.items.map(\.title), ["Cut"])
+    }
+
+    /// The spelling panel's Learn takes the word it shows to the spell server by
+    /// `NSSpellChecker` itself, which no text view's gate sees, so a panel held open past a
+    /// deadline would give a page's word out: a page, a note and a name never show it,
+    /// by Show Spelling and Grammar or by Edit's item for it. A file keeps the panel.
+    func testAPageANoteAndANameNeverShowTheSpellingPanel() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        let show = NSMenuItem(
+            title: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)),
+            keyEquivalent: "")
+        let panel = NSSpellChecker.shared.spellingPanel
+        let alpha = panel.alphaValue
+        panel.alphaValue = 0
+        defer {
+            panel.orderOut(nil)
+            panel.alphaValue = alpha
+        }
+        XCTAssertFalse(panel.isVisible)
+        func neverShows(_ view: NSTextView, _ surface: String) {
+            XCTAssertFalse(view.validateMenuItem(show), "the \(surface)'s Edit item")
+            view.showGuessPanel(nil)
+            XCTAssertFalse(panel.isVisible, "the \(surface) showed the panel")
+        }
+
+        neverShows(page.textView, "page")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        neverShows(try openNameField(page), "name")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        neverShows(try XCTUnwrap(page.coordinator.noteEditor?.textView), "note")
+        page.coordinator.noteEditor?.escape()
+        drainMainQueue()
+        XCTAssertNil(page.model.notice)
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        XCTAssertTrue(file.validateMenuItem(show), "the control: a file's Edit item")
+        file.showGuessPanel(nil)
+        XCTAssertTrue(panel.isVisible, "the control: a file shows the panel")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// With the panel up from a file, a page's Check Document Now and the panel's Find Next
+    /// would put a word of the page in it, so they stand aside; with it down they check.
+    /// The misspelling is the test's own.
+    func testAPagesSpellingCheckStandsAsideWhileThePanelIsUp() throws {
+        try XCTSkipUnless(
+            NSSpellChecker.shared.checkSpelling(of: "wrnog", startingAt: 0).location != NSNotFound,
+            "this machine's spell checker flags no misspelling, so a check selects nothing")
+        let page = try makePage()
+        page.textView.insertText("wrnog ", replacementRange: NSRange(location: 0, length: 0))
+        let start = NSRange(location: 0, length: 0)
+        let panel = NSSpellChecker.shared.spellingPanel
+        let alpha = panel.alphaValue
+        panel.alphaValue = 0
+        defer {
+            panel.orderOut(nil)
+            panel.alphaValue = alpha
+        }
+
+        panel.orderFront(nil)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertTrue(page.textView.answersChords, "the refusal must be the panel's")
+        page.textView.setSelectedRange(start)
+        page.textView.checkSpelling(nil)
+        XCTAssertEqual(page.textView.selectedRange(), start, "the page checked under the panel")
+
+        panel.orderOut(nil)
+        page.textView.checkSpelling(nil)
+        XCTAssertEqual(
+            page.textView.selectedRange(), NSRange(location: 0, length: 5),
+            "the control: with the panel down the check selects the misspelling")
     }
 
     /// A page's Transformations keep the three its rewrite carries round an object; the
@@ -1582,7 +1667,6 @@ final class SealedFragmentEditorTests: XCTestCase {
                 $0.showDefinition(for: NSAttributedString(string: "ab"), at: .zero)
             }),
             ("Check Document Now", { $0.checkSpelling(nil) }),
-            ("Show Spelling and Grammar", { $0.showGuessPanel(nil) }),
             ("Replace All", { $0.checkTextInDocument(nil) }),
             ("Replace in Selection", {
                 $0.selectAll(nil)
