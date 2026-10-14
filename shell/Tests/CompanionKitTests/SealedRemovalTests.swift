@@ -414,6 +414,29 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), page.chips)
     }
 
+    /// A fragment pasted, or the slot's cut placed, over a selected object takes that object
+    /// with the line, and the line's Undo stands it again.
+    func testAPasteOrPlaceOverASelectedObjectTakesItWithTheLine() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        XCTAssertTrue(page.coordinator.copySelection())
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        XCTAssertTrue(page.coordinator.pasteFragment(), "left to AppKit's paste")
+        XCTAssertFalse(chips(page).contains(page.chips[0]))
+        assertRemovalLine(page, "a fragment's paste")
+        page.model.performNoticeAction()
+        XCTAssertEqual(chips(page), page.chips, "the Undo did not stand the pasted over object")
+
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        guard case .cut = page.coordinator.cutSelection() else { return XCTFail("the cut refused") }
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        XCTAssertTrue(page.coordinator.placeActiveCut())
+        XCTAssertEqual(chips(page), [page.chips[1]], "the place kept the object it stood over")
+        assertRemovalLine(page, "the slot's place")
+        page.model.performNoticeAction()
+        XCTAssertTrue(chips(page).contains(page.chips[0]))
+    }
+
     // MARK: Standing aside
 
     /// While a field or the note holds the keys, the page's backspace and

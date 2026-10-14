@@ -2786,8 +2786,10 @@ public struct InkEditorView: NSViewRepresentable {
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
             let ranges = textView.selectedRanges.map(\.rangeValue)
+            let replacesObject = rangesHoldObject(ranges)
             guard let placed = model.placeActiveCut(sheet: sheet, ranges: ranges) else { return false }
             settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
+            if replacesObject { noteRemoval() }
             return true
         }
 
@@ -2801,9 +2803,10 @@ public struct InkEditorView: NSViewRepresentable {
             guard textView.isEditable else { return true }
             InkEditorView.discardComposition(in: textView)
             invalidateOrdinaryPasteMeasurement()
+            let ranges = textView.selectedRanges.map(\.rangeValue)
+            let replacesObject = rangesHoldObject(ranges)
             let outcome = model.pasteFragment(
-                from: model.ambientPasteboard, sheet: sheet,
-                ranges: textView.selectedRanges.map(\.rangeValue))
+                from: model.ambientPasteboard, sheet: sheet, ranges: ranges)
             switch outcome {
             case .ordinary:
                 return false
@@ -2811,6 +2814,8 @@ public struct InkEditorView: NSViewRepresentable {
                 return true
             case .placed(let placed):
                 settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
+                // The removal line, with its Undo, follows any line the paste flashed.
+                if replacesObject { noteRemoval() }
                 return true
             }
         }
