@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste, two press removal and its Undo, drags, decrypted drag) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0051, app 0.34.0; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -115,6 +115,18 @@ Seams for the editor half (all page ids, all refuse a file id):
   `isDecryptedDrag` refuses first, and the in-app mask is empty. A test
   of the refusal must assert `draggingEntered` before calling perform,
   or a regression reads the real system drag board.
+
+- Finished (unit 8, app 0.34.0): a service's request goes through
+  `InkTextView.writeSelection(to:types:)`, `writablePasteboardTypes` and
+  `validRequestor`, which share `PageModel.composeSelection` with the
+  copy. NSTextView names its types the legacy way (`NSStringPboardType`,
+  `NeXT Rich Text Format v1.0 pasteboard type`), and its own
+  `writeSelection` refuses the modern `.string`/`.rtf` names, so a test
+  asking AppKit by those names sees false. Still open, no accepted
+  record: ⇧⌘V and the summon offer seal our own placeholder text after
+  our copy; ⌥⌫, ⌘⌫, Edit > Delete and typing over an object remove it
+  with no line; Share's item source is unverified; no hand procedure
+  has been run.
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law

@@ -35,6 +35,13 @@ for review fixes; shell only.
 - A pad cell's ending passes its pad id to `PadRename.keep`, because the
   cell a field left loses focus after the field has moved to another.
 
+- The phase's last issues, #170 and #247 (the sealed fragment and the
+  name and note in it), finished on the same branch at app 0.34.0; see
+  [[issue170-247-sealed-fragment-core]]. Every new editor route stands
+  aside on `answersChords` while a rename field or the note holds the
+  keys (ADR-0046). None of the epic's hand procedures (rename in place,
+  sealed zones and note, sealed fragment) has been run.
+
 **Why:** these are the non-obvious seams; the focus, selection and
 popover behaviour of the SwiftUI fields was reasoned, not seen.
 
