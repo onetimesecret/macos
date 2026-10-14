@@ -747,13 +747,16 @@ char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
  * and note; else the ledger's newest terminal record places
  * "[sealed content · expired]" or "[sealed content · burned]"; else
  * "[sealed content · unavailable]". An envelope the core cannot read
- * places `plain` (nullable) instead. Returns
+ * places `plain` (nullable) instead. Before an envelope naming an
+ * object resolves, every page past its deadline is swept, as
+ * companion_expire_due() does (ADR-0048). Returns
  *   {"location_utf16": u32, "length_utf16": u32, "reattached": n,
  *    "cloned": n, "expired": n, "burned": n, "unavailable": n,
- *    "unreadable": bool}
- * naming the placed run, or null, changing nothing, for an unknown
- * page, a bad range or nothing to place. Restate the page from
- * companion_sheet_document_json() after it.
+ *    "unreadable": bool, "pages_expired": n}
+ * naming the placed run and the pages swept, or null, changing nothing,
+ * for an unknown page, a page past its deadline, a bad range or nothing
+ * to place. Restate the page from companion_sheet_document_json() after
+ * it, and settle as after companion_expire_due().
  */
 char *companion_sheet_paste_fragment(CompanionHandle *handle, uint64_t sheet,
                                      uint32_t at_utf16, uint32_t len_utf16,
@@ -771,7 +774,8 @@ char *companion_sheet_paste_active_cut(CompanionHandle *handle,
 /*
  * A drag inside a page: move a range to to_utf16, measured before the
  * move, as one undo step that keeps every object's identity. Returns
- * the placed JSON or null for a to_utf16 inside or at the range's edge.
+ * the placed JSON or null for a to_utf16 inside or at the range's edge,
+ * or a page past its deadline.
  */
 char *companion_sheet_move_range(CompanionHandle *handle, uint64_t sheet,
                                  uint32_t from_utf16, uint32_t len_utf16,

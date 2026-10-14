@@ -108,6 +108,25 @@ final class SealedFragmentSeamTests: XCTestCase {
         XCTAssertEqual(chips(client, sheet: sheet).count, 2)
     }
 
+    func testAPasteSweepsADuePageAndSaysHowMany() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (sheet, _) = try page(client)
+        let tab = try XCTUnwrap(client.tabs().last?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        let envelope = try XCTUnwrap(client.copyFragment(sheet: sheet, range: whole)?.envelope)
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertNotEqual(client.newTab(), 0)
+        let fresh = try XCTUnwrap(client.tabs().last?.pageID)
+
+        let placed = try XCTUnwrap(client.pasteFragment(
+            sheet: fresh, range: NSRange(location: 0, length: 0), envelope: envelope,
+            plainText: nil))
+        XCTAssertEqual(placed.pagesExpired, 1)
+        XCTAssertEqual(placed.cloned, 0)
+        XCTAssertEqual(placed.expired, 1)
+        XCTAssertEqual(client.expireDue(), 0, "nothing left for the timer")
+    }
+
     func testADecryptedDragWritesTheItemCoreSideAndRecordsADrag() throws {
         let client = CompanionClient.ephemeral(tag: #function)
         let (_, chip) = try page(client)

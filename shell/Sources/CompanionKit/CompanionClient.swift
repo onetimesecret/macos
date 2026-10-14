@@ -514,6 +514,8 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     public let unavailable: Int
     /// The envelope could not be read, so its public text was placed.
     public let unreadable: Bool
+    /// Due pages the core swept first; the caller settles as its timer does (ADR-0048).
+    public let pagesExpired: Int
 
     /// The placed run, in UTF-16 code units.
     public var range: NSRange { NSRange(location: locationUTF16, length: lengthUTF16) }
@@ -522,6 +524,7 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
         case reattached, cloned, expired, burned, unavailable, unreadable
         case locationUTF16 = "location_utf16"
         case lengthUTF16 = "length_utf16"
+        case pagesExpired = "pages_expired"
     }
 }
 

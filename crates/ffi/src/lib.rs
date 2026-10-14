@@ -1625,7 +1625,8 @@ pub unsafe extern "C" fn companion_sheet_paste_active_cut(
 }
 
 /// A drag inside a page: move a range to `to_utf16`, measured before the move,
-/// as one step. The placed JSON, or null for a `to` inside or at its edge.
+/// as one step. The placed JSON, or null for a `to` inside or at its edge or a
+/// page past its deadline.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -3452,7 +3453,8 @@ fn copied_json(copied: &Copied) -> *mut c_char {
 }
 
 /// What a paste, a move or a clone placed: its run in UTF-16 units, a count
-/// per resolution, and `unreadable` when the public text was placed instead.
+/// per resolution, `unreadable` when the public text was placed instead, and
+/// `pages_expired`, the due pages its sweep took (ADR-0048).
 fn placed_json(placed: Placed) -> *mut c_char {
     let value = serde_json::json!({
         "location_utf16": placed.location_u16,
@@ -3463,6 +3465,7 @@ fn placed_json(placed: Placed) -> *mut c_char {
         "burned": placed.burned,
         "unavailable": placed.unavailable,
         "unreadable": placed.unreadable,
+        "pages_expired": placed.pages_expired,
     });
     match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
@@ -8187,6 +8190,40 @@ mod tests {
             assert!(slot["page_id"].is_null());
             assert_eq!(slot["objects"], serde_json::json!([]));
 
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_paste_sweeps_a_due_page_and_says_how_many_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, _) = page_with_a_chip(handle, "hunter2-secret");
+            assert!(companion_tab_set_rung(
+                handle,
+                strip(handle)[0]["id"].as_u64().unwrap(),
+                0
+            ));
+            let copied = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 5));
+            let envelope = copied["envelope"].as_str().unwrap().to_string();
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            let (_, fresh) = new_page(handle);
+
+            let placed = paste(handle, fresh, 0, &envelope);
+            assert_eq!(placed["pages_expired"], 1);
+            assert_eq!(
+                (placed["cloned"].as_u64(), placed["expired"].as_u64()),
+                (Some(0), Some(1))
+            );
+            assert_eq!(strip(handle)[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(
+                companion_expire_due(handle),
+                0,
+                "nothing left for the timer"
+            );
+
+            let again = paste(handle, fresh, 0, &envelope);
+            assert_eq!(again["pages_expired"], 0);
             companion_free(handle);
         }
     }
