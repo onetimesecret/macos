@@ -1622,26 +1622,12 @@ impl<C: Clock> SheetStore<C> {
 
     /// The earliest instant anything changes: a page expiring or a hold
     /// lapsing. The only timer the shell arms; `None` means nothing to
-    /// schedule (doc 05). Empty tabs contribute nothing.
+    /// schedule (doc 05). Empty tabs contribute nothing; a page past its
+    /// deadline answers now.
     #[must_use]
     pub fn next_event(&self) -> Option<Instant> {
         let now = self.clock.now();
-        self.sheets()
-            .map(|s| match s.clock {
-                SheetClock::Running { deadline } => deadline,
-                SheetClock::Held {
-                    until,
-                    frozen_remaining,
-                    ..
-                } => {
-                    if now < until {
-                        until
-                    } else {
-                        until + frozen_remaining
-                    }
-                }
-            })
-            .min()
+        self.sheets().map(|sheet| sheet.next_event(now)).min()
     }
 
     /// Entomb every page whose countdown reached zero, leaving its tab
@@ -5068,6 +5054,31 @@ mod tests {
             beta.sheet(b).unwrap().remaining(beta.now()),
             frozen - Duration::from_secs(60)
         );
+    }
+
+    /// ADR-0052 points 1 and 4: the timer the shell settles by asks
+    /// the gate's question.
+    #[test]
+    fn a_peer_hold_with_no_life_left_settles_the_page_at_once() {
+        let (_, mut beta, _a, b, uuid, _, _) = shared_page(0);
+        let chip = beta.seal_text(b, "hunter2").unwrap();
+        assert!(beta.observe_peer_hold(
+            uuid,
+            HoldRegister::Held {
+                until_wall_ms: u64::MAX,
+                frozen_ms: 0,
+                topped_up: true,
+            }
+        ));
+        let now = beta.now();
+        assert!(beta.sheet(b).unwrap().is_held(now));
+        assert!(beta.sheet(b).unwrap().is_due(now));
+        assert!(
+            beta.copy_out_chip(chip).is_none(),
+            "every core read refuses"
+        );
+        assert_eq!(beta.next_event(), Some(now), "so the timer settles now");
+        assert_eq!(beta.expire_due(), vec![b]);
     }
 
     #[test]

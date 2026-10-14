@@ -633,6 +633,29 @@ impl Sheet {
         self.remaining(now).is_zero()
     }
 
+    /// When this page's clock next changes: `now` once [`Sheet::is_due`]
+    /// holds, else its hold's lapse or its deadline (ADR-0052).
+    #[must_use]
+    pub(crate) fn next_event(&self, now: Instant) -> Instant {
+        if self.is_due(now) {
+            return now;
+        }
+        match self.clock {
+            SheetClock::Running { deadline } => deadline,
+            SheetClock::Held {
+                until,
+                frozen_remaining,
+                ..
+            } => {
+                if now < until {
+                    until
+                } else {
+                    until + frozen_remaining
+                }
+            }
+        }
+    }
+
     /// The countdown label text ("3h 40m").
     #[must_use]
     pub fn remaining_label(&self, now: Instant) -> String {
