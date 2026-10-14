@@ -1628,14 +1628,14 @@ final class DayScrollTests: XCTestCase {
     /// this list rather than going unnoticed.
     private func stripMenuTitles(model: PageModel, tab: TabSummary) -> [String] {
         var titles = [
-            "Rename tab…",
+            "Rename Tab",
             SheetTab.holdMenuTitle(paused: tab.paused, toppedUp: tab.holdToppedUp),
             SheetTab.rungMenuTitle(hasPage: tab.hasPage),
         ]
         if model.sync.enabled, let pageID = tab.pageID {
             titles.append(SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID)))
         }
-        titles.append("Close tab")
+        titles.append("Close Tab")
         return titles
     }
 
@@ -1671,12 +1671,12 @@ final class DayScrollTests: XCTestCase {
             model.sync.enabled = enabled
             let gutter = try XCTUnwrap(header.menu(for: click)).items.map(\.title)
             XCTAssertFalse(
-                gutter.contains { $0.contains("tab") },
+                gutter.contains { $0.lowercased().contains("tab") },
                 "a day gutter that says tab is naming the strip's object, not its own: \(gutter)"
             )
             XCTAssertEqual(
-                gutter.map { $0.replacingOccurrences(of: "page…", with: "tab…") }
-                    .map { $0 == "Close page" ? "Close tab" : $0 },
+                gutter.map { $0 == "Rename Page" ? "Rename Tab" : $0 }
+                    .map { $0 == "Close Page" ? "Close Tab" : $0 },
                 stripMenuTitles(model: model, tab: tab),
                 "with sync \(enabled ? "on" : "off") the gutter and the strip disagree"
             )

@@ -55,7 +55,7 @@ final class SealedNameFieldTests: XCTestCase {
 
     // MARK: Opening
 
-    /// *Name…* opens the field in the name's seat on the current name,
+    /// *Name* opens the field in the name's seat on the current name,
     /// with `NAME` as its placeholder, and the excerpt stays to its right.
     func testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight() throws {
         let page = try makePage()
@@ -87,21 +87,21 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertEqual(editor.draft, "DB_PASSWORD", "a named object's field opens on its name")
     }
 
-    /// The menu's verb reads *Name…* unnamed and *Rename…* named, and both
-    /// open the field.
+    /// The menu's verb reads *Name* unnamed and *Rename* named, with no
+    /// ellipsis since both edit in place (ADR-0055), and both open the field.
     func testTheMenusVerbOpensTheField() throws {
         let page = try makePage()
         let unnamed = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        let verb = try XCTUnwrap(unnamed.items.first { $0.title == "Name…" })
-        XCTAssertFalse(unnamed.items.contains { $0.title == "Rename…" })
+        let verb = try XCTUnwrap(unnamed.items.first { $0.title == "Name" })
+        XCTAssertFalse(unnamed.items.contains { $0.title == "Rename" })
         _ = (verb.target as? NSObject)?.perform(verb.action, with: verb)
         XCTAssertEqual(page.coordinator.nameEditor?.isOpen, true)
         page.coordinator.keepNaming()
 
         XCTAssertTrue(page.model.setChipName("DB_PASSWORD", chip: page.chip, sheet: page.sheet))
         let named = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        XCTAssertNotNil(named.items.first { $0.title == "Rename…" })
-        XCTAssertFalse(named.items.contains { $0.title == "Name…" })
+        XCTAssertNotNil(named.items.first { $0.title == "Rename" })
+        XCTAssertFalse(named.items.contains { $0.title == "Name" })
     }
 
     /// The double click opens the field only where ADR-0042 point 3 says:

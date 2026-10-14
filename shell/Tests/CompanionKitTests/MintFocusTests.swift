@@ -196,7 +196,7 @@ final class MintFocusTests: XCTestCase {
     /// The live counterpart to `FocusLawTests`'s pure `isRefreshOrphan`
     /// cases: a concealed chip whose own page expires while another page
     /// stays open must not leave the confirmation standing, or a stray
-    /// ↩ ("Create link" carries the default action) fires a network
+    /// ↩ (Create Link carries the default action) fires a network
     /// call for bytes that no longer exist.
     func testAConcealedChipOnAnExpiringPageClearsItsDraftWhileOtherPagesRemain() throws {
         let model = try makeModel()

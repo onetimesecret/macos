@@ -247,7 +247,7 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(page.textView.chipCell(at: 3)?.info.hasNote, true, "the doorway did not open")
 
         let menu = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        XCTAssertNotNil(menu.items.first { $0.title == "Edit note…" })
+        XCTAssertNotNil(menu.items.first { $0.title == "Edit Note…" })
         XCTAssertFalse(menu.items.contains { $0.title == "Note…" })
 
         page.textView.layout()

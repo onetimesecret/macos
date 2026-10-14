@@ -140,7 +140,7 @@ public struct GeneralSettingsView: View {
                         )
                         .help("Makes the ambient panel available through its hotkey and the Show Ambient Panel command.")
                     }
-                    Button("Reset to default position and size", action: resetSurface)
+                    Button("Reset to Default Position and Size", action: resetSurface)
                 } header: {
                     Text("Surface")
                 } footer: {
@@ -273,13 +273,13 @@ public struct GeneralSettingsView: View {
             // disappearance is the receipt.
             if HiddenUI.showsLedgerClear(ledgerRestoreRefused: model.ledgerRestoreRefused) {
                 Section {
-                    Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
+                    Button("Clear the Ledger", role: .destructive) { confirmingLedgerClear = true }
                         .confirmationDialog(
                             "Clear the ledger?",
                             isPresented: $confirmingLedgerClear,
                             titleVisibility: .visible
                         ) {
-                            Button("Clear the ledger", role: .destructive) { clearLedger() }
+                            Button("Clear the Ledger", role: .destructive) { clearLedger() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
                             Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
@@ -529,13 +529,13 @@ public struct ConnectionSettingsView: View {
                 TextField("Organization extid", text: $extid, prompt: Text("empty for guest conceals"))
                 SecureField("API token", text: $token, prompt: Text(tokenPrompt))
                 if model.connection?.hasToken == true {
-                    Button("Clear stored token", role: .destructive) { confirmingClear = true }
+                    Button("Clear Stored Token", role: .destructive) { confirmingClear = true }
                         .confirmationDialog(
                             "Clear the stored API token?",
                             isPresented: $confirmingClear,
                             titleVisibility: .visible
                         ) {
-                            Button("Clear token", role: .destructive) { clearToken() }
+                            Button("Clear Token", role: .destructive) { clearToken() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
                             Text("Conceals fall back to guest links until you enter a new token.")

@@ -133,8 +133,8 @@ final class SyncSurfaceTests: XCTestCase {
 
     func testTheSyncMenuItemSaysWhatTheClickWillDo() {
         XCTAssertEqual(
-            SheetTab.syncMenuTitle(enrolled: false), "Sync this page to your devices")
-        XCTAssertEqual(SheetTab.syncMenuTitle(enrolled: true), "Stop syncing this page")
+            SheetTab.syncMenuTitle(enrolled: false), "Sync This Page to Your Devices")
+        XCTAssertEqual(SheetTab.syncMenuTitle(enrolled: true), "Stop Syncing This Page")
     }
 
     func testEndpointsDeriveFromTheServerButNeverInventARelay() {

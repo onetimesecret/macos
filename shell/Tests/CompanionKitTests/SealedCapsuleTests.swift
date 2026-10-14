@@ -33,17 +33,17 @@ final class SealedCapsuleTests: XCTestCase {
 
         let menu = try XCTUnwrap(coordinator.chipMenu(at: 3))
         let copy = try XCTUnwrap(menu.items.first {
-            $0.title == "Copy decrypted contents"
+            $0.title == "Copy Decrypted Contents"
         })
         let link = try XCTUnwrap(menu.items.first {
-            $0.title == "Create one-time link…"
+            $0.title == "Create One-Time Link…"
         })
         let remove = try XCTUnwrap(menu.items.first {
-            $0.title == "Remove protected content"
+            $0.title == "Remove Sealed Content"
         })
-        XCTAssertEqual(copy.title, "Copy decrypted contents")
-        XCTAssertEqual(link.title, "Create one-time link…")
-        XCTAssertEqual(remove.title, "Remove protected content")
+        XCTAssertEqual(copy.title, "Copy Decrypted Contents")
+        XCTAssertEqual(link.title, "Create One-Time Link…")
+        XCTAssertEqual(remove.title, "Remove Sealed Content")
         XCTAssertNotNil(copy.action)
         XCTAssertNotNil(link.action)
         XCTAssertNotNil(remove.action)
@@ -74,14 +74,14 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(
             named.items.map { $0.isSeparatorItem ? nil : $0.title },
             [
-                "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
-                "Create one-time link…", nil, "Rename…", "Note…", nil,
-                "Remove protected content",
+                "Copy Name", "Copy Decrypted Contents", "Copy Name=Value, Decrypted",
+                "Create One-Time Link…", nil, "Rename", "Note…", nil,
+                "Remove Sealed Content",
             ])
         for item in named.items where !item.isSeparatorItem {
             XCTAssertNotNil(item.action, "\(item.title) does nothing")
             XCTAssertEqual(
-                item.keyEquivalent.isEmpty, item.title != "Copy decrypted contents",
+                item.keyEquivalent.isEmpty, item.title != "Copy Decrypted Contents",
                 "\(item.title) took or lost the copy chord")
         }
     }
@@ -767,7 +767,7 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(
             PageModel.linkCopiedLine,
             "the link is on the clipboard — paste it where it needs to go.")
-        XCTAssertEqual(PageModel.removedLine, "protected content removed.")
+        XCTAssertEqual(PageModel.removedLine, "sealed content removed.")
     }
 
     /// A removal flashes its line with Undo beside it (D-30), since the core

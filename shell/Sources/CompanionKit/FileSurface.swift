@@ -428,19 +428,19 @@ public struct FileConflictBanner: View {
         case .locate:
             FileLocateButton { resolve(.locate) }
         case .keepMine:
-            Button("Keep mine") { resolve(.keepMine) }
+            Button("Keep Mine") { resolve(.keepMine) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
                 .help("Write this copy over the file on disk on the next save")
                 .accessibilityLabel(Text("Keep my copy and overwrite the file"))
         case .takeTheirs:
-            Button("Take theirs") { resolve(.takeTheirs) }
+            Button("Take Theirs") { resolve(.takeTheirs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
                 .help("Replace this copy with the file on disk. Undo restores this copy.")
                 .accessibilityLabel(Text("Take the copy on disk; Undo restores my copy"))
         case .saveAs:
-            Button("Save As") { resolve(.saveAs) }
+            Button("Save As…") { resolve(.saveAs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
                 .help("Write this copy somewhere else and leave the file on disk alone")

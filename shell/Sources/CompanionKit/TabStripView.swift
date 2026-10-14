@@ -479,7 +479,7 @@ struct SheetTab: View {
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
-            Button("Rename tab…") { beginRename() }
+            Button("Rename Tab") { beginRename() }
             // Disabled rather than hidden on an empty slot: the item
             // keeps its place in a menu whose shape the user knows, and
             // an item that says it will hold a clock there would be
@@ -496,7 +496,7 @@ struct SheetTab: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
-            Button("Close tab", role: .destructive) { model.close(sheet.id) }
+            Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
 
@@ -533,8 +533,8 @@ struct SheetTab: View {
     /// the menu offers at each turn of the cycle is testable without a
     /// menu.
     static func holdMenuTitle(paused: Bool, toppedUp: Bool) -> String {
-        if toppedUp { return "Release the hold" }
-        return paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+        if toppedUp { return "Release the Hold" }
+        return paused ? "Top the Hold Up to 24h" : "Hold the Clock for 1h"
     }
 
     /// The rung item's label. On an empty slot the gesture sets the
@@ -542,7 +542,7 @@ struct SheetTab: View {
     /// countdown, and there is no countdown to name, so the item says
     /// what it will actually do (ADR-0017).
     static func rungMenuTitle(hasPage: Bool) -> String {
-        hasPage ? "Shorten the countdown" : "Shorten the next page's countdown"
+        hasPage ? "Shorten the Countdown" : "Shorten the Next Page's Countdown"
     }
 
     /// The sync item's label: what the click will do, both ways. Pure,
@@ -550,7 +550,7 @@ struct SheetTab: View {
     /// without a menu — nonisolated because nothing about it needs
     /// the view's actor, and the tests call it from off it.
     nonisolated static func syncMenuTitle(enrolled: Bool) -> String {
-        enrolled ? "Stop syncing this page" : "Sync this page to your devices"
+        enrolled ? "Stop Syncing This Page" : "Sync This Page to Your Devices"
     }
 
     /// The tooltip: the tier in words, since the chip carries it only
@@ -714,12 +714,12 @@ struct FileTab: View {
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
             Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
-            Button("Close file", role: .destructive) { model.closeFile(file.id) }
+            Button("Close File", role: .destructive) { model.closeFile(file.id) }
         }
     }
 }
 
-/// The strip's group headings, FILES and PAD (ADR-0028).
+/// The strip's group headings, Files and Pad (ADR-0028).
 ///
 /// They exist because the two classes have to be visibly separated and
 /// a gap alone would not say why: a person seeing a document glyph

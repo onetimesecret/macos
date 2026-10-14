@@ -5,9 +5,9 @@ import SwiftUI
 /// default (ADR-0011 section 5, never the page's remaining time per
 /// ADR-0026), optional passphrase and recipient, one confirming click.
 /// The network
-/// boundary is explicit — nothing leaves until "Create link". Failure
+/// boundary is explicit: nothing leaves until Create Link. Failure
 /// is inline with retry; success says the link is on the clipboard and
-/// offers Burn local copy.
+/// offers Burn Local Copy.
 public struct ConcealView: View {
     @ObservedObject var model: PageModel
     let draft: ConcealDraft
@@ -80,8 +80,8 @@ public struct ConcealView: View {
 
     private var title: String {
         switch draft.target {
-        case .chip: "conceal this sealed content into a one-time link"
-        case .page: "conceal this page into a one-time link"
+        case .chip: "create a one-time link from this sealed content"
+        case .page: "create a one-time link from this page"
         }
     }
 
@@ -168,7 +168,7 @@ public struct ConcealView: View {
                         .controlSize(.small)
                         .accessibilityLabel(Text("Sending"))
                 }
-                Button(draft.error == nil ? "Create link" : "Retry") {
+                Button(draft.error == nil ? "Create Link" : "Retry") {
                     model.confirmConceal()
                 }
                 .controlSize(.small)
@@ -191,10 +191,10 @@ public struct ConcealView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.primary)
             Spacer()
-            Button("Burn local copy") { model.burnConcealedCopy() }
+            Button("Burn Local Copy") { model.burnConcealedCopy() }
                 .controlSize(.small)
                 .help(burnHelp)
-            Button("Keep it") { model.dismissConceal() }
+            Button("Keep It") { model.dismissConceal() }
                 .controlSize(.small)
         }
     }

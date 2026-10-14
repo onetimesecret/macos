@@ -18,16 +18,16 @@ struct SyncSettingsSection: View {
                     Text(line)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(
-                            sync.settingsLineIsTrouble ? Color.emberText : Color.secondary)
+                            sync.settingsLineIsTrouble ? Color.emberText : Color.secondaryInk)
                 }
                 if sync.status?.signedIn == true {
-                    Button("Sign out of sync") { confirmingSignout = true }
+                    Button("Sign Out of Sync") { confirmingSignout = true }
                         .confirmationDialog(
                             "Sign out of sync?",
                             isPresented: $confirmingSignout,
                             titleVisibility: .visible
                         ) {
-                            Button("Sign out", role: .destructive) { sync.signOut() }
+                            Button("Sign Out", role: .destructive) { sync.signOut() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
                             Text(
@@ -49,14 +49,14 @@ struct SyncSettingsSection: View {
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(Color.secondaryInk)
                         Spacer()
-                        Button("Give up") { sync.giveUpSignin() }
+                        Button("Give Up") { sync.giveUpSignin() }
                             .controlSize(.small)
                             .help(
                                 "Stops waiting for the browser. Nothing is stored and signing in again starts over."
                             )
                     }
                 } else {
-                    Button("Sign in…") { sync.signIn() }
+                    Button("Sign In…") { sync.signIn() }
                         // The one state the row above returns false
                         // for while a trip still exists: a gate that
                         // names something other than signing in with a
@@ -85,8 +85,8 @@ struct SyncSettingsSection: View {
                     SyncPairingStatus(stage: stage, sync: sync)
                 } else {
                     HStack {
-                        Button("Invite a device…") { sync.beginInvite() }
-                        Button("Join from here…") { sync.beginJoin() }
+                        Button("Invite a Device…") { sync.beginInvite() }
+                        Button("Join from Here…") { sync.beginJoin() }
                     }
                 }
             } header: {
@@ -213,8 +213,8 @@ private struct SyncPairingStatus: View {
                     .font(.system(.title2, design: .monospaced))
                     .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
                 HStack {
-                    Button("They match") { sync.confirmPairing(matched: true) }
-                    Button("They don't match", role: .destructive) {
+                    Button("They Match") { sync.confirmPairing(matched: true) }
+                    Button("They Don't Match", role: .destructive) {
                         sync.confirmPairing(matched: false)
                     }
                 }

@@ -118,7 +118,7 @@ public struct TimeRailView: View {
             surfaceShowsRoll: rollIsShowing,
             stampFormat: model.stampFormat
         )
-        // `FILES` and `PAD` are group labels in one navigation column.
+        // `Files` and `Pad` are group labels in one navigation column.
         // The default stack centres its intrinsic text while the PAD
         // heading itself fills the column for its trailing plus, which
         // made the two labels look unrelated. One leading alignment line
@@ -1061,7 +1061,7 @@ private struct SlotRailRow: View {
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
-            Button("Rename tab…") { beginRename() }
+            Button("Rename Tab") { beginRename() }
             Button(SheetTab.holdMenuTitle(
                 paused: sheet.paused, toppedUp: sheet.holdToppedUp)
             ) { model.pause(sheet.id) }
@@ -1074,7 +1074,7 @@ private struct SlotRailRow: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
-            Button("Close tab", role: .destructive) { model.close(sheet.id) }
+            Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
 

@@ -510,28 +510,28 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
             [
-                "Copy decrypted contents", "Create one-time link…", nil, "Name…", "Note…", nil,
-                "Remove protected content",
+                "Copy Decrypted Contents", "Create One-Time Link…", nil, "Name", "Note…", nil,
+                "Remove Sealed Content",
             ])
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: true, kind: "text"),
             [
-                "Copy name", "Copy decrypted contents", "Copy name=value, decrypted",
-                "Create one-time link…", nil, "Rename…", "Edit note…", nil,
-                "Remove protected content",
+                "Copy Name", "Copy Decrypted Contents", "Copy Name=Value, Decrypted",
+                "Create One-Time Link…", nil, "Rename", "Edit Note…", nil,
+                "Remove Sealed Content",
             ])
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "text")[5...6],
-            ["Rename…", "Note…"])
+            ["Rename", "Note…"])
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true, kind: "text")[3...4],
-            ["Name…", "Edit note…"])
+            ["Name", "Edit Note…"])
         // The core composes `NAME=value` for text alone (ADR-0043 point 7).
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "image"),
             [
-                "Copy name", "Copy decrypted contents", "Create one-time link…", nil, "Rename…",
-                "Note…", nil, "Remove protected content",
+                "Copy Name", "Copy Decrypted Contents", "Create One-Time Link…", nil, "Rename",
+                "Note…", nil, "Remove Sealed Content",
             ])
         makeEditor()
         textView.insertText(
@@ -550,11 +550,11 @@ final class DocumentOpsWiringTests: XCTestCase {
             InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
             "an unnamed object's menu is not the unnamed order")
         let copy = try XCTUnwrap(
-            menu.items.first { $0.title == "Copy decrypted contents" })
+            menu.items.first { $0.title == "Copy Decrypted Contents" })
         let link = try XCTUnwrap(
-            menu.items.first { $0.title == "Create one-time link…" })
+            menu.items.first { $0.title == "Create One-Time Link…" })
         let remove = try XCTUnwrap(
-            menu.items.first { $0.title == "Remove protected content" })
+            menu.items.first { $0.title == "Remove Sealed Content" })
         XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
         // The two egresses come first, in the order D-41 renders them,
         // and the separator keeps the removal below both.

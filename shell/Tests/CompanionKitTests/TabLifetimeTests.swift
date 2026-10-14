@@ -427,18 +427,18 @@ final class TabLifetimeTests: XCTestCase {
 final class EmptySlotGestureTests: XCTestCase {
     func testTheHoldItemNamesTheTurnOfTheCycleItWillTake() {
         XCTAssertEqual(
-            SheetTab.holdMenuTitle(paused: false, toppedUp: false), "Hold the clock for 1h")
+            SheetTab.holdMenuTitle(paused: false, toppedUp: false), "Hold the Clock for 1h")
         XCTAssertEqual(
-            SheetTab.holdMenuTitle(paused: true, toppedUp: false), "Top the hold up to 24h")
-        XCTAssertEqual(SheetTab.holdMenuTitle(paused: true, toppedUp: true), "Release the hold")
+            SheetTab.holdMenuTitle(paused: true, toppedUp: false), "Top the Hold Up to 24h")
+        XCTAssertEqual(SheetTab.holdMenuTitle(paused: true, toppedUp: true), "Release the Hold")
     }
 
     /// On an empty slot the gesture sets the rung the next page is born
     /// at, which is not a countdown being shortened.
     func testTheRungItemSaysWhichClockItShortens() {
-        XCTAssertEqual(SheetTab.rungMenuTitle(hasPage: true), "Shorten the countdown")
+        XCTAssertEqual(SheetTab.rungMenuTitle(hasPage: true), "Shorten the Countdown")
         XCTAssertEqual(
-            SheetTab.rungMenuTitle(hasPage: false), "Shorten the next page's countdown")
+            SheetTab.rungMenuTitle(hasPage: false), "Shorten the Next Page's Countdown")
     }
 
     /// The double-click on an empty slot, in the model where the

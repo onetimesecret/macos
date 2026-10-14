@@ -1424,14 +1424,16 @@ final class DayHeaderView: NSView {
 
     /// The page under this gutter is the one the surface is showing:
     /// the rule under the checkpoint's words draws in ember, and the
-    /// words in ink rather than the faint label. Set by the stack on
+    /// words in ink rather than the secondary label, the name with them
+    /// so it never reads dimmer than its time. Set by the stack on
     /// every assembly, the selection being part of what an assembly is
     /// keyed on.
     var isActive = false {
         didSet {
             guard isActive != oldValue else { return }
-            dayField.textColor = isActive ? .labelColor : .tertiaryLabelColor
+            dayField.textColor = Self.wordsColor(active: isActive)
             timeField.textColor = dayField.textColor
+            titleField.textColor = dayField.textColor
             needsDisplay = true
         }
     }
@@ -1840,7 +1842,7 @@ final class DayHeaderView: NSView {
         // decide would send it looking for a validator this view does
         // not have, and the hold item's own refusal would go with it.
         menu.autoenablesItems = false
-        menu.addItem(item(title: "Rename page…", action: #selector(renameTab)))
+        menu.addItem(item(title: "Rename Page", action: #selector(renameTab)))
         let hold = item(
             title: SheetTab.holdMenuTitle(paused: paused, toppedUp: toppedUp),
             action: #selector(holdClock)
@@ -1865,7 +1867,7 @@ final class DayHeaderView: NSView {
                 action: #selector(toggleSync)
             ))
         }
-        menu.addItem(item(title: "Close page", action: #selector(closeTab)))
+        menu.addItem(item(title: "Close Page", action: #selector(closeTab)))
         return menu
     }
 

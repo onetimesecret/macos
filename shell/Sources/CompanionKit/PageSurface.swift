@@ -244,7 +244,7 @@ public struct PageStatusStack: View {
                 Text("the existing state file would not open, so nothing in this session is being saved")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("discard it and start saving") { model.clearUnreadableStateFile() }
+                Button("Discard It and Start Saving") { model.clearUnreadableStateFile() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .help(discardHelp)
@@ -283,7 +283,7 @@ public struct PageStatusStack: View {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("quit anyway (⌘Q)") { model.requestQuitAnyway() }
+                Button("Quit Anyway (⌘Q)") { model.requestQuitAnyway() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .help(quitAnywayHelp)
@@ -338,7 +338,7 @@ public struct PageStatusStack: View {
                 Text("the clipboard holds content")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.secondaryInk)
-                Button("seal it (⇧⌘V)") { model.performSealedPaste?() }
+                Button("Seal It (⇧⌘V)") { model.performSealedPaste?() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
@@ -363,7 +363,7 @@ public struct PageStatusStack: View {
                     .foregroundStyle(Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Button("place here") { model.placeActiveCutAtCaret() }
+                Button("Place Here") { model.placeActiveCutAtCaret() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Place the cut sealed objects at the caret"))

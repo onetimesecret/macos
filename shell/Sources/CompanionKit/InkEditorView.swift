@@ -2566,17 +2566,19 @@ public struct InkEditorView: NSViewRepresentable {
             case editNote
             case remove
 
+            /// Title case; no ellipsis on Name and Rename, which edit in
+            /// place, and one noun for the object (ADR-0055).
             var title: String {
                 switch self {
-                case .copyName: "Copy name"
-                case .copyDecrypted: "Copy decrypted contents"
-                case .copyNameValue: "Copy name=value, decrypted"
-                case .createLink: "Create one-time link…"
-                case .name: "Name…"
-                case .rename: "Rename…"
+                case .copyName: "Copy Name"
+                case .copyDecrypted: "Copy Decrypted Contents"
+                case .copyNameValue: "Copy Name=Value, Decrypted"
+                case .createLink: "Create One-Time Link…"
+                case .name: "Name"
+                case .rename: "Rename"
                 case .note: "Note…"
-                case .editNote: "Edit note…"
-                case .remove: "Remove protected content"
+                case .editNote: "Edit Note…"
+                case .remove: "Remove Sealed Content"
                 }
             }
         }

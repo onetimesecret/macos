@@ -3052,7 +3052,7 @@ public final class PageModel: ObservableObject {
         }
         // A conceal whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
-        // ↩ lands on "Create link", and a stale draft would answer a
+        // ↩ lands on Create Link, and a stale draft would answer a
         // stray keystroke with a network call over a page (or a chip's
         // page) that no longer exists (issue #19). A chip is orphaned
         // when it survives on no live page: its host page has gone,
@@ -4627,7 +4627,7 @@ public final class PageModel: ObservableObject {
     }
 
     public nonisolated static func unresolvedConflictNotice(name: String) -> String {
-        "\(name) changed on disk. Choose keep mine, take theirs, or Save As before saving."
+        "\(name) changed on disk. Choose Keep Mine, Take Theirs, or Save As… before saving."
     }
 
     /// The refused save's sentence for the conflict the file is
@@ -4639,11 +4639,11 @@ public final class PageModel: ObservableObject {
     public nonisolated static func unresolvedConflictNotice(for file: FileSummary) -> String {
         if file.accessRefused {
             return "\(file.name) cannot be read at its path. "
-                + "Choose Locate, keep mine, or Save As before saving."
+                + "Choose Locate…, Keep Mine, or Save As… before saving."
         }
         if file.conflict == .missing {
             return "\(file.name) is no longer at its path. "
-                + "Choose Locate, keep mine, or Save As before saving."
+                + "Choose Locate…, Keep Mine, or Save As… before saving."
         }
         return unresolvedConflictNotice(name: file.name)
     }
@@ -5480,7 +5480,7 @@ public final class PageModel: ObservableObject {
         clearNotice()
         // A draft aimed at this page — or at a chip riding on it —
         // dies with it. Left standing, the confirmation would still
-        // answer ↩ ("Create link" carries the default action) with a
+        // answer ↩ (Create Link carries the default action) with a
         // network call over a page that no longer exists (issue #19).
         // The chips must be asked for *before* the close; a dead page
         // replays no runs.
@@ -6172,7 +6172,7 @@ public final class PageModel: ObservableObject {
 
     /// The line after a sealed object is removed from the page, in the
     /// design's words (D-30).
-    public static let removedLine = "protected content removed."
+    public static let removedLine = "sealed content removed."
 
     /// Whether a removal's Undo is offered beside `removedLine`: the core
     /// keeps a removed object detached to reattach from (ADR-0047 point 4).
@@ -6612,7 +6612,7 @@ public final class PageModel: ObservableObject {
     /// The confirming click: one POST, off the main actor — the core
     /// releases its lock during the round-trip, so the surface stays
     /// live. On success the link is on the clipboard (written
-    /// core-side) and the confirmation offers Burn local copy.
+    /// core-side) and the confirmation offers Burn Local Copy.
     public func confirmConceal() {
         guard var draft = concealDraft, !draft.inFlight else { return }
         draft.inFlight = true
