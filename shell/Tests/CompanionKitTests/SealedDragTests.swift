@@ -565,6 +565,34 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(shape(target), "xyabcd", "a read only page took ink")
     }
 
+    /// Several stretches of page ink dragged to another page land as a copy, AppKit's own
+    /// answer between two text views, and the source keeps them; one stretch moves.
+    func testSeveralStretchesOfInkDraggedToAnotherPageLandAsACopy() throws {
+        let (model, _) = try makeModel()
+        let source = try mountPage(on: model, text: "ab cd ef", seals: [])
+        let target = try mountPage(on: model, text: "xy", seals: [])
+        source.textView.selectedRanges = [
+            NSValue(range: NSRange(location: 0, length: 2)),
+            NSValue(range: NSRange(location: 6, length: 2)),
+        ]
+        guard case .ordinary = source.coordinator.beginPageDrag() else {
+            return XCTFail("the core was asked for ink stretches")
+        }
+        let drag = DraggingInfoStub(
+            pasteboard: inkBoard("abef"), source: source.textView,
+            location: target.textView.convert(
+                NSPoint(x: 10, y: target.textView.bounds.maxY - 2), to: nil),
+            window: target.window, mask: move)
+
+        XCTAssertEqual(target.textView.dropRoute(for: drag), .ink, "several stretches moved")
+        XCTAssertEqual(target.textView.dragOperation(for: drag, type: .string), .copy)
+        XCTAssertTrue(dropInk(drag, on: target))
+        source.coordinator.endPageDrag()
+
+        XCTAssertEqual(shape(target), "xyabef")
+        XCTAssertEqual(shape(source), "ab cd ef", "several stretches left their source")
+    }
+
     /// The note's ink, dragged onto its own page or another, lands as ink and never
     /// meets drop to seal, though the note holds the keys while it is dragged from.
     func testInkFromTheNoteLandsAsInkAndNeverSeals() throws {

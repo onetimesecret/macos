@@ -286,10 +286,14 @@ SIGKILLs a live one), then `scripts/dev.sh`.
 - [ ] **Ink between pages and from the note.** With both windows
       showing pages, drag a word of plain ink from one page to the
       other, then open an object's note, type a word, select it and
-      drag it onto its own page and onto the other window's page.
-      **Pass:** each word lands as ink where dropped; the page's word
-      leaves its page, the note keeps its word, and no new object or
-      `sealed` appears. **Fail:** any drop becomes a sealed object, or
+      drag it onto its own page and onto the other window's page. Then
+      select two words of plain ink on one page with ⌘ held and drag
+      them to the other window's page.
+      **Pass:** each word lands as ink where dropped; the page's single
+      word leaves its page, the two words and the note's word stay where
+      they were as well (Law 0001, several stretches drag amendment), and
+      no new object or `sealed` appears. **Fail:** any drop becomes a
+      sealed object, or
       the note's drop shows the line that a name or note is being
       written.
 - [ ] **A drag while a name is written.** On the card, open an object's
