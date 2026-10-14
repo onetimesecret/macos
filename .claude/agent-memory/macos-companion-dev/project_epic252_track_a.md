@@ -117,9 +117,14 @@ for review fixes; shell only.
   last accept past the deadline and none PUTs a frame, the relay stays
   an epoch behind and 409s every publish (client protocol 4.4). Solo
   keeps the store's refusal. `JoinedBallot` in the sync_session tests
-  builds two devices with both accepts on the stream. Still open: a
-  seal refusal leaves an earlier unpublished frame to go out under the
-  new epoch (§7.6). A peer's unmarked U+FFFC imports as ink; the shell
+  builds two devices with both accepts on the stream. Phase 8 closed
+  the seal refusal: `KeyFrame` carries its sealing epoch,
+  `sync_driver::stage_frame` drops a stale one, solo reports no commit,
+  and `GopKeyChain::refuse_next_seal` (cfg(test)) reaches the refusal.
+  Still open, same class: a resent in-flight batch is labelled with the
+  chain's epoch over blobs sealed at the old one (client protocol
+  10.13), and after a solo seal refusal the device stands an epoch
+  ahead of the relay until a rejoin, which is not built. A peer's unmarked U+FFFC imports as ink; the shell
   must take it out as an edit, but `sync_document` (the recovery
   mirror) refuses such ink, and undoing the removal would stand it
   again. ADR-0025's delivery note keeps line citations current by
