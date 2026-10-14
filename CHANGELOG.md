@@ -1095,7 +1095,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy dies too. A batch or frame already sealed before the deadline
   still goes out on its retry. A page past its deadline no longer
   enrols, so one not enrolled before its deadline sends the relay
-  nothing, its expiry included. A device that joined a ballot while
+  nothing, its expiry included; asking to enrol one takes the page
+  away and says `this page has expired.` A device that joined a ballot while
   the page stood and read its last accept after the deadline stayed on
   the old key while its peers moved on, so none of its later edits
   could reach them; it now moves with them, sending a frame that holds
