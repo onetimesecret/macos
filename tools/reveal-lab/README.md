@@ -4,6 +4,38 @@ Twelve selectable, standalone AppKit interaction prototypes based on the
 [ambient reveal research](../../docs/spec/design/2026-1013-ambient-panel-reveal-research.md).
 This is a throwaway mechanics harness, not an implementation in OnetimePad.
 
+## Purpose and design approach
+
+This demo asks which gestures make a panel easier to reach without becoming
+another interruption. The approach below describes this experiment, not an
+accepted project policy or a requirement for the finished product.
+
+- **Compare gestures, not visual designs.** Reuse one content-free card and mock
+  editor so differences in the triggers are easier to judge. This is not an
+  attempt to reproduce Notes' appearance or private implementation.
+- **Separate noticing from committing.** The staged gestures expose availability
+  with a peek, then offer a larger target. Opening the editor remains an explicit
+  action. Preserving the current typing destination during reveal is a test
+  objective, not a guarantee established by this demo.
+- **Count interruption as a cost.** Judge accidental appearances, missed clicks,
+  desktop interference, and dismissal difficulty alongside speed of access.
+  A gesture that activates reliably can still be a poor interaction.
+- **Test on the actual desktop.** An in-window simulation would miss competition
+  with desktop actions, menu bars, screen boundaries, and other applications.
+  The controls configure the experiment; the desktop is where it happens.
+- **Make negative results useful.** The outward-delta probe has no dwell fallback
+  that could disguise a failed push gesture. A mechanic that is unreliable,
+  intrusive, or hard to discover is a candidate to discard, not necessarily to
+  complicate.
+- **Keep the implementation disposable.** Broad, quick comparisons come before
+  production integration or architecture. A promising interaction earns further
+  work; this harness does not establish its readiness to ship.
+
+The orange target marker is a teaching aid, not necessarily a product feature.
+The click-through peek, timings, thresholds, and click-arming rule are
+experimental choices to question during testing, not conclusions of the
+research. Feedback about these choices is part of the result.
+
 ## Run
 
 From the repository root, with Xcode / Swift installed:
