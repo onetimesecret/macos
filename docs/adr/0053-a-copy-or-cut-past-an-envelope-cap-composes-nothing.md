@@ -60,3 +60,7 @@ Copy and cut compose an envelope only within ADR-0049's caps.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, before its code.
+- 2026-10-14: Built for issue #170, core and shell.
+  [Law 0001](../law/0001-sealed-object.md)'s copy and cut rows hold it
+  and cite the tests that pin it, the editor's line naming the cap
+  among them.

@@ -75,6 +75,11 @@ gives none of it out.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, before its code.
+- 2026-10-14: Built for issue #170, core and shell.
+  [Law 0001](../law/0001-sealed-object.md)'s expiry and decrypted drag
+  rows hold it and cite the tests that pin it. The shell settles after
+  a refusal when the core's next event is due, which every refusal past
+  a deadline meets; a refusal with nothing due has nothing to sweep.
 
 ## Erratum
 

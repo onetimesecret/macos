@@ -74,3 +74,7 @@ every object's identity.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, before its code.
+- 2026-10-14: Built for issue #170, core and shell.
+  [Law 0001](../law/0001-sealed-object.md)'s drag inside the document
+  row holds it and cites the tests that pin it; the drop between the
+  card and the editor window is owed a hand check.

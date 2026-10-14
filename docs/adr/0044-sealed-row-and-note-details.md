@@ -96,3 +96,7 @@ record holds them instead.
 
 - 2026-10-13: Accepted. ADR-0042's Open questions are restored, and its
   history points here.
+- 2026-10-14: Built for issues #244 to #246.
+  [Law 0001](../law/0001-sealed-object.md)'s `=` zone and note rows and
+  [Law 0007](../law/0007-edit-in-place.md)'s sealed name rows hold it
+  and cite the tests that pin it.

@@ -66,3 +66,6 @@ object twice.
   Its second consequence, that a selection longer than 8 MiB or holding
   more than 1024 objects still copies and cuts, is replaced: a copy or a
   cut past either cap now composes nothing and changes nothing.
+- 2026-10-14: Built for issue #170.
+  [Law 0001](../law/0001-sealed-object.md)'s paste inside row holds it
+  and cites the tests that pin it.

@@ -66,3 +66,7 @@ block's top row, ending 8 points before the actions seat.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, with the handle and its provider.
+- 2026-10-14: [Law 0001](../law/0001-sealed-object.md)'s handle pointer
+  amendment shows an open hand over a drawn handle a press would drag
+  from, so the last consequence's pointer half describes the build at
+  acceptance. Its VoiceOver half stands.
