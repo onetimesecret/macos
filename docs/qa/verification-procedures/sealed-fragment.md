@@ -122,12 +122,15 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       original moves, or the copy lands as placeholder text.
 - [ ] **A drag between pages.** Where two pages show at once (the
       editor window and the card), drag a selection holding an object
-      from one page to the other. **Pass:** the run lands on the second
-      page with the object's name, and leaves the first; ⌘Z on the
-      first page brings the same object back. With ⌥ held, the first
-      page keeps its run. **Fail:** the drop seals the text
-      `[sealed content · tiny]` as a new object, or the first page
-      keeps its run after a plain drop.
+      from one page to the other (ADR-0054; needs issue 170's shell
+      half to wire the drop). **Pass:** the run lands on the second
+      page with the object's name and note, leaves the first, and the
+      ledger gains no `sealed`; ⌘Z on the first page brings nothing
+      back, and ⌘Z on the second takes the run off it. With ⌥ held, the
+      first page keeps its run and the ledger gains one `sealed`.
+      **Fail:** the drop seals the text `[sealed content · tiny]` as a
+      new object, the first page keeps its run after a plain drop, or
+      ⌘Z on the first page stands the object again.
 - [ ] **Plain drag out.** Drag the selection into TextEdit, then drag it
       onto the Trash in the Dock. **Pass:** TextEdit receives the same
       placeholder text as the copy did, the page keeps its run both

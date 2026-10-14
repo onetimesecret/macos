@@ -4,7 +4,7 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8; ADR-0044; ADR-0045; ADR-0046; ADR-0047; ADR-0048; ADR-0049; ADR-0052; ADR-0053
+decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8; ADR-0044; ADR-0045; ADR-0046; ADR-0047; ADR-0048; ADR-0049; ADR-0052; ADR-0053; ADR-0054
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the name's charset, the bottom row's zones, the note popover on a narrow card)
@@ -16,6 +16,7 @@ consumed-by:
   - docs/adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md (the handle's seat, look and press)
   - docs/adr/0052-a-page-past-its-deadline-gives-nothing-out.md (no route gives a page out past its deadline, swept or not)
   - docs/adr/0053-a-copy-or-cut-past-an-envelope-cap-composes-nothing.md (a copy or a cut past an envelope cap writes and detaches nothing, and names the cap)
+  - docs/adr/0054-a-drag-between-pages-moves-its-objects.md (a drag between pages moves its objects in one transaction and clears the source's undo)
 sources:
   - docs/adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md (what the fragment, lifecycle and drag rows left open)
   - docs/adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md (the cut row's clock and the expiry row, between a deadline and its sweep)
@@ -24,8 +25,9 @@ sources:
   - docs/adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md (where the handle stands with no move handle beside it)
   - docs/adr/0052-a-page-past-its-deadline-gives-nothing-out.md (the expiry row between a deadline and its sweep, for every route that gives a page out)
   - docs/adr/0053-a-copy-or-cut-past-an-envelope-cap-composes-nothing.md (the copy and cut rows past an envelope cap)
+  - docs/adr/0054-a-drag-between-pages-moves-its-objects.md (the drag row between pages, which cloned and left the original to the source's undo)
   - crates/core/src/fragment.rs (the envelope and the public text, from one walk)
-  - crates/core/src/transfer.rs (cut, paste, the slot's route, the drags inside a page, resolution and the transaction)
+  - crates/core/src/transfer.rs (cut, paste, the slot's route, the drags inside a page and between pages, resolution and the transaction)
   - crates/pasteboard/src/macos.rs (`SystemDragItem`, the decrypted drag's write into its item)
   - docs/qa/verification-procedures/sealed-fragment.md (what another app and a real drag receive)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points the name and note amendment left open)
@@ -144,7 +146,7 @@ without a test says what it is owed by.
 | cut | structural editing | writes the same fragment, then detaches every referenced object in one core transaction; all selected objects appear together in the app's clipboard slot and retain the page's clock; past an envelope cap it writes, deletes and detaches nothing, and an earlier cut stands | `transfer.rs` `a_cut_chip_is_detached_not_reaped`, `a_cut_detaches_every_object_in_one_step_and_undo_stands_them_all`, `a_later_cut_replaces_the_active_one_and_leaves_its_objects_detached`, `a_cut_the_body_refuses_changes_nothing`; undo ends the cut and redo detaches its objects as a removal that a later paste of its envelope clones: `undo_ends_a_cut_and_redo_detaches_as_a_removal_whose_objects_a_later_paste_clones`; past an envelope cap (ADR-0053): `transfer.rs` `a_copy_or_cut_naming_past_the_reference_cap_composes_nothing_and_changes_nothing`, `a_copy_or_cut_longer_than_the_length_cap_composes_nothing_and_changes_nothing`, `lib.rs` `a_copy_or_cut_past_an_envelope_cap_names_the_cap_over_the_seam`, `SealedFragmentSeamTests.swift` `testACopyOrCutPastAnEnvelopeCapNamesItsLimitAndChangesNothing`, and the editor's line naming the cap, owed to issue 170's shell half; the page's clock past its deadline (ADR-0048): `transfer.rs` `a_cut_from_a_page_past_its_deadline_reattaches_nothing_and_places_expired`, and after sleep by hand in the [sealed fragment](../qa/verification-procedures/sealed-fragment.md) procedure; the slot's faces: `lib.rs` `copy_cut_and_paste_carry_the_envelope_unread_over_the_seam`, `SealedFragmentSeamTests.swift` `testACutsFirstPasteReattachesAndALaterOneClones`; the editor's ⌘X: `SealedFragmentEditorTests.swift` `testACutDetachesItsObjectsAsOneStepAndOneUndoStandsThemAgain`, `testACutOfInkAloneWritesPlainTextAndLeavesTheSlotAlone`, `testSeveralStretchesCutAsInkOrNotAtAll`, a fragment the board refuses put back by the core's undo `testACutTheBoardRefusesIsPutBack`, standing aside while a field or the note holds the keys (ADR-0046) `testCutAndThePlaceStandAsideWhileAFieldOrTheNoteHoldsTheKeys`; the slot's line: `testTheSlotNamesTheCutObjectsByTheirFacesAlone`, `testTheSlotStandsUnderTheOwnersPageAlone`, `testTheSlotPlacesTheSameObjectAtTheCaretAndItsLineGoes`; the line and its button on the raised card under a real pointer, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | paste, inside OnetimePad | structural editing | inserts the whole fragment as one undoable transaction; the first paste of a cut reattaches all cut objects, while a paste after copy or a later paste of a cut clones every live reference core-side; terminal or unknown references become cause-specific placeholders in their original positions | `transfer.rs` `a_pasted_reference_reattaches_by_id`, `the_first_paste_of_a_cut_reattaches_all_and_a_later_one_clones`, `a_fragment_not_naming_the_cut_clones_its_objects_and_the_cut_stands`, `a_cut_pasted_on_another_page_moves_there_and_clears_the_source_undo`, `a_paste_after_copy_clones_every_live_reference_without_its_receipt`, `a_paste_is_one_step_and_replaces_the_selection_it_covers`, `an_unreadable_envelope_pastes_its_public_text_and_says_so`; rollback: `a_paste_the_body_refuses_partway_changes_nothing_on_any_page`, and after a sweep `a_paste_the_body_refuses_after_its_sweep_reverts_the_paste_and_not_the_sweep`; mixed state: `a_mixed_paste_keeps_its_order_with_each_cause_in_position`; a page past its deadline (ADR-0048): `a_copy_from_a_page_past_its_deadline_clones_nothing_and_places_expired`, `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`, `a_paste_of_ink_alone_sweeps_nothing`, `lib.rs` `a_paste_sweeps_a_due_page_and_says_how_many_over_the_seam`, `SealedFragmentSeamTests.swift` `testAPasteSweepsADuePageAndSaysHowMany`; a crafted envelope (ADR-0049): `fragment.rs` `an_envelope_past_a_cap_or_naming_one_object_twice_is_refused_whole`, `transfer.rs` `a_crafted_envelope_naming_a_live_object_twice_clones_nothing`; `SealedFragmentSeamTests.swift` `testACutsFirstPasteReattachesAndALaterOneClones`, `testAnUnreadableEnvelopePlacesItsPublicText`; the editor's ⌘V, Paste and Match Style and Paste Without Detection: `SealedFragmentEditorTests.swift` `testACutsFirstPasteReattachesItsObjectsAndALaterOneClonesThem` (names and notes kept by the reattach and carried by the clone), `testAPasteAfterACopyClonesEveryObjectAsOneStep`, `testAGoneReferencePastesItsPlaceholderWhereTheObjectStood`, `testAnUnreadableEnvelopePastesItsPublicTextAndSaysSo`, `testEveryPasteCommandTakesAFragmentThroughTheCore`, `testANoteOrAFileLeavesAFragmentToThePublicText`, `testAPasteThatSweepsADuePageSettlesAtOnce`, `testPasteStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`; the write it arms: `LedgerAppendArmingTests.swift` `testEveryLedgerAppendingMutationArmsAWrite`; the paste on the raised card: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | paste, another app | ambient observation | receives ordered ink with `[sealed content · <size class>]` substituted for each live reference; never receives a payload | the public text the core composes: `fragment.rs` `the_public_text_puts_a_size_class_placeholder_where_each_object_stood`; size class: `store.rs` `a_multi_line_chip_reports_a_size_class_not_lines`; the editor's copy writes it: `SealedFragmentEditorTests.swift` `testACopyOfAMixedSelectionWritesTheFragmentAndThePublicTextAlone`; the cut's write: `SealedFragmentEditorTests.swift` `testACutDetachesItsObjectsAsOneStepAndOneUndoStandsThemAgain`; what a rich or plain text reader takes from the board: `SealedFragmentEditorTests.swift` `testAnotherAppReadsThePublicTextAlone`; the plain drag's write: `SealedDragTests.swift` `testThePlainDragCarriesTheCopysFragmentAndNothingElse`; what another app pastes, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
-| drag, inside the document | structural editing | moves the selected objects and ink atomically with a clear insertion line; contents never preview | the core's move: `transfer.rs` `a_drag_inside_a_page_moves_ink_and_objects_in_one_step_keeping_identity`; `SealedFragmentSeamTests.swift` `testTheSlotTheMoveAndTheCloneRoutes`; an editor's move in two batches keeps the object: `store.rs` `an_editor_move_in_two_batches_detaches_and_then_reattaches_the_chip`; refused on a page past its deadline: `transfer.rs` `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`; the editor's drop on its own page: `SealedDragTests.swift` `testADragInsideThePageMovesInkAndObjectsAsOneStepKeepingThem`, `testADropOntoItsOwnRangeOrAChangedPageChangesNothing`, `testTheViewsDropRoutesAFragmentAndTheOwnDragThroughTheCore`; a drag to another page pastes there and its move removes the source run, which detaches: `testADragToAnotherPagePastesThereAndTheMoveRemovesItsSource`; standing aside while a field or the note holds the keys: `testDragsStandAsideWhileAFieldOrTheNoteHoldsTheKeys`; the gesture under a real pointer, its insertion line and its image: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| drag, inside the document | structural editing | moves the selected objects and ink atomically with a clear insertion line; contents never preview | the core's move: `transfer.rs` `a_drag_inside_a_page_moves_ink_and_objects_in_one_step_keeping_identity`; `SealedFragmentSeamTests.swift` `testTheSlotTheMoveAndTheCloneRoutes`; an editor's move in two batches keeps the object: `store.rs` `an_editor_move_in_two_batches_detaches_and_then_reattaches_the_chip`; refused on a page past its deadline: `transfer.rs` `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`; the editor's drop on its own page: `SealedDragTests.swift` `testADragInsideThePageMovesInkAndObjectsAsOneStepKeepingThem`, `testADropOntoItsOwnRangeOrAChangedPageChangesNothing`, `testTheViewsDropRoutesAFragmentAndTheOwnDragThroughTheCore`; a drag to another page moves there as one transaction keeping every object, clears the source's undo when it carries one and refuses a page past its deadline at either end ([ADR-0054](../adr/0054-a-drag-between-pages-moves-its-objects.md)): `transfer.rs` `a_drag_between_pages_moves_ink_and_objects_keeping_identity_name_and_note`, `a_drag_between_pages_clears_the_source_undo_so_nothing_stands_a_second_copy`, `a_drag_of_ink_alone_between_pages_keeps_the_source_undo`, `a_drag_between_pages_refuses_one_page_a_bad_range_or_a_bad_point`, `a_drag_between_pages_refuses_a_page_past_its_deadline_and_changes_neither`, `a_drag_between_pages_either_body_refuses_changes_neither_page`; `lib.rs` `a_drag_between_pages_crosses_the_seam_keeping_its_object`, `a_drag_between_pages_refuses_a_page_past_its_deadline_over_the_seam`; `SealedFragmentSeamTests.swift` `testADragBetweenPagesMovesTheSameObjectAndRefusesADuePage`; the editor's drop through that route, owed by issue 170's shell half, which today still pastes a clone and removes the source run: `testADragToAnotherPagePastesThereAndTheMoveRemovesItsSource`; standing aside while a field or the note holds the keys: `testDragsStandAsideWhileAFieldOrTheNoteHoldsTheKeys`; the gesture under a real pointer, its insertion line and its image: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | ⌥ drag | structural editing | clones all selected sealed objects core-side as one operation, following the macOS copy-drag convention | the core's clone: `transfer.rs` `an_option_drag_clones_every_object_in_one_step`; refused on a page past its deadline: `a_page_past_its_deadline_takes_no_paste_move_or_clone_and_waits_for_its_sweep`; the editor's ⌥ drop: `SealedDragTests.swift` `testAnOptionDragClonesEveryObjectCoreSide`, `testADragOffersAMoveOnlyInsideTheAppAndOptionNarrowsItToACopy`; its clones arm a write: `LedgerAppendArmingTests.swift`; ⌥ under a real pointer: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | plain drag, outside | ambient observation | exposes only ordered ink and placeholders | the public text it carries is the copy's (the copy row); the drag's one item, the copy's fragment, with nothing else written and the ordinary pasteboard untouched: `SealedDragTests.swift` `testThePlainDragCarriesTheCopysFragmentAndNothingElse`, `testInkAloneDragsAsPlainTextAndSeveralStretchesWithAnObjectDoNot`; only a copy offered outside the app, and no run removed on another app's answer: `testADragOffersAMoveOnlyInsideTheAppAndOptionNarrowsItToACopy`, `testACopiedCancelledOrForeignDragLeavesItsSource`; what another app receives: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | the core's write into the drag item, its refusals and its record: `lib.rs` `a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag`, `a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`, a chip removed mid drag `a_decrypted_drag_refuses_a_chip_removed_mid_drag`, a page past its deadline (ADR-0052) `a_page_past_its_deadline_gives_nothing_out_over_the_seam`, `the_fragment_routes_fail_closed`; `crates/pasteboard/src/macos.rs` `a_drag_item_takes_the_plaintext_under_its_kinds_type`, `a_drag_item_on_the_general_pasteboard_says_so`, `a_drag_item_refuses_null_and_objects_of_another_class`; `SealedFragmentSeamTests.swift` `testADecryptedDragWritesTheItemCoreSideAndRecordsADrag`; its buffer: `store.rs` `a_copy_out_is_written_at_its_exact_size`; the `Drag` class at rest: `persist.rs` `every_destination_class_round_trips_in_the_ledger`; the handle's seat and press ([ADR-0051](../adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md)): `SealedDecryptedDragTests.swift` `testTheHandleSitsBeforeTheActionsSeatAndOnlyWhereItFits`, `testTheHandleDragsTheChipsOwnTypeAndAnUnknownKindHasNone`, `testOnlyAFirstPlainPressOnADrawnHandleStartsTheDrag`; its data provider, the core's write on a destination's ask, its record arming a write and the object left standing: `testADestinationsAskIsWrittenByTheCoreAndRecordsOneDrag`, `LedgerAppendArmingTests`; a cancelled session and a foreign ask refused: `testACancelledDragAndAForeignAskAreRefused`; a copy outside the app and no drop on the page or the note ([ADR-0050](../adr/0050-a-decrypted-drag-lands-only-in-another-app.md)): `testTheDragOffersACopyToAnotherAppAndNothingInsideThisOne`, `testTheDecryptedDragLandsOnNoPageOfThisApp`; standing aside: `testTheDecryptedDragStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`; the handle under a real pointer, a drop into another app, a cancel and the app's other fields: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
@@ -441,7 +443,14 @@ and for no route past the deadline (ADR-0052)
 `a_page_past_its_deadline_gives_no_cut_before_its_sweep`, and for a
 copy or a cut past an envelope cap (ADR-0053)
 `a_copy_or_cut_naming_past_the_reference_cap_composes_nothing_and_changes_nothing`,
-`a_copy_or_cut_longer_than_the_length_cap_composes_nothing_and_changes_nothing`. In `store.rs`:
+`a_copy_or_cut_longer_than_the_length_cap_composes_nothing_and_changes_nothing`,
+and for a drag between pages (ADR-0054)
+`a_drag_between_pages_moves_ink_and_objects_keeping_identity_name_and_note`,
+`a_drag_between_pages_clears_the_source_undo_so_nothing_stands_a_second_copy`,
+`a_drag_of_ink_alone_between_pages_keeps_the_source_undo`,
+`a_drag_between_pages_refuses_one_page_a_bad_range_or_a_bad_point`,
+`a_drag_between_pages_refuses_a_page_past_its_deadline_and_changes_neither`,
+`a_drag_between_pages_either_body_refuses_changes_neither_page`. In `store.rs`:
 `a_sync_that_omits_a_chip_detaches_it_and_one_naming_it_reattaches_it`,
 `deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`,
 `an_empty_snapshot_is_select_all_delete_and_detaches_every_chip`,
@@ -501,7 +510,10 @@ past the deadline (ADR-0052)
 `page_routes_refuse_a_file_id`; for a copy or a cut past an envelope
 cap (ADR-0053),
 `a_copy_or_cut_past_an_envelope_cap_names_the_cap_over_the_seam`,
-`each_cap_crosses_the_seam_as_its_own_token_and_limit`.
+`each_cap_crosses_the_seam_as_its_own_token_and_limit`; for a drag
+between pages (ADR-0054),
+`a_drag_between_pages_crosses_the_seam_keeping_its_object`,
+`a_drag_between_pages_refuses_a_page_past_its_deadline_over_the_seam`.
 
 Shell (`shell/Tests/CompanionKitTests`, `scripts/test-shell.sh`):
 `DocumentOpsTests` (`testAClickOnAChipSelectsItWhole`,
@@ -539,8 +551,9 @@ own routes, the page's own surface in it and what stands aside there),
 the live core), `SealedFragmentSeamTests` (the fragment, slot, move,
 clone and decrypted drag wrappers over the live core, the drag into an
 item on a privately named pasteboard, the count of due pages a paste
-swept, every way out refusing a page past its deadline, and a copy or
-a cut past an envelope cap naming its limit),
+swept, every way out refusing a page past its deadline, a copy or a
+cut past an envelope cap naming its limit, and a move between pages
+keeping its object),
 `SealedFragmentEditorTests` (the
 editor's copy, cut, paste and select all on a privately named
 pasteboard, what a service asking for the selection is written and
@@ -587,7 +600,9 @@ settle after a route refuses a page past its deadline and on wake
 (ADR-0052 point 4), with the AppKit paths over text the shell already
 holds that its erratum names; and the editor's line naming the cap and
 its limit when a copy, a cut or a drag is refused past an envelope cap
-(ADR-0053 point 3). Issues 169
+(ADR-0053 point 3); and the editor's drop on another page through the
+move between pages, with both pages restated and the source deleting
+nothing itself (ADR-0054 point 5). Issues 169
 (`SealedBlockTests`) and 172 (the interrupting dialogs) are closed;
 D-14 is strict and the seal, remove, copy decrypted, naming and note
 paths must stay dialog free.
@@ -889,3 +904,14 @@ paths must stay dialog free.
   cut and redo detaches its objects as a removal a later paste clones.
   The acceptance lists and sources follow, and the owed list adds the
   editor's line naming the cap.
+- 2026-10-13: Move between pages amendment (issue 170).
+  [ADR-0054](../adr/0054-a-drag-between-pages-moves-its-objects.md)
+  supersedes ADR-0047 point 10's last sentence, under which a drag
+  between pages pasted a clone and left the original for the source's
+  undo to stand again. The drag row now says such a drag moves its
+  range as one transaction keeping every object, clears the source's
+  undo when it carries one and refuses a page past its deadline at
+  either end, and cites the core, seam and `CompanionClient` tests that
+  pin the route. The editor still pastes and removes the source run
+  until issue 170's shell half wires its drop to the route; the row and
+  the owed list say so. The acceptance lists and sources follow.
