@@ -1089,8 +1089,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate process, even past the page's deadline, and Search With
   Google handed a selection to the browser. Neither is offered in the
   text menu of a page, a note or a name field any more, and a Touch
-  Bar's typing suggestions are off there, as Writing Tools is; a regular
-  text file keeps them all. Edit > Spelling and Grammar, the
+  Bar's typing suggestions and the gray inline predictions are off
+  there, as Writing Tools is; a regular text file keeps them all. Edit > Spelling and Grammar, the
   Substitutions panel, completion with ⌥Esc, Quick Look Attachments and
   every check that runs as you type, Check Spelling While Typing
   included, ask whether the page still stands before they read it, so

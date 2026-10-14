@@ -393,8 +393,8 @@ final class SealedFragmentEditorTests: XCTestCase {
     /// Share… builds its picker over the selection with the menu, before any gate is
     /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
     /// page's, a sealed name's and a note's text offer neither; nor Search With Google,
-    /// which hands the selection to the browser, nor the typing suggestions the spell
-    /// server makes around the caret at every move. A file keeps them all.
+    /// which hands the selection to the browser, nor the typing suggestions and inline
+    /// predictions made from the text around the caret as it moves. A file keeps them all.
     func testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.applyNoteOps(
@@ -446,9 +446,14 @@ final class SealedFragmentEditorTests: XCTestCase {
         for menu in [pageMenu, nameMenu, noteMenu] {
             XCTAssertFalse(menu.items.contains { $0.action == writingTools }, "Writing Tools offered")
         }
+        XCTAssertEqual(file.inlinePredictionType, .default, "the control: a file predicts")
+        XCTAssertEqual(page.textView.inlinePredictionType, .no, "the page predicts")
+        XCTAssertEqual(note.inlinePredictionType, .no, "the note predicts")
+        XCTAssertEqual(name.inlinePredictionType, .no, "the name predicts")
         fileCoordinator.currentSheet = page.sheet
         XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
         XCTAssertFalse(file.isAutomaticTextCompletionEnabled, "a page mounted where a file stood")
+        XCTAssertEqual(file.inlinePredictionType, .no, "a page mounted where a file stood")
     }
 
     /// Look Up and Translate are built titled with the selection they hold, Speech reads it

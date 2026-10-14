@@ -40,8 +40,8 @@ enum TextOffers {
         item.submenu?.items.contains { $0.action == #selector(NSTextView.startSpeaking(_:)) } == true
     }
 
-    /// Spelling and Grammar, and the guesses, Provide Feedback, Ignore Spelling and Learn
-    /// Spelling AppKit heads the menu with over a misspelled word, which send the word out.
+    /// Spelling and Grammar, and what AppKit heads the menu with over a misspelled word:
+    /// the spell server's guesses, Provide Feedback, Ignore Spelling and Learn Spelling.
     static func isSpelling(_ item: NSMenuItem) -> Bool {
         if let action = item.action.map(NSStringFromSelector),
            spellingItems.contains(action) || action.hasPrefix("_invokeProofreadingFeedback")
@@ -81,9 +81,11 @@ enum TextOffers {
     }
 
     /// The readers no click gates, which a file keeps and a page, note or name refuses:
-    /// Writing Tools, and the typing suggestions the spell server makes around the caret.
+    /// Writing Tools, and the typing suggestions and inline predictions made from the
+    /// text around the caret as it moves.
     static func offerUngatedReaders(_ offers: Bool, on textView: NSTextView) {
         textView.isAutomaticTextCompletionEnabled = offers
+        if #available(macOS 14.0, *) { textView.inlinePredictionType = offers ? .default : .no }
         guard #available(macOS 15.0, *) else { return }
         textView.writingToolsBehavior = offers ? .default : .none
     }

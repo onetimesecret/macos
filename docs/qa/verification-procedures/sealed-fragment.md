@@ -8,7 +8,8 @@ sealed paste and its offer over this app's own copy, a menu bar
 with no Print…, text menus with no Share…, Writing Tools, Look Up,
 Translate, Speech, Spelling and Grammar or Search With Google, the
 route a real look up takes to the page's gate, Transformations and
-Substitutions over an object, a Touch Bar's typing suggestions, and
+Substitutions over an object, inline predictions and a Touch Bar's
+typing suggestions, and
 text holding U+FFFC landing beside an object.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
@@ -114,12 +115,15 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       time with no removal line, and each ⌘Z takes back its change
       whole. **Fail:** the object goes, the line says protected content
       removed, or one ⌘Z takes back only part of a change.
-- [ ] **No typing suggestions over a page on a Touch Bar** (Law 0001,
-      AppKit text routes amendment). Only on a Mac with a Touch Bar:
-      type a few words on a page, in a note and in a regular text file.
-      **Pass:** the Touch Bar shows no typing suggestions over the page
-      or the note, and shows them over the file. **Fail:** suggestions
-      show over the page or the note.
+- [ ] **No inline predictions or typing suggestions over a page**
+      (Law 0001, AppKit text routes amendment). With System Settings >
+      Keyboard > Text Input's inline predictive text on, type the start
+      of a common phrase, such as `see you`, on a page, in a note and in
+      a regular text file; on a Mac with a Touch Bar, watch it as you
+      type. **Pass:** no gray prediction follows the caret and the Touch
+      Bar shows no typing suggestions over the page or the note; the
+      file shows them. **Fail:** a prediction or a suggestion shows over
+      the page or the note.
 - [ ] **Cut and paste in place.** Cut the selection, note the slot's
       line under the page, then paste further down. **Pass:** the line
       names the cut object by its face and goes when the paste lands;
