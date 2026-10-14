@@ -628,6 +628,15 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
 
 /*
+ * Whether a chip stands on a live page, past its deadline or not, as
+ * companion_chip_conceal() asks to word its error. False for an
+ * unknown chip or a null handle. The shell asks it before and after
+ * settling an object's refusal, and says the page expired only when
+ * the chip stood and then did not.
+ */
+bool companion_chip_stands(CompanionHandle *handle, uint64_t chip);
+
+/*
  * Burn a chip, attached or detached: its bytes are wiped, its page's
  * undo stack goes with it, and one `discarded` is recorded. A removal
  * by backspace is not a burn; it detaches (ADR-0047). Returns whether

@@ -396,6 +396,13 @@ impl<C: Clock> SheetStore<C> {
         self.sheet(id).is_some_and(|sheet| sheet.is_due(now))
     }
 
+    /// Whether object `id` stands on a live page, past its deadline or not,
+    /// which a refusal asks to choose its words.
+    #[must_use]
+    pub fn chip_stands(&self, id: ChipId) -> bool {
+        self.sheets().any(|sheet| sheet.chip(id).is_some())
+    }
+
     /// The local id of the page a cross-device `uuid` names, if it stands
     /// here.
     #[must_use]
@@ -2364,6 +2371,22 @@ mod tests {
             Some(PayloadError::UnknownSheet)
         );
         assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn an_object_on_a_page_past_its_deadline_still_stands_until_its_sweep() {
+        let (mut store, id, chip, _) = a_due_page();
+        assert!(
+            store.chip_payload(chip).is_none(),
+            "the control: the page is due"
+        );
+        assert!(store.chip_stands(chip));
+        assert!(
+            !store.chip_stands(ChipId::from_raw(4_242)),
+            "an unknown object"
+        );
+        assert_eq!(store.expire_due(), vec![id]);
+        assert!(!store.chip_stands(chip), "the sweep took it");
     }
 
     #[test]

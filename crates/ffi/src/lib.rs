@@ -1210,6 +1210,23 @@ pub unsafe extern "C" fn companion_chip_copy_name_value(
     true
 }
 
+/// Whether a chip stands on a live page, past its deadline or not, as the
+/// chip conceal's error asks; the shell words a refusal by it. False for an
+/// unknown chip or a null handle.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_stands(handle: *mut CompanionHandle, chip: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.chip_stands(ChipId::from_raw(chip))
+}
+
 /// Burn a chip, attached or detached, wiping its bytes and its page's undo
 /// stack (ADR-0047). Returns whether it existed.
 ///
@@ -2773,7 +2790,7 @@ pub unsafe extern "C" fn companion_chip_conceal(
             .find(|sheet| sheet.chip(chip).is_some());
         let Some(sheet) = holder else {
             // A page past its deadline still stands until its sweep.
-            if guard.store.sheets().any(|sheet| sheet.chip(chip).is_some()) {
+            if guard.store.chip_stands(chip) {
                 return conceal_error(&PayloadError::Expired.to_string());
             }
             return conceal_error("that content is gone");
@@ -8647,6 +8664,24 @@ mod tests {
             assert!(board_text(handle).is_none(), "nothing written");
             assert!(sent_destinations(handle).is_empty(), "nothing recorded");
             assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn an_object_stands_over_the_seam_until_its_page_is_swept() {
+        let handle = handle();
+        unsafe {
+            let (_, chip) = a_due_page_with_a_chip(handle);
+            assert!(
+                !companion_chip_copy_out(handle, chip),
+                "the control: it is due"
+            );
+            assert!(companion_chip_stands(handle, chip));
+            assert!(!companion_chip_stands(handle, 4_242), "an unknown object");
+            assert!(!companion_chip_stands(ptr::null_mut(), chip));
+            assert_eq!(companion_expire_due(handle), 1);
+            assert!(!companion_chip_stands(handle, chip), "the sweep took it");
             companion_free(handle);
         }
     }

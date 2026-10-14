@@ -1423,13 +1423,7 @@ final class SealedFragmentEditorTests: XCTestCase {
             let client = RefusedCopyClient(tag: UUID().uuidString)
             let page = try makePage(client: client)
             XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
-            page.model.newPage()
-            let other = try XCTUnwrap(page.model.selectedPageID)
-            XCTAssertTrue(client.applyOps(sheet: other, json: #"[{"ins":{"at":0,"text":"due"}}]"#))
-            let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == other }?.id)
-            XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
-            XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
-            XCTAssertTrue(client.tabs().contains { $0.pageID == other }, "the control: a sweep ran")
+            let other = try anotherPageComesDue(beside: page)
             let notice = page.model.notice
 
             route.run(page)
@@ -1438,6 +1432,51 @@ final class SealedFragmentEditorTests: XCTestCase {
                 page.model.tabs.contains { $0.pageID == other }, "\(route.name): no settle")
             XCTAssertTrue(
                 page.model.tabs.contains { $0.pageID == page.sheet }, "\(route.name) took its page")
+            XCTAssertEqual(page.model.notice, route.line ?? notice, route.name)
+        }
+    }
+
+    /// A second page with ink, past its deadline with no sweep; `page`'s own stays young.
+    private func anotherPageComesDue(beside page: Page) throws -> UInt64 {
+        let client = page.model.coreClient
+        page.model.newPage()
+        let other = try XCTUnwrap(page.model.selectedPageID)
+        XCTAssertTrue(client.applyOps(sheet: other, json: #"[{"ins":{"at":0,"text":"due"}}]"#))
+        let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == other }?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertTrue(client.tabs().contains { $0.pageID == other }, "the control: a sweep ran")
+        return other
+    }
+
+    /// An object that stood on no page when its route refused, as a stale menu's would,
+    /// takes the route's own line, though the settle takes another page that came due.
+    func testAnUnknownObjectsRefusalNeverSaysAPageExpired() throws {
+        let unknown: UInt64 = 4_242
+        let routes: [(name: String, line: String?, run: (Page) -> Void)] = [
+            ("copy decrypted", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.model.copyOutChip(unknown))
+            }),
+            ("copy NAME=value", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.model.copyChipNameValue(unknown))
+            }),
+            ("conceal", nil, {
+                $0.model.finishConceal(
+                    ConcealOutcome(ok: false, receiptId: nil, error: "that content is gone"),
+                    for: .chip(unknown), draftID: UUID())
+            }),
+        ]
+        for route in routes {
+            let page = try makePage()
+            XCTAssertFalse(page.model.coreClient.chipStands(unknown), "the control: no such object")
+            XCTAssertTrue(page.model.coreClient.chipStands(page.chips[0]), "the control: one stands")
+            let other = try anotherPageComesDue(beside: page)
+            let notice = page.model.notice
+
+            route.run(page)
+
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == other }, "\(route.name): no settle")
             XCTAssertEqual(page.model.notice, route.line ?? notice, route.name)
         }
     }

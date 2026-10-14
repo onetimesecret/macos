@@ -7189,9 +7189,10 @@ public final class PageModel: ObservableObject {
     public static let copyRefusedLine = "the sealed content could not be copied."
 
     /// A core route refused object `chip`: settle, and say the page expired only when the
-    /// object's own page went with it (ADR-0052); otherwise `line`, when there is one.
+    /// object stood and its own page went with it (ADR-0052); otherwise `line`, when there is one.
     func settleRefusal(chip: UInt64, otherwise line: String?) {
-        if settleIfDue(), pageHolding(chip) == nil {
+        let stood = client.chipStands(chip)
+        if settleIfDue(), stood, !client.chipStands(chip) {
             flash(Self.pageExpiredLine)
         } else if let line {
             flash(line)

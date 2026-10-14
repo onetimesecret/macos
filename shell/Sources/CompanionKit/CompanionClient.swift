@@ -1210,6 +1210,12 @@ public class CompanionClient: @unchecked Sendable {
         companion_chip_copy_name_value(handle, chip)
     }
 
+    /// Whether a chip stands on a live page, past its deadline or not, as the
+    /// chip conceal asks to word its error.
+    public func chipStands(_ chip: UInt64) -> Bool {
+        companion_chip_stands(handle, chip)
+    }
+
     /// Burn a chip, attached or detached: bytes zeroized and its page's undo
     /// gone. A backspace is no burn; its delete op detaches (ADR-0047).
     @discardableResult
