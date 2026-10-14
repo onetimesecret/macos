@@ -631,7 +631,7 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 1))
     }
 
-    /// Seals "seal me" and removes the object whole, as a backspace would.
+    /// Seals "seal me" and removes the object whole, as a backspace on it selected would.
     private func sealThenRemove() -> ChipInfo? {
         makeEditor()
         textView.insertText(

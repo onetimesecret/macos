@@ -770,21 +770,28 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(PageModel.removedLine, "protected content removed.")
     }
 
-    /// A removal flashes its line. Undo is owed to issue 170 and not
-    /// offered until the core keeps a detached object to reattach; the
-    /// gate is one constant, so the button appears the moment it flips.
-    func testARemovalFlashesItsLineAndOffersUndoOnlyWhenTheCoreCan() throws {
+    /// A removal flashes its line with Undo beside it (D-30), since the core
+    /// keeps the object detached; withdrawn, the words stay and the button goes.
+    func testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords() throws {
         let model = try makeModel()
         var undone = 0
+        XCTAssertTrue(PageModel.offersRemovalUndo)
         model.noteRemoval { undone += 1 }
         XCTAssertEqual(model.notice, PageModel.removedLine)
         XCTAssertEqual(model.noticeTone, .plain)
-        if PageModel.offersRemovalUndo {
-            XCTAssertEqual(model.noticeAction?.label, "Undo")
-        } else {
-            XCTAssertNil(model.noticeAction, "an Undo was offered that the core cannot honour")
-        }
+        XCTAssertEqual(model.noticeAction?.label, "Undo")
         XCTAssertEqual(undone, 0)
+
+        model.withdrawRemovalUndo()
+        XCTAssertEqual(model.notice, PageModel.removedLine)
+        XCTAssertNil(model.noticeAction)
+        model.performNoticeAction()
+        XCTAssertEqual(undone, 0, "a withdrawn Undo still ran")
+
+        // Another line's button is not the removal's to withdraw.
+        model.flash("a line with a button", action: .init(label: "Undo") { undone += 1 })
+        model.withdrawRemovalUndo()
+        XCTAssertEqual(model.noticeAction?.label, "Undo")
     }
 
     /// A notice's action runs once and takes the line down with it;

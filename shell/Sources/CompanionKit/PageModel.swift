@@ -5991,25 +5991,28 @@ public final class PageModel: ObservableObject {
     }
 
     /// The line after a sealed object is removed from the page, in the
-    /// design's words. Its Undo is owed to issue 170: today the core
-    /// zeroizes an object the moment the document stops referencing it,
-    /// so an Undo would put back a reference to nothing, and the
-    /// button is not offered until the detached state exists to
-    /// reattach from (D-30, D-33).
+    /// design's words (D-30).
     public static let removedLine = "protected content removed."
 
-    /// Whether a removal's Undo is offered beside `removedLine`. False
-    /// until issue 170 lands the detached state; the button and the
-    /// plumbing are ready for it.
-    public static let offersRemovalUndo = false
+    /// Whether a removal's Undo is offered beside `removedLine`: the core
+    /// keeps a removed object detached to reattach from (ADR-0047 point 4).
+    public static let offersRemovalUndo = true
 
-    /// After a removal: the line, with Undo beside it once the core can
-    /// honour one.
+    /// The removal line's Undo, pressed while a name or the note holds the keys (ADR-0046).
+    public static let undoWaitsLine = "a name or note is being written, so the removal was not undone."
+
+    /// After a removal: the line, with Undo beside it.
     public func noteRemoval(undo: @escaping @MainActor () -> Void) {
         flash(
             Self.removedLine,
             action: Self.offersRemovalUndo ? NoticeAction(label: "Undo", perform: undo) : nil
         )
+    }
+
+    /// Takes the removal's Undo off its line once the page has moved past the removal.
+    public func withdrawRemovalUndo() {
+        guard notice == Self.removedLine, noticeAction != nil else { return }
+        noticeAction = nil
     }
 
     /// The line after a one-time link is made, in the design's words:

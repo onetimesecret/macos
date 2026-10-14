@@ -524,7 +524,11 @@ public struct InkEditorView: NSViewRepresentable {
         weak var textView: InkTextView?
         /// The page or file under the editor, or nil on a note's surface,
         /// whose page only paths key on it (ADR-0045).
-        var currentSheet: UInt64?
+        var currentSheet: UInt64? {
+            didSet { if oldValue != currentSheet { retireRemovalUndo() } }
+        }
+        /// The page and edit count just after a removal, while its line offers Undo.
+        private var removalStamp: (document: InkDocument, generation: Int)?
         /// The note this surface writes, by its object's chip, while one is open.
         private(set) var noteChip: UInt64?
         /// The popover that holds this surface when it is a note's, not the page's.
@@ -2143,6 +2147,7 @@ public struct InkEditorView: NSViewRepresentable {
             // that filled the classification cache. An edit this method
             // declines to emit still moves the page under that reading.
             generation &+= 1
+            retireRemovalUndo()
             structuralStyleNeedsRebuild = true
             if nameEditor?.isOpen == true || noteEditor?.isOpen == true {
                 // On the next turn: the object may have moved or gone, and its field or note follows.
@@ -2663,9 +2668,8 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The chip's actions, appended to `menu` for the chip standing
-        /// at `charIndex` in `chipMenuItems`' order. The removal keeps
-        /// today's behaviour of deleting the sentinel whole (the two
-        /// stage removal is a separate call).
+        /// at `charIndex` in `chipMenuItems`' order. The removal deletes the
+        /// sentinel whole; the two press removal is the keyboard's.
         func appendChipItems(to menu: NSMenu, at charIndex: Int) {
             guard let attachment = chipAttachment(at: charIndex) else { return }
             for entry in Self.chipMenuItems(
@@ -3023,13 +3027,59 @@ public struct InkEditorView: NSViewRepresentable {
             let range = NSRange(location: index, length: 1)
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
-                textView.didChangeText() // travels as a del op; the core reaps the chip
-                // The line says what happened. Its Undo steps the
-                // core's stack back once the core keeps a removed
-                // object to step back to (issue 170); until then the
-                // model offers the line without the button.
-                model.noteRemoval { [weak self] in self?.step(back: true) }
+                textView.didChangeText() // travels as a del op; the core detaches the chip
+                noteRemoval()
             }
+        }
+
+        /// D-30's first press: a caret beside an object selects it whole and removes nothing.
+        func selectObjectBeside(forward: Bool) -> Bool {
+            guard !writesNote, let textView, textView.isEditable, !textView.hasMarkedText(),
+                  textView.selectedRanges.count == 1
+            else { return false }
+            let caret = textView.selectedRange()
+            guard caret.location != NSNotFound, caret.length == 0 else { return false }
+            let index = forward ? caret.location : caret.location - 1
+            guard chipAttachment(at: index) != nil else { return false }
+            textView.setSelectedRange(NSRange(location: index, length: 1))
+            return true
+        }
+
+        /// Whether a deletion of the page's selection would take an object with it.
+        var selectionHoldsObject: Bool {
+            guard !writesNote, let textView, let storage = textView.textStorage else { return false }
+            return textView.selectedRanges.contains { Self.containsChip(storage, in: $0.rangeValue) }
+        }
+
+        /// After a deletion took an object: end its step, so Undo stands the object alone,
+        /// and say so with Undo beside the line (D-30).
+        func noteRemoval() {
+            guard let document, let textView else { return }
+            model.finishEditingGroup(document, selection: textView.selectedRange())
+            removalStamp = (document, generation)
+            model.noteRemoval { [weak self] in self?.undoRemoval() }
+        }
+
+        /// The removal line's Undo: one step back, while the removal is still the page's latest edit.
+        func undoRemoval() {
+            guard let stamp = removalStamp, stamp.document == document,
+                  stamp.generation == generation, let textView
+            else { return }
+            guard textView.answersChords else {
+                model.flash(PageModel.undoWaitsLine)
+                return
+            }
+            removalStamp = nil
+            step(back: true)
+        }
+
+        /// Any later edit or another page retires the removal's Undo from its line.
+        private func retireRemovalUndo() {
+            guard let stamp = removalStamp,
+                  stamp.document != document || stamp.generation != generation
+            else { return }
+            removalStamp = nil
+            model.withdrawRemovalUndo()
         }
 
         // MARK: Markdown — styled, never rewritten
@@ -5244,15 +5294,25 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     override func deleteBackward(_ sender: Any?) {
-        withEditIntent(.deletion) {
-            super.deleteBackward(sender)
-        }
+        deleting(forward: false) { super.deleteBackward(sender) }
     }
 
     override func deleteForward(_ sender: Any?) {
-        withEditIntent(.deletion) {
-            super.deleteForward(sender)
+        deleting(forward: true) { super.deleteForward(sender) }
+    }
+
+    /// On a page the first press beside an object selects it and the second removes it (D-30);
+    /// the page's delete stands aside while another surface holds the keys (ADR-0046).
+    private func deleting(forward: Bool, _ delete: () -> Void) {
+        guard let coordinator, !coordinator.writesNote else {
+            return withEditIntent(.deletion, perform: delete)
         }
+        guard answersChords else { return }
+        if coordinator.selectObjectBeside(forward: forward) { return }
+        let takesObject = coordinator.selectionHoldsObject
+        let length = textStorage?.length
+        withEditIntent(.deletion, perform: delete)
+        if takesObject, textStorage?.length != length { coordinator.noteRemoval() }
     }
 
     var canDetectCodeLanguage: Bool {
