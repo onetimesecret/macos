@@ -1,7 +1,8 @@
 # The sealed fragment: what other apps and a real drag receive
 
 **Applies to:** OnetimePad's copy, cut, paste and drags of a selection
-holding a sealed object, and the decrypted drag from its handle.
+holding a sealed object, the decrypted drag from its handle, and the
+two presses that remove an object and the line's Undo after them.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
@@ -10,8 +11,9 @@ runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-
 [ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md).
 **Owner:** delano.
 **Status:** open; not yet run. The editor's copy and cut write the
-fragment, its paste reads it and the slot's button places a cut, so
-every check above the drags can run; the drag checks are blocked until
+fragment, its paste reads it, the slot's button places a cut and two
+presses remove an object with Undo on the line, so every check above
+the drags can run; the drag checks are blocked until
 the editor drags and offers the decrypted drag handle (issue #170's
 shell half).
 
@@ -70,6 +72,22 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       note shows the ink with `[sealed content · tiny]` where the object
       stood, and the page is unchanged. **Fail:** the note shows the
       sealed word or a block, or the paste lands on the page.
+- [ ] **Two presses and the removal's Undo.** On the raised card, type
+      `before`, seal a word, type `after`, put the caret just after the
+      object and press ⌫ once. Press ⌫ again, then click the line's
+      `Undo` button, then type a letter. **Pass:** the first ⌫ selects
+      the object and removes nothing; the second removes it and the
+      line under the page reads `protected content removed.` with
+      `Undo`; the click keeps the card raised and stands the same
+      object again, selected, with its face and name; the letter lands
+      on the page. The same holds for ⌦ with the caret just before the
+      object. **Fail:** one press removes the object, the line has no
+      `Undo`, the card rests on the click, or the letter goes elsewhere.
+- [ ] **The removal's Undo after the page moves on.** Remove an object
+      with two presses, then type a letter before the line clears.
+      **Pass:** the `Undo` button leaves the line at once, and ⌘Z
+      takes the letter back first and the removal on the next press.
+      **Fail:** the button stays, or pressing it takes the letter back.
 - [ ] **Plain drag out.** Drag the selection into TextEdit. **Pass:**
       TextEdit receives the same placeholder text as the copy did.
       **Fail:** the sealed word arrives.
