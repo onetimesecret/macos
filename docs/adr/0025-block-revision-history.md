@@ -263,6 +263,13 @@ seven-day page can be seven days. Mitigations, in order of weight:
   detached and a step stands it again. The note's citations of those two
   name tests since rewritten as `undo_stands_a_removed_chip_again_from_the_detached_store`
   and `a_peers_chip_deletion_detaches_it_and_leaves_this_devices_steps`.
+- **2026-10-14:** Law 0001's ballot advance amendment gives a confirmed
+  ballot whose page this device may not give out a frame with no
+  compaction. That frame is empty, so no history leaves with it, and
+  every frame that carries a page still comes from `perform_ceremony`'s
+  rebuild. `gop::ceremony_commit` now takes the rebuild its callers cut,
+  and the note's test is now
+  `the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`.
 
 ## Delivery note (2026-09-04)
 
@@ -289,18 +296,18 @@ Settle list, as of this date:
   the hoped-for answer. Emission and compaction are one event by
   construction: both sites that stage a frame call
   `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:952` for a
-  confirmed ballot and `crates/ffi/src/sync_session.rs:1051` for the
+  confirmed ballot and `crates/ffi/src/sync_session.rs:1039` for the
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
-  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1044`).
+  (`crates/ffi/src/gop.rs:102`, `crates/core/src/store.rs:1044`).
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
-  (`crates/ffi/src/gop.rs:277`) and
+  (`crates/ffi/src/gop.rs:204`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
-  (`crates/core/src/store.rs:5217`). The joining side discards too, by
+  (`crates/core/src/store.rs:5252`). The joining side discards too, by
   a separate rule: a frame lands only on a pristine page
-  (`crates/core/src/store.rs:4905`), so a device carrying
+  (`crates/core/src/store.rs:4940`), so a device carrying
   pre-ceremony history drops it and rejoins empty
-  (`crates/core/src/store.rs:4856`). **Unverified; no test exercises
+  (`crates/core/src/store.rs:4891`). **Unverified; no test exercises
   a key frame emitted without a local discard**, and no code path
   offers one. Whether part 2's schedule change removes the occasion
   rather than the coupling is the question left standing.
@@ -309,15 +316,15 @@ Settle list, as of this date:
 Delivered by #132 and holding part 4:
 
 - Local only step, peer's operations left standing:
-  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:6039`.
+  `crates/core/src/document.rs:1606`, `crates/core/src/store.rs:6074`.
 - Nothing to step back through after a restore or a ceremony:
   `crates/core/src/document.rs:1574`, `crates/core/src/document.rs:1591`,
-  `crates/core/src/store.rs:5983`.
+  `crates/core/src/store.rs:6018`.
 - The stack forgotten where a step would lie: a seal
-  (`crates/core/src/store.rs:5332`), a deleted chip
-  (`crates/core/src/store.rs:5785`), a wholesale restate
-  (`crates/core/src/store.rs:5966`), a peer's chip deletion
-  (`crates/core/src/store.rs:6002`).
+  (`crates/core/src/store.rs:5367`), a deleted chip
+  (`crates/core/src/store.rs:5820`), a wholesale restate
+  (`crates/core/src/store.rs:6001`), a peer's chip deletion
+  (`crates/core/src/store.rs:6037`).
 - Two second merge interval and the automation's own step:
   `crates/core/src/document.rs:1513`, `crates/core/src/document.rs:1535`.
 - The caret across the seam: `crates/core/src/document.rs:1448`,
