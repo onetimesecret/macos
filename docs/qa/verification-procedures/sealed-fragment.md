@@ -318,6 +318,14 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `[sealed content · tiny]` and the ink around it as plain text, and
       the page keeps its run. **Fail:** the field takes any of the
       sealed word, or the run leaves the page.
+- [ ] **A field's text dragged onto a page.** Open the tab's rename
+      field, type a word, select it and drag it onto the page. Repeat
+      from the gutter's field, a pad's field in the pad list, an
+      object's name field and a field in Settings. **Pass:** each word
+      lands as ink where dropped, the field keeps its text, and no new
+      object or `sealed` appears. **Fail:** any drop becomes a sealed
+      object, or a drop from the field that holds the keys shows the
+      line that a name or note is being written.
 - [ ] **Plain drag out.** Drag the selection into TextEdit, then drag it
       onto the Trash in the Dock. **Pass:** while it passes over TextEdit
       the image shows no part of the sealed word, TextEdit receives the

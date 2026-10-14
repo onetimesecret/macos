@@ -6312,13 +6312,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case move
         /// A copy fragment, pasted through the core as ⌘V pastes it.
         case fragment
-        /// Ink from a page or note of this app, or another build's fragment, dropped by AppKit as ink.
+        /// Any other drag from inside this app, or another build's fragment, dropped by AppKit as ink.
         case ink
-        /// Any other drag, another app's above all, sealed where a seal can land.
+        /// Another app's drag, sealed where a seal can land.
         case seal
     }
 
-    /// The route a drop from `sender` takes here. A drag from elsewhere seals, and only
+    /// The route a drop from `sender` takes here. Another app's drag seals, and only
     /// where a seal can land: over a file it would write plaintext the next save keeps.
     func dropRoute(for sender: NSDraggingInfo) -> DropRoute {
         if isDecryptedDrag(sender) { return .refused }
@@ -6330,8 +6330,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return .move
         }
         if carriesFragment(sender) { return coordinator.takesFragmentDrop ? .fragment : .refused }
-        // This app's own ink, or another build's fragment, was never meant to be staged.
-        if editor != nil || SealedFragment.anyBuildsItem(on: sender.draggingPasteboard) {
+        // AppKit names a source only inside this app; nothing from here, nor another build's
+        // fragment, was meant to be staged.
+        if sender.draggingSource != nil || SealedFragment.anyBuildsItem(on: sender.draggingPasteboard) {
             return coordinator.takesFragmentDrop ? .ink : .refused
         }
         return coordinator.sealsHere ? .seal : .refused
@@ -6375,7 +6376,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return coordinator?.dropFragment(
                 from: sender.draggingPasteboard, at: index, source: editor) ?? false
         case .ink:
-            guard editor === self || coordinator?.admitsDrop(from: editor) == true else {
+            let source = sender.draggingSource as? NSView
+            guard source === self || coordinator?.admitsDrop(from: source) == true else {
                 return false
             }
             return super.performDragOperation(sender)
