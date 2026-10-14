@@ -32,7 +32,7 @@ pub struct GopKeyChain {
 }
 
 /// A ceremony's key frame and the epoch whose key sealed it, the one
-/// epoch it may be published at (client protocol §7.8).
+/// epoch it may be published at (client protocol §4.6).
 pub struct KeyFrame {
     epoch: u64,
     sealed: Vec<u8>,

@@ -295,8 +295,8 @@ Settle list, as of this date:
 - **Key-frame emission and local discard.** Determined, and against
   the hoped-for answer. Emission and compaction are one event by
   construction: both sites that stage a frame call
-  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:953` for a
-  confirmed ballot and `crates/ffi/src/sync_session.rs:1046` for the
+  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:952` for a
+  confirmed ballot and `crates/ffi/src/sync_session.rs:1045` for the
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
   (`crates/ffi/src/gop.rs:142`, `crates/core/src/store.rs:1081`).

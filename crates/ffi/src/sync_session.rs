@@ -947,9 +947,8 @@ impl SyncSession {
                 let Some(entropy) = entropy else {
                     return;
                 };
-                // Every member advances on this accept, so a page the store
-                // will not rebuild here (ADR-0052) still advances the chain,
-                // and a refused seal leaves the epoch's frame to a peer.
+                // Every member advances on this accept, even with no rebuild
+                // here (ADR-0052) or a refused seal, which leaves the frame to a peer.
                 let rebuild = sheet_of(store, page).and_then(|sheet| store.perform_ceremony(sheet));
                 let _staged = self.commit_advance(
                     page,
