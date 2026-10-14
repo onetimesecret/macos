@@ -5311,10 +5311,29 @@ public final class PageModel: ObservableObject {
         return id
     }
 
-    /// A new page (⌘N or the + tab). It cannot be refused for room:
-    /// the strip has no cap, and a tenth tab opens like the ninth
-    /// (issue #158).
+    /// Timeline creation splits the current page at its caret; Tabs opens a blank page.
     public func newPage() {
+        let insertionTab = showsTimeUnits && selectedFile == nil && !showingLedger ? selection : nil
+        let source = insertionTab.flatMap { tab in tabs.first { $0.id == tab }?.pageID }
+        let sourceDay = insertionTab.flatMap { tab in tabs.first { $0.id == tab }?.pageDayOffset }
+        let sourceLength = source.map { id in
+            client.documentRuns(sheet: id).reduce(0) { length, run in
+                switch run {
+                case .ink(let text): return length + text.utf16.count
+                case .chip: return length + 1
+                }
+            }
+        } ?? 0
+        let editor = (activeEditor as? InkTextView).flatMap { view in
+            view.coordinator?.currentSheet == source ? view : nil
+        }
+        if editor?.hasMarkedText() == true {
+            flash("finish composing text before inserting a checkpoint")
+            return
+        }
+        let caret = source.flatMap { editor?.selectedRange() ?? viewStates.carets[$0] }
+            ?? NSRange(location: sourceLength, length: 0)
+        let splitAt = min(max(caret.location, 0), sourceLength)
         clearNotice()
         clearPendingFileClose()
         // A page asked for now is a page to look at now, so the file
@@ -5327,6 +5346,39 @@ public final class PageModel: ObservableObject {
         }
         refresh()
         if created != 0 {
+            if let insertionTab, let source, let dest = tabs.first(where: { $0.id == created })?.pageID {
+                let naturalTabs = tabs.filter { $0.id != created }
+                guard let sourceIndex = naturalTabs.firstIndex(where: { $0.id == insertionTab }),
+                      client.moveTab(id: created, to: UInt64(sourceIndex + 1)) else {
+                    _ = client.closeTab(id: created)
+                    refresh()
+                    flash("the checkpoint could not be inserted")
+                    return
+                }
+                if splitAt < sourceLength {
+                    let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
+                    guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
+                        _ = client.closeTab(id: created)
+                        refresh()
+                        flash("the checkpoint could not be inserted")
+                        return
+                    }
+                } else {
+                    refresh()
+                }
+                editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
+                viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
+                viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
+                if pads.isEnabled, padRosterDate != nil {
+                    pads.setCheckpointSort(.natural, for: pads.activeID,
+                        onDate: dateKey(forDayBucket: 0))
+                    if let sourceDay, sourceDay < 0 {
+                        pads.setDaySort(.natural, for: pads.activeID)
+                        pads.setCheckpointSort(.natural, for: pads.activeID,
+                            onDate: dateKey(forDayBucket: sourceDay))
+                    }
+                }
+            }
             // A new page cannot borrow a plain tab switch's assumption
             // that the editor still holds the keys (issue #22). A switch
             // keeps one persistent editor focused and swaps its content
@@ -5349,41 +5401,7 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// ⌘N while pages are organized by day: go to today's page, make
-    /// one when today has none, and make another when the person is
-    /// already on today's page (issues #79, #158).
-    ///
-    /// Three arms, none of them a new mint policy. When today holds a
-    /// live page and the selection is elsewhere this is a plain
-    /// `select(_:)`, the jump, which cannot mint into an occupied slot.
-    /// When today holds none it is `newPage()`, the same path ⌘N takes
-    /// with the strip showing, which opens a fresh slot at this form
-    /// factor's rung and hands its editor the keys. And when the
-    /// selection already stands on one of today's pages it is
-    /// `newPage()` again: first press jumps, second press creates, and
-    /// the projection files the new page under today beside the first,
-    /// in strip order. Every mint stamps the clock's own reading of
-    /// now, so the page it makes lands on today by construction rather
-    /// than by being filed there.
-    ///
-    /// Blank or not makes no difference, exactly as on the strip: ⌘N
-    /// there opens a slot whether or not the last one was written on,
-    /// and a person on today's page who asks for another gets another.
-    /// A bar on content would be a second mint policy dressed as a
-    /// courtesy, and it was tried and taken out (issue #158).
-    ///
-    /// What it will not do is reach for some arbitrary empty tab to put
-    /// today's page in. That would be opinionated in exactly the place
-    /// the issue asked for unopinionated, and it has a real cost:
-    /// flipping back to the strip would show a tab the user named
-    /// holding today's typing. Nothing here can be refused for room:
-    /// the strip has no cap (issue #158).
-    ///
-    /// Reached from ⌘N and ⌘T only. The gestures that name today as a
-    /// place, the roll's empty region and the rail's Today row, take
-    /// `startToday()`, which never mints a second page. Nothing calls
-    /// either from `refresh()`, from a mount or from the toggle: what is
-    /// displayed is not thereby minted (ADR-0017).
+    /// Legacy day-navigation helper; creation commands now use `newPage()` directly.
     public func openToday() {
         // Bucket 0 is today and there is exactly one of it: the
         // projection folds a page stamped ahead of now into today rather
