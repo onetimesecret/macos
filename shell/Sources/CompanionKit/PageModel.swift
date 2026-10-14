@@ -1559,7 +1559,7 @@ public final class PageModel: ObservableObject {
             // owed check instead, after it has finished with that answer.
             MainActor.assumeIsolated { self?.consumeOwedActivationCheck() }
         }
-        // The event timer does not count sleep, so a page that came due asleep goes on wake (ADR-0052).
+        // The event timer does not count sleep, so a wake settles as the timer would (ADR-0052).
         wakeObserver = wakeCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -7038,7 +7038,7 @@ public final class PageModel: ObservableObject {
 
     /// Whether text the shell already shows from page `sheet` may leave by AppKit, which
     /// no core route sees (ADR-0052): a late timer settles first, and a page gone says so.
-    public func givesOut(sheet: UInt64) -> Bool {
+    func givesOut(sheet: UInt64) -> Bool {
         guard !sheet.isFileID else { return true }
         settleIfDue()
         guard livePageIDs.contains(sheet) else {
