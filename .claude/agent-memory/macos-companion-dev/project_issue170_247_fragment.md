@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0052, app 0.34.0; the deadline gate (readable_sheets); the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0053, app 0.34.0; the deadline gate (readable_sheets); copy and cut refuse past an envelope cap; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -68,6 +68,17 @@ Seams for the editor half (all page ids, all refuse a file id):
   timer. An envelope over 8 MiB, over 1024 refs, or naming one UUID
   twice is unreadable. ADR-0052 (phase 4, core 0.32.0, ffi 0.40.0)
   replaced ADR-0048's consequence that copy and cut still read a due page.
+
+- Envelope caps (ADR-0053, phase 4): copy and cut ask the parse's own
+  `EnvelopeCap::passed` before any buffer and return
+  `Result<Copied, CopyRefusal>`; past a cap nothing is written, deleted
+  or detached. The FFI answers `{"error": "tooLarge" | "tooManyObjects",
+  "limit"}` (every other refusal stays null), and
+  `copyFragmentResult`/`cutFragmentResult` give a `FragmentRefusal`. The
+  optional `copyFragment`/`cutFragment` still return nil, so the editor
+  writes nothing but says nothing yet: its line is owed. Sealing 1025
+  chips one FFI call at a time takes about 21 s in a debug test, so seam
+  tests use the 8 MiB length cap; the store seals 1026 in well under 1 s.
 
 - Deadline gate (ADR-0052): `SheetStore::readable_sheets` is the one
   accessor for any route that gives a page out; it asks `Sheet::is_due`,
