@@ -5945,6 +5945,37 @@ public final class PageModel: ObservableObject {
         return .placed(placed)
     }
 
+    /// The line when a drag's several stretches hold a sealed object.
+    public static let severalStretchesDragLine = "sealed objects drag from one selection, not several."
+
+    /// The line when a drop meets a name or note holding the keys (ADR-0046).
+    public static let dropWaitsLine = "a name or note is being written, so the drop was not placed."
+
+    /// A page's range as its drag carries it: the copy's fragment (ADR-0047 point 10).
+    public func dragFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
+        guard !sheet.isFileID else { return nil }
+        return client.copyFragment(sheet: sheet, range: range)
+    }
+
+    /// A page's own drag dropped on it at `index`: the range moved, or cloned for ⌥,
+    /// through the core as one step (ADR-0047 point 10). Nil, settled, on a refusal.
+    @discardableResult
+    public func dropRange(
+        _ range: NSRange, sheet: UInt64, at index: Int, cloning: Bool
+    ) -> PlacedFragment? {
+        guard !sheet.isFileID else { return nil }
+        let placed = cloning
+            ? client.cloneRange(sheet: sheet, range: range, to: index)
+            : client.moveRange(sheet: sheet, range: range, to: index)
+        guard let placed else {
+            // A page past its deadline refuses; the sweep takes it now (ADR-0048).
+            settleCoreEvent()
+            return nil
+        }
+        settleTransfer(sheet: sheet)
+        return placed
+    }
+
     /// The slot's words: each cut object by its name, or as sealed content,
     /// and its size class, leaving the excerpt out. Nil for a cut holding nothing.
     public nonisolated static func cutSlotSentence(for cut: ActiveCut) -> String? {

@@ -2783,6 +2783,151 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
+        // MARK: Drags of the page's selection (ADR-0047 point 10)
+
+        /// The page's own drag, from its start until its session ends.
+        private struct PageDrag {
+            let range: NSRange
+            let document: InkDocument
+            let generation: Int
+            /// Another page of this app pasted the drag as a move.
+            var movedAway = false
+        }
+
+        private var pageDrag: PageDrag?
+
+        /// Whether a drag of this page's selection is under way.
+        var dragsPageSelection: Bool { pageDrag != nil }
+
+        /// What a drag of the page's selection carries.
+        enum DragStart {
+            /// The core's copy fragment, in the one item the drag writes.
+            case fragment(NSPasteboardItem)
+            /// Not a page, or several stretches of ink: AppKit drags as it always has.
+            case ordinary
+            /// Nothing is dragged.
+            case refused
+        }
+
+        /// Start a drag of the page's selection as the core's copy fragment, so
+        /// another app reads only ink and placeholders (ADR-0047 point 2).
+        func beginPageDrag() -> DragStart {
+            pageDrag = nil
+            guard !writesNote, let textView, let storage = textView.textStorage,
+                  let sheet = currentSheet, !sheet.isFileID, let document
+            else { return .ordinary }
+            guard textView.answersChords else { return .refused }
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            guard ranges.count == 1 else {
+                guard ranges.contains(where: { Self.containsChip(storage, in: $0) }) else {
+                    return .ordinary
+                }
+                model.flash(PageModel.severalStretchesDragLine)
+                return .refused
+            }
+            guard let item = model.dragFragment(sheet: sheet, range: ranges[0])?.pasteboardItem()
+            else { return .refused }
+            pageDrag = PageDrag(range: ranges[0], document: document, generation: generation)
+            return .fragment(item)
+        }
+
+        /// A drag that starts on an object drags the selection holding it, or the
+        /// object alone, by the page's own drag rather than AppKit's attachment drag.
+        public func textView(
+            _ view: NSTextView, draggedCell cell: any NSTextAttachmentCellProtocol,
+            in rect: NSRect, event: NSEvent, at charIndex: Int
+        ) {
+            guard let textView = view as? InkTextView, textView === self.textView else { return }
+            if !NSLocationInRange(charIndex, textView.selectedRange()) {
+                textView.setSelectedRange(NSRange(location: charIndex, length: 1))
+            }
+            _ = textView.dragSelection(with: event, offset: .zero, slideBack: true)
+        }
+
+        /// The page's own drag, while the page still reads as it did when the drag began.
+        private var standingPageDrag: PageDrag? {
+            guard let drag = pageDrag, drag.document == document, drag.generation == generation
+            else { return nil }
+            return drag
+        }
+
+        /// What the page's own drag would do dropped at `index`: a move inside its own
+        /// range is no drop, and a refused page takes none.
+        func pageDragOperation(at index: Int, offered mask: NSDragOperation) -> NSDragOperation {
+            guard let drag = standingPageDrag, textView?.isEditable == true else { return [] }
+            let operation = InkTextView.pageDropOperation(offered: mask)
+            let inside = drag.range.location...NSMaxRange(drag.range)
+            return operation == .move && inside.contains(index) ? [] : operation
+        }
+
+        /// The page's own drag dropped on it at `index`: moved, or cloned for ⌥,
+        /// through the core as one step; stands aside while a field holds the keys.
+        func dropPageDrag(at index: Int, offered mask: NSDragOperation) -> Bool {
+            let operation = pageDragOperation(at: index, offered: mask)
+            guard operation != [], let drag = standingPageDrag, let textView,
+                  let sheet = currentSheet
+            else { return false }
+            guard textView.answersChords else {
+                model.flash(PageModel.dropWaitsLine)
+                return false
+            }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard let placed = model.dropRange(
+                drag.range, sheet: sheet, at: index, cloning: operation == .copy)
+            else { return false }
+            settleRewrite(selecting: placed.range)
+            return true
+        }
+
+        /// Whether a fragment from another page or app can drop here: an editable page.
+        var takesFragmentDrop: Bool {
+            guard !writesNote, let textView, textView.isEditable, let sheet = currentSheet
+            else { return false }
+            return !sheet.isFileID
+        }
+
+        /// A fragment dragged from another page or app, dropped at `index`: pasted
+        /// through the core as ⌘V pastes it, never sealed as its public text.
+        func dropFragment(from board: NSPasteboard, at index: Int) -> Bool {
+            guard takesFragmentDrop, let textView, let sheet = currentSheet else { return false }
+            guard textView.answersChords else {
+                model.flash(PageModel.dropWaitsLine)
+                return false
+            }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard case .placed(let placed) = model.pasteFragment(
+                from: board, sheet: sheet, range: NSRange(location: index, length: 0))
+            else { return false }
+            settleRewrite(selecting: placed.range)
+            return true
+        }
+
+        /// Another page pasted this page's drag as a move, so its end takes the run off here.
+        func pageDragMovedAway() {
+            pageDrag?.movedAway = true
+        }
+
+        /// The page's drag ended. A move another page took leaves this page by an
+        /// ordinary deletion, which detaches its objects (ADR-0047 points 4 and 10);
+        /// another app's answer removes nothing.
+        func endPageDrag(operation: NSDragOperation) {
+            let drag = standingPageDrag
+            pageDrag = nil
+            guard let drag, drag.movedAway, operation.contains(.move), let textView,
+                  textView.isEditable, let storage = textView.textStorage,
+                  NSMaxRange(drag.range) <= storage.length
+            else { return }
+            withEditIntent(.deletion) {
+                if textView.shouldChangeText(in: drag.range, replacementString: "") {
+                    storage.replaceCharacters(in: drag.range, with: "")
+                    textView.didChangeText()
+                }
+            }
+            model.finishEditingGroup(drag.document, selection: textView.selectedRange())
+        }
+
         /// After the core rewrote the page under the editor: lay the styles back
         /// down and stand the selection, as a step does.
         func settleRewrite(selecting selection: NSRange) {
@@ -5768,32 +5913,138 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isExternalDrag(sender) else { return super.draggingEntered(sender) }
+        guard isExternalDrag(sender), !carriesFragment(sender) else {
+            return super.draggingEntered(sender)
+        }
         return sealsExternalDrag(sender) ? .copy : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isExternalDrag(sender) else { return super.draggingUpdated(sender) }
+        guard isExternalDrag(sender), !carriesFragment(sender) else {
+            return super.draggingUpdated(sender)
+        }
         return sealsExternalDrag(sender) ? .copy : []
     }
 
     /// Dragging content to a secrecy tool is already the "stage this"
     /// gesture: an external drop seals. The core reads the drag
     /// pasteboard itself — the dropped bytes never enter this process.
-    /// Internal drags (moving ink within the page) stay ordinary text
-    /// editing.
+    /// The page's own drag and a fragment go through the core instead.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let index = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
+        if isOwnPageDrag(sender) {
+            return coordinator?.dropPageDrag(
+                at: index, offered: sender.draggingSourceOperationMask) ?? false
+        }
+        if carriesFragment(sender) {
+            guard coordinator?.dropFragment(from: sender.draggingPasteboard, at: index) == true
+            else { return false }
+            if Self.pageDropOperation(offered: sender.draggingSourceOperationMask) == .move,
+               let source = sender.draggingSource as? InkTextView, source !== self
+            {
+                source.coordinator?.pageDragMovedAway()
+            }
+            return true
+        }
         guard isExternalDrag(sender) else {
             return super.performDragOperation(sender)
         }
         guard sealsExternalDrag(sender) else { return false }
-        let point = convert(sender.draggingLocation, from: nil)
-        let index = characterIndexForInsertion(at: point)
         return coordinator?.sealDrop(at: index) ?? false
     }
 
     private func isExternalDrag(_ sender: NSDraggingInfo) -> Bool {
         (sender.draggingSource as? NSView) !== self
+    }
+
+    // MARK: Drags of the page's selection (ADR-0047 point 10)
+
+    /// The page's selection drags as the core's copy fragment, with its own
+    /// drawing as the image; several stretches of ink drag as AppKit drags them.
+    override func dragSelection(
+        with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool
+    ) -> Bool {
+        guard let coordinator else {
+            return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+        }
+        switch coordinator.beginPageDrag() {
+        case .ordinary:
+            return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+        case .refused:
+            return false
+        case .fragment(let item):
+            var origin = NSPoint.zero
+            let image = dragImageForSelection(with: event, origin: &origin)
+                ?? NSImage(size: NSSize(width: 1, height: 1))
+            // AppKit gives the image's lower left corner; a flipped frame starts at its top.
+            let top = isFlipped ? origin.y - image.size.height : origin.y
+            let dragging = NSDraggingItem(pasteboardWriter: item)
+            dragging.setDraggingFrame(
+                NSRect(origin: NSPoint(x: origin.x, y: top), size: image.size), contents: image)
+            let session = beginDraggingSession(with: [dragging], event: event, source: self)
+            session.animatesToStartingPositionsOnCancelOrFail = slideBack
+            session.draggingFormation = .none
+            return true
+        }
+    }
+
+    override func draggingSession(
+        _ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        guard coordinator?.dragsPageSelection == true else {
+            return super.draggingSession(session, sourceOperationMaskFor: context)
+        }
+        return Self.pageDragMask(for: context, editable: isEditable)
+    }
+
+    override func draggingSession(
+        _ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation
+    ) {
+        guard let coordinator, coordinator.dragsPageSelection else {
+            return super.draggingSession(session, endedAt: screenPoint, operation: operation)
+        }
+        coordinator.endPageDrag(operation: operation)
+    }
+
+    /// The operation AppKit's drop caret follows for the page's own drag or a fragment;
+    /// any other drag keeps AppKit's answer.
+    override func dragOperation(
+        for dragInfo: NSDraggingInfo, type: NSPasteboard.PasteboardType
+    ) -> NSDragOperation {
+        guard let coordinator else { return super.dragOperation(for: dragInfo, type: type) }
+        if isOwnPageDrag(dragInfo) {
+            let index = characterIndexForInsertion(
+                at: convert(dragInfo.draggingLocation, from: nil))
+            return coordinator.pageDragOperation(
+                at: index, offered: dragInfo.draggingSourceOperationMask)
+        }
+        if carriesFragment(dragInfo) {
+            guard coordinator.takesFragmentDrop else { return [] }
+            return Self.pageDropOperation(offered: dragInfo.draggingSourceOperationMask)
+        }
+        return super.dragOperation(for: dragInfo, type: type)
+    }
+
+    private func isOwnPageDrag(_ sender: NSDraggingInfo) -> Bool {
+        (sender.draggingSource as? NSView) === self && coordinator?.dragsPageSelection == true
+    }
+
+    private func carriesFragment(_ sender: NSDraggingInfo) -> Bool {
+        SealedFragment.item(on: sender.draggingPasteboard) != nil
+    }
+
+    /// What a page's drag offers: a move or a copy inside the app, and only a copy
+    /// outside it, so no other app can take the selection off the page.
+    nonisolated static func pageDragMask(
+        for context: NSDraggingContext, editable: Bool
+    ) -> NSDragOperation {
+        context == .withinApplication && editable ? [.move, .copy] : .copy
+    }
+
+    /// A drop of a page's drag: a move, or a copy when ⌥ leaves only the copy.
+    nonisolated static func pageDropOperation(offered mask: NSDragOperation) -> NSDragOperation {
+        if mask.contains(.move) { return .move }
+        return mask.contains(.copy) ? .copy : []
     }
 }
 

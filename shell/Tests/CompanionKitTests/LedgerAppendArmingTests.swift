@@ -66,6 +66,12 @@ final class LedgerAppendArmingTests: XCTestCase {
                 model.pasteFragment(
                     from: board, sheet: sheet, range: NSRange(location: 1, length: 0))
             }),
+            // The ⌥ drag clones its objects core side (ADR-0047 point 10).
+            ("dropRange cloning appends sealed for each clone", {
+                guard let sheet = model.selectedPageID else { return }
+                model.dropRange(
+                    NSRange(location: 0, length: 1), sheet: sheet, at: 0, cloning: true)
+            }),
             // A removal in an edit batch detaches and appends nothing
             // (ADR-0047); the close below records the chip's death.
             ("close appends discarded for the chip and the page", {

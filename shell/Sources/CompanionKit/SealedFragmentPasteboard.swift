@@ -18,13 +18,19 @@ extension SealedFragment {
         self.init(envelope: nil, plainText: fragments.map(\.plainText).joined(separator: "\n"))
     }
 
-    /// One item holding the envelope under the private type beside the
-    /// public text, or the text alone for ink. False when the board refused.
+    /// The one item a copy writes and a drag carries: the envelope under the
+    /// private type beside the public text, or the text alone for ink.
+    func pasteboardItem() -> NSPasteboardItem? {
+        let item = NSPasteboardItem()
+        if let envelope, !item.setData(envelope, forType: Self.pasteboardType) { return nil }
+        guard item.setString(plainText, forType: .string) else { return nil }
+        return item
+    }
+
+    /// The item alone on `pasteboard`. False when the board refused.
     @discardableResult
     func write(to pasteboard: NSPasteboard) -> Bool {
-        let item = NSPasteboardItem()
-        if let envelope, !item.setData(envelope, forType: Self.pasteboardType) { return false }
-        guard item.setString(plainText, forType: .string) else { return false }
+        guard let item = pasteboardItem() else { return false }
         pasteboard.clearContents()
         return pasteboard.writeObjects([item])
     }
