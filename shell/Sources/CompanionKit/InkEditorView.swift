@@ -5470,11 +5470,53 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return coordinator.chipMenu(at: index)
         }
         let menu = super.menu(for: event) ?? NSMenu()
-        // Share's picker holds the selection before any gate is asked (Law 0001).
-        if coordinator?.writesFile != true { TextOffers.removeShare(from: menu) }
+        // These hold the selection from the menu's building on, before any gate (Law 0001).
+        if coordinator?.writesFile != true { TextOffers.removeSelectionReaders(from: menu) }
         coordinator?.appendSealItem(to: menu)
         coordinator?.appendLanguageItems(to: menu)
         return menu
+    }
+
+    // MARK: Look Up and Speech outside the menu (Law 0001, ADR-0052)
+
+    /// Whether AppKit's look up or speech may read the selection: not while another
+    /// surface holds the keys (ADR-0046), and past the page's deadline it settles instead.
+    private var readsOutSelection: Bool { answersChords && givesOutShownText }
+
+    /// Edit > Speech > Start Speaking reads the selection to the system's voice.
+    override func startSpeaking(_ sender: Any?) {
+        guard readsOutSelection else { return }
+        super.startSpeaking(sender)
+    }
+
+    /// A force click or a three finger tap looks up the word under the pointer.
+    override func quickLook(with event: NSEvent) {
+        guard readsOutSelection else { return }
+        super.quickLook(with: event)
+    }
+
+    /// Quick Look by key, which AppKit ends in a dictionary look up of the selection.
+    override func quickLookPreviewItems(_ sender: Any?) {
+        guard readsOutSelection else { return }
+        super.quickLookPreviewItems(sender)
+    }
+
+    /// Where AppKit's look up of this view's text shows its definition.
+    override func showDefinition(for attrString: NSAttributedString?, at textBaselineOrigin: NSPoint) {
+        guard readsOutSelection else { return }
+        super.showDefinition(for: attrString, at: textBaselineOrigin)
+    }
+
+    /// Where AppKit's look up of a range of this view's text shows its definition.
+    override func showDefinition(
+        for attrString: NSAttributedString?, range targetRange: NSRange,
+        options: [NSView.DefinitionOptionKey: Any]?,
+        baselineOriginProvider originProvider: ((NSRange) -> NSPoint)?
+    ) {
+        guard readsOutSelection else { return }
+        super.showDefinition(
+            for: attrString, range: targetRange, options: options,
+            baselineOriginProvider: originProvider)
     }
 
     /// A resize rewraps paragraphs without touching their content, so

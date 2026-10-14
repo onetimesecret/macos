@@ -437,6 +437,49 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
     }
 
+    /// Look Up and Translate are built titled with the selection they hold, and Speech
+    /// reads it out, so no gate at the click can stop a menu held open past a deadline:
+    /// a page's, a sealed name's and a note's text menu offer none of them; a file keeps all.
+    func testAPageANameAndANoteOfferNoLookUpTranslateOrSpeech() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        func offers(_ menu: NSMenu) -> [String] {
+            var found: [String] = []
+            if menu.items.contains(where: TextOffers.isLookUpOrTranslate) { found.append("Look Up") }
+            if menu.items.contains(where: TextOffers.isSpeech) { found.append("Speech") }
+            return found
+        }
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.setSelectedRange(NSRange(location: 0, length: 4))
+        let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
+        XCTAssertEqual(offers(fileMenu), ["Look Up", "Speech"], "the control: a file offers them")
+        XCTAssertEqual(
+            fileMenu.items.filter(TextOffers.isLookUpOrTranslate).count, 2,
+            "the control: a file offers Look Up and Translate")
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        XCTAssertEqual(offers(pageMenu), [], "the page")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        let name = try openNameField(page)
+        name.selectAll(nil)
+        let nameMenu = try XCTUnwrap(name.menu(for: secondaryClick(in: name)))
+        XCTAssertEqual(offers(nameMenu), [], "the name")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        note.selectAll(nil)
+        let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
+        XCTAssertEqual(offers(noteMenu), [], "the note")
+        for menu in [pageMenu, nameMenu, noteMenu] {
+            XCTAssertNotEqual(menu.items.first?.isSeparatorItem, true, "a separator led the menu")
+        }
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
     // MARK: Select all
 
     /// Select all takes each object whole, and its copy carries every
@@ -1379,7 +1422,7 @@ final class SealedFragmentEditorTests: XCTestCase {
                     return XCTFail("the drag began")
                 }
             }),
-        ]
+        ] + lookUpAndSpeech.map { way in (way.name, { way.run($0.textView) }) }
         for route in routes {
             let page = try makePage()
             XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
@@ -1395,6 +1438,76 @@ final class SealedFragmentEditorTests: XCTestCase {
             XCTAssertEqual(page.pasteboard.changeCount, board, "\(route.name) wrote the board")
             XCTAssertEqual(sent(page), [], "\(route.name) recorded a sent")
             XCTAssertNil(page.model.activeCut, route.name)
+        }
+    }
+
+    /// AppKit's look up and speech outside the text menu, over the selection or the
+    /// text under the pointer. Run only where a gate refuses: one that ran would speak
+    /// or look up through a service.
+    private var lookUpAndSpeech: [(name: String, run: (NSTextView) -> Void)] {
+        [
+            ("Speech", {
+                $0.selectAll(nil)
+                $0.startSpeaking(nil)
+            }),
+            ("Look Up by force click", { view in
+                guard let event = NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: view.convert(NSPoint(x: 4, y: 4), to: nil),
+                    modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                else { return XCTFail("no event") }
+                view.quickLook(with: event)
+            }),
+            ("Look Up by key", {
+                $0.selectAll(nil)
+                $0.quickLookPreviewItems(nil)
+            }),
+            ("the definition of a range", {
+                $0.showDefinition(
+                    for: nil, range: NSRange(location: 0, length: 2), options: nil,
+                    baselineOriginProvider: nil)
+            }),
+            ("the definition at a point", {
+                $0.showDefinition(for: NSAttributedString(string: "ab"), at: .zero)
+            }),
+        ]
+    }
+
+    /// While a field or the note holds the keys, the page's look up and speech stand
+    /// aside without asking the page (ADR-0046); the note's own, and the page's once
+    /// the keys come back, refuse past the deadline and settle (ADR-0052).
+    func testLookUpAndSpeechStandAsideForTheKeysAndRefusePastTheDeadline() throws {
+        for way in lookUpAndSpeech {
+            let page = try makePage()
+            page.coordinator.beginNote(at: 3)
+            drainMainQueue()
+            let note = try XCTUnwrap(page.coordinator.noteEditor)
+            XCTAssertTrue(note.holdsKeys)
+            try age(page)
+
+            way.run(page.textView)
+            XCTAssertNotEqual(page.model.notice, PageModel.pageExpiredLine, "\(way.name) under the note")
+            XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+
+            way.run(note.textView)
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, "the note's \(way.name)")
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+        }
+        for way in lookUpAndSpeech {
+            let page = try makePage()
+            XCTAssertTrue(page.window.makeFirstResponder(page.field))
+            drainMainQueue()
+            try age(page)
+
+            way.run(page.textView)
+            XCTAssertNotEqual(page.model.notice, PageModel.pageExpiredLine, "\(way.name) under the field")
+            XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+
+            XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+            drainMainQueue()
+            way.run(page.textView)
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, way.name)
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
         }
     }
 
@@ -1659,9 +1772,9 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// A name is part of its page: past the deadline Copy name (above) and the name
-    /// field's copy, cut, drag and service give nothing out, and the settle takes the
-    /// page with its line. The drag is asked only through its gate, as a drag that ran
-    /// would write the system's drag board.
+    /// field's copy, cut, drag, service, look up and speech give nothing out, and the
+    /// settle takes the page with its line. The drag is asked only through its gate, as
+    /// a drag that ran would write the system's drag board.
     func testANamePastItsPagesDeadlineGivesNothingOutAndTheSettleTakesThePage() throws {
         let board = NSPasteboard.withUniqueName()
         addTeardownBlock { board.releaseGlobally() }
@@ -1674,7 +1787,7 @@ final class SealedFragmentEditorTests: XCTestCase {
                 XCTAssertFalse($0.writeSelection(to: board, type: legacy), "once gone")
             }),
             ("the field's drag", { XCTAssertFalse($0.givesOut, "AppKit's drag would run") }),
-        ]
+        ] + lookUpAndSpeech.map { way in ("the field's \(way.name)", { way.run($0) }) }
         for ask in asks {
             let page = try makePage()
             XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
