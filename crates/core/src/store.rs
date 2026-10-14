@@ -1093,7 +1093,8 @@ impl<C: Clock> SheetStore<C> {
                 ..
             } if now < until => HoldRegister::Held {
                 until_wall_ms: wall.saturating_add(millis(until.saturating_duration_since(now))),
-                frozen_ms: millis(frozen_remaining),
+                // Rounded up: truncating would publish a life under 1 ms as none.
+                frozen_ms: millis_up(frozen_remaining),
                 topped_up,
             },
             _ => HoldRegister::Released,
@@ -1744,6 +1745,11 @@ impl<C: Clock> SheetStore<C> {
 /// A duration as whole milliseconds, saturating.
 fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+/// A duration as milliseconds rounded up, saturating.
+fn millis_up(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos().div_ceil(1_000_000)).unwrap_or(u64::MAX)
 }
 
 /// The document's refusal in the store's vocabulary. Spelled out so a
@@ -5079,6 +5085,31 @@ mod tests {
         );
         assert_eq!(beta.next_event(), Some(now), "so the timer settles now");
         assert_eq!(beta.expire_due(), vec![b]);
+    }
+
+    #[test]
+    fn a_held_life_under_a_millisecond_reaches_a_peer_still_alive() {
+        let (mut alpha, mut beta, a, b, uuid, alpha_clock, beta_clock) = shared_page(0);
+        let short_of_the_deadline =
+            alpha.sheet(a).unwrap().remaining(alpha.now()) - Duration::from_micros(500);
+        alpha_clock.advance(short_of_the_deadline);
+        beta_clock.advance(short_of_the_deadline);
+        assert!(alpha.pause_press(slot(&alpha, a)));
+
+        let register = alpha.hold_register(a).unwrap();
+        assert!(
+            matches!(register, HoldRegister::Held { frozen_ms: 1, .. }),
+            "rounded up, never to nothing: {register:?}"
+        );
+        assert!(beta.observe_peer_hold(uuid, register));
+        let now = beta.now();
+        assert!(beta.sheet(b).unwrap().is_held(now));
+        assert!(
+            !beta.sheet(b).unwrap().is_due(now),
+            "held there, so held here"
+        );
+        assert!(beta.next_event().unwrap() > now);
+        assert!(beta.expire_due().is_empty());
     }
 
     #[test]
