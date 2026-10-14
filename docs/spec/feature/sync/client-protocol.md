@@ -7,7 +7,9 @@ documentation_status: draft # draft | needs-review | reviewed | stale
 **Status:** draft, not accepted; grants itself no authority and changes
 no spec. Describes the client at `50044ad`, with the deadline gate that
 `4fde3d8`, `ba3d5eb`, `999d011` and `b6600bb` added (§2, §3, §4.4,
-§7.1, §7.4, §7.6) and the ballot advance `3de557c` made (§7.1, §7.6).
+§7.1, §7.4, §7.6), the ballot advance `3de557c` made (§7.1, §7.6), and
+the frame epoch `9d74837` and the cap settle `09ee545` made (§4.6,
+§7.2, §7.6, 10.11).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
@@ -151,10 +153,12 @@ absorb duplicates.
 
 ### 4.6 Frames
 
-Every committing device PUTs its staged frame at the chain epoch,
-without `welcome`, at the end of the turn (§7.8). A 2xx or `409` drops
-it; anything else (a `401`, with access kept; a transport failure, with
-no fault or event) keeps it for the next turn. Nothing fetches a frame:
+Every committing device PUTs its staged frame at the epoch whose key
+sealed it, without `welcome`, at the end of the turn (§7.8). A 2xx or
+`409` drops it; anything else (a `401`, with access kept; a transport
+failure, with no fault or event) keeps it for the next turn, until the
+chain moves past its epoch, when it is dropped unsent
+(`a_frame_sealed_behind_the_chain_s_epoch_never_goes_out`). Nothing fetches a frame:
 `fetch_frame_request` and `absorb_frame` have no caller (§8).
 
 ### 4.7 Pairing mailbox
@@ -253,7 +257,10 @@ ballot, so a page still due proposes again.
 ### 7.2 Solo ceremony
 
 `solo_ceremony` commits at once as §7.6 does; devices absent from this
-device's roster, or without a record, are left behind.
+device's roster, or without a record, are left behind. A solo commit
+settles its page's cursors whichever trigger asked, a `413` included
+(`a_due_transition_with_an_empty_room_rotates_the_channel_solo`,
+`a_solo_commit_at_the_relay_cap_settles_the_page_s_cursor`).
 
 ### 7.3 Membership
 
@@ -296,15 +303,30 @@ member could cut the page
 `a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay`,
 `the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`,
 `a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`).
-The empty frame's size tells the relay that it holds no page, and a
-rejoin from it would land none (interpretation). `solo_ceremony` keeps
-the store's refusal as a refusal, since no peer holds its entropy
-(`a_solo_ceremony_the_store_refuses_rotates_nothing`). A frame or batch
-sealed before the deadline still goes out on its retry: the frame PUT
-is what moves the relay's epoch.
-A seal refusal leaves the chain advanced and the channels moved but
-stages no frame, here and in `solo_ceremony`, so a frame an earlier
-commit left unpublished goes out under the new epoch (interpretation).
+The empty frame's size tells the relay that it holds no page
+(interpretation); opened, it is empty, and a rejoining store lands no
+page and takes no identity from it
+(`the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`).
+`solo_ceremony` keeps the store's refusal as a refusal, since no peer
+holds its entropy (`a_solo_ceremony_the_store_refuses_rotates_nothing`).
+A frame or batch sealed before the deadline still goes out on its
+retry, a frame only while the chain stands at its epoch (§4.6): the
+frame PUT is what moves the relay's epoch.
+A seal refusal (the RNG declining a nonce) leaves the chain advanced
+and the channels moved but stages no frame
+(`a_refused_frame_seal_stages_nothing_and_the_chain_still_advances`).
+A ballot member still commits on the accept and leaves the epoch's
+frame to a peer
+(`a_member_whose_frame_seal_refuses_still_takes_its_peers_epoch`);
+`solo_ceremony` reports no commit, so no `ceremony_committed` goes out
+(`a_solo_ceremony_whose_frame_seal_refuses_reports_no_commit`). Either
+way a frame an earlier commit left unpublished is dropped, never PUT
+under the new epoch
+(`a_frame_sealed_behind_the_chain_s_epoch_never_goes_out`). After a
+solo refusal no frame exists at the new epoch: the cursor stays, so
+the next sweep exports the rebuild as ops, and the relay, a step
+behind, answers that publish and every later one with `409` until a
+rejoin, which is not built (§8) (interpretation).
 
 ### 7.7 Abandonment
 
@@ -425,7 +447,7 @@ Owner questions first; the owner decides which side moves in each.
 | 10.8 | relay-protocol §5: "every device stays on the old GOP"; "on waking it advances its chain" | §7.7, §8 | a sleeper that reads an abandoned ballot confirms alone and its frame wins, leaving the proposer behind; one that accepted then slept finds the remaining accepts purged, gets `410` and stays behind (interpretation) |
 | 10.9 | none | §5.4 | after a follower republishes, the proposer seals to the spent package until it re-attaches; the channel cannot rotate (interpretation) |
 | 10.10 | relay-protocol §5: "the publisher immediately proposes a ceremony" | §7.1 | with no live page left, no rotation; the dead page stays openable (code reading) |
-| 10.11 S | relay-protocol §3: "A refused publisher proposes a size-triggered ceremony"; §4: "Control and content share the stream" | §4.4, §7.1 | the proposal is never sealed while the batch is in flight, so the channel wedges; a dead first page never commits; a solo commit there skips `settle_frontier` and re-exports the rebuild (interpretation) |
+| 10.11 S | relay-protocol §3: "A refused publisher proposes a size-triggered ceremony"; §4: "Control and content share the stream" | §4.4, §7.1 | the proposal is never sealed while the batch is in flight, so the channel wedges; a dead first page never commits (interpretation) |
 | 10.12 S | relay-protocol §4: "`410 rejoin` is the whole recovery story"; account-auth.md §5: "not a hot loop" | §3, §4.5 | a `410` or `protocol` turn re-pumps at once (code reading) |
 | 10.13 S | none | §4.4 | a resend carries the new epoch over blobs sealed under the old key; peers cannot open them, yet cursors advance (interpretation) |
 | 10.14 | relay-protocol §8: "delivery latency is bounded by the publish clock, not the poll" | §3 | an edit waits up to 25 s (code reading) |
