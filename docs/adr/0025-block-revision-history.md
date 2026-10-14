@@ -270,6 +270,12 @@ seven-day page can be seven days. Mitigations, in order of weight:
   rebuild. `gop::ceremony_commit` now takes the rebuild its callers cut,
   and the note's test is now
   `the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`.
+- **2026-10-14:** A solo commit whose frame seal refused owes its frame,
+  and `SyncSession::seal_owed_frame` seals it on the next sweep, a third
+  site that stages a frame. It too cuts the page with
+  `perform_ceremony` first, or seals an empty frame where the store cuts
+  none, so every frame that carries a page still comes from that
+  rebuild (client protocol §7.6).
 
 ## Delivery note (2026-09-04)
 
@@ -300,9 +306,6 @@ Settle list, as of this date:
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
   (`crates/ffi/src/gop.rs:169`, `crates/core/src/store.rs:1081`).
-  A frame a refused seal left owed is cut the same way, by
-  `perform_ceremony` before `gop::seal_frame`
-  (`crates/ffi/src/sync_session.rs:1125`).
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
   (`crates/ffi/src/gop.rs:281`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
