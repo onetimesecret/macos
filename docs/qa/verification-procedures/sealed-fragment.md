@@ -1,7 +1,8 @@
 # The sealed fragment: what other apps and a real drag receive
 
 **Applies to:** OnetimePad's copy, cut, paste and drags of a selection
-holding a sealed object, the decrypted drag from its handle, and the
+holding a sealed object and a service's request for it, the decrypted
+drag from its handle, and the
 two presses that remove an object and the line's Undo after them.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
@@ -41,6 +42,16 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the plain text and `com.onetimesecret.onetimepad.sealed-fragment.debug`,
       and no other type carries the word. **Fail:** a rich text or other
       type carries it.
+- [ ] **A service and Share over an object.** Select the same three
+      again, then open OnetimePad > Services, and the Share submenu of
+      the page's context menu over the ink. **Pass:** a service that
+      takes text without answering, such as a new note or a web
+      search, receives `before [sealed content · tiny] after`; no
+      service that rewrites the selection in place, such as a case
+      change, is offered; a Share destination receives the same text,
+      or Share offers nothing. **Fail:** any service or Share
+      destination receives the sealed word, or `￼` where the object
+      stood, or a service rewrites the selection over the object.
 - [ ] **Cut and paste in place.** Cut the selection, note the slot's
       line under the page, then paste further down. **Pass:** the line
       names the cut object by its face and goes when the paste lands;
