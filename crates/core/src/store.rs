@@ -4628,6 +4628,158 @@ mod tests {
         );
     }
 
+    /// Two inked pages on `alpha` mirrored on `beta`, each published as the
+    /// sync sweep publishes: what it holds past its last export, delivered
+    /// or refused.
+    struct TwoPages {
+        alpha: SheetStore<ManualClock>,
+        beta: SheetStore<ManualClock>,
+        /// Per page: alpha's page, beta's mirror and alpha's export cursor.
+        pages: [(SheetId, SheetId, Vec<u8>); 2],
+    }
+
+    impl TwoPages {
+        fn inked(texts: [&str; 2]) -> Self {
+            let (mut alpha, _) = store();
+            let (mut beta, _) = store();
+            let pristine = SheetStore::<ManualClock>::pristine_document_version();
+            let pages = texts.map(|text| {
+                let page = alpha.new_tab().1;
+                type_on(&mut alpha, page, text);
+                (page, beta.new_tab().1, pristine.clone())
+            });
+            let mut pair = Self { alpha, beta, pages };
+            for page in 0..2 {
+                let batch = pair.publish(page);
+                pair.deliver(page, &batch).unwrap();
+                assert!(pair.agree(page));
+            }
+            pair
+        }
+
+        fn publish(&mut self, page: usize) -> Zeroizing<Vec<u8>> {
+            let (id, _, cursor) = &mut self.pages[page];
+            let batch = self.alpha.export_document_updates(*id, cursor).unwrap();
+            *cursor = self.alpha.document_version(*id).unwrap();
+            batch
+        }
+
+        fn deliver(&mut self, page: usize, batch: &[u8]) -> Result<(), RemoteRefusal> {
+            self.beta.apply_remote_update(self.pages[page].1, batch)
+        }
+
+        fn agree(&self, page: usize) -> bool {
+            let (id, mirror, _) = &self.pages[page];
+            self.alpha.sheet(*id).unwrap().segments()
+                == self.beta.sheet(*mirror).unwrap().segments()
+        }
+
+        fn mirrors(&self) -> Vec<Vec<Segment>> {
+            self.pages
+                .iter()
+                .map(|(_, mirror, _)| self.beta.sheet(*mirror).unwrap().segments().to_vec())
+                .collect()
+        }
+    }
+
+    fn type_on(store: &mut SheetStore<ManualClock>, id: SheetId, text: &str) {
+        let end = u32::try_from(store.sheet(id).unwrap().document.utf16_len()).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: end,
+                text: text.into(),
+            }],
+        ));
+    }
+
+    #[test]
+    fn a_move_of_ink_between_pages_reaches_a_peer_in_either_order() {
+        for order in [[1, 0], [0, 1]] {
+            let mut pair = TwoPages::inked(["keep MOVED", "dest "]);
+            let (home, away) = (pair.pages[0].0, pair.pages[1].0);
+            pair.alpha.move_range_to(home, 5, 5, away, 5).unwrap();
+            let batches = [pair.publish(0), pair.publish(1)];
+            for page in order {
+                assert_eq!(pair.deliver(page, &batches[page]), Ok(()));
+                assert!(pair.agree(page), "either side lands alone");
+            }
+            assert!(pair.agree(0) && pair.agree(1));
+        }
+    }
+
+    /// Seal an object on the first page, carry it to the second by `carry`,
+    /// and deliver both pages' batches to the peer in `order`.
+    fn carry_an_object_between_pages(
+        order: [usize; 2],
+        carry: impl Fn(&mut SheetStore<ManualClock>, SheetId, SheetId),
+    ) {
+        let mut pair = TwoPages::inked(["ink ", "dest "]);
+        let (home, away) = (pair.pages[0].0, pair.pages[1].0);
+        let before = pair.mirrors();
+        let chip = pair.alpha.seal_text_at(home, "the secret", 4, 0).unwrap();
+        let sealed = pair.publish(0);
+        assert_eq!(pair.deliver(0, &sealed), Err(RemoteRefusal::ChipRoster));
+
+        carry(&mut pair.alpha, home, away);
+        let batches = [pair.publish(0), pair.publish(1)];
+        let mut refusals = [Ok(()), Ok(())];
+        for page in order {
+            refusals[page] = pair.deliver(page, &batches[page]);
+        }
+        // The source builds on the refused seal; the destination stands an
+        // object its mirror does not own.
+        assert_eq!(
+            refusals,
+            [
+                Err(RemoteRefusal::MissingHistory),
+                Err(RemoteRefusal::ChipRoster)
+            ]
+        );
+        assert_eq!(pair.mirrors(), before, "the peer holds what it held");
+        assert!(
+            pair.beta
+                .sheets()
+                .all(|sheet| sheet.chip_count() == 0 && sheet.detached().next().is_none()),
+            "no object on any page of the peer, so none twice"
+        );
+
+        // On alpha the object stands once, where it was carried, intact.
+        assert!(pair.alpha.sheet(home).unwrap().chip(chip).is_none());
+        assert!(pair.alpha.sheet(home).unwrap().detached().next().is_none());
+        assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+        assert_eq!(
+            pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+            b"the secret"
+        );
+
+        // Every later batch of the destination builds on the refused one.
+        type_on(&mut pair.alpha, away, " later");
+        let later = pair.publish(1);
+        assert_eq!(pair.deliver(1, &later), Err(RemoteRefusal::MissingHistory));
+    }
+
+    #[test]
+    fn sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer() {
+        for order in [[1, 0], [0, 1]] {
+            carry_an_object_between_pages(order, |store, home, away| {
+                let placed = store.move_range_to(home, 4, 1, away, 0).unwrap();
+                assert_eq!(placed.reattached, 1);
+            });
+        }
+    }
+
+    #[test]
+    fn sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer() {
+        for order in [[1, 0], [0, 1]] {
+            carry_an_object_between_pages(order, |store, home, away| {
+                store.cut_fragment(home, 4, 1).unwrap();
+                let placed = store.paste_active_cut(away, 0, 0).unwrap();
+                assert_eq!(placed.reattached, 1);
+            });
+        }
+    }
+
     #[test]
     fn a_device_across_the_boundary_rejoins_at_the_key_frame() {
         let (mut alpha, _) = store();
