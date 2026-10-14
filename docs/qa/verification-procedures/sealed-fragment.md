@@ -5,7 +5,9 @@ holding a sealed object and a service's request for it, the decrypted
 drag from its handle, the
 two presses that remove an object and the line's Undo after them, the
 sealed paste and its offer over this app's own copy, a menu bar
-with no Print…, and text menus with no Share… or Writing Tools.
+with no Print…, text menus with no Share…, Writing Tools, Look Up,
+Translate or Speech, the route a real look up takes to the page's gate,
+and text holding U+FFFC landing beside an object.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
@@ -66,6 +68,29 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       panel appears beside a selection there; the file's menu still
       offers Share… and Writing Tools. **Fail:** any of these shows over
       a page, a note or a name, or the file's menu has lost them.
+- [ ] **No Look Up, Translate or Speech over a page, a note or a name**
+      (Law 0001, share and Writing Tools amendment). Control click a
+      selection on a page, in a note and in a name field, then in a
+      regular text file. **Pass:** the first three menus hold no
+      `Look Up “…”`, no `Translate “…”` and no Speech submenu; the
+      file's menu holds all three. **Fail:** any of them shows over a
+      page, a note or a name, or the file's menu has lost one.
+- [ ] **Look Up reaches the page's gate** (ADR-0052, ADR-0046). The
+      tests refuse look up past a deadline through the routes AppKit
+      documents, but cannot send ⌃⌘D, a system shortcut, or a real
+      force click, and a page past its deadline settles at the wake
+      before a person can try either. So check the route on a standing
+      page, where the page stands aside while its note holds the keys.
+      Seal a word on a page that also holds plain words, open the
+      object's note and type a word in it. With the note holding the
+      keys, point at a plain word on the page outside the note and
+      press ⌃⌘D, then force click the same word (or tap it with three
+      fingers). Then do both over the word in the note, and over a
+      plain word in a regular text file. **Pass:** nothing appears for
+      the page's word; the note's word and the file's word each show a
+      definition. **Fail:** a definition, a Dictionary window or a
+      translation of the page's word appears; record which gesture
+      reached it, since that route is not gated.
 - [ ] **Cut and paste in place.** Cut the selection, note the slot's
       line under the page, then paste further down. **Pass:** the line
       names the cut object by its face and goes when the paste lands;
@@ -225,6 +250,19 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       nothing; ⌘Z takes the ⌃Y back as one step. **Fail:** a box or an
       object face appears, the caret lands anywhere else, or the page
       reloads whole.
+- [ ] **Text holding U+FFFC right after an object** (Law 0001,
+      inherited attachment amendment). Open a regular text file, insert
+      `x`, U+FFFC from the Character Viewer and `y`, select the three
+      and copy. On a page holding `ab`, a sealed word, ` cd`, a second
+      sealed word and ` ef`, click right after the first object and
+      press ⌘V; then drag the same three characters from the file and
+      drop them right after the first object, right before the second,
+      and between two objects sealed side by side. After each, backspace
+      the `d` of `cd`. **Pass:** each landing reads `xy` with no second
+      object face, both objects stand, the backspace takes only the `d`
+      with no removal line, and a relaunch shows the page as it was
+      left. **Fail:** a face appears twice, an object goes or loses its
+      face, the removal line shows, or the relaunch differs.
 - [ ] **The removal's Undo after the page moves on.** Remove an object
       with two presses, then type a letter before the line clears.
       **Pass:** the `Undo` button leaves the line at once, and ⌘Z
