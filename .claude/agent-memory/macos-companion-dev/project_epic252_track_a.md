@@ -121,10 +121,17 @@ for review fixes; shell only.
   the seal refusal: `KeyFrame` carries its sealing epoch,
   `sync_driver::stage_frame` drops a stale one, solo reports no commit,
   and `GopKeyChain::refuse_next_seal` (cfg(test)) reaches the refusal.
-  Still open, same class: a resent in-flight batch is labelled with the
-  chain's epoch over blobs sealed at the old one (client protocol
-  10.13), and after a solo seal refusal the device stands an epoch
-  ahead of the relay until a rejoin, which is not built. A peer's unmarked U+FFFC imports as ink; the shell
+  Phase 9 unit 1 closed the rest: `gop::take_stale` is the one epoch
+  check frames and batches share (`EpochSealed`); a stale batch drops,
+  every page rewinds to `acked` and its expiry, hold and marker queue
+  again; a refused solo seal now reports the commit and owes its frame
+  to the next sweep (`seal_owed_frame`); `settle_frontier` withdraws
+  the page's queued ops (they held deleted text across the boundary);
+  and `stage_publish` holds while any frame of ours waits, so driver
+  tests call `land_frame` before expecting a publish. Left for the
+  orchestrator: 10.33 (a second commit before the first frame lands
+  splits the device; waiting to rotate defers compaction against
+  relay-protocol §2) and 10.34. A peer's unmarked U+FFFC imports as ink; the shell
   must take it out as an edit, but `sync_document` (the recovery
   mirror) refuses such ink, and undoing the removal would stand it
   again. ADR-0025's delivery note keeps line citations current by
