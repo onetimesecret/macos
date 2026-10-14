@@ -67,7 +67,7 @@ duration; this lets the deadline land where the clock does"
 "Round a page's deadline up to the hour, or to midnight". It defaults
 to on (`shell/Sources/CompanionKit/PageModel.swift:1502`) and is
 carried to the core by `companion_set_grace_snap`
-(`crates/ffi/src/lib.rs:2531`).
+(`crates/ffi/src/lib.rs:2518`).
 
 ## What the code actually promises, so the expectations below are not guesses
 
@@ -101,7 +101,7 @@ carried to the core by `companion_set_grace_snap`
 - Undo is the core's stack, bound to the document's peer id
   (`crates/core/src/document.rs:130`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:758`),
-  `companion_sheet_undo` (`crates/ffi/src/lib.rs:970`) and
+  `companion_sheet_undo` (`crates/ffi/src/lib.rs:968`) and
   `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:6004`).
   `canUndo` is what greys the Edit menu
   (`shell/Sources/CompanionKit/PageModel.swift:401`).
@@ -110,16 +110,16 @@ carried to the core by `companion_set_grace_snap`
   (`crates/core/src/document.rs:156`, and the comment at
   `crates/core/src/document.rs:192`), and restore reads a snapshot
   into a document minted by that function
-  (`crates/core/src/document.rs:437`).
+  (`crates/core/src/document.rs:436`).
 - Undo **does not survive compaction** either: the ceremony rebuilds
   the body into a fresh document and then calls `forget_undo`
-  explicitly (`crates/core/src/document.rs:728`,
-  `crates/core/src/document.rs:325`), because the rebuild is itself
+  explicitly (`crates/core/src/document.rs:727`,
+  `crates/core/src/document.rs:324`), because the rebuild is itself
   typed in as local operations and would otherwise leave one step that
   undoes the whole page to nothing.
 - What triggers compaction **today** is a rung transition
-  (`crates/core/src/store.rs:1501`) and a pause top-up, which is the
-  second press of the pause cycle (`crates/core/src/store.rs:1540`),
+  (`crates/core/src/store.rs:1505`) and a pause top-up, which is the
+  second press of the pause cycle (`crates/core/src/store.rs:1544`),
   both through `Sheet::compact_or_defer`
   (`crates/core/src/sheet.rs:507`). There is no size-budget trigger
   and no timer in the shipped code: ADR-0025 section 2 proposes moving
@@ -320,7 +320,7 @@ arithmetic won over the elapsed arithmetic; a deadline landing on the
 Exercises `SheetDocument::new` (`crates/core/src/document.rs:156`, and
 the comment at `crates/core/src/document.rs:192`),
 `SheetDocument::import_snapshot`
-(`crates/core/src/document.rs:437`), `SheetStore::can_undo`
+(`crates/core/src/document.rs:436`), `SheetStore::can_undo`
 (`crates/core/src/store.rs:784`) and the Edit menu binding at
 `shell/Sources/CompanionKit/PageModel.swift:6044`.
 
@@ -353,9 +353,9 @@ restored document carried a live stack into a rebound peer.
 ## Case E: undo does not survive compaction either
 
 Exercises `Sheet::compact` (`crates/core/src/sheet.rs:494`),
-`SheetDocument::compact` (`crates/core/src/document.rs:685`) and its
-explicit `forget_undo` at `crates/core/src/document.rs:728`, reached
-from the rung transition at `crates/core/src/store.rs:1501` through
+`SheetDocument::compact` (`crates/core/src/document.rs:684`) and its
+explicit `forget_undo` at `crates/core/src/document.rs:727`, reached
+from the rung transition at `crates/core/src/store.rs:1505` through
 `Sheet::compact_or_defer` (`crates/core/src/sheet.rs:507`).
 
 Compaction has no dogfood hook and no threshold to wait for. On a solo
@@ -381,7 +381,7 @@ out**: the ceremony destroyed the operations any step pointed into,
 and the rebuild's own operations, which would otherwise stand as a
 single step that undoes the whole page to nothing, went with them. The
 rung change itself sets a new deadline from the new rung
-(`crates/core/src/store.rs:1495`), so the remaining time changes; that
+(`crates/core/src/store.rs:1499`), so the remaining time changes; that
 is the rung click, not the ceremony.
 
 **Fail:** ⌘Z after the rung click removing the whole page's text in
@@ -397,7 +397,7 @@ reordering of the surviving text; or a chip disappearing.
    items greyed.
 6. Note for the record that a **release** press, the third
    double-click, is deliberately **not** a boundary
-   (`crates/core/src/store.rs:1553`), so undo state after it is
+   (`crates/core/src/store.rs:1557`), so undo state after it is
    whatever the top-up left, which is empty.
 7. Cleanup: none.
 
