@@ -2154,9 +2154,21 @@ public struct InkEditorView: NSViewRepresentable {
                   !model.isApplyingProjection, !markedTextInFlight,
                   !(textView?.hasMarkedText() ?? false)
             else { return }
-            for range in Self.strayObjectCharacters(in: storage, editedRange).reversed() {
+            let stray = Self.strayObjectCharacters(
+                in: storage, editedRange, fromBoard: boardReadDepth > 0)
+            for range in stray.reversed() {
                 storage.replaceCharacters(in: range, with: "")
             }
+        }
+
+        /// How deep the view is in reading a board's text, which never carries an object.
+        private var boardReadDepth = 0
+
+        /// Runs `read`, a paste, a drop or a service's answer, as a board's text landing.
+        func readingBoard<Result>(_ read: () -> Result) -> Result {
+            boardReadDepth += 1
+            defer { boardReadDepth -= 1 }
+            return read()
         }
 
         /// The emission point: every character edit the storage
@@ -2390,7 +2402,10 @@ public struct InkEditorView: NSViewRepresentable {
             var pos = editedRange.location
             storage.enumerateAttribute(.attachment, in: editedRange) { value, range, _ in
                 if let chip = value as? ChipAttachment {
-                    ops.append(.chip(at: pos, id: chip.info.chipId))
+                    // One position per character, so a face standing twice is sent twice.
+                    for offset in 0..<range.length {
+                        ops.append(.chip(at: pos + offset, id: chip.info.chipId))
+                    }
                 } else if range.length > 0 {
                     ops.append(.ins(at: pos, text: text.substring(with: range)))
                 }
@@ -2450,7 +2465,7 @@ public struct InkEditorView: NSViewRepresentable {
             let full = NSRange(location: 0, length: storage.length)
             storage.enumerateAttribute(.attachment, in: full) { value, range, _ in
                 if let chip = value as? ChipAttachment {
-                    runs.append(.chip(chip.info.chipId))
+                    runs.append(contentsOf: repeatElement(.chip(chip.info.chipId), count: range.length))
                 } else if range.length > 0 {
                     runs.append(.ink(text.substring(with: range)))
                 }
@@ -3374,21 +3389,41 @@ public struct InkEditorView: NSViewRepresentable {
         /// U+FFFC, which a page or a note holds for its objects alone (Law 0001).
         static let objectCharacter = "\u{FFFC}"
 
-        /// Each U+FFFC in `range` of `storage` that no object's attachment carries.
-        static func strayObjectCharacters(in storage: NSTextStorage, _ range: NSRange) -> [NSRange] {
+        /// Each U+FFFC in `range` no object stands on (Law 0001): one with no object, a board's,
+        /// one whose object's run takes in ink (inherited with it), or an object's second index.
+        static func strayObjectCharacters(
+            in storage: NSTextStorage, _ range: NSRange, fromBoard: Bool = false
+        ) -> [NSRange] {
             let text = storage.string as NSString
+            let whole = NSRange(location: 0, length: storage.length)
             var stray: [NSRange] = []
-            storage.enumerateAttribute(.attachment, in: range) { value, run, _ in
-                guard !(value is ChipAttachment) else { return }
-                var rest = run
-                while true {
-                    let found = text.range(of: objectCharacter, options: .literal, range: rest)
-                    guard found.location != NSNotFound else { break }
+            var objects: [(at: Int, chip: UInt64)] = []
+            var rest = range
+            while rest.length > 0 {
+                let found = text.range(of: objectCharacter, options: .literal, range: rest)
+                guard found.location != NSNotFound else { break }
+                rest = NSRange(location: NSMaxRange(found), length: NSMaxRange(rest) - NSMaxRange(found))
+                var run = NSRange()
+                let value = storage.attribute(
+                    .attachment, at: found.location, longestEffectiveRange: &run, in: whole)
+                guard !fromBoard, let chip = value as? ChipAttachment,
+                      !(run.location..<NSMaxRange(run)).contains(where: {
+                          text.character(at: $0) != 0xFFFC
+                      })
+                else {
                     stray.append(found)
-                    rest = NSRange(location: NSMaxRange(found), length: NSMaxRange(run) - NSMaxRange(found))
+                    continue
                 }
+                objects.append((found.location, chip.info.chipId))
             }
-            return stray
+            guard !objects.isEmpty else { return stray }
+            var standing = chipIDs(storage, in: NSRange(location: 0, length: range.location))
+                .union(chipIDs(storage, in: NSRange(
+                    location: NSMaxRange(range), length: storage.length - NSMaxRange(range))))
+            for object in objects where !standing.insert(object.chip).inserted {
+                stray.append(NSRange(location: object.at, length: 1))
+            }
+            return stray.sorted { $0.location < $1.location }
         }
 
         /// Once an edit has landed: if an object it held no longer stands, the removal line.
@@ -5881,8 +5916,17 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// Paste and Match Style takes a sealed fragment through the core, as ⌘V does.
     override func pasteAsPlainText(_ sender: Any?) {
         guard answersChords else { return }
-        if coordinator?.pasteFragment() == true { return }
-        super.pasteAsPlainText(sender)
+        guard let coordinator else { return super.pasteAsPlainText(sender) }
+        if coordinator.pasteFragment() { return }
+        coordinator.readingBoard { super.pasteAsPlainText(sender) }
+    }
+
+    /// A board's text, as a paste, a drop or a service's answer reads it, stands no object.
+    override func readSelection(
+        from pboard: NSPasteboard, type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        guard let coordinator else { return super.readSelection(from: pboard, type: type) }
+        return coordinator.readingBoard { super.readSelection(from: pboard, type: type) }
     }
 
     @objc func pasteWithoutDetection(_ sender: Any?) {

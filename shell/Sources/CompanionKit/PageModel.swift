@@ -6652,7 +6652,8 @@ public final class PageModel: ObservableObject {
     /// owns; the one way a well-formed batch is refused is an undo
     /// re-inserting a dead chip's attachment, and undo never un-seals
     /// (ADR-0009), so the glyph goes silently, no notice, as does a
-    /// U+FFFC that names no object (Law 0001). Then mirror
+    /// U+FFFC no object stands on, an object's second index included,
+    /// the first kept (Law 0001). Then mirror
     /// the storage whole and drop the page's undo history, which after
     /// a rewrite holds ranges that describe nothing.
     private func recoverProjection(sheet: UInt64) {
@@ -6663,14 +6664,17 @@ public final class PageModel: ObservableObject {
         let live = chipIds(onSheet: sheet)
         applyingProjection {
             let whole = NSRange(location: 0, length: storage.length)
-            var dead = InkEditorView.Coordinator.strayObjectCharacters(in: storage, whole)
+            var dead = IndexSet()
+            for range in InkEditorView.Coordinator.strayObjectCharacters(in: storage, whole) {
+                dead.insert(integersIn: Range(range) ?? 0..<0)
+            }
             storage.enumerateAttribute(.attachment, in: whole) { value, range, _ in
                 if let chip = value as? ChipAttachment, !live.contains(chip.info.chipId) {
-                    dead.append(range)
+                    dead.insert(integersIn: Range(range) ?? 0..<0)
                 }
             }
-            for range in dead.sorted(by: { $0.location > $1.location }) {
-                storage.replaceCharacters(in: range, with: "")
+            for range in dead.rangeView.reversed() {
+                storage.replaceCharacters(in: NSRange(range), with: "")
             }
         }
         syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))

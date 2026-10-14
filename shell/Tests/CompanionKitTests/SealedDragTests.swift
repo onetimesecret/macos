@@ -687,6 +687,68 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(shape(page), landed, "a refused drop changed the page")
     }
 
+    /// A window point whose drop lands at `index` of `page`: just inside the right
+    /// edge of the character before it, or the left edge of the first.
+    private func dropPoint(_ page: Page, landing index: Int) throws -> NSPoint {
+        let layout = try XCTUnwrap(page.textView.layoutManager)
+        let container = try XCTUnwrap(page.textView.textContainer)
+        let glyph = layout.glyphIndexForCharacter(at: max(0, index - 1))
+        var rect = layout.boundingRect(
+            forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+        rect.origin.x += page.textView.textContainerOrigin.x
+        rect.origin.y += page.textView.textContainerOrigin.y
+        let inside = NSPoint(x: index == 0 ? rect.minX + 1 : rect.maxX - 1, y: rect.midY)
+        XCTAssertEqual(page.textView.characterIndexForInsertion(at: inside), index)
+        return page.textView.convert(inside, to: nil)
+    }
+
+    /// Ink holding U+FFFC, as a file's drag from this app carries it, dropped right after
+    /// an object, right before one and between two lands without the character: each
+    /// object stands once, the core agrees, and a delete of the ink beside them detaches
+    /// nothing (Law 0001).
+    func testADroppedObjectCharacterBesideAnObjectStandsNoSecondFace() throws {
+        let apart = [NSRange(location: 3, length: 6), NSRange(location: 8, length: 5)]
+        // The page, where the drop lands, the page after, and the caret whose backspace
+        // takes ink beside an object.
+        let cases: [(text: String, seals: [NSRange], at: Int, reads: String, delete: Int)] = [
+            ("ab SECRET cd TOKEN ef", apart, 4, "ab \u{FFFC}xy cd \u{FFFC} ef", 9),
+            ("ab SECRET cd TOKEN ef", apart, 3, "ab xy\u{FFFC} cd \u{FFFC} ef", 5),
+            ("SECRET cd TOKEN ef", [NSRange(location: 0, length: 6), NSRange(location: 5, length: 5)],
+             0, "xy\u{FFFC} cd \u{FFFC} ef", 2),
+            ("ab SECRETTOKEN ef", [NSRange(location: 3, length: 6), NSRange(location: 4, length: 5)],
+             4, "ab \u{FFFC}xy\u{FFFC} ef", 6),
+        ]
+        for spot in cases {
+            let label = "\(spot.text) at \(spot.at)"
+            let (model, _) = try makeModel()
+            let page = try mountPage(on: model, text: spot.text, seals: spot.seals)
+            let ids = chips(page).map(\.chipId)
+            let drag = DraggingInfoStub(
+                pasteboard: inkBoard("x\u{FFFC}y"), source: NSView(),
+                location: try dropPoint(page, landing: spot.at), window: page.window)
+
+            XCTAssertTrue(dropInk(drag, on: page), label)
+            XCTAssertEqual(page.textView.string, spot.reads, label)
+            XCTAssertEqual(chips(page).map(\.chipId), ids, label)
+            try assertParity(page, label)
+
+            page.textView.setSelectedRange(NSRange(location: spot.delete, length: 0))
+            page.textView.deleteBackward(nil)
+            XCTAssertEqual(chips(page).map(\.chipId), ids, "a delete of ink detached an object: \(label)")
+            XCTAssertNil(model.notice, label)
+            try assertParity(page, "after the delete: \(label)")
+        }
+    }
+
+    /// The editor and the core spell the same page.
+    private func assertParity(_ page: Page, _ message: String, line: UInt = #line) throws {
+        let storage = try XCTUnwrap(page.textView.textStorage)
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: page.model.coreClient.documentRuns(sheet: page.sheet)),
+            message, line: line)
+    }
+
     /// A field's own drag lands while the field holds the keys; while the note or another
     /// field holds them, a drop from this app on the page waits and says why (ADR-0046).
     func testADragFromAFieldStandsAsideWhileAnotherHolderHasTheKeys() throws {

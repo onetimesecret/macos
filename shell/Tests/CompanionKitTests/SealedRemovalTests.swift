@@ -18,8 +18,35 @@ final class SealedRemovalTests: XCTestCase {
         let chips: [UInt64]
     }
 
-    /// `ab <SECRET> cd <TOKEN> ef` and `tail`, objects at 3 and 8, the page holding the keys.
-    private func makePage(tail: String = "") throws -> Page {
+    /// Where a page's two objects stand.
+    private enum Layout {
+        /// `ab <SECRET> cd <TOKEN> ef`, objects at 3 and 8.
+        case apart
+        /// `ab <SECRET><TOKEN> ef`, objects at 3 and 4.
+        case adjacent
+        /// `<SECRET> cd <TOKEN> ef`, objects at 0 and 5.
+        case leading
+
+        var text: String {
+            switch self {
+            case .apart: "ab SECRET cd TOKEN ef"
+            case .adjacent: "ab SECRETTOKEN ef"
+            case .leading: "SECRET cd TOKEN ef"
+            }
+        }
+
+        /// Each seal's range, in the text the seals before it left.
+        var seals: [NSRange] {
+            switch self {
+            case .apart: [NSRange(location: 3, length: 6), NSRange(location: 8, length: 5)]
+            case .adjacent: [NSRange(location: 3, length: 6), NSRange(location: 4, length: 5)]
+            case .leading: [NSRange(location: 0, length: 6), NSRange(location: 5, length: 5)]
+            }
+        }
+    }
+
+    /// `layout`'s page and `tail`, the page holding the keys.
+    private func makePage(tail: String = "", layout: Layout = .apart) throws -> Page {
         let suite = "companion-sealed-removal-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -39,15 +66,18 @@ final class SealedRemovalTests: XCTestCase {
         let sheet = try XCTUnwrap(model.selectedPageID)
         let blank = try mount(model, sheet, chips: [])
         let (coordinator, textView) = (blank.coordinator, blank.textView)
+        let seals = layout.seals
         textView.insertText(
-            "ab SECRET cd TOKEN ef" + tail, replacementRange: NSRange(location: NSNotFound, length: 0))
-        textView.setSelectedRange(NSRange(location: 3, length: 6))
-        coordinator.sealSelectionOrLine()
-        textView.setSelectedRange(NSRange(location: 8, length: 5))
-        coordinator.sealSelectionOrLine()
+            layout.text + tail, replacementRange: NSRange(location: NSNotFound, length: 0))
+        for seal in seals {
+            textView.setSelectedRange(seal)
+            coordinator.sealSelectionOrLine()
+        }
         textView.layout()
         textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
-        let chips = try [3, 8].map { try XCTUnwrap(coordinator.chipAttachment(at: $0)?.info.chipId) }
+        let chips = try seals.map {
+            try XCTUnwrap(coordinator.chipAttachment(at: $0.location)?.info.chipId)
+        }
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         drainMainQueue()
         model.notice = nil
@@ -646,6 +676,26 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), page.chips)
     }
 
+    /// A recovery keeps an object the storage stands at two indices once, at the first,
+    /// and detaches nothing.
+    func testTheRecoveryKeepsAnObjectStandingTwiceOnce() throws {
+        let page = try makePage()
+        let storage = try XCTUnwrap(page.textView.textStorage)
+        let face = try XCTUnwrap(page.coordinator.chipAttachment(at: 3))
+        page.model.applyingProjection {
+            storage.insert(NSAttributedString(attachment: face), at: 0)
+        }
+        let foreign = ChipInfo(
+            chipId: 4_242, kind: "text", excerpt: "", sizeLabel: "tiny", concealed: false)
+
+        storage.insert(InkEditorView.Coordinator.chipString(foreign), at: 1)
+
+        XCTAssertEqual(page.textView.string, "\u{FFFC}ab  cd \u{FFFC} ef")
+        XCTAssertEqual(page.coordinator.chipAttachment(at: 0)?.info.chipId, page.chips[0])
+        XCTAssertEqual(chips(page), page.chips)
+        try assertParity(page, "after the recovery")
+    }
+
     /// Outside text holding U+FFFC, read as AppKit's paste, a drop and a service's answer
     /// read a board, lands without it on a page and in a note, the caret after it.
     func testOutsideTextHoldingTheObjectCharacterLandsWithoutIt() throws {
@@ -688,6 +738,111 @@ final class SealedRemovalTests: XCTestCase {
         assertRemovalLine(page, "a board's text")
         page.model.performNoticeAction()
         XCTAssertEqual(chips(page), page.chips)
+    }
+
+    // MARK: A board's U+FFFC beside an object (Law 0001: one position per object)
+
+    /// Two of the ways a board's text lands; SealedDragTests drives the third, a drop.
+    private enum BoardRoute: CaseIterable {
+        /// ⌘V as `paste(_:)` runs it, its board read standing in for AppKit's plain paste.
+        case paste
+        /// A service's answer, through `NSServicesMenuRequestor`.
+        case service
+    }
+
+    /// `text` read from a board of the test's own at `selection`, by `route`.
+    private func read(_ text: String, over selection: NSRange, on page: Page, by route: BoardRoute) {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString(text, forType: .string)
+        page.textView.setSelectedRange(selection)
+        switch route {
+        case .paste:
+            page.textView.performOrdinaryPaste(nil, bypassingAutomaticFencing: true) { _ in
+                XCTAssertTrue(page.textView.readSelection(from: board, type: .string))
+            }
+        case .service:
+            XCTAssertTrue(page.textView.readSelection(from: board))
+        }
+    }
+
+    /// The editor and the core spell the same page.
+    private func assertParity(_ page: Page, _ message: String, line: UInt = #line) throws {
+        let storage = try XCTUnwrap(page.textView.textStorage)
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: page.model.coreClient.documentRuns(sheet: page.sheet)),
+            message, line: line)
+    }
+
+    /// Text holding U+FFFC landing right after an object, right before one and between
+    /// two takes on none of their attachments: the page reads it without the character,
+    /// each object stands once, and a delete of the ink beside them detaches nothing.
+    func testABoardsObjectCharacterBesideAnObjectStandsNoSecondFace() throws {
+        // The page, where the text lands, the editor's text after, and the caret whose
+        // backspace takes ink beside an object (the first: the review's `d` of `cd`).
+        let cases: [(layout: Layout, at: Int, reads: String, delete: Int)] = [
+            (.apart, 4, "ab \u{FFFC}xy cd \u{FFFC} ef", 9),
+            (.apart, 3, "ab xy\u{FFFC} cd \u{FFFC} ef", 5),
+            (.apart, 8, "ab \u{FFFC} cd xy\u{FFFC} ef", 10),
+            (.leading, 0, "xy\u{FFFC} cd \u{FFFC} ef", 2),
+            (.adjacent, 4, "ab \u{FFFC}xy\u{FFFC} ef", 6),
+        ]
+        for route in BoardRoute.allCases {
+            for text in ["x\u{FFFC}y", "\u{FFFC}xy\u{FFFC}", "xy\u{FFFC}"] {
+                for spot in cases {
+                    let label = "\(route) \(text.debugDescription) at \(spot.at), \(spot.layout)"
+                    let page = try makePage(layout: spot.layout)
+                    read(text, over: NSRange(location: spot.at, length: 0), on: page, by: route)
+
+                    XCTAssertEqual(page.textView.string, spot.reads, label)
+                    XCTAssertEqual(chips(page), page.chips, label)
+                    try assertParity(page, label)
+                    XCTAssertEqual(
+                        page.textView.selectedRange(), NSRange(location: spot.at + 2, length: 0), label)
+
+                    page.textView.setSelectedRange(NSRange(location: spot.delete, length: 0))
+                    page.textView.deleteBackward(nil)
+                    XCTAssertEqual(chips(page), page.chips, "a delete of ink detached an object: \(label)")
+                    XCTAssertNil(page.model.notice, label)
+                    try assertParity(page, "after the delete: \(label)")
+                }
+            }
+        }
+    }
+
+    /// A bare U+FFFC beside an object, which inherits it whole, lands as nothing.
+    func testABoardsBareObjectCharacterBesideAnObjectLandsAsNothing() throws {
+        for route in BoardRoute.allCases {
+            for (layout, at) in [(Layout.apart, 4), (.apart, 3), (.adjacent, 4), (.leading, 0)] {
+                let label = "\(route) at \(at), \(layout)"
+                let page = try makePage(layout: layout)
+                let before = page.textView.string
+                read("\u{FFFC}", over: NSRange(location: at, length: 0), on: page, by: route)
+                XCTAssertEqual(page.textView.string, before, label)
+                XCTAssertEqual(chips(page), page.chips, label)
+                try assertParity(page, label)
+            }
+        }
+    }
+
+    /// A board's U+FFFC over a selection that starts with an object takes the object with
+    /// the line, as any other board text does, rather than standing it again.
+    func testABoardsObjectCharacterOverASelectedObjectTakesItWithTheLine() throws {
+        for route in BoardRoute.allCases {
+            for text in ["\u{FFFC}", "q\u{FFFC}"] {
+                let label = "\(route) \(text.debugDescription)"
+                let page = try makePage()
+                read(text, over: NSRange(location: 3, length: 1), on: page, by: route)
+                XCTAssertEqual(chips(page), [page.chips[1]], label)
+                try assertParity(page, label)
+                assertRemovalLine(page, label)
+                page.model.performNoticeAction()
+                XCTAssertEqual(chips(page), page.chips, label)
+                try assertParity(page, "after the Undo: \(label)")
+            }
+        }
     }
 
     /// AppKit may ask to change an object's range and then make no edit. That ask judges
