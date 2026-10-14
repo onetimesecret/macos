@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, and that sync carries no sealed object
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, and where the editor strips U+FFFC
 metadata:
   type: project
 ---
@@ -62,6 +62,21 @@ for review fixes; shell only.
   unsealed ops, a device stays out of a ballot for its due page. The
   seam's store runs on the system clock and a restore (`age_by`) drops a
   deferred ceremony, so test a due page's ceremony in the core.
+- Phase 5 unit 2 (2026-10-14): no U+FFFC enters a page or a note as
+  ink. The shell strips it in `Coordinator.textStorage(_:willProcessEditing:)`,
+  the only hook that sees attributes: `shouldChangeTextInRanges` gets
+  plain strings, and ⌃T carries a real `ChipAttachment` through it, so
+  stripping there removed the object. AppKit puts the caret right after
+  a willProcessEditing strip on its own. The core refuses ops and the
+  recovery mirror holding it, strips pasted envelopes, and files keep
+  it. Object routes' expired line asks `pageHolding(chip)` after the
+  settle (`settleRefusal(chip:otherwise:)`).
+- Test traps: the DEBUG `assertProjectionParity` traps and xctest hangs
+  with no output, so run mutation checks under `timeout`. `ageForTests`
+  re-mints the store and drops every undo stack; reach a refused note
+  batch on a due page through a stand in client. The Edit tool turns a
+  JSON style `\uXXXX` in its input into the literal character; write
+  `\u{FFFC}` with braces or interpolate a char.
 - An earlier re-aim sweep shifted document.rs citations by a fixed
   offset without reading them back, so five were wrong for weeks. Read
   each cited line back against what it read when its doc line was

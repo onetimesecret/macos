@@ -31,8 +31,9 @@ the brief asked for one shared path, not a copy per selector.
   (deleteToBeginningOfLine) never reaches past one; ⌃K and
   deleteToBeginningOfParagraph do. ⌥⌫ after `￼ ` deletes the space and
   the object together.
-- AppKit's kill buffer is plain text: ⌃K over an object then ⌃Y writes
-  U+FFFC back as ink, not an object. Reported, not fixed.
+- AppKit's kill buffer is plain text: ⌃K over an object then ⌃Y wrote
+  U+FFFC back as ink, not an object. Fixed 2026-10-14: the editor's
+  willProcessEditing strips it and the core refuses it as ink.
 
 W04 (same day) moved the removal's stamp and Undo into PageModel:
 `removalStamp` is (page, count of edits the model sent for it), the
