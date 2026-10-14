@@ -8,6 +8,11 @@ extension SealedFragment {
         NSPasteboard.PasteboardType(CompanionClient.sealedFragmentType)
     }
 
+    /// The first item carrying the private type, the one a paste reads.
+    static func item(on pasteboard: NSPasteboard) -> NSPasteboardItem? {
+        pasteboard.pasteboardItems?.first { $0.types.contains(pasteboardType) }
+    }
+
     /// Several selected stretches of ink as one plain text, by line.
     init(joining fragments: [SealedFragment]) {
         self.init(envelope: nil, plainText: fragments.map(\.plainText).joined(separator: "\n"))

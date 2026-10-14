@@ -36,6 +36,9 @@ final class LedgerAppendArmingTests: XCTestCase {
         let client = model.coreClient
         // The copy-out step writes a board in process memory, not the clipboard.
         XCTAssertTrue(client.useMemoryPasteboardForTests())
+        // The paste step carries its fragment on a board of its own.
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
 
         var chip: ChipInfo?
         // One entry per ledger-appending path the model can drive on
@@ -52,6 +55,16 @@ final class LedgerAppendArmingTests: XCTestCase {
             }),
             ("copyOutChip appends sent to clipboard", {
                 model.copyOutChip(chip?.chipId ?? 0)
+            }),
+            // A paste of a copy clones its object core side (ADR-0047 point 6).
+            ("pasteFragment appends sealed for each clone", {
+                guard let sheet = model.selectedPageID,
+                      let fragment = client.copyFragment(
+                          sheet: sheet, range: NSRange(location: 0, length: 1)),
+                      fragment.write(to: board)
+                else { return }
+                model.pasteFragment(
+                    from: board, sheet: sheet, range: NSRange(location: 1, length: 0))
             }),
             // A removal in an edit batch detaches and appends nothing
             // (ADR-0047); the close below records the chip's death.

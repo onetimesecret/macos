@@ -2756,6 +2756,29 @@ public struct InkEditorView: NSViewRepresentable {
             return true
         }
 
+        /// Paste the board's fragment over the selection through the core (ADR-0047);
+        /// false where AppKit's paste should run: no fragment, a note or a file.
+        func pasteFragment() -> Bool {
+            guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID,
+                  SealedFragment.item(on: model.ambientPasteboard) != nil
+            else { return false }
+            // Answered here on a read only page, so AppKit's paste is not asked to place its public text.
+            guard textView.isEditable else { return true }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            let outcome = model.pasteFragment(
+                from: model.ambientPasteboard, sheet: sheet, range: textView.selectedRange())
+            switch outcome {
+            case .ordinary:
+                return false
+            case .refused:
+                return true
+            case .placed(let placed):
+                settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
+                return true
+            }
+        }
+
         /// After the core rewrote the page under the editor: lay the styles back
         /// down and stand the selection, as a step does.
         func settleRewrite(selecting selection: NSRange) {
@@ -5054,7 +5077,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return canChooseCodeLanguage
         case #selector(pasteWithoutDetection(_:)):
             return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
-        case #selector(copy(_:)), #selector(cut(_:)):
+        case #selector(copy(_:)), #selector(cut(_:)), #selector(paste(_:)),
+             #selector(pasteAsPlainText(_:)):
             return answersChords && super.validateMenuItem(item)
         case #selector(selectAll(_:)) where coordinator?.writesNote != true:
             return answersChords && super.validateMenuItem(item)
@@ -5179,9 +5203,11 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         return true
     }
 
-    /// Ordinary paste remains plain when the preference is off. When it is on,
-    /// Option bypasses automatic fencing for this paste only.
+    /// A fragment pastes through the core; other paste stays plain, with Option bypassing
+    /// automatic fencing once. Stands aside while another surface holds the keys (ADR-0046).
     override func paste(_ sender: Any?) {
+        guard answersChords else { return }
+        if coordinator?.pasteFragment() == true { return }
         let bypass = NSApp.currentEvent?.modifierFlags.contains(.option) == true
         performOrdinaryPaste(sender, bypassingAutomaticFencing: bypass) { [unowned self] sender in
             pasteAsPlainText(sender)
@@ -5240,8 +5266,16 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.detectCodeLanguage()
     }
 
+    /// Paste and Match Style takes a sealed fragment through the core, as ⌘V does.
+    override func pasteAsPlainText(_ sender: Any?) {
+        guard answersChords else { return }
+        if coordinator?.pasteFragment() == true { return }
+        super.pasteAsPlainText(sender)
+    }
+
     @objc func pasteWithoutDetection(_ sender: Any?) {
         guard PageModel.languageDetectionFeaturesAvailable, isEditable, answersChords else { return }
+        if coordinator?.pasteFragment() == true { return }
         performOrdinaryPaste(sender, bypassingAutomaticFencing: true) { [unowned self] sender in
             pasteAsPlainText(sender)
         }

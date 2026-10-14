@@ -506,4 +506,246 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertTrue(page.coordinator.placeActiveCut(), "the place did not come back")
         XCTAssertNil(page.model.activeCut)
     }
+
+    // MARK: Paste
+
+    /// One item as another build or a crafted copy would leave it.
+    private func put(_ envelope: String, text: String?, on pasteboard: NSPasteboard) {
+        let item = NSPasteboardItem()
+        XCTAssertTrue(item.setData(Data(envelope.utf8), forType: SealedFragment.pasteboardType))
+        if let text { XCTAssertTrue(item.setString(text, forType: .string)) }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([item]))
+    }
+
+    /// The first ⌘V of a cut stands the same objects with their names and notes;
+    /// a later ⌘V of the same board clones them, and each paste is one undo step.
+    func testACutsFirstPasteReattachesItsObjectsAndALaterOneClonesThem() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        page.textView.setSelectedRange(whole)
+        page.textView.cut(nil)
+        XCTAssertNotNil(page.model.activeCut)
+
+        var marks = page.model.dirtyMarks
+        page.textView.paste(nil)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips, "the first paste did not reattach")
+        XCTAssertEqual(chips(page).map(\.name), ["API_KEY", nil])
+        XCTAssertEqual(page.model.noteText(chip: page.chips[0]), "rotate monthly")
+        XCTAssertNil(page.model.activeCut, "the slot outlived the first paste")
+        XCTAssertNotNil(page.coordinator.chipAttachment(at: 3), "the storage was not restated")
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: whole.length, length: 0))
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "the paste armed no write")
+
+        marks = page.model.dirtyMarks
+        page.textView.paste(nil)
+        let all = chips(page)
+        XCTAssertEqual(all.count, 4)
+        XCTAssertEqual(all.prefix(2).map(\.chipId), page.chips)
+        let clones = Array(all.suffix(2))
+        XCTAssertTrue(
+            Set(clones.map(\.chipId)).isDisjoint(with: page.chips), "a later paste reattached")
+        XCTAssertEqual(clones.map(\.name), ["API_KEY", nil])
+        XCTAssertEqual(page.model.noteText(chip: clones[0].chipId), "rotate monthly")
+        XCTAssertEqual(page.textView.textStorage?.length, 2 * whole.length)
+        XCTAssertGreaterThan(page.model.dirtyMarks, marks, "the clone armed no write")
+
+        page.coordinator.step(back: true)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips, "one undo did not take both clones")
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length)
+    }
+
+    /// ⌘V after a copy clones every object core side, records one `sealed` for
+    /// each clone, leaves the copied objects where they stand, and undoes as one step.
+    func testAPasteAfterACopyClonesEveryObjectAsOneStep() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        page.textView.setSelectedRange(NSRange(location: whole.length, length: 0))
+        let records = page.model.coreClient.ledger().count
+        page.textView.paste(nil)
+
+        let all = chips(page)
+        XCTAssertEqual(all.count, 4)
+        XCTAssertEqual(all.prefix(2).map(\.chipId), page.chips, "the copy's objects moved")
+        XCTAssertTrue(Set(all.suffix(2).map(\.chipId)).isDisjoint(with: page.chips))
+        XCTAssertEqual(page.model.coreClient.ledger().count, records + 2, "one sealed per clone")
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 2 * whole.length, length: 0))
+
+        page.coordinator.step(back: true)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length)
+    }
+
+    /// Paste and Match Style and Paste Without Detection take a fragment through
+    /// the core as ⌘V does, so neither places its public text as ink.
+    func testEveryPasteCommandTakesAFragmentThroughTheCore() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        page.textView.setSelectedRange(NSRange(location: whole.length, length: 0))
+        page.textView.pasteAsPlainText(nil)
+        XCTAssertEqual(chips(page).count, 4, "Paste and Match Style placed no clones")
+        page.textView.pasteWithoutDetection(nil)
+        XCTAssertEqual(chips(page).count, 6, "Paste Without Detection placed no clones")
+        XCTAssertFalse(page.textView.string.contains(placeholder), "a public text was pasted")
+    }
+
+    /// A note and a file leave a fragment to AppKit's paste, which reads the
+    /// public text as another app does; the core places nothing for either.
+    func testANoteOrAFileLeavesAFragmentToThePublicText() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        let file = page.sheet | CompanionClient.fileIDTag
+        XCTAssertEqual(
+            page.model.pasteFragment(
+                from: page.pasteboard, sheet: file, range: NSRange(location: 0, length: 0)),
+            .ordinary)
+
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertEqual(note.textView.coordinator?.writesNote, true)
+        XCTAssertEqual(note.textView.coordinator?.pasteFragment(), false)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.textView.textStorage?.length, whole.length)
+        note.escape()
+    }
+
+    /// A burned object's reference pastes `[sealed content · burned]` and an
+    /// unknown one `[sealed content · unavailable]`, each where its object stood.
+    func testAGoneReferencePastesItsPlaceholderWhereTheObjectStood() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        XCTAssertTrue(page.model.coreClient.deleteChip(id: page.chips[0]))
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.paste(nil)
+
+        let text = page.textView.string
+        XCTAssertTrue(
+            text.hasPrefix("ab [sealed content · burned] cd \u{FFFC} ef"), "out of position: \(text)")
+        let standing = chips(page).map(\.chipId)
+        XCTAssertEqual(standing.count, 2)
+        XCTAssertEqual(standing.last, page.chips[1])
+        XCTAssertNotEqual(standing.first, page.chips[1], "the live reference was not cloned")
+
+        let uuid = UUID().uuidString.lowercased()
+        put(
+            #"{"version":1,"nodes":[{"ink":"x "},{"ref":{"uuid":"\#(uuid)"}},{"ink":" y"}]}"#,
+            text: "x \(placeholder) y", on: page.pasteboard)
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.paste(nil)
+        XCTAssertTrue(page.textView.string.hasPrefix("x [sealed content · unavailable] yab "))
+        XCTAssertEqual(chips(page).map(\.chipId), standing)
+    }
+
+    /// An envelope this build cannot read pastes its item's public text and says
+    /// so; with no text beside it, nothing changes and a line says nothing was placed.
+    func testAnUnreadableEnvelopePastesItsPublicTextAndSaysSo() throws {
+        let page = try makePage()
+        put(#"{"version":2,"nodes":[]}"#, text: "x \(placeholder) y", on: page.pasteboard)
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.paste(nil)
+        XCTAssertTrue(page.textView.string.hasPrefix("x \(placeholder) yab "))
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.model.notice, PageModel.pastedPublicTextLine)
+
+        put("not an envelope", text: nil, on: page.pasteboard)
+        let length = page.textView.textStorage?.length
+        page.textView.paste(nil)
+        XCTAssertEqual(page.textView.textStorage?.length, length)
+        XCTAssertEqual(chips(page).map(\.chipId), page.chips)
+        XCTAssertEqual(page.model.notice, PageModel.pasteRefusedLine)
+    }
+
+    /// A paste that swept a due page settles at once: the swept page leaves the
+    /// model's tabs without waiting for the timer (ADR-0048).
+    func testAPasteThatSweepsADuePageSettlesAtOnce() throws {
+        let page = try makePage()
+        let client = page.model.coreClient
+        let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == page.sheet }?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        page.model.newPage()
+        let fresh = try XCTUnwrap(page.model.selectedPageID)
+        XCTAssertTrue(
+            page.model.tabs.contains { $0.pageID == page.sheet }, "the control: the page still shows")
+
+        let outcome = page.model.pasteFragment(
+            from: page.pasteboard, sheet: fresh, range: NSRange(location: 0, length: 0))
+        guard case .placed(let placed) = outcome else { return XCTFail("placed nothing") }
+        XCTAssertEqual(placed.pagesExpired, 1)
+        XCTAssertEqual(placed.expired, 2)
+        XCTAssertFalse(
+            page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
+    }
+
+    /// What another app reads from a copy: a rich or a plain text reader gets
+    /// the public text, with a placeholder where each object stood.
+    func testAnotherAppReadsThePublicTextAlone() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        let publicText = "ab \(placeholder) cd \(placeholder) ef"
+        let rich = page.pasteboard.readObjects(forClasses: [NSAttributedString.self])
+        XCTAssertEqual((rich?.first as? NSAttributedString)?.string, publicText)
+        let plain = page.pasteboard.readObjects(forClasses: [NSString.self])
+        XCTAssertEqual(plain?.first as? String, publicText)
+    }
+
+    /// While a field or the note holds the keys, Paste and Paste and Match Style
+    /// reach the holder and the page places nothing (ADR-0046).
+    func testPasteStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(whole)
+        page.textView.copy(nil)
+        let pasteAction = #selector(NSText.paste(_:))
+        let items = [
+            NSMenuItem(title: "Paste", action: pasteAction, keyEquivalent: ""),
+            NSMenuItem(
+                title: "Paste and Match Style",
+                action: #selector(NSTextView.pasteAsPlainText(_:)), keyEquivalent: ""),
+        ]
+        let caret = NSRange(location: 0, length: 0)
+        XCTAssertTrue(page.textView.answersChords, "the control: the page pastes")
+        let length = page.textView.textStorage?.length
+
+        func standsAside(_ holder: String) {
+            for item in items {
+                XCTAssertFalse(page.textView.validateMenuItem(item), "\(item.title), \(holder)")
+            }
+            page.textView.setSelectedRange(caret)
+            page.textView.paste(nil)
+            page.textView.pasteAsPlainText(nil)
+            XCTAssertEqual(page.textView.textStorage?.length, length, "the page pasted under the \(holder)")
+            XCTAssertEqual(chips(page).map(\.chipId), page.chips, holder)
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertFalse(answerer(of: pasteAction, in: page.window) === page.textView)
+        standsAside("field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        XCTAssertTrue(answerer(of: pasteAction, in: page.window) === note.textView)
+        standsAside("note")
+
+        note.escape()
+        drainMainQueue()
+        XCTAssertTrue(page.window.firstResponder === page.textView)
+        page.textView.setSelectedRange(caret)
+        page.textView.paste(nil)
+        XCTAssertEqual(chips(page).count, 4, "the paste did not come back")
+    }
 }

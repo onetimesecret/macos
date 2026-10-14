@@ -5904,6 +5904,47 @@ public final class PageModel: ObservableObject {
         (activeEditor as? InkTextView)?.coordinator?.placeActiveCut()
     }
 
+    /// The line when an envelope this build cannot read pasted its public text (ADR-0047 point 3).
+    public static let pastedPublicTextLine =
+        "this build cannot read the copied sealed content, so its text was pasted."
+
+    /// The line when the core placed nothing for a fragment on the board.
+    public static let pasteRefusedLine = "the paste could not be placed."
+
+    /// What a paste of a board did, for the editor to settle.
+    public enum PasteOutcome: Equatable, Sendable {
+        /// No item carries a fragment, or the page is a file: the ordinary paste reads the board.
+        case ordinary
+        /// The core placed this run; the editor stands its caret after it.
+        case placed(PlacedFragment)
+        /// The board held a fragment and the core placed nothing.
+        case refused
+    }
+
+    /// Paste the fragment on `pasteboard` over `range` through the core as one
+    /// undo step (ADR-0047 points 3, 6 and 8), with its item's text as the fallback.
+    @discardableResult
+    public func pasteFragment(
+        from pasteboard: NSPasteboard, sheet: UInt64, range: NSRange
+    ) -> PasteOutcome {
+        // A file takes the public text, as another app does.
+        guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard),
+              let envelope = item.data(forType: SealedFragment.pasteboardType)
+        else { return .ordinary }
+        guard let placed = client.pasteFragment(
+            sheet: sheet, range: range, envelope: envelope,
+            plainText: item.string(forType: .string))
+        else {
+            // A refusal can follow a sweep the core made (ADR-0048).
+            settleCoreEvent()
+            flash(Self.pasteRefusedLine)
+            return .refused
+        }
+        settleTransfer(sheet: sheet)
+        if placed.unreadable { flash(Self.pastedPublicTextLine) }
+        return .placed(placed)
+    }
+
     /// The slot's words: each cut object by its name, or as sealed content,
     /// and its size class, leaving the excerpt out. Nil for a cut holding nothing.
     public nonisolated static func cutSlotSentence(for cut: ActiveCut) -> String? {
