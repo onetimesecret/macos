@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
+description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the open ⇧⌘V placeholder trap, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names)
 metadata:
   type: project
 ---
@@ -98,9 +98,10 @@ Seams for the editor half (all page ids, all refuse a file id):
   ink alone service; ink stretch drag) ask `PageModel.givesOut(sheet:)`,
   which also refuses a page no longer in `tabs`, because a hand mounted
   editor keeps a swept page's storage. `noteRuns` answers nil for a
-  refusal. Never call a note's `textView.copy`/`cut` in a test: NSTextView
-  writes the general pasteboard; pin through `givesOutShownText()` or
-  `writeSelection` on a unique board. `age_by`/`ageForTests` stage a due
+  refusal. A note's or file's `copy` now writes `model.ambientPasteboard`
+  (`copyAsAppKitDoes`, phase 4 unit 6), so a test may call it on a unique
+  board; never call their `cut`, whose write through `copy:` is probed but
+  unpinned. `age_by`/`ageForTests` stage a due
   page with no sweep; ids re-mint densely, so a one page fixture keeps
   its ids (assert it). Mutation checks by Edit ran unrefused.
 
@@ -129,7 +130,7 @@ Seams for the editor half (all page ids, all refuse a file id):
 
 - Paste is built (shell unit 4): `InkTextView.paste`, `pasteAsPlainText`
   and `pasteWithoutDetection` ask `Coordinator.pasteFragment()` first,
-  which calls `PageModel.pasteFragment(from:sheet:range:)` (takes any
+  which calls `PageModel.pasteFragment(from:sheet:ranges:)` (takes any
   board, so a drop can reuse it; `.ordinary` for no fragment or a file
   id). A board holding the type never reaches AppKit's paste on a page,
   even when refused; a note falls through to AppKit's public text.
@@ -137,6 +138,16 @@ Seams for the editor half (all page ids, all refuse a file id):
   hold the fragment on the private board, or AppKit reads the real
   general one. Open trap still unfixed: ⇧⌘V and the summon offer would
   seal our own placeholder text.
+  Phase 4 unit 6: paste and `placeActiveCut(sheet:ranges:)` share
+  `pasteRange`, which refuses several stretches with
+  `severalStretchesPasteLine` before any data read or core call. An item
+  naming the type with no data pastes `Data()`, which the core reads as
+  unreadable. `settlingRefusal` reads `nextEventMs()==0` before a paste,
+  place or either `dropRange` and settles a refusal only then, so a
+  refusal with nothing due leaves `dirtyMarks` alone. A test whose
+  board item may fall to AppKit asks `coordinator.pasteFragment()`, not
+  ⌘V. After a cut, `ageForTests` re-mints chip ids (`age(_:keepsChipIDs:)`).
+  `SweepThenRefuseClient` stages a paste refused after its own sweep.
 
 - Removal is built (shell unit 5): `InkTextView.deleting` runs ⌫ and ⌦
   on a page; `Coordinator.selectObjectBeside` is the first press, and
