@@ -6,7 +6,7 @@ documentation_status: draft # draft | needs-review | reviewed | stale
 
 **Status:** draft, not accepted; grants itself no authority and changes
 no spec. Describes the client at `50044ad`, with the deadline gate that
-`4fde3d8` and `ba3d5eb` added (§3, §4.4, §7.1, §7.4, §7.6).
+`4fde3d8`, `ba3d5eb` and `999d011` added (§3, §4.4, §7.1, §7.4, §7.6).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
