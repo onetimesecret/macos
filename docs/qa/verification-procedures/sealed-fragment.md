@@ -10,6 +10,8 @@ two presses that remove an object and the line's Undo after them.
 paste, drag and decrypted drag rows cite this procedure for what the
 runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md);
 [ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md);
+[ADR-0052](../../adr/0052-a-page-past-its-deadline-gives-nothing-out.md);
+[ADR-0053](../../adr/0053-a-copy-or-cut-past-an-envelope-cap-composes-nothing.md);
 [ADR-0050](../../adr/0050-a-decrypted-drag-lands-only-in-another-app.md);
 [ADR-0051](../../adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md).
 **Owner:** delano.
@@ -79,6 +81,23 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       stands empty, the slot's line is gone, and the ledger shows the
       object expired. **Fail:** the object returns, or the first page
       still shows its ink after the paste.
+- [ ] **A page that comes due asleep** (ADR-0052). On the raised card,
+      open a one hour page, seal a word and write a note on it. Sleep the
+      Mac for more than an hour, wake it, and look at the card before
+      touching anything. **Pass:** the page has gone at the wake: its tab
+      stands empty, the ledger shows it expired, and
+      `osascript -e 'clipboard info'` shows nothing new. **Fail:** the
+      page's ink, its block or its note still shows after the wake.
+- [ ] **A selection past an envelope cap** (ADR-0053). Put more than
+      8 MiB of text on a page, for example by pasting the output of
+      `head -c 9000000 /dev/zero | tr '\0' x | pbcopy`, seal a word in
+      it, select all, then try ⌘C, ⌘X and a drag. **Pass:** each leaves
+      the line `a selection holding sealed objects can be at most 8 MiB,
+      so nothing was copied.`, ending `nothing was cut.` for the cut and
+      `the drag did not start.` for the drag; the general pasteboard, the
+      page, the slot's line and the ledger stand as they were; selecting
+      the ink alone still copies it as plain text. **Fail:** anything
+      reaches the pasteboard, the page changes, or no line shows.
 - [ ] **A fragment pasted into a note.** Copy a sealed object with some
       ink, open another object's note and paste with ⌘V. **Pass:** the
       note shows the ink with `[sealed content · tiny]` where the object
