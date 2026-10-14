@@ -5,7 +5,8 @@ documentation_status: draft # draft | needs-review | reviewed | stale
 # The sync client protocol, as built
 
 **Status:** draft, not accepted; grants itself no authority and changes
-no spec. Describes the client at `50044ad`.
+no spec. Describes the client at `50044ad`, with the deadline gate that
+`4fde3d8` and `ba3d5eb` added (§3, §4.4, §7.1, §7.4, §7.6).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
@@ -51,7 +52,7 @@ only between round trips.
 | Step | Code | Rule |
 | --- | --- | --- |
 | 1 | `ensure_access` | refresh if no access token (§4.2); a failure ends the turn |
-| 2 | `sweep_outbound` | queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1) |
+| 2 | `sweep_outbound` | queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (ADR-0052) or gone queues no ops, and its unsealed ops are withdrawn (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`); its expiry, hold and marker still queue |
 | 3 | `tick` | abandon a ballot open 60 s (`BALLOT_PATIENCE_MS`, relay-protocol §5; §7.7) |
 | 4 | `publish_round` | if `PUBLISH_INTERVAL_MS` (2 s, relay-protocol §8) has passed and anything is queued or in flight (§4.4) |
 | 5 | `fetch_request` | long poll, `wait` at most 25 s (`LONG_POLL_WAIT_S`, relay-protocol §8; §4.5) |
@@ -133,7 +134,7 @@ absorb duplicates.
 | 2xx | cleared | acknowledged cursors move to the recorded ones (`an_answer_to_a_resent_batch_acknowledges_only_what_that_batch_carried`) | |
 | `401` | kept; clock reopened | refresh and resend once: a second `401` is only the event, a failed refresh ends the round silently, a failed resend reports `unreachable` without a fault | `unauthorized` |
 | `409`, `410` | dropped | record dropped; export frontier not rewound | `epoch_conflict`, `rejoin_required` |
-| `413` | kept | `rotate_channel` on the first enrolled page by id | `ceremony_required` |
+| `413` | kept | `rotate_channel` on the first enrolled page by id held here before its deadline (`live_anchor`) | `ceremony_required` |
 | any other answer | kept; resent next tick | | `protocol` |
 | transport failure | kept | fault unreachable | `unreachable` |
 
@@ -238,8 +239,11 @@ lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
 | --- | --- |
 | a deferred transition is due (`ceremony_due`) | that page |
 | this device queued a terminal marker | a due page, else the first live enrolled page by id; with none, no rotation |
-| a publish answered `413` | the first enrolled page by id, live or not |
+| a publish answered `413` | the first live enrolled page by id; with none, no rotation |
 
+A live page here is one held before its deadline: a page past it would
+refuse the commit (§7.6), so it is never a target or an anchor
+(`a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`).
 `rotate_channel` proposes (§7.3) or runs solo (§7.2), never during a
 ballot, so a page still due proposes again.
 
@@ -260,7 +264,8 @@ keys of `entropy_sealed`, unfiltered (untested). Members count as
 
 A follower stays out at the first failed check, only the last
 spending: the ballot id is new; no ballot is in flight (relay-protocol
-§5 has no such rule); the page is held and not terminal;
+§5 has no such rule); the page is held, before its deadline and not
+terminal (`a_proposal_for_a_page_past_its_deadline_here_spends_nothing`);
 `entropy_sealed` names it; its entry opens (§5.3; failure is logged).
 It then opens the ballot and queues its accept.
 
@@ -278,8 +283,15 @@ only, advances the chain with the ballot's entropy and seals the
 snapshot, unpadded, under the new key; existing page channels take the
 new epoch, the frame is staged, and `settle_frontier` moves both
 cursors to the rebuild, which travels only as the frame. A store
-refusal (page gone or not enrolled; entropy already consumed) rotates
-nothing (`the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`).
+refusal (page gone, not enrolled or past its deadline; entropy already
+consumed) rotates nothing
+(`the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`,
+`a_ceremony_cuts_no_key_frame_from_a_page_past_its_deadline_before_its_sweep`).
+A device that accepted before the page's deadline and meets the
+completing accept after it therefore stays on the old epoch while its
+peers advance (interpretation). A frame or batch sealed before the
+deadline still goes out on its retry: the frame PUT is what moves the
+relay's epoch.
 A seal refusal leaves the chain advanced but moves no channel and
 stages no frame, here and in `solo_ceremony` (interpretation).
 
@@ -422,6 +434,7 @@ Owner questions first; the owner decides which side moves in each.
 | 10.28 | none | `settledTrouble` | while the gate still holds an earlier `unreachable`, a `keychain` refusal settles to `.unreachable`, so the sentence blames the server for a locked keychain, for up to the backoff (code reading; `testAQuietRefusalAfterAnUnreachableTurnStillBacksOff`) |
 | 10.29 | surface.md §4: "no peer awake reads `sync waiting`"; §5: "the relay cannot be reached", "waiting on your browser" | `currentPeers`, `sentence` | an asleep rostered peer reads `synced`; the built sentences differ (code reading) |
 | 10.30 | `companion_sync_pump` documents a `signed_out` event | `SyncEvent::SignedOut` | never constructed outside a test; sign-out arrives as the turn's reason (code reading) |
+| 10.31 | ADR-0021: "Sync must move a Page between a user's enrolled devices" | §6, `SheetStore::apply_remote_update` | no envelope carries a sealed object, and a batch that stands a sentinel the peer's page does not own is refused whole (`ChipRoster`) and dropped; every later batch of that page builds on it (`MissingHistory`) and no rejoin exists (§8), so a page holding an object, sealed there or carried onto it by a move or a cut's reattach, stops reaching every peer (`sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer`, `sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`) |
 
 ## Appendix A. Signing contexts, info strings, magics
 
