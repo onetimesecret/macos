@@ -628,8 +628,8 @@ struct BackdropRootView: View {
 
     private func tone(_ tone: SyncHeaderWord.Tone) -> AnyShapeStyle {
         switch tone {
-        case .quiet: return AnyShapeStyle(.tertiary)
-        case .plain: return AnyShapeStyle(.secondary)
+        case .quiet: return AnyShapeStyle(Color.secondaryInk)
+        case .plain: return AnyShapeStyle(Color.secondaryInk)
         case .loud: return AnyShapeStyle(Color.emberText)
         }
     }
