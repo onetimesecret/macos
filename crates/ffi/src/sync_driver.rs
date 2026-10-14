@@ -841,14 +841,18 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
 }
 
 /// Move a page's export and acknowledged cursors to its rebuilt
-/// version without exporting, and drop the page from any staged batch:
-/// the rebuild travels only as the frame (client protocol §7.6).
+/// version without exporting, drop the page from any staged batch, and
+/// withdraw its unsealed ops: the rebuild travels only as the frame
+/// (client protocol §7.6).
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
     staged: &mut Option<StagedBatch>,
+    session: &mut SyncSession,
     page: ItemId,
 ) {
+    // Ops queued before the rebuild are history from behind the boundary.
+    session.withdraw_ops(page);
     if let Some(tracking) = enrolled.get_mut(&page)
         && let Some(sheet) = sheet_of(store, page)
         && let Some(version) = store.document_version(sheet)
@@ -973,7 +977,7 @@ fn rotate_channel(
             events.push(serde_json::json!({
                 "kind": "ceremony_committed", "page": page, "page_id": page_id
             }));
-            settle_frontier(store, enrolled, staged_batch, target);
+            settle_frontier(store, enrolled, staged_batch, &mut engine.session, target);
         }
     } else {
         let own = engine.packages.package().clone();
@@ -1101,6 +1105,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                                         store,
                                         &mut sync.enrolled,
                                         &mut sync.staged_batch,
+                                        session,
                                         *page,
                                     );
                                 }
@@ -2820,6 +2825,45 @@ mod tests {
             !engine.session.publish_due(4_000),
             "the rebuild must not be republished as a delta"
         );
+    }
+
+    #[test]
+    fn a_compacted_page_s_queued_ops_never_cross_the_boundary() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "keep DOOMED");
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Delete {
+                pos_u16: 4,
+                len_u16: 7,
+            }],
+        ));
+        let tab = companion.store.tabs().next().unwrap().id();
+        let other = inked_page(&mut companion, "the other page");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, other, true));
+        companion.store.cycle_rung(tab).unwrap();
+
+        // One sweep queues both pages' ops, then compacts the due page.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        let sealed = staged_envelopes(&mut companion, 0);
+        let wire = |sheet: SheetId| {
+            crate::sync_session::page_wire_id(companion.store.sheet(sheet).unwrap().uuid())
+        };
+        let carries_ops = |sheet: SheetId| {
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire(sheet)))
+        };
+        assert!(
+            !carries_ops(page),
+            "the deleted text would open under the new key"
+        );
+        assert!(carries_ops(other), "the control: a page not compacted");
     }
 
     #[test]
