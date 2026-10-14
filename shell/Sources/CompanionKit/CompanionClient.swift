@@ -936,10 +936,10 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Discard the page a slot holds and leave the slot standing: its
-    /// sealed bytes are zeroized, the ledger keeps one discarded
-    /// record, and the tab keeps its name, its rung, its position and
-    /// its number key, the way an expiry leaves it. Returns whether a
-    /// page by that id was standing.
+    /// sealed bytes are zeroized, the ledger keeps a discarded record
+    /// for it and for each of its objects, and the tab keeps its name,
+    /// its rung, its position and its number key, the way an expiry
+    /// leaves it. Returns whether a page by that id was standing.
     ///
     /// Page addressed rather than tab addressed, which is the whole
     /// difference from `closeTab`: the burn offered after a conceal

@@ -236,8 +236,8 @@ bool companion_tab_close(CompanionHandle *handle, uint64_t tab);
 
 /*
  * Discard the page a slot holds and leave the slot standing: sealed
- * bytes zeroized, one discarded record in the ledger, and the tab keeps
- * its name, its rung, its position and its number key. Returns whether
+ * bytes zeroized, discarded recorded for the page and each object, and
+ * the tab keeps its name, rung, position and number key. Returns whether
  * a page by that id was standing. Page addressed because the burn
  * offered after a conceal names the content that travelled and not
  * the slot it travelled from.

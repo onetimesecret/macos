@@ -304,8 +304,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Close a tab, empty or not: its page's sealed bytes are zeroized,
-    /// one `Discarded` record is kept, and the slot leaves the strip.
-    /// Returns whether the tab existed.
+    /// `Discarded` is recorded for the page and each of its objects, and
+    /// the slot leaves the strip. Returns whether the tab existed.
     pub fn close_tab(&mut self, id: TabId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let Some(index) = self.tab_index(id) else {

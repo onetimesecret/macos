@@ -6396,8 +6396,8 @@ public final class PageModel: ObservableObject {
 
     /// Mirror the page's document to the core wholesale: the recovery
     /// path (still authoritative for chip liveness: a chip the
-    /// snapshot omits was deleted in the editor and is zeroized
-    /// there). The rejected-batch route arrives via
+    /// snapshot omits was removed in the editor and is detached
+    /// there, ADR-0047). The rejected-batch route arrives via
     /// `recoverProjection`; programmatic rewrites (a burn) come here
     /// directly.
     public func syncDocument(sheet: UInt64, runs: [DocumentRun]) {
