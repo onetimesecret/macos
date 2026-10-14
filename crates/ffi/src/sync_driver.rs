@@ -777,7 +777,7 @@ pub(crate) fn sweep_outbound(
                 }
                 // Client protocol §7.1: a due page is the target; a live
                 // page only anchors the rotation a marker owes.
-                if !past_deadline && store.ceremony_due(sheet) {
+                if store.ceremony_due(sheet) {
                     rotate = true;
                     due_target = due_target.or(Some(*page));
                 }

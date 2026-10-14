@@ -242,8 +242,10 @@ lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
 | a publish answered `413` | the first live enrolled page by id; with none, no rotation |
 
 A live page here is one held before its deadline: a page past it would
-refuse the commit (§7.6), so it is never a target or an anchor
-(`a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`).
+refuse the commit (§7.6), so it is never a target, since `ceremony_due`
+answers false for it, or an anchor
+(`a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`,
+`a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`).
 `rotate_channel` proposes (§7.3) or runs solo (§7.2), never during a
 ballot, so a page still due proposes again.
 
@@ -286,7 +288,7 @@ cursors to the rebuild, which travels only as the frame. A store
 refusal (page gone, not enrolled or past its deadline; entropy already
 consumed) rotates nothing
 (`the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`,
-`a_ceremony_cuts_no_key_frame_from_a_page_past_its_deadline_before_its_sweep`).
+`a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`).
 A device that accepted before the page's deadline and meets the
 completing accept after it therefore stays on the old epoch while its
 peers advance (interpretation). A frame or batch sealed before the

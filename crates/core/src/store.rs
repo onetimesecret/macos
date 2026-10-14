@@ -995,10 +995,11 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
-    /// Whether a deferred page has a transition waiting on its ceremony.
+    /// Whether a deferred page has a transition waiting on a ceremony it can
+    /// perform; never a page past its deadline (ADR-0052).
     #[must_use]
     pub fn ceremony_due(&self, id: SheetId) -> bool {
-        self.sheet(id)
+        self.readable_sheet(id)
             .is_some_and(|sheet| sheet.ceremony == CeremonyState::Deferred { due: true })
     }
 
@@ -2374,13 +2375,16 @@ mod tests {
     }
 
     #[test]
-    fn a_ceremony_cuts_no_key_frame_from_a_page_past_its_deadline_before_its_sweep() {
+    fn a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep() {
         let (mut store, clock) = store();
-        let id = store.new_tab().1;
+        let (tab, id) = store.new_tab();
         seal(&mut store, id, "hunter2");
         assert!(store.set_compaction_deferred(id, true));
         assert!(store.perform_ceremony(id).is_some());
+        assert_eq!(store.set_rung(tab, Ttl::MIN), Some(Ttl::MIN));
+        assert!(store.ceremony_due(id), "the transition waits on a ceremony");
         clock.advance(8 * HOUR);
+        assert!(!store.ceremony_due(id));
         let version = store.document_version(id);
         assert!(store.perform_ceremony(id).is_none());
         assert_eq!(store.document_version(id), version, "nothing compacted");
