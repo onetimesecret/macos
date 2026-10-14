@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, and why a ballot always advances with an empty frame for a page it cannot give out
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, and why a trap under xctest hangs
 metadata:
   type: project
 ---
@@ -124,8 +124,34 @@ for review fixes; shell only.
   mirror) refuses such ink, and undoing the removal would stand it
   again. ADR-0025's delivery note keeps line citations current by
   digits plus a decision history entry, not by rewriting its text.
-- Test traps: the DEBUG `assertProjectionParity` traps and xctest hangs
-  with no output, so run mutation checks under `timeout`. `ageForTests`
+- Phase 7 unit 2 (2026-10-14): a board's plain text (a service's
+  answer, a drop, the tests' paste) goes through
+  `readSelection(from:type:)`, which writes the storage directly, not
+  the view's `replaceCharacters`, and the new characters inherit the
+  attributes of the one before them; AppKit strips `.attachment` from
+  non U+FFFC characters only after `willProcessEditing`. So
+  `strayObjectCharacters` drops a U+FFFC whose attachment run holds
+  other characters, an object's second index, and every U+FFFC while
+  `readingBoard` runs. Typing attributes never carry `.attachment`.
+  `runs(of:)` and `editOps` give one position per character, so a
+  doubled face breaks parity. A page's own U+FFFC (peer, earlier
+  build) leaves at `PageModel.pageRuns` through
+  `companion_sheet_take_out_object_characters`, committed under
+  `UNRECORDED_ORIGIN`, which the Loro undo manager excludes; the core
+  now has a `test-util` feature (its first seam,
+  `ink_below_the_guard`). A peer's change never restates a mounted
+  storage (onRemoteChange only refreshes), so the take out waits for
+  the next restate. Look Up and Translate are `_rvMenuItemAction`
+  items; the file menu control in the test guards that predicate.
+  ⌃⌘D is a system shortcut no test can send; its route is a hand
+  check, read from the page standing aside under its note. Never run a
+  mutation that lets a speech or look up gate pass: it speaks or looks
+  up on the machine running the suite.
+- Test traps: any Swift trap (assert, precondition) under xctest stops
+  the process at `_assertionFailure` with no output until killed;
+  `assertProjectionParity` now writes its line and exits instead, so a
+  parity break ends the run at once. Run other mutation checks under
+  `timeout`. `ageForTests`
   re-mints the store and drops every undo stack; reach a refused note
   batch on a due page through a stand in client. The Edit tool turns a
   JSON style `\uXXXX` in its input into the literal character; write
