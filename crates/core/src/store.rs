@@ -815,10 +815,8 @@ impl<C: Clock> SheetStore<C> {
         self.sheet(id)?.document.restored_selection()
     }
 
-    /// Replace a page's body wholesale; the recovery route (ADR-0013).
-    /// Chips the segments no longer reference are detached and detached ones
-    /// they name reattach (ADR-0047); a foreign or repeated chip rejects the
-    /// whole call. Returns whether it applied.
+    /// Replace a page's body wholesale, the recovery route (ADR-0013): chips it
+    /// omits detach, those it names reattach, a foreign or repeated one refuses all.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "the segments used to move into the sheet; the signature outlives that so callers of the recovery path stay untouched while stage 3 rebuilds the seam"
@@ -870,7 +868,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Settle the chip roster (ADR-0047), then rebuild the projection and
-    /// derived title. Nothing here records or forgets a step.
+    /// derived title.
     pub(crate) fn settle_document(&mut self, id: SheetId) {
         let Some(sheet) = self.sheet_mut(id) else {
             return;
@@ -1317,9 +1315,8 @@ impl<C: Clock> SheetStore<C> {
         Some(out)
     }
 
-    /// Burn a chip, attached or detached: its bytes are wiped as it drops
-    /// and its page's undo stack goes with it (ADR-0047). Returns whether the
-    /// chip existed.
+    /// Burn a chip, attached or detached: its bytes wiped and its page's undo
+    /// stack with it (ADR-0047). False for an unknown chip.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let mut removed: Option<(ItemId, usize, String, u64)> = None;
@@ -1656,9 +1653,8 @@ impl<C: Clock> SheetStore<C> {
         evict_expired(&mut self.ledger, at_wall_ms);
     }
 
-    /// Record the page's death and drop it, zeroizing its chips: one record
-    /// per chip, attached or detached, as a paste's evidence (ADR-0047), then
-    /// the page's own, skipped for a page that held no chip and no content.
+    /// Record each chip's end, attached or detached, then the page's unless it
+    /// held neither chip nor content (ADR-0047), and drop it, chips zeroized.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"

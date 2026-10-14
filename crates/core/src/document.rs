@@ -247,9 +247,8 @@ impl SheetDocument {
         self.doc.state_frontiers()
     }
 
-    /// Put the body back as it was at `checkpoint` after an edit refused
-    /// partway, and clear the undo stack, which could replay the half edit
-    /// (ADR-0047 point 8).
+    /// Revert the body to `checkpoint` after an edit refused partway, and
+    /// clear the undo stack, which could replay the half edit (ADR-0047).
     pub(crate) fn rollback(&self, checkpoint: &Frontiers) {
         // Refused only for a target before a shallow start; a checkpoint is the present.
         let _ = self.doc.revert_to(checkpoint);

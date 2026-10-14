@@ -733,10 +733,8 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
 
 // ---- The synced document ----
 
-/// Replace a page's document snapshot, a JSON array of `{"ink": "text"}` and
-/// `{"chip": id}` runs. Chips it omits are detached and detached ones it names
-/// reattach (ADR-0047); a malformed snapshot is rejected whole. Returns whether
-/// it was accepted.
+/// Replace a page's document with `{"ink": "text"}` and `{"chip": id}` runs:
+/// chips it omits detach, those it names reattach; a malformed one refuses whole.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `json` must be a valid,
@@ -1501,10 +1499,8 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
 
 // ---- The sealed fragment: copy, cut, paste, drags (ADR-0047) ----
 
-/// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`: the
-/// private type's bytes, null for ink alone, and the public text. The shell
-/// writes both, carrying the envelope unread. Null for a file id, an unknown
-/// page, or an empty or bad range. Free with [`companion_string_free`].
+/// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`; null
+/// for a file id, an unknown page or a bad range. Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1530,9 +1526,8 @@ pub unsafe extern "C" fn companion_sheet_copy_fragment(
         .map_or(ptr::null_mut(), |copied| copied_json(&copied))
 }
 
-/// [`companion_sheet_copy_fragment`], then delete the range as one undo step;
-/// its objects detach as the active cut. Null, changing nothing, where the copy
-/// refuses or the page refuses the delete.
+/// [`companion_sheet_copy_fragment`], then delete the range as one undo step,
+/// its objects detaching as the active cut. Null, changing nothing, on refusal.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1558,10 +1553,8 @@ pub unsafe extern "C" fn companion_sheet_cut_fragment(
         .map_or(ptr::null_mut(), |copied| copied_json(&copied))
 }
 
-/// Paste an envelope over a UTF-16 range as one undo step, the core
-/// resolving each reference; an envelope it cannot read places `plain`.
-/// Returns the placed JSON ([`placed_json`]), or null, changing nothing, for a
-/// file id, an unknown page, a bad range or nothing to place.
+/// Paste envelope bytes over a range as one undo step, `plain` placed for one
+/// the core cannot read. The placed JSON ([`placed_json`]), or null on refusal.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `envelope` must be null or readable for
@@ -1631,9 +1624,8 @@ pub unsafe extern "C" fn companion_sheet_paste_active_cut(
         .map_or(ptr::null_mut(), placed_json)
 }
 
-/// A drag inside a page: move a UTF-16 range to `to_utf16`, measured before
-/// the move, as one step that keeps every object. Returns the placed JSON, or
-/// null, changing nothing, for a `to` inside or at the range's edge.
+/// A drag inside a page: move a range to `to_utf16`, measured before the move,
+/// as one step. The placed JSON, or null for a `to` inside or at its edge.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1688,10 +1680,8 @@ pub unsafe extern "C" fn companion_sheet_clone_range(
         .map_or(ptr::null_mut(), placed_json)
 }
 
-/// The clipboard slot (ADR-0047 point 12): `{"page_id": u64|null,
-/// "objects": [face]}`, the active cut's page and its objects' faces in
-/// order, `null` and `[]` when no cut stands. Free with
-/// [`companion_string_free`]; null on error.
+/// The clipboard slot: `{"page_id": u64|null, "objects": [face]}`, null and
+/// `[]` with no cut. Free with [`companion_string_free`]; null on error.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1719,11 +1709,8 @@ pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle)
     }
 }
 
-/// Decrypted drag (ADR-0047 point 11): from the shell's data provider, write
-/// a chip's payload into the drag `item` on `pasteboard` under `type`, and
-/// record one `sent` to `drag`. The bytes never reach Swift. False, writing
-/// and recording nothing, for an unknown chip, a null or foreign pointer, the
-/// general pasteboard, or a type other than the chip's own; always off macOS.
+/// Decrypted drag: write a chip's payload into the drag `item` on `pasteboard`
+/// under its type and record one `sent` to `drag`; false, doing neither, on refusal.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `pasteboard` and `item` must each be null
@@ -3464,9 +3451,8 @@ fn copied_json(copied: &Copied) -> *mut c_char {
     }
 }
 
-/// What a paste, a move or a clone placed: `location_utf16` and
-/// `length_utf16` of the placed run, a count per resolution, and
-/// `unreadable`, true when the public text was placed instead.
+/// What a paste, a move or a clone placed: its run in UTF-16 units, a count
+/// per resolution, and `unreadable` when the public text was placed instead.
 fn placed_json(placed: Placed) -> *mut c_char {
     let value = serde_json::json!({
         "location_utf16": placed.location_u16,

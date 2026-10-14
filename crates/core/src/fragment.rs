@@ -147,9 +147,8 @@ impl Fragment {
 }
 
 impl Sheet {
-    /// A UTF-16 range of the body as a fragment and its public text, from one
-    /// walk. `None` for an empty range, one past the body, or one splitting a
-    /// surrogate pair.
+    /// A UTF-16 range as a fragment and its public text, from one walk; `None`
+    /// for an empty range, one past the body or one splitting a surrogate pair.
     pub(crate) fn select(
         &self,
         at_u16: u32,

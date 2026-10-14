@@ -85,9 +85,8 @@ impl Planned<'_> {
 }
 
 impl<C: Clock> SheetStore<C> {
-    /// Copy a selection (Law 0001, ADR-0047): its envelope when it holds an
-    /// object, and its public text. `None` for an unknown page or a range
-    /// [`Sheet::select`] refuses. The page is not touched.
+    /// Copy a selection: its envelope when it holds an object, and its public
+    /// text. `None` for an unknown page or a range [`Sheet::select`] refuses.
     #[must_use]
     pub fn copy_fragment(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
         let (fragment, plain) = self.sheet(id)?.select(at_u16, len_u16)?;
@@ -95,9 +94,8 @@ impl<C: Clock> SheetStore<C> {
         Some(Copied { envelope, plain })
     }
 
-    /// Cut a selection: copy it, then delete it as one undo step. The objects
-    /// it held detach as the store's one active cut, replacing any before it.
-    /// `None`, changing nothing, where the copy or the body refuses.
+    /// Copy a selection, then delete it as one step, its objects detaching as
+    /// the one active cut. `None`, changing nothing, where either refuses.
     pub fn cut_fragment(&mut self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
         let (mut fragment, plain) = self.sheet(id)?.select(at_u16, len_u16)?;
         let members: Vec<ItemId> = fragment.references().map(|r| r.uuid).collect();
@@ -126,10 +124,8 @@ impl<C: Clock> SheetStore<C> {
         Some(Copied { envelope, plain })
     }
 
-    /// Paste an envelope over a UTF-16 range as one undo step, resolving each
-    /// reference (ADR-0047 point 6). An unreadable envelope places `plain`
-    /// instead. `None`, changing nothing, for an unknown page, a bad range,
-    /// nothing to place, or a body that refuses the edit.
+    /// Paste an envelope over a range as one step, resolving each reference;
+    /// an unreadable one places `plain`. `None`, changing nothing, on refusal.
     pub fn paste_fragment(
         &mut self,
         id: SheetId,
@@ -156,9 +152,8 @@ impl<C: Clock> SheetStore<C> {
         self.paste_fragment(id, at_u16, len_u16, &envelope, None)
     }
 
-    /// A drag inside a page: move a range to `to`, measured before the move,
-    /// as one step that keeps every object's identity. `None`, changing
-    /// nothing, for a `to` inside or at the edge of the range, or a bad range.
+    /// A drag inside a page: move a range to `to`, measured before the move, as
+    /// one step keeping every object. `None` for a `to` in the range or a bad one.
     pub fn move_range(
         &mut self,
         id: SheetId,
@@ -210,9 +205,8 @@ impl<C: Clock> SheetStore<C> {
         stood.then_some(placed)
     }
 
-    /// The ⌥ drag inside a page: insert a copy of a range at `to` as one
-    /// step, every object in it cloned. `None`, changing nothing, for a bad
-    /// range.
+    /// The ⌥ drag inside a page: a copy of a range at `to`, every object
+    /// cloned, as one step. `None` for a bad range.
     pub fn clone_range(
         &mut self,
         id: SheetId,

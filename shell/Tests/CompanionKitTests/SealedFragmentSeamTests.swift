@@ -3,10 +3,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The sealed fragment across the seam (ADR-0047), against the live core
-/// through an ephemeral handle. Nothing persists, and no test here reaches
-/// the general pasteboard: copies and cuts hand their bytes back, and the
-/// decrypted drag writes an item on a privately named pasteboard.
+/// The sealed fragment across the seam (ADR-0047), against the live core;
+/// nothing persists, and the drag writes an item on a privately named board.
 final class SealedFragmentSeamTests: XCTestCase {
     private let secret = "ghp_" + String(repeating: "n0ts3cr3t", count: 2)
 

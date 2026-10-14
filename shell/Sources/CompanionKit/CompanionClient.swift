@@ -1245,10 +1245,8 @@ public class CompanionClient: @unchecked Sendable {
         return fragment(from: companion_sheet_cut_fragment(handle, sheet, wire.0, wire.1))
     }
 
-    /// Paste an envelope over a range as one undo step, the core resolving
-    /// each reference; an envelope it cannot read places `plainText`. Nil,
-    /// with nothing changed, when there is nothing to place. A `plainText`
-    /// holding a NUL is not passed, since a C string would end there.
+    /// Paste an envelope over a range as one undo step; an unreadable one places
+    /// `plainText`, withheld if it holds a NUL. Nil when nothing is placed.
     @discardableResult
     public func pasteFragment(
         sheet: UInt64, range: NSRange, envelope: Data, plainText: String?
@@ -1304,11 +1302,8 @@ public class CompanionClient: @unchecked Sendable {
         return ActiveCut(pageID: page, objects: wire.objects)
     }
 
-    /// Decrypted drag, from an `NSPasteboardItemDataProvider`: the core
-    /// writes the chip's payload into `item` (an `NSPasteboardItem`) on
-    /// `pasteboard` (its `NSPasteboard`) under `type`, records one `sent`
-    /// to `drag`, and refuses the general pasteboard and any type but the
-    /// chip's own. This process never holds the bytes.
+    /// Decrypted drag, from a data provider: the core writes the chip's payload
+    /// into `item` on `pasteboard` under `type` and records one `sent` to `drag`.
     @discardableResult
     public func provideDecryptedDrag(
         chip: UInt64, pasteboard: AnyObject, item: AnyObject, type: String
