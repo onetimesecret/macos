@@ -295,13 +295,16 @@ Settle list, as of this date:
 - **Key-frame emission and local discard.** Determined, and against
   the hoped-for answer. Emission and compaction are one event by
   construction: both sites that stage a frame call
-  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:952` for a
-  confirmed ballot and `crates/ffi/src/sync_session.rs:1045` for the
+  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:1004` for a
+  confirmed ballot and `crates/ffi/src/sync_session.rs:1097` for the
   empty room case), and that function's first step is
   `SheetStore::perform_ceremony`, which compacts
-  (`crates/ffi/src/gop.rs:142`, `crates/core/src/store.rs:1081`).
+  (`crates/ffi/src/gop.rs:169`, `crates/core/src/store.rs:1081`).
+  A frame a refused seal left owed is cut the same way, by
+  `perform_ceremony` before `gop::seal_frame`
+  (`crates/ffi/src/sync_session.rs:1125`).
   Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
-  (`crates/ffi/src/gop.rs:248`) and
+  (`crates/ffi/src/gop.rs:281`) and
   `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
   (`crates/core/src/store.rs:5338`). The joining side discards too, by
   a separate rule: a frame lands only on a pristine page
