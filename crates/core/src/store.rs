@@ -64,6 +64,8 @@ pub enum PayloadError {
     /// The sheet holds an image chip; the conceal payload is text-shaped
     /// (open question 3).
     ImageChip,
+    /// The page's countdown has run out, swept or not (ADR-0052).
+    Expired,
 }
 
 impl std::fmt::Display for PayloadError {
@@ -74,6 +76,7 @@ impl std::fmt::Display for PayloadError {
                 f,
                 "this page holds an image, which cannot travel as a text secret yet"
             ),
+            PayloadError::Expired => write!(f, "this page has expired"),
         }
     }
 }
@@ -361,6 +364,18 @@ impl<C: Clock> SheetStore<C> {
     #[must_use]
     pub fn sheet(&self, id: SheetId) -> Option<&Sheet> {
         self.sheets().find(|s| s.id == id)
+    }
+
+    /// The live pages whose countdown still runs; every read or egress of a
+    /// page, an object or a note finds it here (ADR-0052).
+    pub fn readable_sheets(&self) -> impl Iterator<Item = &Sheet> {
+        let now = self.clock.now();
+        self.sheets().filter(move |sheet| !sheet.is_due(now))
+    }
+
+    /// A page by id from [`SheetStore::readable_sheets`].
+    pub(crate) fn readable_sheet(&self, id: SheetId) -> Option<&Sheet> {
+        self.readable_sheets().find(|s| s.id == id)
     }
 
     /// The local id of the page a cross-device `uuid` names, if it stands
@@ -1166,8 +1181,10 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
+    /// An attached object and its page, refused past the page's deadline.
     fn chip_home(&self, id: ChipId) -> Option<(SheetId, &SealedChip)> {
-        self.sheets().find_map(|s| s.chip(id).map(|c| (s.id, c)))
+        self.readable_sheets()
+            .find_map(|s| s.chip(id).map(|c| (s.id, c)))
     }
 
     fn chip_mut(&mut self, id: ChipId) -> Option<&mut SealedChip> {
@@ -1193,7 +1210,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A sealed object's note, empty when it has none; `None` for an unknown
-    /// chip (ADR-0043).
+    /// chip (ADR-0043) or a page past its deadline (ADR-0052).
     #[must_use]
     pub fn note_text(&self, id: ChipId) -> Option<Zeroizing<String>> {
         let (_, chip) = self.chip_home(id)?;
@@ -1290,6 +1307,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
+    /// `None` for an unknown chip or a page past its deadline (ADR-0052).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
         let (_, chip) = self.chip_home(id)?;
@@ -1298,7 +1316,8 @@ impl<C: Clock> SheetStore<C> {
 
     /// The name, `=` and a text chip's payload, raw, in one buffer at its
     /// final size (ADR-0042 point 4, ADR-0043). `None` for an unknown,
-    /// unnamed or image chip. Consumes nothing and records nothing.
+    /// unnamed or image chip, or a page past its deadline (ADR-0052).
+    /// Consumes nothing and records nothing.
     #[must_use]
     pub fn copy_out_name_value(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
         let (_, chip) = self.chip_home(id)?;
@@ -1426,16 +1445,23 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A chip's bytes for the conceal path, which never passes through the
-    /// UI layer.
+    /// UI layer; refused as [`SheetStore::copy_out_chip`] refuses.
     #[must_use]
     pub fn chip_payload(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
         self.copy_out_chip(id).map(|(bytes, _)| bytes)
     }
 
     /// The whole page as one conceal payload, chips inlined in document
-    /// order. Pages holding image chips are refused.
+    /// order. Pages holding image chips, and pages past their deadline
+    /// (ADR-0052), are refused.
     pub fn sheet_payload(&self, id: SheetId) -> Result<Zeroizing<String>, PayloadError> {
-        let sheet = self.sheet(id).ok_or(PayloadError::UnknownSheet)?;
+        let Some(sheet) = self.readable_sheet(id) else {
+            return Err(if self.sheet(id).is_some() {
+                PayloadError::Expired
+            } else {
+                PayloadError::UnknownSheet
+            });
+        };
         if sheet
             .chips
             .iter()
@@ -1493,7 +1519,7 @@ impl<C: Clock> SheetStore<C> {
             return Some(rung);
         };
         normalize(sheet, now);
-        if sheet.remaining(now).is_zero() {
+        if sheet.is_due(now) {
             return None; // due; the timer will reap it
         }
         set_clock(tab, rung, life, now);
@@ -1594,7 +1620,7 @@ impl<C: Clock> SheetStore<C> {
         for tab in &mut self.tabs {
             let spent = tab.page.as_mut().is_some_and(|page| {
                 normalize(page, now);
-                page.remaining(now).is_zero()
+                page.is_due(now)
             });
             if !spent {
                 continue;
@@ -2260,6 +2286,99 @@ mod tests {
             let (bytes, _) = store.copy_out_chip(chip).unwrap();
             assert_eq!(bytes.capacity(), bytes.len(), "{} bytes", payload.len());
         }
+    }
+
+    /// A page holding one named, noted chip, its clock run out and no sweep
+    /// yet, with the ledger's length then (ADR-0052).
+    fn a_due_page() -> (SheetStore<ManualClock>, SheetId, ChipId, usize) {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "hunter2");
+        store.set_chip_name(chip, "TOKEN").unwrap();
+        write_note(&mut store, chip, "rotate monthly");
+        assert!(store.copy_out_name_value(chip).is_some(), "readable before");
+        clock.advance(8 * HOUR);
+        let records = store.ledger().count();
+        (store, id, chip, records)
+    }
+
+    /// The refused read recorded nothing, and the timer's sweep still takes
+    /// the page.
+    fn assert_untouched_until_its_sweep(
+        mut store: SheetStore<ManualClock>,
+        id: SheetId,
+        records: usize,
+    ) {
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+        assert!(!events(&store).contains(&LedgerEvent::Sent));
+        assert_eq!(store.expire_due(), vec![id], "the sweep still takes it");
+    }
+
+    #[test]
+    fn copy_decrypted_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.copy_out_chip(chip).is_none());
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn copy_name_value_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.copy_out_name_value(chip).is_none());
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn conceal_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.chip_payload(chip).is_none());
+        assert_eq!(store.sheet_payload(id).err(), Some(PayloadError::Expired));
+        assert_eq!(
+            store.sheet_payload(SheetId::from_raw(4_242)).err(),
+            Some(PayloadError::UnknownSheet)
+        );
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn the_note_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.note_text(chip).is_none());
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn the_read_gate_and_the_sweep_agree_on_the_deadline() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "hunter2");
+        clock.advance(8 * HOUR - Duration::from_secs(1));
+        assert!(store.copy_out_chip(chip).is_some());
+        assert!(store.expire_due().is_empty());
+        clock.advance(Duration::from_secs(1));
+        assert!(store.readable_sheets().next().is_none());
+        assert!(store.copy_out_chip(chip).is_none());
+        assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
+    fn a_held_page_reads_until_its_frozen_life_drains() {
+        let (mut store, clock) = store();
+        let (tab, id) = store.new_tab();
+        let chip = seal(&mut store, id, "hunter2");
+        clock.advance(7 * HOUR);
+        assert!(
+            store.pause_press(tab),
+            "an hour frozen under an hour's hold"
+        );
+        clock.advance(HOUR + HOUR / 2);
+        assert!(
+            store.copy_out_chip(chip).is_some(),
+            "past the running deadline"
+        );
+        clock.advance(HOUR / 2);
+        assert!(store.copy_out_chip(chip).is_none());
+        assert_eq!(store.expire_due(), vec![id]);
     }
 
     #[test]

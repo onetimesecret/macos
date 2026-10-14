@@ -626,6 +626,13 @@ impl Sheet {
         }
     }
 
+    /// Whether the countdown has run out at `now`, whether or not a sweep
+    /// has taken the page yet (ADR-0048, ADR-0052).
+    #[must_use]
+    pub fn is_due(&self, now: Instant) -> bool {
+        self.remaining(now).is_zero()
+    }
+
     /// The countdown label text ("3h 40m").
     #[must_use]
     pub fn remaining_label(&self, now: Instant) -> String {

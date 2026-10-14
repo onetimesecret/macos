@@ -88,10 +88,11 @@ impl Planned<'_> {
 
 impl<C: Clock> SheetStore<C> {
     /// Copy a selection: its envelope when it holds an object, and its public
-    /// text. `None` for an unknown page or a range [`Sheet::select`] refuses.
+    /// text. `None` for an unknown page, a page past its deadline (ADR-0052)
+    /// or a range [`Sheet::select`] refuses.
     #[must_use]
     pub fn copy_fragment(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
-        let (fragment, plain) = self.sheet(id)?.select(at_u16, len_u16)?;
+        let (fragment, plain) = self.readable_sheet(id)?.select(at_u16, len_u16)?;
         let envelope = fragment.has_reference().then(|| fragment.envelope());
         Some(Copied { envelope, plain })
     }
@@ -99,7 +100,7 @@ impl<C: Clock> SheetStore<C> {
     /// Copy a selection, then delete it as one step, its objects detaching as
     /// the one active cut. `None`, changing nothing, where either refuses.
     pub fn cut_fragment(&mut self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
-        let (mut fragment, plain) = self.sheet(id)?.select(at_u16, len_u16)?;
+        let (mut fragment, plain) = self.readable_sheet(id)?.select(at_u16, len_u16)?;
         let members: Vec<ItemId> = fragment.references().map(|r| r.uuid).collect();
         let token = (!members.is_empty()).then(ItemId::random);
         fragment.cut = token;
@@ -396,8 +397,7 @@ impl<C: Clock> SheetStore<C> {
     /// Whether a page's clock has run out though no sweep has taken it yet.
     fn is_due(&self, id: SheetId) -> bool {
         let now = self.clock.now();
-        self.sheet(id)
-            .is_some_and(|sheet| sheet.remaining(now).is_zero())
+        self.sheet(id).is_some_and(|sheet| sheet.is_due(now))
     }
 
     /// A live object by identity, attached or detached, on any page.
@@ -1303,6 +1303,36 @@ mod tests {
         assert!(store.sheet(id).is_none());
         assert_eq!(sealed(&store), before, "no clone was recorded");
         assert!(uuids.iter().all(|uuid| expired_on_record(&store, *uuid)));
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_gives_no_copy_before_its_sweep() {
+        let (mut store, clock) = store();
+        let (id, ..) = mixed(&mut store);
+        assert!(store.copy_fragment(id, 0, 8).is_some(), "readable before");
+        clock.advance(HOUR);
+        let records = store.ledger().count();
+
+        assert!(store.copy_fragment(id, 0, 8).is_none());
+        assert!(store.copy_fragment(id, 0, 2).is_none(), "ink alone too");
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+        assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_gives_no_cut_before_its_sweep() {
+        let (mut store, clock) = store();
+        let (id, ..) = mixed(&mut store);
+        clock.advance(HOUR);
+        let before = body(&store, id);
+        let records = store.ledger().count();
+
+        assert!(store.cut_fragment(id, 0, 8).is_none());
+        assert!(store.cut_fragment(id, 0, 2).is_none(), "ink alone too");
+        assert_eq!(body(&store, id), before, "nothing changed");
+        assert!(store.active_cut().is_none(), "no cut stands");
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+        assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
     }
 
     #[test]
