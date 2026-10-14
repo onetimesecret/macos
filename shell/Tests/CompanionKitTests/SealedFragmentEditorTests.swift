@@ -270,6 +270,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         ]
         XCTAssertFalse(page.textView.writeSelection(to: board, types: [.string]))
         XCTAssertEqual(board.changeCount, cleared, "several stretches with an object wrote")
+        XCTAssertEqual(page.model.notice, PageModel.severalStretchesLine, "the copy's line")
     }
 
     /// No service reaches the page, and the page writes nothing for one,
@@ -788,6 +789,44 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(placed.expired, 2)
         XCTAssertFalse(
             page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
+    }
+
+    // MARK: Past an envelope cap (ADR-0053)
+
+    /// A copy, cut or drag whose envelope would pass a cap writes, deletes and detaches
+    /// nothing, an earlier cut stands, and the line names the core's own limit.
+    func testACopyCutOrDragPastAnEnvelopeCapNamesItsLimitAndChangesNothing() throws {
+        let page = try makePage()
+        let client = page.model.coreClient
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        page.textView.cut(nil)
+        let standing = try XCTUnwrap(page.model.activeCut)
+        let limit = 8 * 1024 * 1024
+        let ink = String(repeating: "x", count: limit)
+        XCTAssertTrue(client.applyOps(
+            sheet: page.sheet, json: #"[{"ins":{"at":0,"text":"\#(ink)"}}]"#))
+        let length = client.documentRuns(sheet: page.sheet).reduce(0) {
+            if case .ink(let text) = $1 { $0 + text.utf16.count } else { $0 + 1 }
+        }
+        let all = NSRange(location: 0, length: length)
+        let board = page.pasteboard.changeCount
+        let records = client.ledger().count
+        let tooLarge = "a selection holding sealed objects can be at most 8 MiB, so"
+
+        XCTAssertFalse(page.model.copySelection([all], sheet: page.sheet))
+        XCTAssertEqual(page.model.notice, "\(tooLarge) nothing was copied.")
+        XCTAssertEqual(page.model.cutSelection([all], sheet: page.sheet), .refused)
+        XCTAssertEqual(page.model.notice, "\(tooLarge) nothing was cut.")
+        XCTAssertNil(page.model.dragFragment(sheet: page.sheet, range: all))
+        XCTAssertEqual(page.model.notice, "\(tooLarge) the drag did not start.")
+
+        XCTAssertEqual(page.pasteboard.changeCount, board, "a refusal wrote the board")
+        XCTAssertEqual(chips(page).map(\.chipId), [page.chips[0]], "a refused cut moved an object")
+        XCTAssertEqual(page.model.activeCut, standing, "the earlier cut went")
+        XCTAssertEqual(client.ledger().count, records)
+        XCTAssertEqual(
+            PageModel.refusalLine(for: .pastCap(.tooManyObjects(limit: 1_024)), .cut),
+            "a selection can hold at most 1024 sealed objects, so nothing was cut.")
     }
 
     // MARK: A page past its deadline (ADR-0052)

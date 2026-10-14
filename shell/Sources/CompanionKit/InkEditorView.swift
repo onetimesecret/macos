@@ -5626,7 +5626,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         guard answersChords else { return .refused }
         guard let coordinator, coordinator.selectionHoldsObject else { return nil }
         let composition = coordinator.composeSelection()
-        if composition == .pageExpired { coordinator.model.flash(PageModel.pageExpiredLine) }
+        if let composition, let line = PageModel.refusalLine(for: composition, .copy) {
+            coordinator.model.flash(line)
+        }
         return composition
     }
 

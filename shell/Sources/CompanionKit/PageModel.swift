@@ -5849,6 +5849,8 @@ public final class PageModel: ObservableObject {
         case severalStretchesHoldAnObject
         /// The page was past its deadline, and the settle took it (ADR-0052).
         case pageExpired
+        /// Its envelope would pass a cap the paste keeps (ADR-0053).
+        case pastCap(FragmentRefusal)
         case refused
     }
 
@@ -5858,10 +5860,14 @@ public final class PageModel: ObservableObject {
         guard !sheet.isFileID, !ranges.isEmpty else { return .refused }
         var fragments: [SealedFragment] = []
         for range in ranges {
-            guard let fragment = client.copyFragment(sheet: sheet, range: range) else {
+            switch client.copyFragmentResult(sheet: sheet, range: range) {
+            case .success(let fragment):
+                fragments.append(fragment)
+            case .failure(.refused):
                 return settleIfDue(sheet: sheet) ? .pageExpired : .refused
+            case .failure(let cap):
+                return .pastCap(cap)
             }
-            fragments.append(fragment)
         }
         guard fragments.count > 1 else { return .composed(fragments[0]) }
         guard fragments.allSatisfy({ $0.envelope == nil }) else {
@@ -5870,22 +5876,53 @@ public final class PageModel: ObservableObject {
         return .composed(SealedFragment(joining: fragments))
     }
 
+    /// What a person asked of a page's selection, for the line its refusal shows.
+    public enum SelectionAct: Sendable {
+        case copy, cut, drag
+
+        var outcome: String {
+            switch self {
+            case .copy: "nothing was copied"
+            case .cut: "nothing was cut"
+            case .drag: "the drag did not start"
+            }
+        }
+    }
+
+    /// The line a refused composition shows whoever asked for `act`: several stretches,
+    /// a page past its deadline (ADR-0052), or a cap and the core's limit (ADR-0053).
+    public static func refusalLine(
+        for composition: SelectionComposition, _ act: SelectionAct
+    ) -> String? {
+        switch composition {
+        case .composed, .refused, .pastCap(.refused):
+            return nil
+        case .severalStretchesHoldAnObject:
+            switch act {
+            case .copy: return severalStretchesLine
+            case .cut: return severalStretchesCutLine
+            case .drag: return severalStretchesDragLine
+            }
+        case .pageExpired:
+            return pageExpiredLine
+        case .pastCap(.tooLarge(let limit)):
+            let size = sizePhrase(bytes: UInt64(clamping: limit))
+            return "a selection holding sealed objects can be at most \(size), so \(act.outcome)."
+        case .pastCap(.tooManyObjects(let limit)):
+            return "a selection can hold at most \(limit) sealed objects, so \(act.outcome)."
+        }
+    }
+
     /// Copy a page's selected ranges to the ordinary pasteboard as the core
     /// composes them (ADR-0047 point 2); nothing is written if one is refused.
     @discardableResult
     public func copySelection(_ ranges: [NSRange], sheet: UInt64) -> Bool {
-        switch composeSelection(ranges, sheet: sheet) {
-        case .composed(let fragment):
-            return fragment.write(to: ambientPasteboard)
-        case .severalStretchesHoldAnObject:
-            flash(Self.severalStretchesLine)
-            return false
-        case .pageExpired:
-            flash(Self.pageExpiredLine)
-            return false
-        case .refused:
+        let composition = composeSelection(ranges, sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .copy) { flash(line) }
             return false
         }
+        return fragment.write(to: ambientPasteboard)
     }
 
     /// The line when a cut's several stretches hold a sealed object.
@@ -5913,20 +5950,20 @@ public final class PageModel: ObservableObject {
     public func cutSelection(_ ranges: [NSRange], sheet: UInt64) -> CutOutcome {
         guard !sheet.isFileID, let range = ranges.first else { return .refused }
         guard ranges.count == 1 else {
-            switch composeSelection(ranges, sheet: sheet) {
-            case .composed:
-                return .inkStretches
-            case .severalStretchesHoldAnObject:
-                flash(Self.severalStretchesCutLine)
-            case .pageExpired:
-                flash(Self.pageExpiredLine)
-            case .refused:
-                break
-            }
+            let composition = composeSelection(ranges, sheet: sheet)
+            if case .composed = composition { return .inkStretches }
+            if let line = Self.refusalLine(for: composition, .cut) { flash(line) }
             return .refused
         }
-        guard let fragment = client.cutFragment(sheet: sheet, range: range) else {
+        let fragment: SealedFragment
+        switch client.cutFragmentResult(sheet: sheet, range: range) {
+        case .success(let cut):
+            fragment = cut
+        case .failure(.refused):
             settleRefusal(sheet: sheet, told: true)
+            return .refused
+        case .failure(let cap):
+            if let line = Self.refusalLine(for: .pastCap(cap), .cut) { flash(line) }
             return .refused
         }
         var selecting = NSRange(location: range.location, length: 0)
@@ -6007,15 +6044,12 @@ public final class PageModel: ObservableObject {
 
     /// A page's range as its drag carries it: the copy's fragment (ADR-0047 point 10).
     public func dragFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
-        switch composeSelection([range], sheet: sheet) {
-        case .composed(let fragment):
-            return fragment
-        case .pageExpired:
-            flash(Self.pageExpiredLine)
-            return nil
-        case .severalStretchesHoldAnObject, .refused:
+        let composition = composeSelection([range], sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .drag) { flash(line) }
             return nil
         }
+        return fragment
     }
 
     /// A page's own drag dropped on it at `index`: the range moved, or cloned for ⌥,
