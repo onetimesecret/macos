@@ -7,6 +7,8 @@ pub mod clock;
 mod document;
 pub mod file_persist;
 pub mod files;
+// The sealed fragment's envelope; the shell carries its bytes unread (ADR-0047).
+mod fragment;
 pub mod harden;
 mod ink;
 mod language_detection;
@@ -30,6 +32,7 @@ pub use files::{
     FileId, FileIo, FileNotice, FileStore, FileWitness, HydrationFate, HydrationOutcome,
     LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError,
 };
+pub use fragment::Copied;
 pub use harden::harden_process;
 pub use ink::StepOutcome;
 pub use language_detection::detect_source_language;

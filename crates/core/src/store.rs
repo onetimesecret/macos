@@ -10,6 +10,7 @@ use zeroize::Zeroizing;
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
+use crate::fragment::Copied;
 use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::note::Note;
@@ -1285,6 +1286,16 @@ impl<C: Clock> SheetStore<C> {
                 .as_mut()
                 .map_or(StepOutcome::NONE, |note| note.step(back)),
         )
+    }
+
+    /// Copy a selection (Law 0001, ADR-0047): its envelope when it holds an
+    /// object, and its public text. `None` for an unknown page or a range
+    /// [`Sheet::select`] refuses. The page is not touched.
+    #[must_use]
+    pub fn copy_fragment(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Copied> {
+        let (fragment, plain) = self.sheet(id)?.select(at_u16, len_u16)?;
+        let envelope = fragment.has_reference().then(|| fragment.envelope());
+        Some(Copied { envelope, plain })
     }
 
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).

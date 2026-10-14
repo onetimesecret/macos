@@ -153,6 +153,7 @@ dependencies = [
  "loro",
  "ots-client",
  "serde",
+ "serde_json",
  "static_assertions",
  "zeroize",
 ]
