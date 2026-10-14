@@ -854,6 +854,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refusal over an object that no longer stood never says a page
+  expired** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
+  0.40.0; Law 0001, ADR-0052, issue #170). Copy decrypted, Copy
+  `NAME=value` or a conceal over an object no page held, from a menu
+  left open after it went, said `this page has expired.` whenever
+  another page came due at the same moment. It now says the route's
+  own line, such as `the sealed content could not be copied.` The core
+  answers whether an object stands, past its deadline or not, as
+  `companion_chip_stands`.
+
 - **A copy, cut or drag past an envelope cap does nothing and names
   the cap** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001, ADR-0053, issue #170). A selection holding sealed
@@ -1038,9 +1048,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would after such a refusal and on the system's wake, and says `this
   page has expired.` where a person asked; a refused paste, place or
   move whose settle took its page says so too. Before AppKit copies,
-  cuts, drags or serves text the shell already shows, the shell asks
-  whether the page still stands. The page's drawing is not gated, so
-  it shows until the settle.
+  cuts, drags or serves text the shell already shows, or Use Selection
+  for Find hands it to the find pasteboard every app reads, the shell
+  asks whether the page still stands. A sealed object's name is part of
+  its page, so Copy name and the name field's copy, cut, drag and
+  services ask too. The page's drawing is not gated, so it shows until
+  the settle.
+
+- **A page, a note and a sealed name offer no Share… or Writing Tools**
+  (app 0.35.0; Law 0001, issue #170). The text menu's Share… built its
+  picker over the selection before anything could ask whether the page
+  still stood, so a menu left open past a page's deadline could still
+  share it, and Writing Tools read a selection past every check and
+  could rewrite across a sealed object without its two presses. Neither
+  is offered over a page, a note or a name field any more; a regular
+  text file keeps both.
 
 - **Sync sends nothing of a page past its deadline** (app 0.35.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
