@@ -167,3 +167,19 @@ One observation, not a contradiction: on the save path, `ensure_file_half` treat
 - Covered by a test added here: 11 claims, 11 tests (9 by the audit, 2 in review).
 - Structural (4), or macOS only and not run by Linux CI (2): 6.
 - No test: 6, of which 3 are in store.rs, document.rs and sheet.rs.
+
+## Since this audit
+
+The audit above reads the tree at 7544943 and is left as it was. On
+2026-10-13, under issue #170 and [ADR-0047](../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md),
+a removed chip became detached rather than zeroized, which settles the
+chip removal contradiction in favour of D-30. Two tests named above
+were rewritten to pin the new behaviour:
+
+- `a_deleted_chip_leaves_no_step_that_would_stand_it_again` is now
+  `undo_stands_a_removed_chip_again_from_the_detached_store`. It no
+  longer covers the claim that undo never un-seals;
+  `a_seal_cannot_be_stepped_back` and
+  `a_seal_finished_through_ops_cannot_be_stepped_back_to_its_ink` do.
+- `deleting_a_sentinel_by_op_zeroizes_the_chip` is now
+  `deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`.
