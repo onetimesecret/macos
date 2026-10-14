@@ -76,7 +76,7 @@ final class SealedObjectSeamTests: XCTestCase {
     }
 
     private func noteText(_ client: CompanionClient, chip: UInt64) -> String {
-        client.noteRuns(chip: chip).reduce(into: "") { text, run in
+        (client.noteRuns(chip: chip) ?? []).reduce(into: "") { text, run in
             if case .ink(let ink) = run { text += ink }
         }
     }

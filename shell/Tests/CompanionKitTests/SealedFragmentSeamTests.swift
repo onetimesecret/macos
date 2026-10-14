@@ -163,7 +163,8 @@ final class SealedFragmentSeamTests: XCTestCase {
     func testAPagePastItsDeadlineGivesNothingOutAndTheSettleSweepsIt() throws {
         let client = CompanionClient.ephemeral(tag: #function)
         XCTAssertTrue(client.useMemoryPasteboardForTests())
-        _ = try page(client)
+        let (_, live) = try page(client)
+        XCTAssertEqual(client.noteRuns(chip: live.chipId)?.count, 0, "no note reads as empty")
         let tab = try XCTUnwrap(client.tabs().last?.id)
         XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
         XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
@@ -175,6 +176,7 @@ final class SealedFragmentSeamTests: XCTestCase {
         let plain = NSPasteboard.PasteboardType.string.rawValue
 
         XCTAssertFalse(client.copyOutChip(id: chip))
+        XCTAssertNil(client.noteRuns(chip: chip), "the note's refusal reads apart from no note")
         XCTAssertNil(client.copyFragment(sheet: sheet, range: whole))
         XCTAssertNil(client.cutFragment(sheet: sheet, range: whole))
         XCTAssertFalse(

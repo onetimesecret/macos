@@ -5764,9 +5764,10 @@ public final class PageModel: ObservableObject {
 
     // MARK: A sealed object's note (ADR-0043 point 4), keyed by chip, never by page
 
-    /// The note's text as the core holds it; empty without a note.
-    public func noteText(chip: UInt64) -> String {
-        client.noteRuns(chip: chip).reduce(into: "") { text, run in
+    /// The note's text as the core holds it; empty without a note, nil where
+    /// the core refuses it, as for a page past its deadline (ADR-0052).
+    public func noteText(chip: UInt64) -> String? {
+        client.noteRuns(chip: chip)?.reduce(into: "") { text, run in
             if case .ink(let ink) = run { text += ink }
         }
     }
@@ -6926,9 +6927,11 @@ public final class PageModel: ObservableObject {
     /// to fire on its own, and this is the one mutation site whose mark
     /// nothing else in the app would ever make good: a lapse the user
     /// never saw, over a file that would stay stale until they typed.
-    func settleCoreEvent() {
-        _ = client.expireDue()
+    @discardableResult
+    func settleCoreEvent() -> UInt64 {
+        let expired = client.expireDue()
         markDirty()
         refresh() // re-arms for the next event
+        return expired
     }
 }

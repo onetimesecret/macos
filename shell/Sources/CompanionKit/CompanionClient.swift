@@ -1389,10 +1389,10 @@ public class CompanionClient: @unchecked Sendable {
     // MARK: A sealed object's note (ADR-0043)
 
     /// The note's runs, in the shape a page's and a file's arrive in;
-    /// empty without a note, and for an unknown chip or a page past its
+    /// empty without a note, nil for an unknown chip or a page past its
     /// deadline (ADR-0052).
-    public func noteRuns(chip: UInt64) -> [RestoredRun] {
-        decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip)) ?? []
+    public func noteRuns(chip: UInt64) -> [RestoredRun]? {
+        decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip))
     }
 
     /// Apply an edit batch to the note. False means it was refused whole

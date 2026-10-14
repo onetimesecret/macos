@@ -3148,7 +3148,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// The note's text from the core, with no edit crossing for it.
         private func restateNote() {
             guard let noteChip, let storage = textView?.textStorage else { return }
-            let text = model.noteText(chip: noteChip)
+            let text = model.noteText(chip: noteChip) ?? ""
             model.applyingProjection {
                 storage.setAttributedString(NSAttributedString(
                     string: text,
