@@ -1134,6 +1134,13 @@ public class CompanionClient: @unchecked Sendable {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
     }
 
+    /// Take every U+FFFC out of a page's ink, a peer's or an earlier build's
+    /// (Law 0001), as an edit peers receive and no undo puts back; whether any went.
+    @discardableResult
+    public func takeOutObjectCharacters(sheet: UInt64) -> Bool {
+        companion_sheet_take_out_object_characters(handle, sheet)
+    }
+
     // MARK: Undo (issue #132)
 
     /// Take back the page's last local edit, or the couple of seconds

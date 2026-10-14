@@ -676,6 +676,52 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertEqual(chips(page), page.chips)
     }
 
+    /// The ink the core holds for page `sheet`, its runs joined, objects left out.
+    private func coreInk(_ model: PageModel, _ sheet: UInt64) -> String {
+        model.coreClient.documentRuns(sheet: sheet).reduce(into: "") {
+            if case .ink(let text) = $1 { $0 += text }
+        }
+    }
+
+    /// A page holding U+FFFC as ink, as a peer's batch or a page an earlier build saved
+    /// leaves it, loses it at the projection that mounts it, a restate and the quiet one,
+    /// as an edit the core keeps and the save follows, never a step of the page's own.
+    func testAPagesObjectCharacterLeavesItAtEveryProjection() throws {
+        let page = try makePage()
+        let (model, client) = (page.model, page.model.coreClient)
+
+        model.newPage()
+        let fresh = try XCTUnwrap(model.selectedPageID)
+        XCTAssertTrue(client.applyOps(sheet: fresh, json: #"[{"ins":{"at":0,"text":"ab"}}]"#))
+        XCTAssertTrue(client.inkBelowTheGuardForTests(sheet: fresh, at: 1, "\u{FFFC}"))
+        XCTAssertEqual(coreInk(model, fresh), "a\u{FFFC}b", "the control: the seam stood it")
+        let marks = model.dirtyMarks
+        let mounted = try mount(model, fresh, chips: [])
+        XCTAssertEqual(mounted.textView.string, "ab")
+        XCTAssertEqual(coreInk(model, fresh), "ab")
+        try assertParity(mounted, "at the mount")
+        drainMainQueue()
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the take out was never saved")
+        mounted.coordinator.step(back: true)
+        XCTAssertEqual(mounted.textView.string, "", "the typed ink was not the one step")
+        XCTAssertFalse(model.canUndoEdit(sheet: fresh), "the take out was a step of its own")
+
+        page.textView.setSelectedRange(NSRange(location: 12, length: 0))
+        page.textView.insertText("z", replacementRange: Self.noReplacement)
+        XCTAssertTrue(client.inkBelowTheGuardForTests(sheet: page.sheet, at: 0, "\u{FFFC}"))
+        page.coordinator.step(back: true)
+        XCTAssertEqual(page.textView.string, "ab \u{FFFC} cd \u{FFFC} ef")
+        XCTAssertEqual(coreInk(page), "ab  cd  ef")
+        XCTAssertEqual(chips(page), page.chips)
+        try assertParity(page, "after the restate")
+
+        model.newPage()
+        let quiet = try XCTUnwrap(model.selectedPageID)
+        XCTAssertTrue(client.inkBelowTheGuardForTests(sheet: quiet, at: 0, "x\u{FFFC}y"))
+        XCTAssertEqual(model.quietRendering(for: quiet).text.string, "xy")
+        XCTAssertEqual(coreInk(model, quiet), "xy")
+    }
+
     /// A recovery keeps an object the storage stands at two indices once, at the first,
     /// and detaches nothing.
     func testTheRecoveryKeepsAnObjectStandingTwiceOnce() throws {

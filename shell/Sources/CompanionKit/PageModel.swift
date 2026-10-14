@@ -3152,7 +3152,23 @@ public final class PageModel: ObservableObject {
     /// too, so a mistake here fails loudly rather than reading page
     /// zero.
     private func runs(of id: UInt64) -> [RestoredRun] {
-        id.isFileID ? client.fileRuns(id) : client.documentRuns(sheet: id)
+        id.isFileID ? client.fileRuns(id) : pageRuns(id)
+    }
+
+    /// A page's runs for a projection, with any U+FFFC it held as ink taken out first.
+    private func pageRuns(_ sheet: UInt64) -> [RestoredRun] {
+        takeOutObjectCharacters(sheet: sheet)
+        return client.documentRuns(sheet: sheet)
+    }
+
+    /// A U+FFFC a page holds as ink, a peer's or an earlier build's, leaves it as an edit
+    /// its peers receive (Law 0001); the save is marked a turn later.
+    private func takeOutObjectCharacters(sheet: UInt64) {
+        guard client.takeOutObjectCharacters(sheet: sheet) else { return }
+        countEdit(.sheet(sheet))
+        invalidateQuietRendering(for: sheet)
+        // A projection can run inside a view update, where publishing is refused.
+        DispatchQueue.main.async { [weak self] in self?.markDirty() }
     }
 
     public func storage(for id: UInt64) -> NSTextStorage {
@@ -3219,7 +3235,7 @@ public final class PageModel: ObservableObject {
     public func quietRendering(for id: UInt64) -> QuietRendering {
         if let existing = quietRenderings[id] { return existing }
         let rendered = NSMutableAttributedString()
-        for run in client.documentRuns(sheet: id) {
+        for run in pageRuns(id) {
             switch run {
             case .ink(let text):
                 rendered.append(NSAttributedString(

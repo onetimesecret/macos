@@ -197,6 +197,16 @@ char *companion_test_wire_last_json(CompanionHandle *handle);
  * companion_new_ephemeral() above. */
 bool companion_test_memory_pasteboard(CompanionHandle *handle);
 
+/* Write `text` as ink at UTF-16 offset `pos_u16` of page `sheet`,
+ * below the guard that refuses U+FFFC and outside the undo stack, as
+ * a page an earlier build saved or a peer's batch lands it. Returns
+ * whether it landed; a file, an unknown page or a null answers false.
+ * The symbol exists only in test-util builds of the core (ADR-0018),
+ * on the same terms as companion_new_ephemeral() above. */
+bool companion_test_ink_below_the_guard(CompanionHandle *handle,
+                                        uint64_t sheet, uint32_t pos_u16,
+                                        const char *text);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
@@ -554,6 +564,17 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  */
 bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
                                    const char *json);
+
+/*
+ * Take every U+FFFC out of a page's ink, one a peer's batch or a page
+ * an earlier build saved left there (Law 0001), as an edit the page's
+ * peers receive and no undo puts back; a chip's sentinel stays.
+ * Returns whether any went: false for a file, an unknown page, a page
+ * holding none, or a null handle. The shell asks before it projects a
+ * page.
+ */
+bool companion_sheet_take_out_object_characters(CompanionHandle *handle,
+                                                uint64_t sheet);
 
 /*
  * A live page's document, replayed for a shell rebuilding its editor

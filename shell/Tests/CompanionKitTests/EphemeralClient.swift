@@ -70,6 +70,14 @@ extension CompanionClient {
         companion_test_memory_pasteboard(rawHandleForTests)
     }
 
+    /// Write `text` as ink into page `sheet` below the guard that refuses U+FFFC
+    /// and outside the undo stack, as a page an earlier build saved or a peer's
+    /// batch holds it (`companion_test_ink_below_the_guard`, gated with the seams above).
+    @discardableResult
+    func inkBelowTheGuardForTests(sheet: UInt64, at position: UInt32, _ text: String) -> Bool {
+        text.withCString { companion_test_ink_below_the_guard(rawHandleForTests, sheet, position, $0) }
+    }
+
     /// The most recent request the stubbed wire saw
     /// (`companion_test_wire_last_json`): a summary the core made at
     /// send time from the non-secret fields of the body, which it then

@@ -392,6 +392,38 @@ pub unsafe extern "C" fn companion_test_memory_pasteboard(handle: *mut Companion
     true
 }
 
+/// Write `text` as ink at `pos_u16` of page `sheet`, below the guard that
+/// refuses U+FFFC and outside the undo stack, as an earlier build's page or a
+/// peer's batch lands it. Returns whether it landed. `test-util` only (ADR-0018).
+///
+/// # Safety
+/// `handle` must be null or a valid handle. `text` must be null or a valid,
+/// NUL-terminated UTF-8 C string.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_ink_below_the_guard(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    pos_u16: u32,
+    text: *const c_char,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(text) = (unsafe { cstr(text) }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .ink_below_the_guard(SheetId::from_raw(sheet), pos_u16, text)
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     #[cfg(target_os = "macos")]
@@ -763,6 +795,31 @@ pub unsafe extern "C" fn companion_sheet_sync_document(
     guard
         .store
         .sync_document(SheetId::from_raw(sheet), segments)
+}
+
+/// Take every U+FFFC out of a page's ink, a peer's or an earlier build's
+/// (Law 0001), as an edit its peers receive and no undo puts back. Returns
+/// whether any went; false for a file, an unknown page or a page with none.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_take_out_object_characters(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .take_out_unmarked_object_characters(SheetId::from_raw(sheet))
 }
 
 /// Apply an ordered batch of `{"ins": {"at", "text"}}`, `{"del": {"at",
@@ -4077,6 +4134,52 @@ mod tests {
             assert_eq!(board_text(handle).as_deref(), Some("API_KEY=hunter2"));
             assert!(companion_clear_clipboard_if_ours(handle));
             assert!(board_text(handle).is_none());
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_pages_object_character_comes_out_and_every_route_fails_closed() {
+        let tag = cstring("object-character-seam");
+        let text = cstring("x\u{FFFC}y");
+        unsafe {
+            let handle = companion_new_ephemeral(tag.as_ptr());
+            let (sheet, _chip) = sealed_chip(handle, "hunter2");
+            assert!(!companion_test_ink_below_the_guard(
+                ptr::null_mut(),
+                sheet,
+                0,
+                text.as_ptr()
+            ));
+            assert!(!companion_test_ink_below_the_guard(
+                handle,
+                sheet,
+                0,
+                ptr::null()
+            ));
+            assert!(companion_test_ink_below_the_guard(
+                handle,
+                sheet,
+                0,
+                text.as_ptr()
+            ));
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(document.contains('\u{FFFC}'), "the seam wrote no U+FFFC");
+
+            assert!(!companion_sheet_take_out_object_characters(
+                ptr::null_mut(),
+                sheet
+            ));
+            assert!(!companion_sheet_take_out_object_characters(
+                handle,
+                companion_core::FILE_ID_TAG | sheet
+            ));
+            assert!(companion_sheet_take_out_object_characters(handle, sheet));
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!document.contains('\u{FFFC}'));
+            assert!(document.contains("\"chip\""), "the object went with it");
+            assert!(!companion_sheet_take_out_object_characters(handle, sheet));
             companion_free(handle);
         }
     }

@@ -17,7 +17,7 @@ workspace = true
 
 [features]
 # Test seams only; never in a release build (ADR-0018).
-test-util = []
+test-util = ["companion-core/test-util"]
 
 [dependencies]
 # File bookmarks cross the C ABI as base64 strings.
