@@ -75,3 +75,20 @@ gives none of it out.
 ## Decision history
 
 - 2026-10-13: Accepted for issue #170, before its code.
+
+## Erratum
+
+2026-10-13: Decision point 2 says each route finds its page or object
+only through `readable_sheets`. Each reads only through it, but to
+word its refusal a page's conceal asks whether the page still stands,
+and a chip's conceal whether any page still holds the chip; neither
+reads either. The first consequence names the shell's note among the
+routes the gate covers. The core's note route is covered, but AppKit
+copies, cuts and drags the open note's ink, and serves a page's
+selection of ink alone to a service or a drag of several stretches,
+from the text the shell already shows, which no core route sees; until
+the shell settles, those still give the page out. The last consequence
+says a conceal answered after the deadline still records its `sent`.
+It does only while the page stands: a sweep during the round trip
+leaves the record nowhere to land, as `finish_conceal` in
+`crates/ffi/src/lib.rs` already said. The decision is unchanged.
