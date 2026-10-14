@@ -85,7 +85,7 @@ struct ChipRename {
 
 /// The name field's editor: it takes only drags of its own text (ADR-0044), and its
 /// text, part of the object's page, leaves only once that page is asked (ADR-0052).
-final class SealedNameTextView: NSTextView {
+final class SealedNameTextView: AskingTextView {
     /// The field over the name, which knows the object's page; with none, nothing leaves.
     weak var owner: SealedNameEditor?
 
@@ -145,48 +145,8 @@ final class SealedNameTextView: NSTextView {
         givesOut && super.writeSelection(to: pboard, type: type)
     }
 
-    /// These hold the selection from the menu's building on, before any gate (Law 0001).
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard let menu = super.menu(for: event) else { return nil }
-        TextOffers.removeSelectionReaders(from: menu)
-        return menu
-    }
-
-    /// Edit > Speech > Start Speaking reads the name to the system's voice.
-    override func startSpeaking(_ sender: Any?) {
-        guard givesOut else { return }
-        super.startSpeaking(sender)
-    }
-
-    /// A force click or a three finger tap looks up the word under the pointer.
-    override func quickLook(with event: NSEvent) {
-        guard givesOut else { return }
-        super.quickLook(with: event)
-    }
-
-    /// Quick Look by key, which AppKit ends in a dictionary look up of the selection.
-    override func quickLookPreviewItems(_ sender: Any?) {
-        guard givesOut else { return }
-        super.quickLookPreviewItems(sender)
-    }
-
-    /// Where AppKit's look up of the name shows its definition.
-    override func showDefinition(for attrString: NSAttributedString?, at textBaselineOrigin: NSPoint) {
-        guard givesOut else { return }
-        super.showDefinition(for: attrString, at: textBaselineOrigin)
-    }
-
-    /// Where AppKit's look up of a range of the name shows its definition.
-    override func showDefinition(
-        for attrString: NSAttributedString?, range targetRange: NSRange,
-        options: [NSView.DefinitionOptionKey: Any]?,
-        baselineOriginProvider originProvider: ((NSRange) -> NSPoint)?
-    ) {
-        guard givesOut else { return }
-        super.showDefinition(
-            for: attrString, range: targetRange, options: options,
-            baselineOriginProvider: originProvider)
-    }
+    /// AppKit's readers of the name ask its page, as copy does.
+    override var mayReadOut: Bool { givesOut }
 }
 
 /// The name field's cell, which edits through a field editor of its own

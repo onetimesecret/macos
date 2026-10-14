@@ -42,3 +42,55 @@ enum TextOffers {
         textView.writingToolsBehavior = offers ? .default : .none
     }
 }
+
+/// A text view whose AppKit routes that read its text out of the process ask first,
+/// and whose text menu holds none that read it from the menu's building on (Law 0001).
+class AskingTextView: NSTextView {
+    /// Whether AppKit may read this view's text out now; every reader below asks it.
+    var mayReadOut: Bool { true }
+
+    /// Whether the text menu keeps the items that hold the selection, as a file's does.
+    var keepsSelectionReaders: Bool { false }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let menu = super.menu(for: event) else { return nil }
+        if !keepsSelectionReaders { TextOffers.removeSelectionReaders(from: menu) }
+        return menu
+    }
+
+    /// Edit > Speech > Start Speaking reads the selection to the system's voice.
+    override func startSpeaking(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.startSpeaking(sender)
+    }
+
+    /// A force click or a three finger tap looks up the word under the pointer.
+    override func quickLook(with event: NSEvent) {
+        guard mayReadOut else { return }
+        super.quickLook(with: event)
+    }
+
+    /// Quick Look by key, which AppKit ends in a dictionary look up of the selection.
+    override func quickLookPreviewItems(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.quickLookPreviewItems(sender)
+    }
+
+    /// Where AppKit's look up of this view's text shows its definition.
+    override func showDefinition(for attrString: NSAttributedString?, at textBaselineOrigin: NSPoint) {
+        guard mayReadOut else { return }
+        super.showDefinition(for: attrString, at: textBaselineOrigin)
+    }
+
+    /// Where AppKit's look up of a range of this view's text shows its definition.
+    override func showDefinition(
+        for attrString: NSAttributedString?, range targetRange: NSRange,
+        options: [NSView.DefinitionOptionKey: Any]?,
+        baselineOriginProvider originProvider: ((NSRange) -> NSPoint)?
+    ) {
+        guard mayReadOut else { return }
+        super.showDefinition(
+            for: attrString, range: targetRange, options: options,
+            baselineOriginProvider: originProvider)
+    }
+}
