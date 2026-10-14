@@ -1106,6 +1106,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection holding an object is not made, and says `the change would
   replace a sealed object, so it was not made.`
 
+- **A link on a page opens only while the page stands** (app 0.35.0;
+  Law 0001, ADR-0052, issue #170). A ⌘-click on a link sent its URL to
+  the browser even past the page's deadline, and the text menu's Open
+  With handed it to any browser. A link on a page or in a note now
+  opens, by ⌘-click or by the menu's Open Link, only while its page
+  stands and no name or note holds the keys; past the deadline the
+  page goes and says so. Copy Link asks the same way, and Open With is
+  no longer offered there. Open Link from the text menu used to move
+  the caret and open nothing, on a file too; it now opens the link. A
+  regular text file keeps Open With and Copy Link as they were.
+
+- **No spelling panel or data detectors over a page** (app 0.35.0; Law
+  0001, issue #170). The spelling panel's Learn hands the word it shows
+  to the system's spell server without asking the page, so a panel
+  left open past a page's deadline could give a word of it out. Show
+  Spelling and Grammar is now unavailable over a page, a note or a
+  name field, and with the panel open over a file, Check Document Now
+  and the panel's Find Next leave the page alone. Data Detectors, whose
+  dates and places a click hands to another app, stay off on a page, a
+  note and a name field. A regular text file keeps both.
+
 - **Sync sends nothing of a page past its deadline** (app 0.35.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
   issue #170). With sync on, a page past its deadline but not yet swept
