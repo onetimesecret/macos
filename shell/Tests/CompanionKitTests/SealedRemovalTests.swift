@@ -538,6 +538,98 @@ final class SealedRemovalTests: XCTestCase {
         }
     }
 
+    /// The ink the core holds for `page`, its runs joined, objects left out.
+    private func coreInk(_ page: Page) -> String {
+        page.model.coreClient.documentRuns(sheet: page.sheet).reduce(into: "") {
+            if case .ink(let text) = $1 { $0 += text }
+        }
+    }
+
+    /// ⌃K over objects then ⌃Y brings back their paragraph's ink alone: AppKit's kill
+    /// buffer holds U+FFFC as a character, and no page takes it as ink (Law 0001).
+    func testAYankOfKilledObjectsLandsTheirInkWithoutTheObjectCharacter() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        page.textView.deleteToEndOfParagraph(nil)
+        XCTAssertEqual(chips(page), [], "the control: ⌃K took the objects")
+        XCTAssertEqual(length(page), 0)
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        page.textView.yank(nil)
+        XCTAssertEqual(length(page), 0, "the yank ran while a field held the keys (ADR-0046)")
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        drainMainQueue()
+
+        page.textView.yank(nil)
+
+        XCTAssertEqual(page.textView.string, "ab  cd  ef")
+        XCTAssertEqual(coreInk(page), "ab  cd  ef")
+        XCTAssertEqual(chips(page), [], "the yank stood an object")
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 10, length: 0))
+        page.coordinator.step(back: true)
+        XCTAssertEqual(page.textView.string, "", "the yank was no step of its own")
+    }
+
+    /// A composition committed with U+FFFC in it lands without it, the objects kept.
+    func testACommittedCompositionLandsWithoutTheObjectCharacter() throws {
+        let page = try makePage()
+        page.textView.setMarkedText(
+            "q", selectedRange: NSRange(location: 1, length: 0), replacementRange: Self.noReplacement)
+
+        page.textView.insertText("q\u{FFFC}", replacementRange: Self.noReplacement)
+
+        XCTAssertEqual(page.textView.string.prefix(3), "qab")
+        XCTAssertEqual(coreInk(page), "qab  cd  ef")
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertNotNil(page.coordinator.chipAttachment(at: 4), "an object lost its face")
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 1, length: 0))
+    }
+
+    /// A page restated with U+FFFC as ink, as one an earlier build wrote may be, drops it
+    /// when a refused batch sends the page through its recovery, which the core then takes.
+    func testTheRecoveryDropsAnObjectCharacterNoObjectCarries() throws {
+        let page = try makePage()
+        let storage = try XCTUnwrap(page.textView.textStorage)
+        page.model.applyingProjection {
+            storage.insert(NSAttributedString(string: "\u{FFFC}"), at: 0)
+        }
+        let foreign = ChipInfo(
+            chipId: 4_242, kind: "text", excerpt: "", sizeLabel: "tiny", concealed: false)
+
+        storage.insert(InkEditorView.Coordinator.chipString(foreign), at: 1)
+
+        XCTAssertEqual(page.textView.string.prefix(3), "ab ")
+        XCTAssertEqual(coreInk(page), "ab  cd  ef")
+        XCTAssertEqual(chips(page), page.chips)
+    }
+
+    /// Outside text holding U+FFFC, read as AppKit's paste, a drop and a service's answer
+    /// read a board, lands without it on a page and in a note, the caret after it.
+    func testOutsideTextHoldingTheObjectCharacterLandsWithoutIt() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("x\u{FFFC}y\u{FFFC}", forType: .string)
+
+        page.textView.setSelectedRange(NSRange(location: 12, length: 0))
+        XCTAssertTrue(page.textView.readSelection(from: board, type: .string))
+        XCTAssertEqual(page.textView.string.suffix(4), "efxy")
+        XCTAssertEqual(coreInk(page), "ab  cd  efxy")
+        XCTAssertEqual(chips(page), page.chips)
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: 14, length: 0))
+        page.coordinator.step(back: true)
+        XCTAssertEqual(coreInk(page), "ab  cd  ef", "the paste was no step of its own")
+
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.textView.readSelection(from: board, type: .string))
+        XCTAssertEqual(note.textView.string, "xy")
+        XCTAssertEqual(page.model.noteText(chip: page.chips[0]), "xy")
+        XCTAssertEqual(note.textView.selectedRange(), NSRange(location: 2, length: 0))
+    }
+
     /// A board's text read over a selected object, as AppKit's paste and a service's
     /// answer write it, takes the object with the line.
     func testABoardsTextReadOverASelectedObjectTakesItWithTheLine() throws {

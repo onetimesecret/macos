@@ -6651,7 +6651,8 @@ public final class PageModel: ObservableObject {
     /// liveness. So first strip any chip glyph the core no longer
     /// owns; the one way a well-formed batch is refused is an undo
     /// re-inserting a dead chip's attachment, and undo never un-seals
-    /// (ADR-0009), so the glyph goes silently, no notice. Then mirror
+    /// (ADR-0009), so the glyph goes silently, no notice, as does a
+    /// U+FFFC that names no object (Law 0001). Then mirror
     /// the storage whole and drop the page's undo history, which after
     /// a rewrite holds ranges that describe nothing.
     private func recoverProjection(sheet: UInt64) {
@@ -6661,15 +6662,14 @@ public final class PageModel: ObservableObject {
         }
         let live = chipIds(onSheet: sheet)
         applyingProjection {
-            var dead: [NSRange] = []
-            storage.enumerateAttribute(
-                .attachment, in: NSRange(location: 0, length: storage.length)
-            ) { value, range, _ in
+            let whole = NSRange(location: 0, length: storage.length)
+            var dead = InkEditorView.Coordinator.strayObjectCharacters(in: storage, whole)
+            storage.enumerateAttribute(.attachment, in: whole) { value, range, _ in
                 if let chip = value as? ChipAttachment, !live.contains(chip.info.chipId) {
                     dead.append(range)
                 }
             }
-            for range in dead.reversed() {
+            for range in dead.sorted(by: { $0.location > $1.location }) {
                 storage.replaceCharacters(in: range, with: "")
             }
         }

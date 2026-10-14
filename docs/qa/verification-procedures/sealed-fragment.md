@@ -205,6 +205,16 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       **Fail:** a first press removes the object, a
       removal shows no line or no `Undo`, the `Undo` takes back more
       than the removal, or the page changes under the name field.
+- [ ] **⌃Y after ⌃K over an object** (Law 0001, object character
+      amendment). On the raised card, with `before`, a sealed word and
+      `after` on one line, put the caret before `before`, press ⌃K, then
+      ⌃Y. Then open the Character Viewer (⌃⌘Space), search for `object
+      replacement`, and insert U+FFFC into the page and into a note.
+      **Pass:** the ⌃Y brings back `before  after` with no object, no
+      box glyph and the caret after `after`; the inserted U+FFFC leaves
+      nothing; ⌘Z takes the ⌃Y back as one step. **Fail:** a box or an
+      object face appears, the caret lands anywhere else, or the page
+      reloads whole.
 - [ ] **The removal's Undo after the page moves on.** Remove an object
       with two presses, then type a letter before the line clears.
       **Pass:** the `Undo` button leaves the line at once, and ⌘Z

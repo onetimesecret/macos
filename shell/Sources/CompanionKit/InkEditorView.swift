@@ -2133,6 +2133,23 @@ public struct InkEditorView: NSViewRepresentable {
         /// Nil outside tests.
         var onEmit: (([DocumentEditOp]) -> Void)?
 
+        /// Every character edit, before it is emitted: a U+FFFC no object carries (⌃Y after ⌃K
+        /// over one, a board's text, a service) leaves the page or note, never the file (Law 0001).
+        public func textStorage(
+            _ storage: NSTextStorage,
+            willProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            guard editedMask.contains(.editedCharacters), document != nil, file == nil,
+                  !model.isApplyingProjection, !markedTextInFlight,
+                  !(textView?.hasMarkedText() ?? false)
+            else { return }
+            for range in Self.strayObjectCharacters(in: storage, editedRange).reversed() {
+                storage.replaceCharacters(in: range, with: "")
+            }
+        }
+
         /// The emission point: every character edit the storage
         /// processed becomes one replace-shaped batch. Attribute-only
         /// passes (restyle) carry no `.editedCharacters` and emit
@@ -3322,6 +3339,26 @@ public struct InkEditorView: NSViewRepresentable {
             let watched = removalWatch?.document == document ? removalWatch?.chips ?? [] : []
             removalWatch = (document, watched.union(chips))
             return true
+        }
+
+        /// U+FFFC, which a page or a note holds for its objects alone (Law 0001).
+        static let objectCharacter = "\u{FFFC}"
+
+        /// Each U+FFFC in `range` of `storage` that no object's attachment carries.
+        static func strayObjectCharacters(in storage: NSTextStorage, _ range: NSRange) -> [NSRange] {
+            let text = storage.string as NSString
+            var stray: [NSRange] = []
+            storage.enumerateAttribute(.attachment, in: range) { value, run, _ in
+                guard !(value is ChipAttachment) else { return }
+                var rest = run
+                while true {
+                    let found = text.range(of: objectCharacter, options: .literal, range: rest)
+                    guard found.location != NSNotFound else { break }
+                    stray.append(found)
+                    rest = NSRange(location: NSMaxRange(found), length: NSMaxRange(run) - NSMaxRange(found))
+                }
+            }
+            return stray
         }
 
         /// Once an edit has landed: if an object it held no longer stands, the removal line.

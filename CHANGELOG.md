@@ -913,6 +913,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `the sealed content could not be copied.` A refused conceal of an
   object keeps its draft's error in the same case.
 
+- **⌃Y after ⌃K over an object no longer writes a false object**
+  (app 0.35.0, `companion-core` 0.32.0; Law 0001, issue #170). AppKit's
+  kill buffer holds an object as the plain character U+FFFC, so ⌃Y
+  wrote that character into the page as ink that looked like an object
+  and was none. The editor now takes every U+FFFC no object carries out
+  of an edit before it lands, whether it comes from ⌃Y, a paste, a
+  drop, a service or typing, in a page or a note; the rest lands with
+  the caret after it. The core refuses a page's or a note's edit that
+  would write the character as ink, and drops it from a pasted
+  fragment. A file keeps it as its own text.
+
 - **A paste takes nothing from a page past its deadline**
   (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
   issue #170). Between a page's deadline and the timer's sweep, a paste,
