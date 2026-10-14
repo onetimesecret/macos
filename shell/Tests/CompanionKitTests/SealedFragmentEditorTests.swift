@@ -17,6 +17,12 @@ final class SealedFragmentEditorTests: XCTestCase {
         let pasteboard: NSPasteboard
         let sheet: UInt64
         let chips: [UInt64]
+        let opened: OpenedLinks
+    }
+
+    /// The links a page opened, recorded in place of the browser.
+    private final class OpenedLinks {
+        var urls: [URL] = []
     }
 
     /// The envelope's documented shape (ADR-0047 point 1), read only here.
@@ -58,12 +64,13 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertTrue(client.useMemoryPasteboardForTests())
         let pasteboard = NSPasteboard.withUniqueName()
         addTeardownBlock { pasteboard.releaseGlobally() }
+        let opened = OpenedLinks()
         let model = PageModel(
             formFactor: .backdrop, defaults: defaults,
             seams: .init(
                 stateDirectory: directory, client: client,
                 clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard,
-                writeCutFragment: writeCutFragment))
+                writeCutFragment: writeCutFragment, openURL: { opened.urls.append($0) }))
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -95,7 +102,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         drainMainQueue()
         return Page(
             model: model, coordinator: coordinator, textView: textView, field: field,
-            window: window, pasteboard: pasteboard, sheet: sheet, chips: chips)
+            window: window, pasteboard: pasteboard, sheet: sheet, chips: chips, opened: opened)
     }
 
     private func envelope(on pasteboard: NSPasteboard) throws -> Envelope {
@@ -2049,5 +2056,239 @@ final class SealedFragmentEditorTests: XCTestCase {
         page.textView.setSelectedRange(caret)
         page.textView.paste(nil)
         XCTAssertEqual(chips(page).count, 4, "the paste did not come back")
+    }
+
+    // MARK: Links (ADR-0023, Law 0001's AppKit text routes)
+
+    private static let secretLink = URL(string: "https://example.invalid/?token=s3cr3t")!
+
+    /// Types a markdown link at the end of `view` and gives the point over its label.
+    private func appendLink(to view: NSTextView) throws -> NSPoint {
+        view.setSelectedRange(NSRange(location: view.string.utf16.count, length: 0))
+        view.insertText(
+            " [x](\(Self.secretLink.absoluteString))",
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        drainMainQueue()
+        let storage = try XCTUnwrap(view.textStorage)
+        let index = try XCTUnwrap(
+            (0..<storage.length).first { storage.attribute(.link, at: $0, effectiveRange: nil) != nil },
+            "no link was styled")
+        let layout = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        layout.ensureLayout(for: container)
+        let glyphs = layout.glyphRange(
+            forCharacterRange: NSRange(location: index + 1, length: 1), actualCharacterRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
+        return NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
+    }
+
+    /// The text menu a secondary click over `point` builds.
+    private func textMenu(over point: NSPoint, in view: NSTextView) throws -> NSMenu {
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: view.convert(point, to: nil), modifierFlags: [],
+            timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1))
+        return try XCTUnwrap(view.menu(for: event))
+    }
+
+    /// Chooses the menu's item sending `action`, as the menu would.
+    private func choose(_ action: Selector, in menu: NSMenu) throws {
+        let item = try XCTUnwrap(menu.items.first { $0.action == action }, "no \(action) item")
+        let target = try XCTUnwrap(item.target as? NSObject, "\(action) has no target")
+        target.perform(action, with: item)
+    }
+
+    /// Makes the application's current event a click with `flags`, as a real one would be.
+    private func click(with flags: NSEvent.ModifierFlags) throws {
+        let app = NSApplication.shared
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        app.postEvent(event, atStart: true)
+        let current = app.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true)
+        XCTAssertEqual(current?.modifierFlags.contains(.command), flags.contains(.command))
+        XCTAssertTrue(app.currentEvent === current, "the click is not the current event")
+    }
+
+    /// A ⌘-click on the link at `point`, through the delegate, as AppKit's tracking sends it.
+    private func commandClick(at point: NSPoint, in view: NSTextView) throws {
+        let link = try XCTUnwrap((view as? InkTextView)?.linkTarget(at: point), "no link under the point")
+        try click(with: .command)
+        defer { try? click(with: []) }
+        XCTAssertTrue(view.delegate?.textView?(view, clickedOnLink: link.link, at: link.index) == true)
+    }
+
+    private static let openLink = #selector(InkTextView.openLinkFromMenu(_:))
+    private static let copyLink = #selector(InkTextView.copyLinkFromMenu(_:))
+
+    /// A link on a standing page opens by ⌘-click and by the menu's Open Link, and its Copy
+    /// Link writes the URL; a plain click edits. The page's menu offers no Open With, which
+    /// would hand the URL to an app no delegate asks, and a file's keeps it and opens too.
+    func testALinkOnAStandingPageOpensWhenAimedAndItsMenuOffersNoOpenWith() throws {
+        let page = try makePage()
+        let point = try appendLink(to: page.textView)
+        let link = try XCTUnwrap(page.textView.linkTarget(at: point))
+
+        try click(with: [])
+        XCTAssertTrue(page.coordinator.textView(page.textView, clickedOnLink: link.link, at: link.index))
+        XCTAssertEqual(page.opened.urls, [], "a plain click opened the link")
+
+        try commandClick(at: point, in: page.textView)
+        XCTAssertEqual(page.opened.urls, [Self.secretLink], "⌘-click")
+        let menu = try textMenu(over: point, in: page.textView)
+        XCTAssertFalse(menu.items.contains(where: TextOffers.isOpenWith), "the page offers Open With")
+        XCTAssertFalse(menu.items.contains { $0.action == TextOffers.openLinkAction }, "AppKit's Open Link")
+        XCTAssertFalse(menu.items.contains { $0.action == TextOffers.copyLinkAction }, "AppKit's Copy Link")
+        try choose(Self.openLink, in: menu)
+        XCTAssertEqual(page.opened.urls, [Self.secretLink, Self.secretLink], "Open Link")
+        try choose(Self.copyLink, in: menu)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), Self.secretLink.absoluteString)
+        XCTAssertEqual(page.pasteboard.string(forType: .URL), Self.secretLink.absoluteString)
+        XCTAssertNil(page.model.notice)
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.delegate = fileCoordinator
+        let fileStorage = try XCTUnwrap(file.textStorage)
+        fileStorage.addAttribute(.link, value: Self.secretLink, range: NSRange(location: 0, length: 4))
+        let filePoint = try XCTUnwrap(file.layoutManager.map { layout in
+            let rect = layout.boundingRect(
+                forGlyphRange: NSRange(location: 1, length: 1), in: file.textContainer!)
+            return NSPoint(x: rect.midX + file.textContainerOrigin.x, y: rect.midY + file.textContainerOrigin.y)
+        })
+        let fileMenu = try textMenu(over: filePoint, in: file)
+        XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isOpenWith), "the control: a file offers Open With")
+        XCTAssertTrue(fileMenu.items.contains { $0.action == TextOffers.copyLinkAction }, "a file's Copy Link")
+        try choose(Self.openLink, in: fileMenu)
+        try commandClick(at: filePoint, in: file)
+        XCTAssertEqual(page.opened.urls.count, 4, "a file's link did not open")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// Past the page's deadline, before any sweep, a link opens and copies nothing by
+    /// ⌘-click or by a menu built while the page stood, on the page or in its note, and the
+    /// settle takes the page with its line.
+    func testALinkPastItsPagesDeadlineGivesNothingOutAndTheSettleTakesIt() throws {
+        let ways: [(name: String, note: Bool, run: (NSTextView, NSPoint, NSMenu) throws -> Void)] = [
+            ("⌘-click", false, { view, point, _ in try self.commandClick(at: point, in: view) }),
+            ("Open Link", false, { _, _, menu in try self.choose(Self.openLink, in: menu) }),
+            ("Copy Link", false, { _, _, menu in try self.choose(Self.copyLink, in: menu) }),
+            ("the note's ⌘-click", true, { view, point, _ in try self.commandClick(at: point, in: view) }),
+            ("the note's Open Link", true, { _, _, menu in try self.choose(Self.openLink, in: menu) }),
+            ("the note's Copy Link", true, { _, _, menu in try self.choose(Self.copyLink, in: menu) }),
+        ]
+        for way in ways {
+            let page = try makePage()
+            var view: NSTextView = page.textView
+            if way.note {
+                page.coordinator.beginNote(at: 3)
+                drainMainQueue()
+                view = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+            }
+            let point = try appendLink(to: view)
+            let menu = try textMenu(over: point, in: view)
+            try age(page)
+            let board = page.pasteboard.changeCount
+
+            try way.run(view, point, menu)
+
+            XCTAssertEqual(page.opened.urls, [], "\(way.name) opened the link")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(way.name) wrote the board")
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, way.name)
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, "\(way.name): no settle")
+        }
+    }
+
+    /// While a field or the note holds the keys, the page's link opens and copies nothing
+    /// and asks nothing (ADR-0046); once the keys come back it opens.
+    func testAPagesLinkStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let page = try makePage()
+        let point = try appendLink(to: page.textView)
+        let menu = try textMenu(over: point, in: page.textView)
+        let board = page.pasteboard.changeCount
+        func standsAside(_ holder: String) throws {
+            XCTAssertFalse(page.textView.answersChords, holder)
+            try commandClick(at: point, in: page.textView)
+            try choose(Self.openLink, in: menu)
+            try choose(Self.copyLink, in: menu)
+            XCTAssertEqual(page.opened.urls, [], "the link opened under the \(holder)")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "Copy Link wrote under the \(holder)")
+            XCTAssertNil(page.model.notice, holder)
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        try standsAside("field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        try standsAside("note")
+
+        note.escape()
+        drainMainQueue()
+        try commandClick(at: point, in: page.textView)
+        XCTAssertEqual(page.opened.urls, [Self.secretLink], "the control: the link opens")
+    }
+
+    /// A held press on a link selects it and drags the selection through
+    /// `dragSelection(with:offset:slideBack:)`, the method a page's and a note's drag gate,
+    /// so a change of AppKit's route fails here. The view and its link are the test's own.
+    func testALinkDragsAsTheSelectionThroughTheOneGatedMethod() throws {
+        final class Dragged: NSTextView {
+            var dragged: [NSRange] = []
+            override func dragSelection(
+                with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool
+            ) -> Bool {
+                dragged.append(selectedRange())
+                return false
+            }
+        }
+        let app = NSApplication.shared
+        let storage = NSTextStorage(string: "see link here and more text to drag over")
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 400, height: 200))
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled],
+            backing: .buffered, defer: false)
+        let view = Dragged(frame: NSRect(x: 0, y: 0, width: 400, height: 200), textContainer: container)
+        window.contentView?.addSubview(view)
+        let linkRange = NSRange(location: 4, length: 4)
+        storage.addAttribute(.link, value: URL(string: "https://example.invalid/route")!, range: linkRange)
+        layout.ensureLayout(for: container)
+        let rect = layout.boundingRect(forGlyphRange: NSRange(location: 5, length: 1), in: container)
+        let point = NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
+        XCTAssertTrue(window.makeFirstResponder(view))
+        let dragBoard = NSPasteboard(name: .drag).changeCount
+        let pressed = ProcessInfo.processInfo.systemUptime
+        func mouse(_ type: NSEvent.EventType, _ offset: CGFloat) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type, location: view.convert(NSPoint(x: point.x + offset, y: point.y), to: nil),
+                modifierFlags: [], timestamp: pressed + (type == .leftMouseDown ? 0 : 1.5),
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                pressure: 1)
+        }
+        let down = try XCTUnwrap(mouse(.leftMouseDown, 0))
+        var moves = try [4.0, 12, 30, 60].map { try XCTUnwrap(mouse(.leftMouseDragged, $0)) }
+        moves.append(try XCTUnwrap(mouse(.leftMouseUp, 60)))
+        nonisolated(unsafe) let held = moves
+        nonisolated(unsafe) let application = app
+        // The press is held before it moves, as a person's is; posted at once, AppKit selects text.
+        let release = Timer(timeInterval: 1.2, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                for index in held.indices { application.postEvent(held[index], atStart: false) }
+            }
+        }
+        RunLoop.main.add(release, forMode: .common)
+        RunLoop.main.add(release, forMode: .eventTracking)
+        defer { release.invalidate() }
+
+        view.mouseDown(with: down)
+
+        XCTAssertEqual(view.dragged, [linkRange], "the link's drag went another way")
+        XCTAssertEqual(NSPasteboard(name: .drag).changeCount, dragBoard, "the drag board was written")
     }
 }

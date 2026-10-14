@@ -1291,6 +1291,9 @@ public final class PageModel: ObservableObject {
     /// How a cut writes its fragment onto `ambientPasteboard`; a test hands in one that refuses.
     private let writeCutFragment: @MainActor (SealedFragment, NSPasteboard) -> Bool
 
+    /// Where a link the person opens goes: the shared workspace, or a test's recorder.
+    let openURL: @MainActor (URL) -> Void
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1341,6 +1344,9 @@ public final class PageModel: ObservableObject {
         /// Where the system's wake is heard: a center of the test's own, so a
         /// suite can post one; nil is the shared workspace's.
         let wakeNotifications: NotificationCenter?
+        /// Where a link the person opens goes: a recorder of the test's own, so
+        /// a suite never starts a browser; nil is the shared workspace's.
+        let openURL: (@MainActor (URL) -> Void)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1356,7 +1362,8 @@ public final class PageModel: ObservableObject {
             )? = nil,
             ambientPasteboard: NSPasteboard? = nil,
             writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
-            wakeNotifications: NotificationCenter? = nil
+            wakeNotifications: NotificationCenter? = nil,
+            openURL: (@MainActor (URL) -> Void)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1370,6 +1377,7 @@ public final class PageModel: ObservableObject {
             self.ambientPasteboard = ambientPasteboard
             self.writeCutFragment = writeCutFragment
             self.wakeNotifications = wakeNotifications
+            self.openURL = openURL
         }
     }
 
@@ -1452,6 +1460,7 @@ public final class PageModel: ObservableObject {
         declinedPresentationWrite = seams.declinedPresentationWrite
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
+        openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")

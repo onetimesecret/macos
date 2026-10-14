@@ -3189,13 +3189,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// Every click on a `.link` range lands here, and the answer is
         /// always "handled", because the default answer — open on any
         /// click — makes the URL's own text uneditable by mouse. With ⌘
-        /// held the click is an aimed gesture and the link opens;
-        /// without it the click is editing, so the caret is placed
-        /// where the click fell, exactly as on any other ink.
+        /// held the click is an aimed gesture and the link opens through
+        /// `openLink`, as the text menu's Open Link does; without it the
+        /// click is editing, so the caret is placed where the click fell,
+        /// exactly as on any other ink.
         public func textView(
             _ view: NSTextView, clickedOnLink link: Any, at charIndex: Int
         ) -> Bool {
-            let event = NSApp.currentEvent
+            let event = NSApp?.currentEvent
             guard event?.modifierFlags.contains(.command) == true else {
                 // The caret goes to the insertion point nearest the
                 // click, not merely to the clicked character's start;
@@ -3211,8 +3212,18 @@ public struct InkEditorView: NSViewRepresentable {
                 }
                 return true
             }
-            let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
-            if let url { NSWorkspace.shared.open(url) }
+            openLink(link, from: view)
+            return true
+        }
+
+        /// Opens a link the person aimed at: a file's at once, a page's or a note's only
+        /// once its view may read out, so past the deadline the page settles (ADR-0052).
+        @discardableResult
+        func openLink(_ link: Any, from view: NSTextView) -> Bool {
+            guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)),
+                  writesFile || (view as? AskingTextView)?.mayReadOut == true
+            else { return false }
+            model.openURL(url)
             return true
         }
 
@@ -5577,9 +5588,75 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         if let coordinator, !coordinator.writesNote, !coordinator.writesFile {
             TextOffers.removeUncarriedTransformations(from: menu)
         }
+        aimLinkItems(in: menu, at: point)
         coordinator?.appendSealItem(to: menu)
         coordinator?.appendLanguageItems(to: menu)
         return menu
+    }
+
+    // MARK: Links in the text menu (ADR-0023, Law 0001)
+
+    /// The link a text menu item acts on, found under the pointer as the menu was built.
+    struct LinkTarget {
+        let link: Any
+        let index: Int
+    }
+
+    /// Sends Open Link to the delegate's `openLink`, and a page's or a note's Copy Link through
+    /// the gate any copy asks; there, one with no link found under the pointer leaves.
+    private func aimLinkItems(in menu: NSMenu, at point: NSPoint) {
+        let target = linkTarget(at: point)
+        let asks = coordinator?.writesFile != true
+        for item in menu.items {
+            let ours: Selector
+            switch item.action {
+            case TextOffers.openLinkAction: ours = #selector(openLinkFromMenu(_:))
+            case TextOffers.copyLinkAction where asks: ours = #selector(copyLinkFromMenu(_:))
+            default: continue
+            }
+            guard let target else {
+                if asks { menu.removeItem(item) }
+                continue
+            }
+            item.target = self
+            item.action = ours
+            item.representedObject = target
+        }
+    }
+
+    /// The link drawn under `point`, in this view's coordinates.
+    func linkTarget(at point: NSPoint) -> LinkTarget? {
+        guard let layout = layoutManager, let container = textContainer,
+              let storage = textStorage, storage.length > 0
+        else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = layout.glyphIndex(for: local, in: container)
+        guard layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            .contains(local)
+        else { return nil }
+        let index = layout.characterIndexForGlyph(at: glyph)
+        guard index < storage.length, let link = storage.attribute(.link, at: index, effectiveRange: nil)
+        else { return nil }
+        return LinkTarget(link: link, index: index)
+    }
+
+    /// Open Link, which the delegate opens as it does a ⌘-click (`Coordinator.openLink`).
+    @objc func openLinkFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? LinkTarget else { return }
+        coordinator?.openLink(target.link, from: self)
+    }
+
+    /// Copy Link, which asks first like any copy and writes the URL on the model's ambient board.
+    @objc func copyLinkFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? LinkTarget,
+              let url = (target.link as? URL) ?? (target.link as? String).flatMap(URL.init(string:)),
+              let board = coordinator?.model.ambientPasteboard, mayReadOut
+        else { return }
+        let item = NSPasteboardItem()
+        item.setString(url.absoluteString, forType: .URL)
+        item.setString(url.absoluteString, forType: .string)
+        board.clearContents()
+        board.writeObjects([item])
     }
 
     // MARK: AppKit's readers of the text (Law 0001, ADR-0052)

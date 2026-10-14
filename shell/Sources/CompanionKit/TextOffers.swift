@@ -6,11 +6,11 @@ import AppKit
 enum TextOffers {
     /// Takes out the items that hold or read the selection for another process from the
     /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar, Search
-    /// With), then folds the separators.
+    /// With, a link's Open With), then folds the separators.
     static func removeSelectionReaders(from menu: NSMenu) {
         menu.items.filter {
             isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) || isSpelling($0)
-                || isWebSearch($0)
+                || isWebSearch($0) || isOpenWith($0)
         }
         .forEach(menu.removeItem)
         var previousIsSeparator = true
@@ -79,6 +79,20 @@ enum TextOffers {
     static func isWebSearch(_ item: NSMenuItem) -> Bool {
         item.action.map(NSStringFromSelector)?.hasPrefix("_searchWith") == true
     }
+
+    /// A link's Open With, whose applications AppKit hands the URL to with no delegate asked.
+    static func isOpenWith(_ item: NSMenuItem) -> Bool {
+        item.identifier?.rawValue == "__NSTextViewContextSubmenuIdentifierOpenWith"
+            || item.submenu?.items.contains {
+                ($0.representedObject as? URL)?.pathExtension == "app"
+            } == true
+    }
+
+    /// AppKit's Open Link over a link, which asks the delegate as a plain click does.
+    static let openLinkAction = Selector(("_openLinkFromMenu:"))
+
+    /// AppKit's Copy Link, which writes the link to the general pasteboard.
+    static let copyLinkAction = Selector(("copyLink:"))
 
     /// The readers no click gates, which a file keeps and a page, note or name refuses:
     /// Writing Tools, and the typing suggestions and inline predictions made from the
