@@ -6,8 +6,10 @@ drag from its handle, the
 two presses that remove an object and the line's Undo after them, the
 sealed paste and its offer over this app's own copy, a menu bar
 with no Print…, text menus with no Share…, Writing Tools, Look Up,
-Translate or Speech, the route a real look up takes to the page's gate,
-and text holding U+FFFC landing beside an object.
+Translate, Speech, Spelling and Grammar or Search With Google, the
+route a real look up takes to the page's gate, Transformations and
+Substitutions over an object, a Touch Bar's typing suggestions, and
+text holding U+FFFC landing beside an object.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
@@ -91,6 +93,32 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       definition. **Fail:** a definition, a Dictionary window or a
       translation of the page's word appears; record which gesture
       reached it, since that route is not gated.
+- [ ] **No Spelling and Grammar or Search With Google over a page, a
+      note or a name** (Law 0001, AppKit text routes amendment). On a
+      page, choose Edit > Spelling and Grammar > Check Spelling While
+      Typing, type `wrnog`, and Control click the underlined word; do the
+      same in an object's note and in its name field while it is open,
+      then in a regular text file. **Pass:** the page's, the note's and
+      the name's menus hold no Spelling and Grammar submenu, no guesses,
+      no Ignore Spelling, no Learn Spelling and no Search With Google;
+      the file's menu holds them. **Fail:** any of them shows over a
+      page, a note or a name, or the file's menu has lost one.
+- [ ] **Transformations and Substitutions keep every object** (Law
+      0001, the rewrite row). On a page type `say -- hi`, seal `hi`,
+      type ` -- end` after it, and select the whole line. Choose Edit >
+      Transformations > Make Upper Case, then ⌘Z; then Edit >
+      Substitutions > Show Substitutions and press Replace in Selection
+      with Smart Dashes ticked, then ⌘Z. **Pass:** the ink changes case
+      and both dashes become `—`, the object standing in place each
+      time with no removal line, and each ⌘Z takes back its change
+      whole. **Fail:** the object goes, the line says protected content
+      removed, or one ⌘Z takes back only part of a change.
+- [ ] **No typing suggestions over a page on a Touch Bar** (Law 0001,
+      AppKit text routes amendment). Only on a Mac with a Touch Bar:
+      type a few words on a page, in a note and in a regular text file.
+      **Pass:** the Touch Bar shows no typing suggestions over the page
+      or the note, and shows them over the file. **Fail:** suggestions
+      show over the page or the note.
 - [ ] **Cut and paste in place.** Cut the selection, note the slot's
       line under the page, then paste further down. **Pass:** the line
       names the cut object by its face and goes when the paste lands;
