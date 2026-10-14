@@ -7,6 +7,7 @@ governs: A buffer that holds secret-bearing plaintext never grows in place; it i
 decisions: none numbered; the rule serves ADR-0001's zeroization posture
 consumed-by:
   - docs/adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md (the note's persisted text and the composed `NAME=` buffer)
+  - docs/adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md (the envelope, its public text and the decrypted drag's buffer)
 sources:
   - docs/adr/0001-rust-core-thin-shell.md (accepted, Context)
   - docs/adr/0012-framing-threat-boundary-and-persistence-model.md (proposed, persistence buffers)
@@ -77,6 +78,11 @@ and not an ADR.
 | HTTP response body | wiping growth | No allocation holding body bytes is reallocated or freed unwiped | owed: no issue yet; needs a counting global allocator in transport's tests, an `unsafe` allowance the workspace lint rule does not grant today |
 | Key file half | known-size copy | `fs::read` sizes the buffer from the stat; it grows only if the file grows during the read | owed: no issue yet |
 | An opened file's text | unclassified | `read_regular` presizes a plain `Vec` from the stat and `read_to_end` grows it if the file grows during the read | owed: owner decision on whether file backed text is in scope |
+| A sealed fragment's envelope | two-pass | Capacity equals length | `crates/core/src/fragment.rs` `the_envelope_is_written_at_its_exact_size` |
+| A fragment's public text | known-size copy | Capacity equals length | `crates/core/src/fragment.rs` `the_public_text_puts_a_size_class_placeholder_where_each_object_stood` |
+| Copy decrypted's and the decrypted drag's payload | known-size copy | Capacity is the payload | `crates/core/src/store.rs` `a_copy_out_is_written_at_its_exact_size` |
+| A pasted envelope's parse | unclassified | `serde_json` grows its scratch for an escaped string and frees it unwiped; the bytes came from a pasteboard any app reads ([ADR-0047](../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)) | owed: owner decision on whether pasted ink is in scope |
+| Page, note and fragment JSON for the shell | unclassified | `serde_json` builds each string growing; Swift then holds the same ink in values it cannot zeroize | owed: owner decision on whether seam output is in scope |
 
 ## What the rule forbids
 
@@ -103,13 +109,17 @@ and not an ADR.
 
 - Core: `snapshot_size_is_exact`, `the_drafts_buffer_is_written_at_its_exact_size`,
   `the_block_section_is_written_at_its_exact_size`,
-  `the_conceal_payload_is_written_at_its_exact_size`.
+  `the_conceal_payload_is_written_at_its_exact_size`,
+  `the_envelope_is_written_at_its_exact_size`,
+  `the_public_text_puts_a_size_class_placeholder_where_each_object_stood`,
+  `a_copy_out_is_written_at_its_exact_size`.
 - Client and transport: `the_conceal_body_is_written_at_its_exact_size`,
   `a_body_read_past_its_reservation_arrives_whole_and_in_order`,
   `a_read_that_fails_partway_returns_the_error`.
 - Seam: `the_seal_work_buffer_is_exact_and_self_wiping`.
-- Owed: the response body wipe, the key file half, and a scope decision on an
-  opened file's text.
+- Owed: the response body wipe, the key file half, and scope decisions on an
+  opened file's text, a pasted envelope's parse and the JSON the seam hands
+  the shell.
 
 ## Amendments
 
@@ -122,3 +132,8 @@ and not an ADR.
   wiping growth class and its rows were added and the rule widened to cover
   it. The key file half and opened file rows record two readers the review
   found outside the table.
+- 2026-10-13: Sealed fragment rows (issue 170). The envelope, its public
+  text and the payload buffer copy decrypted and the decrypted drag share
+  join the table with the tests that pin them. Two readers the build could
+  not bring under the rule are recorded unclassified: the parse of a pasted
+  envelope, and the JSON the seam hands the shell, page and note included.

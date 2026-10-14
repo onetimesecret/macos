@@ -4,12 +4,18 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8; ADR-0044; ADR-0045; ADR-0046
+decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0042 points 1 to 4, 7 and 8; ADR-0044; ADR-0045; ADR-0046; ADR-0047
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the name's charset, the bottom row's zones, the note popover on a narrow card)
   - docs/adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md (where the name and note live, persist and cross the FFI)
+  - docs/adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md (the envelope, the detached store, the active cut, resolution, the decrypted drag's write, the clipboard slot)
 sources:
+  - docs/adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md (what the fragment, lifecycle and drag rows left open)
+  - crates/core/src/fragment.rs (the envelope and the public text, from one walk)
+  - crates/core/src/transfer.rs (cut, paste, the slot's route, the drags inside a page, resolution and the transaction)
+  - crates/pasteboard/src/macos.rs (`SystemDragItem`, the decrypted drag's write into its item)
+  - docs/qa/verification-procedures/sealed-fragment.md (what another app and a real drag receive)
   - docs/adr/0042-sealed-names-copy-zones-and-rename-seats.md (the points the name and note amendment left open)
   - docs/adr/0044-sealed-row-and-note-details.md (ADR-0042's open questions settled; the row's and the note's details; a named object that is not text; no drop from elsewhere into the note or the name field)
   - docs/adr/0045-the-note-is-written-on-the-pages-surface.md (the note on the page's own surface, routed by document; what stands aside in a note)
@@ -119,32 +125,32 @@ without a test says what it is owed by.
 | arrow keys | ambient observation | the caret crosses the object as one indivisible unit | a chip is one attachment character: `SealedCapsuleTests.swift` `testTheCaretCrossesAnObjectAsOneUnitBothWays` |
 | click, on an unnamed object or outside a named object's bottom row | structural editing | selects the whole object; never places a caret inside it | `DocumentOpsTests.swift` `testAClickOnAChipSelectsItWhole`; off a zone or with a modifier the click takes that path: `SealedCapsuleTests.swift` `testAZoneActsOnTheFirstClickAndAClickOffItSelects` |
 | shift selection | structural editing | includes the whole object or none of it | `SealedCapsuleTests.swift` `testAShiftSelectionHoldsTheWholeObjectOrNoneOfIt` |
-| select all | structural editing | includes each object structurally, not its payload | no direct test; owed: issue 170 |
-| copy, object or mixed selection | structural editing | writes one versioned sealed fragment preserving ordered ink runs and UUID references; the public representation preserves the ink and substitutes one size-class placeholder per reference; neither representation contains payload or ciphertext | owed: issue 170 (`DocumentOpsTests` for ordered mixed and multi-chip selections) |
-| cut | structural editing | writes the same fragment, then detaches every referenced object in one core transaction; all selected objects appear together in the app's clipboard slot and retain the page's clock | owed: issue 170 (`store.rs` atomic multi-chip detach coverage) |
-| paste, inside OnetimePad | structural editing | inserts the whole fragment as one undoable transaction; the first paste of a cut reattaches all cut objects, while a paste after copy or a later paste of a cut clones every live reference core-side; terminal or unknown references become cause-specific placeholders in their original positions | owed: issue 170 (`store.rs` fragment reattach, clone, rollback and mixed-state coverage) |
-| paste, another app | ambient observation | receives ordered ink with `[sealed content · <size class>]` substituted for each live reference; never receives a payload | owed: issue 170; size class: `store.rs` `a_multi_line_chip_reports_a_size_class_not_lines` |
-| drag, inside the document | structural editing | moves the selected objects and ink atomically with a clear insertion line; contents never preview | owed: issue 170 and issue 169 |
-| ⌥ drag | structural editing | clones all selected sealed objects core-side as one operation, following the macOS copy-drag convention | owed: issue 170 |
-| plain drag, outside | ambient observation | exposes only ordered ink and placeholders | owed: issue 170 |
-| decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | owed: issue 170 |
-| backspace beside it | structural editing | the first press selects the object, the second removes it from the page | owed: no issue yet; the contradicting build test is rewritten under issue 170 |
-| backspace, selected | structural editing | detaches it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; undo: owed, issue 170 |
+| select all | structural editing | includes each object structurally, not its payload | the core's selection of a whole page: `fragment.rs` `a_whole_page_selection_holds_every_object_by_reference` ([ADR-0047](../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)); the editor's select all and its copy, owed: issue 170, the editor's half |
+| copy, object or mixed selection | structural editing | writes one versioned sealed fragment preserving ordered ink runs and UUID references; the public representation preserves the ink and substitutes one size-class placeholder per reference; neither representation contains payload or ciphertext | the core composes both: `fragment.rs` `a_mixed_selection_keeps_its_ink_and_references_in_order`, `the_public_text_puts_a_size_class_placeholder_where_each_object_stood`, `neither_representation_holds_payload_or_ciphertext`, `a_one_object_copy_is_a_one_reference_fragment`, `the_envelope_reads_as_its_documented_shape`, `an_envelope_this_build_cannot_read_is_refused_whole`; `lib.rs` `copy_cut_and_paste_carry_the_envelope_unread_over_the_seam`, `sealed_bytes_never_appear_in_any_output`; `SealedFragmentSeamTests.swift` `testACopyHandsBackAnEnvelopeAndThePublicText` (ADR-0047); the editor's write of both types, owed: issue 170, the editor's half (`DocumentOpsTests` for ordered mixed and multi-chip selections, with no plaintext type on the ordinary copy path); what another app receives, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| cut | structural editing | writes the same fragment, then detaches every referenced object in one core transaction; all selected objects appear together in the app's clipboard slot and retain the page's clock | `transfer.rs` `a_cut_chip_is_detached_not_reaped`, `a_cut_detaches_every_object_in_one_step_and_undo_stands_them_all`, `a_later_cut_replaces_the_active_one_and_leaves_its_objects_detached`, `a_cut_the_body_refuses_changes_nothing`; the slot's faces: `lib.rs` `copy_cut_and_paste_carry_the_envelope_unread_over_the_seam`, `SealedFragmentSeamTests.swift` `testACutsFirstPasteReattachesAndALaterOneClones`; the editor's ⌘X and the slot's line, owed: issue 170, the editor's half |
+| paste, inside OnetimePad | structural editing | inserts the whole fragment as one undoable transaction; the first paste of a cut reattaches all cut objects, while a paste after copy or a later paste of a cut clones every live reference core-side; terminal or unknown references become cause-specific placeholders in their original positions | `transfer.rs` `a_pasted_reference_reattaches_by_id`, `the_first_paste_of_a_cut_reattaches_all_and_a_later_one_clones`, `a_fragment_not_naming_the_cut_clones_its_objects_and_the_cut_stands`, `a_cut_pasted_on_another_page_moves_there_and_clears_the_source_undo`, `a_paste_after_copy_clones_every_live_reference_without_its_receipt`, `a_paste_is_one_step_and_replaces_the_selection_it_covers`, `an_unreadable_envelope_pastes_its_public_text_and_says_so`; rollback: `a_paste_the_body_refuses_partway_changes_nothing_on_any_page`; mixed state: `a_mixed_paste_keeps_its_order_with_each_cause_in_position`; `SealedFragmentSeamTests.swift` `testACutsFirstPasteReattachesAndALaterOneClones`, `testAnUnreadableEnvelopePlacesItsPublicText`; the editor's ⌘V, owed: issue 170, the editor's half |
+| paste, another app | ambient observation | receives ordered ink with `[sealed content · <size class>]` substituted for each live reference; never receives a payload | the public text the core composes: `fragment.rs` `the_public_text_puts_a_size_class_placeholder_where_each_object_stood`; size class: `store.rs` `a_multi_line_chip_reports_a_size_class_not_lines`; the editor's write, owed: issue 170, the editor's half; what another app pastes, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| drag, inside the document | structural editing | moves the selected objects and ink atomically with a clear insertion line; contents never preview | the core's move: `transfer.rs` `a_drag_inside_a_page_moves_ink_and_objects_in_one_step_keeping_identity`; `SealedFragmentSeamTests.swift` `testTheSlotTheMoveAndTheCloneRoutes`; an editor's move in two batches keeps the object: `store.rs` `an_editor_move_in_two_batches_detaches_and_then_reattaches_the_chip`; the drag gesture and its insertion line, owed: issue 170, the editor's half (issue 169 is closed) |
+| ⌥ drag | structural editing | clones all selected sealed objects core-side as one operation, following the macOS copy-drag convention | the core's clone: `transfer.rs` `an_option_drag_clones_every_object_in_one_step`; the gesture, owed: issue 170, the editor's half |
+| plain drag, outside | ambient observation | exposes only ordered ink and placeholders | the public text it carries is the copy's (the copy row); the drag, owed: issue 170, the editor's half, and the hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | the core's write into the drag item, its refusals and its record: `lib.rs` `a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag`, `a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`, `the_fragment_routes_fail_closed`; `crates/pasteboard/src/macos.rs` `a_drag_item_takes_the_plaintext_under_its_kinds_type`, `a_drag_item_on_the_general_pasteboard_says_so`, `a_drag_item_refuses_null_and_objects_of_another_class`; `SealedFragmentSeamTests.swift` `testADecryptedDragWritesTheItemCoreSideAndRecordsADrag`; its buffer: `store.rs` `a_copy_out_is_written_at_its_exact_size`; the `Drag` class at rest: `persist.rs` `every_destination_class_round_trips_in_the_ledger`; the handle and its data provider, owed: issue 170, the editor's half; a drop into another app, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| backspace beside it | structural editing | the first press selects the object, the second removes it from the page | owed: issue 170, the editor's half; one backspace removes the object today, and no test pins either behaviour |
+| backspace, selected | structural editing | detaches it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; the detach and the undo: `store.rs` `deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`, `undo_stands_a_removed_chip_again_from_the_detached_store`; through the editor: `DocumentOpsTests.swift` `testUndoAfterRemovingAChipStandsTheSameObjectAgain`, `testPuttingARemovedChipsAttachmentBackReattachesIt`; the removal line's Undo button, owed: issue 170, the editor's half |
 | find, word count | ambient observation | does not inspect the payload; may count one protected object | `WrapTests.swift` `testUseSelectionForFindRefusesAChip`; no word count exists |
-| expiry | destruction/lifecycle | destroys all of the page's attached and detached payloads; while terminal-cause evidence remains, later references produce an expired placeholder and cannot be undone | no direct lifecycle test; owed: issue 170 |
-| explicit burn | destruction/lifecycle | destroys the named local payloads atomically; while terminal-cause evidence remains, later references produce a burned placeholder | owed: issue 170 |
+| expiry | destruction/lifecycle | destroys all of the page's attached and detached payloads; while terminal-cause evidence remains, later references produce an expired placeholder and cannot be undone | `store.rs` `an_expiring_page_destroys_its_detached_chips_and_records_each`; `transfer.rs` `an_expired_reference_says_so_while_evidence_remains_then_is_unavailable`, `the_active_cut_ends_with_its_page` |
+| explicit burn | destruction/lifecycle | destroys the named local payloads atomically; while terminal-cause evidence remains, later references produce a burned placeholder | `store.rs` `burning_a_chip_takes_the_stack_with_it`, `burning_a_detached_chip_destroys_it_and_takes_the_stack_with_it`; `transfer.rs` `a_burned_reference_says_so`, `burning_a_clones_source_leaves_the_clone` |
 | export, print, share | ambient observation | emits placeholders by default; a plaintext export is separately named declassification/egress | owed when a path exists |
 | promote the whole page | declassification/egress | includes sealed payloads; the confirmation says so; the local copy is offered up to burn and is never burned automatically | payload inclusion: `store.rs` `sheet_payload_inlines_chips_in_document_order`; confirmation count: `ConcealWireTests.swift`; receipt marker and retained local payload: `store.rs` `a_conceal_marks_the_chip_and_keeps_only_the_receipt` |
 | seal a selection | classification | replaces visible ink in place, keeps whitespace and selects the new object; the result is one-way in the editor | shell and core range-seal tests listed below |
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
 | copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
-| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | the core's name, its rule and its refusal: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`, `a_name_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_name`; `lib.rs` `chip_json_carries_the_name`, `the_name_routes_judge_by_one_rule_and_fail_closed` ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)); the field and the redrawn row: `SealedNameFieldTests.swift` `testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight`, `testReturnNamesTheObjectAndRedrawsItsBlock`, `testARefusalKeepsTheFieldAndTheLine`, with the rest of the field's rows in Law 0007; owed: issue 247 (the fragment) |
+| name the object (*Name…*, *Rename…*, a double click on an unnamed object's bottom row or a named object's name zone) | structural editing | an inline field in the name's seat per [Law 0007](0007-edit-in-place.md); the name is page-owned text stored with the object core-side, carried in the fragment, never in the ledger; it is 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, case kept, and the core refuses any other ([ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)); a named object's bottom row reads `NAME=excerpt` | the core's name, its rule and its refusal: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`, `a_name_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_name`; `lib.rs` `chip_json_carries_the_name`, `the_name_routes_judge_by_one_rule_and_fail_closed` ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-live-on-its-chip.md)); the field and the redrawn row: `SealedNameFieldTests.swift` `testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight`, `testReturnNamesTheObjectAndRedrawsItsBlock`, `testARefusalKeepsTheFieldAndTheLine`, with the rest of the field's rows in Law 0007; the name in the fragment, a clone judging it and the public text omitting it: `fragment.rs` `the_envelope_round_trips_with_and_without_a_name_and_a_note`, `the_public_text_names_neither_the_name_nor_the_note`, `an_empty_name_or_note_reads_as_none`; `transfer.rs` `a_clone_carries_the_name_and_note_its_fragment_holds`, `a_pasted_name_the_rule_refuses_is_dropped_and_the_object_kept`, `a_reattached_object_keeps_its_own_name_and_note`, `a_placeholder_carries_neither_name_nor_note` (issue 247, ADR-0047) |
 | pointer over an unnamed object's bottom row | structural editing | no zones until the object is named: no pill, no seat words, and a click selects as anywhere on the block (D-40) | `SealedBlockTests.swift` `testTheDrawnRowAtAWideAndANarrowMeasure`; `SealedCapsuleTests.swift` `testHoverFindsTheZoneUnderThePointer` |
 | click the name zone, the name's glyph run | ambient observation | the first click copies the name; the second of a double click opens the name field; the size class's seat reads `copies the name` while hovered | the zone and its seat: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`; the double click: the same press test, and `SealedNameFieldTests.swift` `testADoubleClickOpensTheFieldOnlyWhereTheRuleSays` |
 | click the value zone, the value's glyph run | declassification/egress | a handle in D-29's sense: copies the decrypted contents by the copy decrypted route above on the first click and ignores the clicks after it; the seat reads `copies the value, decrypted` before the click | `SealedBlockTests.swift` `testEachZoneSaysWhatItsClickDoesInTheSeat`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects`, `testAZoneActsOnlyOnceTheSeatHasNamedIt` |
 | click the `=` zone, the glyph and 2 points either side | declassification/egress | copies `NAME=<plaintext>`, the value raw and unquoted, by the same route on the first click and ignores the clicks after it; the seat reads `copies name=value, decrypted` before the click; on an object that is not text the `=` is no zone, since the core composes `NAME=value` for text alone ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)) | the core's write: `store.rs` `name_value_is_composed_raw_at_its_exact_size`, `name_value_refuses_an_unnamed_an_image_and_an_unknown_chip`; `lib.rs` `copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed`, `copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing`, `a_name_value_copy_and_a_copy_out_retire_each_others_receipts`, `a_name_value_copy_records_one_sent_and_no_name`; the zone: `SealedBlockTests.swift` `testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide`, `testANamedImagesEqualsIsNoZone`; `SealedCapsuleTests.swift` `testEachZoneCallsItsOwnModelRoute`, `testAZoneActsOnTheFirstClickAndAClickOffItSelects`, `testAZoneActsOnlyOnceTheSeatHasNamedIt` |
-| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; a drop from elsewhere lands nowhere in it, since no seal can stand in a note ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)), and once closed its view holds none of its ink; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; the popover: `SealedNoteTests.swift` `testThePopoverHangsUnderTheBlockAtTheBlocksMeasure`, `testANarrowBlockPutsTheNoteAcrossTheContentWidth`, `testExpandedTheNoteCoversTheContentAndWithoutRoomBelowItStandsAbove`, `testTheMenusVerbOpensTheNoteInThePagesOwnWindow`, `testTheDoorwayOpensTheNoteAndEscClosesIt`, `testTheArrowsAndShiftEscExpandAndContractAndEscContracts`, `testTheNoteClosesWhenItsSeatGoes`, `testTheObjectLeavingThePageClosesItsNote`, `testANoteEditLeavesThePagesCaretAndUndoAlone`, `testNoNoteRouteRunsAModalSession`, `testTheNoteTakesNoDropFromElsewhere`, `testAClosedNoteLeavesNoInkInTheShell`; the page's own surface ([ADR-0045](../adr/0045-the-note-is-written-on-the-pages-surface.md)): `SealedNoteTests.swift` `testTheNoteWearsThePagesFace`, `testANoteContinuesAndNestsAListAsThePageDoes`, `testChooseLanguageActsOnTheNoteAndItsLabelIsTheNotesOwn`, the Edit menu acting on the note while it holds the keys ([ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)) `testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys`, and what stands aside in it, `testNoSealLandsInANote`, `testNoObjectStandsInANote`, `testANoteShowsNoBlockStampsAndAsksNoPageForThem`, `testTheWrapToggleStandsAsideInANote`; on the raised card and under a real pointer, and a click and a ⌘-click on a note's link, owed: hand check, [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md); owed: issue 247 (the fragment) |
+| the note (*Note…*, *Edit note…*, a click on `note`) | structural editing | the page's own writing surface in a popover at the block's measure, or the card's full content width when the block's measure is narrower than the popover's minimum, expanded to the card by its diagonal arrows or ⇧Esc and contracted the same way; a drop from elsewhere lands nowhere in it, since no seal can stand in a note ([ADR-0044](../adr/0044-sealed-row-and-note-details.md)), and once closed its view holds none of its ink; ink stored with the object core-side, carried in the fragment, never in the ledger, on the page's clock | the core's note: `store.rs` `a_note_survives_a_snapshot_round_trip`, `after_the_page_expires_the_snapshot_holds_no_note`, `undo_inside_the_note_is_separate_from_the_pages_undo`, `note_edits_leave_the_ledger_unchanged`, `a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note`; `lib.rs` `note_routes_edit_the_note_and_leave_the_page_alone`, `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`; the popover: `SealedNoteTests.swift` `testThePopoverHangsUnderTheBlockAtTheBlocksMeasure`, `testANarrowBlockPutsTheNoteAcrossTheContentWidth`, `testExpandedTheNoteCoversTheContentAndWithoutRoomBelowItStandsAbove`, `testTheMenusVerbOpensTheNoteInThePagesOwnWindow`, `testTheDoorwayOpensTheNoteAndEscClosesIt`, `testTheArrowsAndShiftEscExpandAndContractAndEscContracts`, `testTheNoteClosesWhenItsSeatGoes`, `testTheObjectLeavingThePageClosesItsNote`, `testANoteEditLeavesThePagesCaretAndUndoAlone`, `testNoNoteRouteRunsAModalSession`, `testTheNoteTakesNoDropFromElsewhere`, `testAClosedNoteLeavesNoInkInTheShell`; the page's own surface ([ADR-0045](../adr/0045-the-note-is-written-on-the-pages-surface.md)): `SealedNoteTests.swift` `testTheNoteWearsThePagesFace`, `testANoteContinuesAndNestsAListAsThePageDoes`, `testChooseLanguageActsOnTheNoteAndItsLabelIsTheNotesOwn`, the Edit menu acting on the note while it holds the keys ([ADR-0046](../adr/0046-the-keys-holder-answers-the-pages-chords-and-menu.md)) `testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys`, and what stands aside in it, `testNoSealLandsInANote`, `testNoObjectStandsInANote`, `testANoteShowsNoBlockStampsAndAsksNoPageForThem`, `testTheWrapToggleStandsAsideInANote`; on the raised card and under a real pointer, and a click and a ⌘-click on a note's link, owed: hand check, [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md); the note in the fragment, carried by a clone with an empty undo stack and kept by a reattach: `fragment.rs` `the_envelope_round_trips_with_and_without_a_name_and_a_note`; `transfer.rs` `a_clone_carries_the_name_and_note_its_fragment_holds`, `a_reattached_object_keeps_its_own_name_and_note`; with its object when removed: `persist.rs` `a_detached_chip_comes_back_detached_with_its_name_and_note` (issue 247, ADR-0047) |
 
 ### Sealed-fragment representation
 
@@ -206,6 +212,11 @@ resolve as unavailable rather than being guessed expired.
   general pasteboard ... automatically participates with the Universal
   Clipboard feature." This law makes no broader claim about clipboard
   history, observation by other software or erasure after a drag ends.
+  The core refuses to provide a decrypted drag on an item whose
+  pasteboard is the general pasteboard, pinned by `lib.rs`
+  `a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`
+  and `crates/pasteboard/src/macos.rs`
+  `a_drag_item_on_the_general_pasteboard_says_so`.
 
 ### Presentation invariants
 
@@ -354,7 +365,76 @@ fields (`crates/core/src/persist.rs`):
 `a_chip_written_before_notes_existed_keeps_its_name_and_has_no_note`,
 `a_written_note_comes_back_beside_its_name`,
 `an_unknown_note_flag_is_malformed_and_the_store_is_untouched`, and
-`snapshot_size_is_exact` over a named chip with a note.
+`snapshot_size_is_exact` over a named chip with a note and a detached
+chip.
+
+The fragment, the detached store and the transaction (ADR-0047). In
+`crates/core/src/fragment.rs`: `a_mixed_selection_keeps_its_ink_and_references_in_order`,
+`the_public_text_puts_a_size_class_placeholder_where_each_object_stood`,
+`neither_representation_holds_payload_or_ciphertext`,
+`a_one_object_copy_is_a_one_reference_fragment`,
+`a_whole_page_selection_holds_every_object_by_reference`,
+`a_copy_of_ink_alone_offers_its_text_and_no_envelope_and_changes_nothing`,
+`a_range_that_splits_a_pair_or_is_empty_selects_nothing`,
+`the_envelope_is_written_at_its_exact_size`,
+`the_envelope_reads_as_its_documented_shape`,
+`an_envelope_this_build_cannot_read_is_refused_whole`, and for the name
+and note (issue 247) `the_envelope_round_trips_with_and_without_a_name_and_a_note`,
+`the_public_text_names_neither_the_name_nor_the_note`,
+`an_empty_name_or_note_reads_as_none`. In `crates/core/src/transfer.rs`:
+`a_cut_chip_is_detached_not_reaped`,
+`a_cut_detaches_every_object_in_one_step_and_undo_stands_them_all`,
+`a_cut_of_ink_alone_names_no_cut_and_leaves_the_one_standing`,
+`a_later_cut_replaces_the_active_one_and_leaves_its_objects_detached`,
+`a_cut_the_body_refuses_changes_nothing`,
+`a_pasted_reference_reattaches_by_id`,
+`the_first_paste_of_a_cut_reattaches_all_and_a_later_one_clones`,
+`a_fragment_not_naming_the_cut_clones_its_objects_and_the_cut_stands`,
+`a_cut_pasted_on_another_page_moves_there_and_clears_the_source_undo`,
+`a_paste_after_copy_clones_every_live_reference_without_its_receipt`,
+`burning_a_clones_source_leaves_the_clone`,
+`a_reference_to_a_removed_object_clones_the_retained_one_and_undo_reattaches_it`,
+`an_expired_reference_says_so_while_evidence_remains_then_is_unavailable`,
+`a_burned_reference_says_so`,
+`an_unknown_reference_is_unavailable_and_never_called_expired`,
+`an_unreadable_envelope_pastes_its_public_text_and_says_so`,
+`a_paste_is_one_step_and_replaces_the_selection_it_covers`,
+`a_paste_the_body_refuses_partway_changes_nothing_on_any_page`,
+`a_mixed_paste_keeps_its_order_with_each_cause_in_position`,
+`the_slot_places_the_active_cut_without_the_pasteboard`,
+`the_active_cut_ends_with_its_page`,
+`a_drag_inside_a_page_moves_ink_and_objects_in_one_step_keeping_identity`,
+`an_option_drag_clones_every_object_in_one_step`,
+`the_active_cut_survives_a_relaunch_and_its_first_paste_reattaches`,
+`a_cut_whose_objects_are_not_all_detached_restores_as_no_cut`, and for
+the name and note `a_clone_carries_the_name_and_note_its_fragment_holds`,
+`a_pasted_name_the_rule_refuses_is_dropped_and_the_object_kept`,
+`a_reattached_object_keeps_its_own_name_and_note`,
+`a_placeholder_carries_neither_name_nor_note`. In `store.rs`:
+`a_sync_that_omits_a_chip_detaches_it_and_one_naming_it_reattaches_it`,
+`deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing`,
+`an_empty_snapshot_is_select_all_delete_and_detaches_every_chip`,
+`a_select_all_delete_batch_detaches_every_chip_and_undo_stands_them_again`,
+`undo_stands_a_removed_chip_again_from_the_detached_store`,
+`undo_after_a_drag_that_carries_a_chip_stands_it_where_it_was`,
+`an_editor_move_in_two_batches_detaches_and_then_reattaches_the_chip`,
+`a_chip_detached_on_another_page_cannot_be_stood_here`,
+`a_seal_finished_through_ops_cannot_be_stepped_back_to_its_ink`,
+`standing_a_sentinel_through_the_op_path_takes_the_stack_with_it`,
+`burning_a_chip_takes_the_stack_with_it`,
+`burning_a_detached_chip_destroys_it_and_takes_the_stack_with_it`,
+`an_expiring_page_destroys_its_detached_chips_and_records_each`,
+`a_chip_removed_in_the_editor_records_nothing_until_its_page_ends`,
+`a_peers_chip_deletion_detaches_it_and_leaves_this_devices_steps`,
+`a_copy_out_is_written_at_its_exact_size`. In `persist.rs`:
+`a_detached_chip_comes_back_detached_with_its_name_and_note`,
+`a_page_written_before_detached_chips_existed_restores_with_none`,
+`a_detached_chip_repeating_an_identity_is_malformed`,
+`every_destination_class_round_trips_in_the_ledger`. In
+`crates/pasteboard/src/macos.rs`:
+`a_drag_item_takes_the_plaintext_under_its_kinds_type`,
+`a_drag_item_on_the_general_pasteboard_says_so`,
+`a_drag_item_refuses_null_and_objects_of_another_class`.
 
 Seam (`crates/ffi/src/lib.rs`): `the_clear_interval_is_the_core_constant`,
 `sealed_bytes_never_appear_in_any_output`, `chip_json_carries_the_name`,
@@ -367,11 +447,21 @@ Seam (`crates/ffi/src/lib.rs`): `the_clear_interval_is_the_core_constant`,
 `note_routes_edit_the_note_and_leave_the_page_alone`,
 `the_note_and_the_page_keep_separate_undo_stacks_across_the_seam`,
 `the_note_routes_fail_closed`,
-`a_name_and_a_note_reach_no_ledger_record_and_no_other_output`.
+`a_name_and_a_note_reach_no_ledger_record_and_no_other_output`; for the
+fragment (ADR-0047), `copy_cut_and_paste_carry_the_envelope_unread_over_the_seam`,
+`an_unreadable_envelope_pastes_its_public_text_over_the_seam`,
+`the_slot_move_and_clone_routes_cross_the_seam`,
+`the_fragment_routes_fail_closed`,
+`a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag`,
+`a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip`,
+`sync_document_names_the_page_and_detaches_omitted_chips`,
+`page_routes_refuse_a_file_id`.
 
 Shell (`shell/Tests/CompanionKitTests`, `scripts/test-shell.sh`):
 `DocumentOpsTests` (`testAClickOnAChipSelectsItWhole`,
 `testDeletingAChipAttachmentEmitsOneDelete`,
+`testUndoAfterRemovingAChipStandsTheSameObjectAgain`,
+`testPuttingARemovedChipsAttachmentBackReattachesIt`,
 `testSealSelectionReplacesTheSelectionCoreSide`,
 `testSealingSelectsTheNewObject`, `testSealedPasteOverAChipIsRefused`,
 `testTheChipMenuOffersPlaintextByName`,
@@ -398,30 +488,33 @@ its open, expand, contract and close routes, its edits on the note's
 own routes, the page's own surface in it and what stands aside there),
 `BundledKeymapTests` (`shift-escape`),
 `SealedObjectSeamTests` (the name, `name=value` and note wrappers over
-the live core).
+the live core), `SealedFragmentSeamTests` (the fragment, slot, move,
+clone and decrypted drag wrappers over the live core, the drag into an
+item on a privately named pasteboard).
 
 By hand: the [sealed zones and note](../qa/verification-procedures/sealed-zones-and-note.md)
 procedure, for the zones under a real pointer, the beat on a display,
 the note on the raised card and VoiceOver naming a block inside the
-page by `SealedBlockCell`'s label. It has not been run.
+page by `SealedBlockCell`'s label; the [sealed fragment](../qa/verification-procedures/sealed-fragment.md)
+procedure, for what another app and a real drag receive. Neither has
+been run.
 
-Tests that pin the contradicting build and are rewritten when issue 170
-lands (removal detaches, undo reattaches): `store.rs`
-`a_sync_that_omits_a_chip_zeroizes_it`,
-`deleting_a_sentinel_by_op_zeroizes_the_chip`,
-`an_empty_snapshot_is_select_all_delete_and_zeroizes_every_chip`,
-`a_select_all_delete_batch_zeroizes_every_chip`,
-`a_deleted_chip_leaves_no_step_that_would_stand_it_again`,
-`burning_a_chip_takes_the_stack_with_it`; `DocumentOpsTests`
-`testAnUndoResurrectingADeadChipIsStrippedSilently`.
+The tests that pinned the contradicting build (removal reaped, nothing
+reattached) were rewritten under issue 170 as the `store.rs` tests
+above that detach and reattach, and `DocumentOpsTests`
+`testPuttingARemovedChipsAttachmentBackReattachesIt`.
+`burning_a_chip_takes_the_stack_with_it` stands, since a burn is not a
+removal.
 
-Owed: issue 170 (the versioned sealed-fragment model, atomic multi-object
-detach/reattach/clone, lifecycle resolution, the lazy decrypted drag and
-their tests as named in the rows); issue 247 (the name and note in the
-fragment, as named in the rows); a first run of the sealed zones and
-note procedure. Issues 169 (`SealedBlockTests`) and 172 (the
-interrupting dialogs) are closed; D-14 is strict and the seal, remove,
-copy decrypted, naming and note paths must stay dialog free.
+Owed: issue 170, the editor's half: writing and reading the fragment on
+copy, cut, paste and the plain drags, the select all copy, the slot's
+line, the decrypted drag handle and its data provider, the second
+backspace, and the removal line's Undo button, each over the core's
+routes and tests named in the rows; a first run of the sealed zones and
+note procedure and of the sealed fragment procedure. Issues 169
+(`SealedBlockTests`) and 172 (the interrupting dialogs) are closed;
+D-14 is strict and the seal, remove, copy decrypted, naming and note
+paths must stay dialog free.
 
 ## Amendments
 
@@ -576,3 +669,18 @@ copy decrypted, naming and note paths must stay dialog free.
 - 2026-10-13: VoiceOver amendment. The by hand paragraph adds the
   procedure's check that VoiceOver names a block inside the page by its
   cell's label, which `SealedBlockTests` pins only as a string.
+- 2026-10-13: Fragment amendment (issues 170 and 247, the core's half).
+  [ADR-0047](../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)
+  settles the envelope, the detached store, the active cut, resolution
+  by the ledger's terminal records, the transaction and its revert, the
+  decrypted drag's write into its item and the clipboard slot. The
+  select all, copy, cut, paste, drag, ⌥ drag, plain drag, decrypted
+  drag, backspace, expiry and burn rows replace their owed clauses with
+  the core, seam and wrapper tests that pin them, and owe the editor's
+  half of issue 170 and the new [sealed fragment](../qa/verification-procedures/sealed-fragment.md)
+  procedure for the rest. The naming and note rows cite the tests of
+  the name and note in the fragment and drop issue 247. The drag
+  invariant cites the core's refusal of the general pasteboard. The
+  paragraph of contradicting tests names their rewrites, the
+  acceptance lists and sources follow, and the owed list keeps the
+  editor's half and both procedures' first runs.
