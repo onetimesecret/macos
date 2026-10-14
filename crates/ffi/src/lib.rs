@@ -35,16 +35,16 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
-    LedgerEvent, NameRefusal, RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore,
-    StepOutcome, SystemClock, TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language,
-    judge_name, local_day,
+    ChipId, ChipMeta, Copied, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT,
+    FileId, LedgerEvent, NameRefusal, Placed, RestoreError, SealedChip, Segment, Sheet, SheetId,
+    SheetStore, StepOutcome, SystemClock, TTL_LADDER, Tab, TabId, TextSelection, Ttl,
+    detect_source_language, judge_name, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
 use companion_pasteboard::{
-    ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, PasteboardItem,
-    WriteOptions,
+    ChangeCount, ContentKind, DragItem, MemoryPasteboard, Pasteboard, PasteboardContent,
+    PasteboardItem, WriteOptions,
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -1181,11 +1181,7 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
     let Some((bytes, meta)) = guard.store.copy_out_chip(chip) else {
         return false;
     };
-    let kind = match meta {
-        ChipMeta::Text { .. } => ContentKind::Text,
-        ChipMeta::Image { .. } => ContentKind::Image,
-    };
-    guard.write_decrypted(chip, bytes, kind);
+    guard.write_decrypted(chip, bytes, content_kind(meta));
     true
 }
 
@@ -1503,6 +1499,270 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
     outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
+// ---- The sealed fragment: copy, cut, paste, drags (ADR-0047) ----
+
+/// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`: the
+/// private type's bytes, null for ink alone, and the public text. The shell
+/// writes both, carrying the envelope unread. Null for a file id, an unknown
+/// page, or an empty or bad range. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_copy_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .copy_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16)
+        .map_or(ptr::null_mut(), |copied| copied_json(&copied))
+}
+
+/// [`companion_sheet_copy_fragment`], then delete the range as one undo step;
+/// its objects detach as the active cut. Null, changing nothing, where the copy
+/// refuses or the page refuses the delete.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_cut_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .cut_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16)
+        .map_or(ptr::null_mut(), |copied| copied_json(&copied))
+}
+
+/// Paste an envelope over a UTF-16 range as one undo step, the core
+/// resolving each reference; an envelope it cannot read places `plain`.
+/// Returns the placed JSON ([`placed_json`]), or null, changing nothing, for a
+/// file id, an unknown page, a bad range or nothing to place.
+///
+/// # Safety
+/// `handle` must be a valid handle. `envelope` must be null or readable for
+/// `envelope_len` bytes. `plain` must be null or a valid, NUL-terminated
+/// UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_paste_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+    envelope: *const u8,
+    envelope_len: usize,
+    plain: *const c_char,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let envelope: &[u8] = if envelope.is_null() || envelope_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(envelope, envelope_len) }
+    };
+    let plain = unsafe { cstr(plain) };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .paste_fragment(
+            SheetId::from_raw(sheet),
+            at_utf16,
+            len_utf16,
+            envelope,
+            plain,
+        )
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// Place the active cut over a UTF-16 range, the clipboard slot's route; null
+/// when no cut stands, or as [`companion_sheet_paste_fragment`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_paste_active_cut(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .paste_active_cut(SheetId::from_raw(sheet), at_utf16, len_utf16)
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// A drag inside a page: move a UTF-16 range to `to_utf16`, measured before
+/// the move, as one step that keeps every object. Returns the placed JSON, or
+/// null, changing nothing, for a `to` inside or at the range's edge.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_move_range(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    from_utf16: u32,
+    len_utf16: u32,
+    to_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .move_range(SheetId::from_raw(sheet), from_utf16, len_utf16, to_utf16)
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// The ⌥ drag inside a page: insert a copy of a UTF-16 range at `to_utf16`,
+/// every object cloned, as one step. Returns the placed JSON or null.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_clone_range(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    from_utf16: u32,
+    len_utf16: u32,
+    to_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .clone_range(SheetId::from_raw(sheet), from_utf16, len_utf16, to_utf16)
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// The clipboard slot (ADR-0047 point 12): `{"page_id": u64|null,
+/// "objects": [face]}`, the active cut's page and its objects' faces in
+/// order, `null` and `[]` when no cut stands. Free with
+/// [`companion_string_free`]; null on error.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let (page, objects) = guard.store.active_cut().unzip();
+    let faces: Vec<serde_json::Value> = objects
+        .unwrap_or_default()
+        .into_iter()
+        .map(chip_face)
+        .collect();
+    let value = serde_json::json!({
+        "page_id": page.map(SheetId::raw),
+        "objects": faces,
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Decrypted drag (ADR-0047 point 11): from the shell's data provider, write
+/// a chip's payload into the drag `item` on `pasteboard` under `type`, and
+/// record one `sent` to `drag`. The bytes never reach Swift. False, writing
+/// and recording nothing, for an unknown chip, a null or foreign pointer, the
+/// general pasteboard, or a type other than the chip's own; always off macOS.
+///
+/// # Safety
+/// `handle` must be a valid handle. `pasteboard` and `item` must each be null
+/// or the live `NSPasteboard` and `NSPasteboardItem` the provider was handed,
+/// for the call. `pasteboard_type` must be null or a valid C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_provide_drag(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    pasteboard: *mut std::ffi::c_void,
+    item: *mut std::ffi::c_void,
+    pasteboard_type: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(requested) = (unsafe { cstr(pasteboard_type) }) else {
+        return false;
+    };
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (handle, chip, pasteboard, item, requested);
+        false
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: the caller vouches each pointer is null or a live object.
+        let Some(mut drag) =
+            (unsafe { companion_pasteboard::SystemDragItem::from_raw(pasteboard, item) })
+        else {
+            return false;
+        };
+        let Ok(mut guard) = handle.inner.lock() else {
+            return false;
+        };
+        guard.provide_drag(ChipId::from_raw(chip), &mut drag, requested)
+    }
+}
+
 /// Clear the pasteboard only if it still holds our last copy-out. Returns
 /// whether a clear happened.
 ///
@@ -1557,6 +1817,43 @@ impl Companion {
         );
         self.last_write = Some(receipt);
         self.store.record_sent(chip, DestinationClass::Clipboard);
+    }
+
+    /// Decrypted drag's write: the chip's own type only, never the general
+    /// pasteboard, one `sent` to `drag` once the item took the bytes.
+    // Only AppKit hands a drag item; off macOS only the tests call this.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn provide_drag(&mut self, chip: ChipId, item: &mut dyn DragItem, requested: &str) -> bool {
+        if item.on_general_pasteboard() {
+            return false;
+        }
+        let Some(meta) = self
+            .store
+            .sheets()
+            .find_map(|sheet| sheet.chip(chip))
+            .map(SealedChip::meta)
+        else {
+            return false;
+        };
+        let kind = content_kind(meta);
+        if kind.pasteboard_type() != requested {
+            return false;
+        }
+        let Some((bytes, _)) = self.store.copy_out_chip(chip) else {
+            return false;
+        };
+        if !item.provide(&bytes, kind) {
+            return false;
+        }
+        self.store.record_sent(chip, DestinationClass::Drag)
+    }
+}
+
+/// The pasteboard kind a chip's payload is written as.
+fn content_kind(meta: ChipMeta) -> ContentKind {
+    match meta {
+        ChipMeta::Text { .. } => ContentKind::Text,
+        ChipMeta::Image { .. } => ContentKind::Image,
     }
 }
 
@@ -3150,6 +3447,43 @@ fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *
     }
 }
 
+/// A copy or cut as `{"envelope": string|null, "plain": string}`.
+fn copied_json(copied: &Copied) -> *mut c_char {
+    // The core writes the envelope as UTF-8 JSON; it crosses as a string.
+    let envelope = copied
+        .envelope
+        .as_ref()
+        .map(|bytes| String::from_utf8_lossy(bytes));
+    let value = serde_json::json!({
+        "envelope": envelope,
+        "plain": copied.plain.as_str(),
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// What a paste, a move or a clone placed: `location_utf16` and
+/// `length_utf16` of the placed run, a count per resolution, and
+/// `unreadable`, true when the public text was placed instead.
+fn placed_json(placed: Placed) -> *mut c_char {
+    let value = serde_json::json!({
+        "location_utf16": placed.location_u16,
+        "length_utf16": placed.length_u16,
+        "reattached": placed.reattached,
+        "cloned": placed.cloned,
+        "expired": placed.expired,
+        "burned": placed.burned,
+        "unavailable": placed.unavailable,
+        "unreadable": placed.unreadable,
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
 /// A step's outcome as the header's `StepOutcome`, an owned C string.
 pub(crate) fn step_outcome_json(outcome: StepOutcome) -> *mut c_char {
     let value = serde_json::json!({
@@ -3831,6 +4165,18 @@ mod tests {
             let doc = take_json(companion_sheet_document_json(handle, sheet));
             assert!(doc.contains("\"name\":\"GH_TOKEN\""), "{doc}");
             assert!(!doc.contains("n0ts3cr3t"), "{doc}");
+
+            // The fragment, its public text and the slot name objects, never bytes.
+            let copied = take_json(companion_sheet_copy_fragment(handle, sheet, 0, 2));
+            assert!(
+                copied.contains("GH_TOKEN"),
+                "the name rides along: {copied}"
+            );
+            assert!(!copied.contains("n0ts3cr3t"), "{copied}");
+            let cut = take_json(companion_sheet_cut_fragment(handle, sheet, 0, 2));
+            assert!(!cut.contains("n0ts3cr3t"), "{cut}");
+            let slot = take_json(companion_active_cut_json(handle));
+            assert!(!slot.contains("n0ts3cr3t"), "{slot}");
 
             // After death the ledger holds metadata only.
             assert!(companion_tab_close(handle, tab));
@@ -7753,9 +8099,301 @@ mod tests {
             let opts = cstring("{}");
             assert!(companion_sheet_conceal(handle, tagged, opts.as_ptr()).is_null());
 
+            assert!(companion_sheet_copy_fragment(handle, tagged, 0, 1).is_null());
+            assert!(companion_sheet_cut_fragment(handle, tagged, 0, 1).is_null());
+            let plain = cstring("x");
+            assert!(
+                companion_sheet_paste_fragment(
+                    handle,
+                    tagged,
+                    0,
+                    0,
+                    ptr::null(),
+                    0,
+                    plain.as_ptr()
+                )
+                .is_null()
+            );
+            assert!(companion_sheet_paste_active_cut(handle, tagged, 0, 0).is_null());
+            assert!(companion_sheet_move_range(handle, tagged, 0, 1, 3).is_null());
+            assert!(companion_sheet_clone_range(handle, tagged, 0, 1, 3).is_null());
+
             let after = take_json(companion_sheet_document_json(handle, page));
             assert!(after.contains("hello"));
 
+            companion_free(handle);
+        }
+    }
+
+    unsafe fn json_of(p: *mut c_char) -> serde_json::Value {
+        serde_json::from_str(&unsafe { take_json(p) }).unwrap()
+    }
+
+    /// A page reading `ab`, a sealed chip, `cd`: five units.
+    unsafe fn page_with_a_chip(handle: *mut CompanionHandle, secret: &str) -> (u64, u64) {
+        let (_, sheet) = unsafe { new_page(handle) };
+        let chip = unsafe {
+            json_of(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(secret).as_ptr(),
+                0,
+                0,
+            ))
+        }["chip_id"]
+            .as_u64()
+            .unwrap();
+        let ops =
+            cstring(r#"[{"ins": {"at": 0, "text": "ab"}}, {"ins": {"at": 3, "text": "cd"}}]"#);
+        assert!(unsafe { companion_sheet_apply_ops(handle, sheet, ops.as_ptr()) });
+        (sheet, chip)
+    }
+
+    unsafe fn paste(
+        handle: *mut CompanionHandle,
+        sheet: u64,
+        at: u32,
+        envelope: &str,
+    ) -> serde_json::Value {
+        unsafe {
+            json_of(companion_sheet_paste_fragment(
+                handle,
+                sheet,
+                at,
+                0,
+                envelope.as_ptr(),
+                envelope.len(),
+                ptr::null(),
+            ))
+        }
+    }
+
+    #[test]
+    fn copy_cut_and_paste_carry_the_envelope_unread_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let (_, other) = new_page(handle);
+
+            let copied = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 5));
+            assert_eq!(copied["plain"], "ab[sealed content \u{b7} tiny]cd");
+            let envelope = copied["envelope"].as_str().unwrap().to_string();
+            assert!(!envelope.contains("hunter2"), "{envelope}");
+            let placed = paste(handle, other, 0, &envelope);
+            assert_eq!(placed["cloned"], 1);
+            assert_eq!(placed["length_utf16"], 5);
+            assert_eq!(placed["unreadable"], false);
+
+            let ink = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 2));
+            assert!(ink["envelope"].is_null(), "ink alone writes no envelope");
+
+            let cut = json_of(companion_sheet_cut_fragment(handle, sheet, 2, 1));
+            let slot = json_of(companion_active_cut_json(handle));
+            assert_eq!(slot["page_id"], sheet);
+            assert_eq!(slot["objects"][0]["chip_id"], chip);
+            assert!(
+                slot["objects"][0].get("excerpt").is_some(),
+                "a face, never payload"
+            );
+            let placed = paste(handle, other, 5, cut["envelope"].as_str().unwrap());
+            assert_eq!(placed["reattached"], 1);
+            let slot = json_of(companion_active_cut_json(handle));
+            assert!(slot["page_id"].is_null());
+            assert_eq!(slot["objects"], serde_json::json!([]));
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn an_unreadable_envelope_pastes_its_public_text_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (_, sheet) = new_page(handle);
+            let garbage = b"not an envelope";
+            let plain = cstring("ink [sealed content \u{b7} small]");
+            let placed = json_of(companion_sheet_paste_fragment(
+                handle,
+                sheet,
+                0,
+                0,
+                garbage.as_ptr(),
+                garbage.len(),
+                plain.as_ptr(),
+            ));
+            assert_eq!(placed["unreadable"], true);
+            let runs = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(runs.contains("ink [sealed content"), "{runs}");
+            assert!(
+                companion_sheet_paste_fragment(handle, sheet, 0, 0, ptr::null(), 0, ptr::null())
+                    .is_null(),
+                "nothing to place"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_slot_move_and_clone_routes_cross_the_seam() {
+        let handle = handle();
+        unsafe {
+            assert!(
+                companion_sheet_paste_active_cut(handle, 1, 0, 0).is_null(),
+                "no cut"
+            );
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            assert!(!companion_sheet_cut_fragment(handle, sheet, 0, 3).is_null());
+            let placed = json_of(companion_sheet_paste_active_cut(handle, sheet, 2, 0));
+            assert_eq!(placed["reattached"], 1);
+
+            // `cd` then `ab` and the chip; move the chip ahead of all.
+            let moved = json_of(companion_sheet_move_range(handle, sheet, 4, 1, 0));
+            assert_eq!(moved["location_utf16"], 0);
+            assert!(companion_chip_copy_out(handle, chip), "the same object");
+            assert!(
+                companion_sheet_move_range(handle, sheet, 0, 1, 1).is_null(),
+                "its own edge"
+            );
+
+            let cloned = json_of(companion_sheet_clone_range(handle, sheet, 0, 1, 5));
+            assert_eq!(cloned["cloned"], 1);
+            let runs = json_of(companion_sheet_document_json(handle, sheet));
+            let chips = runs
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|run| run.get("chip").is_some())
+                .count();
+            assert_eq!(chips, 2);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_fragment_routes_fail_closed() {
+        unsafe {
+            let null = ptr::null_mut();
+            assert!(companion_sheet_copy_fragment(null, 1, 0, 1).is_null());
+            assert!(companion_sheet_cut_fragment(null, 1, 0, 1).is_null());
+            assert!(
+                companion_sheet_paste_fragment(null, 1, 0, 0, ptr::null(), 0, ptr::null())
+                    .is_null()
+            );
+            assert!(companion_sheet_paste_active_cut(null, 1, 0, 0).is_null());
+            assert!(companion_sheet_move_range(null, 1, 0, 1, 3).is_null());
+            assert!(companion_sheet_clone_range(null, 1, 0, 1, 3).is_null());
+            assert!(companion_active_cut_json(null).is_null());
+            let kind = cstring("public.utf8-plain-text");
+            assert!(!companion_chip_provide_drag(
+                null,
+                1,
+                null.cast(),
+                null.cast(),
+                kind.as_ptr()
+            ));
+
+            let handle = handle();
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            assert!(
+                companion_sheet_copy_fragment(handle, 4_242, 0, 1).is_null(),
+                "unknown page"
+            );
+            assert!(
+                companion_sheet_copy_fragment(handle, sheet, 0, 99).is_null(),
+                "past the body"
+            );
+            assert!(
+                companion_sheet_copy_fragment(handle, sheet, 1, 0).is_null(),
+                "empty"
+            );
+            assert!(companion_sheet_cut_fragment(handle, sheet, 3, 99).is_null());
+            let runs = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(
+                runs.contains("\"ab\"") && runs.contains("\"cd\""),
+                "a refused cut cut nothing"
+            );
+            assert!(!companion_chip_provide_drag(
+                handle,
+                chip,
+                null.cast(),
+                null.cast(),
+                kind.as_ptr()
+            ));
+            assert!(!companion_chip_provide_drag(
+                handle,
+                chip,
+                null.cast(),
+                null.cast(),
+                ptr::null()
+            ));
+            companion_free(handle);
+        }
+    }
+
+    fn sent_destinations(handle: *mut CompanionHandle) -> Vec<String> {
+        let ledger = unsafe { take_json(companion_ledger_json(handle)) };
+        serde_json::from_str::<Vec<serde_json::Value>>(&ledger)
+            .unwrap()
+            .into_iter()
+            .filter(|record| record["event"] == "sent")
+            .map(|record| record["destination"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag() {
+        let handle = handle();
+        unsafe {
+            let (_, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let mut item = companion_pasteboard::MemoryDragItem::new();
+            {
+                let mut guard = (*handle).inner.lock().unwrap();
+                assert!(guard.provide_drag(
+                    ChipId::from_raw(chip),
+                    &mut item,
+                    "public.utf8-plain-text"
+                ));
+            }
+            assert_eq!(
+                item.provided(),
+                Some((&b"hunter2-secret"[..], ContentKind::Text))
+            );
+            assert_eq!(sent_destinations(handle), vec!["drag"]);
+            assert!(
+                !board_text(handle).is_some_and(|text| text.contains("hunter2")),
+                "not the clipboard"
+            );
+            assert!(
+                companion_chip_copy_out(handle, chip),
+                "a drop deletes nothing"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip() {
+        let handle = handle();
+        unsafe {
+            let (_, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let mut guard = (*handle).inner.lock().unwrap();
+            let chip = ChipId::from_raw(chip);
+            let mut general = companion_pasteboard::MemoryDragItem::on_general();
+            assert!(!guard.provide_drag(chip, &mut general, "public.utf8-plain-text"));
+            assert!(general.provided().is_none());
+            let mut item = companion_pasteboard::MemoryDragItem::new();
+            assert!(!guard.provide_drag(chip, &mut item, "public.png"));
+            assert!(!guard.provide_drag(
+                ChipId::from_raw(4_242),
+                &mut item,
+                "public.utf8-plain-text"
+            ));
+            assert!(item.provided().is_none());
+            drop(guard);
+            assert!(
+                sent_destinations(handle).is_empty(),
+                "nothing provided, nothing recorded"
+            );
             companion_free(handle);
         }
     }

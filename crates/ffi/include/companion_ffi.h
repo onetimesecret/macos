@@ -649,8 +649,8 @@ bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
 /*
  * The note is ink of its own beside the object: a document that holds
  * no chips, with an undo stack of its own and no clock. It goes with
- * its chip, at expiry, discard, close or removal, and no ledger record
- * names it. These routes take a CHIP id and mirror the file routes; no
+ * its chip: detached with it at a removal, destroyed with it at expiry,
+ * discard, close or a burn (ADR-0047), and no ledger record names it. These routes take a CHIP id and mirror the file routes; no
  * page route reaches the note and no note route reaches a page, so the
  * page's undo and the note's never cross.
  */
@@ -705,6 +705,107 @@ char *companion_chip_note_redo_action_name(CompanionHandle *handle,
  */
 char *companion_chip_note_undo(CompanionHandle *handle, uint64_t chip);
 char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);
+
+/* ------------------------------------------------------------------ */
+/* The sealed fragment: copy, cut, paste, drags (ADR-0047)             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The core alone composes and reads the envelope the private type
+ * com.onetimesecret.onetimepad.sealed-fragment carries (".debug" in a
+ * debug build, the shell's choice): ordered ink and UUID references,
+ * each with the object's name and note, never payload. The shell
+ * writes and reads its bytes unread. Ranges are UTF-16 code units
+ * against the page's body. Every route below takes a page id, refuses
+ * a file id, and frees as companion_string_free().
+ */
+
+/*
+ * Copy a range: {"envelope": string|null, "plain": string}. The
+ * envelope is null for ink alone, so the shell writes plain text and an
+ * in-app paste keeps its ordinary path; "plain" is the ink with
+ * "[sealed content · <size class>]" for each object, the public
+ * representation. Null for an unknown page or an empty or bad range.
+ */
+char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
+                                    uint32_t at_utf16, uint32_t len_utf16);
+
+/*
+ * As companion_sheet_copy_fragment(), then delete the range as one undo
+ * step. Its objects detach on the page's clock as the store's one
+ * active cut, whose envelope names it; a later cut holding an object
+ * replaces it. Null, changing nothing, where the copy or the page
+ * refuses.
+ */
+char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
+                                   uint32_t at_utf16, uint32_t len_utf16);
+
+/*
+ * Paste envelope bytes over a range as one undo step. Each reference
+ * resolves in order: the active cut's objects, from its own envelope,
+ * reattach; any other live object is cloned with the envelope's name
+ * and note; else the ledger's newest terminal record places
+ * "[sealed content · expired]" or "[sealed content · burned]"; else
+ * "[sealed content · unavailable]". An envelope the core cannot read
+ * places `plain` (nullable) instead. Returns
+ *   {"location_utf16": u32, "length_utf16": u32, "reattached": n,
+ *    "cloned": n, "expired": n, "burned": n, "unavailable": n,
+ *    "unreadable": bool}
+ * naming the placed run, or null, changing nothing, for an unknown
+ * page, a bad range or nothing to place. Restate the page from
+ * companion_sheet_document_json() after it.
+ */
+char *companion_sheet_paste_fragment(CompanionHandle *handle, uint64_t sheet,
+                                     uint32_t at_utf16, uint32_t len_utf16,
+                                     const uint8_t *envelope,
+                                     size_t envelope_len, const char *plain);
+
+/*
+ * The clipboard slot's route: place the active cut over a range, as a
+ * paste of its own envelope. Null when no cut stands.
+ */
+char *companion_sheet_paste_active_cut(CompanionHandle *handle,
+                                       uint64_t sheet, uint32_t at_utf16,
+                                       uint32_t len_utf16);
+
+/*
+ * A drag inside a page: move a range to to_utf16, measured before the
+ * move, as one undo step that keeps every object's identity. Returns
+ * the placed JSON or null for a to_utf16 inside or at the range's edge.
+ */
+char *companion_sheet_move_range(CompanionHandle *handle, uint64_t sheet,
+                                 uint32_t from_utf16, uint32_t len_utf16,
+                                 uint32_t to_utf16);
+
+/*
+ * The option drag inside a page: insert a copy of a range at to_utf16,
+ * every object cloned, as one undo step. Returns the placed JSON or null.
+ */
+char *companion_sheet_clone_range(CompanionHandle *handle, uint64_t sheet,
+                                  uint32_t from_utf16, uint32_t len_utf16,
+                                  uint32_t to_utf16);
+
+/*
+ * The clipboard slot: {"page_id": u64|null, "objects": [face]}, the
+ * active cut's page and its objects' faces (the chip face of
+ * companion_sheet_document_json()) in order; null and [] when no cut
+ * stands. Faces only, never payload.
+ */
+char *companion_active_cut_json(CompanionHandle *handle);
+
+/*
+ * Decrypted drag, from the shell's NSPasteboardItemDataProvider: write
+ * a chip's payload into `item` (an NSPasteboardItem) on `pasteboard`
+ * (its NSPasteboard) under `type`, and record one "sent" to "drag". The
+ * core writes the bytes, as copy decrypted does; the shell never holds
+ * them. Returns false, writing and recording nothing, for an unknown
+ * chip, a null or foreign pointer, the general pasteboard, or a type
+ * other than the chip's own: "public.utf8-plain-text" for text,
+ * "public.png" for an image. Always false off macOS.
+ */
+bool companion_chip_provide_drag(CompanionHandle *handle, uint64_t chip,
+                                 void *pasteboard, void *item,
+                                 const char *type);
 
 /*
  * Clear the pasteboard iff it still holds our last copy-out (change-

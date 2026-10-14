@@ -488,6 +488,60 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     }
 }
 
+/// A copied selection (ADR-0047): the private type's bytes, which the
+/// shell writes and reads unread, and the public text any app receives.
+public struct SealedFragment: Hashable, Sendable {
+    /// The envelope for `CompanionClient.sealedFragmentType`; nil for ink alone.
+    public let envelope: Data?
+    /// The ink, with `[sealed content · <size class>]` for each object.
+    public let plainText: String
+
+    struct Wire: Decodable {
+        let envelope: String?
+        let plain: String
+    }
+}
+
+/// What a paste, a move or a clone placed (ADR-0047 point 6).
+public struct PlacedFragment: Codable, Hashable, Sendable {
+    public let locationUTF16: Int
+    public let lengthUTF16: Int
+    /// Objects that kept their identity: the active cut's, or a move's.
+    public let reattached: Int
+    public let cloned: Int
+    public let expired: Int
+    public let burned: Int
+    public let unavailable: Int
+    /// The envelope could not be read, so its public text was placed.
+    public let unreadable: Bool
+
+    /// The placed run, in UTF-16 code units.
+    public var range: NSRange { NSRange(location: locationUTF16, length: lengthUTF16) }
+
+    enum CodingKeys: String, CodingKey {
+        case reattached, cloned, expired, burned, unavailable, unreadable
+        case locationUTF16 = "location_utf16"
+        case lengthUTF16 = "length_utf16"
+    }
+}
+
+/// The app's clipboard slot (ADR-0047 point 12): the active cut's page and
+/// its objects' faces, never their payload.
+public struct ActiveCut: Codable, Hashable, Sendable {
+    public let pageID: UInt64
+    public let objects: [ChipInfo]
+
+    struct Wire: Decodable {
+        let pageID: UInt64?
+        let objects: [ChipInfo]
+
+        enum CodingKeys: String, CodingKey {
+            case objects
+            case pageID = "page_id"
+        }
+    }
+}
+
 /// Why the core would refuse a draft sealed name (ADR-0042 point 1,
 /// ADR-0043). The rule is the core's alone; the words for each case
 /// are the name field's.
@@ -1164,6 +1218,116 @@ public class CompanionClient: @unchecked Sendable {
     /// number (D-29, D-32).
     public static func clipboardClearSeconds() -> UInt32 {
         companion_clipboard_clear_seconds()
+    }
+
+    // MARK: The sealed fragment (ADR-0047)
+
+    /// The private pasteboard type a fragment's envelope travels under,
+    /// with `.debug` in a debug build so the two cannot read each other's.
+    public static var sealedFragmentType: String {
+        #if DEBUG
+        "com.onetimesecret.onetimepad.sealed-fragment.debug"
+        #else
+        "com.onetimesecret.onetimepad.sealed-fragment"
+        #endif
+    }
+
+    /// Copy a UTF-16 range of a page. Nil for an empty or bad range.
+    public func copyFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
+        guard let wire = selectionWire(range) else { return nil }
+        return fragment(from: companion_sheet_copy_fragment(handle, sheet, wire.0, wire.1))
+    }
+
+    /// Copy a range, then delete it as one undo step; its objects detach
+    /// as the active cut. Nil, with nothing changed, where the core refuses.
+    public func cutFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
+        guard let wire = selectionWire(range) else { return nil }
+        return fragment(from: companion_sheet_cut_fragment(handle, sheet, wire.0, wire.1))
+    }
+
+    /// Paste an envelope over a range as one undo step, the core resolving
+    /// each reference; an envelope it cannot read places `plainText`. Nil,
+    /// with nothing changed, when there is nothing to place. A `plainText`
+    /// holding a NUL is not passed, since a C string would end there.
+    @discardableResult
+    public func pasteFragment(
+        sheet: UInt64, range: NSRange, envelope: Data, plainText: String?
+    ) -> PlacedFragment? {
+        guard let wire = selectionWire(range) else { return nil }
+        let plain = plainText.flatMap { $0.contains("\0") ? nil : $0 }
+        return envelope.withUnsafeBytes { bytes in
+            let base = bytes.bindMemory(to: UInt8.self).baseAddress
+            let paste = { (plain: UnsafePointer<CChar>?) in
+                companion_sheet_paste_fragment(
+                    self.handle, sheet, wire.0, wire.1, base, bytes.count, plain)
+            }
+            let result = plain.map { $0.withCString { paste($0) } } ?? paste(nil)
+            return decodeJSON(PlacedFragment.self, from: result)
+        }
+    }
+
+    /// The clipboard slot's route: place the active cut over a range. Nil
+    /// when no cut stands.
+    @discardableResult
+    public func pasteActiveCut(sheet: UInt64, range: NSRange) -> PlacedFragment? {
+        guard let wire = selectionWire(range) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_paste_active_cut(handle, sheet, wire.0, wire.1))
+    }
+
+    /// A drag inside a page: move `range` to `to`, measured before the move,
+    /// as one step that keeps every object. Nil for a `to` in the range.
+    @discardableResult
+    public func moveRange(sheet: UInt64, range: NSRange, to: Int) -> PlacedFragment? {
+        guard let wire = selectionWire(range), let to = UInt32(exactly: to) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_move_range(handle, sheet, wire.0, wire.1, to))
+    }
+
+    /// The ⌥ drag inside a page: a copy of `range` at `to`, every object
+    /// cloned core-side, as one step.
+    @discardableResult
+    public func cloneRange(sheet: UInt64, range: NSRange, to: Int) -> PlacedFragment? {
+        guard let wire = selectionWire(range), let to = UInt32(exactly: to) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_clone_range(handle, sheet, wire.0, wire.1, to))
+    }
+
+    /// The active cut, for the clipboard slot; nil when none stands.
+    public func activeCut() -> ActiveCut? {
+        guard let wire = decodeJSON(ActiveCut.Wire.self, from: companion_active_cut_json(handle)),
+              let page = wire.pageID
+        else { return nil }
+        return ActiveCut(pageID: page, objects: wire.objects)
+    }
+
+    /// Decrypted drag, from an `NSPasteboardItemDataProvider`: the core
+    /// writes the chip's payload into `item` (an `NSPasteboardItem`) on
+    /// `pasteboard` (its `NSPasteboard`) under `type`, records one `sent`
+    /// to `drag`, and refuses the general pasteboard and any type but the
+    /// chip's own. This process never holds the bytes.
+    @discardableResult
+    public func provideDecryptedDrag(
+        chip: UInt64, pasteboard: AnyObject, item: AnyObject, type: String
+    ) -> Bool {
+        guard !type.contains("\0") else { return false }
+        return withExtendedLifetime((pasteboard, item)) {
+            type.withCString {
+                companion_chip_provide_drag(
+                    handle, chip,
+                    Unmanaged.passUnretained(pasteboard).toOpaque(),
+                    Unmanaged.passUnretained(item).toOpaque(),
+                    $0)
+            }
+        }
+    }
+
+    private func fragment(from ptr: UnsafeMutablePointer<CChar>?) -> SealedFragment? {
+        guard let wire = decodeJSON(SealedFragment.Wire.self, from: ptr) else { return nil }
+        return SealedFragment(envelope: wire.envelope.map { Data($0.utf8) }, plainText: wire.plain)
     }
 
     // MARK: A sealed object's note (ADR-0043)
