@@ -257,7 +257,9 @@ seven-day page can be seven days. Mitigations, in order of weight:
 - **2026-09-04:** Delivery note added below. Status stays `proposed`:
   part 2 waits on op-log growth and compaction cost measured on real
   pages.
-- **2026-10-13:** [ADR-0047](0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)
+- **2026-10-13:** The detached store of draft ADR-0047, since withdrawn
+  and now the proposed
+  [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md),
   reverses two of the delivery note's holdings: a deleted chip and a
   peer's chip deletion no longer clear the stack, since the chip is
   detached and a step stands it again. The note's citations of those two
