@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 mod macos;
 
 #[cfg(target_os = "macos")]
-pub use macos::SystemPasteboard;
+pub use macos::{SystemDragItem, SystemPasteboard};
 
 /// The nspasteboard.org marker for secret content.
 pub const CONCEALED_TYPE: &str = "org.nspasteboard.ConcealedType";
@@ -80,6 +80,71 @@ pub enum ContentKind {
     Text,
     /// Encoded image bytes.
     Image,
+}
+
+impl ContentKind {
+    /// The pasteboard type a decrypted write of this kind goes under.
+    #[must_use]
+    pub const fn pasteboard_type(self) -> &'static str {
+        match self {
+            ContentKind::Text => "public.utf8-plain-text",
+            ContentKind::Image => "public.png",
+        }
+    }
+}
+
+/// One item of a drag in flight, which a decrypted drag's payload is written
+/// into when a destination asks for it (ADR-0047 point 11).
+pub trait DragItem {
+    /// Whether the item's pasteboard is the general pasteboard, which a
+    /// decrypted drag never writes (ADR-0012 Amendment 1).
+    fn on_general_pasteboard(&self) -> bool;
+
+    /// Write the plaintext under its kind's type; false when refused.
+    fn provide(&mut self, content: &[u8], kind: ContentKind) -> bool;
+}
+
+/// A drag item in process memory, for tests and hosts without `AppKit`.
+#[derive(Debug, Default)]
+pub struct MemoryDragItem {
+    general: bool,
+    provided: Option<(Zeroizing<Vec<u8>>, ContentKind)>,
+}
+
+impl MemoryDragItem {
+    /// An item on a drag pasteboard.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// An item on the general pasteboard, as a mistaken caller would pass.
+    #[must_use]
+    pub fn on_general() -> Self {
+        Self {
+            general: true,
+            provided: None,
+        }
+    }
+
+    /// What was provided, if anything.
+    #[must_use]
+    pub fn provided(&self) -> Option<(&[u8], ContentKind)> {
+        self.provided
+            .as_ref()
+            .map(|(bytes, kind)| (bytes.as_slice(), *kind))
+    }
+}
+
+impl DragItem for MemoryDragItem {
+    fn on_general_pasteboard(&self) -> bool {
+        self.general
+    }
+
+    fn provide(&mut self, content: &[u8], kind: ContentKind) -> bool {
+        self.provided = Some((Zeroizing::new(content.to_vec()), kind));
+        true
+    }
 }
 
 /// In-process pasteboard with `NSPasteboard` semantics, for tests, the
@@ -268,6 +333,16 @@ mod tests {
         let c2 = write_text(&mut pb, "b", false);
         assert!(c2.0 > c1.0);
         assert_eq!(pb.change_count(), c2);
+    }
+
+    #[test]
+    fn a_memory_drag_item_keeps_what_it_was_given_and_says_where_it_sits() {
+        let mut item = MemoryDragItem::new();
+        assert!(!item.on_general_pasteboard());
+        assert!(item.provided().is_none());
+        assert!(item.provide(b"hunter2", ContentKind::Text));
+        assert_eq!(item.provided(), Some((&b"hunter2"[..], ContentKind::Text)));
+        assert!(MemoryDragItem::on_general().on_general_pasteboard());
     }
 
     #[test]
