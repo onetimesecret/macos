@@ -1,6 +1,6 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half must build on, their contracts, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
+description: Issue 170 core half and issue 247 built 2026-10-13 under ADR-0047; the seams the editor half builds on, which shell units (copy, cut and slot, paste) are done, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests)
 metadata:
   type: project
 ---
@@ -68,6 +68,17 @@ Seams for the editor half (all page ids, all refuse a file id):
   timer. An envelope over 8 MiB, over 1024 refs, or naming one UUID
   twice is unreadable. Copy, cut, copy decrypted and the decrypted drag
   still read a due page until its timer fires (left, named in ADR-0048).
+
+- Paste is built (shell unit 4): `InkTextView.paste`, `pasteAsPlainText`
+  and `pasteWithoutDetection` ask `Coordinator.pasteFragment()` first,
+  which calls `PageModel.pasteFragment(from:sheet:range:)` (takes any
+  board, so a drop can reuse it; `.ordinary` for no fragment or a file
+  id). A board holding the type never reaches AppKit's paste on a page,
+  even when refused; a note falls through to AppKit's public text.
+  Every paste route now guards `answersChords`. Tests that paste must
+  hold the fragment on the private board, or AppKit reads the real
+  general one. Open trap still unfixed: ⇧⌘V and the summon offer would
+  seal our own placeholder text.
 
 **Why:** the next agent builds the editor on these; the contracts are
 not visible from the issue bodies, and #170's body is wrong where Law
