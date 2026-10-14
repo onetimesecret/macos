@@ -1658,7 +1658,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// Record the page's death and drop it, zeroizing its chips: one record
     /// per chip, attached or detached, as a paste's evidence (ADR-0047), then
-    /// the page's own, which a page without [`Sheet::has_content`] skips.
+    /// the page's own, skipped for a page that held no chip and no content.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
@@ -1676,7 +1676,8 @@ impl<C: Clock> SheetStore<C> {
                 DestinationClass::None,
             );
         }
-        if !sheet.has_content() {
+        // A detached chip is a payload the page held, though nothing shows it.
+        if !sheet.has_content() && sheet.detached.is_empty() {
             return;
         }
         // The label was resolved by the caller; nothing is derived from ink
@@ -5442,6 +5443,27 @@ mod tests {
         }
         assert!(store.copy_out_chip(kept).is_none());
         assert!(store.copy_out_chip(removed).is_none());
+    }
+
+    #[test]
+    fn a_page_holding_only_a_removed_chip_still_records_its_own_end() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store
+            .seal_text_at(id, "the page's one secret", 0, 0)
+            .unwrap();
+        let uuid = store.chip_home(chip).unwrap().1.uuid();
+        let page = store.sheet(id).unwrap().uuid();
+        remove_at(&mut store, id, 0);
+        assert!(!store.sheet(id).unwrap().has_content(), "nothing shows");
+
+        assert!(store.close_tab(slot(&store, id)));
+        let ends: Vec<ItemId> = store
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Discarded)
+            .map(LedgerRecord::item)
+            .collect();
+        assert_eq!(ends, vec![page, uuid], "the page's own beside the chip's");
     }
 
     #[test]

@@ -662,8 +662,8 @@ impl Sheet {
         self.created_wall_ms
     }
 
-    /// A non-whitespace line or a chip: the ledger's bar for a page worth
-    /// recording.
+    /// A non-whitespace line or a standing chip: what the page shows. The
+    /// ledger also records a page holding only detached chips.
     #[must_use]
     pub fn has_content(&self) -> bool {
         !self.chips.is_empty()
