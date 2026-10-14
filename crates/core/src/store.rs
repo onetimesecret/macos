@@ -378,6 +378,14 @@ impl<C: Clock> SheetStore<C> {
         self.readable_sheets().find(|s| s.id == id)
     }
 
+    /// Whether a page's clock has run out though no sweep has taken it yet.
+    /// False for an unknown page.
+    #[must_use]
+    pub fn is_due(&self, id: SheetId) -> bool {
+        let now = self.clock.now();
+        self.sheet(id).is_some_and(|sheet| sheet.is_due(now))
+    }
+
     /// The local id of the page a cross-device `uuid` names, if it stands
     /// here.
     #[must_use]
@@ -915,10 +923,12 @@ impl<C: Clock> SheetStore<C> {
 
     /// The operations a page's document holds beyond `since`, plaintext
     /// for the seam to seal (ADR-0021 section 2). `None` for an unknown
-    /// page or an undecodable frontier.
+    /// page, a page past its deadline (ADR-0052) or an undecodable frontier.
     #[must_use]
     pub fn export_document_updates(&self, id: SheetId, since: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
-        self.sheet(id)?.document.export_updates_since(since)
+        self.readable_sheet(id)?
+            .document
+            .export_updates_since(since)
     }
 
     /// Apply a peer's update batch, refused whole unless it decodes, has
@@ -993,9 +1003,11 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Perform a confirmed ceremony on a deferred page and return the new
-    /// key frame (ADR-0021 sections 1 and 5). `None` unless deferred. The
+    /// key frame (ADR-0021 sections 1 and 5). `None`, changing nothing,
+    /// unless deferred, or for a page past its deadline (ADR-0052). The
     /// caller pairs it with the GOP key rotation.
     pub fn perform_ceremony(&mut self, id: SheetId) -> Option<Zeroizing<Vec<u8>>> {
+        self.readable_sheet(id)?;
         let sheet = self.sheet_mut(id)?;
         if !matches!(sheet.ceremony, CeremonyState::Deferred { .. }) {
             return None;
@@ -2345,6 +2357,34 @@ mod tests {
         let (store, id, chip, records) = a_due_page();
         assert!(store.note_text(chip).is_none());
         assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn sync_exports_no_update_of_a_page_past_its_deadline_before_its_sweep() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        seal(&mut store, id, "hunter2");
+        let pristine = SheetStore::<ManualClock>::pristine_document_version();
+        assert!(store.export_document_updates(id, &pristine).is_some());
+        clock.advance(8 * HOUR);
+        let records = store.ledger().count();
+        assert!(store.export_document_updates(id, &pristine).is_none());
+        assert!(store.is_due(id) && !store.is_due(SheetId::from_raw(4_242)));
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn a_ceremony_cuts_no_key_frame_from_a_page_past_its_deadline_before_its_sweep() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        seal(&mut store, id, "hunter2");
+        assert!(store.set_compaction_deferred(id, true));
+        assert!(store.perform_ceremony(id).is_some());
+        clock.advance(8 * HOUR);
+        let version = store.document_version(id);
+        assert!(store.perform_ceremony(id).is_none());
+        assert_eq!(store.document_version(id), version, "nothing compacted");
+        assert_eq!(store.expire_due(), vec![id], "the sweep still takes it");
     }
 
     #[test]

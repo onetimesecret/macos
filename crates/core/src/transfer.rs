@@ -467,12 +467,6 @@ impl<C: Clock> SheetStore<C> {
             .ok_or(CopyRefusal::Refused)
     }
 
-    /// Whether a page's clock has run out though no sweep has taken it yet.
-    fn is_due(&self, id: SheetId) -> bool {
-        let now = self.clock.now();
-        self.sheet(id).is_some_and(|sheet| sheet.is_due(now))
-    }
-
     /// A live object by identity, attached or detached, on any page.
     fn live_object(&self, uuid: ItemId) -> Option<&SealedChip> {
         self.sheets()
