@@ -6,7 +6,8 @@ holding a sealed object, and the decrypted drag from its handle.
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
 paste, drag and decrypted drag rows cite this procedure for what the
-runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md).
+runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md);
+[ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md).
 **Owner:** delano.
 **Status:** open; not yet run. The editor's copy writes the fragment,
 so the first two checks can run; the rest are blocked until the editor
@@ -46,6 +47,13 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       relaunch, paste. **Pass:** the slot's line is back before the
       paste and the object returns. **Fail:** the paste places
       `[sealed content · unavailable]`.
+- [ ] **A cut that outlives its page's deadline** (ADR-0048). On a one
+      hour page, seal a word and cut it. Sleep the Mac for more than an
+      hour, wake it, and paste onto another page at once. **Pass:** the
+      paste places `[sealed content · expired]`, the first page's tab
+      stands empty, the slot's line is gone, and the ledger shows the
+      object expired. **Fail:** the object returns, or the first page
+      still shows its ink after the paste.
 - [ ] **Plain drag out.** Drag the selection into TextEdit. **Pass:**
       TextEdit receives the same placeholder text as the copy did.
       **Fail:** the sealed word arrives.
