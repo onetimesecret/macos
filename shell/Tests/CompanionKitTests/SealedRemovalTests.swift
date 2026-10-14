@@ -266,6 +266,7 @@ final class SealedRemovalTests: XCTestCase {
     /// Substitutions' replace actions over a selection holding objects leave every object
     /// standing, and what one replaces in the ink on both sides of them is one step.
     func testAReplaceInSelectionOverObjectsKeepsThemAsOneStep() throws {
+        try SpellCheckerOnTheRunner.requireDashReplacement()
         let page = try makePage(tail: " a -- b")
         page.textView.setSelectedRange(NSRange(location: 0, length: 0))
         page.textView.insertText("x -- y ", replacementRange: Self.noReplacement)

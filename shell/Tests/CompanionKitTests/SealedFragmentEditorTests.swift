@@ -397,11 +397,41 @@ final class SealedFragmentEditorTests: XCTestCase {
         return (file, coordinator)
     }
 
+    /// The readers this machine's services may or may not add to a text menu, as items of
+    /// the test's own: Search With, Writing Tools, Look Up and Translate.
+    private func readerControls() -> [NSMenuItem] {
+        [
+            ("Search With Google", "_searchWithGoogleFromMenu:"),
+            ("Show Writing Tools", "showWritingTools:"),
+            ("Look Up “ab”", "_rvMenuItemAction:"),
+            ("Translate “ab”", "_rvMenuItemAction:"),
+        ].map { NSMenuItem(title: $0.0, action: Selector(($0.1)), keyEquivalent: "") }
+    }
+
+    /// The text menu AppKit builds over `view` on a base holding `readerControls()`, so a
+    /// control's item is there whatever the machine offers, and the view's filter meets it.
+    private func seededMenu(_ view: NSTextView) throws -> NSMenu {
+        let base = NSMenu()
+        readerControls().forEach(base.addItem)
+        let kept = view.menu
+        view.menu = base
+        defer { view.menu = kept }
+        return try XCTUnwrap(view.menu(for: secondaryClick(in: view)))
+    }
+
+    /// Whether `menu` holds every reader `readerControls()` seeds.
+    private func holdsEveryReaderControl(_ menu: NSMenu) -> Bool {
+        let titles = Set(menu.items.map(\.title))
+        return readerControls().allSatisfy { titles.contains($0.title) }
+    }
+
     /// Share… builds its picker over the selection with the menu, before any gate is
     /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
     /// page's, a sealed name's and a note's text offer neither; nor Search With Google,
     /// which hands the selection to the browser, nor the typing suggestions and inline
     /// predictions made from the text around the caret as it moves. A file keeps them all.
+    /// Search With and Writing Tools come from this machine's services, so each menu is also
+    /// built on items of the test's own, which a file keeps and the others take out.
     func testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.applyNoteOps(
@@ -411,13 +441,16 @@ final class SealedFragmentEditorTests: XCTestCase {
         file.setSelectedRange(NSRange(location: 0, length: 4))
         let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
         XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isShare), "the control: a file shares")
+        XCTAssertTrue(holdsEveryReaderControl(try seededMenu(file)), "the control: a file keeps them")
 
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))
         let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        let pageSeeded = try seededMenu(page.textView)
         XCTAssertFalse(pageMenu.items.contains(where: TextOffers.isShare), "the page shares")
         XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
         let name = try openNameField(page)
         let nameMenu = try XCTUnwrap(name.menu(for: secondaryClick(in: name)))
+        let nameSeeded = try seededMenu(name)
         XCTAssertFalse(nameMenu.items.contains(where: TextOffers.isShare), "the name shares")
         page.coordinator.nameEditor?.keep(returningKeys: true)
         page.coordinator.beginNote(at: 3)
@@ -425,16 +458,21 @@ final class SealedFragmentEditorTests: XCTestCase {
         let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
         note.selectAll(nil)
         let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
+        let noteSeeded = try seededMenu(note)
         XCTAssertFalse(noteMenu.items.contains(where: TextOffers.isShare), "the note shares")
-        for menu in [pageMenu, nameMenu, noteMenu] {
+        for menu in [pageMenu, nameMenu, noteMenu, pageSeeded, nameSeeded, noteSeeded] {
             XCTAssertFalse(zip(menu.items, menu.items.dropFirst()).contains {
                 $0.isSeparatorItem && $1.isSeparatorItem
             }, "Share left a doubled separator")
         }
 
-        XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isWebSearch), "the control: a file searches")
-        for (menu, surface) in [(pageMenu, "page"), (nameMenu, "name"), (noteMenu, "note")] {
+        let surfaces = [
+            (pageMenu, "page"), (nameMenu, "name"), (noteMenu, "note"),
+            (pageSeeded, "page's seeded"), (nameSeeded, "name's seeded"), (noteSeeded, "note's seeded"),
+        ]
+        for (menu, surface) in surfaces {
             XCTAssertFalse(menu.items.contains(where: TextOffers.isWebSearch), "the \(surface) searches")
+            XCTAssertFalse(menu.items.contains(where: TextOffers.isWritingTools), "the \(surface) writes")
         }
         XCTAssertTrue(file.isAutomaticTextCompletionEnabled, "the control: a file suggests")
         for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
@@ -451,15 +489,10 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
 
         guard #available(macOS 15.0, *) else { return }
-        let writingTools = Selector(("showWritingTools:"))
-        XCTAssertTrue(fileMenu.items.contains { $0.action == writingTools }, "the control")
         XCTAssertEqual(file.writingToolsBehavior, .default)
         XCTAssertEqual(page.textView.writingToolsBehavior, .none, "the page")
         XCTAssertEqual(note.writingToolsBehavior, .none, "the note")
         XCTAssertEqual(name.writingToolsBehavior, .none, "the name")
-        for menu in [pageMenu, nameMenu, noteMenu] {
-            XCTAssertFalse(menu.items.contains { $0.action == writingTools }, "Writing Tools offered")
-        }
         XCTAssertEqual(file.inlinePredictionType, .default, "the control: a file predicts")
         XCTAssertEqual(page.textView.inlinePredictionType, .no, "the page predicts")
         XCTAssertEqual(note.inlinePredictionType, .no, "the note predicts")
@@ -474,7 +507,8 @@ final class SealedFragmentEditorTests: XCTestCase {
     /// Look Up and Translate are built titled with the selection they hold, Speech reads it
     /// out and Spelling and Grammar hands it to the spell server, so no gate at the click
     /// can stop a menu held open past a deadline: a page's, a sealed name's and a note's
-    /// text menu offer none of them; a file keeps all.
+    /// text menu offer none of them; a file keeps all. Look Up and Translate come from this
+    /// machine's services, so each menu is also built on items of the test's own.
     func testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.applyNoteOps(
@@ -491,19 +525,20 @@ final class SealedFragmentEditorTests: XCTestCase {
         file.setSelectedRange(NSRange(location: 0, length: 4))
         let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
         XCTAssertEqual(
-            offers(fileMenu), ["Look Up", "Speech", "Spelling"], "the control: a file offers them")
-        XCTAssertEqual(
-            fileMenu.items.filter(TextOffers.isLookUpOrTranslate).count, 2,
-            "the control: a file offers Look Up and Translate")
+            offers(fileMenu).filter { $0 != "Look Up" }, ["Speech", "Spelling"],
+            "the control: a file offers them")
+        XCTAssertTrue(holdsEveryReaderControl(try seededMenu(file)), "the control: Look Up and Translate")
 
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))
         let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
         XCTAssertEqual(offers(pageMenu), [], "the page")
+        XCTAssertEqual(offers(try seededMenu(page.textView)), [], "the page's seeded")
         XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
         let name = try openNameField(page)
         name.selectAll(nil)
         let nameMenu = try XCTUnwrap(name.menu(for: secondaryClick(in: name)))
         XCTAssertEqual(offers(nameMenu), [], "the name")
+        XCTAssertEqual(offers(try seededMenu(name)), [], "the name's seeded")
         page.coordinator.nameEditor?.keep(returningKeys: true)
         page.coordinator.beginNote(at: 3)
         drainMainQueue()
@@ -511,6 +546,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         note.selectAll(nil)
         let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
         XCTAssertEqual(offers(noteMenu), [], "the note")
+        XCTAssertEqual(offers(try seededMenu(note)), [], "the note's seeded")
         for menu in [pageMenu, nameMenu, noteMenu] {
             XCTAssertNotEqual(menu.items.first?.isSeparatorItem, true, "a separator led the menu")
         }
@@ -586,9 +622,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     /// would put a word of the page in it, so they stand aside; with it down they check.
     /// The misspelling is the test's own.
     func testAPagesSpellingCheckStandsAsideWhileThePanelIsUp() throws {
-        try XCTSkipUnless(
-            NSSpellChecker.shared.checkSpelling(of: "wrnog", startingAt: 0).location != NSNotFound,
-            "this machine's spell checker flags no misspelling, so a check selects nothing")
+        try SpellCheckerOnTheRunner.requireSpelling()
         let page = try makePage()
         page.textView.insertText("wrnog ", replacementRange: NSRange(location: 0, length: 0))
         let start = NSRange(location: 0, length: 0)
@@ -646,7 +680,8 @@ final class SealedFragmentEditorTests: XCTestCase {
     /// Continuous spelling reaches the spell server only through `checkTextInRange`, the
     /// one method the asking views gate for it, so a change of AppKit's route fails here.
     /// Its text is the test's own, never a page's.
-    func testContinuousSpellingChecksThroughTheOneGatedMethod() {
+    func testContinuousSpellingChecksThroughTheOneGatedMethod() throws {
+        try SpellCheckerOnTheRunner.requireSpelling()
         final class Checked: NSTextView {
             var onCheck: (() -> Void)?
             override func checkText(
@@ -2166,13 +2201,34 @@ final class SealedFragmentEditorTests: XCTestCase {
         return NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
     }
 
-    /// The text menu a secondary click over `point` builds.
-    private func textMenu(over point: NSPoint, in view: NSTextView) throws -> NSMenu {
+    /// The text menu a secondary click over `point` builds, on a base of `seeds` when given.
+    private func textMenu(
+        over point: NSPoint, in view: NSTextView, seeding seeds: [NSMenuItem] = []
+    ) throws -> NSMenu {
+        let kept = view.menu
+        if !seeds.isEmpty {
+            let base = NSMenu()
+            seeds.forEach(base.addItem)
+            view.menu = base
+        }
+        defer { view.menu = kept }
         let event = try XCTUnwrap(NSEvent.mouseEvent(
             with: .rightMouseDown, location: view.convert(point, to: nil), modifierFlags: [],
             timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
             eventNumber: 0, clickCount: 1, pressure: 1))
         return try XCTUnwrap(view.menu(for: event))
+    }
+
+    /// An Open With of the test's own, since AppKit builds the real one from the apps this
+    /// machine has for the link.
+    private func openWithControl() -> NSMenuItem {
+        let item = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        item.identifier = NSUserInterfaceItemIdentifier("__NSTextViewContextSubmenuIdentifierOpenWith")
+        let app = NSMenuItem(title: "Browser.app", action: nil, keyEquivalent: "")
+        app.representedObject = URL(fileURLWithPath: "/Applications/Browser.app")
+        item.submenu = NSMenu()
+        item.submenu?.addItem(app)
+        return item
     }
 
     /// Chooses the menu's item sending `action`, as the menu would.
@@ -2221,6 +2277,8 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.opened.urls, [Self.secretLink], "⌘-click")
         let menu = try textMenu(over: point, in: page.textView)
         XCTAssertFalse(menu.items.contains(where: TextOffers.isOpenWith), "the page offers Open With")
+        let seeded = try textMenu(over: point, in: page.textView, seeding: [openWithControl()])
+        XCTAssertFalse(seeded.items.contains(where: TextOffers.isOpenWith), "the page keeps the test's own")
         XCTAssertFalse(menu.items.contains { $0.action == TextOffers.openLinkAction }, "AppKit's Open Link")
         XCTAssertFalse(menu.items.contains { $0.action == TextOffers.copyLinkAction }, "AppKit's Copy Link")
         try choose(Self.openLink, in: menu)
@@ -2240,7 +2298,8 @@ final class SealedFragmentEditorTests: XCTestCase {
             return NSPoint(x: rect.midX + file.textContainerOrigin.x, y: rect.midY + file.textContainerOrigin.y)
         })
         let fileMenu = try textMenu(over: filePoint, in: file)
-        XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isOpenWith), "the control: a file offers Open With")
+        let fileSeeded = try textMenu(over: filePoint, in: file, seeding: [openWithControl()])
+        XCTAssertTrue(fileSeeded.items.contains(where: TextOffers.isOpenWith), "the control: a file keeps it")
         XCTAssertTrue(fileMenu.items.contains { $0.action == TextOffers.copyLinkAction }, "a file's Copy Link")
         try choose(Self.openLink, in: fileMenu)
         try commandClick(at: filePoint, in: file)

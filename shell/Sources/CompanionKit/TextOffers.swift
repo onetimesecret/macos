@@ -6,11 +6,11 @@ import AppKit
 enum TextOffers {
     /// Takes out the items that hold or read the selection for another process from the
     /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar, Search
-    /// With, a link's Open With), then folds the separators.
+    /// With, Writing Tools, a link's Open With), then folds the separators.
     static func removeSelectionReaders(from menu: NSMenu) {
         menu.items.filter {
             isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) || isSpelling($0)
-                || isWebSearch($0) || isOpenWith($0)
+                || isWebSearch($0) || isWritingTools($0) || isOpenWith($0)
         }
         .forEach(menu.removeItem)
         var previousIsSeparator = true
@@ -78,6 +78,11 @@ enum TextOffers {
     /// Search With Google, which hands the selection to the browser's search.
     static func isWebSearch(_ item: NSMenuItem) -> Bool {
         item.action.map(NSStringFromSelector)?.hasPrefix("_searchWith") == true
+    }
+
+    /// Writing Tools' items, should AppKit add them where the view answers Writing Tools with none.
+    static func isWritingTools(_ item: NSMenuItem) -> Bool {
+        item.action == Selector(("showWritingTools:"))
     }
 
     /// A link's Open With, whose applications AppKit hands the URL to with no delegate asked.
