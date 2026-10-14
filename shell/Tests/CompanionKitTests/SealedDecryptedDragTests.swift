@@ -21,15 +21,30 @@ final class SealedDecryptedDragTests: XCTestCase {
     /// Where the sealed object stands on a mounted page.
     private let object = 3
 
+    /// A client whose drop to seal counts its asks and never reads the system drag board.
+    private final class DropToSealWitness: CompanionClient, @unchecked Sendable {
+        private(set) var asks = 0
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func sealFromDrag(sheet: UInt64, at: UInt32, length: UInt32) -> ChipInfo? {
+            asks += 1
+            return nil
+        }
+    }
+
     /// A model of the test's own, whose ordinary pasteboard is a private one.
-    private func makeModel() throws -> PageModel {
+    private func makeModel(
+        client: CompanionClient = .ephemeral(tag: UUID().uuidString)
+    ) throws -> PageModel {
         let suite = "companion-decrypted-drag-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-decrypted-drag-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let client = CompanionClient.ephemeral(tag: UUID().uuidString)
         XCTAssertTrue(client.useMemoryPasteboardForTests())
         let ambient = privateBoard()
         return PageModel(
@@ -303,11 +318,13 @@ final class SealedDecryptedDragTests: XCTestCase {
 
     // MARK: Inside the app (ADR-0050)
 
-    /// The app's own decrypted drag lands on no page: refused before drop to seal reads
-    /// the drag board, so no provider is asked, nothing is recorded and nothing seals.
-    /// A drag from another app still meets drop to seal.
+    /// The app's own decrypted drag lands on no page and no note: each step of the drop
+    /// refuses it, so drop to seal never asks the core, no provider is asked, nothing is
+    /// recorded and nothing seals. A drag from another app still meets drop to seal. The
+    /// witness answers drop to seal, so no step can reach the system drag board.
     func testTheDecryptedDragLandsOnNoPageOfThisApp() throws {
-        let model = try makeModel()
+        let witness = DropToSealWitness(tag: UUID().uuidString)
+        let model = try makeModel(client: witness)
         let page = try mountPage(on: model)
         let other = try mountPage(on: model)
         let (source, item) = try begin(page)
@@ -316,9 +333,9 @@ final class SealedDecryptedDragTests: XCTestCase {
 
         let foreign = FakeDrop(
             source: nil, board: board, location: other.textView.convert(.zero, to: nil))
-        XCTAssertEqual(
-            other.textView.draggingEntered(foreign), .copy,
-            "the control: another app's drag meets drop to seal")
+        XCTAssertEqual(other.textView.draggingEntered(foreign), .copy)
+        XCTAssertFalse(other.textView.performDragOperation(foreign))
+        XCTAssertEqual(witness.asks, 1, "the control: another app's drag meets drop to seal")
 
         other.coordinator.beginNote(at: object)
         let note = try XCTUnwrap(other.coordinator.noteEditor?.textView)
@@ -329,15 +346,13 @@ final class SealedDecryptedDragTests: XCTestCase {
             let drop = FakeDrop(
                 source: source, board: board,
                 location: target.convert(NSPoint(x: 10, y: 10), to: nil))
-            // Checked first, so a regression stops before drop to seal reads a drag board.
-            guard target.draggingEntered(drop) == [] else {
-                return XCTFail("\(name) offered to take the decrypted drag")
-            }
+            XCTAssertEqual(target.draggingEntered(drop), [], name)
             XCTAssertEqual(target.draggingUpdated(drop), [], name)
             XCTAssertEqual(target.dragOperation(for: drop, type: .string), [], name)
             XCTAssertFalse(target.prepareForDragOperation(drop), name)
             XCTAssertFalse(target.performDragOperation(drop), name)
         }
+        XCTAssertEqual(witness.asks, 1, "a surface of this app ran drop to seal")
         XCTAssertEqual(other.model.noteText(chip: try XCTUnwrap(chipID(other))), "")
         XCTAssertEqual(source.asks, 0, "a surface of this app asked the provider")
         XCTAssertNil(model.notice, "drop to seal ran, and said it had nothing to seal")
