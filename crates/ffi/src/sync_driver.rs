@@ -3010,6 +3010,52 @@ mod tests {
             .collect()
     }
 
+    /// The review's case: ink typed before the deadline, published by no
+    /// sweep yet, when the machine sleeps past it.
+    #[test]
+    fn a_sleep_past_the_deadline_publishes_none_of_the_ink_typed_before_it() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "shared ink");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(!staged_envelopes(&mut companion, 0).is_empty());
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.session.absorb_publish(&accepted()).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(staged_envelopes(&mut companion, 2_000).is_empty());
+
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "hunter2 ".into(),
+            }],
+        ));
+        age_by(&mut companion, 365 * 24 * 60 * 60 * 1_000);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        let frontier = companion.sync.enrolled[&uuid].frontier.clone();
+        sweep_outbound(&mut companion, 4_000, &mut events);
+
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, frontier,
+            "nothing exported"
+        );
+        let wire = crate::sync_session::page_wire_id(uuid);
+        let sealed = staged_envelopes(&mut companion, 4_000);
+        assert!(
+            matches!(
+                sealed.as_slice(),
+                [DeltaEnvelope::Expiry { page, ttl_ms: 0, .. }] if *page == wire
+            ),
+            "only its deadline goes, so a peer's copy dies too: {sealed:?}"
+        );
+    }
+
     #[test]
     fn a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
