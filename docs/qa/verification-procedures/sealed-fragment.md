@@ -4,8 +4,8 @@
 holding a sealed object and a service's request for it, the decrypted
 drag from its handle, the
 two presses that remove an object and the line's Undo after them, the
-sealed paste and its offer over this app's own copy, and a menu bar
-with no Print….
+sealed paste and its offer over this app's own copy, a menu bar
+with no Print…, and text menus with no Share… or Writing Tools.
 **Raised by:** issues #170 and #247 on `feature/editing-seals`,
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
@@ -46,16 +46,26 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the plain text and `com.onetimesecret.onetimepad.sealed-fragment.debug`,
       and no other type carries the word. **Fail:** a rich text or other
       type carries it.
-- [ ] **A service and Share over an object.** Select the same three
-      again, then open OnetimePad > Services, and the Share submenu of
-      the page's context menu over the ink. **Pass:** a service that
-      takes text without answering, such as a new note or a web
-      search, receives `before [sealed content · tiny] after`; no
-      service that rewrites the selection in place, such as a case
-      change, is offered; a Share destination receives the same text,
-      or Share offers nothing. **Fail:** any service or Share
-      destination receives the sealed word, or `￼` where the object
-      stood, or a service rewrites the selection over the object.
+- [ ] **A service over an object.** Select the same three again, then
+      open OnetimePad > Services. **Pass:** a service that takes text
+      without answering, such as a new note or a web search, receives
+      `before [sealed content · tiny] after`; no service that rewrites
+      the selection in place, such as a case change, is offered.
+      **Fail:** any service receives the sealed word, or `￼` where the
+      object stood, or a service rewrites the selection over the object.
+- [ ] **No Share… or Writing Tools over a page, a note or a name**
+      (Law 0001, share and Writing Tools amendment). On a Mac with
+      Apple Intelligence on, select ink on a page and Control click it;
+      do the same in an object's note and in its name field while it is
+      open. Then, with each holding the keys, open Edit in the menu bar.
+      Then open a regular text file and Control click a selection there.
+      **Pass:** the page's, the note's and the name field's menus hold
+      no Share…, Show Writing Tools, Proofread or Rewrite and no doubled
+      separator; Edit's Writing Tools items, where the system adds them,
+      are unavailable over all three, and no Writing Tools button or
+      panel appears beside a selection there; the file's menu still
+      offers Share… and Writing Tools. **Fail:** any of these shows over
+      a page, a note or a name, or the file's menu has lost them.
 - [ ] **Cut and paste in place.** Cut the selection, note the slot's
       line under the page, then paste further down. **Pass:** the line
       names the cut object by its face and goes when the paste lands;
