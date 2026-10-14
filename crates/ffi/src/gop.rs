@@ -31,6 +31,27 @@ pub struct GopKeyChain {
     refuse_seal: std::cell::Cell<bool>,
 }
 
+/// What was sealed under one epoch's key, a key frame or a publish batch:
+/// it may go out only while the chain stands at that epoch (client
+/// protocol §4.4, §4.6).
+pub trait EpochSealed {
+    /// The epoch whose key sealed it.
+    fn sealed_epoch(&self) -> u64;
+}
+
+/// Take out of `slot` what was sealed at an epoch other than `chain`'s,
+/// so it never goes out; the one check frames and batches share.
+pub fn take_stale<T: EpochSealed>(slot: &mut Option<T>, chain: &GopKeyChain) -> Option<T> {
+    if slot
+        .as_ref()
+        .is_some_and(|sealed| sealed.sealed_epoch() != chain.epoch())
+    {
+        slot.take()
+    } else {
+        None
+    }
+}
+
 /// A ceremony's key frame and the epoch whose key sealed it, the one
 /// epoch it may be published at (client protocol §4.6).
 pub struct KeyFrame {
@@ -49,6 +70,12 @@ impl KeyFrame {
     #[must_use]
     pub fn sealed(&self) -> &[u8] {
         &self.sealed
+    }
+}
+
+impl EpochSealed for KeyFrame {
+    fn sealed_epoch(&self) -> u64 {
+        self.epoch
     }
 }
 

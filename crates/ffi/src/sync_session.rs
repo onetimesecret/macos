@@ -308,7 +308,7 @@ pub struct SyncSession {
     outbox: Vec<DeltaEnvelope>,
     /// A publish batch built and not yet acknowledged, kept so a `401`
     /// can retry the one request after a refresh.
-    in_flight: Option<Vec<Vec<u8>>>,
+    in_flight: Option<InFlightBatch>,
     /// Which batch that is: bumped once per seal, so a caller tells a
     /// fresh batch from a resend (`sync_driver::stage_publish`).
     in_flight_id: u64,
@@ -326,6 +326,22 @@ pub struct SyncSession {
     /// The last absorbed attach answer: where the channel stands and
     /// who else is on it. `None` until an attach lands.
     attach: Option<AttachSnapshot>,
+}
+
+/// A sealed publish batch, labelled with the epoch whose key sealed it
+/// (client protocol §4.4).
+struct InFlightBatch {
+    epoch: u64,
+    blobs: Vec<Vec<u8>>,
+    /// Its expiry, hold and terminal envelopes, unsealed, to queue again
+    /// if the chain moves before the relay takes it; its ops export again.
+    restate: Vec<DeltaEnvelope>,
+}
+
+impl crate::gop::EpochSealed for InFlightBatch {
+    fn sealed_epoch(&self) -> u64 {
+        self.epoch
+    }
 }
 
 /// What an attach answer leaves behind: the channel position and the
@@ -603,8 +619,9 @@ impl SyncSession {
     }
 
     /// `POST /channel/deltas`: pad and seal everything queued under the
-    /// current GOP key, one request. `None` when the clock says wait,
-    /// nothing is queued, a seal refuses, or no access token is held.
+    /// current GOP key, one request, or resend the batch in flight at the
+    /// epoch that sealed it. `None` when the clock says wait, nothing is
+    /// queued, a seal refuses, or no access token is held.
     #[must_use]
     pub fn publish_request(
         &mut self,
@@ -634,14 +651,45 @@ impl SyncSession {
                 .iter()
                 .map(|envelope| seal(&pad::pad(&envelope.encode())))
                 .collect::<Option<Vec<_>>>()?;
+            let restate = self
+                .outbox
+                .iter()
+                .filter(|envelope| {
+                    matches!(
+                        envelope,
+                        DeltaEnvelope::Expiry { .. }
+                            | DeltaEnvelope::Hold { .. }
+                            | DeltaEnvelope::Terminal { .. }
+                    )
+                })
+                .cloned()
+                .collect();
             // Every seal succeeded; only now does the queue let go.
             self.outbox.clear();
-            self.in_flight = Some(blobs);
+            self.in_flight = Some(InFlightBatch {
+                epoch,
+                blobs,
+                restate,
+            });
             self.in_flight_id = self.in_flight_id.wrapping_add(1);
         }
-        let blobs = self.in_flight.as_ref()?;
+        let batch = self.in_flight.as_ref()?;
         self.last_publish_ms = Some(now_ms);
-        Some(self.api.publish_deltas_request(epoch, blobs, &auth))
+        Some(
+            self.api
+                .publish_deltas_request(batch.epoch, &batch.blobs, &auth),
+        )
+    }
+
+    /// Drop a batch in flight the chain has moved past, unsent, and queue
+    /// its expiry, hold and terminal envelopes again (client protocol
+    /// §4.4). Whether one dropped.
+    pub fn drop_stale_batch(&mut self, chain: &crate::gop::GopKeyChain) -> bool {
+        let Some(stale) = crate::gop::take_stale(&mut self.in_flight, chain) else {
+            return false;
+        };
+        self.outbox.splice(0..0, stale.restate);
+        true
     }
 
     /// Absorb the publish answer: a 2xx clears the batch, a `401` keeps
@@ -1463,6 +1511,62 @@ mod tests {
             session.publish_request(4_000, &chain).is_none(),
             "the epoch moved; the batch is history"
         );
+    }
+
+    #[test]
+    fn a_batch_the_chain_moved_past_never_goes_out_and_queues_its_facts_again() {
+        let mut chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (page, dead) = (ItemId::random(), ItemId::random());
+        session.queue_ops(page, b"ops");
+        let policy = ExpiryPolicy {
+            anchor_wall_ms: 1,
+            ttl_ms: 2,
+        };
+        session.queue_expiry(page, policy);
+        session.queue_hold(page, HoldRegister::Released);
+        session.channels.entry(dead).or_default().set_current(true);
+        assert!(session.queue_terminal(dead, b"marker"));
+        session.outbox.push(DeltaEnvelope::Control {
+            payload: ControlPayload::Accept {
+                ballot_id: "ballot".into(),
+                device_fingerprint: "fp-a".into(),
+            },
+        });
+        let epoch_of = |request: &HttpRequest| {
+            let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+            body["epoch"].as_u64().unwrap()
+        };
+        assert_eq!(epoch_of(&session.publish_request(0, &chain).unwrap()), 0);
+        assert!(!session.drop_stale_batch(&chain), "the chain stands");
+
+        // A resend names the epoch that sealed it, and the driver drops it.
+        chain.advance(b"entropy");
+        assert_eq!(
+            epoch_of(&session.publish_request(2_000, &chain).unwrap()),
+            0
+        );
+        assert!(session.drop_stale_batch(&chain));
+        assert!(session.in_flight.is_none());
+        let wire = page_wire_id(page);
+        let dead_wire = page_wire_id(dead);
+        assert!(
+            matches!(
+                session.queued(),
+                [
+                    DeltaEnvelope::Expiry { page: a, .. },
+                    DeltaEnvelope::Hold { page: b, hold: None },
+                    DeltaEnvelope::Terminal { page: c, .. },
+                ] if *a == wire && *b == wire && *c == dead_wire
+            ),
+            "its ops export again and its ballot is over: {:?}",
+            session.queued()
+        );
+
+        // They seal at the epoch the chain stands at.
+        let request = session.publish_request(4_000, &chain).unwrap();
+        assert_eq!(epoch_of(&request), 1);
+        assert!(!session.drop_stale_batch(&chain));
     }
 
     #[test]

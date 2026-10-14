@@ -867,11 +867,20 @@ fn settle_frontier(
 }
 
 /// Build the publish request and, for a newly sealed batch, record each
-/// page's export cursor; a resend keeps the first record (client
+/// page's export cursor; a resend keeps the first record, and a batch
+/// the chain has moved past is dropped and its pages rewound (client
 /// protocol §4.4).
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
     let engine = companion.sync.engine.as_mut()?;
     let EngineState { session, chain, .. } = engine;
+    if session.drop_stale_batch(chain) {
+        companion.sync.staged_batch = None;
+        for (page, tracking) in &mut companion.sync.enrolled {
+            if rewind_export(tracking) {
+                session.withdraw_ops(*page);
+            }
+        }
+    }
     let request = session.publish_request(now_ms, chain)?;
     let batch = session.in_flight_batch();
     let known = companion
@@ -923,13 +932,23 @@ fn absorb_publish_locked(
     Some(Ok(()))
 }
 
+/// Rewind a page's export cursor to its acknowledged one, so the next
+/// sweep exports what the relay never took. Whether it moved.
+fn rewind_export(tracking: &mut PageTracking) -> bool {
+    if tracking.frontier == tracking.acked {
+        return false;
+    }
+    tracking.frontier = tracking.acked.clone();
+    true
+}
+
 /// Dissolve the engine, handing back its keeper, and rewind every page
 /// to its acknowledged cursor (client protocol §2).
 pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
     // The batch and its record die with the session that sealed it.
     companion.sync.staged_batch = None;
     for tracking in companion.sync.enrolled.values_mut() {
-        tracking.frontier = tracking.acked.clone();
+        let _ = rewind_export(tracking);
         tracking.deadline_wall_ms = None;
         tracking.hold = None;
         tracking.terminal_sent = false;
@@ -1171,13 +1190,7 @@ fn stage_frame(engine: &mut EngineState) -> Option<ots_client::HttpRequest> {
     if let Some(frame) = engine.session.take_frame() {
         engine.unpublished_frame = Some(frame);
     }
-    if engine
-        .unpublished_frame
-        .as_ref()
-        .is_some_and(|frame| frame.epoch() != engine.chain.epoch())
-    {
-        engine.unpublished_frame = None;
-    }
+    let _ = crate::gop::take_stale(&mut engine.unpublished_frame, &engine.chain);
     let frame = engine.unpublished_frame.as_ref()?;
     engine.session.publish_frame_request(frame)
 }
@@ -2906,6 +2919,64 @@ mod tests {
     }
 
     #[test]
+    fn a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink no peer has yet");
+        let due = inked_page(&mut companion, "the page that comes due");
+        let due_tab = companion.store.tabs().last().unwrap().id();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, due, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let wire = crate::sync_session::page_wire_id(uuid);
+        let acked = companion.sync.enrolled[&uuid].acked.clone();
+
+        // A batch sealed at epoch 0 hears no answer, and then an empty room
+        // rotates the channel on the other page.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        companion.store.cycle_rung(due_tab).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+
+        // Its resend would carry epoch 0's blobs: it is dropped, the page's
+        // cursor rewinds, and its expiry goes again at epoch 1.
+        let request = stage_publish(&mut companion, 4_000).expect("the restated facts");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let sealed = opened_envelopes(chain, &request);
+        assert!(
+            !sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+        assert!(
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Expiry { page, .. } if *page == wire))
+        );
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, acked);
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        // The next sweep exports the page again, sealed at epoch 1.
+        sweep_outbound(&mut companion, 6_000, &mut events);
+        let request = stage_publish(&mut companion, 6_000).expect("the page's ops");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(opened_envelopes(chain, &request).iter().any(|e| matches!(
+            e,
+            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(&ops.0, b"no peer has")
+        )));
+    }
+
+    #[test]
     fn a_solo_commit_at_the_relay_cap_settles_the_page_s_cursor() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
         let mut companion = store_companion(Arc::clone(&credentials));
@@ -2939,16 +3010,16 @@ mod tests {
         assert_eq!(companion.sync.enrolled[&uuid].frontier, rebuilt);
         assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
 
-        // Once the kept batch drains, the rebuild is owed only as the frame.
-        let engine = companion.sync.engine.as_mut().unwrap();
-        let EngineState { session, chain, .. } = engine;
-        let _ = session.publish_request(4_000, chain).unwrap();
-        session
-            .absorb_publish(&HttpResponse {
-                status: 200,
-                body: br#"{"seq":1}"#.to_vec(),
-            })
-            .unwrap();
+        // The kept batch was sealed at epoch 0, so only its restated facts go,
+        // and the rebuild is owed only as the frame.
+        let request = stage_publish(&mut companion, 4_000).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
         sweep_outbound(&mut companion, 8_000, &mut events);
         let engine = companion.sync.engine.as_mut().unwrap();
         assert!(
@@ -3139,6 +3210,15 @@ mod tests {
         let Some(request) = session.publish_request(now_ms, chain) else {
             return Vec::new();
         };
+        opened_envelopes(chain, &request)
+    }
+
+    /// Open a publish request's blobs as a peer at `chain`'s epoch would;
+    /// a blob sealed at any other epoch fails the test.
+    fn opened_envelopes(
+        chain: &GopKeyChain,
+        request: &ots_client::HttpRequest,
+    ) -> Vec<DeltaEnvelope> {
         let mut body: serde_json::Value =
             serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
         body["next_seq"] = 0.into();
