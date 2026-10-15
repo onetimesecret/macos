@@ -16,8 +16,7 @@ Guidelines found menu items and buttons in sentence case, an ellipsis on
 items that edit in place, three nouns for the sealed object (`SEALED
 CONTENT`, *protected content*, *decrypted contents*) and two verbs for
 the link (the menu's *Create*, the sheet's *conceal*). The accepted
-words came from the 2026-0915 records (D-09, D-41, D-42) and the draft
-ADR-0042, since withdrawn.
+words came from the 2026-0915 records (D-09, D-41, D-42) and ADR-0042.
 
 The platform's convention is title case for menu items and buttons; an
 ellipsis where more input follows in another window, panel, sheet or
@@ -78,8 +77,12 @@ Menus and buttons are worded as the platform words them.
   (fix/ui-guidelines). The stream navigator record carries dated notes at
   D-41 and D-42, the 2026-0915 UI/UX record at D-09, and Laws 0001 and
   0007 amendments cite this record.
-- 2026-10-15: The draft ADR-0042 this record superseded in part was
-  withdrawn without ratification (feature/editing-seals), so the relation
-  is dropped. The menu it amended is Law 0001's menu block and the
+- 2026-10-15: The ADR-0042 this record superseded in part, *Sealed
+  names, copy zones and rename seats*
+  (`0042-sealed-names-copy-zones-and-rename-seats.md`, last at
+  `8a10020f`), was a draft withdrawn without ratification
+  (feature/editing-seals), so the relation is dropped. The proposed
+  ADR-0042 now in this directory is a different record. The menu it
+  amended is Law 0001's menu block and the
   [sealed row spec](../spec/feature/sealed-content/sealed-row-note-and-handles.md)'s
   The object's menu, both in this record's words.
