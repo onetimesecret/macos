@@ -35,9 +35,14 @@ public struct PadSettingsView: View {
             }
             if pads.isEnabled {
                 Section {
-                    ForEach(pads.entries) { pad in
+                    ForEach(Array(pads.entries.enumerated()), id: \.element.id) { index, pad in
                         PadSettingsRow(
                             model: model, pad: pad,
+                            digit: PadShortcutMonitor.allows(number: index, keymap: model.keymap) ? index : nil,
+                            canMoveUp: index > 1,
+                            canMoveDown: index < pads.entries.count - 1,
+                            moveUp: { pads.moveUp(pad.id) },
+                            moveDown: { pads.moveDown(pad.id) },
                             renaming: routes.rename.pad == pad.id,
                             refusal: routes.rename.pad == pad.id ? routes.rename.refusal : nil,
                             draft: Binding(
@@ -57,6 +62,8 @@ public struct PadSettingsView: View {
                     Button(CompanionL10n.string("pad.new.menu")) { routes.beginCreating() }
                 } header: {
                     Text(CompanionL10n.string("pad.picker.heading"))
+                } footer: {
+                    SettingsCaption(CompanionL10n.string("pad.settings.order"))
                 }
                 Section {
                     Toggle(CompanionL10n.string("pad.app.enabled"), isOn: Binding(
@@ -97,6 +104,11 @@ public struct PadSettingsView: View {
 private struct PadSettingsRow: View {
     @ObservedObject var model: PageModel
     let pad: PadEntry
+    let digit: Int?
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let moveUp: () -> Void
+    let moveDown: () -> Void
     let renaming: Bool
     let refusal: String?
     @Binding var draft: String
@@ -115,6 +127,22 @@ private struct PadSettingsRow: View {
                         keysMoved: model.editorKeysMayHaveMoved)
                 } else {
                     Text(pad.name).lineLimit(1)
+                }
+                if let digit {
+                    Text("⌘\(digit)").font(.caption).monospacedDigit()
+                        .foregroundStyle(Color.secondaryInk)
+                }
+                if !pad.isScratch {
+                    Button(action: moveUp) { Image(systemName: "arrow.up") }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(!canMoveUp)
+                        .accessibilityLabel(CompanionL10n.format("pad.move.up", pad.name))
+                        .help(CompanionL10n.format("pad.move.up", pad.name))
+                    Button(action: moveDown) { Image(systemName: "arrow.down") }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(!canMoveDown)
+                        .accessibilityLabel(CompanionL10n.format("pad.move.down", pad.name))
+                        .help(CompanionL10n.format("pad.move.down", pad.name))
                 }
                 Spacer(minLength: 8)
                 if !pad.isScratch {

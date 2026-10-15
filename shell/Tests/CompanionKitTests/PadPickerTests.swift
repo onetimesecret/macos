@@ -209,6 +209,52 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(entries.dropFirst().first?.digit, nil, "an unbound ⌘1 still labels a pad")
     }
 
+    func testReorderedSwitcherKeepsActiveCheckAndHonorsDigitRemaps() throws {
+        let (model, otto) = try padModel()
+        let familia = try XCTUnwrap(model.createPad(named: "Familia"))
+        let docs = try XCTUnwrap(model.createPad(named: "Docs"))
+        model.activatePad(otto.id)
+        XCTAssertTrue(model.pads.moveUp(docs))
+        XCTAssertTrue(model.pads.moveDown(otto.id))
+        let keymap = Keymap.resolve(defaultText: defaultsText, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-1":null,"cmd-2":"app::Settings"}}]
+            """)
+        let entries = PadSwitcherMenu.entries(
+            pads: model.pads.entries, activeID: model.pads.activeID, keymap: keymap)
+        XCTAssertEqual(entries.map(\.id), [PadCatalog.scratchID, docs, otto.id, familia])
+        XCTAssertEqual(entries.map(\.name), ["Scratch", "Docs", "Otto", "Familia"])
+        XCTAssertEqual(entries.map(\.digit), [0, nil, nil, 3])
+        XCTAssertEqual(entries.filter(\.checked).map(\.id), [otto.id])
+        let menu = PadSwitcherMenu.menu(entries: entries, select: { model.activatePad($0) }, newPad: {}, manage: {})
+        XCTAssertEqual(Array(menu.items.prefix(4)).map(\.keyEquivalent), ["0", "", "", "3"])
+        menu.performActionForItem(at: 3)
+        XCTAssertEqual(model.pads.activeID, familia)
+    }
+
+    func testMovingPadIntoNumberedRangeUpdatesShortcutWithoutMovingScratch() throws {
+        let (model, otto) = try padModel()
+        for number in 2...10 { _ = try XCTUnwrap(model.createPad(named: "Pad \(number)")) }
+        let last = try XCTUnwrap(model.pads.entries.last?.id)
+        let keymap = Keymap.resolve(defaultText: """
+            [{"context":"Editor","bindings":{"cmd-9":"page::Select9"}}]
+            """, overrideText: nil)
+        func entries() -> [PadSwitcherMenu.Entry] {
+            PadSwitcherMenu.entries(pads: model.pads.entries, activeID: model.pads.activeID, keymap: keymap)
+        }
+        XCTAssertNil(entries().last?.digit)
+        XCTAssertTrue(model.pads.moveUp(last))
+        XCTAssertEqual(entries()[9].id, last)
+        XCTAssertEqual(entries()[9].digit, 9)
+        XCTAssertNil(entries()[10].digit)
+        XCTAssertEqual(entries()[0].id, PadCatalog.scratchID)
+        XCTAssertEqual(entries()[0].digit, 0)
+        XCTAssertEqual(entries()[1].id, otto.id)
+        XCTAssertEqual(entries().filter(\.checked).map(\.id), [last])
+        XCTAssertTrue(model.pads.moveDown(last))
+        XCTAssertEqual(entries()[10].id, last)
+        XCTAssertNil(entries()[10].digit)
+    }
+
     /// The menu draws the check in its leading column and the digit in the
     /// shortcut column, and ends in New Pad… and Manage Pads….
     func testTheSwitcherMenuEndsInNewPadAndManagePads() {

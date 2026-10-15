@@ -46,6 +46,36 @@ final class PadModelTests: XCTestCase {
         model.select(index: 1)
         XCTAssertEqual(model.selection, familiaTab)
     }
+    func testReorderingPadsKeepsActivePageSelectionAndStorage() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let familia = try XCTUnwrap(model.createPad(named: "Familia"))
+        model.newPage()
+        let familiaTab = try XCTUnwrap(model.selection)
+        let familiaPage = try XCTUnwrap(model.selectedPageID)
+        let storage = model.storage(for: familiaPage)
+        storage.append(NSAttributedString(string: "Familia ink"))
+        let otto = try XCTUnwrap(model.createPad(named: "Otto"))
+        model.newPage()
+        model.activatePad(familia)
+        let tabs = model.tabs
+        let navigation = model.navigationTabs
+        let remembered = model.pads.rememberedTab(for: familia)
+
+        XCTAssertTrue(model.pads.moveDown(familia))
+        XCTAssertEqual(model.pads.entries.map(\.id), [PadCatalog.scratchID, otto, familia])
+        XCTAssertEqual(model.pads.activeID, familia)
+        XCTAssertEqual(model.selection, familiaTab)
+        XCTAssertEqual(model.selectedPageID, familiaPage)
+        XCTAssertEqual(model.tabs.map(\.id), tabs.map(\.id))
+        XCTAssertEqual(model.navigationTabs.map(\.id), navigation.map(\.id))
+        XCTAssertEqual(model.pads.owner(ofTabUUID: model.selectedTab?.uuid), familia)
+        XCTAssertEqual(model.pads.rememberedTab(for: familia), remembered)
+        XCTAssertTrue(model.storage(for: familiaPage) === storage)
+        XCTAssertEqual(storage.string, "Familia ink")
+    }
+
     func testOpenFileRoutesUsingOnlyExplicitSuppliedPath() throws {
         let defaults = try defaults()
         let model = isolatedModel(defaults: defaults)

@@ -37,6 +37,9 @@
 "pad.remove.menu" = "Remove Pad…";
 "pad.remove.explanation" = "Pages and open files move to Scratch. Their content remains. Folder and app associations, and this pad’s sort preferences, are removed.";
 "pad.actions" = "Actions for %@";
+"pad.move.up" = "Move %@ up";
+"pad.move.down" = "Move %@ down";
+"pad.settings.order" = "Use the arrow buttons to reorder pads and their keyboard shortcuts. Scratch stays first.";
 "pad.scratch.expiry" = "Usual page expiry across restarts.";
 "pad.folder.one" = "%ld folder";
 "pad.folder.many" = "%ld folders";

@@ -345,6 +345,19 @@ public final class PadCatalog: ObservableObject {
         if entries[index].name != name { entries[index].name = name; changed() }
         return true
     }
+    @discardableResult
+    public func moveUp(_ id: UUID) -> Bool { move(id, by: -1) }
+    @discardableResult
+    public func moveDown(_ id: UUID) -> Bool { move(id, by: 1) }
+    private func move(_ id: UUID, by offset: Int) -> Bool {
+        guard loadFailure == nil, let index = entries.firstIndex(where: { $0.id == id }),
+              !entries[index].isScratch else { return false }
+        let destination = index + offset
+        guard destination > 0, entries.indices.contains(destination) else { return false }
+        entries.swapAt(index, destination)
+        changed()
+        return true
+    }
     /// Removes navigation metadata only. Existing content becomes implicit Scratch.
     @discardableResult
     public func remove(_ id: UUID) -> Bool {
