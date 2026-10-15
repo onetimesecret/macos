@@ -5,10 +5,13 @@
 > 2026-10-13 amendment. The mockup
 > ([sealed-name-and-note.svg](sealed-name-and-note.svg)) draws today's
 > block first and the proposed states beside it; this note says what each
-> state means. It remains a lead, not a source, except for the surface
-> details [ADR-0042](../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
-> names. That record also settles the charset, the double click and the
-> three open points below, where its answers are noted.
+> state means. It remains a lead, not a source. Draft ADR-0042, withdrawn
+> on 2026-10-14 without ratification, took its surface details from it and
+> answered the charset, the double click and the three open points below,
+> where its answers are noted. The details now stand in the
+> [sealed row spec](../spec/feature/sealed-content/sealed-row-note-and-handles.md),
+> and the answers in Law 0001's and Law 0007's rows and in
+> [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md), proposed.
 
 # Sealed object: a name and a note
 
@@ -43,7 +46,8 @@ it does.
   the bottom row. An inline field opens in the name's seat with the
   placeholder `NAME`; Return commits, Esc cancels. No dialog (D-14).
   *Rename…* reopens the same field over the current name.
-  *Settled by ADR-0042:* on a named row only a double click on the name
+  *Answered by draft ADR-0042, now Law 0001's zone rows and Law
+  0007's Opening class:* on a named row only a double click on the name
   opens the field; the value and `=` copy on the first click.
 - **What it is.** Page-owned text, like a title: ambient ink that lives
   with the object core-side and travels with it through cut, paste and
@@ -51,7 +55,7 @@ it does.
   ledger, which has no content field to receive it. Proposed shape: up to
   64 characters, letters, digits, underscore, dot and dash, so that
   `name=value` pastes as an environment line. Case is kept as typed.
-  *Settled by ADR-0042:* 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`,
+  *Proposed by ADR-0042 point 1:* 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`,
   refused core-side, since a dot or a dash does not assign in a shell.
 
 ## The three copy zones
@@ -147,6 +151,7 @@ more seats the law reaches:
 - The note's measure when the card is narrower than the popover's
   minimum.
 
-*Answered by ADR-0042:* an unnamed row has no zones until the object is
-named; the value is copied raw; and on a narrow card the note takes the
-card's full content width.
+*Answered by draft ADR-0042, now Law 0001's unnamed row and note rows
+and ADR-0042 point 2, proposed:* an unnamed row has no zones until the
+object is named; the value is copied raw; and on a narrow card the note
+takes the card's full content width.
