@@ -447,6 +447,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tab summaries name each page's UUID** (`companion-ffi` 0.41.0).
+  `companion_tabs_json` gains `page_uuid`, the page's `Sheet.uuid()` in
+  lowercase hyphenated form, or null for a slot with no page; the shell
+  reads it as `TabSummary.pageUUID`.
+
 - **The editor copies, cuts, pastes and drags a sealed object by
   reference** (app 0.34.0; Law 0001, ADR-0045, ADR-0046,
   `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
