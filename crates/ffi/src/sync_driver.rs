@@ -370,7 +370,7 @@ fn wall_now_ms() -> u64 {
 
 /// Enrol a page into the channel, or withdraw it, which performs any due
 /// ceremony on the spot (client protocol §2). A page past its deadline
-/// does not enrol (ADR-0052).
+/// does not enrol (Law 0001, expiry row).
 pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bool) -> bool {
     let Some(page) = companion
         .store
@@ -756,7 +756,7 @@ pub(crate) fn sweep_outbound(
     for (page, tracking) in enrolled.iter_mut() {
         match sheet_of(store, *page) {
             Some(sheet) => {
-                // ADR-0052: past its deadline a page gives the relay no ops,
+                // Law 0001, expiry row: past its deadline a page gives the relay no ops,
                 // and none queued earlier reach a seal.
                 let past_deadline = store.is_due(sheet);
                 if past_deadline {
@@ -811,7 +811,7 @@ pub(crate) fn sweep_outbound(
 }
 
 /// The first enrolled page held here before its deadline, the anchor of a
-/// rotation no page is owed; a page past it would refuse (ADR-0052).
+/// rotation no page is owed; a page past it would refuse (Law 0001, expiry row).
 fn live_anchor(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &BTreeMap<ItemId, PageTracking>,

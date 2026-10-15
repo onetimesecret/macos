@@ -557,7 +557,8 @@ impl SyncSession {
     }
 
     /// Drop a page's ops still waiting for a seal, as for a page past its
-    /// deadline or gone (ADR-0052). Its expiry, hold and marker stay queued.
+    /// deadline or gone (Law 0001, expiry row). Its expiry, hold and marker
+    /// stay queued.
     pub fn withdraw_ops(&mut self, page: ItemId) {
         let wire = page_wire_id(page);
         self.outbox.retain(
@@ -930,7 +931,7 @@ impl SyncSession {
                     return;
                 };
                 // A page past its deadline here would refuse the commit
-                // (ADR-0052), so this device stays out as for one it lacks.
+                // (Law 0001, expiry row), so this device stays out as for one it lacks.
                 if sheet_of(store, page).is_none_or(|sheet| store.is_due(sheet))
                     || self
                         .channels
@@ -999,8 +1000,8 @@ impl SyncSession {
                 let Some(entropy) = entropy else {
                     return;
                 };
-                // Every member advances on this accept, even with no rebuild
-                // here (ADR-0052) or a refused seal, which leaves the frame to a peer.
+                // Every member advances on this accept, even with no rebuild here
+                // (Law 0001, expiry row) or a refused seal, which leaves the frame to a peer.
                 let rebuild = sheet_of(store, page).and_then(|sheet| store.perform_ceremony(sheet));
                 let _staged = self.commit_advance(
                     page,

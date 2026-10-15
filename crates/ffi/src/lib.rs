@@ -1221,7 +1221,7 @@ pub unsafe extern "C" fn companion_sheet_undo_selection_length_u16(
 /// `ConcealedType`, keeps the receipt for [`companion_clear_clipboard_if_ours`],
 /// and records one `sent` to `clipboard`. The chip survives. Returns whether
 /// it existed; false, writing and recording nothing, past its page's deadline
-/// (ADR-0052).
+/// (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1241,10 +1241,11 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
     true
 }
 
-/// Copy `NAME=<plaintext>` by copy decrypted's route (Law 0001, ADR-0043): the
-/// store composes it and this writes it as [`companion_chip_copy_out`] does.
-/// False, writing and recording nothing, for an unknown, unnamed or image chip,
-/// or a page past its deadline (ADR-0052).
+/// Copy `NAME=<plaintext>` by copy decrypted's route
+/// (Law 0001; ADR-0042 point 3, proposed): the store composes it and this
+/// writes it as [`companion_chip_copy_out`] does. False, writing and recording
+/// nothing, for an unknown, unnamed or image chip, or a page past its deadline
+/// (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1285,7 +1286,7 @@ pub unsafe extern "C" fn companion_chip_stands(handle: *mut CompanionHandle, chi
 }
 
 /// Burn a chip, attached or detached, wiping its bytes and its page's undo
-/// stack (ADR-0047). Returns whether it existed.
+/// stack (ADR-0046 point 2, proposed). Returns whether it existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1300,9 +1301,9 @@ pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chi
     guard.store.delete_chip(ChipId::from_raw(chip))
 }
 
-/// Judge a draft sealed name without a handle (ADR-0043): 0 takes it, an
-/// empty draft clearing; 1 is too long; 2 is outside the charset, as are null
-/// and non-UTF-8.
+/// Judge a draft sealed name without a handle (ADR-0042 point 1, proposed):
+/// 0 takes it, an empty draft clearing; 1 is too long; 2 is outside the
+/// charset, as are null and non-UTF-8.
 ///
 /// # Safety
 /// `draft` must be null or a valid NUL-terminated C string.
@@ -1318,8 +1319,9 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
     }
 }
 
-/// Name a sealed object, or clear its name with a blank draft (ADR-0043).
-/// False for an unknown chip or a refused draft; the name is then unchanged.
+/// Name a sealed object, or clear its name with a blank draft
+/// (ADR-0042 point 1, proposed). False for an unknown chip or a refused draft;
+/// the name is then unchanged.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `name` must be a valid,
@@ -1345,11 +1347,11 @@ pub unsafe extern "C" fn companion_chip_set_name(
         .is_ok()
 }
 
-// ---- A sealed object's note: its own document, keyed by chip (ADR-0043) ----
+// ---- A sealed object's note: its own document, keyed by chip (ADR-0043 point 2, proposed) ----
 
 /// The note as document runs: `[]` without one, else `[{"ink": text}]`. Null
-/// for an unknown chip or a page past its deadline (ADR-0052). Free with
-/// [`companion_string_free`].
+/// for an unknown chip or a page past its deadline (Law 0001, expiry row).
+/// Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1574,11 +1576,12 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
     outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
-// ---- The sealed fragment: copy, cut, paste, drags (ADR-0047) ----
+// ---- The sealed fragment: copy, cut, paste, drags (ADR-0045 and ADR-0046, proposed) ----
 
 /// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`, or
-/// `{"error", "limit"}` past an envelope cap (ADR-0053); null for a file id,
-/// an unknown page, a page past its deadline (ADR-0052) or a bad range.
+/// `{"error", "limit"}` past an envelope cap (Law 0001, copy row); null for a
+/// file id, an unknown page, a page past its deadline (Law 0001, expiry row)
+/// or a bad range.
 /// Free with [`companion_string_free`].
 ///
 /// # Safety
@@ -1735,9 +1738,9 @@ pub unsafe extern "C" fn companion_sheet_move_range(
         .map_or(ptr::null_mut(), placed_json)
 }
 
-/// A drag between pages (ADR-0054): move a range of `source` to `at_utf16` on
-/// `dest` as one transaction keeping every object. The placed JSON, its run on
-/// `dest`, or null with neither page changed.
+/// A drag between pages (Law 0001, drag row): move a range of `source` to
+/// `at_utf16` on `dest` as one transaction keeping every object. The placed
+/// JSON, its run on `dest`, or null with neither page changed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1830,7 +1833,8 @@ pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle)
 
 /// Decrypted drag: write a chip's payload into the drag `item` on `pasteboard`
 /// under its type and record one `sent` to `drag`; false, doing neither, on
-/// refusal, which includes a removed chip and a page past its deadline (ADR-0052).
+/// refusal, which includes a removed chip and a page past its deadline
+/// (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle. `pasteboard` and `item` must each be null
@@ -2814,7 +2818,7 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
 /// without holding the core lock; call off the main thread. On success the
 /// link is on the clipboard. Returns `{"ok": true, "receipt_id"}` or
 /// `{"ok": false, "error"}`, sending nothing for a page past its deadline
-/// (ADR-0052); free with [`companion_string_free`].
+/// (Law 0001, expiry row); free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
@@ -3254,7 +3258,7 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
 /// by default (relay protocol §1). Enrolling defers its compaction to
 /// the coordinated ceremony and starts its cursor at the beginning;
 /// withdrawing performs any due ceremony on the spot. A page past its
-/// deadline does not enrol (ADR-0052). `page` is the PAGE id.
+/// deadline does not enrol (Law 0001, expiry row). `page` is the PAGE id.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -3577,7 +3581,7 @@ fn copied_json(copied: &Copied) -> *mut c_char {
 }
 
 /// A copy's or a cut's answer: [`copied_json`], `{"error": "tooLarge" |
-/// "tooManyObjects", "limit"}` past a cap (ADR-0053), else null.
+/// "tooManyObjects", "limit"}` past a cap (Law 0001, copy row), else null.
 fn copy_outcome_json(outcome: Result<Copied, CopyRefusal>) -> *mut c_char {
     let cap = match outcome {
         Ok(copied) => return copied_json(&copied),
@@ -3594,7 +3598,7 @@ fn copy_outcome_json(outcome: Result<Copied, CopyRefusal>) -> *mut c_char {
 
 /// What a paste, a move or a clone placed: its run in UTF-16 units, a count
 /// per resolution, `unreadable` when the public text was placed instead, and
-/// `pages_expired`, the due pages its sweep took (ADR-0048).
+/// `pages_expired`, the due pages its sweep took (Law 0001, expiry row).
 fn placed_json(placed: Placed) -> *mut c_char {
     let value = serde_json::json!({
         "location_utf16": placed.location_u16,
@@ -5447,7 +5451,7 @@ mod tests {
                 cstring(r#"[{"chip": 424242}]"#).as_ptr()
             ));
 
-            // A snapshot that omits the chip detaches it (ADR-0047).
+            // A snapshot that omits the chip detaches it (ADR-0046 point 1, proposed).
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
