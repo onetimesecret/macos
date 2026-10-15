@@ -350,42 +350,18 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
     }
 
-    func testSortAccessibilitySeparatesCurrentOrderFromNextAction() {
-        let oldest = PadSortCopy(direction: .chronological, subject: "days")
-        XCTAssertEqual(oldest.label, "days sort order")
-        XCTAssertEqual(oldest.currentOrder, "Oldest first")
-        XCTAssertEqual(oldest.action, "Activate to sort days newest first")
-        let newest = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
-        XCTAssertEqual(newest.currentOrder, "Newest first")
-        XCTAssertEqual(newest.action, "Activate to sort today checkpoints in natural order")
-        XCTAssertEqual(oldest.symbolName, "arrow.down")
-        XCTAssertEqual(newest.symbolName, "arrow.up")
-        let natural = PadSortCopy(direction: .natural, subject: "today checkpoints")
-        XCTAssertEqual(natural.label, "today checkpoints sort order")
-        XCTAssertEqual(natural.currentOrder, "Natural order")
-        XCTAssertEqual(natural.action, "Activate to sort today checkpoints oldest first")
-        XCTAssertEqual(natural.symbolName, "list.bullet")
-    }
-
-    func testDaySortAccessibilityCyclesThroughNaturalOrder() {
-        let cases: [(PadSortDirection, String, String, String)] = [
-            (.natural, "Natural order", "Activate to sort days oldest first", "list.bullet"),
-            (.chronological, "Oldest first", "Activate to sort days newest first", "arrow.down"),
-            (.reverseChronological, "Newest first", "Activate to sort days in natural order", "arrow.up")
-        ]
-        for (direction, value, action, symbol) in cases {
+    func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {
+        XCTAssertEqual(PadSortCopy.orders, [.natural, .chronological, .reverseChronological])
+        let labels = ["Natural order", "Oldest first", "Newest first"]
+        for (direction, label) in zip(PadSortCopy.orders, labels) {
             let copy = PadSortCopy(direction: direction, subject: "days")
             XCTAssertEqual(copy.label, "days sort order")
-            XCTAssertEqual(copy.currentOrder, value)
-            XCTAssertEqual(copy.action, action)
-            XCTAssertEqual(copy.symbolName, symbol)
+            XCTAssertEqual(copy.currentOrder, label)
+            XCTAssertEqual(copy.help, "days sort order: \(label)")
         }
-    }
-
-    func testSortAccessibilityRetainsExplicitNextOverride() {
-        let copy = PadSortCopy(direction: .reverseChronological, subject: "days", next: .chronological)
-        XCTAssertEqual(copy.currentOrder, "Newest first")
-        XCTAssertEqual(copy.action, "Activate to sort days oldest first")
+        let checkpoints = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
+        XCTAssertEqual(checkpoints.label, "today checkpoints sort order")
+        XCTAssertEqual(checkpoints.help, "today checkpoints sort order: Newest first")
     }
 
     func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {

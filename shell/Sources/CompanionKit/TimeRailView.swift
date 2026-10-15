@@ -173,12 +173,13 @@ public struct TimeRailView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 3) {
-                    GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
-                    Spacer(minLength: 0)
-                    sortControl(
+                    sortMenu(
                         direction: dayDirection,
-                        label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort
-                    )
+                        subject: CompanionL10n.string("pad.sort.days"), select: model.setDaySort
+                    ) {
+                        GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
+                    }
+                    Spacer(minLength: 0)
                     Button(action: model.newPage) { Image(systemName: "plus") }
                         .buttonStyle(.plain).help(CompanionL10n.string("pad.page.new"))
                         .accessibilityLabel(CompanionL10n.string("pad.page.new"))
@@ -186,16 +187,17 @@ public struct TimeRailView: View {
                 ForEach(projection.units) { unit in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 3) {
-                            Text(unit.railLabel).font(.caption).foregroundStyle(Color.secondaryInk)
-                            Spacer(minLength: 0)
-                            sortControl(
+                            sortMenu(
                                 direction: model.pads.checkpointSortDirection(
                                     for: model.pads.activeID,
                                     onDate: model.dateKey(forDayBucket: unit.bucket)
                                 ),
-                                label: CompanionL10n.format("pad.sort.checkpoints", unit.spokenLabel),
-                                action: { model.toggleCheckpointSort(dayBucket: unit.bucket) }
-                            )
+                                subject: CompanionL10n.format("pad.sort.checkpoints", unit.spokenLabel),
+                                select: { model.setCheckpointSort($0, dayBucket: unit.bucket) }
+                            ) {
+                                Text(unit.railLabel).font(.caption).foregroundStyle(Color.secondaryInk)
+                            }
+                            Spacer(minLength: 0)
                         }
                         ForEach(Self.nodes(for: unit, in: nodes)) { node in
                             Button {
@@ -246,19 +248,32 @@ public struct TimeRailView: View {
         }
     }
 
-    private func sortControl(
-        direction: PadSortDirection, next: PadSortDirection? = nil,
-        label: String, action: @escaping () -> Void
+    private func sortMenu<Heading: View>(
+        direction: PadSortDirection, subject: String,
+        select: @escaping (PadSortDirection) -> Void,
+        @ViewBuilder heading: () -> Heading
     ) -> some View {
-        let copy = PadSortCopy(direction: direction, subject: label, next: next)
-        return Button(action: action) {
-            Image(systemName: copy.symbolName)
-                .font(.system(size: 10)).frame(width: 18, height: 18)
+        let copy = PadSortCopy(direction: direction, subject: subject)
+        return Menu {
+            Picker(copy.label, selection: Binding(get: { direction }, set: select)) {
+                ForEach(PadSortCopy.orders, id: \.self) { order in
+                    Text(PadSortCopy(direction: order, subject: subject).currentOrder).tag(order)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 4) {
+                heading()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.secondaryInk)
+            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(copy.action)
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(copy.help)
         .accessibilityLabel(copy.label)
         .accessibilityValue(copy.currentOrder)
-        .accessibilityHint(copy.action)
     }
 
     /// The PAD group's heading with the strip's + on it. The plus sits
@@ -1096,18 +1111,11 @@ private struct SlotRailRow: View {
     }
 }
 
-/// VoiceOver announces the current ordering as the value and the next ordering
-/// as the action, rather than presenting the next state as the current state.
+/// The menu's order choices and current value share their localized labels.
 struct PadSortCopy {
     let direction: PadSortDirection
     let subject: String
-    let next: PadSortDirection
-
-    init(direction: PadSortDirection, subject: String, next: PadSortDirection? = nil) {
-        self.direction = direction
-        self.subject = subject
-        self.next = next ?? direction.next
-    }
+    static let orders: [PadSortDirection] = [.natural, .chronological, .reverseChronological]
 
     var label: String { CompanionL10n.format("pad.sort.label", subject) }
     var currentOrder: String {
@@ -1117,20 +1125,7 @@ struct PadSortCopy {
         case .reverseChronological: return CompanionL10n.string("pad.sort.newest")
         }
     }
-    var action: String {
-        switch next {
-        case .natural: return CompanionL10n.format("pad.sort.toNatural", subject)
-        case .chronological: return CompanionL10n.format("pad.sort.toOldest", subject)
-        case .reverseChronological: return CompanionL10n.format("pad.sort.toNewest", subject)
-        }
-    }
-    var symbolName: String {
-        switch direction {
-        case .natural: return "list.bullet"
-        case .chronological: return "arrow.down"
-        case .reverseChronological: return "arrow.up"
-        }
-    }
+    var help: String { CompanionL10n.format("pad.sort.help", label, currentOrder) }
 }
 
 private struct SlotRailFramesKey: PreferenceKey {
