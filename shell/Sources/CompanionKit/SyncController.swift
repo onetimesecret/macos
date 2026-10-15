@@ -101,7 +101,7 @@ public final class SyncController: ObservableObject {
     /// shows and persists.
     public var onRemoteChange: (() -> Void)?
     /// What a refused enrolment should do: the model settles as the timer would, since
-    /// a page past its deadline refuses (ADR-0052), and says so.
+    /// a page past its deadline refuses (Law 0001, expiry row), and says so.
     public var onEnrolRefused: ((UInt64) -> Void)?
     /// Where the conceal server URL lives, for endpoint derivation.
     public var serverUrlProvider: () -> String = { "" }

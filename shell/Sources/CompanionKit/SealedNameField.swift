@@ -83,8 +83,8 @@ struct ChipRename {
     }
 }
 
-/// The name field's editor: it takes only drags of its own text (ADR-0044), and its
-/// text, part of the object's page, leaves only once that page is asked (ADR-0052).
+/// The name field's editor: it takes only drags of its own text (Law 0001, naming row), and
+/// its text, part of the object's page, leaves only once that page is asked (Law 0001, expiry row).
 final class SealedNameTextView: AskingTextView {
     /// The field over the name, which knows the object's page; with none, nothing leaves.
     weak var owner: SealedNameEditor?
@@ -150,7 +150,7 @@ final class SealedNameTextView: AskingTextView {
 }
 
 /// The name field's cell, which edits through a field editor of its own
-/// that takes no drop from elsewhere (ADR-0044).
+/// that takes no drop from elsewhere (Law 0001, naming row).
 final class SealedNameFieldCell: NSTextFieldCell {
     let editor: SealedNameTextView = {
         let editor = SealedNameTextView()
@@ -176,7 +176,7 @@ final class SealedNameField: NSTextField {
         set {}
     }
 
-    /// The outline and fill the drawing gives the field (ADR-0042 point 8).
+    /// The outline and fill the drawing gives the field (docs/mockups/sealed-name-and-note.svg).
     override func draw(_ dirtyRect: NSRect) {
         let metrics = SealedBlockLayout.metrics(containerWidth: bounds.width)
         let outline = NSBezierPath(
@@ -221,7 +221,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     var isOpen: Bool { rename.isOpen }
 
     /// Whether the draft may leave by AppKit: the object's page is asked, as Copy name
-    /// asks it, and a page past its deadline settles and refuses (ADR-0052).
+    /// asks it, and a page past its deadline settles and refuses (Law 0001, expiry row).
     func givesOutName() -> Bool {
         guard let sheet = rename.sheet else { return false }
         return model.givesOut(sheet: sheet)

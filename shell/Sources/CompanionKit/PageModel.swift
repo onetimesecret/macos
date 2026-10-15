@@ -709,7 +709,7 @@ public final class PageModel: ObservableObject {
     /// editor installs it (`routeSealedPaste(_:from:)`).
     public private(set) var performSealedPaste: (() -> Void)?
 
-    /// The clipboard slot's cut (ADR-0047 point 12): its page and faces, read
+    /// The clipboard slot's cut (sealed row spec): its page and faces, read
     /// again on every `refresh()`; nil when no cut stands.
     @Published public private(set) var activeCut: ActiveCut?
 
@@ -1067,7 +1067,7 @@ public final class PageModel: ObservableObject {
     public let sealActions = SealActionAvailability()
 
     /// The keys moved where the editor cannot see them, as into a field in
-    /// another window: the Edit menu asks the editor again (ADR-0046).
+    /// another window: the Edit menu asks the editor again (Law 0007, keys row).
     func editorKeysMayHaveMoved() {
         (activeEditor as? InkTextView)?.coordinator?.keysMoved()
     }
@@ -1569,7 +1569,7 @@ public final class PageModel: ObservableObject {
             // owed check instead, after it has finished with that answer.
             MainActor.assumeIsolated { self?.consumeOwedActivationCheck() }
         }
-        // The event timer does not count sleep, so a wake settles as the timer would (ADR-0052).
+        // The event timer does not count sleep, so a wake settles as the timer would (Law 0001, expiry row).
         wakeObserver = wakeCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -5752,7 +5752,7 @@ public final class PageModel: ObservableObject {
     public static let ownCopySealLine =
         "nothing to seal: the clipboard holds this app's own copy, which ⌘V pastes."
 
-    /// The line when the offer's button meets a name or note holding the keys (ADR-0046).
+    /// The line when the offer's button meets a name or note holding the keys (Law 0007, keys row).
     public static let sealWaitsLine =
         "a name or note is being written, so the clipboard was not sealed."
 
@@ -5825,8 +5825,8 @@ public final class PageModel: ObservableObject {
         return true
     }
 
-    /// Copy `NAME=<plaintext>` by copy decrypted's route (ADR-0043 point 7),
-    /// with copy out's clear and line (ADR-0042 point 8).
+    /// Copy `NAME=<plaintext>` by copy decrypted's route (Law 0001, `=` zone row),
+    /// with copy out's clear and line (sealed row spec, The page's line).
     @discardableResult
     public func copyChipNameValue(_ id: UInt64, size: String? = nil) -> Bool {
         guard client.copyNameValue(chip: id) else {
@@ -5849,10 +5849,10 @@ public final class PageModel: ObservableObject {
         return true
     }
 
-    // MARK: A sealed object's note (ADR-0043 point 4), keyed by chip, never by page
+    // MARK: A sealed object's note, keyed by chip, never by page (core interface, The note's routes)
 
     /// The note's text as the core holds it; empty without a note, nil where
-    /// the core refuses it, as for a page past its deadline (ADR-0052).
+    /// the core refuses it, as for a page past its deadline (Law 0001, expiry row).
     public func noteText(chip: UInt64) -> String? {
         client.noteRuns(chip: chip)?.reduce(into: "") { text, run in
             if case .ink(let ink) = run { text += ink }
@@ -5893,12 +5893,12 @@ public final class PageModel: ObservableObject {
         _ = client.finishNoteEditingGroup(chip: chip)
     }
 
-    /// The line after *Copy name* (ADR-0044 point 1).
+    /// The line after *Copy name* (sealed row spec, The page's line).
     public static let copiedNameLine = "copied the name."
 
     /// Copy a sealed object's name, which is ambient ink (Law 0001), to
     /// the ordinary pasteboard. No clear is armed and nothing is recorded.
-    /// The name is part of its page `sheet`, which is asked first (ADR-0052).
+    /// The name is part of its page `sheet`, which is asked first (Law 0001, expiry row).
     @discardableResult
     public func copyChipName(_ name: String, onPage sheet: UInt64) -> Bool {
         guard givesOut(sheet: sheet) else { return false }
@@ -5911,20 +5911,20 @@ public final class PageModel: ObservableObject {
     /// The line when a selection of several stretches holds a sealed object.
     public static let severalStretchesLine = "sealed objects copy from one selection, not several."
 
-    /// A page's selected ranges as the core composes them (ADR-0047 point 2).
+    /// A page's selected ranges as the core composes them (ADR-0045 point 2).
     public enum SelectionComposition: Equatable, Sendable {
         case composed(SealedFragment)
         /// One envelope holds one range, so several stretches carry no object.
         case severalStretchesHoldAnObject
-        /// The page was past its deadline, and the settle took it (ADR-0052).
+        /// The page was past its deadline, and the settle took it (Law 0001, expiry row).
         case pageExpired
-        /// Its envelope would pass a cap the paste keeps (ADR-0053).
+        /// Its envelope would pass a cap the paste keeps (Law 0001, copy row).
         case pastCap(FragmentRefusal)
         case refused
     }
 
     /// Compose a page's selected ranges for a copy or a service; writes nothing,
-    /// and a refusal settles as the timer would (ADR-0052 point 4).
+    /// and a refusal settles as the timer would (Law 0001, expiry row).
     public func composeSelection(_ ranges: [NSRange], sheet: UInt64) -> SelectionComposition {
         guard !sheet.isFileID, !ranges.isEmpty else { return .refused }
         var fragments: [SealedFragment] = []
@@ -5959,7 +5959,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// The line a refused composition shows whoever asked for `act`: several stretches,
-    /// a page past its deadline (ADR-0052), or a cap and the core's limit (ADR-0053).
+    /// a page past its deadline, or a cap and the core's limit (Law 0001, expiry and copy rows).
     public static func refusalLine(
         for composition: SelectionComposition, _ act: SelectionAct
     ) -> String? {
@@ -5983,7 +5983,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// Copy a page's selected ranges to the ordinary pasteboard as the core
-    /// composes them (ADR-0047 point 2); nothing is written if one is refused.
+    /// composes them (ADR-0045 point 2); nothing is written if one is refused.
     @discardableResult
     public func copySelection(_ ranges: [NSRange], sheet: UInt64) -> Bool {
         let composition = composeSelection(ranges, sheet: sheet)
@@ -6000,7 +6000,7 @@ public final class PageModel: ObservableObject {
     /// The line when the board refused a cut's fragment and the core took the cut back.
     public static let cutPutBackLine = "the clipboard refused the cut, so it was put back."
 
-    /// The line when the slot's button meets a name or note holding the keys (ADR-0046).
+    /// The line when the slot's button meets a name or note holding the keys (Law 0007, keys row).
     public static let placeWaitsLine = "a name or note is being written, so the cut was not placed."
 
     /// What a page's cut did, for the editor to settle.
@@ -6013,7 +6013,7 @@ public final class PageModel: ObservableObject {
         case refused
     }
 
-    /// Cut a page's selection through the core as one undo step (ADR-0047 point 5)
+    /// Cut a page's selection through the core as one undo step (ADR-0046 point 3)
     /// and write its fragment; several stretches holding an object cut nothing.
     @discardableResult
     public func cutSelection(_ ranges: [NSRange], sheet: UInt64) -> CutOutcome {
@@ -6046,7 +6046,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// The slot's route: place the active cut over the selection on `sheet`
-    /// (ADR-0047 point 12). Nil when the core refuses, settled as `settlingRefusal` says.
+    /// (sealed row spec). Nil when the core refuses, settled as `settlingRefusal` says.
     @discardableResult
     public func placeActiveCut(sheet: UInt64, ranges: [NSRange]) -> PlacedFragment? {
         guard !sheet.isFileID, let range = pasteRange(ranges) else { return nil }
@@ -6064,7 +6064,7 @@ public final class PageModel: ObservableObject {
         (activeEditor as? InkTextView)?.coordinator?.placeActiveCut()
     }
 
-    /// The line when an envelope this build cannot read pasted its public text (ADR-0047 point 3).
+    /// The line when an envelope this build cannot read pasted its public text (ADR-0045 point 3).
     public static let pastedPublicTextLine =
         "this build cannot read the copied sealed content, so its text was pasted."
 
@@ -6086,7 +6086,7 @@ public final class PageModel: ObservableObject {
         "sealed objects paste into one selection, not several."
 
     /// The one range a paste places over; several stretches refuse with their line, since
-    /// the core places one range as copy, cut and drag compose one (ADR-0047 point 2).
+    /// the core places one range as copy, cut and drag compose one (Law 0001, paste row).
     private func pasteRange(_ ranges: [NSRange]) -> NSRange? {
         guard ranges.count > 1 else { return ranges.first }
         flash(Self.severalStretchesPasteLine)
@@ -6094,7 +6094,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// Paste the fragment on `pasteboard` over the selection's one range through the core
-    /// as one undo step (ADR-0047 points 3, 6 and 8), with its item's text as the fallback.
+    /// as one undo step (Law 0001, paste row), with its item's text as the fallback.
     @discardableResult
     public func pasteFragment(
         from pasteboard: NSPasteboard, sheet: UInt64, ranges: [NSRange]
@@ -6102,7 +6102,7 @@ public final class PageModel: ObservableObject {
         // A file takes the public text, as another app does.
         guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard) else { return .ordinary }
         guard let range = pasteRange(ranges) else { return .refused }
-        // Data the item names but cannot give is an envelope this build cannot read (ADR-0047 point 3).
+        // Data the item names but cannot give is an envelope this build cannot read (Law 0001, paste row).
         let envelope = item.data(forType: SealedFragment.pasteboardType) ?? Data()
         guard let placed = settlingRefusal({
             client.pasteFragment(
@@ -6120,10 +6120,10 @@ public final class PageModel: ObservableObject {
     /// The line when a drag's several stretches hold a sealed object.
     public static let severalStretchesDragLine = "sealed objects drag from one selection, not several."
 
-    /// The line when a drop meets a name or note holding the keys (ADR-0046).
+    /// The line when a drop meets a name or note holding the keys (Law 0007, keys row).
     public static let dropWaitsLine = "a name or note is being written, so the drop was not placed."
 
-    /// A page's range as its drag carries it: the copy's fragment (ADR-0047 point 10).
+    /// A page's range as its drag carries it: the copy's fragment (Law 0001, drag row).
     public func dragFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
         let composition = composeSelection([range], sheet: sheet)
         guard case .composed(let fragment) = composition else {
@@ -6134,7 +6134,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// A page's own drag dropped on it at `index`: the range moved, or cloned for ⌥,
-    /// through the core as one step (ADR-0047 point 10). Nil on a refusal.
+    /// through the core as one step (Law 0001, drag and ⌥ drag rows). Nil on a refusal.
     @discardableResult
     public func dropRange(
         _ range: NSRange, sheet: UInt64, at index: Int, cloning: Bool
@@ -6151,7 +6151,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// A page's drag dropped on page `dest` at `index`: the range moved there through the
-    /// core keeping every object, and both pages restated (ADR-0054). Nil on a refusal.
+    /// core keeping every object, and both pages restated (Law 0001, drag row). Nil on a refusal.
     @discardableResult
     public func dropRange(
         _ range: NSRange, sheet: UInt64, onto dest: UInt64, at index: Int
@@ -6160,7 +6160,7 @@ public final class PageModel: ObservableObject {
         guard let placed = settlingRefusal({
             client.moveRange(sheet: sheet, range: range, toSheet: dest, at: index)
         }) else {
-            // A page past its deadline at either end refuses, and the settle takes it (ADR-0052).
+            // A page past its deadline at either end refuses, and the settle takes it (Law 0001, expiry row).
             if !livePageIDs.contains(sheet) || !livePageIDs.contains(dest) {
                 flash(Self.pageExpiredLine)
             }
@@ -6170,13 +6170,13 @@ public final class PageModel: ObservableObject {
         return placed
     }
 
-    /// The line when the decrypted drag meets a name or note holding the keys (ADR-0046).
+    /// The line when the decrypted drag meets a name or note holding the keys (Law 0007, keys row).
     public static let decryptedDragWaitsLine =
         "a name or note is being written, so the drag did not start."
 
     /// The decrypted drag, asked by a destination: the core writes the chip's payload
-    /// into `item` and records one `sent` to `drag` (ADR-0047 point 11), so a write is armed.
-    /// A refusal settles with no line, since the destination asked (ADR-0052).
+    /// into `item` and records one `sent` to `drag` (Law 0001, decrypted drag row), so a write
+    /// is armed. A refusal settles with no line, since the destination asked (Law 0001, expiry row).
     @discardableResult
     public func provideDecryptedDrag(
         chip: UInt64, pasteboard: NSPasteboard, item: NSPasteboardItem,
@@ -6212,7 +6212,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// After the core rewrote pages by a transfer: restate each, then settle as
-    /// the event timer does, since a paste may have swept due pages (ADR-0048).
+    /// the event timer does, since a paste may have swept due pages (Law 0001, expiry row).
     private func settleTransfer(_ sheets: UInt64...) {
         for sheet in sheets {
             countEdit(.sheet(sheet))
@@ -6248,10 +6248,10 @@ public final class PageModel: ObservableObject {
     public static let rewriteRefusedLine = "the change would replace a sealed object, so it was not made."
 
     /// Whether a removal's Undo is offered beside `removedLine`: the core
-    /// keeps a removed object detached to reattach from (ADR-0047 point 4).
+    /// keeps a removed object detached to reattach from (ADR-0046 point 1).
     public static let offersRemovalUndo = true
 
-    /// The removal line's Undo, pressed while a name or the note holds the keys (ADR-0046).
+    /// The removal line's Undo, pressed while a name or the note holds the keys (Law 0007, keys row).
     public static let undoWaitsLine = "a name or note is being written, so the removal was not undone."
 
     /// How many edits this model has sent the core for each document, from any surface.
@@ -6409,7 +6409,7 @@ public final class PageModel: ObservableObject {
         return accepted
     }
 
-    // MARK: One route per document a writing surface edits (ADR-0045)
+    // MARK: One route per document a writing surface edits (ADR-0044 point 2)
 
     /// One batch to the page, file or note `document` names. False when the
     /// core refused it; a page or file is restated here, a note by its surface.
@@ -6645,7 +6645,7 @@ public final class PageModel: ObservableObject {
     /// Mirror the page's document to the core wholesale: the recovery
     /// path (still authoritative for chip liveness: a chip the
     /// snapshot omits was removed in the editor and is detached
-    /// there, ADR-0047). The rejected-batch route arrives via
+    /// there, ADR-0046 point 1). The rejected-batch route arrives via
     /// `recoverProjection`; programmatic rewrites (a burn) come here
     /// directly.
     public func syncDocument(sheet: UInt64, runs: [DocumentRun]) {
@@ -6815,7 +6815,7 @@ public final class PageModel: ObservableObject {
         // clear belongs to that egress, not to whichever draft the UI is
         // showing when the response returns.
         if outcome.ok { armClipboardClear() }
-        // A refusal may be a page past its deadline (ADR-0052): settle as the timer would.
+        // A refusal may be a page past its deadline (Law 0001, expiry row): settle as the timer would.
         if !outcome.ok {
             switch target {
             case .page(let id): settleRefusal(sheet: id, told: true)
@@ -7224,7 +7224,7 @@ public final class PageModel: ObservableObject {
         return expired
     }
 
-    /// Run a core transfer, which may sweep before it refuses (ADR-0048); a refusal
+    /// Run a core transfer, which may sweep before it refuses (Law 0001, expiry row); a refusal
     /// settles as the timer would only when an event was due as it began.
     private func settlingRefusal<T>(_ route: () -> T?) -> T? {
         let wasDue = client.nextEventMs() == 0
@@ -7243,11 +7243,11 @@ public final class PageModel: ObservableObject {
         return expired && !livePageIDs.contains(sheet)
     }
 
-    /// The line when a page past its deadline refused what a person asked of it (ADR-0052).
+    /// The line when a page past its deadline refused what a person asked of it (Law 0001, expiry row).
     public static let pageExpiredLine = "this page has expired."
 
     /// A core route refused to give a page out: settle as the timer would, since a page
-    /// past its deadline refuses (ADR-0052 point 4), and tell a person who acted.
+    /// past its deadline refuses (Law 0001, expiry row), and tell a person who acted.
     func settleRefusal(sheet: UInt64? = nil, told: Bool) {
         if settleIfDue(sheet: sheet), told { flash(Self.pageExpiredLine) }
     }
@@ -7256,7 +7256,7 @@ public final class PageModel: ObservableObject {
     public static let copyRefusedLine = "the sealed content could not be copied."
 
     /// A core route refused object `chip`: settle, and say the page expired only when the
-    /// object stood and its own page went with it (ADR-0052); otherwise `line`, when there is one.
+    /// object stood and its own page went with it (Law 0001, expiry row); otherwise `line`, when there is one.
     func settleRefusal(chip: UInt64, otherwise line: String?) {
         let stood = client.chipStands(chip)
         if settleIfDue(), stood, !client.chipStands(chip) {
@@ -7267,7 +7267,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// Whether text the shell already shows from page `sheet` may leave by AppKit, which
-    /// no core route sees (ADR-0052): a late timer settles first, and a page gone says so.
+    /// no core route sees (Law 0001, expiry row): a late timer settles first, and a page gone says so.
     func givesOut(sheet: UInt64) -> Bool {
         guard !sheet.isFileID else { return true }
         settleIfDue()

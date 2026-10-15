@@ -241,7 +241,7 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     /// The writing surface over `storage`, wired to `coordinator`; the page's
-    /// editor and a sealed object's note are both built here (ADR-0045).
+    /// editor and a sealed object's note are both built here (ADR-0044 point 1).
     @MainActor
     static func makeSurface(over storage: NSTextStorage, coordinator: Coordinator) -> InkTextView {
         let layoutManager = InkLayoutManager()
@@ -526,7 +526,7 @@ public struct InkEditorView: NSViewRepresentable {
         let model: PageModel
         weak var textView: InkTextView?
         /// The page or file under the editor, or nil on a note's surface,
-        /// whose page only paths key on it (ADR-0045).
+        /// whose page only paths key on it (ADR-0044).
         var currentSheet: UInt64? {
             didSet {
                 if let currentSheet, let textView {
@@ -1105,7 +1105,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The Edit menu's language and seal items as the key holder can answer
-        /// them (ADR-0046); under a field the page offers none.
+        /// them (Law 0007, keys row); under a field the page offers none.
         func refreshLanguageActionAvailability() {
             if writesNote, textView?.answersChords != true { return }
             if let textView, !textView.answersChords {
@@ -2519,7 +2519,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// bytes.
         func sealedPaste() {
             guard sealsHere, let textView, let storage = textView.textStorage else { return }
-            // The offer's button is not a chord, so it asks the holder here (ADR-0046).
+            // The offer's button is not a chord, so it asks the holder here (Law 0007, keys row).
             guard textView.answersChords else {
                 model.flash(PageModel.sealWaitsLine)
                 return
@@ -2706,7 +2706,7 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
-        /// The object's menu in D-41's order as ADR-0042 extends it, nil
+        /// The object's menu in D-41's order as Law 0001's presentation invariants extend it, nil
         /// marking a separator: the copies and the link, the object's own
         /// words, then the removal set apart.
         static func chipMenuItems(named: Bool, hasNote: Bool, kind: String) -> [ChipMenuItem?] {
@@ -2843,7 +2843,7 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
-        /// Copy the page's selected ranges by the core's fragment (ADR-0047 point 2).
+        /// Copy the page's selected ranges by the core's fragment (ADR-0045 point 2).
         @discardableResult
         func copySelection() -> Bool {
             guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
@@ -2862,13 +2862,13 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// Whether AppKit may give out the text this surface shows, which no core route
-        /// sees (ADR-0052): the note's page or the page is asked; a file always may.
+        /// sees (Law 0001, expiry row): the note's page or the page is asked; a file always may.
         func givesOutShownText() -> Bool {
             guard let sheet = writesNote ? noteHost?.sheet : currentSheet else { return !writesNote }
             return model.givesOut(sheet: sheet)
         }
 
-        /// Cut the page's selection through the core (ADR-0047 point 5).
+        /// Cut the page's selection through the core (ADR-0046 point 3).
         @discardableResult
         func cutSelection() -> PageModel.CutOutcome {
             guard !writesNote, let textView, textView.isEditable,
@@ -2882,8 +2882,8 @@ public struct InkEditorView: NSViewRepresentable {
             return outcome
         }
 
-        /// Place the clipboard slot's cut at the caret (ADR-0047 point 12); stands
-        /// aside while a name or note holds the keys (ADR-0046).
+        /// Place the clipboard slot's cut at the caret (sealed row spec); stands
+        /// aside while a name or note holds the keys (Law 0007, keys row).
         @discardableResult
         func placeActiveCut() -> Bool {
             guard !writesNote, let textView, textView.isEditable,
@@ -2903,7 +2903,7 @@ public struct InkEditorView: NSViewRepresentable {
             return true
         }
 
-        /// Paste the board's fragment over the selection through the core (ADR-0047);
+        /// Paste the board's fragment over the selection through the core (ADR-0045);
         /// false where AppKit's paste should run: no fragment, a note or a file.
         func pasteFragment() -> Bool {
             guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID,
@@ -2930,7 +2930,7 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
-        // MARK: Drags of the page's selection (ADR-0047 point 10)
+        // MARK: Drags of the page's selection (Law 0001, drag and ⌥ drag rows)
 
         /// The page's own drag, from its start until its session ends.
         private struct PageDrag {
@@ -2955,7 +2955,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// Start a drag of the page's selection as the core's copy fragment, so
-        /// another app reads only ink and placeholders (ADR-0047 point 2).
+        /// another app reads only ink and placeholders (ADR-0045 point 2).
         func beginPageDrag() -> DragStart {
             pageDrag = nil
             guard !writesNote, let textView, let storage = textView.textStorage,
@@ -3029,7 +3029,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// Whether a drop from `source` may land here: not while a field or note other
-        /// than the drag's own source holds the keys (ADR-0046), and the line says why.
+        /// than the drag's own source holds the keys (Law 0007, keys row), and the line says why.
         func admitsDrop(from source: NSView?) -> Bool {
             guard let textView else { return false }
             guard textView.yieldsKeys(toAnyBut: source) else { return true }
@@ -3053,7 +3053,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The page and range of another page's drag that a drop here moves through the
-        /// core (ADR-0054 point 5): a move, while that drag stands, between two pages.
+        /// core (Law 0001, drag row): a move, while that drag stands, between two pages.
         func pageDragToMove(
             from source: Coordinator?, offered mask: NSDragOperation
         ) -> (sheet: UInt64, range: NSRange)? {
@@ -3084,12 +3084,12 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The page's drag ended. A move between pages went through the core at the drop
-        /// (ADR-0054), so the end removes nothing here, whatever the destination answered.
+        /// (Law 0001, drag row), so the end removes nothing here, whatever the destination answered.
         func endPageDrag() {
             pageDrag = nil
         }
 
-        // MARK: The decrypted drag from a block's handle (ADR-0047 point 11, ADR-0050)
+        // MARK: The decrypted drag from a block's handle (ADR-0045 point 5; Law 0001, decrypted drag row)
 
         /// The decrypted drag under way, held until its session ends.
         private(set) var decryptedDrag: DecryptedDrag?
@@ -3217,7 +3217,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// Opens a link the person aimed at: a file's at once, a page's or a note's only
-        /// once its view may read out, so past the deadline the page settles (ADR-0052).
+        /// once its view may read out, so past the deadline the page settles (Law 0001, expiry row).
         @discardableResult
         func openLink(_ link: Any, from view: NSTextView) -> Bool {
             guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)),
@@ -3280,10 +3280,10 @@ public struct InkEditorView: NSViewRepresentable {
             noteEditor.follow()
         }
 
-        // MARK: A note's own surface, over the note's routes (ADR-0045)
+        // MARK: A note's own surface, over the note's routes (ADR-0044)
 
         /// Puts the note of `chip` under this surface, its text from the core;
-        /// false, with nothing loaded, where the core refuses the note (ADR-0052).
+        /// false, with nothing loaded, where the core refuses the note (Law 0001, expiry row).
         @discardableResult
         func loadNote(chip: UInt64) -> Bool {
             unloadNote()
@@ -3314,7 +3314,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The note's text from the core, with no edit crossing for it. A refusal
-        /// closes the note and settles as the timer would (ADR-0052).
+        /// closes the note and settles as the timer would (Law 0001, expiry row).
         private func restateNote() {
             guard let noteChip else { return }
             guard let text = model.noteText(chip: noteChip) else {
@@ -3621,7 +3621,7 @@ public struct InkEditorView: NSViewRepresentable {
             return sheet
         }
 
-        /// The page's block stamps; a file and a note show none (ADR-0045).
+        /// The page's block stamps; a file and a note show none (Law 0001, object in a note row).
         ///
         /// A file gets no block stamps, and the route is not merely
         /// skipped for dull values: `blocks(sheet:)` is a
@@ -4855,7 +4855,7 @@ final class InkLayoutManager: NSLayoutManager {
 }
 
 /// The language Edit → Choose Language sends down the responder chain, to
-/// whichever surface holds the keys (ADR-0046).
+/// whichever surface holds the keys (Law 0007, keys row).
 public final class CodeLanguageChoice: NSObject {
     public let language: String
 
@@ -5031,7 +5031,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// The zone of the hovered block's named row under the pointer, so
-    /// its pill and seat words can be drawn (ADR-0042 point 8).
+    /// its pill and seat words can be drawn (sealed row spec, Hover pill and seat words).
     private(set) var hoveredZone: SealedBlockLayout.Zone?
 
     /// A zone's copy, worn in ember for `SealedBlockCell.beatDuration`.
@@ -5104,7 +5104,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// Whether another text view or field holds the keys, in this window or
-    /// in a key window over it, so the page's chords stand aside (ADR-0046).
+    /// in a key window over it, so the page's chords stand aside (Law 0007, keys row).
     var yieldsKeys: Bool { yieldsKeys(toAnyBut: nil) }
 
     /// Whether a text view other than this one and `source` holds the keys, in this
@@ -5116,7 +5116,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// Whether this surface answers its chords and Edit menu: a note while it
-    /// holds the keys, the page unless another text view does (ADR-0046).
+    /// holds the keys, the page unless another text view does (Law 0007, keys row).
     var answersChords: Bool {
         guard coordinator?.writesNote == true else { return !yieldsKeys }
         return window?.firstResponder === self && !keysHeldInAnotherWindow()
@@ -5226,13 +5226,13 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// Whether the block at `index` draws its decrypted drag handle: while it is hovered
-    /// or selected (ADR-0051 point 1).
+    /// or selected (sealed row spec, Seat and look).
     func drawsDecryptedDragHandle(at index: Int) -> Bool {
         hoveredChipIndex == index || selectedRange() == NSRange(location: index, length: 1)
     }
 
     /// Each drawn handle a press would start the decrypted drag from, so none while
-    /// another field or the note holds the keys (ADR-0051 point 4).
+    /// another field or the note holds the keys (sealed row spec, Press).
     var decryptedDragCursorRects: [NSRect] {
         guard answersChords else { return [] }
         let blocks = Set([hoveredChipIndex, selectedRange().location].compactMap { $0 })
@@ -5300,7 +5300,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     static let doorwaySlop: CGFloat = 3
 
     /// The zone a click acts on: the one under it, once the seat has named
-    /// it under the pointer, and otherwise none (Law 0001, ADR-0044 point 2).
+    /// it under the pointer, and otherwise none (Law 0001, zone gate row).
     nonisolated static func actingZone(
         pointed: SealedBlockLayout.Zone?, index: Int,
         hoveredIndex: Int?, hoveredZone: SealedBlockLayout.Zone?
@@ -5310,7 +5310,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// What a primary click on a sealed block does past its actions seat
-    /// (Law 0001, ADR-0042 points 2 and 3).
+    /// (Law 0001, unnamed row and zone rows).
     enum ChipClick: Equatable {
         /// AppKit's path, whose delegate selects the whole object (D-40).
         case select
@@ -5448,7 +5448,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         }
     }
 
-    /// The session, its image the handle as drawn rather than the block (ADR-0051 point 5).
+    /// The session, its image the handle as drawn rather than the block (sealed row spec, Pointer and image).
     private func beginDecryptedDrag(chipAt index: Int, handle: NSRect, event: NSEvent) {
         guard let (source, item) = coordinator?.beginDecryptedDrag(at: index) else { return }
         let dragging = NSDraggingItem(pasteboardWriter: item)
@@ -5659,9 +5659,9 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         board.writeObjects([item])
     }
 
-    // MARK: AppKit's readers of the text (Law 0001, ADR-0052)
+    // MARK: AppKit's readers of the text (Law 0001, expiry row and AppKit's text routes)
 
-    /// Not while another surface holds the keys (ADR-0046); past the page's deadline it settles.
+    /// Not while another surface holds the keys (Law 0007, keys row); past the page's deadline it settles.
     override var mayReadOut: Bool { answersChords && givesOutShownText }
 
     /// A file's text menu keeps them all.
@@ -5703,7 +5703,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         rewriting { super.changeSpelling(sender) }
     }
 
-    /// A page's rewrite stands aside while another surface holds the keys (ADR-0046).
+    /// A page's rewrite stands aside while another surface holds the keys (Law 0007, keys row).
     private func rewriting(_ rewrite: () -> Void) {
         guard let coordinator, !coordinator.writesNote, !coordinator.writesFile else {
             return withEditIntent(.replacement, perform: rewrite)
@@ -5954,7 +5954,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// A fragment pastes through the core; other paste stays plain, with Option bypassing
-    /// automatic fencing once. Stands aside while another surface holds the keys (ADR-0046).
+    /// automatic fencing once. Stands aside while another surface holds the keys (Law 0007, keys row).
     override func paste(_ sender: Any?) {
         guard answersChords else { return }
         if coordinator?.pasteFragment() == true { return }
@@ -5965,7 +5965,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// A page copies by the core's fragment and stands aside while another
-    /// surface holds the keys (ADR-0046); a note or a file copies as AppKit does.
+    /// surface holds the keys (Law 0007, keys row); a note or a file copies as AppKit does.
     override func copy(_ sender: Any?) {
         guard answersChords else { return }
         guard let coordinator, !coordinator.writesNote,
@@ -5985,7 +5985,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         _ = super.writeSelection(to: board, types: writablePasteboardTypes)
     }
 
-    /// Whether AppKit may write out what this view shows (ADR-0052); a bare view may.
+    /// Whether AppKit may write out what this view shows (Law 0001, expiry row); a bare view may.
     private var givesOutShownText: Bool {
         coordinator?.givesOutShownText() ?? true
     }
@@ -6018,7 +6018,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         return [SealedFragment.pasteboardType, .string, SealedFragment.legacyStringType]
     }
 
-    /// No service is offered while another surface holds the keys (ADR-0046), nor
+    /// No service is offered while another surface holds the keys (Law 0007, keys row), nor
     /// one that would write its answer over a selection holding an object.
     override func validRequestor(
         forSendType sendType: NSPasteboard.PasteboardType?,
@@ -6125,7 +6125,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// Every page deletion: a caret beside an object in `forward`'s direction selects it (D-30),
-    /// and nothing goes while another surface holds the keys (ADR-0046).
+    /// and nothing goes while another surface holds the keys (Law 0007, keys row).
     private func deleting(
         forward: Bool?, intent: EditorEditIntent = .deletion, _ delete: () -> Void
     ) {
@@ -6480,7 +6480,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// the tag numbering the guard reads.
     ///
     /// Use Selection for Find hands the ink to the finder, whose find
-    /// pasteboard every process reads, so it asks first (ADR-0052).
+    /// pasteboard every process reads, so it asks first (Law 0001, expiry row).
     override func performFindPanelAction(_ sender: Any?) {
         guard !refusesFinderAction(sender) else { return }
         super.performFindPanelAction(sender)
@@ -6579,7 +6579,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     /// A note given up closes, on the next turn, once the keys have landed;
-    /// the Edit menu's answers follow the keys either way (ADR-0046).
+    /// the Edit menu's answers follow the keys either way (Law 0007, keys row).
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
         if resigned {
@@ -6599,12 +6599,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
 
     /// Where a drop on this surface goes, one answer for the cursor and the drop.
     enum DropRoute: Equatable {
-        /// Nothing lands: a decrypted drag (ADR-0050), another surface's drag on a
-        /// note (ADR-0044 point 4), or another app's where no seal can stand.
+        /// Nothing lands: a decrypted drag (Law 0001, decrypted drag row), another surface's
+        /// drag on a note (Law 0001, note row), or another app's where no seal can stand.
         case refused
         /// The page's own drag, moved or cloned in place through the core.
         case ownDrag
-        /// Another page's standing drag, moved here through the core (ADR-0054).
+        /// Another page's standing drag, moved here through the core (Law 0001, drag row).
         case move
         /// A copy fragment, pasted through the core as ⌘V pastes it.
         case fragment
@@ -6686,12 +6686,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         isDecryptedDrag(sender) ? false : super.prepareForDragOperation(sender)
     }
 
-    /// This app's own decrypted drag, which the page and the note refuse (ADR-0050 point 2).
+    /// This app's own decrypted drag, which the page and the note refuse (Law 0001, decrypted drag row).
     private func isDecryptedDrag(_ sender: NSDraggingInfo) -> Bool {
         sender.draggingSource is DecryptedDrag
     }
 
-    // MARK: Drags of the page's selection (ADR-0047 point 10)
+    // MARK: Drags of the page's selection (Law 0001, drag and ⌥ drag rows)
 
     /// The page's selection drags as the core's copy fragment, with its own
     /// drawing as the image; several stretches of ink drag as AppKit drags them.
@@ -6727,7 +6727,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     private(set) var drawsPageDragImage = false
 
     /// The selection's ink as drawn and each object's face without its excerpt, built as
-    /// the decrypted drag's image is (ADR-0051 point 5), since other apps see it pass.
+    /// the decrypted drag's image is (sealed row spec, Pointer and image), since other apps see it pass.
     func pageDragImage(with event: NSEvent, origin: inout NSPoint) -> NSImage? {
         drawsPageDragImage = true
         defer { drawsPageDragImage = false }
@@ -6928,7 +6928,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     /// What the size class's seat says a click on `zone` will do,
-    /// before the click (Law 0001, ADR-0042 point 8).
+    /// before the click (Law 0001; sealed row spec, Hover pill and seat words).
     nonisolated static func seatWords(for zone: SealedBlockLayout.Zone) -> String {
         switch zone {
         case .name: "copies the name"
@@ -6940,7 +6940,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// The seat's word for the beat after a zone's copy.
     nonisolated static let copiedWords = "copied"
 
-    /// The word in the seat that opens the note, once one exists (ADR-0042 point 8).
+    /// The word in the seat that opens the note, once one exists (sealed row spec, Doorway).
     nonisolated static let doorwayWord = "note"
 
     /// The seat at rest: the size class first, then the note's doorway.
@@ -6998,8 +6998,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let geometry: SealedBlockLayout.NamedRow
     }
 
-    /// The named row in a block drawn at `cellFrame`, nil when unnamed (ADR-0042
-    /// point 2); measured against the seat's widest words, not its current ones.
+    /// The named row in a block drawn at `cellFrame`, nil when unnamed (Law 0001, unnamed
+    /// row row); measured against the seat's widest words, not its current ones.
     /// With `editingWidth` the name's seat is a field that wide (Law 0007),
     /// drawn by the field, and the row follows it whether named or not.
     @MainActor
@@ -7236,7 +7236,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     nonisolated static let decryptedDragWords = "drag decrypted"
 
     /// The handle's seat: on the classification's row, a gap before the actions seat and
-    /// as wide as its words; nil where it would meet the classification (ADR-0051 point 2).
+    /// as wide as its words; nil where it would meet the classification (sealed row spec, Seat and look).
     nonisolated static func decryptedDragRect(
         in cellFrame: NSRect, wordsWidth: CGFloat, labelWidth: CGFloat
     ) -> NSRect? {
@@ -7392,9 +7392,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
         case dragImage
     }
 
-    /// How long a zone wears ember after its copy (ADR-0044 point 1).
+    /// How long a zone wears ember after its copy (sealed row spec, Ember beat).
     nonisolated static let beatDuration: TimeInterval = 1
-    /// The fade at each end of the beat, which Reduce Motion drops (ADR-0044 point 2).
+    /// The fade at each end of the beat, which Reduce Motion drops (sealed row spec, Ember beat).
     nonisolated static let beatFade: TimeInterval = 0.15
 
     /// How strongly the beat is drawn `elapsed` seconds after the copy,
@@ -7694,7 +7694,7 @@ public enum InkStyle {
         typeface.font(size: max(typeface.size - 2, Typeface.sizeRange.lowerBound), weight: .medium)
     }
 
-    /// A sealed object's name, in the excerpt's face set semibold (ADR-0042 point 8).
+    /// A sealed object's name, in the excerpt's face set semibold (sealed row spec, Row).
     public static var chipNameFont: NSFont {
         typeface.font(size: chipFont.pointSize, weight: .semibold)
     }

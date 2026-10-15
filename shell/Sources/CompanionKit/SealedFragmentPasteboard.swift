@@ -1,9 +1,9 @@
 import AppKit
 
-/// The sealed fragment on a pasteboard (ADR-0047): the shell writes the
+/// The sealed fragment on a pasteboard (ADR-0045 points 1 and 2): the shell writes the
 /// core's two representations and never reads the envelope.
 extension SealedFragment {
-    /// The private type as AppKit names it (ADR-0047 point 13).
+    /// The private type as AppKit names it (core interface, Type name).
     static var pasteboardType: NSPasteboard.PasteboardType {
         NSPasteboard.PasteboardType(CompanionClient.sealedFragmentType)
     }

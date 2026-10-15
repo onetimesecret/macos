@@ -1,6 +1,6 @@
 import AppKit
 
-/// The decrypted drag from a sealed block's handle (ADR-0047 point 11, ADR-0050):
+/// The decrypted drag from a sealed block's handle (ADR-0045 point 5; Law 0001, decrypted drag row):
 /// the session's source and its one item's data provider. The core writes the payload.
 @MainActor
 final class DecryptedDrag: NSObject, NSDraggingSource, NSPasteboardItemDataProvider {
@@ -37,7 +37,7 @@ final class DecryptedDrag: NSObject, NSDraggingSource, NSPasteboardItemDataProvi
         }
     }
 
-    /// A copy to another app, and nothing inside this one (ADR-0050 point 1).
+    /// A copy to another app, and nothing inside this one (Law 0001, decrypted drag row).
     nonisolated static func operationMask(for context: NSDraggingContext) -> NSDragOperation {
         context == .outsideApplication ? .copy : []
     }
@@ -60,7 +60,7 @@ final class DecryptedDrag: NSObject, NSDraggingSource, NSPasteboardItemDataProvi
         end(with: operation)
     }
 
-    /// The session's end; one that dropped nowhere answers no later ask (ADR-0050 point 3).
+    /// The session's end; one that dropped nowhere answers no later ask (Law 0001, decrypted drag row).
     func end(with operation: NSDragOperation) {
         if operation.isEmpty { cancelled = true }
         let ended = onEnd
