@@ -126,7 +126,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       file shows them. **Fail:** a prediction or a suggestion shows over
       the page or the note.
 - [ ] **A link opens only through the page** (Law 0001, link and
-      spelling panel amendment). On a page type
+      spelling panel amendment, Edit Link amendment). On a page type
       `[docs](https://example.com/?t=1)`. ⌘-click the link; then Control
       click it and choose Open Link, then Copy Link, and paste in
       TextEdit. Seal a word on the page, open its note, type the same
@@ -134,10 +134,11 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       holding the link and Control click it. **Pass:** on the page and
       in the note, a plain click only moves the caret, ⌘-click and Open
       Link each open the browser at the URL, Copy Link pastes the URL,
-      and the menu holds no Open With; the file's menu holds Open With,
-      and its Open Link opens the browser. **Fail:** Open With shows
-      over the page or the note, a plain click opens the link, or Open
-      Link does nothing anywhere.
+      and the menu holds no Open With and no Edit Link…; the file's menu
+      holds Open With and Edit Link…, and its Open Link opens the
+      browser. **Fail:** Open With or Edit Link… shows over the page or
+      the note, a plain click opens the link, or Open Link does nothing
+      anywhere.
 - [ ] **A link dragged off a page** (Law 0001, the link rows). Press and
       hold on the page's link without moving, then drag it into
       TextEdit. **Pass:** TextEdit receives

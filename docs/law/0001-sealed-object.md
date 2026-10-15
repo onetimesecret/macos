@@ -407,7 +407,8 @@ whose Learn was never pressed. The tests are in
 | Open Link (`_openLinkFromMenu:`) and Copy Link (`copyLink:`) | the text menu over a link | Open Link goes to `Coordinator.openLink`, as a ⌘-click does; on a page and in a note Copy Link asks first, as any copy does, and writes the URL on the ambient board; a file keeps AppKit's Copy Link | the same three tests |
 | Open With (`__NSTextViewContextSubmenuIdentifierOpenWith`, whose items hand the URL to an application with no delegate asked) | the text menu over a link | removed on a page, a note and a name; a file keeps it | fragment `testALinkOnAStandingPageOpensWhenAimedAndItsMenuOffersNoOpenWith` |
 | a held press on a link, then a move | the mouse | AppKit selects the link and drags the selection by `dragSelection(with:offset:slideBack:)`, so the drag rows apply: a page's goes through the core and a note's asks first | fragment `testALinkDragsAsTheSelectionThroughTheOneGatedMethod`; the drag rows |
-| Edit Link… (`orderFrontLinkPanel:`), Remove Link (`_removeLinkFromMenu:`), link tooltips (`displaysLinkToolTips`) | the text menu over a link, a pointer resting on one | stays in process: the link panel and the tooltip are this app's windows, and the restyle pass lays a page's links again | none |
+| Edit Link… (`orderFrontLinkPanel:`) | the text menu over a link | removed from a page's, a note's and a name's text menu, the action refused and its item unavailable there, since its panel shows the URL in a field whose editor is AppKit's own and asks no gate, so a copy there writes the URL out past any deadline (2026-10-14 Edit Link amendment); a file keeps it | fragment `testAPageANoteAndANameOfferNoEditLinkAndNeverShowItsPanel` |
+| Remove Link (`_removeLinkFromMenu:`), link tooltips (`displaysLinkToolTips`) | the text menu over a link, a pointer resting on one | stays in process: the tooltip is this app's window, and the restyle pass lays a page's links again | none |
 | AppKit's link detection (`isAutomaticLinkDetectionEnabled`) | typing, Substitutions' Smart Links and Add Links | off on a page and a note, so their links are the restyle pass's (ADR-0023); Smart Links turns it on and Add Links runs it once, each through `checkTextInRange:types:options:`, which asks first, and a link it finds opens only by the link rows | fragment `testAppKitFindsNoLinkOnAPageAndAnObjectGivesItNothingToHandOut` |
 | an object's attachment: a click, a double click, a drag, Quick Look and the cell's pasteboard writes (`textView(_:clickedOn:in:at:)`, `textView(_:doubleClickedOn:in:at:)`, `textView(_:draggedCell:in:event:at:)`, `textView(_:urlForContentsOf:at:)`, `textView(_:writablePasteboardTypesFor:at:)`, `textView(_:write:at:to:type:)`) | the mouse, Quick Look Attachments | a click selects the object and a drag is the page's own; the attachment holds no contents and no file and the delegate answers none of the others, so AppKit has nothing of it to open, show or write | fragment `testAppKitFindsNoLinkOnAPageAndAnObjectGivesItNothingToHandOut`; the drag rows |
 | the other `NSTextViewDelegate` callbacks that could hand text out: `textView(_:willShow:forItems:)`, the candidate callbacks, Writing Tools' callbacks | the share picker, the Touch Bar, Writing Tools | none is reached: Share… and its picker are refused, the candidates and Writing Tools are off, and the delegate answers none of them | the Share, Writing Tools and suggestions rows |
@@ -1630,3 +1631,17 @@ paths must stay dialog free.
   ADR-0043 leaves it open. Draft ADR-0046's keys holder is Law 0007's
   keys row, which the rows here cite in its place. The `decisions`,
   `consumed-by` and `sources` lists follow.
+- 2026-10-14: Edit Link amendment (issue 170, applying the expiry row).
+  The AppKit text routes table sorted Edit Link… as staying in process,
+  and a verification found its panel a way out: the panel shows the URL
+  in an editable field whose editor is AppKit's own text view, which
+  asks no gate, and a copy there wrote the URL to the general
+  pasteboard. A panel opened while the page stood stayed up past its
+  deadline, and one chosen on a page past its deadline stayed up after
+  the page settled and was swept; from either, the copy still wrote the
+  URL. Edit Link… now leaves a page's, a note's and a name's text menu,
+  and its action is refused and its item unavailable there, as Share's
+  picker and the spelling panel are; a file keeps it. Remove Link and
+  link tooltips stay in process, in a row of their own. The row cites
+  the test, and the sealed fragment procedure's link step looks for
+  Edit Link….
