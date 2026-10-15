@@ -2960,12 +2960,19 @@ public final class PageModel: ObservableObject {
             PadCatalog.normalizedPath($0.path) == pads.rememberedFile(for: pads.activeID)
         }?.id
     }
-    public func toggleDaySort() { pads.toggleDaySort(for: pads.activeID) }
+    public func toggleDaySort() { setDaySort(pads.daySortDirection(for: pads.activeID).next) }
+    public func setDaySort(_ direction: PadSortDirection) {
+        pads.setDaySort(direction, for: pads.activeID)
+    }
     public func toggleCheckpointSort(dayBucket: Int) {
+        setCheckpointSort(pads.checkpointSortDirection(for: pads.activeID,
+            onDate: dateKey(forDayBucket: dayBucket)).next, dayBucket: dayBucket)
+    }
+    public func setCheckpointSort(_ direction: PadSortDirection, dayBucket: Int) {
         // A read spanning a day boundary supplies no unambiguous date for its
         // relative offsets. Wait for the next stable refresh before writing.
         guard padRosterDate != nil else { return }
-        pads.toggleCheckpointSort(for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
+        pads.setCheckpointSort(direction, for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
     }
     public func dateKey(forDayBucket bucket: Int) -> String {
         // The roster's offsets and this reference must describe the same day.
