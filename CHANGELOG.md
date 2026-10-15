@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer stands pastes a copy and removes nothing.
 
 - **A drop never seals what was dragged from inside this app** (app
-  0.35.0; Law 0001, issue #170). A drag of ink from another page or from a
+  0.36.0; Law 0001, issue #170). A drag of ink from another page or from a
   note, or of text from a rename field, a name field, the pad list or
   Settings, no longer meets drop to seal: it lands on the page as ink,
   the note or field keeping its text. A drag from another app still
@@ -933,7 +933,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds the keys.
 
 - **⇧⌘V and the summon offer leave this app's own copy alone** (app
-  0.35.0; Law 0001's copy row, issue #170). After a copy or a cut the
+  0.36.0; Law 0001's copy row, issue #170). After a copy or a cut the
   card offered to seal the clipboard, and ⇧⌘V sealed the copy's public
   text and cleared the board, losing the fragment. Neither now acts on
   a board holding this app's own copy, whether a release or a debug
