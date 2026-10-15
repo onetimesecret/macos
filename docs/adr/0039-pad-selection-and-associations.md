@@ -97,7 +97,7 @@ Storage choice, migration, and metadata removal still require review.
   validation; browser interception is not that validation.
 - ADR-0017 is not the only record that gives ⌘1 to ⌘9 to slots. The cap
   paragraph and keyboard map of
-  [04-interaction-model.md](../spec/design/04-interaction-model.md), the
+  [2026-0707-interaction-model.md](../spec/design/2026-0707-interaction-model.md), the
   [vertical time tabs feature spec](../spec/feature/vertical-time-tabs/README.md)
   with its mode off and its
   [capacity and Today proposal](../spec/feature/vertical-time-tabs/2026-0904-capacity-and-today-proposal.md),
