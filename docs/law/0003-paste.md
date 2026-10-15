@@ -7,6 +7,7 @@ governs: An explicit transfer gesture imports offered content into a stable name
 decisions: []
 consumed-by:
   - docs/adr/0038-explicit-clipboard-operations.md
+  - docs/adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md (proposed; an unreadable envelope pastes its public text rather than declining)
 sources:
   - maintainer instructions in the 2026-10-01 design conversation (primary scope constraint)
   - docs/law/0001-sealed-object.md (accepted, sealed-object scope)
@@ -84,9 +85,9 @@ observations of the named scenario, not acceptance of this law or OS guarantees.
 | Configured code-fencing paste / bypass | ordinary insertion | Transform within the explicit paste, or bypass once; do not make a background read | `LanguageDetectionPasteIntegrationTests.swift` `testAutomaticPasteFencingAppliesOneDetectedReplacement`, `testAutomaticPasteBypassUsesImmediatePlainPasteWithoutDetection` |
 | Change document while a transfer is pending | any insertion | Cancel; do not insert in a replacement pad/page or file | automatic-fencing path: `LanguageDetectionPasteIntegrationTests.swift` `testDocumentSwitchCancelsPendingAutomaticPasteWithoutInsertion`; other routes owed: no issue yet |
 | Edit or move selection during conversion | ordinary / selected conversion | Revalidate within the same destination according to the defined mode; never redirect to another document | current fencing behavior: `LanguageDetectionPasteIntegrationTests.swift` `testEditDuringAutomaticDetectionFallsBackAtCurrentSelection`, `testSelectionChangeDuringAutomaticDetectionFallsBackAtCurrentSelection`; broader modes owed: no issue yet |
-| Paste sealed or mixed private fragment | sealed insertion / structural editing | Resolve references core-side in order and in one transaction; use cause-specific placeholders for terminal/unknown references; over several selected stretches, place nothing and say so before anything changes; ⌘V is its paste, and a named sealed paste of it takes nothing | accepted authority: Law 0001; the core: `crates/core/src/transfer.rs` `a_mixed_paste_keeps_its_order_with_each_cause_in_position`, `a_paste_the_body_refuses_partway_changes_nothing_on_any_page` ([ADR-0047](../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)); the editor's paste: `SealedFragmentEditorTests.swift` `testACutsFirstPasteReattachesItsObjectsAndALaterOneClonesThem`, `testAPasteAfterACopyClonesEveryObjectAsOneStep`, `testAGoneReferencePastesItsPlaceholderWhereTheObjectStood`; several stretches: `testAFragmentPastesIntoOneSelectionNotSeveral`; a named sealed paste of it: `testThisAppsOwnCopyOnTheBoardOffersNothingToSeal` |
+| Paste sealed or mixed private fragment | sealed insertion / structural editing | Resolve references core-side in order and in one transaction; use cause-specific placeholders for terminal/unknown references; over several selected stretches, place nothing and say so before anything changes; ⌘V is its paste, and a named sealed paste of it takes nothing | accepted authority: Law 0001; the core: `crates/core/src/transfer.rs` `a_mixed_paste_keeps_its_order_with_each_cause_in_position`, `a_paste_the_body_refuses_partway_changes_nothing_on_any_page` ([ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md) point 4, proposed); the editor's paste: `SealedFragmentEditorTests.swift` `testACutsFirstPasteReattachesItsObjectsAndALaterOneClonesThem`, `testAPasteAfterACopyClonesEveryObjectAsOneStep`, `testAGoneReferencePastesItsPlaceholderWhereTheObjectStood`; several stretches: `testAFragmentPastesIntoOneSelectionNotSeveral`; a named sealed paste of it: `testThisAppsOwnCopyOnTheBoardOffersNothingToSeal` |
 | Named sealed paste | sealed insertion | Preserve the named classification route; refuse nesting over an existing sealed object; a board on which an item carries the app's private fragment type, as any build names it, holds nothing to seal: make no summon offer, and take nothing, leave the board and the destination as they are and say that ⌘V pastes it | `DocumentOpsTests.swift` `testSealedPasteOverAChipIsRefused`; the app's own copy or cut: `SealedFragmentEditorTests.swift` `testThisAppsOwnCopyOnTheBoardOffersNothingToSeal`, another build's `testAnotherBuildsCopyOnTheBoardOffersNothingToSeal`; broader access/destination coverage owed: no issue yet |
-| Denied, unavailable, malformed, or unsupported offered data | any insertion | Explain or decline without changing the destination; valid Law 0001 reference placeholders are successful results | a fragment the core cannot read places the item's public text and reports it unreadable for the editor to explain, by ADR-0047 point 3: `crates/core/src/transfer.rs` `an_unreadable_envelope_pastes_its_public_text_and_says_so`; the explanation: `SealedFragmentEditorTests.swift` `testAnUnreadableEnvelopePastesItsPublicTextAndSaysSo`, and for an item naming the private type whose data cannot be read, `testAnItemWhoseFragmentCannotBeReadPastesItsPublicTextAndSaysSo`; other representations, owed: no issue yet, representation/failure tests |
+| Denied, unavailable, malformed, or unsupported offered data | any insertion | Explain or decline without changing the destination; valid Law 0001 reference placeholders are successful results | a fragment the core cannot read places the item's public text and reports it unreadable for the editor to explain, by [ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md) point 3, proposed: `crates/core/src/transfer.rs` `an_unreadable_envelope_pastes_its_public_text_and_says_so`; the explanation: `SealedFragmentEditorTests.swift` `testAnUnreadableEnvelopePastesItsPublicTextAndSaysSo`, and for an item naming the private type whose data cannot be read, `testAnItemWhoseFragmentCannotBeReadPastesItsPublicTextAndSaysSo`; other representations, owed: no issue yet, representation/failure tests |
 | Deliberate drop or invoked Service | explicit contextual transfer | Use the supplied interaction pasteboard and receiver; do not substitute a background general-board read | owed: no issue yet, when each route is introduced |
 | Activate app, change pad, inspect association, hover picker, sort | no transfer | Read no clipboard content, make no automatic copy, and perform no paste | owed: no issue yet, clipboard-access instrumentation |
 | Selected rich conversion | selected conversion | Use only its documented representation priority and conversion behavior | owed: no issue yet; no rich-conversion mode adopted |
@@ -136,8 +137,8 @@ was produced by the mockup work. This law changes no page/link TTL semantics.
 - 2026-10-01: Completed the initial draft with explicit transfer classes, stable
   destination rules, configured-transformation treatment, and coverage debts.
 - 2026-10-13: Sealed rows (issue 170, the core's half). The fragment row
-  cites the core tests [ADR-0047](../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)
-  built it with. The malformed row records that the accepted ADR places an
+  cites the core tests draft ADR-0047 built it with. The malformed row
+  records that the draft, then marked accepted, places an
   unreadable fragment's public text rather than declining, since declining
   would lose the ink copied, and reports it so the editor explains; the
   explanation is owed with the editor's paste.
@@ -158,3 +159,12 @@ was produced by the mockup work. This law changes no page/link TTL semantics.
   had sealed the fragment's placeholder text and cleared the board. The
   fragment row says that ⌘V is its paste, and both cite the editor's
   test.
+- 2026-10-14: Drafts withdrawn (following Law 0001's drafts withdrawn
+  amendment of this date). Draft ADR-0047, which the fragment and
+  malformed rows cited, was withdrawn without ratification. The
+  fragment row now cites
+  [ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md)
+  point 4 and the malformed row its point 3, both proposed, so the
+  malformed row's placing of an unreadable fragment's public text rests
+  on a proposal, as Law 0001's paste row does. ADR-0045 links this law,
+  so `consumed-by` lists it. No behaviour changes.
