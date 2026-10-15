@@ -320,8 +320,8 @@ Owed: a first run of the rename in place procedure.
   and draft ADR-0044, which the sealed name's rows already build on: the core
   judge and refusal, and no drop from elsewhere into the field.
 - 2026-10-14: Drafts withdrawn amendment. The drafts ADR-0042 to ADR-0055
-  (the last the open hand draft, not the accepted ADR-0055 on menu
-  wording), written on 2026-10-13 and 2026-10-14, were marked accepted and never
+  (the last *The decrypted drag handle shows an open hand*, not the
+  accepted ADR-0055 on menu wording), written on 2026-10-13 and 2026-10-14, were marked accepted and never
   ratified, and are withdrawn; the entries above name each as a draft.
   The sealed name's charset and an empty draft clearing it rest on
   [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),

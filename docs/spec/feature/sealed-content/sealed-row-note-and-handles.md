@@ -22,7 +22,8 @@ them is in the
 [sealed objects core interface](../../../development/sealed-objects-core-interface.md).
 
 Sources: the drafts ADR-0042, ADR-0044, ADR-0047, ADR-0051 and ADR-0055
-(the open hand draft, not the accepted ADR-0055 on menu wording),
+(*The decrypted drag handle shows an open hand*, not the accepted
+ADR-0055 on menu wording),
 written 2026-10-13 and 2026-10-14 and withdrawn on 2026-10-14 without
 ratification. They
 took these details from the

@@ -16,7 +16,7 @@ consumed-by:
   - docs/spec/feature/sealed-content/sealed-row-note-and-handles.md (the looks, words and timings the rows rely on)
   - docs/development/sealed-objects-core-interface.md (the routes, JSON and bytes at rest the rows rest on)
 sources:
-  - the drafts ADR-0042 to ADR-0055 (the last the open hand draft, not the accepted ADR-0055 on menu wording), written 2026-10-13 and 2026-10-14 and withdrawn 2026-10-14 without ratification (what the name and note, fragment, lifecycle, drag and expiry rows left open; their content now stands in the rows, the six proposed ADRs, the spec and the development note)
+  - the drafts ADR-0042 to ADR-0055 (the last *The decrypted drag handle shows an open hand*, not the accepted ADR-0055 on menu wording), written 2026-10-13 and 2026-10-14 and withdrawn 2026-10-14 without ratification (what the name and note, fragment, lifecycle, drag and expiry rows left open; their content now stands in the rows, the six proposed ADRs, the spec and the development note)
   - ADR-0042 to ADR-0047, proposed 2026-10-14 (the rows that cite them rest on a proposal)
   - docs/adr/0011-ttl-choices.md (the deadline the expiry row applies)
   - docs/spec/feature/sealed-content/sealed-row-note-and-handles.md (the row's, the note's, the slot's and the handle's details)
@@ -1591,8 +1591,8 @@ paths must stay dialog free.
   fragment procedure gains a real ⌘-click, the Edit menu's spelling
   item and a panel opened over a file.
 - 2026-10-14: Drafts withdrawn amendment. The drafts ADR-0042 to ADR-0055
-  (the last the open hand draft, not the accepted ADR-0055 on menu
-  wording), written on 2026-10-13 and 2026-10-14, were marked accepted and never
+  (the last *The decrypted drag handle shows an open hand*, not the
+  accepted ADR-0055 on menu wording), written on 2026-10-13 and 2026-10-14, were marked accepted and never
   ratified, and are withdrawn; the entries above name each as a draft.
   Six proposed ADRs take their decisions:
   [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md) (a
