@@ -336,7 +336,7 @@ Delivered by #132 and holding part 4:
 - Two second merge interval and the automation's own step:
   `crates/core/src/document.rs:1561`, `crates/core/src/document.rs:1583`.
 - The caret across the seam: `crates/core/src/document.rs:1496`,
-  `crates/ffi/src/lib.rs:5494`.
+  `crates/ffi/src/lib.rs:5568`.
 
 **Part 2, "The page is history's retention unit (amends ADR-0013)",
 stays open.** The question it asks is whether rung transitions and

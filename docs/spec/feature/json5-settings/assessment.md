@@ -58,7 +58,7 @@ ADR-0011 requires boundary snapping to be a persisted setting in the local form 
 
 Primary source locations:
 
-- `shell/Sources/CompanionKit/PageModel.swift:723-975`
+- `shell/Sources/CompanionKit/PageModel.swift:723-1001`
 - `shell/Sources/CompanionKit/PageModel.swift:1515-1592`
 - `shell/Sources/CompanionKit/PageModel.swift:7009-7046`
 - `shell/Sources/CompanionKit/SyncController.swift:4-40`
