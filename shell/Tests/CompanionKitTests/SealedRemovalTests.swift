@@ -752,7 +752,7 @@ final class SealedRemovalTests: XCTestCase {
         XCTAssertTrue(page.window.makeFirstResponder(page.field))
         drainMainQueue()
         page.textView.yank(nil)
-        XCTAssertEqual(length(page), 0, "the yank ran while a field held the keys (ADR-0046)")
+        XCTAssertEqual(length(page), 0, "the yank ran while a field held the keys (Law 0007, keys row)")
         XCTAssertTrue(page.window.makeFirstResponder(page.textView))
         drainMainQueue()
 
