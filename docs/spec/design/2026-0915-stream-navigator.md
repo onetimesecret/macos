@@ -8,7 +8,7 @@ superseded-by: docs/spec/design/2026-0916-clipboard-clear-interval.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface), Days + side
 sources:
-  - claude.ai/design project ec4e1925-a907-418a-8020-270fb6353d23, "Stream Navigator (Sol feedback).html" and stream-navigator-sol.jsx (the maintainer's interactive design)
+  - the maintainer's interactive design, "Stream Navigator (Sol feedback).html" and stream-navigator-sol.jsx
   - docs/spec/design/2026-0915-ui-ux-decisions.md
   - docs/law/0001-sealed-object.md
   - shell/Sources/CompanionKit/StreamNavigator.swift
@@ -21,6 +21,9 @@ sources:
 ---
 
 # The stream navigator and the sealed capsule's actions
+
+*Publication cleanup, 2026-10-14:* the source attribution omits the private
+AI project identifier; the artifact names and decision history are retained.
 
 The maintainer's interactive design of 2026-09-15 ("Stream Navigator,
 Sol feedback") redraws the Days + side presentation as one track of

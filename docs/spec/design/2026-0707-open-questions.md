@@ -1,9 +1,14 @@
-# docs/spec/design/06-open-questions.md
+# docs/spec/design/2026-0707-open-questions.md
 ---
 
 # Open Questions
 
-Updated for interaction-model revision C (doc 04). Questions the design
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
+
+Updated for interaction-model revision C ([Interaction model](2026-0707-interaction-model.md)). Questions the design
 rounds settled are recorded first — with their resolutions, so the
 reasoning stays auditable — then everything still genuinely open, each
 with a current leaning where one exists.
@@ -13,7 +18,7 @@ with a current leaning where one exists.
 - **Secret-shape detection** (was Q7). Settled in the opposite direction
   of the old leaning: detection is **deleted**. Masking is decided by
   gesture, never by content or origin; excerpts are mechanical; the app
-  never reads what you paste. (v10 round; doc 04.)
+  never reads what you paste. (v10 round; [Interaction model](2026-0707-interaction-model.md).)
 - **The switcher.** Tabs won, on the window's bottom edge,
   Excel-anchored, drag-to-reorder, with the ⌘-number map.
 - **The seal gesture.** ⌘↩ — seals the selection, or the current line if
@@ -81,7 +86,7 @@ with a current leaning where one exists.
     a fixed window (e.g. 24h) even within a long-running session?
 11. **Persistence across restart.** v1 leaning unchanged: none — quit is
     amnesia, and rev C's ledger deliberately follows the same law
-    (in-memory, session-bound). But the "overnight hold" moment (doc 01)
+    (in-memory, session-bound). But the "overnight hold" moment ([Problem space](2026-0707-problem-space.md))
     still collides with an OS update reboot, and the pause feature
     sharpens it: a paused page the user meant to keep dies with the
     process. If ever added: encrypted spill keyed via Keychain/Secure
@@ -90,12 +95,12 @@ with a current leaning where one exists.
 
 ## Platform & technical
 
-12. **Shell decision.** Tauri 2.x vs Swift-shell-Rust-core (doc 05).
+12. **Shell decision.** Tauri 2.x vs Swift-shell-Rust-core ([Technical direction](2026-0707-technical-direction.md)).
     Requires the two-way spike on the non-activating window — the one
     surface that can disqualify a framework. Rev C raises the bar: the
     window must move, resize, and stretch like a real window while never
     activating, and the boundary law hardened from "UI renders
-    transiently" to "UI never receives sealed bytes" (doc 05) — a
+    transiently" to "UI never receives sealed bytes" ([Technical direction](2026-0707-technical-direction.md)) — a
     discipline any shell can meet, so it's a scoring criterion, not a
     gate. Either way, "Rust-based" honestly means "Rust-cored".
 13. **Sandbox + capture exclusion.** Verify App Sandbox coexists with

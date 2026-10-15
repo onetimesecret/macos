@@ -8,9 +8,9 @@ superseded-by:
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
-  - docs/spec/design/03-design-principles.md
-  - docs/spec/design/04-interaction-model.md
-  - docs/spec/design/05-technical-direction.md
+  - docs/spec/design/2026-0707-design-principles.md
+  - docs/spec/design/2026-0707-interaction-model.md
+  - docs/spec/design/2026-0707-technical-direction.md
   - docs/spec/feature/background-surface/README.md
   - docs/spec/feature/sealed-content/sealed-content.md
   - docs/adr/0009-chip-deletion-deliberate-final.md
@@ -37,9 +37,14 @@ What the shipping surface looks like, what each visible decision is, and
 what a build has to satisfy before the decision counts as honoured. The
 illustrated companion (mockups with callouts) is the committed bundle
 `docs/spec/design/UI-UX Decision Record - Sealed Content.html` beside this
-record; it covers D-01 to D-33 despite its filename. The shipping surface
-sets `sharingType = .none` and cannot be screenshotted, so every visual is
-a recreation from this source tree.
+record; it covers D-01 to D-33 despite its filename. Every visual is a
+recreation from this source tree.
+
+*Publication clarification, 2026-10-14:* this record specifies
+`sharingType = .none`; that setting is not evidence that every screenshot
+or screen-sharing mechanism excludes the surface. The earlier absolute
+capture claim is withdrawn. This is a documentation correction, not a new
+interaction decision.
 
 ## 0 · Pipeline and status
 
@@ -502,7 +507,7 @@ in plain; the fragment adds order, not payload exposure.
   *Review correction 2026-09-15:* the earlier contract and amendment-history
   wording said an unpasted chip died by “its own TTL.” That wording is
   withdrawn. The page owns the clock for attached and detached objects; no
-  chip timer exists (`sheet.rs` :292, doc 04 :155), following the maintainer's
+  chip timer exists (`sheet.rs` :292, [Interaction model](2026-0707-interaction-model.md) :155), following the maintainer's
   2026-08-07 decision.
 
 ### Amended since the first draft

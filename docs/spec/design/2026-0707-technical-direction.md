@@ -1,7 +1,12 @@
-# docs/spec/design/05-technical-direction.md
+# docs/spec/design/2026-0707-technical-direction.md
 ---
 
 # Technical Direction (draft — survey, not decisions)
+
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
 
 Milestone-1 supporting material. Records the option space and provisional
 leanings so milestone 2 can make decisions against something written down.
@@ -54,7 +59,16 @@ download as a target, no always-resident helper processes.
 
 ## Security posture
 
-The claims in docs 02–03, made implementable:
+**Publication clarification, 2026-10-14:** the memory-only and process-exit
+amnesia model below is superseded by accepted
+[ADR-0016](../../adr/0016-content-persists-across-restart.md#decision).
+The claims about non-reading, UI residence, runtime memory access, and
+network destinations are historical design assertions, not validation of
+current behavior. In particular, the runtime-dumping paragraph does not
+establish protection against every privileged attacker. See the
+[scope and qualifications](README.md#reading-historical-security-claims).
+
+The claims in [Overlooked opportunities](2026-0707-overlooked-opportunities.md) and [Design principles](2026-0707-design-principles.md), made implementable:
 
 - **Memory-only by default.** Sheets live in RAM; process exit is total
   amnesia — including the ledger, which is session-bound by design (v1
@@ -88,7 +102,7 @@ The claims in docs 02–03, made implementable:
 - **Pasteboard hygiene.** Outbound copies marked
   `org.nspasteboard.ConcealedType` + transient. *(Amended by rev C:
   inbound `ConcealedType` no longer drives masking — masking is decided
-  by the user's gesture alone, doc 04.)* Optional clear-after-copy
+  by the user's gesture alone, [Interaction model](2026-0707-interaction-model.md).)* Optional clear-after-copy
   (clear the system clipboard N seconds after a copy-out, only if the
   clipboard still holds our change-count).
 - **Capture exclusion.** Window `NSWindow.sharingType = .none` by
@@ -103,7 +117,7 @@ The claims in docs 02–03, made implementable:
   clears this where Electron can't: JS runs out-of-process in Apple's
   SIP-protected `WebContent`, so the binary holding resident secrets can
   be fully hardened. Note this guarantee is macOS-specific — it does not
-  transfer to a Linux/Windows sibling (doc 06 §15).
+  transfer to a Linux/Windows sibling ([Open questions](2026-0707-open-questions.md) §15).
 - **Network boundary.** At most two outbound destinations, TLS-only,
   and no others: the configured OTS server, reached only on an explicit
   conceal, and the sync relay, reached only for a page the user has
@@ -148,16 +162,16 @@ Grounded in the current repo (`apps/api/v3/routes.txt`,
   self-hosted instances with zero setup.
 - **After a conceal:** store only the receipt identifier on the live
   sheet (for a "burn remote" affordance there alone). No receipt
-  browsing, no local history of concealed secrets (doc 03 §5).
+  browsing, no local history of concealed secrets ([Design principles](2026-0707-design-principles.md) §5).
 - **Server config:** `GET /api/v3/status` + config endpoints at
   connection-test time to learn allowed TTLs and share domains, cached in
   memory only.
 
 ## Accessibility commitments
 
-Category-defying per doc 02 §8; committed now because retrofits fail:
+Category-defying per [Overlooked opportunities](2026-0707-overlooked-opportunities.md) §8; committed now because retrofits fail:
 
-- **Keyboard-complete.** Every operation in doc 04's keyboard map has a
+- **Keyboard-complete.** Every operation in [Interaction model](2026-0707-interaction-model.md)'s keyboard map has a
   binding; ⌥Space summons the window for full keyboard operation, esc
   hands it back.
 - **VoiceOver-legible.** A sealed chip is one accessibility element with
