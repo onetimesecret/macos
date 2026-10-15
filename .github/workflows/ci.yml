@@ -103,6 +103,12 @@ jobs:
           swift build --package-path shell
       - name: swift test
         run: ./scripts/test-shell.sh
+      - name: Check reveal lab
+        timeout-minutes: 5
+        run: |
+          swift build --package-path tools/reveal-lab
+          swift run --skip-build --package-path tools/reveal-lab RevealLab --self-test
+          sh tools/reveal-lab/run.sh --build-only
       # --debug reuses the build above; the step exists to keep the
       # bundle assembly (Info.plist, stamping, codesign) from rotting.
       - name: Assemble the app bundle
