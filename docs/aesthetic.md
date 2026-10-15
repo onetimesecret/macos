@@ -9,7 +9,7 @@ I’ll ground this in the project’s governing design documentation, then trans
 
 Design OnetimePad as a **native macOS utility that belongs to the desktop**, not as a productivity dashboard, notes app, or security control panel.
 
-The governing design principle says: **“The app is furniture. It occupies peripheral vision … never steals focus, never interrupts.”** (`docs/spec/design/03-design-principles.md`)
+The governing design principle says: **“The app is furniture. It occupies peripheral vision … never steals focus, never interrupts.”** (`docs/spec/design/2026-0707-design-principles.md`)
 
 ### Visual character
 
@@ -38,7 +38,7 @@ That creates the central aesthetic: a card that is only as present as the deskto
 3. **The tab rail** — bottom-anchored, spreadsheet-like tabs that identify pages and show their remaining life geometrically.
 4. **Actions on demand** — hover/focus exposes copy and conceal actions for sealed chips; actions should never compete with the page.
 
-The interaction model describes the page as **“a little text file”** and specifies that tabs sit at the bottom edge, “below the content they name, out of the title bar’s way” (`docs/spec/design/04-interaction-model.md`).
+The interaction model describes the page as **“a little text file”** and specifies that tabs sit at the bottom edge, “below the content they name, out of the title bar’s way” (`docs/spec/design/2026-0707-interaction-model.md`).
 
 ### Time should be felt, not shouted
 
@@ -49,7 +49,7 @@ Expiry is the product’s character, so it needs calm, persistent visual express
 - No badges, banners, countdown alarms, bounce animations, or “items expiring” language.
 - Paused pages use a dashed/frozen gauge and a compact `⏸ 1h` / `⏸ 24h` marker.
 
-The design principle is explicit: **“Expiry is the promise, not a limitation to soften.”** It bans default expiry notifications in favor of the visual draining cue (`docs/spec/design/03-design-principles.md`).
+The design principle is explicit: **“Expiry is the promise, not a limitation to soften.”** It bans default expiry notifications in favor of the visual draining cue (`docs/spec/design/2026-0707-design-principles.md`).
 
 ### Sealed content should look intentional, not alarming
 
