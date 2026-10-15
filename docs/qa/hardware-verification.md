@@ -253,7 +253,7 @@ front` names it) and leave this window visible but not key.
 - [ ] Reopen the file, make one edit, request close, then press ⌘Z until the
       buffer matches the saved file. The file closes.
 - [ ] Reopen the file, make an edit, modify the same file on disk, and request
-      close. Choose **Take theirs**. The file closes with the on-disk contents
+      close. Choose **Take Theirs**. The file closes with the on-disk contents
       unchanged.
 
 ## Separate procedures, in their own documents
@@ -345,7 +345,7 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   relaunch, the draft's own last edit time on the header, the automatic
   content erase resealing rather than dropping the draft when the last
   page tab closes, the inline dirty-close decision ending the draft,
-  Take theirs remaining undoable, and dirty-file quit asking nothing
+  Take Theirs remaining undoable, and dirty-file quit asking nothing
   (ADR-0028, D-14, D-19). Not an ADR-0016 case: a file is not staged
   content.
 

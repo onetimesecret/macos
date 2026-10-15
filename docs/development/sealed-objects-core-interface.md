@@ -297,4 +297,4 @@ refused.
 | `SealedBlockCell.decryptedDragWords` | `drag decrypted` | the handle's words |
 | `InkTextView.decryptedDragSlop` | 3 | the travel before a press on the handle drags |
 | `SealedBlockLayout.Metrics.handleGap` | 8 | the handle's clearance from the actions seat and the classification |
-| `PageModel.copiedNameLine` | `copied the name.` | the line after *Copy name* |
+| `PageModel.copiedNameLine` | `copied the name.` | the line after *Copy Name* |

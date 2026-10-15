@@ -60,6 +60,14 @@ allow = [
 
 [bans]
 multiple-versions = "warn"
+skip = [
+  # Loro 1.13.9's stack requires thiserror 1; postcard's cobs 0.3.0 requires 2.
+  { name = "thiserror", version = "=1.0.69" },
+  # thiserror 1.0.69 and 2.0.19 each pin their matching impl version exactly.
+  { name = "thiserror-impl", version = "=1.0.69" },
+  # ring 0.17.14 requires ^0.52; nu-ansi-term 0.50.3 requires >=0.59, <=0.61.
+  { name = "windows-sys", version = "=0.52.0" },
+]
 wildcards = "deny"
 # Workspace crates reference each other by path without a version pin;
 # this exemption applies only to publish = false crates, so anything

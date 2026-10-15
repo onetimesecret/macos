@@ -8,7 +8,7 @@ import XCTest
 /// business (docs/qa/hardware-verification.md). What is here is everything
 /// that was deliberately kept out of the drawing: the target a tap
 /// resolves to, the day the selected mark sits on, the words in each
-/// tooltip and the footer's count are all pure functions, in the idiom
+/// tooltips are all pure functions, in the idiom
 /// `TabStripView.newPageHelp` and `SheetTab.holdMenuTitle` set. If one
 /// of them is wrong the rail sends a click to the wrong page or names a
 /// chord that does nothing, and neither needs a window to catch.
@@ -183,31 +183,9 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: false, chord: nil), "Start today's page")
     }
 
-    // MARK: The count of what is not shown
+    // MARK: Hidden blank pages
 
-    /// The footer's line appears exactly when the projection is holding
-    /// something back, and says nothing at all when it is not: a line
-    /// reading "0 blank" would be chrome measuring the absence of a
-    /// problem. The short form keeps the footer lighter than the days
-    /// above it; the sentence behind it names the one place those pages
-    /// can be reached from, which is what doc 05's no-abbreviation-only
-    /// rule asks for.
-    func testTheHiddenPagesLineAppearsExactlyWhenSomethingIsHidden() {
-        XCTAssertNil(TimeRailView.hiddenPagesLine(count: 0))
-        XCTAssertEqual(TimeRailView.hiddenPagesLine(count: 1), "1 blank")
-        XCTAssertEqual(TimeRailView.hiddenPagesLine(count: 3), "3 blank")
-
-        XCTAssertTrue(TimeRailView.hiddenPagesHelp(count: 1).hasPrefix("One live page has"))
-        XCTAssertTrue(TimeRailView.hiddenPagesHelp(count: 3).hasPrefix("3 live pages have"))
-        XCTAssertTrue(
-            TimeRailView.hiddenPagesHelp(count: 3).contains("Settings"),
-            "the footer did not say where the hidden pages are")
-    }
-
-    /// And it counts what the projection dropped, not what the strip
-    /// holds: three blank pages on days nobody can reach, and an empty
-    /// slot that is on no day at all and therefore in hiding nowhere.
-    func testTheFooterCountsTheProjectionsOwnNumber() {
+    func testHiddenBlankPagesDoNotAddTimelineNodes() {
         let projection = project([
             slot(tab: 1, page: 11, day: -1, content: false),
             slot(tab: 2, page: 22, day: -2, content: false),
@@ -215,7 +193,11 @@ final class TimeRailTests: XCTestCase {
             slot(tab: 4, page: 44, day: -3, content: true),
             slot(tab: 5),
         ])
-        XCTAssertEqual(TimeRailView.hiddenPagesLine(count: projection.hiddenBlankPages), "3 blank")
+        XCTAssertEqual(projection.hiddenBlankPages, 3)
+        XCTAssertEqual(projection.units.flatMap(\.pageIDs), [44])
+        let nodes = StreamNavigator.nodes(projection: projection, tabs: [], selection: nil,
+            surfaceShowsRoll: true, stampFormat: .standard)
+        XCTAssertEqual(nodes.compactMap(\.page), [44])
     }
 
     // MARK: Which row is lit

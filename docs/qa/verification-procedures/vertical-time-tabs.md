@@ -133,7 +133,7 @@ The decision under test: the scroll **closes up** and the gap lives in
 the labels. No ghost row, no placeholder, no renumbering.
 
 1. Stage three days, and give the middle day's page a short rung:
-   right-click that day's gutter and use its **Shorten the countdown**
+   right-click that day's gutter and use its **Shorten the Countdown**
    item, which steps the ladder down one press at a time. The countdown
    printed in the gutter is a label and not a button; the menu is the
    only way to step the rung in this mode, since the card header no

@@ -211,7 +211,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.currentSheet = sheetID
         coordinator.appliedTypeface = InkStyle.typeface
         coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
-        coordinator.appliedPreviewRendering = model.previewRendering
+        coordinator.appliedPreviewRendering = model.previewRendering(for: sheetID)
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
@@ -489,7 +489,7 @@ public struct InkEditorView: NSViewRepresentable {
         // nothing.
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
-        coordinator.applyPreviewRendering(model.previewRendering)
+        coordinator.applyPreviewRendering(model.previewRendering(for: sheetID))
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
         // The stance may have flipped editing on or off above, so the
@@ -1902,13 +1902,13 @@ public struct InkEditorView: NSViewRepresentable {
             restyle()
         }
 
-        /// Restyle the mounted page when the preview-rendering scope
-        /// changes. `.never` short-circuits to the plain-file path, and
-        /// the other two return to the block walk; the roll picks up its
-        /// own reseed through the notification the model posts.
+        /// Compare the mounted page's effective scope, including its override.
         func applyPreviewRendering(_ scope: PreviewRenderingScope) {
-            guard appliedPreviewRendering != scope else { return }
-            appliedPreviewRendering = scope
+            let effective = writesNote ? scope : currentSheet.map {
+                model.previewRendering(for: $0)
+            } ?? scope
+            guard appliedPreviewRendering != effective else { return }
+            appliedPreviewRendering = effective
             restyle()
         }
 
@@ -2691,17 +2691,19 @@ public struct InkEditorView: NSViewRepresentable {
             case editNote
             case remove
 
+            /// Title case; no ellipsis on Name and Rename, which edit in
+            /// place, and one noun for the object (ADR-0055).
             var title: String {
                 switch self {
-                case .copyName: "Copy name"
-                case .copyDecrypted: "Copy decrypted contents"
-                case .copyNameValue: "Copy name=value, decrypted"
-                case .createLink: "Create one-time link…"
-                case .name: "Name…"
-                case .rename: "Rename…"
+                case .copyName: "Copy Name"
+                case .copyDecrypted: "Copy Decrypted Contents"
+                case .copyNameValue: "Copy Name=Value, Decrypted"
+                case .createLink: "Create One-Time Link…"
+                case .name: "Name"
+                case .rename: "Rename"
                 case .note: "Note…"
-                case .editNote: "Edit note…"
-                case .remove: "Remove protected content"
+                case .editNote: "Edit Note…"
+                case .remove: "Remove Sealed Content"
                 }
             }
         }
@@ -3578,7 +3580,11 @@ public struct InkEditorView: NSViewRepresentable {
             // `.never` uses the plain visual profile everywhere. Markdown-capable
             // pages still need the Markdown walk's classifications and fence ranges
             // for editing and paste safety, but neither result is rendered.
-            if model.previewRendering == .never {
+            let previewScope = writesNote ? model.previewRendering : currentSheet.map {
+                model.previewRendering(for: $0)
+            } ?? model.previewRendering
+            appliedPreviewRendering = previewScope
+            if previewScope == .never {
                 restylePlainFile(storage, preservingMarkdownStructure: file == nil)
                 return
             }
@@ -4712,7 +4718,7 @@ final class BlockMetadataField: NSTextField {
     /// dark carries them along.
     func refreshPillColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            textColor = .secondaryLabelColor
+            textColor = .secondaryInk
             backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
             layer?.borderColor = NSColor.separatorColor
                 .withAlphaComponent(0.35).cgColor
@@ -5122,7 +5128,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         return window?.firstResponder === self && !keysHeldInAnotherWindow()
     }
 
-    /// A text field in another key window, such as the pad list's popover, other than `source`.
+    /// A text field in another key window, such as a pad's in Settings, other than `source`.
     private func keysHeldInAnotherWindow(besides source: NSView? = nil) -> Bool {
         guard let key = NSApp?.keyWindow, key !== window,
               let holder = key.firstResponder as? NSTextView
@@ -6900,21 +6906,29 @@ final class SealedBlockCell: NSTextAttachmentCell {
         )
     }
 
+    /// The block's quieter words: the secondary ink at rest, ink on a
+    /// selected block, where the selection highlight shows through the
+    /// fill and leaves the secondary label near 4:1 (record section 9, row 5).
+    nonisolated static func quietInk(selected: Bool) -> NSColor {
+        selected ? .labelColor : .secondaryInk
+    }
+
     @MainActor
-    private var classificationLabel: NSAttributedString {
+    private func classificationLabel(selected: Bool = false) -> NSAttributedString {
         NSAttributedString(
             string: Self.classification,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: Self.quietInk(selected: selected),
                 .kern: 1.15,
             ]
         )
     }
 
     @MainActor
-    private var metadata: NSAttributedString {
-        Self.seatString(Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: info.hasNote))
+    private func metadata(selected: Bool) -> NSAttributedString {
+        Self.seatString(
+            Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: info.hasNote), selected: selected)
     }
 
     /// The current core returns this closed vocabulary. Refuse to draw
@@ -7003,7 +7017,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// With `editingWidth` the name's seat is a field that wide (Law 0007),
     /// drawn by the field, and the row follows it whether named or not.
     @MainActor
-    func namedRow(in cellFrame: NSRect, editingWidth: CGFloat? = nil) -> NamedRow? {
+    func namedRow(
+        in cellFrame: NSRect, editingWidth: CGFloat? = nil, selected: Bool = false
+    ) -> NamedRow? {
         let name: String
         if editingWidth != nil {
             name = ""
@@ -7020,7 +7036,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             .font: InkStyle.chipFont, .foregroundColor: NSColor.labelColor,
         ]
         let equals = NSAttributedString(string: "=", attributes: [
-            .font: InkStyle.chipFont, .foregroundColor: NSColor.secondaryLabelColor,
+            .font: InkStyle.chipFont, .foregroundColor: Self.quietInk(selected: selected),
         ])
         let floor = NSAttributedString(
             string: String(name.prefix(Self.nameFloorCharacters)) + "…",
@@ -7074,12 +7090,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    static func seatString(_ text: String) -> NSAttributedString {
+    static func seatString(_ text: String, selected: Bool = false) -> NSAttributedString {
         NSAttributedString(
             string: text,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: quietInk(selected: selected),
             ]
         )
     }
@@ -7222,12 +7238,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    private var actions: NSAttributedString {
+    private func actions(selected: Bool) -> NSAttributedString {
         NSAttributedString(
             string: Self.actionsGlyph,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: Self.quietInk(selected: selected),
             ]
         )
     }
@@ -7257,7 +7273,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         guard DecryptedDrag.pasteboardType(forKind: info.kind) != nil else { return nil }
         return Self.decryptedDragRect(
             in: cellFrame, wordsWidth: Self.decryptedDragString.size().width,
-            labelWidth: classificationLabel.size().width)
+            labelWidth: classificationLabel().size().width)
     }
 
     @MainActor
@@ -7463,9 +7479,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
             )
         }
 
-        classificationLabel.draw(at: layout.labelOrigin)
+        classificationLabel(selected: selected).draw(at: layout.labelOrigin)
         if hovered || selected {
-            let glyph = actions
+            let glyph = actions(selected: selected)
             let size = glyph.size()
             let seat = Self.actionsRect(in: cellFrame)
             glyph.draw(at: NSPoint(
@@ -7477,8 +7493,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
             }
         }
 
-        guard let row = namedRow(in: cellFrame, editingWidth: editingWidth) else {
+        guard let row = namedRow(in: cellFrame, editingWidth: editingWidth, selected: selected)
+        else {
             let excerptLine = excerpt
+            let metadata = metadata(selected: selected)
             let metadataSize = metadata.size()
             if face == .page {
                 excerptLine.draw(in: layout.excerptRect(
@@ -7501,7 +7519,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let hovered = editingWidth == nil ? zone : nil
         let copied = editingWidth == nil && beat != nil
         let seat = Self.seatString(Self.seatText(
-            sizeLabel: info.sizeLabel, hasNote: info.hasNote, hovered: hovered, copied: copied))
+            sizeLabel: info.sizeLabel, hasNote: info.hasNote, hovered: hovered, copied: copied),
+            selected: selected)
         seat.draw(at: layout.metadataOrigin(width: seat.size().width))
         if hovered == nil, !copied { drawDoorwayRule(in: cellFrame) }
     }

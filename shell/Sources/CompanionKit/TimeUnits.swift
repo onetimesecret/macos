@@ -142,11 +142,8 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// pick a different page from the one the bar is drawn from, and a
     /// row would then say one thing and show another.
     public struct Unit: Equatable, Sendable, Identifiable {
-        /// How far back this day is, in units, counted from today: 0
-        /// for today, -1 for yesterday. Never above zero, a page from a
-        /// clock that went backwards is filed under today rather than
-        /// ahead of it. Unique within a projection, which is what makes
-        /// it the identity as well.
+        /// Day offset from today: 0 for today, -1 for yesterday.
+        /// Natural ordering can draw multiple runs with the same bucket.
         public let bucket: Int
         /// "Today", "-1d": what the roll's day gutter draws.
         public let label: String
@@ -183,13 +180,12 @@ public struct TimeUnitProjection: Equatable, Sendable {
         /// clock to report.
         public let spokenRemaining: String
 
-        public var id: Int { bucket }
+        public var sequenceID: Int? = nil
+
+        public var id: Int { sequenceID ?? bucket }
     }
 
-    /// The visible days, newest first: today at the top, then back
-    /// through whatever is still alive. Days whose pages have all
-    /// expired are simply absent, and the gap shows in the labels
-    /// rather than as a row standing in for something that is gone.
+    /// Visible day groups, or contiguous day runs in natural order.
     public let units: [Unit]
 
     /// How many live pages the projection is not showing.
@@ -205,6 +201,41 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// content predicate itself, if it is routinely above zero in
     /// dogfood, the bar is set wrong (ADR-0020's eject triggers).
     public let hiddenBlankPages: Int
+
+    public nonisolated func inNaturalOrder(tabs: [TabSummary]) -> Self {
+        let drawnPages = Set(units.flatMap(\.pageIDs))
+        var templates: [Int: Unit] = [:]
+        for unit in units where templates[unit.bucket] == nil {
+            templates[unit.bucket] = unit
+        }
+        var runs: [(template: Unit, pages: [TabSummary], sequenceID: Int)] = []
+        for tab in tabs {
+            guard tab.hasPage, let page = tab.pageID, drawnPages.contains(page),
+                  let offset = tab.pageDayOffset,
+                  let template = templates[TimeUnit.day.bucket(dayOffset: offset)] else { continue }
+            if let last = runs.last, last.template.bucket == template.bucket {
+                runs[runs.count - 1].pages.append(tab)
+            } else {
+                runs.append((template, [tab], Int(page)))
+            }
+        }
+        let ordered = runs.map { run in
+            let template = run.template
+            let soonest = run.pages.min { $0.remainingMs < $1.remainingMs }
+            return Unit(
+                bucket: template.bucket, label: template.label,
+                spokenLabel: template.spokenLabel, railLabel: template.railLabel,
+                pageIDs: run.pages.compactMap(\.pageID), tabIDs: run.pages.map(\.id),
+                fractionRemaining: soonest?.fractionRemaining ?? 0,
+                paused: soonest?.paused ?? false, toppedUp: soonest?.holdToppedUp ?? false,
+                lastHour: soonest?.lastHour ?? false,
+                remainingLabel: soonest?.remainingLabel ?? "",
+                spokenRemaining: soonest?.spokenRemaining ?? "", sequenceID: run.sequenceID
+            )
+        }
+        let emptyToday = units.filter { $0.bucket == 0 && $0.pageIDs.isEmpty }
+        return Self(units: emptyToday + ordered, hiddenBlankPages: hiddenBlankPages)
+    }
 
     /// Group the live pages into days. The single entry point, and the
     /// only place any of this is decided.

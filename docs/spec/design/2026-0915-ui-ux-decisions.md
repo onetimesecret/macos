@@ -101,6 +101,11 @@ chrome.
   *Acceptance:* greyscale the surface and read every state (keyline
   present or absent, hatch, dot beside a word); ember text clears 4.5:1
   on page and card, light and dark.
+  *Amended 2026-10-14:* the system's `.secondary` reads 3.95:1 on white,
+  under section 9's row 5, so the quieter words wear a `secondaryInk`
+  token beside `emberText`: black at 60% under light, the system's
+  secondary label under dark and Increase Contrast. No text wears
+  `.tertiary`. `ThemeContrastTests` measures both.
 - **D-04 (open)** Is the resting card opaque or translucent? Today both
   stances share one material: `.ultraThinMaterial` in `BackdropRootView`
   (`BackdropRootView.swift:222`); the resting look is that material
@@ -399,6 +404,13 @@ in plain; the fragment adds order, not payload exposure.
   is never seeded from the page's remaining time; failure is inline text
   and the button becomes Retry; the local copy is offered up to burn and
   never burned automatically.
+  *Amended 2026-10-14:* the sheet stays inline. Its title takes the
+  menu's verb, `create a one-time link from this sealed content`; its
+  buttons are title case (*Create Link*, *Burn Local Copy*, *Keep It*);
+  a *Cancel* left of the default button answers Escape and waits out a
+  request in flight; each field has a label of its own; and the guest
+  line ends in a *Connection Settings…* link that opens that tab
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-10 (fixed)** Hover reveals affordances, never content, and the
   affordance keeps its seat whether visible or not (~120 ms opacity,
   0 ms under Reduce Motion): revealing it never nudges the ink or
@@ -612,7 +624,7 @@ read as a page an instant from death rather than a slot standing ready.
   where the default is headed; the default does not flip before D-26's
   two settings exist, or Days + side would ship as the only
   alternative. There is no page cap to design for: the core has had
-  none since issue #158 (`PageModel.swift:5274`), so no refusal is
+  none since issue #158 (`PageModel.swift:5334`), so no refusal is
   drawn. What remains open is when the prototype label comes off and
   the default flips.
   *Amended 2026-10-01:* D-26's two settings will not exist, so the gate
@@ -667,6 +679,10 @@ in draw order: content-restore failure · ledger failure · cancelled quit
   *Banned:* "3 items expiring soon", "Are you sure?" on expiry,
   onboarding or celebratory copy, "your secrets are safe with us", and
   any label implying content can be revealed.
+  *Amended 2026-10-14:* the register is the sentences'; a button in a
+  status line is a button and is title case, *Quit Anyway (⌘Q)*,
+  *Seal It (⇧⌘V)*
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-16 (fixed)** The empty state is one calm sentence ("No page here
   yet.") over a hint naming the gesture that works on this surface and
   stance. No illustration, no onboarding flow.
@@ -778,6 +794,12 @@ half is the kind of setting a user flips once and then distrusts.
 General and Code save on each flip; Connection holds fields in draft
 until Save, because a half-typed server URL is not a setting anyone
 wants applied.
+
+*Amended 2026-10-14:* a fifth form, Pads, stands after Code while the
+pads experiment exists: its switch, moved from General, and the pads with
+their folders and apps, saved on each change
+([ADR-0039](../../adr/0039-pad-selection-and-associations.md) Amendment 1,
+proposed).
 
 Copy the forms carry:
 

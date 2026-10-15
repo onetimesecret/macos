@@ -31,19 +31,19 @@ final class DayScrollTests: XCTestCase {
         return model
     }
 
-    /// A page with something on it, minted by the shipped gesture. The
-    /// ink goes in through the core's own restate rather than through a
-    /// keystroke, because what these tests need is a document with a
-    /// known length, not an emitter under test.
+    /// Seed an independent page through the core, without splitting
+    /// the selected page at the editor's caret.
     @discardableResult
     private func page(in model: PageModel, saying ink: String) throws -> UInt64 {
-        model.newPage()
-        let page = try XCTUnwrap(model.selectedPageID)
+        let tab = model.coreClient.newTab()
+        XCTAssertNotEqual(tab, 0)
+        let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
         let escaped = ink.replacingOccurrences(of: "\n", with: "\\n")
         XCTAssertTrue(model.coreClient.syncDocument(
             sheet: page, json: "[{\"ink\": \"\(escaped)\"}]"
         ))
         model.refresh()
+        model.select(tab)
         return page
     }
 
@@ -1221,10 +1221,10 @@ final class DayScrollTests: XCTestCase {
 
     func testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement() throws {
         let model = try makeModel()
-        model.newPage()
+        try page(in: model, saying: "")
         let firstID = try XCTUnwrap(model.selection)
         model.renameTab(firstID, to: "first page")
-        model.newPage()
+        try page(in: model, saying: "")
         let secondID = try XCTUnwrap(model.selection)
         model.renameTab(secondID, to: "second page")
         let first = try XCTUnwrap(model.tabs.first { $0.id == firstID })
@@ -1244,6 +1244,20 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(header.renameDraft, "second page")
     }
 
+    /// The gutter's day, time and name share one colour: ink on the
+    /// active page, the secondary ink elsewhere, so a name never
+    /// reads dimmer than its time and none of them wears tertiary.
+    func testAGuttersWordsWearInkWhenActiveAndTheSecondaryInkOtherwise() throws {
+        let model = try makeModel()
+        let header = DayHeaderView(model: model)
+        let secondary = Array(repeating: NSColor.secondaryInk as NSColor?, count: 3)
+        XCTAssertEqual(header.wordColors, secondary)
+        header.isActive = true
+        XCTAssertEqual(header.wordColors, Array(repeating: NSColor.labelColor as NSColor?, count: 3))
+        header.isActive = false
+        XCTAssertEqual(header.wordColors, secondary)
+    }
+
     /// A gutter's title field is drawn for a typed name and for the
     /// length of a rename, and for nothing else: a placeholder and a
     /// first line are both said already, beside or under the gutter.
@@ -1251,7 +1265,7 @@ final class DayScrollTests: XCTestCase {
     /// countdown is still spoken.
     func testAGutterDrawsATypedNameAndNoGauge() throws {
         let model = try makeModel()
-        model.newPage()
+        try page(in: model, saying: "")
         let tabID = try XCTUnwrap(model.selection)
         let placeholder = try XCTUnwrap(model.tabs.first { $0.id == tabID })
         XCTAssertEqual(placeholder.titleSource, .placeholder)
@@ -1261,8 +1275,8 @@ final class DayScrollTests: XCTestCase {
             spokenLabel: "today", mark: .none, summary: placeholder)
         XCTAssertFalse(header.titleIsDrawn, "a placeholder title was drawn beside its own stamp")
         XCTAssertTrue(
-            header.subviews.allSatisfy { $0 is NSTextField },
-            "the gutter hosts something besides its words: \(header.subviews)")
+            header.subviews.allSatisfy { $0 is NSTextField || $0 is NSButton },
+            "the gutter hosts something besides its words and preview toggle: \(header.subviews)")
         XCTAssertEqual(
             header.accessibilityLabel(),
             DayHeaderView.spokenHeader(
@@ -1536,7 +1550,7 @@ final class DayScrollTests: XCTestCase {
 
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {
         let model = try makeModel()
-        model.newPage()
+        try page(in: model, saying: "")
         let tabID = try XCTUnwrap(model.selection)
         model.renameTab(tabID, to: "original title")
         let summary = try XCTUnwrap(model.tabs.first { $0.id == tabID })
@@ -1614,14 +1628,14 @@ final class DayScrollTests: XCTestCase {
     /// this list rather than going unnoticed.
     private func stripMenuTitles(model: PageModel, tab: TabSummary) -> [String] {
         var titles = [
-            "Rename tab…",
+            "Rename Tab",
             SheetTab.holdMenuTitle(paused: tab.paused, toppedUp: tab.holdToppedUp),
             SheetTab.rungMenuTitle(hasPage: tab.hasPage),
         ]
         if model.sync.enabled, let pageID = tab.pageID {
             titles.append(SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID)))
         }
-        titles.append("Close tab")
+        titles.append("Close Tab")
         return titles
     }
 
@@ -1657,12 +1671,12 @@ final class DayScrollTests: XCTestCase {
             model.sync.enabled = enabled
             let gutter = try XCTUnwrap(header.menu(for: click)).items.map(\.title)
             XCTAssertFalse(
-                gutter.contains { $0.contains("tab") },
+                gutter.contains { $0.lowercased().contains("tab") },
                 "a day gutter that says tab is naming the strip's object, not its own: \(gutter)"
             )
             XCTAssertEqual(
-                gutter.map { $0.replacingOccurrences(of: "page…", with: "tab…") }
-                    .map { $0 == "Close page" ? "Close tab" : $0 },
+                gutter.map { $0 == "Rename Page" ? "Rename Tab" : $0 }
+                    .map { $0 == "Close Page" ? "Close Tab" : $0 },
                 stripMenuTitles(model: model, tab: tab),
                 "with sync \(enabled ? "on" : "off") the gutter and the strip disagree"
             )

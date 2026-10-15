@@ -183,6 +183,10 @@ the mechanical excerpt and the size class on the row under them.
   order and with the unnamed variants that the
   [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)
   records under The object's menu. The chord stays on *Copy decrypted contents*.
+  *Amended 2026-10-14:* the items are title case, *Name* and *Rename*
+  edit in place and carry no ellipsis, and the removal reads *Remove
+  Sealed Content*
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the
@@ -202,6 +206,9 @@ the mechanical excerpt and the size class on the row under them.
     reports stays four.
   *Acceptance:* `SealedCapsuleTests.testTheLinesReadAsTheDesignWroteThem`,
   `PasteboardOfferTests.testACopyOutArmsTheClearAndFlashesTheInterval`.
+  *Amended 2026-10-14:* the removal line reads `sealed content removed.`,
+  one noun for the object
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-43 (fixed)** The clear after copy is **90 seconds**, the interval
   the design names. It stays one core constant,
   `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi/src/lib.rs`, read by the

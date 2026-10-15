@@ -789,6 +789,32 @@ public final class PageModel: ObservableObject {
         }
     }
     private static let previewRenderingKey = "previewRendering"
+    private static let pagePreviewKey = "pageMarkdownPreviewV1"
+    private var pagePreviewOverrides: [String: Bool] = [:]
+
+    private func pagePreviewIdentity(for id: UInt64) -> String? {
+        guard !id.isFileID else { return nil }
+        return tabs.first(where: { $0.pageID == id })?.pageUUID
+    }
+
+    public func previewRendering(for id: UInt64) -> PreviewRenderingScope {
+        guard let key = pagePreviewIdentity(for: id), let enabled = pagePreviewOverrides[key]
+        else { return previewRendering }
+        return enabled ? .allPages : .never
+    }
+
+    public func markdownPreviewEnabled(for id: UInt64, quiet: Bool = false) -> Bool {
+        let scope = previewRendering(for: id)
+        return quiet ? scope == .allPages : scope != .never
+    }
+
+    public func toggleMarkdownPreview(for id: UInt64) {
+        guard let key = pagePreviewIdentity(for: id) else { return }
+        objectWillChange.send()
+        pagePreviewOverrides[key] = !markdownPreviewEnabled(for: id)
+        defaults.set(pagePreviewOverrides, forKey: Self.pagePreviewKey)
+        invalidateQuietRenderings()
+    }
 
     /// Posted when a rendering dependency (preview scope, syntax highlighting,
     /// typeface) moves and the quiet cache has been dropped. The roll listens
@@ -1079,6 +1105,20 @@ public final class PageModel: ObservableObject {
     /// Set by the app delegate; ⌘, routes here (the delegate owns the
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
+
+    /// The Settings tabs the surface points to by name: the conceal
+    /// sheet's Connection Settings… and the pad switcher's Manage Pads….
+    public enum SettingsPane: Sendable {
+        case connection
+        case pads
+    }
+
+    /// Set by the app delegate: Settings opened on a named tab.
+    public var onOpenSettingsPane: ((SettingsPane) -> Void)?
+
+    public func openSettings(_ pane: SettingsPane) {
+        onOpenSettingsPane?(pane)
+    }
 
     /// Set by the roll while it is mounted: put the clip back on Day 0
     /// (issue #79). Nil in horizontal mode, where there is one page in
@@ -1491,6 +1531,7 @@ public final class PageModel: ObservableObject {
         // eye expects of a page it can already read.
         previewRendering = (defaults.string(forKey: Self.previewRenderingKey)
             .flatMap(PreviewRenderingScope.init(rawValue:))) ?? .allPages
+        pagePreviewOverrides = defaults.dictionary(forKey: Self.pagePreviewKey) as? [String: Bool] ?? [:]
         languageDetectionEnabled =
             defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
         automaticallyFencePastes =
@@ -2929,12 +2970,19 @@ public final class PageModel: ObservableObject {
             PadCatalog.normalizedPath($0.path) == pads.rememberedFile(for: pads.activeID)
         }?.id
     }
-    public func toggleDaySort() { pads.toggleDaySort(for: pads.activeID) }
+    public func toggleDaySort() { setDaySort(pads.daySortDirection(for: pads.activeID).next) }
+    public func setDaySort(_ direction: PadSortDirection) {
+        pads.setDaySort(direction, for: pads.activeID)
+    }
     public func toggleCheckpointSort(dayBucket: Int) {
+        setCheckpointSort(pads.checkpointSortDirection(for: pads.activeID,
+            onDate: dateKey(forDayBucket: dayBucket)).next, dayBucket: dayBucket)
+    }
+    public func setCheckpointSort(_ direction: PadSortDirection, dayBucket: Int) {
         // A read spanning a day boundary supplies no unambiguous date for its
         // relative offsets. Wait for the next stable refresh before writing.
         guard padRosterDate != nil else { return }
-        pads.toggleCheckpointSort(for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
+        pads.setCheckpointSort(direction, for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
     }
     public func dateKey(forDayBucket bucket: Int) -> String {
         // The roster's offsets and this reference must describe the same day.
@@ -2971,9 +3019,12 @@ public final class PageModel: ObservableObject {
     private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
         guard pads.isEnabled else { return projection }
         let summaries = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-        var units = projection.units.map { unit in
+        let dayDirection = pads.daySortDirection(for: pads.activeID)
+        let grouped = dayDirection == .natural ? projection.inNaturalOrder(tabs: navigationTabs) : projection
+        var units = grouped.units.map { unit in
             let direction = pads.checkpointSortDirection(for: pads.activeID, onDate: dateKey(forDayBucket: unit.bucket))
-            let ordered = zip(unit.tabIDs, unit.pageIDs).sorted { a, b in
+            let natural = Array(zip(unit.tabIDs, unit.pageIDs))
+            let ordered = direction == .natural ? natural : natural.sorted { a, b in
                 let lhs = summaries[a.0]?.pageCreatedMs ?? 0, rhs = summaries[b.0]?.pageCreatedMs ?? 0
                 if lhs == rhs {
                     let left = summaries[a.0]?.uuid ?? String(a.0)
@@ -2985,9 +3036,10 @@ public final class PageModel: ObservableObject {
             return TimeUnitProjection.Unit(bucket: unit.bucket, label: unit.label, spokenLabel: unit.spokenLabel,
                 railLabel: unit.railLabel, pageIDs: ordered.map { $0.1 }, tabIDs: ordered.map { $0.0 },
                 fractionRemaining: unit.fractionRemaining, paused: unit.paused, toppedUp: unit.toppedUp,
-                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining)
+                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining,
+                sequenceID: unit.sequenceID)
         }
-        if pads.daySortDirection(for: pads.activeID) == .chronological { units.reverse() }
+        if dayDirection == .chronological { units.reverse() }
         return TimeUnitProjection(units: units, hiddenBlankPages: projection.hiddenBlankPages)
     }
 
@@ -3022,6 +3074,14 @@ public final class PageModel: ObservableObject {
                 }
             }
             pads.reconcileTabs(Set(tabs.compactMap(\.uuid)), checkpointKeys: checkpointKeys)
+        }
+        if stateLoaded && saveLicence {
+            let previewKeys = Set(tabs.compactMap { $0.pageID.flatMap(pagePreviewIdentity(for:)) })
+            let retained = pagePreviewOverrides.filter { previewKeys.contains($0.key) }
+            if retained != pagePreviewOverrides {
+                pagePreviewOverrides = retained
+                defaults.set(retained, forKey: Self.pagePreviewKey)
+            }
         }
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
@@ -3064,7 +3124,7 @@ public final class PageModel: ObservableObject {
         }
         // A conceal whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
-        // ↩ lands on "Create link", and a stale draft would answer a
+        // ↩ lands on Create Link, and a stale draft would answer a
         // stray keystroke with a network call over a page (or a chip's
         // page) that no longer exists (issue #19). A chip is orphaned
         // when it survives on no live page: its host page has gone,
@@ -3271,7 +3331,7 @@ public final class PageModel: ObservableObject {
         // The payload carries the fence regions the styling walk returned
         // so a quiet region's `InkLayoutManager` can paint the same slab
         // the editor would. `.focusedOnly` and `.never` return plain ink.
-        if previewRendering == .allPages, !id.isFileID {
+        if markdownPreviewEnabled(for: id, quiet: true), !id.isFileID {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).
@@ -4661,7 +4721,7 @@ public final class PageModel: ObservableObject {
     }
 
     public nonisolated static func unresolvedConflictNotice(name: String) -> String {
-        "\(name) changed on disk. Choose keep mine, take theirs, or Save As before saving."
+        "\(name) changed on disk. Choose Keep Mine, Take Theirs, or Save As… before saving."
     }
 
     /// The refused save's sentence for the conflict the file is
@@ -4673,11 +4733,11 @@ public final class PageModel: ObservableObject {
     public nonisolated static func unresolvedConflictNotice(for file: FileSummary) -> String {
         if file.accessRefused {
             return "\(file.name) cannot be read at its path. "
-                + "Choose Locate, keep mine, or Save As before saving."
+                + "Choose Locate…, Keep Mine, or Save As… before saving."
         }
         if file.conflict == .missing {
             return "\(file.name) is no longer at its path. "
-                + "Choose Locate, keep mine, or Save As before saving."
+                + "Choose Locate…, Keep Mine, or Save As… before saving."
         }
         return unresolvedConflictNotice(name: file.name)
     }
@@ -5292,10 +5352,80 @@ public final class PageModel: ObservableObject {
         return id
     }
 
-    /// A new page (⌘N or the + tab). It cannot be refused for room:
-    /// the strip has no cap, and a tenth tab opens like the ninth
-    /// (issue #158).
+    /// Timeline creation splits the current page at its caret; Tabs opens a blank page.
     public func newPage() {
+        let insertionTab = showsTimeUnits && selectedFile == nil && !showingLedger ? selection : nil
+        guard let insertionTab,
+              let source = tabs.first(where: { $0.id == insertionTab })?.pageID else {
+            createBlankPage()
+            return
+        }
+        let sourceDay = tabs.first { $0.id == insertionTab }?.pageDayOffset
+        let sourceLength = client.documentRuns(sheet: source).reduce(0) { length, run in
+            switch run {
+            case .ink(let text): return length + text.utf16.count
+            case .chip: return length + 1
+            }
+        }
+        let editor = (activeEditor as? InkTextView).flatMap { view in
+            view.coordinator?.currentSheet == source ? view : nil
+        }
+        if editor?.hasMarkedText() == true {
+            flash("finish composing text before inserting a checkpoint")
+            return
+        }
+        let caret = editor?.selectedRange() ?? viewStates.carets[source]
+            ?? NSRange(location: sourceLength, length: 0)
+        let splitAt = min(max(caret.location, 0), sourceLength)
+        guard let created = mintTab() else { return }
+        if let dest = tabs.first(where: { $0.id == created })?.pageID {
+            let naturalTabs = tabs.filter { $0.id != created }
+            guard let sourceIndex = naturalTabs.firstIndex(where: { $0.id == insertionTab }),
+                  client.moveTab(id: created, to: UInt64(sourceIndex + 1)) else {
+                _ = client.closeTab(id: created)
+                refresh()
+                flash("the checkpoint could not be inserted")
+                return
+            }
+            // A caret at the very start asks for a blank checkpoint, not
+            // for the whole page to move and leave an empty one behind.
+            if splitAt > 0, splitAt < sourceLength {
+                let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
+                guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
+                    _ = client.closeTab(id: created)
+                    refresh()
+                    flash("the checkpoint could not be inserted")
+                    return
+                }
+            } else {
+                refresh()
+            }
+            editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
+            viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
+            viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
+            if pads.isEnabled, padRosterDate != nil {
+                pads.setCheckpointSort(.natural, for: pads.activeID,
+                    onDate: dateKey(forDayBucket: 0))
+                if let sourceDay, sourceDay < 0 {
+                    pads.setDaySort(.natural, for: pads.activeID)
+                    pads.setCheckpointSort(.natural, for: pads.activeID,
+                        onDate: dateKey(forDayBucket: sourceDay))
+                }
+            }
+        }
+        adoptCreatedTab(created)
+    }
+
+    /// A blank page at the ladder's top rung, selected. Never splits
+    /// anything: Tabs mode, a page asked for from the ledger or a file,
+    /// and today's place all take this path.
+    private func createBlankPage() {
+        guard let created = mintTab() else { return }
+        adoptCreatedTab(created)
+    }
+
+    /// Ask the core for a new tab and refresh. Nil when the core could not answer.
+    private func mintTab() -> UInt64? {
         clearNotice()
         clearPendingFileClose()
         // A page asked for now is a page to look at now, so the file
@@ -5307,64 +5437,32 @@ public final class PageModel: ObservableObject {
             flash(Self.newPageFailed)
         }
         refresh()
-        if created != 0 {
-            // A new page cannot borrow a plain tab switch's assumption
-            // that the editor still holds the keys (issue #22). A switch
-            // keeps one persistent editor focused and swaps its content
-            // beneath it, so `select` refocuses only when it leaves the
-            // ledger. Conjuring a page can instead tear the mount whole:
-            // an empty window's catcher gives way to a freshly built
-            // editor, and the + tab is chrome whose click resigns first
-            // responder before we arrive. Left to `select`'s conditional
-            // refocus alone the page mounts with nothing focused and every
-            // keystroke beeps, so this path always hands the editor the
-            // keys once it appears. Set selection inline rather than
-            // through `select`, whose own leaving-ledger refocus would
-            // otherwise schedule a second, redundant focus poll here.
-            // `refocusEditorIfKeyed` only ever accepts, staying a quiet
-            // no-op on the switch paths where focus never left.
-            showingLedger = false
-            selection = created
-            if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
-            refocusEditorIfKeyed()
-        }
+        return created == 0 ? nil : created
     }
 
-    /// ⌘N while pages are organized by day: go to today's page, make
-    /// one when today has none, and make another when the person is
-    /// already on today's page (issues #79, #158).
-    ///
-    /// Three arms, none of them a new mint policy. When today holds a
-    /// live page and the selection is elsewhere this is a plain
-    /// `select(_:)`, the jump, which cannot mint into an occupied slot.
-    /// When today holds none it is `newPage()`, the same path ⌘N takes
-    /// with the strip showing, which opens a fresh slot at this form
-    /// factor's rung and hands its editor the keys. And when the
-    /// selection already stands on one of today's pages it is
-    /// `newPage()` again: first press jumps, second press creates, and
-    /// the projection files the new page under today beside the first,
-    /// in strip order. Every mint stamps the clock's own reading of
-    /// now, so the page it makes lands on today by construction rather
-    /// than by being filed there.
-    ///
-    /// Blank or not makes no difference, exactly as on the strip: ⌘N
-    /// there opens a slot whether or not the last one was written on,
-    /// and a person on today's page who asks for another gets another.
-    /// A bar on content would be a second mint policy dressed as a
-    /// courtesy, and it was tried and taken out (issue #158).
-    ///
-    /// What it will not do is reach for some arbitrary empty tab to put
-    /// today's page in. That would be opinionated in exactly the place
-    /// the issue asked for unopinionated, and it has a real cost:
-    /// flipping back to the strip would show a tab the user named
-    /// holding today's typing. Nothing here can be refused for room:
-    /// the strip has no cap (issue #158).
-    ///
-    /// Reached from ⌘N and ⌘T only. The gestures that name today as a
-    /// place, the roll's empty region and the rail's Today row, take
-    /// `startToday()`, which never mints a second page. Nothing calls
-    /// either from `refresh()`, from a mount or from the toggle: what is
-    /// displayed is not thereby minted (ADR-0017).
+    private func adoptCreatedTab(_ created: UInt64) {
+        // A new page cannot borrow a plain tab switch's assumption
+        // that the editor still holds the keys (issue #22). A switch
+        // keeps one persistent editor focused and swaps its content
+        // beneath it, so `select` refocuses only when it leaves the
+        // ledger. Conjuring a page can instead tear the mount whole:
+        // an empty window's catcher gives way to a freshly built
+        // editor, and the + tab is chrome whose click resigns first
+        // responder before we arrive. Left to `select`'s conditional
+        // refocus alone the page mounts with nothing focused and every
+        // keystroke beeps, so this path always hands the editor the
+        // keys once it appears. Set selection inline rather than
+        // through `select`, whose own leaving-ledger refocus would
+        // otherwise schedule a second, redundant focus poll here.
+        // `refocusEditorIfKeyed` only ever accepts, staying a quiet
+        // no-op on the switch paths where focus never left.
+        showingLedger = false
+        selection = created
+        if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
+        refocusEditorIfKeyed()
+    }
+
+    /// Legacy day-navigation helper; creation commands now use `newPage()` directly.
     public func openToday() {
         // Bucket 0 is today and there is exactly one of it: the
         // projection folds a page stamped ahead of now into today rather
@@ -5403,13 +5501,14 @@ public final class PageModel: ObservableObject {
     /// appeared, a double click on the region, a chord landing during
     /// the relayout, and a place that made a page a moment ago must
     /// find that page and select it rather than stack a blank one
-    /// beside it. ⌘N is the gesture that asks for another; this is not.
+    /// beside it. ⌘N is the gesture that asks for another; this is not,
+    /// so it never takes ⌘N's checkpoint split of the selected page.
     public func startToday() {
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
             select(tab)
             return
         }
-        newPage()
+        createBlankPage()
     }
 
     /// A summon: put the surface back on today (issue #79).
@@ -5514,7 +5613,7 @@ public final class PageModel: ObservableObject {
         clearNotice()
         // A draft aimed at this page — or at a chip riding on it —
         // dies with it. Left standing, the confirmation would still
-        // answer ↩ ("Create link" carries the default action) with a
+        // answer ↩ (Create Link carries the default action) with a
         // network call over a page that no longer exists (issue #19).
         // The chips must be asked for *before* the close; a dead page
         // replays no runs.
@@ -5893,7 +5992,7 @@ public final class PageModel: ObservableObject {
         _ = client.finishNoteEditingGroup(chip: chip)
     }
 
-    /// The line after *Copy name* (sealed row spec, The page's line).
+    /// The line after *Copy Name* (sealed row spec, The page's line).
     public static let copiedNameLine = "copied the name."
 
     /// Copy a sealed object's name, which is ambient ink (Law 0001), to
@@ -6242,7 +6341,7 @@ public final class PageModel: ObservableObject {
 
     /// The line after a sealed object is removed from the page, in the
     /// design's words (D-30).
-    public static let removedLine = "protected content removed."
+    public static let removedLine = "sealed content removed."
 
     /// The line when a rewrite of the selection, such as a spelling change, would take an object.
     public static let rewriteRefusedLine = "the change would replace a sealed object, so it was not made."
@@ -6781,7 +6880,7 @@ public final class PageModel: ObservableObject {
     /// The confirming click: one POST, off the main actor — the core
     /// releases its lock during the round-trip, so the surface stays
     /// live. On success the link is on the clipboard (written
-    /// core-side) and the confirmation offers Burn local copy.
+    /// core-side) and the confirmation offers Burn Local Copy.
     public func confirmConceal() {
         guard var draft = concealDraft, !draft.inFlight else { return }
         draft.inFlight = true

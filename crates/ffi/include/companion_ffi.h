@@ -305,6 +305,8 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  *   page_id (the PAGE's id, or null when has_page is false, what the
  *     sealing and document routes address, and what a shell-side
  *     storage map is keyed by),
+ *   page_uuid (string or null: the PAGE's Sheet.uuid() in lowercase
+ *     hyphenated UUID form; null when has_page is false),
  *   title (the tab's label, resolved three ways: the name the user
  *     typed; else the live page's derived title, its first non-empty
  *     ink line with markdown stripped, capped at 80 characters; else

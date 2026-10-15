@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Delete, Delete to Mark and ⌃Y act at once. Any edit that takes an
   object off a page, typing, Return, an input method's text, AppKit's
   paste or the core's paste and place over a selected object included,
-  shows `protected content removed.` with Undo. None of these keys
+  shows `sealed content removed.` with Undo. None of these keys
   changes the page while a name or a note holds the keys.
 
 - **The decrypted drag's handle shows an open hand** (app 0.35.0;
@@ -45,6 +45,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issue #170). Over a drawn handle a press would
   drag from, the pointer is an open hand; while a name or a note holds
   the keys it stays the text cursor.
+
+- **The app reads as a Mac app: menus, the editor window and the pads**
+  (app 0.35.0; ADR-0055, ADR-0039 Amendment 1). Menu items and buttons
+  are title case, and the items that rename in place lose their
+  ellipsis: *Rename*, *Rename Tab*, *Rename Page*. The sealed object has
+  one noun, *Remove Sealed Content*, and the conceal sheet says
+  *create a one-time link*. The sheet gains Cancel, which Escape
+  presses, a label for each field, plain help under the expiry, and a
+  *Connection Settings…* link where it sends as a guest. The editor
+  window has one toolbar band: the pad switcher stands where the title
+  would, and the expand control moves into the toolbar with a glyph
+  that is not the full screen arrows. The pad switcher is a menu, the
+  active pad checked and ⌘0 to ⌘9 beside the pads; folders, apps,
+  renames and removals move to a new Pads tab of Settings, with the
+  experiment's switch. Section headings are title case in the system
+  font. Captions, help, headings, gutter times, hints and the ledger's
+  stamps wear a secondary ink that clears 4.5:1 in both appearances
+  (the system's secondary label reads 3.95:1 on white, and the tertiary
+  one about 2:1), and a selected sealed block's quieter words go to ink
+  over the selection.
 
 - **A page's copy of ink alone is plain text** (app 0.34.0; ADR-0045
   point 2, issue #170). ⌘C and ⌘X on a page write the text the core

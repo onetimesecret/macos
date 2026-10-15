@@ -94,12 +94,12 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       plaintext or excerpt. **Fail:** VoiceOver says nothing on the
       block, reads an attachment character, or reads its contents.
 - [ ] **A named image.** Copy an image in Preview and press ⇧⌘V on the
-      page, then choose the block's *Name…*, type `LOGO` and press
+      page, then choose the block's *Name*, type `LOGO` and press
       Return, then move the pointer across `=` and
       open the object's menu. **Pass:** the row reads `LOGO=` and the
       image's excerpt, `=` shows no pill and the seat keeps its size
-      class, and the menu has *Copy name* but no *Copy name=value,
-      decrypted*. **Fail:** the seat offers name=value, or the menu
+      class, and the menu has *Copy Name* but no *Copy Name=Value,
+      Decrypted*. **Fail:** the seat offers name=value, or the menu
       item is there.
 
 ## Results

@@ -47,7 +47,7 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
     }
 
-    // MARK: The pad cell's rename field (Law 0007, issue #249)
+    // MARK: The pad row's rename field (Law 0007, issue #249)
 
     private func padModel() throws -> (PageModel, PadEntry) {
         let suite = "pad-rename-\(UUID().uuidString)"
@@ -63,225 +63,221 @@ final class PadPickerTests: XCTestCase {
         model.pads.entries.first { $0.id == pad.id }?.name
     }
 
-    func testReturnInTheCellRenamesThePadAndShutsTheField() throws {
+    func testReturnInTheRowRenamesThePadAndShutsTheField() throws {
         let (model, pad) = try padModel()
         var rename = PadRename()
-        rename.open(pad, in: model)
+        rename.open(pad)
         XCTAssertTrue(rename.isOpen)
         XCTAssertEqual(rename.pad, pad.id)
         XCTAssertEqual(rename.draft, "Otto", "the field did not open on the pad's name")
 
-        rename.edit("  Otto Renamed ", in: model)
+        rename.edit("  Otto Renamed ")
         rename.commit(in: model)
         XCTAssertEqual(name(of: pad, in: model), "Otto Renamed")
         XCTAssertFalse(rename.isOpen)
-        XCTAssertNil(model.notice)
+        XCTAssertNil(rename.refusal)
     }
 
     func testAnUntouchedReturnEscapeAndFocusLossKeepTheName() throws {
         let (model, pad) = try padModel()
         var rename = PadRename()
-        rename.open(pad, in: model)
-        rename.edit("Otto ", in: model)
+        rename.open(pad)
+        rename.edit("Otto ")
         rename.commit(in: model)
         XCTAssertFalse(rename.isOpen, "an untouched Return left the field open")
         XCTAssertEqual(name(of: pad, in: model), "Otto")
 
-        // Escape, the keyboard leaving and the list closing all end in `keep`.
-        rename.open(pad, in: model)
-        rename.edit("Payroll", in: model)
-        rename.keep(in: model)
+        // Escape, the keyboard leaving and the tab closing all end in `keep`.
+        rename.open(pad)
+        rename.edit("Payroll")
+        rename.keep()
         XCTAssertFalse(rename.isOpen)
         XCTAssertEqual(name(of: pad, in: model), "Otto")
     }
 
-    func testAFieldMovedToAnotherCellOutlivesTheFocusLossOfTheOneItLeft() throws {
+    func testAFieldMovedToAnotherRowOutlivesTheFocusLossOfTheOneItLeft() throws {
         let (model, otto) = try padModel()
         let familiaID = try XCTUnwrap(model.createPad(named: "Familia"))
         let familia = try XCTUnwrap(model.pads.entries.first { $0.id == familiaID })
         var rename = PadRename()
-        rename.open(otto, in: model)
-        rename.open(familia, in: model)
+        rename.open(otto)
+        rename.open(familia)
         XCTAssertEqual(rename.draft, "Familia")
-        rename.keep(otto.id, in: model)
-        XCTAssertEqual(rename.pad, familia.id, "the cell it left shut the field it moved to")
-        rename.keep(familia.id, in: model)
+        rename.keep(otto.id)
+        XCTAssertEqual(rename.pad, familia.id, "the row it left shut the field it moved to")
+        rename.keep(familia.id)
         XCTAssertFalse(rename.isOpen)
     }
 
-    func testARefusalKeepsBothTheFieldAndTheLine() throws {
+    /// A refusal is said under the field, in the pad's row, with the field
+    /// open; nothing is said under a page, which stands in another window.
+    func testARefusalIsSaidUnderTheFieldWithTheFieldOpen() throws {
         let (model, pad) = try padModel()
         var rename = PadRename()
-        rename.open(pad, in: model)
-        rename.edit("", in: model)
+        rename.open(pad)
+        rename.edit("")
         rename.commit(in: model)
         XCTAssertTrue(rename.isOpen, "an empty pad name shut the field")
-        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.empty"))
-        XCTAssertEqual(model.noticeTone, .actionable)
+        XCTAssertEqual(rename.refusal, CompanionL10n.string("pad.name.empty"))
+        XCTAssertNil(model.notice, "the refusal went to the line under the page")
         XCTAssertEqual(name(of: pad, in: model), "Otto")
 
-        rename.edit(String(repeating: "o", count: 81), in: model)
-        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.long"), "the line kept an old refusal")
-        rename.edit("Payroll", in: model)
-        XCTAssertNil(model.notice, "the line still refused a draft the pad can take")
+        rename.edit(String(repeating: "o", count: 81))
+        XCTAssertEqual(rename.refusal, CompanionL10n.string("pad.name.long"), "the field kept an old refusal")
+        rename.edit("Payroll")
+        XCTAssertNil(rename.refusal, "the field still refused a draft the pad can take")
         XCTAssertTrue(rename.isOpen)
 
-        rename.edit("", in: model)
+        rename.edit("")
         rename.commit(in: model)
-        rename.keep(in: model)
-        XCTAssertNil(model.notice, "the refusal outlived its field")
+        rename.keep()
+        XCTAssertNil(rename.refusal, "the refusal outlived its field")
         XCTAssertEqual(name(of: pad, in: model), "Otto")
-    }
-
-    /// A keystroke over a still refused draft leaves a notice in front of the
-    /// refusal with its action; the line comes back on the draft's refusal.
-    func testAKeystrokeUnderAFlashLeavesTheFlashStanding() throws {
-        let (model, pad) = try padModel()
-        var rename = PadRename()
-        rename.open(pad, in: model)
-        rename.edit("", in: model)
-        rename.commit(in: model)
-        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.empty"))
-        model.flash(
-            "autosave refused", tone: .actionable,
-            action: PageModel.NoticeAction(label: "Retry") {})
-
-        rename.edit(" ", in: model)
-        XCTAssertEqual(model.notice, "autosave refused", "the same refusal cut the flash")
-        XCTAssertNotNil(model.noticeAction, "the same refusal took the flash's Retry")
-        rename.edit(String(repeating: "o", count: 81), in: model)
-        XCTAssertEqual(model.notice, "autosave refused", "a new refusal cut the flash")
-        XCTAssertNotNil(model.noticeAction, "a new refusal took the flash's Retry")
-
-        model.performNoticeAction()
-        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.long"))
-        XCTAssertTrue(rename.isOpen)
-        rename.edit("Payroll", in: model)
-        XCTAssertNil(model.notice)
-    }
-
-    /// On a short card the pad list ends above the line under the page, so a
-    /// refusal said there stays in sight (Law 0007, Refusing; D-14).
-    func testThePadListEndsAboveTheLineUnderThePage() {
-        let tallest = PadListLayout.tallest
-        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: nil, lineTop: 400), tallest)
-        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: 72, lineTop: nil), tallest)
-        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: 72, lineTop: 2_000), tallest)
-        // The card at its least height, 260 points, with the header, the
-        // picker and the strip: little room between the picker and the line.
-        for (row, line) in [(CGFloat(73), CGFloat(206)), (73, 240), (110, 700), (73, 90), (73, 60)] {
-            let height = PadListLayout.maxHeight(rowBottom: row, lineTop: line)
-            XCTAssertGreaterThanOrEqual(height, 0)
-            XCTAssertLessThanOrEqual(
-                row + PadListLayout.popoverChrome + height, max(line, row + PadListLayout.popoverChrome),
-                "the list from \(row) reaches past the line at \(line)")
-        }
-        XCTAssertEqual(PadListLayout.maxHeight(rowBottom: 73, lineTop: 206), 206 - 73 - 24)
-    }
-
-    /// What the pad picker reads in a root that keeps the list above the
-    /// line: where the status stack under the page begins.
-    private struct LineTopProbe: View {
-        @Environment(\.noticeLineTop) private var lineTop
-        let report: (CGFloat?, CGFloat) -> Void
-
-        var body: some View {
-            GeometryReader { proxy in
-                Color.clear.task(id: lineTop) { report(lineTop, proxy.frame(in: .global).maxY) }
-            }
-            .frame(height: 40)
-        }
-    }
-
-    /// A root that keeps the list above the line hands the picker the
-    /// status stack's top, in the space the picker measures its own row in.
-    func testTheRootHandsThePickerTheTopOfTheLineUnderThePage() throws {
-        let suite = "pad-line-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let model = isolatedModel(defaults: defaults)
-        var seen: CGFloat?
-        var rowBottom: CGFloat = 0
-        let root = VStack(spacing: 0) {
-            LineTopProbe { seen = $0; rowBottom = $1 }
-            Color.clear.frame(height: 200)
-            PageStatusStack(model: model)
-        }
-        .frame(width: 400, height: 300, alignment: .top)
-        .keepsThePadListAboveTheNoticeLine()
-        let host = NSHostingView(rootView: root)
-        host.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
-        let window = NSWindow(
-            contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        host.layoutSubtreeIfNeeded()
-        drainMainQueue()
-        let line = try XCTUnwrap(seen, "the picker heard no line")
-        XCTAssertEqual(line - rowBottom, 200, accuracy: 0.5, "the line is not where the stack begins")
-        XCTAssertEqual(
-            PadListLayout.maxHeight(rowBottom: rowBottom, lineTop: line), 200 - 24, accuracy: 0.5)
     }
 
     func testANameTheCatalogRefusesIsSaidWithTheFieldOpen() throws {
         let (model, _) = try padModel()
         let scratch = try XCTUnwrap(model.pads.entries.first { $0.isScratch })
         var rename = PadRename()
-        rename.open(scratch, in: model)
-        rename.edit("Notes", in: model)
+        rename.open(scratch)
+        rename.edit("Notes")
         rename.commit(in: model)
         XCTAssertTrue(rename.isOpen)
-        XCTAssertEqual(model.notice, CompanionL10n.string("pad.name.failed"))
+        XCTAssertEqual(rename.refusal, CompanionL10n.string("pad.name.failed"))
         XCTAssertEqual(name(of: scratch, in: model), scratch.name)
     }
 
-    /// The list's *Rename pad…* route: the field opens in the cell over the
-    /// open list, and no step raises the create sheet or a modal session.
-    func testRenamePadOpensTheCellOverTheOpenListAndRaisesNoSheet() throws {
+    /// The Pads tab's *Rename* route: the field opens in the row, and no
+    /// step raises the create sheet or a modal session.
+    func testRenameOpensTheFieldInTheRowAndRaisesNoSheet() throws {
         let (model, pad) = try padModel()
         var ends = 0
         let token = NotificationCenter.default.addObserver(
             forName: ModalSession.didEndNotification, object: nil, queue: nil
         ) { _ in MainActor.assumeIsolated { ends += 1 } }
         defer { NotificationCenter.default.removeObserver(token) }
-        var routes = PadPickerRoutes()
-        routes.listOpen = true
-        func inTheCell(_ moment: String) {
-            XCTAssertTrue(routes.listOpen, "the list closed \(moment)")
+        var routes = PadSettingsRoutes()
+        func inTheRow(_ moment: String) {
             XCTAssertFalse(routes.creating, "the sheet came up \(moment)")
             XCTAssertFalse(ModalSession.isRunning, "a modal session ran \(moment)")
         }
 
-        routes.beginRename(pad, in: model)
-        XCTAssertEqual(routes.rename.pad, pad.id, "the field did not open in the pad's cell")
-        inTheCell("on opening")
-        routes.rename.edit("", in: model)
+        routes.beginRename(pad)
+        XCTAssertEqual(routes.rename.pad, pad.id, "the field did not open in the pad's row")
+        inTheRow("on opening")
+        routes.rename.edit("")
         routes.rename.commit(in: model)
-        inTheCell("on a refusal")
-        routes.rename.edit("Payroll", in: model)
+        inTheRow("on a refusal")
+        routes.rename.edit("Payroll")
         routes.rename.commit(in: model)
-        inTheCell("on a commit")
+        inTheRow("on a commit")
         XCTAssertEqual(name(of: pad, in: model), "Payroll")
         XCTAssertEqual(ends, 0)
     }
 
-    /// *New pad…* is the one route to the sheet, and it shuts the list,
-    /// keeping the name under any field that was open.
-    func testNewPadShutsTheListAndKeepsAnOpenFieldsName() throws {
+    /// *New Pad…* is the one route to the sheet, and it keeps the name
+    /// under any field that was open.
+    func testNewPadRaisesTheSheetAndKeepsAnOpenFieldsName() throws {
         let (model, pad) = try padModel()
-        var routes = PadPickerRoutes()
-        routes.listOpen = true
-        routes.beginRename(pad, in: model)
-        routes.rename.edit("", in: model)
+        var routes = PadSettingsRoutes()
+        routes.beginRename(pad)
+        routes.rename.edit("")
         routes.rename.commit(in: model)
-        XCTAssertNotNil(model.notice)
+        XCTAssertNotNil(routes.rename.refusal)
 
-        routes.beginCreating(in: model)
+        routes.beginCreating()
         XCTAssertTrue(routes.creating)
-        XCTAssertFalse(routes.listOpen)
-        XCTAssertFalse(routes.rename.isOpen, "the field outlived the list")
-        XCTAssertNil(model.notice, "the refusal outlived its field")
+        XCTAssertFalse(routes.rename.isOpen, "the field outlived the sheet's arrival")
+        XCTAssertNil(routes.rename.refusal, "the refusal outlived its field")
         XCTAssertEqual(name(of: pad, in: model), "Otto")
+    }
+
+    // MARK: The switcher's menu (ADR-0039 Amendment 1)
+
+    /// Each pad once, in the catalog's order, the active one checked and a
+    /// digit beside each pad the keymap leaves its digit to.
+    func testTheSwitcherListsEachPadWithItsCheckAndItsDigit() throws {
+        let (model, otto) = try padModel()
+        let keymap = Keymap.resolve(defaultText: defaultsText, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-1":null}}]
+            """)
+        let entries = PadSwitcherMenu.entries(
+            pads: model.pads.entries, activeID: otto.id, keymap: keymap)
+        XCTAssertEqual(entries.map(\.id), model.pads.entries.map(\.id))
+        XCTAssertEqual(entries.filter(\.checked).map(\.id), [otto.id])
+        XCTAssertEqual(entries.first?.digit, 0, "Scratch lost ⌘0")
+        XCTAssertEqual(entries.dropFirst().first?.digit, nil, "an unbound ⌘1 still labels a pad")
+    }
+
+    func testReorderedSwitcherKeepsActiveCheckAndHonorsDigitRemaps() throws {
+        let (model, otto) = try padModel()
+        let familia = try XCTUnwrap(model.createPad(named: "Familia"))
+        let docs = try XCTUnwrap(model.createPad(named: "Docs"))
+        model.activatePad(otto.id)
+        XCTAssertTrue(model.pads.moveUp(docs))
+        XCTAssertTrue(model.pads.moveDown(otto.id))
+        let keymap = Keymap.resolve(defaultText: defaultsText, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-1":null,"cmd-2":"app::Settings"}}]
+            """)
+        let entries = PadSwitcherMenu.entries(
+            pads: model.pads.entries, activeID: model.pads.activeID, keymap: keymap)
+        XCTAssertEqual(entries.map(\.id), [PadCatalog.scratchID, docs, otto.id, familia])
+        XCTAssertEqual(entries.map(\.name), ["Scratch", "Docs", "Otto", "Familia"])
+        XCTAssertEqual(entries.map(\.digit), [0, nil, nil, 3])
+        XCTAssertEqual(entries.filter(\.checked).map(\.id), [otto.id])
+        let menu = PadSwitcherMenu.menu(entries: entries, select: { model.activatePad($0) }, newPad: {}, manage: {})
+        XCTAssertEqual(Array(menu.items.prefix(4)).map(\.keyEquivalent), ["0", "", "", "3"])
+        menu.performActionForItem(at: 3)
+        XCTAssertEqual(model.pads.activeID, familia)
+    }
+
+    func testMovingPadIntoNumberedRangeUpdatesShortcutWithoutMovingScratch() throws {
+        let (model, otto) = try padModel()
+        for number in 2...10 { _ = try XCTUnwrap(model.createPad(named: "Pad \(number)")) }
+        let last = try XCTUnwrap(model.pads.entries.last?.id)
+        let keymap = Keymap.resolve(defaultText: """
+            [{"context":"Editor","bindings":{"cmd-9":"page::Select9"}}]
+            """, overrideText: nil)
+        func entries() -> [PadSwitcherMenu.Entry] {
+            PadSwitcherMenu.entries(pads: model.pads.entries, activeID: model.pads.activeID, keymap: keymap)
+        }
+        XCTAssertNil(entries().last?.digit)
+        XCTAssertTrue(model.pads.moveUp(last))
+        XCTAssertEqual(entries()[9].id, last)
+        XCTAssertEqual(entries()[9].digit, 9)
+        XCTAssertNil(entries()[10].digit)
+        XCTAssertEqual(entries()[0].id, PadCatalog.scratchID)
+        XCTAssertEqual(entries()[0].digit, 0)
+        XCTAssertEqual(entries()[1].id, otto.id)
+        XCTAssertEqual(entries().filter(\.checked).map(\.id), [last])
+        XCTAssertTrue(model.pads.moveDown(last))
+        XCTAssertEqual(entries()[10].id, last)
+        XCTAssertNil(entries()[10].digit)
+    }
+
+    /// The menu draws the check in its leading column and the digit in the
+    /// shortcut column, and ends in New Pad… and Manage Pads….
+    func testTheSwitcherMenuEndsInNewPadAndManagePads() {
+        let first = UUID(), second = UUID()
+        var picked: UUID?
+        var managed = false
+        let menu = PadSwitcherMenu.menu(
+            entries: [
+                .init(id: first, name: "Scratch", checked: false, digit: 0),
+                .init(id: second, name: "Otto", checked: true, digit: nil),
+            ],
+            select: { picked = $0 }, newPad: {}, manage: { managed = true })
+        XCTAssertEqual(
+            menu.items.map { $0.isSeparatorItem ? nil : $0.title },
+            ["Scratch", "Otto", nil, "New Pad…", "Manage Pads…"])
+        XCTAssertEqual(menu.items[0].keyEquivalent, "0")
+        XCTAssertEqual(menu.items[0].keyEquivalentModifierMask, .command)
+        XCTAssertEqual(menu.items[1].keyEquivalent, "")
+        XCTAssertEqual(menu.items.map(\.state), [.off, .on, .off, .off, .off])
+        menu.performActionForItem(at: 1)
+        menu.performActionForItem(at: 4)
+        XCTAssertEqual(picked, second)
+        XCTAssertTrue(managed)
     }
 
     func testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay() {
@@ -291,6 +287,37 @@ final class PadPickerTests: XCTestCase {
         for key in ["pad.cancel", "pad.name", "pad.new.title", "pad.create", "pad.rename.menu"] {
             XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) went with the rename sheet")
         }
+    }
+
+    /// Section headings are title case, as sidebar sections are, and the
+    /// Applications pop-up carries no ellipsis: it is a menu, not a window.
+    func testHeadingsAreTitleCaseAndTheApplicationsPopUpHasNoEllipsis() {
+        XCTAssertEqual(CompanionL10n.string("pad.picker.heading"), "Pads")
+        XCTAssertEqual(CompanionL10n.string("pad.timeline.heading"), "Timeline")
+        XCTAssertEqual(CompanionL10n.string("pad.files.heading"), "Files")
+        XCTAssertEqual(CompanionL10n.string("pad.app.menu"), "Applications")
+        XCTAssertEqual(CompanionL10n.string("pad.app.remove"), "pad.app.remove", "the remove items became checkmarks")
+    }
+
+    /// One list, each app once: the running ones in order, checked when
+    /// associated, then an associated app that is not running, checked,
+    /// so it can still be unchecked.
+    func testTheApplicationsPopUpListsEachAppOnceWithItsStateAsACheckmark() {
+        let choices = PadApplicationChoice.choices(
+            running: [("com.a", "A"), ("com.b", "B"), ("com.a", "A again")],
+            associated: ["com.b", "com.quit"]
+        )
+        XCTAssertEqual(choices, [
+            PadApplicationChoice(id: "com.a", name: "A", associated: false),
+            PadApplicationChoice(id: "com.b", name: "B", associated: true),
+            PadApplicationChoice(id: "com.quit", name: "com.quit", associated: true),
+        ])
+        var toggled: [PadApplicationChoice] = []
+        let menu = PadApplicationChoice.menu(choices: choices) { toggled.append($0) }
+        XCTAssertEqual(menu.items.map(\.title), ["A", "B", "com.quit"])
+        XCTAssertEqual(menu.items.map(\.state), [.off, .on, .on])
+        menu.performActionForItem(at: 1)
+        XCTAssertEqual(toggled, [choices[1]], "the item handed over another app or state")
     }
 
     func testPadShortcutsYieldToSheetAttachedToAnotherWindow() {
@@ -323,14 +350,18 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
     }
 
-    func testSortAccessibilitySeparatesCurrentOrderFromNextAction() {
-        let oldest = PadSortCopy(direction: .chronological, subject: "days")
-        XCTAssertEqual(oldest.label, "days sort order")
-        XCTAssertEqual(oldest.currentOrder, "Oldest first")
-        XCTAssertEqual(oldest.action, "Activate to sort days newest first")
-        let newest = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
-        XCTAssertEqual(newest.currentOrder, "Newest first")
-        XCTAssertEqual(newest.action, "Activate to sort today checkpoints oldest first")
+    func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {
+        XCTAssertEqual(PadSortCopy.orders, [.natural, .chronological, .reverseChronological])
+        let labels = ["Natural order", "Oldest first", "Newest first"]
+        for (direction, label) in zip(PadSortCopy.orders, labels) {
+            let copy = PadSortCopy(direction: direction, subject: "days")
+            XCTAssertEqual(copy.label, "days sort order")
+            XCTAssertEqual(copy.currentOrder, label)
+            XCTAssertEqual(copy.help, "days sort order: \(label)")
+        }
+        let checkpoints = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
+        XCTAssertEqual(checkpoints.label, "today checkpoints sort order")
+        XCTAssertEqual(checkpoints.help, "today checkpoints sort order: Newest first")
     }
 
     func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {
@@ -339,6 +370,11 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(TimeRailView.width, TimeRailView.width(experimental: false))
         XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: false).contains("110 points"))
         XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: true).contains("150 points"))
+        for experimental in [false, true] {
+            let caption = GeneralSettingsView.pageLayoutCaption(experimental: experimental)
+            XCTAssertTrue(caption.contains("older blank pages are hidden"))
+            XCTAssertFalse(caption.contains("counted"))
+        }
     }
 
     func testPadLocalizedFormatsKeepNamesAndPathsLiteral() {
@@ -367,6 +403,7 @@ final class PadPickerTests: XCTestCase {
             XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: "[{\"ink\":\"\(text)\"}]"))
             model.refresh()
         }
+        model.toggleCheckpointSort(dayBucket: 0)
         let coordinator = InkEditorView.Coordinator(model: model)
         coordinator.surface = model.owner
         let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "Start writing")

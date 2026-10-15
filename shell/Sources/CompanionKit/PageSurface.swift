@@ -30,12 +30,33 @@ public struct PageContentView: View {
     /// backdrop names the one that would make it typeable at all.
     let emptyHint: String
 
+    /// Whether the expand control stands over the page. The editor
+    /// window puts it in its toolbar instead, out of a band of its own.
+    let showsExpandControl: Bool
+
     @Environment(\.presentationSurface) private var surface
 
-    public init(model: PageModel, readOnly: Bool = false, emptyHint: String) {
+    public init(
+        model: PageModel, readOnly: Bool = false, emptyHint: String,
+        showsExpandControl: Bool = true
+    ) {
         self.model = model
         self.readOnly = readOnly
         self.emptyHint = emptyHint
+        self.showsExpandControl = showsExpandControl
+    }
+
+    /// The expand control's glyph: a page centred in its frame, which
+    /// does not read as the window's full screen arrows.
+    public static let expandSymbol = "rectangle.center.inset.filled"
+
+    /// The expand control's words, one pair wherever the control stands.
+    public static func expandHelp(expanded: Bool) -> String {
+        expanded ? "Collapse page (Esc)" : "Expand page"
+    }
+
+    public static func expandLabel(expanded: Bool) -> String {
+        expanded ? "Collapse page" : "Expand page"
     }
 
     /// Whether a window shows the content area at all, pure: only the
@@ -48,22 +69,21 @@ public struct PageContentView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if Self.mounts(surface: surface, owner: model.owner), model.canExpandPage {
+            if showsExpandControl, Self.mounts(surface: surface, owner: model.owner),
+               model.canExpandPage {
                 HStack {
                     Spacer()
                     Button(action: model.togglePageExpansion) {
-                        Image(systemName: model.isPageExpanded
-                              ? "arrow.down.right.and.arrow.up.left"
-                              : "arrow.up.left.and.arrow.down.right")
-                            .scaleEffect(x: 1, y: -1)
+                        Image(systemName: Self.expandSymbol)
                             .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(model.isPageExpanded ? Color.accentColor : Color.secondaryInk)
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help(model.isPageExpanded ? "Collapse page (Esc)" : "Expand page")
-                    .accessibilityLabel(model.isPageExpanded ? "Collapse page" : "Expand page")
+                    .help(Self.expandHelp(expanded: model.isPageExpanded))
+                    .accessibilityLabel(Self.expandLabel(expanded: model.isPageExpanded))
+                    .accessibilityAddTraits(model.isPageExpanded ? .isSelected : [])
                     .disabled(readOnly)
                 }
                 .padding(.trailing, 6)
@@ -160,10 +180,10 @@ public struct PageContentView: View {
                 VStack(spacing: 6) {
                     Text("No page here yet.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondaryInk)
                     Text(emptyHint)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                 }
                 .allowsHitTesting(false)
             }
@@ -226,12 +246,6 @@ public struct PageStatusStack: View {
     }
 
     public var body: some View {
-        // Where the stack begins, so the pad list's popover can end above it.
-        Color.clear.frame(height: 0)
-            .background(GeometryReader { proxy in
-                Color.clear.preference(
-                    key: NoticeLineTopKey.self, value: proxy.frame(in: .global).minY)
-            })
         if model.contentRestoreRefused {
             // The standing restore-failure state (issue #49): persistent
             // for the whole session, unlike a notice, because the
@@ -243,7 +257,7 @@ public struct PageStatusStack: View {
                 Text("the existing state file would not open, so nothing in this session is being saved")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("discard it and start saving") { model.clearUnreadableStateFile() }
+                Button("Discard It and Start Saving") { model.clearUnreadableStateFile() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .help(discardHelp)
@@ -282,7 +296,7 @@ public struct PageStatusStack: View {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("quit anyway (⌘Q)") { model.requestQuitAnyway() }
+                Button("Quit Anyway (⌘Q)") { model.requestQuitAnyway() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .help(quitAnywayHelp)
@@ -301,7 +315,7 @@ public struct PageStatusStack: View {
             // which is a fact rather than a fault.
             Text(sentence)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondary)
+                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondaryInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,7 +331,7 @@ public struct PageStatusStack: View {
             // what the header's word is for.
             Text("another device is editing this page")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -336,8 +350,8 @@ public struct PageStatusStack: View {
             HStack(spacing: 8) {
                 Text("the clipboard holds content")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Button("seal it (⇧⌘V)") { model.performSealedPaste?() }
+                    .foregroundStyle(Color.secondaryInk)
+                Button("Seal It (⇧⌘V)") { model.performSealedPaste?() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
@@ -359,10 +373,10 @@ public struct PageStatusStack: View {
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Button("place here") { model.placeActiveCutAtCaret() }
+                Button("Place Here") { model.placeActiveCutAtCaret() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Place the cut sealed objects at the caret"))
@@ -382,7 +396,7 @@ public struct PageStatusStack: View {
                 Text(notice)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(
-                        model.noticeTone == .actionable ? Color.emberText : Color.secondary)
+                        model.noticeTone == .actionable ? Color.emberText : Color.secondaryInk)
                 if let action = model.noticeAction {
                     Button(action.label) { model.performNoticeAction() }
                         .font(.system(.caption, design: .monospaced))

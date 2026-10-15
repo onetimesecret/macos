@@ -31,6 +31,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     /// A defaulted `var` keeps existing memberwise initializer call sites
     /// source-compatible while older summaries without this key still decode.
     public var uuid: String? = nil
+    public var pageUUID: String? = nil
     /// Whether the slot holds a page at all. False after an expiry and
     /// before the next deliberate gesture opens one; the tab draws the
     /// dashed empty treatment rather than a gauge, and every clock
@@ -111,6 +112,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
         case id, uuid, title, paused
         case hasPage = "has_page"
         case pageID = "page_id"
+        case pageUUID = "page_uuid"
         case titleSource = "title_source"
         case rungCode = "rung_code"
         case rungLabel = "rung_label"

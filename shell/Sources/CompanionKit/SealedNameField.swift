@@ -242,7 +242,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         field.font = InkStyle.chipNameFont
         field.placeholderAttributedString = NSAttributedString(
             string: "NAME",
-            attributes: [.font: InkStyle.chipNameFont, .foregroundColor: NSColor.tertiaryLabelColor])
+            attributes: [.font: InkStyle.chipNameFont, .foregroundColor: NSColor.placeholderTextColor])
         field.stringValue = rename.draft
         if field.superview !== textView { textView.addSubview(field) }
         // The page's menu actions must not answer for the draft (Law 0007, Drafting).

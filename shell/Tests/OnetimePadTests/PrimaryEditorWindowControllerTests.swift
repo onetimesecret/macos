@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import OnetimePad
@@ -45,5 +46,17 @@ final class PrimaryEditorWindowControllerTests: XCTestCase {
 
     func testCloseCannotHandBackAnInactiveAppsActivation() {
         XCTAssertFalse(handsBack(active: false))
+    }
+
+    /// One unified band: the pad picker leads where the title would
+    /// stand and the expand control trails. The title text hides while
+    /// the picker stands in its place; the title itself stays the app's
+    /// name for the Window menu and Mission Control (ADR-0033).
+    func testThePadPickerTakesTheTitlesPlaceAndTheExpandControlTrails() {
+        XCTAssertEqual(
+            PrimaryEditorWindowController.toolbarItems,
+            [.editorPadPicker, .flexibleSpace, .editorExpandPage])
+        XCTAssertEqual(PrimaryEditorWindowController.titleVisibility(padsEnabled: true), .hidden)
+        XCTAssertEqual(PrimaryEditorWindowController.titleVisibility(padsEnabled: false), .visible)
     }
 }

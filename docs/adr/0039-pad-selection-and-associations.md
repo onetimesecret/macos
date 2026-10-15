@@ -151,6 +151,32 @@ Storage choice, migration, and metadata removal still require review.
   Replacing the accepted newest-first day policy requires a separate successor
   design decision; this ADR does not silently supersede it.
 
+## Amendment 1: switch from a menu, manage in Settings
+
+Proposed 2026-10-14 with the HIG audit's fixes; this record stays
+proposed. The Decision's first rule put add and remove controls "within
+that pad's menu cell" and the footer's options in the same list, which
+built a popover three rows tall per pad. The audit's convention is a
+switcher that is a menu, with management in a separate window or a
+Settings pane, as Xcode's schemes are; the maintainer chose that.
+
+1. The picker's name opens a native menu: each pad once, the active pad
+   checked in the menu's leading column, ⌘0 to ⌘9 shown beside the pads
+   the keymap leaves those digits to, then *New Pad…* and *Manage
+   Pads…*. The shortcuts in the menu are labels; the app-local monitor
+   still switches on them.
+2. *Manage Pads…* opens the Pads tab of Settings: the experiment's
+   switch, moved from General with its captions; each pad with its
+   folders and its Applications pop-up, *Rename* and *Remove Pad…* on the
+   row's actions menu; *New Pad…*; App associations; Show full paths.
+3. A pad is renamed in its row in the Pads tab (Law 0007), and a refused
+   name is said under the field there, since the line under the page is
+   in another window. Removal keeps the platform's confirmation, which
+   D-14 allows for a destructive Settings action.
+
+The Settings window gains a fifth tab; the 2026-0915 UI/UX record's
+section 8 names four.
+
 ## Eject triggers
 
 - A supplied path can resolve to several pads after normalization, bookmark
@@ -172,3 +198,5 @@ Storage choice, migration, and metadata removal still require review.
 
 - 2026-10-01: Proposed after the one-pad-picker mockup review. Acceptance and
   the supersession of ADR-0017's slot shortcut clause remain outstanding.
+- 2026-10-14: Amendment 1 proposed: the switcher is a menu and the pads are
+  managed in a Pads tab of Settings.

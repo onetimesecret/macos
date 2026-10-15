@@ -478,6 +478,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
         model.onOpenEditorWindow = { [weak self] in self?.openEditorPresentation() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
+        model.pages.onOpenSettingsPane = { [weak self] pane in self?.openSettingsTab(SettingsTab(pane)) }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.trayImage()
@@ -1074,8 +1075,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// About, and only when the activation will actually happen, since
     /// an already-active app fires no notification to consume the flag.
     @objc func openSettings() {
+        openSettingsTab(nil)
+    }
+
+    func openSettingsTab(_ tab: SettingsTab?) {
         settingsActivation = !NSApp.isActive
-        settings.show()
+        settings.show(tab: tab)
     }
 
     private func diagnosticReport() -> DiagnosticsReport {
@@ -1144,7 +1149,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                     ofSize: NSFont.smallSystemFontSize,
                     weight: .regular
                 ),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: NSColor.secondaryInk,
                 .paragraphStyle: paragraph,
             ]
         ))

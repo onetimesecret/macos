@@ -116,7 +116,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       with Smart Dashes ticked, then ⌘Z. **Pass:** the ink changes case
       and both dashes become `—`, the object standing in place each
       time with no removal line, and each ⌘Z takes back its change
-      whole. **Fail:** the object goes, the line says protected content
+      whole. **Fail:** the object goes, the line says sealed content
       removed, or one ⌘Z takes back only part of a change.
 - [ ] **No inline predictions or typing suggestions over a page**
       (Law 0001, AppKit text routes amendment). With System Settings >
@@ -173,7 +173,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       a fresh face.
 - [ ] **The slot's button on the raised card.** Name a sealed object,
       select it with some ink and cut with ⌘X. Switch to another page,
-      put the caret at its end and click the slot's `place here`
+      put the caret at its end and click the slot's `Place Here`
       button under the page, then type a letter. **Pass:** the line
       named the object by its name and size class and showed nothing
       of the sealed word; the card stays raised through the click; the
@@ -296,7 +296,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       object and press ⌫ once. Press ⌫ again, then click the line's
       `Undo` button, then type a letter. **Pass:** the first ⌫ selects
       the object and removes nothing; the second removes it and the
-      line under the page reads `protected content removed.` with
+      line under the page reads `sealed content removed.` with
       `Undo`; the click keeps the card raised and stands the same
       object again, selected, with its face and name; the letter lands
       on the page. The same holds for ⌦ with the caret just before the
@@ -368,10 +368,10 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       was not undone.`, the object stays off the page and the field
       keeps its draft. **Fail:** the object comes back while the field
       is open, or the draft is lost.
-- [ ] **Remove protected content and its Undo.** Choose *Remove
-      protected content* from a named object's `···` menu, then click
+- [ ] **Remove Sealed Content and its Undo.** Choose *Remove
+      Sealed Content* from a named object's `···` menu, then click
       the line's `Undo`. Remove it the same way again and press ⌘Z.
-      **Pass:** each removal shows `protected content removed.` with
+      **Pass:** each removal shows `sealed content removed.` with
       `Undo`; the click and ⌘Z each stand the same object again with its
       name and note, and the ledger gains no record for either removal.
       **Fail:** the object returns as a fresh seal or without its name
@@ -436,11 +436,11 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       line reads `a name or note is being written, so the drop was not
       placed.` **Fail:** a run moves or lands while the field still
       shows its draft, or the draft is lost without the field closing.
-- [ ] **A page's drag onto a rename field.** Choose *Rename tab…* from
+- [ ] **A page's drag onto a rename field.** Choose *Rename Tab* from
       a tab's menu, then drag a selection holding an object from the
       page onto the tab's field; repeat on the gutter's field (*Timeline*,
-      click a page's time) and on a pad's field (*Rename pad…* in the pad
-      list). **Pass:** each field takes
+      click a page's time) and on a pad's field (*Rename* on a pad's row
+      in the Pads tab of Settings). **Pass:** each field takes
       `[sealed content · tiny]` and the ink around it as plain text, and
       the page keeps its run. **Fail:** the field takes any of the
       sealed word, or the run leaves the page.

@@ -25,16 +25,7 @@ extension PageModel {
         }
         switch command {
         case .pageNew:
-            // ⌘N asks for a page to type on now. With the strip that is
-            // a new slot; when pages are organized by day it is today's
-            // page, which may already be there, and a second page on
-            // today when the person is already on one (issues #79, #158).
-            // One command with two
-            // readings of the same intent, rather than a second id: the
-            // raw values here are published contract, named in whatever
-            // keymap.json a user has written, and both readings keep
-            // working under the chord they chose.
-            if showsTimeUnits { openToday() } else { newPage() }
+            newPage()
         case .pageClose:
             // ⌘W closes what is on screen. A dirty file publishes its
             // Save file, Discard changes, and Keep editing decision

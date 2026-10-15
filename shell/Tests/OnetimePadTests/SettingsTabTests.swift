@@ -63,6 +63,27 @@ final class SettingsTabTests: XCTestCase {
         XCTAssertEqual(SettingsTab.landing(current: .connection, ledgerRestoreRefused: true), .general)
     }
 
+    /// The surface names two tabs: the conceal sheet's Connection
+    /// Settings… and the pad switcher's Manage Pads….
+    func testEachPaneTheSurfaceNamesIsATab() {
+        XCTAssertEqual(SettingsTab(.connection), .connection)
+        XCTAssertEqual(SettingsTab(.pads), .pads)
+        XCTAssertEqual(SettingsTab.pads.label, "Pads")
+    }
+
+    /// A button that names a tab, the conceal sheet's Connection
+    /// Settings…, lands there over the last tab and over a refused ledger.
+    func testARequestedTabWins() {
+        for tab in SettingsTab.allCases {
+            XCTAssertEqual(
+                SettingsTab.landing(current: tab, requested: .connection, ledgerRestoreRefused: false),
+                .connection)
+        }
+        XCTAssertEqual(
+            SettingsTab.landing(current: .sync, requested: .connection, ledgerRestoreRefused: true),
+            .connection)
+    }
+
     func testAnOrdinaryShowKeepsTheLastTab() {
         for tab in SettingsTab.allCases {
             XCTAssertEqual(SettingsTab.landing(current: tab, ledgerRestoreRefused: false), tab)

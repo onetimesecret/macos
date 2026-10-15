@@ -21,7 +21,8 @@ are proposed:
 them is in the
 [sealed objects core interface](../../../development/sealed-objects-core-interface.md).
 
-Sources: the drafts ADR-0042, ADR-0044, ADR-0047, ADR-0051 and ADR-0055,
+Sources: the drafts ADR-0042, ADR-0044, ADR-0047, ADR-0051 and ADR-0055
+(the open hand draft, not the accepted ADR-0055 on menu wording),
 written 2026-10-13 and 2026-10-14 and withdrawn on 2026-10-14 without
 ratification. They
 took these details from the
@@ -85,28 +86,30 @@ on it opens the note.
 
 - After the value or `=` zone: D-42's confirmation as it stands. The
   mockup says "the page's line reads as it does today".
-- After *Copy name*: `copied the name.`, arming no clear, since the name
+- After *Copy Name*: `copied the name.`, arming no clear, since the name
   is ambient ink.
 
 ### The object's menu
 
-Named and with a note:
+Named and with a note, in
+[ADR-0055](../../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)'s
+title case:
 
 ```text
-Copy name
-Copy decrypted contents              ⇧⌘C
-Copy name=value, decrypted
-Create one-time link…
+Copy Name
+Copy Decrypted Contents              ⇧⌘C
+Copy Name=Value, Decrypted
+Create One-Time Link…
 ────────────────────────
-Rename…
-Edit note…
+Rename
+Edit Note…
 ────────────────────────
-Remove protected content
+Remove Sealed Content
 ```
 
-Unnamed, *Copy name* and *Copy name=value, decrypted* are absent and
-*Name…* stands for *Rename…*. Without a note, *Note…* stands for *Edit
-note…*. On an object that is not text, *Copy name=value, decrypted* is
+Unnamed, *Copy Name* and *Copy Name=Value, Decrypted* are absent and
+*Name* stands for *Rename*. Without a note, *Note…* stands for *Edit
+Note…*. On an object that is not text, *Copy Name=Value, Decrypted* is
 absent. Law 0001's presentation invariants hold the same list.
 
 ## The note's popover
@@ -167,7 +170,7 @@ the cut's envelope would. No mockup draws it.
 
 ### What it lacks
 
-- VoiceOver does not reach the handle; *Copy decrypted contents* in the
+- VoiceOver does not reach the handle; *Copy Decrypted Contents* in the
   object's menu remains its path.
 - No move handle exists, so D-29's "visually distinct" has nothing to be
   distinct from. Issue #255 records the maintainer's direction of

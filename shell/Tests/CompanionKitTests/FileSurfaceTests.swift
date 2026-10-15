@@ -332,13 +332,13 @@ final class FileSurfaceTests: XCTestCase {
             for: file(name: "a.txt", dirty: true, conflict: .missing))
         XCTAssertEqual(
             missing,
-            "a.txt is no longer at its path. Choose Locate, keep mine, or Save As before saving.")
+            "a.txt is no longer at its path. Choose Locate…, Keep Mine, or Save As… before saving.")
         let refused = PageModel.unresolvedConflictNotice(
             for: file(name: "a.txt", dirty: true, conflict: .changed, accessRefused: true))
         XCTAssertEqual(
             refused,
-            "a.txt cannot be read at its path. Choose Locate, keep mine, or Save As before saving.")
-        XCTAssertFalse(refused.contains("take theirs"))
+            "a.txt cannot be read at its path. Choose Locate…, Keep Mine, or Save As… before saving.")
+        XCTAssertFalse(refused.lowercased().contains("take theirs"))
     }
 
     /// A held file is neither saved nor unsaved: nothing of it was

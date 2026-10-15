@@ -107,16 +107,113 @@ final class PadCatalogTests: XCTestCase {
         let pad = try XCTUnwrap(catalog.create(named: "Familia"))
         catalog.assign(tabUUID: "stable-tab-uuid", to: pad)
         catalog.assign(filePath: "/work/note.md", to: pad)
-        catalog.toggleDaySort(for: pad)
+        catalog.setDaySort(.chronological, for: pad)
         catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-01")
         let restored = PadCatalog(defaults: defaults)
         XCTAssertTrue(restored.isEnabled)
         XCTAssertEqual(restored.owner(ofTabUUID: "stable-tab-uuid"), pad)
         XCTAssertEqual(restored.owner(ofFile: "/work/note.md"), pad)
         XCTAssertEqual(restored.daySortDirection(for: pad), .chronological)
-        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .reverseChronological)
-        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .chronological)
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .natural)
     }
+    func testCheckpointSortCyclesThroughAllOrdersAndReloadsEachChoice() throws {
+        let defaults = try defaults()
+        var catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        for owner in [PadCatalog.scratchID, pad] {
+            XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-01"), .natural)
+            for expected: PadSortDirection in [.chronological, .reverseChronological, .natural, .chronological] {
+                catalog.toggleCheckpointSort(for: owner, onDate: "2026-10-01")
+                XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-01"), expected)
+                catalog = PadCatalog(defaults: defaults)
+                XCTAssertNil(catalog.loadFailure)
+                XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-01"), expected)
+                XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-02"), .natural)
+            }
+        }
+    }
+
+    func testLegacyStoredSortChoicesRemainExplicitAfterReload() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        catalog.setDaySort(.chronological, for: pad)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))) as? [String: Any])
+        json["checkpointSort"] = [
+            pad.uuidString + "/2026-10-01": "chronological",
+            pad.uuidString + "/2026-10-02": "reverseChronological"
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: PadCatalog.storageKey)
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertNil(restored.loadFailure)
+        XCTAssertEqual(restored.daySortDirection(for: pad), .chronological)
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-03"), .natural)
+        restored.showFullPaths = true
+        let reloaded = PadCatalog(defaults: defaults)
+        XCTAssertEqual(reloaded.daySortDirection(for: pad), .chronological)
+        XCTAssertEqual(reloaded.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
+        XCTAssertEqual(reloaded.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
+    }
+
+    func testDaySortCyclesThroughAllOrdersAcrossReloads() throws {
+        let defaults = try defaults()
+        var catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        for owner in [PadCatalog.scratchID, pad] {
+            XCTAssertEqual(catalog.daySortDirection(for: owner), .reverseChronological)
+            for expected: PadSortDirection in [.natural, .chronological, .reverseChronological, .natural] {
+                catalog.toggleDaySort(for: owner)
+                XCTAssertEqual(catalog.daySortDirection(for: owner), expected)
+                catalog = PadCatalog(defaults: defaults)
+                XCTAssertNil(catalog.loadFailure)
+                XCTAssertEqual(catalog.daySortDirection(for: owner), expected)
+                XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-01"), .natural)
+            }
+        }
+    }
+
+    func testSetDaySortReloadsEachChoiceAndSkipsNoOpsAndUnknownPads() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Familia"))
+        var changes = 0
+        catalog.onChange = { changes += 1 }
+        for (index, direction) in [PadSortDirection.natural, .chronological, .reverseChronological].enumerated() {
+            catalog.setDaySort(direction, for: pad)
+            XCTAssertEqual(changes, index + 1)
+            let restored = PadCatalog(defaults: defaults)
+            XCTAssertNil(restored.loadFailure)
+            XCTAssertEqual(restored.daySortDirection(for: pad), direction)
+            catalog.setDaySort(direction, for: pad)
+            catalog.setDaySort(direction, for: UUID())
+            XCTAssertEqual(changes, index + 1)
+            XCTAssertEqual(catalog.daySortDirection(for: PadCatalog.scratchID), .reverseChronological)
+        }
+    }
+
+    func testSetDaySortDoesNotWriteUnreadableCatalog() throws {
+        let defaults = try defaults()
+        let bytes = Data("{unreadable}".utf8)
+        defaults.set(bytes, forKey: PadCatalog.storageKey)
+        let catalog = PadCatalog(defaults: defaults)
+        catalog.setDaySort(.natural, for: PadCatalog.scratchID)
+        XCTAssertNotNil(catalog.loadFailure)
+        XCTAssertEqual(catalog.daySortDirection(for: PadCatalog.scratchID), .reverseChronological)
+        XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
+    }
+
+    func testSortDirectionNextCycleAndReversal() {
+        XCTAssertEqual(PadSortDirection.natural.next, .chronological)
+        XCTAssertEqual(PadSortDirection.chronological.next, .reverseChronological)
+        XCTAssertEqual(PadSortDirection.reverseChronological.next, .natural)
+        XCTAssertEqual(PadSortDirection.natural.reversed, .natural)
+        XCTAssertEqual(PadSortDirection.chronological.reversed, .reverseChronological)
+        XCTAssertEqual(PadSortDirection.reverseChronological.reversed, .chronological)
+    }
+
     func testUnreadableCatalogCannotBeEnabledOrOverwritten() throws {
         let defaults = try defaults()
         let bytes = Data("{not readable}".utf8)
@@ -142,6 +239,124 @@ final class PadCatalogTests: XCTestCase {
         restored.showFullPaths = true
         XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
     }
+    func testMovingPadsReloadsOrderWithoutChangingOtherMetadata() throws {
+        struct Metadata: Decodable, Equatable {
+            let version: Int
+            let enabled: Bool
+            let appAssociationsEnabled: Bool
+            let showFullPaths: Bool
+            let activeID: UUID
+            let tabOwners: [String: UUID]
+            let fileOwners: [String: UUID]
+            let lastUsed: [UUID: Double]
+            let daySort: [UUID: PadSortDirection]
+            let checkpointSort: [String: PadSortDirection]
+            let rememberedTabs: [UUID: String]
+            let rememberedFiles: [UUID: String]?
+        }
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        catalog.isEnabled = true
+        catalog.appAssociationsEnabled = true
+        catalog.showFullPaths = true
+        let first = try XCTUnwrap(catalog.create(named: "Familia"))
+        let second = try XCTUnwrap(catalog.create(named: "Otto"))
+        let third = try XCTUnwrap(catalog.create(named: "Docs"))
+        XCTAssertTrue(catalog.addFolder("/work/familia", to: first))
+        XCTAssertTrue(catalog.addFolder("/work/docs", to: third))
+        catalog.addApplication("dev.zed.Zed", to: first)
+        catalog.addApplication("dev.zed.Zed", to: second)
+        catalog.assign(tabUUID: "familia-tab", to: first)
+        catalog.assign(tabUUID: "otto-tab", to: second)
+        catalog.assign(filePath: "/work/familia/note.md", to: first)
+        catalog.rememberSelection(tabUUID: "familia-tab", filePath: "/work/familia/note.md", for: first)
+        catalog.remember(tabUUID: "otto-tab", for: second)
+        catalog.setDaySort(.natural, for: first)
+        catalog.setCheckpointSort(.chronological, for: first, onDate: "2026-10-01")
+        catalog.activate(second)
+        catalog.activate(first, recordRecency: false)
+        let original = catalog.entries
+        let metadata = try JSONDecoder().decode(Metadata.self, from: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey)))
+        var changes = 0
+        catalog.onChange = { changes += 1 }
+
+        XCTAssertTrue(catalog.moveUp(third))
+        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(catalog.entries, [original[0], original[1], original[3], original[2]])
+        XCTAssertEqual(PadCatalog(defaults: defaults).entries, catalog.entries)
+        XCTAssertEqual(try JSONDecoder().decode(Metadata.self, from: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))), metadata)
+
+        XCTAssertTrue(catalog.moveDown(first))
+        XCTAssertEqual(changes, 2)
+        XCTAssertEqual(catalog.entries, [original[0], original[3], original[1], original[2]])
+        XCTAssertEqual(catalog.activeID, first)
+        XCTAssertEqual(catalog.pad(forApplication: "dev.zed.Zed"), second)
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertNil(restored.loadFailure)
+        XCTAssertEqual(restored.entries, catalog.entries)
+        XCTAssertEqual(restored.activeID, first)
+        XCTAssertEqual(restored.owner(ofTabUUID: "familia-tab"), first)
+        XCTAssertEqual(restored.owner(ofTabUUID: "otto-tab"), second)
+        XCTAssertEqual(restored.owner(ofFile: "/work/familia/note.md"), first)
+        XCTAssertEqual(restored.rememberedTab(for: first), "familia-tab")
+        XCTAssertEqual(restored.rememberedFile(for: first), "/work/familia/note.md")
+        XCTAssertEqual(restored.daySortDirection(for: first), .natural)
+        XCTAssertEqual(restored.checkpointSortDirection(for: first, onDate: "2026-10-01"), .chronological)
+        XCTAssertEqual(restored.pad(forApplication: "dev.zed.Zed"), second)
+        XCTAssertEqual(try JSONDecoder().decode(Metadata.self, from: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))), metadata)
+    }
+
+    func testInvalidScratchAndBoundaryMovesDoNotPersist() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        var changes = 0
+        catalog.onChange = { changes += 1 }
+        XCTAssertFalse(catalog.moveUp(PadCatalog.scratchID))
+        XCTAssertFalse(catalog.moveDown(PadCatalog.scratchID))
+        XCTAssertFalse(catalog.moveUp(UUID()))
+        XCTAssertFalse(catalog.moveDown(UUID()))
+        XCTAssertNil(defaults.data(forKey: PadCatalog.storageKey))
+        XCTAssertEqual(changes, 0)
+
+        let first = try XCTUnwrap(catalog.create(named: "Familia"))
+        changes = 0
+        let single = try XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))
+        XCTAssertFalse(catalog.moveUp(first))
+        XCTAssertFalse(catalog.moveDown(first))
+        XCTAssertEqual(changes, 0)
+        XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), single)
+
+        let last = try XCTUnwrap(catalog.create(named: "Otto"))
+        changes = 0
+        let entries = catalog.entries
+        let bytes = try XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))
+        XCTAssertFalse(catalog.moveUp(first))
+        XCTAssertFalse(catalog.moveDown(last))
+        XCTAssertFalse(catalog.moveUp(PadCatalog.scratchID))
+        XCTAssertFalse(catalog.moveDown(PadCatalog.scratchID))
+        XCTAssertFalse(catalog.moveUp(UUID()))
+        XCTAssertFalse(catalog.moveDown(UUID()))
+        XCTAssertEqual(changes, 0)
+        XCTAssertEqual(catalog.entries, entries)
+        XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
+    }
+
+    func testMovesDoNotWriteUnreadableCatalog() throws {
+        let defaults = try defaults()
+        let bytes = Data("{unreadable}".utf8)
+        defaults.set(bytes, forKey: PadCatalog.storageKey)
+        let catalog = PadCatalog(defaults: defaults)
+        var changes = 0
+        catalog.onChange = { changes += 1 }
+        XCTAssertNotNil(catalog.loadFailure)
+        XCTAssertFalse(catalog.moveUp(PadCatalog.scratchID))
+        XCTAssertFalse(catalog.moveDown(PadCatalog.scratchID))
+        XCTAssertFalse(catalog.moveUp(UUID()))
+        XCTAssertFalse(catalog.moveDown(UUID()))
+        XCTAssertEqual(changes, 0)
+        XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
+    }
+
     func testRenamingAndRemovingPadRetainsContentOwnershipInScratch() throws {
         let defaults = try defaults()
         let catalog = PadCatalog(defaults: defaults)
@@ -195,7 +410,7 @@ final class PadCatalogTests: XCTestCase {
         XCTAssertEqual(restored.owner(ofFile: "/closed.txt"), PadCatalog.scratchID)
         XCTAssertNil(restored.rememberedTab(for: pad))
         XCTAssertNil(restored.rememberedFile(for: pad))
-        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
+        XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .natural)
     }
     func testSymlinkAndCaseAliasesCannotAcquireAnotherOwner() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pad-alias-\(UUID().uuidString)")

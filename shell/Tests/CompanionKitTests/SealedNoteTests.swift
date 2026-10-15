@@ -234,7 +234,7 @@ final class SealedNoteTests: XCTestCase {
     }
 
     /// A click on the doorway opens the note; Esc closes it and gives the
-    /// keys back to the page; *Edit note…* reads so once a note exists.
+    /// keys back to the page; *Edit Note…* reads so once a note exists.
     func testTheDoorwayOpensTheNoteAndEscClosesIt() throws {
         let page = try makePage()
         page.coordinator.beginNote(at: 3)
@@ -247,7 +247,7 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(page.textView.chipCell(at: 3)?.info.hasNote, true, "the doorway did not open")
 
         let menu = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        XCTAssertNotNil(menu.items.first { $0.title == "Edit note…" })
+        XCTAssertNotNil(menu.items.first { $0.title == "Edit Note…" })
         XCTAssertFalse(menu.items.contains { $0.title == "Note…" })
 
         page.textView.layout()
