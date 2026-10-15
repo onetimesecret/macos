@@ -2392,6 +2392,94 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.opened.urls, [Self.secretLink], "the control: the link opens")
     }
 
+    private static let editLink = #selector(NSTextView.orderFrontLinkPanel(_:))
+
+    /// An Edit Link… of the test's own, so the filter meets one whatever AppKit builds.
+    private func editLinkControl() -> NSMenuItem {
+        NSMenuItem(title: "Edit Link…", action: Self.editLink, keyEquivalent: "")
+    }
+
+    /// Whether a sheet stands over `view`'s window, or a shown window's field holds the URL.
+    private func linkPanelShows(over view: NSView) -> Bool {
+        func fields(_ view: NSView) -> [NSTextField] {
+            ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(fields)
+        }
+        return view.window?.attachedSheet != nil || NSApplication.shared.windows.contains { window in
+            window.isVisible && (window.contentView.map(fields) ?? []).contains {
+                $0.stringValue.contains(Self.secretLink.absoluteString)
+            }
+        }
+    }
+
+    /// The range of the first link in `view`, as Edit Link… would find it selected.
+    private func linkRange(in view: NSTextView) throws -> NSRange {
+        let storage = try XCTUnwrap(view.textStorage)
+        let index = try XCTUnwrap(
+            (0..<storage.length).first { storage.attribute(.link, at: $0, effectiveRange: nil) != nil },
+            "no link")
+        var range = NSRange()
+        _ = storage.attribute(.link, at: index, effectiveRange: &range)
+        return range
+    }
+
+    /// Edit Link…'s panel shows the URL in a field whose editor asks no gate, past any deadline,
+    /// so a page, a note and a name neither offer nor open it. A file does both.
+    func testAPageANoteAndANameOfferNoEditLinkAndNeverShowItsPanel() throws {
+        let page = try makePage()
+        defer {
+            if let sheet = page.window.attachedSheet { page.window.endSheet(sheet) }
+            page.window.orderOut(nil)
+        }
+        func neverShows(_ view: NSTextView, over point: NSPoint, _ surface: String) throws {
+            let menu = try textMenu(over: point, in: view)
+            let seeded = try textMenu(over: point, in: view, seeding: [editLinkControl()])
+            for menu in [menu, seeded] {
+                XCTAssertFalse(
+                    menu.items.contains { $0.action == Self.editLink }, "the \(surface) offers Edit Link")
+            }
+            XCTAssertFalse(view.validateMenuItem(editLinkControl()), "the \(surface)'s Edit Link")
+            view.orderFrontLinkPanel(nil)
+            drainMainQueue()
+            XCTAssertFalse(linkPanelShows(over: view), "the \(surface) showed the link panel")
+            if let window = view.window, let sheet = window.attachedSheet { window.endSheet(sheet) }
+        }
+
+        let point = try appendLink(to: page.textView)
+        page.textView.setSelectedRange(try linkRange(in: page.textView))
+        try neverShows(page.textView, over: point, "page")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        try neverShows(try openNameField(page), over: NSPoint(x: 4, y: 4), "name")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        let notePoint = try appendLink(to: note)
+        note.setSelectedRange(try linkRange(in: note))
+        try neverShows(note, over: notePoint, "note")
+        page.coordinator.noteEditor?.escape()
+        drainMainQueue()
+        XCTAssertNil(page.model.notice)
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.delegate = fileCoordinator
+        let range = NSRange(location: 0, length: 4)
+        try XCTUnwrap(file.textStorage).addAttribute(.link, value: Self.secretLink, range: range)
+        let filePoint = try XCTUnwrap(file.layoutManager.map { layout in
+            let rect = layout.boundingRect(
+                forGlyphRange: NSRange(location: 1, length: 1), in: file.textContainer!)
+            return NSPoint(x: rect.midX + file.textContainerOrigin.x, y: rect.midY + file.textContainerOrigin.y)
+        })
+        let fileMenu = try textMenu(over: filePoint, in: file)
+        XCTAssertTrue(fileMenu.items.contains { $0.action == Self.editLink }, "the control: a file's Edit Link")
+        XCTAssertTrue(file.validateMenuItem(editLinkControl()), "the control: a file's item")
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        file.setSelectedRange(range)
+        file.orderFrontLinkPanel(nil)
+        drainMainQueue()
+        XCTAssertTrue(linkPanelShows(over: file), "the control: a file shows the link panel")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
     /// What AppKit drives from attributes on its own: a page and a note find no links as
     /// typed, the restyle pass alone does (ADR-0023), and an object's attachment holds no
     /// contents and no file, with no delegate answer to name one, so AppKit's double click,

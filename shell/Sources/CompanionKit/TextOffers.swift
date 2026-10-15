@@ -4,13 +4,13 @@ import AppKit
 /// selection where no gate sees it (Law 0001, the export, print, share row).
 @MainActor
 enum TextOffers {
-    /// Takes out the items that hold or read the selection for another process from the
+    /// Takes out the items that hold or read the selection where no gate sees it from the
     /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar, Search
-    /// With, Writing Tools, a link's Open With), then folds the separators.
+    /// With, Writing Tools, a link's Open With and Edit Link…), then folds the separators.
     static func removeSelectionReaders(from menu: NSMenu) {
         menu.items.filter {
             isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) || isSpelling($0)
-                || isWebSearch($0) || isWritingTools($0) || isOpenWith($0)
+                || isWebSearch($0) || isWritingTools($0) || isOpenWith($0) || isEditLink($0)
         }
         .forEach(menu.removeItem)
         var previousIsSeparator = true
@@ -91,6 +91,11 @@ enum TextOffers {
             || item.submenu?.items.contains {
                 ($0.representedObject as? URL)?.pathExtension == "app"
             } == true
+    }
+
+    /// A link's Edit Link…, whose panel shows the URL in a field whose editor asks no gate.
+    static func isEditLink(_ item: NSMenuItem) -> Bool {
+        item.action == #selector(NSTextView.orderFrontLinkPanel(_:))
     }
 
     /// AppKit's Open Link over a link, which asks the delegate as a plain click does.
@@ -197,6 +202,12 @@ class AskingTextView: NSTextView {
         super.orderFrontSharingServicePicker(sender)
     }
 
+    /// Edit Link…, refused where the text menu holds none (Law 0001).
+    override func orderFrontLinkPanel(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.orderFrontLinkPanel(sender)
+    }
+
     /// The typing suggestions `TextOffers.offerUngatedReaders` turned off stay off.
     override func toggleAutomaticTextCompletion(_ sender: Any?) {
         guard keepsSelectionReaders else { return }
@@ -209,11 +220,17 @@ class AskingTextView: NSTextView {
         super.toggleAutomaticDataDetection(sender)
     }
 
-    /// Edit's Show Spelling and Grammar is unavailable where the panel is never shown.
+    /// Show Spelling and Grammar and Edit Link… are unavailable where their panels never show.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(NSText.showGuessPanel(_:)), !keepsSelectionReaders { return false }
+        if !keepsSelectionReaders, Self.refusedPanels.contains(where: { $0 == item.action }) {
+            return false
+        }
         return super.validateMenuItem(item)
     }
+
+    private static let refusedPanels = [
+        #selector(NSText.showGuessPanel(_:)), #selector(NSTextView.orderFrontLinkPanel(_:)),
+    ]
 
     // MARK: Spelling, grammar and text checking, which hand the text to the spell server
 
