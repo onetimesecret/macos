@@ -94,7 +94,7 @@ rest are in the
    field does. Issue #257 records the maintainer's direction of
    2026-10-14 that a batch never fails to sync because of a sealed
    object, and that its name, note and other metadata other than its
-   value "can be synced. Can, not must." Whether the name and note
+   value may sync, without requiring that they do. Whether the name and note
    travel, and on what carrier, is for the successor to
    [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md) that #257
    asks for. This proposal decides nothing about sync.
