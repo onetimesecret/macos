@@ -74,8 +74,8 @@ Seams for the editor half (all page ids, all refuse a file id):
   `settleCoreEvent` does, or a swept page stays on screen until the
   timer. An envelope over 8 MiB, over 1024 refs, or naming one UUID
   twice is unreadable. The deadline gate (phase 4, core 0.32.0, ffi
-  0.40.0; draft ADR-0052, now Law 0001's expiry row) replaced draft
-  ADR-0048's consequence that copy and cut still read a due page.
+  0.40.0; draft ADR-0052, now Law 0001's expiry row) replaced the
+  consequence of draft ADR-0048 that copy and cut still read a due page.
 
 - Envelope caps (Law 0001's copy and cut rows, phase 4): copy and cut
   ask the parse's own
