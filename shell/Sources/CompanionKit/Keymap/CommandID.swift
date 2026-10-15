@@ -49,6 +49,10 @@ public enum CommandID: String, CaseIterable, Sendable {
     // (D-29). The object's menu advertises it beside the verb.
     case chipCopyDecrypted = "chip::CopyDecrypted"
 
+    // A sealed object's note grows to the card and back (Law 0001, issue
+    // #246). Answered by the note's own writing surface, which holds the keys.
+    case noteToggleExpanded = "note::ToggleExpanded"
+
     // The page's own presentation
     case editorToggleWrap = "editor::ToggleWrap"
     case editorDetectCodeLanguage = "editor::DetectCodeLanguage"
@@ -97,7 +101,7 @@ public enum CommandID: String, CaseIterable, Sendable {
     public var dispatch: Dispatch {
         switch self {
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
-            .editorDetectCodeLanguage, .editorUndo, .editorRedo:
+            .editorDetectCodeLanguage, .editorUndo, .editorRedo, .noteToggleExpanded:
             return .editor
         case .windowClose:
             return .window

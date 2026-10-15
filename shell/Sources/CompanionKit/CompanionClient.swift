@@ -31,6 +31,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     /// A defaulted `var` keeps existing memberwise initializer call sites
     /// source-compatible while older summaries without this key still decode.
     public var uuid: String? = nil
+    public var pageUUID: String? = nil
     /// Whether the slot holds a page at all. False after an expiry and
     /// before the next deliberate gesture opens one; the tab draws the
     /// dashed empty treatment rather than a gauge, and every clock
@@ -111,6 +112,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
         case id, uuid, title, paused
         case hasPage = "has_page"
         case pageID = "page_id"
+        case pageUUID = "page_uuid"
         case titleSource = "title_source"
         case rungCode = "rung_code"
         case rungLabel = "rung_label"
@@ -461,12 +463,126 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     public let excerpt: String
     public let sizeLabel: String
     public let concealed: Bool
+    /// The typed name beside the object; nil until one is given (ADR-0043).
+    public let name: String?
+    /// Whether the note holds anything but whitespace: the block's
+    /// doorway. The note's text is read with `noteRuns(chip:)`.
+    public let hasNote: Bool
 
     enum CodingKeys: String, CodingKey {
-        case kind, excerpt, concealed
+        case kind, excerpt, concealed, name
         case chipId = "chip_id"
         case sizeLabel = "size_label"
+        case hasNote = "has_note"
     }
+
+    init(
+        chipId: UInt64, kind: String, excerpt: String, sizeLabel: String, concealed: Bool,
+        name: String? = nil, hasNote: Bool = false
+    ) {
+        self.chipId = chipId
+        self.kind = kind
+        self.excerpt = excerpt
+        self.sizeLabel = sizeLabel
+        self.concealed = concealed
+        self.name = name
+        self.hasNote = hasNote
+    }
+}
+
+/// A copied selection (ADR-0047): the private type's bytes, which the
+/// shell writes and reads unread, and the public text any app receives.
+public struct SealedFragment: Hashable, Sendable {
+    /// The envelope for `CompanionClient.sealedFragmentType`; nil for ink alone.
+    public let envelope: Data?
+    /// The ink, with `[sealed content · <size class>]` for each object.
+    public let plainText: String
+
+    /// A copy, or a cap's refusal with `error` and `limit` (ADR-0053).
+    struct Wire: Decodable {
+        let envelope: String?
+        let plain: String?
+        let error: String?
+        let limit: Int?
+    }
+
+    /// The core's answer to a copy or a cut; nil, or one this build does not know, refuses.
+    static func outcome(of wire: Wire?) -> Result<SealedFragment, FragmentRefusal> {
+        switch (wire?.plain, wire?.error, wire?.limit) {
+        case (let plain?, nil, _):
+            .success(
+                SealedFragment(envelope: wire?.envelope.map { Data($0.utf8) }, plainText: plain))
+        case (nil, "tooLarge", let limit?):
+            .failure(.tooLarge(limit: limit))
+        case (nil, "tooManyObjects", let limit?):
+            .failure(.tooManyObjects(limit: limit))
+        default:
+            .failure(.refused)
+        }
+    }
+}
+
+/// Why the core composed no fragment for a copy or a cut.
+public enum FragmentRefusal: Error, Equatable, Sendable {
+    /// An unknown page, one past its deadline, a bad range or a cut the body refused.
+    case refused
+    /// Its envelope would be longer than `limit` bytes (ADR-0053).
+    case tooLarge(limit: Int)
+    /// Its envelope would name more than `limit` sealed objects (ADR-0053).
+    case tooManyObjects(limit: Int)
+}
+
+/// What a paste, a move or a clone placed (ADR-0047 point 6).
+public struct PlacedFragment: Codable, Hashable, Sendable {
+    public let locationUTF16: Int
+    public let lengthUTF16: Int
+    /// Objects that kept their identity: the active cut's, or a move's.
+    public let reattached: Int
+    public let cloned: Int
+    public let expired: Int
+    public let burned: Int
+    public let unavailable: Int
+    /// The envelope could not be read, so its public text was placed.
+    public let unreadable: Bool
+    /// Due pages the core swept first; the caller settles as its timer does (ADR-0048).
+    public let pagesExpired: Int
+
+    /// The placed run, in UTF-16 code units.
+    public var range: NSRange { NSRange(location: locationUTF16, length: lengthUTF16) }
+
+    enum CodingKeys: String, CodingKey {
+        case reattached, cloned, expired, burned, unavailable, unreadable
+        case locationUTF16 = "location_utf16"
+        case lengthUTF16 = "length_utf16"
+        case pagesExpired = "pages_expired"
+    }
+}
+
+/// The app's clipboard slot (ADR-0047 point 12): the active cut's page and
+/// its objects' faces, never their payload.
+public struct ActiveCut: Codable, Hashable, Sendable {
+    public let pageID: UInt64
+    public let objects: [ChipInfo]
+
+    struct Wire: Decodable {
+        let pageID: UInt64?
+        let objects: [ChipInfo]
+
+        enum CodingKeys: String, CodingKey {
+            case objects
+            case pageID = "page_id"
+        }
+    }
+}
+
+/// Why the core would refuse a draft sealed name (ADR-0042 point 1,
+/// ADR-0043). The rule is the core's alone; the words for each case
+/// are the name field's.
+public enum ChipNameRefusal: UInt32, Sendable {
+    /// Longer than 64 characters once trimmed.
+    case tooLong = 1
+    /// Outside `[A-Za-z_][A-Za-z0-9_]*`, which is judged first.
+    case outsideCharset = 2
 }
 
 /// One line of the audit trail: what the app did with one item,
@@ -497,7 +613,7 @@ public struct LedgerEntry: Codable, Hashable, Sendable, Identifiable {
     /// tiny | small | medium | large | huge: a coarse bucket, never a
     /// byte count.
     public let size: String
-    /// none | clipboard | link
+    /// none | clipboard | link | drag
     public let destination: String
 
     /// One item can produce several records, so identity is the item,
@@ -850,10 +966,10 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Discard the page a slot holds and leave the slot standing: its
-    /// sealed bytes are zeroized, the ledger keeps one discarded
-    /// record, and the tab keeps its name, its rung, its position and
-    /// its number key, the way an expiry leaves it. Returns whether a
-    /// page by that id was standing.
+    /// sealed bytes are zeroized, the ledger keeps a discarded record
+    /// for it and for each of its objects, and the tab keeps its name,
+    /// its rung, its position and its number key, the way an expiry
+    /// leaves it. Returns whether a page by that id was standing.
     ///
     /// Page addressed rather than tab addressed, which is the whole
     /// difference from `closeTab`: the burn offered after a conceal
@@ -1081,15 +1197,47 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Copy a chip back out. The core writes the pasteboard itself,
     /// marked transient + concealed; this process never holds the bytes.
+    /// False for an unknown chip or a page past its deadline (ADR-0052).
     @discardableResult
     public func copyOutChip(id: UInt64) -> Bool {
         companion_chip_copy_out(handle, id)
     }
 
-    /// ⌫ on a chip: removes it whole, bytes zeroized, no resurrection.
+    /// Copy `NAME=<plaintext>` by `copyOutChip`'s route: the core composes
+    /// and writes it and records one `sent`, so the caller arms the same
+    /// guarded clear. False, with nothing written, for an unknown, unnamed
+    /// or image chip, or a page past its deadline (ADR-0052).
+    @discardableResult
+    public func copyNameValue(chip: UInt64) -> Bool {
+        companion_chip_copy_name_value(handle, chip)
+    }
+
+    /// Burn a chip, attached or detached: bytes zeroized and its page's undo
+    /// gone. A backspace is no burn; its delete op detaches (ADR-0047).
     @discardableResult
     public func deleteChip(id: UInt64) -> Bool {
         companion_chip_delete(handle, id)
+    }
+
+    /// Name a sealed object, or clear its name with a blank draft. False
+    /// for an unknown chip or a draft `chipNameRefusal` refuses, and the
+    /// name is then as it was. Records nothing in the ledger.
+    @discardableResult
+    public func setChipName(_ name: String, chip: UInt64) -> Bool {
+        // A C string ends at an interior NUL, so the core would take less than was typed.
+        guard !name.contains("\0") else { return false }
+        return name.withCString { companion_chip_set_name(handle, chip, $0) }
+    }
+
+    /// Why the core would refuse `draft` as a sealed name, or nil when it
+    /// would take it (a blank draft clears). Handle free, so a field can
+    /// ask on every keystroke.
+    public static func chipNameRefusal(_ draft: String) -> ChipNameRefusal? {
+        guard !draft.contains("\0") else { return .outsideCharset }
+        let code = draft.withCString { companion_chip_name_refusal($0) }
+        guard code != 0 else { return nil }
+        // An unknown code is still a refusal, never a name taken.
+        return ChipNameRefusal(rawValue: code) ?? .outsideCharset
     }
 
     /// Change-count-guarded clear of our own last copy-out.
@@ -1104,6 +1252,200 @@ public class CompanionClient: @unchecked Sendable {
     /// number (D-29, D-32).
     public static func clipboardClearSeconds() -> UInt32 {
         companion_clipboard_clear_seconds()
+    }
+
+    // MARK: The sealed fragment (ADR-0047)
+
+    /// The private pasteboard type a fragment's envelope travels under,
+    /// with `.debug` in a debug build so the two cannot read each other's.
+    public static var sealedFragmentType: String {
+        #if DEBUG
+        "com.onetimesecret.onetimepad.sealed-fragment.debug"
+        #else
+        "com.onetimesecret.onetimepad.sealed-fragment"
+        #endif
+    }
+
+    /// Copy a UTF-16 range of a page. Nil for an empty or bad range, a
+    /// page past its deadline (ADR-0052) or an envelope past a cap (ADR-0053).
+    public func copyFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
+        try? copyFragmentResult(sheet: sheet, range: range).get()
+    }
+
+    /// Copy a UTF-16 range of a page, or why the core refused it.
+    public func copyFragmentResult(
+        sheet: UInt64, range: NSRange
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        guard let wire = selectionWire(range) else { return .failure(.refused) }
+        return fragment(from: companion_sheet_copy_fragment(handle, sheet, wire.0, wire.1))
+    }
+
+    /// Copy a range, then delete it as one undo step; its objects detach
+    /// as the active cut. Nil, with nothing changed, where the core refuses.
+    public func cutFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
+        try? cutFragmentResult(sheet: sheet, range: range).get()
+    }
+
+    /// Cut a range as `cutFragment` does, or why the core refused it.
+    public func cutFragmentResult(
+        sheet: UInt64, range: NSRange
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        guard let wire = selectionWire(range) else { return .failure(.refused) }
+        return fragment(from: companion_sheet_cut_fragment(handle, sheet, wire.0, wire.1))
+    }
+
+    /// Paste an envelope over a range as one undo step; an unreadable one places
+    /// `plainText`, withheld if it holds a NUL. Nil when nothing is placed.
+    @discardableResult
+    public func pasteFragment(
+        sheet: UInt64, range: NSRange, envelope: Data, plainText: String?
+    ) -> PlacedFragment? {
+        guard let wire = selectionWire(range) else { return nil }
+        let plain = plainText.flatMap { $0.contains("\0") ? nil : $0 }
+        return envelope.withUnsafeBytes { bytes in
+            let base = bytes.bindMemory(to: UInt8.self).baseAddress
+            let paste = { (plain: UnsafePointer<CChar>?) in
+                companion_sheet_paste_fragment(
+                    self.handle, sheet, wire.0, wire.1, base, bytes.count, plain)
+            }
+            let result = plain.map { $0.withCString { paste($0) } } ?? paste(nil)
+            return decodeJSON(PlacedFragment.self, from: result)
+        }
+    }
+
+    /// The clipboard slot's route: place the active cut over a range. Nil
+    /// when no cut stands.
+    @discardableResult
+    public func pasteActiveCut(sheet: UInt64, range: NSRange) -> PlacedFragment? {
+        guard let wire = selectionWire(range) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_paste_active_cut(handle, sheet, wire.0, wire.1))
+    }
+
+    /// A drag inside a page: move `range` to `to`, measured before the move,
+    /// as one step that keeps every object. Nil for a `to` in the range.
+    @discardableResult
+    public func moveRange(sheet: UInt64, range: NSRange, to: Int) -> PlacedFragment? {
+        guard let wire = selectionWire(range), let to = UInt32(exactly: to) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_move_range(handle, sheet, wire.0, wire.1, to))
+    }
+
+    /// A drag between pages (ADR-0054): move `range` to `at` on `toSheet` as one
+    /// transaction keeping every object. Nil with neither page changed.
+    @discardableResult
+    public func moveRange(
+        sheet: UInt64, range: NSRange, toSheet dest: UInt64, at: Int
+    ) -> PlacedFragment? {
+        guard let wire = selectionWire(range), let at = UInt32(exactly: at) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_move_range_to(handle, sheet, wire.0, wire.1, dest, at))
+    }
+
+    /// The ⌥ drag inside a page: a copy of `range` at `to`, every object
+    /// cloned core-side, as one step.
+    @discardableResult
+    public func cloneRange(sheet: UInt64, range: NSRange, to: Int) -> PlacedFragment? {
+        guard let wire = selectionWire(range), let to = UInt32(exactly: to) else { return nil }
+        return decodeJSON(
+            PlacedFragment.self,
+            from: companion_sheet_clone_range(handle, sheet, wire.0, wire.1, to))
+    }
+
+    /// The active cut, for the clipboard slot; nil when none stands.
+    public func activeCut() -> ActiveCut? {
+        guard let wire = decodeJSON(ActiveCut.Wire.self, from: companion_active_cut_json(handle)),
+              let page = wire.pageID
+        else { return nil }
+        return ActiveCut(pageID: page, objects: wire.objects)
+    }
+
+    /// Decrypted drag, from a data provider: the core writes the chip's payload
+    /// into `item` on `pasteboard` under `type` and records one `sent` to `drag`.
+    /// False, doing neither, for a removed chip or a page past its deadline.
+    @discardableResult
+    public func provideDecryptedDrag(
+        chip: UInt64, pasteboard: AnyObject, item: AnyObject, type: String
+    ) -> Bool {
+        guard !type.contains("\0") else { return false }
+        return withExtendedLifetime((pasteboard, item)) {
+            type.withCString {
+                companion_chip_provide_drag(
+                    handle, chip,
+                    Unmanaged.passUnretained(pasteboard).toOpaque(),
+                    Unmanaged.passUnretained(item).toOpaque(),
+                    $0)
+            }
+        }
+    }
+
+    private func fragment(
+        from ptr: UnsafeMutablePointer<CChar>?
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        SealedFragment.outcome(of: decodeJSON(SealedFragment.Wire.self, from: ptr))
+    }
+
+    // MARK: A sealed object's note (ADR-0043)
+
+    /// The note's runs, in the shape a page's and a file's arrive in;
+    /// empty without a note, nil for an unknown chip or a page past its
+    /// deadline (ADR-0052).
+    public func noteRuns(chip: UInt64) -> [RestoredRun]? {
+        decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip))
+    }
+
+    /// Apply an edit batch to the note. False means it was refused whole
+    /// and nothing moved; a batch with a chip op is refused.
+    @discardableResult
+    public func applyNoteOps(
+        chip: UInt64,
+        json: String,
+        intent: EditorEditIntent = .typing,
+        selection: EditorEditSelection? = nil
+    ) -> Bool {
+        guard let wire = editSelectionWire(selection) else { return false }
+        return json.withCString {
+            companion_chip_note_apply_ops_with_intent(
+                handle, chip, $0, intent.rawValue, wire.0, wire.1, wire.2, wire.3)
+        }
+    }
+
+    /// End the note's coalescing run without creating an undo item.
+    @discardableResult
+    public func finishNoteEditingGroup(chip: UInt64, selection: NSRange? = nil) -> Bool {
+        guard let wire = selectionWire(selection) else { return false }
+        return companion_chip_note_finish_editing_group(handle, chip, wire.0, wire.1)
+    }
+
+    /// Take back the note's own last step.
+    public func undoNote(chip: UInt64) -> StepOutcome? {
+        decodeJSON(StepOutcome.self, from: companion_chip_note_undo(handle, chip))
+    }
+
+    /// Put back the step `undoNote(chip:)` took.
+    public func redoNote(chip: UInt64) -> StepOutcome? {
+        decodeJSON(StepOutcome.self, from: companion_chip_note_redo(handle, chip))
+    }
+
+    /// Whether the note has a step of its own waiting in either direction.
+    public func canUndoNote(chip: UInt64) -> Bool {
+        companion_chip_note_can_undo(handle, chip)
+    }
+
+    public func canRedoNote(chip: UInt64) -> Bool {
+        companion_chip_note_can_redo(handle, chip)
+    }
+
+    /// Content-free label for the note's next step in either direction.
+    public func undoNoteActionName(chip: UInt64) -> String? {
+        ownedString(from: companion_chip_note_undo_action_name(handle, chip))
+    }
+
+    public func redoNoteActionName(chip: UInt64) -> String? {
+        ownedString(from: companion_chip_note_redo_action_name(handle, chip))
     }
 
     // MARK: Time
@@ -1187,7 +1529,7 @@ public class CompanionClient: @unchecked Sendable {
     /// travel core → client → transport and never enter this process;
     /// on success the link is on the clipboard and only the receipt id
     /// stays on the chip. **Blocks** for the round-trip — call off the
-    /// main actor.
+    /// main actor. A page past its deadline sends nothing (ADR-0052).
     public func concealChip(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {
@@ -1197,8 +1539,8 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Conceal the whole page (ink verbatim, sealed bytes inlined,
-    /// core-side). Refused when the page holds an image chip. **Blocks**
-    /// — call off the main actor.
+    /// core-side). Refused when the page holds an image chip or is past
+    /// its deadline (ADR-0052). **Blocks** — call off the main actor.
     public func concealSheet(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {

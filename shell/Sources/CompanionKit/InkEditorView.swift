@@ -194,11 +194,6 @@ public struct InkEditorView: NSViewRepresentable {
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
     ) -> InkTextView? {
         guard model.admits(.activeEditor, from: coordinator.surface) else { return nil }
-        let layoutManager = InkLayoutManager()
-        let container = InkTextContainer(size: NSSize(
-            width: 0, height: CGFloat.greatestFiniteMagnitude
-        ))
-        container.widthTracksTextView = true
         let storage = model.storage(for: sheetID)
         // The page's storage outlives any one editor instance, the
         // ledger and the empty state unmount the editor, even though
@@ -209,6 +204,51 @@ public struct InkEditorView: NSViewRepresentable {
         // building this editor before it dismantles the one it
         // replaces. Exactly one manager drives this storage.
         Coordinator.shedLayoutManagers(from: storage, keeping: nil)
+        let textView = makeSurface(over: storage, coordinator: coordinator)
+        textView.textContainerInset = NSSize(
+            width: 12, height: Coordinator.topInset
+        )
+        coordinator.currentSheet = sheetID
+        coordinator.appliedTypeface = InkStyle.typeface
+        coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
+        coordinator.appliedPreviewRendering = model.previewRendering(for: sheetID)
+        coordinator.appliedLanguageDetection = model.languageDetectionEnabled
+        coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
+        coordinator.restyle()
+        // The caret is the page's wherever the page is mounted, so the
+        // building seats it and every mount gets it: the page in its
+        // own scroller and the roll alike. Only when one was kept. A
+        // page nobody has left yet keeps the fresh view's caret, and
+        // the building stays silent about a selection it did not move.
+        if model.viewStates.carets[sheetID] != nil {
+            coordinator.restoreCaret(textView: textView, for: sheetID)
+        }
+        // The editor and the sealed paste route, which the summon-time
+        // offer's button takes so the chip lands at the caret and
+        // consent stays a gesture aimed at this page.
+        coordinator.announce(textView)
+        // One line per editor built. Two windows share this model
+        // (ADR-0033), and how many editors stand over it is a claim to
+        // check in the log stream rather than by eye: a transfer of
+        // ownership must produce exactly one of these, from the window
+        // that now owns. A later one with no transfer before it is the
+        // owner's own rebuild after the ledger or an empty slot.
+        // Mechanics only, never the page.
+        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+            .info("editor=built")
+        coordinator.refreshLanguageActionAvailability()
+        return textView
+    }
+
+    /// The writing surface over `storage`, wired to `coordinator`; the page's
+    /// editor and a sealed object's note are both built here (ADR-0045).
+    @MainActor
+    static func makeSurface(over storage: NSTextStorage, coordinator: Coordinator) -> InkTextView {
+        let layoutManager = InkLayoutManager()
+        let container = InkTextContainer(size: NSSize(
+            width: 0, height: CGFloat.greatestFiniteMagnitude
+        ))
+        container.widthTracksTextView = true
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
         // Only the mounted page's storage carries the coordinator as
@@ -251,9 +291,6 @@ public struct InkEditorView: NSViewRepresentable {
         // plain click edits (⌘-click is the opening gesture).
         textView.linkTextAttributes = [:]
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(
-            width: 12, height: Coordinator.topInset
-        )
         textView.typingAttributes = [
             .font: InkStyle.baseFont,
             .foregroundColor: NSColor.labelColor,
@@ -261,35 +298,6 @@ public struct InkEditorView: NSViewRepresentable {
         textView.delegate = coordinator
         textView.coordinator = coordinator
         coordinator.textView = textView
-        coordinator.currentSheet = sheetID
-        coordinator.appliedTypeface = InkStyle.typeface
-        coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
-        coordinator.appliedPreviewRendering = model.previewRendering
-        coordinator.appliedLanguageDetection = model.languageDetectionEnabled
-        coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
-        coordinator.restyle()
-        // The caret is the page's wherever the page is mounted, so the
-        // building seats it and every mount gets it: the page in its
-        // own scroller and the roll alike. Only when one was kept. A
-        // page nobody has left yet keeps the fresh view's caret, and
-        // the building stays silent about a selection it did not move.
-        if model.viewStates.carets[sheetID] != nil {
-            coordinator.restoreCaret(textView: textView, for: sheetID)
-        }
-        // The editor and the sealed paste route, which the summon-time
-        // offer's button takes so the chip lands at the caret and
-        // consent stays a gesture aimed at this page.
-        coordinator.announce(textView)
-        // One line per editor built. Two windows share this model
-        // (ADR-0033), and how many editors stand over it is a claim to
-        // check in the log stream rather than by eye: a transfer of
-        // ownership must produce exactly one of these, from the window
-        // that now owns. A later one with no transfer before it is the
-        // owner's own rebuild after the ledger or an empty slot.
-        // Mechanics only, never the page.
-        Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
-            .info("editor=built")
-        coordinator.refreshLanguageActionAvailability()
         return textView
     }
 
@@ -478,7 +486,7 @@ public struct InkEditorView: NSViewRepresentable {
         // nothing.
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
-        coordinator.applyPreviewRendering(model.previewRendering)
+        coordinator.applyPreviewRendering(model.previewRendering(for: sheetID))
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
         // The stance may have flipped editing on or off above, so the
@@ -514,7 +522,28 @@ public struct InkEditorView: NSViewRepresentable {
         @preconcurrency NSTextStorageDelegate {
         let model: PageModel
         weak var textView: InkTextView?
-        var currentSheet: UInt64?
+        /// The page or file under the editor, or nil on a note's surface,
+        /// whose page only paths key on it (ADR-0045).
+        var currentSheet: UInt64? {
+            didSet { if oldValue != currentSheet { retireRemovalUndo() } }
+        }
+        /// The page and edit count just after a removal, while its line offers Undo.
+        private var removalStamp: (document: InkDocument, generation: Int)?
+        /// The note this surface writes, by its object's chip, while one is open.
+        private(set) var noteChip: UInt64?
+        /// The popover that holds this surface when it is a note's, not the page's.
+        weak var noteHost: SealedNoteEditor?
+        /// A note's display only fence labels, which last as long as it stays open.
+        private var noteFenceLanguages: [Int: String] = [:]
+
+        /// What the surface's ink edits: the open note, or the mounted page or file.
+        var document: InkDocument? {
+            if let noteChip { return .note(chip: noteChip) }
+            return currentSheet.map(InkDocument.sheet)
+        }
+
+        /// Whether this is a note's surface rather than the page's.
+        var writesNote: Bool { noteHost != nil }
 
         /// Which content window this coordinator's mount stands in
         /// (ADR-0033), named on every presentation write it makes so
@@ -624,6 +653,10 @@ public struct InkEditorView: NSViewRepresentable {
                 self, selector: #selector(blockMetadataFormatDidChange(_:)),
                 name: .NSSystemTimeZoneDidChange, object: nil
             )
+            notifications.addObserver(
+                self, selector: #selector(windowBecameKey(_:)),
+                name: NSWindow.didBecomeKeyNotification, object: nil
+            )
         }
 
         /// Both notifications mean already-rendered labels could have stale
@@ -631,6 +664,18 @@ public struct InkEditorView: NSViewRepresentable {
         /// like the clip observer, so it needs no teardown registration.
         @objc private func blockMetadataFormatDidChange(_ notification: Notification) {
             restyle()
+        }
+
+        @objc private func windowBecameKey(_ notification: Notification) {
+            keysMoved()
+        }
+
+        /// The keys moved to or from a surface or a window: the Edit menu's
+        /// answers follow them on the next turn, once AppKit has settled.
+        func keysMoved() {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshLanguageActionAvailability()
+            }
         }
 
         /// Captures the ordinary plain-text payload once, before AppKit performs
@@ -661,7 +706,7 @@ public struct InkEditorView: NSViewRepresentable {
         func observeOrdinaryPaste(payload data: Data) {
             invalidateOrdinaryPasteMeasurement()
             let started = ContinuousClock.now
-            guard let documentID = currentSheet, let textView else { return }
+            guard let documentID = detectionKey, let textView else { return }
             let selection = textView.selectedRange()
             let request = LanguageDetectionRequest(
                 documentID: documentID,
@@ -739,8 +784,8 @@ public struct InkEditorView: NSViewRepresentable {
             pendingAutomaticPaste = nil
             deferredPlainAutomaticPaste = nil
             languageDetectionService.invalidate()
-            guard currentSheet == pending.documentID,
-                  let textView, model.activeEditor === textView,
+            guard detectionKey == pending.documentID,
+                  let textView, isLiveSurface(textView),
                   textView.isEditable, !textView.hasMarkedText(),
                   let storage = textView.textStorage
             else {
@@ -765,6 +810,10 @@ public struct InkEditorView: NSViewRepresentable {
             if textView.isEditable != editable {
                 invalidateOrdinaryPasteMeasurement()
             }
+            if !editable {
+                keepNaming()
+                closeNote()
+            }
             textView.isEditable = editable
             refreshLanguageActionAvailability()
         }
@@ -777,8 +826,8 @@ public struct InkEditorView: NSViewRepresentable {
 
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
-            if !selectionChangeIsIncidental, let sheet = currentSheet, let textView {
-                model.finishEditingGroup(sheet: sheet, selection: textView.selectedRange())
+            if !selectionChangeIsIncidental, let document, let textView {
+                model.finishEditingGroup(document, selection: textView.selectedRange())
             }
             refreshLanguageActionAvailability()
             if refreshBlockMetadataFocus() {
@@ -788,7 +837,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
             guard pendingOrdinaryPasteRequestID == context.requestID,
-                  currentSheet == context.documentID,
+                  detectionKey == context.documentID,
                   UInt64(generation) == context.revision,
                   let textView,
                   textView.isEditable,
@@ -818,7 +867,7 @@ public struct InkEditorView: NSViewRepresentable {
             pendingManualRequestID = nil
             languageSuggestion = nil
             languageDetectionService.invalidate()
-            guard let documentID = currentSheet else { return false }
+            guard let documentID = detectionKey else { return false }
             let selection = destination.replacementRange
             let request = LanguageDetectionRequest(
                 documentID: documentID,
@@ -860,7 +909,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard !structuralStyleNeedsRebuild,
                   let textView, let storage = textView.textStorage,
                   textView.isEditable, !textView.hasMarkedText(),
-                  let sheet = currentSheet
+                  document != nil
             else { return nil }
             let selection = textView.selectedRange()
             guard selection.location != NSNotFound,
@@ -870,7 +919,7 @@ public struct InkEditorView: NSViewRepresentable {
             let intersectsFence = rangeIntersectsFence(selection)
             let inContainer = rangeIntersectsContainer(selection, in: storage.string)
             let intersectsAttachment = rangeIntersectsAttachment(selection, in: storage)
-            let markdownCapable = isMarkdownCapable(sheet: sheet)
+            let markdownCapable = isMarkdownCapable
             let destination = PasteDestinationContext(
                 documentText: storage.string,
                 replacementRange: selection,
@@ -933,8 +982,45 @@ public struct InkEditorView: NSViewRepresentable {
             return false
         }
 
-        private func isMarkdownCapable(sheet: UInt64) -> Bool {
-            !sheet.isFileID || model.fileRenderMode(for: sheet) == .markdown
+        /// A page and a note read as markdown; a file only in its markdown mode.
+        private var isMarkdownCapable: Bool {
+            guard case .sheet(let sheet) = document else { return document != nil }
+            return !sheet.isFileID || model.fileRenderMode(for: sheet) == .markdown
+        }
+
+        /// The id a language detection request carries: the sheet's, or the
+        /// note's chip; a surface only ever compares it with its own.
+        private var detectionKey: UInt64? { noteChip ?? currentSheet }
+
+        /// The display only fence labels of the document under the surface.
+        private func fenceLanguages() -> [Int: String] {
+            switch document {
+            case .sheet(let sheet): model.fenceRenderingLanguages(for: sheet)
+            case .note: noteFenceLanguages
+            case nil: [:]
+            }
+        }
+
+        private func setFenceLanguage(_ language: String, at paragraphLocation: Int) {
+            switch document {
+            case .sheet(let sheet):
+                model.setFenceRenderingLanguage(language, sheet: sheet, at: paragraphLocation)
+            case .note: noteFenceLanguages[paragraphLocation] = language
+            case nil: break
+            }
+        }
+
+        private func clearFenceLanguages() {
+            switch document {
+            case .sheet(let sheet): model.clearFenceRenderingLanguages(for: sheet)
+            case .note: noteFenceLanguages = [:]
+            case nil: break
+            }
+        }
+
+        /// Whether `textView` is still the surface a captured paste was for.
+        private func isLiveSurface(_ textView: InkTextView) -> Bool {
+            writesNote ? noteChip != nil : model.activeEditor === textView
         }
 
         private func isCurrentAutomaticPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -943,7 +1029,7 @@ public struct InkEditorView: NSViewRepresentable {
                   pendingAutomaticPaste.requestID == context.requestID,
                   pendingAutomaticPaste.documentID == context.documentID,
                   pendingAutomaticPaste.revision == context.revision,
-                  currentSheet == context.documentID,
+                  detectionKey == context.documentID,
                   UInt64(generation) == context.revision,
                   let textView, textView.isEditable, !textView.hasMarkedText()
             else { return false }
@@ -1004,12 +1090,23 @@ public struct InkEditorView: NSViewRepresentable {
             PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
         }
 
+        /// The Edit menu's language and seal items as the key holder can answer
+        /// them (ADR-0046); under a field the page offers none.
         func refreshLanguageActionAvailability() {
+            if writesNote, textView?.answersChords != true { return }
+            if let textView, !textView.answersChords {
+                if let holder = textView.window?.firstResponder as? InkTextView,
+                   holder !== textView, holder.answersChords { return }
+                model.languageActions.stand(
+                    canDetect: false, canChoose: false, selectionIsEmpty: nil, canPaste: false)
+                model.sealActions.stand(canSeal: false)
+                return
+            }
             let canChoose = manualLanguageTargetAvailable
             let selectionIsEmpty: Bool?
             if PageModel.languageDetectionFeaturesAvailable,
                let textView, let storage = textView.textStorage,
-               currentSheet != nil, textView.isEditable, !textView.hasMarkedText()
+               document != nil, textView.isEditable, !textView.hasMarkedText()
             {
                 let selection = textView.selectedRange()
                 selectionIsEmpty = selection.location != NSNotFound
@@ -1022,7 +1119,9 @@ public struct InkEditorView: NSViewRepresentable {
             model.languageActions.stand(
                 canDetect: canChoose && model.languageDetectionEnabled,
                 canChoose: canChoose,
-                selectionIsEmpty: selectionIsEmpty
+                selectionIsEmpty: selectionIsEmpty,
+                canPaste: PageModel.languageDetectionFeaturesAvailable
+                    && document != nil && textView?.isEditable == true
             )
             model.sealActions.stand(canSeal: sealableSelection() != nil)
         }
@@ -1145,7 +1244,7 @@ public struct InkEditorView: NSViewRepresentable {
                   context.documentID == target.documentID,
                   context.revision == target.revision,
                   context.targetRange == target.detectionRange,
-                  currentSheet == target.documentID,
+                  detectionKey == target.documentID,
                   UInt64(generation) == target.revision,
                   let textView, textView.isEditable, !textView.hasMarkedText(),
                   textView.selectedRange() == target.selectionSnapshot
@@ -1155,7 +1254,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         private func manualLanguageTarget() -> ManualLanguageTarget? {
             guard let textView, let storage = textView.textStorage,
-                  let documentID = currentSheet, textView.isEditable,
+                  let documentID = detectionKey, textView.isEditable,
                   !textView.hasMarkedText()
             else { return nil }
             let selection = textView.selectedRange()
@@ -1163,7 +1262,7 @@ public struct InkEditorView: NSViewRepresentable {
                 let destination = PasteDestinationContext(
                     documentText: storage.string,
                     replacementRange: selection,
-                    isMarkdownCapable: isMarkdownCapable(sheet: documentID),
+                    isMarkdownCapable: isMarkdownCapable,
                     intersectsCodeFence: rangeIntersectsFence(selection),
                     isInListOrQuoteContainer: rangeIntersectsContainer(
                         selection, in: storage.string
@@ -1278,7 +1377,7 @@ public struct InkEditorView: NSViewRepresentable {
                 let destination = PasteDestinationContext(
                     documentText: text,
                     replacementRange: suggestion.target.detectionRange,
-                    isMarkdownCapable: isMarkdownCapable(sheet: suggestion.target.documentID),
+                    isMarkdownCapable: isMarkdownCapable,
                     intersectsCodeFence: rangeIntersectsFence(
                         suggestion.target.detectionRange
                     ),
@@ -1304,11 +1403,7 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             case .bareFence(let opening, _, let insertion):
                 if displayOnly {
-                    model.setFenceRenderingLanguage(
-                        suggestion.language,
-                        sheet: suggestion.target.documentID,
-                        at: opening.location
-                    )
+                    setFenceLanguage(suggestion.language, at: opening.location)
                     restyle()
                 } else {
                     languageSuggestion = nil
@@ -1490,6 +1585,8 @@ public struct InkEditorView: NSViewRepresentable {
             // here, and this is the guard for one that did not.
             guard model.admits(.activeEditor, from: surface) else { return }
             invalidateOrdinaryPasteMeasurement()
+            keepNaming()
+            closeNote()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             // The one-layout-manager-per-storage invariant rests on this
@@ -1546,6 +1643,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// same pass.
         func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
             guard currentSheet != nil, let outgoing = textView.textStorage else { return }
+            keepNaming()
+            closeNote()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             let vacant = NSTextStorage()
@@ -1789,13 +1888,13 @@ public struct InkEditorView: NSViewRepresentable {
             restyle()
         }
 
-        /// Restyle the mounted page when the preview-rendering scope
-        /// changes. `.never` short-circuits to the plain-file path, and
-        /// the other two return to the block walk; the roll picks up its
-        /// own reseed through the notification the model posts.
+        /// Compare the mounted page's effective scope, including its override.
         func applyPreviewRendering(_ scope: PreviewRenderingScope) {
-            guard appliedPreviewRendering != scope else { return }
-            appliedPreviewRendering = scope
+            let effective = writesNote ? scope : currentSheet.map {
+                model.previewRendering(for: $0)
+            } ?? scope
+            guard appliedPreviewRendering != effective else { return }
+            appliedPreviewRendering = effective
             restyle()
         }
 
@@ -1948,7 +2047,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// should be built as though it could.
         func step(back: Bool) {
             invalidateOrdinaryPasteMeasurement()
-            guard let sheet = currentSheet, let textView else { return }
+            guard let document, let textView else { return }
             // The gate lives here rather than only at the callers. Both
             // routes that exist today check it before they arrive, and
             // that is still worth keeping at the chord, which has to
@@ -1967,8 +2066,10 @@ public struct InkEditorView: NSViewRepresentable {
             // what every other editor on the machine does with ⌘Z
             // mid-conversion.
             InkEditorView.discardComposition(in: textView)
-            let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
+            let outcome = model.stepEdit(document, back: back)
             guard outcome.applied else { return }
+            // The model restates a page's storage; a note's is the surface's own.
+            if case .note = document { restateNote() }
             // The model rebuilt the storage from the core's runs, which
             // are plain text carrying the base font and nothing else,
             // so the page arrives here stripped of every attribute the
@@ -1993,12 +2094,14 @@ public struct InkEditorView: NSViewRepresentable {
             // step taken over an edit that was off screen would put the
             // caret somewhere the writer cannot see. Follow it.
             textView.scrollRangeToVisible(selection)
+            noteHost?.inkDidChange()
         }
 
         // MARK: Editing (ops across the seam, ADR-0013)
 
         public func textDidChange(_ notification: Notification) {
             restyle()
+            noteHost?.inkDidChange()
         }
 
         /// The composition the IME gate is tracking: where it started,
@@ -2044,28 +2147,34 @@ public struct InkEditorView: NSViewRepresentable {
             // that filled the classification cache. An edit this method
             // declines to emit still moves the page under that reading.
             generation &+= 1
+            retireRemovalUndo()
             structuralStyleNeedsRebuild = true
-            if let sheet = currentSheet {
-                // Display-only inferred labels belong to the old character
-                // projection and cannot survive a projection rewrite.
-                model.clearFenceRenderingLanguages(for: sheet)
+            if nameEditor?.isOpen == true || noteEditor?.isOpen == true {
+                // On the next turn: the object may have moved or gone, and its field or note follows.
+                DispatchQueue.main.async { [weak self] in
+                    self?.followNaming()
+                    self?.followNote()
+                }
             }
+            // Display-only inferred labels belong to the old character
+            // projection and cannot survive a projection rewrite.
+            clearFenceLanguages()
             abandonAutomaticConversionForEditorChange()
             if model.isApplyingProjection {
                 let changedGeneration = generation
-                let changedSheet = currentSheet
+                let changedDocument = document
                 DispatchQueue.main.async { [weak self, weak storage] in
                     guard let self, let storage,
                           self.structuralStyleNeedsRebuild,
                           self.generation == changedGeneration,
-                          self.currentSheet == changedSheet,
+                          self.document == changedDocument,
                           self.textView?.textStorage === storage
                     else { return }
                     self.restyle()
                 }
                 return
             }
-            guard let sheet = currentSheet else { return }
+            guard let document else { return }
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
                 // Composition in flight: the span grows and shrinks
                 // with each marked replacement, and nothing crosses the
@@ -2077,7 +2186,7 @@ public struct InkEditorView: NSViewRepresentable {
                 // This edit resolved the composition (a commit's final
                 // replacement, or the removal a cancel performs).
                 imeComposition?.spanLength += delta
-                finishComposition(in: storage, sheet: sheet)
+                finishComposition(in: storage, document: document)
                 return
             }
             let ops = Self.editOps(
@@ -2092,7 +2201,7 @@ public struct InkEditorView: NSViewRepresentable {
                 after: editSelectionAfter
                     ?? NSRange(location: NSMaxRange(editedRange), length: 0)
             )
-            emit(ops, sheet: sheet, selection: selection)
+            emit(ops, document: document, selection: selection)
         }
 
         /// A composition is starting: remember what the span it will
@@ -2114,7 +2223,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// its pre-composition baseline. Equal means an abandoned
         /// composition (Esc), and an abandoned composition must
         /// produce zero ops; different commits the minimal replace.
-        func finishComposition(in storage: NSTextStorage, sheet: UInt64) {
+        func finishComposition(in storage: NSTextStorage, document: InkDocument) {
             guard let ime = imeComposition else { return }
             imeComposition = nil
             let text = storage.string as NSString
@@ -2122,7 +2231,12 @@ public struct InkEditorView: NSViewRepresentable {
             guard NSMaxRange(span) <= text.length else {
                 // The span outran the storage, so there is nothing trustworthy to
                 // diff, so fall back to the recovery mirror.
-                model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
+                switch document {
+                case .sheet(let sheet):
+                    model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
+                case .note:
+                    restateNoteNextTurn()
+                }
                 return
             }
             let final = text.substring(with: span)
@@ -2133,7 +2247,7 @@ public struct InkEditorView: NSViewRepresentable {
             )
             emit(
                 Self.minimalReplace(at: ime.location, old: ime.baseline, new: final),
-                sheet: sheet,
+                document: document,
                 selection: EditorEditSelection(before: ime.selectionBefore, after: after)
             )
         }
@@ -2145,9 +2259,9 @@ public struct InkEditorView: NSViewRepresentable {
             guard imeComposition != nil,
                   let textView, !textView.hasMarkedText(),
                   let storage = textView.textStorage,
-                  let sheet = currentSheet
+                  let document
             else { return }
-            finishComposition(in: storage, sheet: sheet)
+            finishComposition(in: storage, document: document)
         }
 
         /// The outermost TextKit action currently producing storage edits.
@@ -2193,17 +2307,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// no-op is not an operation.
         private func emit(
             _ ops: [DocumentEditOp],
-            sheet: UInt64,
+            document: InkDocument,
             selection: EditorEditSelection
         ) {
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
             let intent = editIntentInFlight ?? Self.inferredIntent(for: ops)
-            model.applyOps(
-                sheet: sheet,
-                opsJSON: json,
-                intent: intent,
-                selection: selection
-            )
+            let accepted = model.applyOps(
+                to: document, json: json, intent: intent, selection: selection)
+            // The model restates a refused page or file; a note is restated here.
+            if !accepted, case .note = document { restateNoteNextTurn() }
             onEmit?(ops)
         }
 
@@ -2442,14 +2554,48 @@ public struct InkEditorView: NSViewRepresentable {
 
         // MARK: Chip actions: a click selects, a secondary click offers actions, never content
 
-        /// The chip's menu, in order (D-29): the two egresses, then the
-        /// removal set apart. Lifted so the titles are pinned by a test
-        /// rather than read off a screen.
-        static let chipMenuTitles = [
-            "Copy decrypted contents",
-            "Create one-time link…",
-            "Remove protected content",
-        ]
+        /// One item of the object's menu.
+        enum ChipMenuItem: Equatable {
+            case copyName
+            case copyDecrypted
+            case copyNameValue
+            case createLink
+            case name
+            case rename
+            case note
+            case editNote
+            case remove
+
+            /// Title case; no ellipsis on Name and Rename, which edit in
+            /// place, and one noun for the object (ADR-0055).
+            var title: String {
+                switch self {
+                case .copyName: "Copy Name"
+                case .copyDecrypted: "Copy Decrypted Contents"
+                case .copyNameValue: "Copy Name=Value, Decrypted"
+                case .createLink: "Create One-Time Link…"
+                case .name: "Name"
+                case .rename: "Rename"
+                case .note: "Note…"
+                case .editNote: "Edit Note…"
+                case .remove: "Remove Sealed Content"
+                }
+            }
+        }
+
+        /// The object's menu in D-41's order as ADR-0042 extends it, nil
+        /// marking a separator: the copies and the link, the object's own
+        /// words, then the removal set apart.
+        static func chipMenuItems(named: Bool, hasNote: Bool, kind: String) -> [ChipMenuItem?] {
+            (named ? [.copyName] : []) + [.copyDecrypted]
+                + (named && SealedBlockLayout.copiesNameValue(kind: kind) ? [.copyNameValue] : [])
+                + [.createLink, nil, named ? .rename : .name, hasNote ? .editNote : .note, nil, .remove]
+        }
+
+        /// The menu's titles, pinned by a test rather than read off a screen.
+        static func chipMenuTitles(named: Bool, hasNote: Bool, kind: String) -> [String?] {
+            chipMenuItems(named: named, hasNote: hasNote, kind: kind).map { $0?.title }
+        }
 
         /// A plain click on a chip selects the whole object and never
         /// places a caret inside it (D-28). It does not also perform an
@@ -2478,7 +2624,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// menu query and the explicit routes that pop it up directly.
         func chipMenu(at charIndex: Int) -> NSMenu? {
             let menu = NSMenu()
-            // The object's menu is the three items and nothing the text
+            // The object's menu is its own items and nothing the text
             // system would append to a text view's menu (D-41).
             menu.allowsContextMenuPlugIns = false
             appendChipItems(to: menu, at: charIndex)
@@ -2515,57 +2661,343 @@ public struct InkEditorView: NSViewRepresentable {
             return index
         }
 
-        /// The chip's three actions, appended to `menu` for the chip
-        /// standing at `charIndex`: the egresses first, a separator,
-        /// then the removal, which keeps today's behaviour of deleting
-        /// the sentinel whole (the two stage removal is a separate
-        /// call).
+        /// The chip standing at `charIndex` in the mounted page, if one does.
+        func chipAttachment(at charIndex: Int) -> ChipAttachment? {
+            guard let storage = textView?.textStorage, charIndex >= 0, charIndex < storage.length
+            else { return nil }
+            return storage.attribute(.attachment, at: charIndex, effectiveRange: nil)
+                as? ChipAttachment
+        }
+
+        /// The chip's actions, appended to `menu` for the chip standing
+        /// at `charIndex` in `chipMenuItems`' order. The removal deletes the
+        /// sentinel whole; the two press removal is the keyboard's.
         func appendChipItems(to menu: NSMenu, at charIndex: Int) {
-            guard let storage = textView?.textStorage, charIndex < storage.length,
-                  let attachment = storage.attribute(.attachment, at: charIndex, effectiveRange: nil)
-                    as? ChipAttachment
-            else { return }
-            let chipID = attachment.info.chipId
-            let copy = NSMenuItem(
-                title: Self.chipMenuTitles[0],
-                action: #selector(copyOutChip(_:)),
-                keyEquivalent: ""
-            )
-            copy.target = self
-            // The item carries the object's place rather than its id,
-            // so the action can read the block's own size class off
-            // the storage for the confirmation line.
-            copy.representedObject = charIndex as NSNumber
-            // The chord beside the verb is the keymap's, the way every
-            // tooltip names its chord: a keymap that moved
-            // `chip::CopyDecrypted` moves this, and one that unbound it
-            // leaves the verb alone. Display only; the page's text view
-            // dispatches the chord itself, so the menu item advertises
-            // and never claims.
-            if let chord = model.keymap.hintKeystroke(for: .chipCopyDecrypted) {
-                copy.keyEquivalent = chord.menuKeyEquivalent
-                copy.keyEquivalentModifierMask = chord.menuModifierMask
+            guard let attachment = chipAttachment(at: charIndex) else { return }
+            for entry in Self.chipMenuItems(
+                named: attachment.info.name != nil, hasNote: attachment.info.hasNote,
+                kind: attachment.info.kind)
+            {
+                guard let entry else {
+                    menu.addItem(.separator())
+                    continue
+                }
+                let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
+                item.target = self
+                // Each item carries the object's place rather than its id,
+                // so its action reads the block's own face off the storage.
+                item.representedObject = charIndex as NSNumber
+                switch entry {
+                case .copyName:
+                    item.action = #selector(copyChipName(_:))
+                case .copyDecrypted:
+                    item.action = #selector(copyOutChip(_:))
+                    // The chord beside the verb is the keymap's, the way
+                    // every tooltip names its chord: a keymap that moved
+                    // `chip::CopyDecrypted` moves this, and one that
+                    // unbound it leaves the verb alone. Display only; the
+                    // page's text view dispatches the chord itself, so the
+                    // menu item advertises and never claims.
+                    if let chord = model.keymap.hintKeystroke(for: .chipCopyDecrypted) {
+                        item.keyEquivalent = chord.menuKeyEquivalent
+                        item.keyEquivalentModifierMask = chord.menuModifierMask
+                    }
+                case .copyNameValue:
+                    item.action = #selector(copyChipNameValue(_:))
+                case .createLink:
+                    item.action = #selector(concealChip(_:))
+                    item.representedObject = attachment.info.chipId as NSNumber
+                case .name, .rename:
+                    item.action = #selector(nameChip(_:))
+                case .note, .editNote:
+                    item.action = #selector(openChipNote(_:))
+                case .remove:
+                    // The separator and verb carry the destructive meaning;
+                    // leave menu text styling to AppKit.
+                    item.action = #selector(removeChip(_:))
+                }
+                menu.addItem(item)
             }
-            menu.addItem(copy)
-            let conceal = NSMenuItem(
-                title: Self.chipMenuTitles[1],
-                action: #selector(concealChip(_:)),
-                keyEquivalent: ""
-            )
-            conceal.target = self
-            conceal.representedObject = chipID as NSNumber
-            menu.addItem(conceal)
-            menu.addItem(.separator())
-            let remove = NSMenuItem(
-                title: Self.chipMenuTitles[2],
-                action: #selector(removeChip(_:)),
-                keyEquivalent: ""
-            )
-            remove.target = self
-            remove.representedObject = charIndex as NSNumber
-            // The separator and verb carry the destructive meaning;
-            // leave menu text styling to AppKit.
-            menu.addItem(remove)
+        }
+
+        /// Copy the page's selected ranges by the core's fragment (ADR-0047 point 2).
+        @discardableResult
+        func copySelection() -> Bool {
+            guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
+            else { return false }
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            return model.copySelection(ranges, sheet: sheet)
+        }
+
+        /// The page's selection as the copy composes it, for a service or another
+        /// requester; nil on a note or a file, which AppKit writes.
+        func composeSelection() -> PageModel.SelectionComposition? {
+            guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
+            else { return nil }
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            return model.composeSelection(ranges, sheet: sheet)
+        }
+
+        /// Whether AppKit may give out the text this surface shows, which no core route
+        /// sees (ADR-0052): the note's page or the page is asked; a file always may.
+        func givesOutShownText() -> Bool {
+            guard let sheet = writesNote ? noteHost?.sheet : currentSheet else { return !writesNote }
+            return model.givesOut(sheet: sheet)
+        }
+
+        /// Cut the page's selection through the core (ADR-0047 point 5).
+        @discardableResult
+        func cutSelection() -> PageModel.CutOutcome {
+            guard !writesNote, let textView, textView.isEditable,
+                  let sheet = currentSheet, !sheet.isFileID
+            else { return .refused }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            let outcome = model.cutSelection(ranges, sheet: sheet)
+            if case .cut(let selecting) = outcome { settleRewrite(selecting: selecting) }
+            return outcome
+        }
+
+        /// Place the clipboard slot's cut at the caret (ADR-0047 point 12); stands
+        /// aside while a name or note holds the keys (ADR-0046).
+        @discardableResult
+        func placeActiveCut() -> Bool {
+            guard !writesNote, let textView, textView.isEditable,
+                  let sheet = currentSheet, !sheet.isFileID
+            else { return false }
+            guard textView.answersChords else {
+                model.flash(PageModel.placeWaitsLine)
+                return false
+            }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            let ranges = textView.selectedRanges.map(\.rangeValue)
+            guard let placed = model.placeActiveCut(sheet: sheet, ranges: ranges) else { return false }
+            settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
+            return true
+        }
+
+        /// Paste the board's fragment over the selection through the core (ADR-0047);
+        /// false where AppKit's paste should run: no fragment, a note or a file.
+        func pasteFragment() -> Bool {
+            guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID,
+                  SealedFragment.item(on: model.ambientPasteboard) != nil
+            else { return false }
+            // Answered here on a read only page, so AppKit's paste is not asked to place its public text.
+            guard textView.isEditable else { return true }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            let outcome = model.pasteFragment(
+                from: model.ambientPasteboard, sheet: sheet,
+                ranges: textView.selectedRanges.map(\.rangeValue))
+            switch outcome {
+            case .ordinary:
+                return false
+            case .refused:
+                return true
+            case .placed(let placed):
+                settleRewrite(selecting: NSRange(location: NSMaxRange(placed.range), length: 0))
+                return true
+            }
+        }
+
+        // MARK: Drags of the page's selection (ADR-0047 point 10)
+
+        /// The page's own drag, from its start until its session ends.
+        private struct PageDrag {
+            let range: NSRange
+            let document: InkDocument
+            let generation: Int
+        }
+
+        private var pageDrag: PageDrag?
+
+        /// Whether a drag of this page's selection is under way.
+        var dragsPageSelection: Bool { pageDrag != nil }
+
+        /// What a drag of the page's selection carries.
+        enum DragStart {
+            /// The core's copy fragment, in the one item the drag writes.
+            case fragment(NSPasteboardItem)
+            /// Not a page, or several stretches of ink: AppKit drags as it always has.
+            case ordinary
+            /// Nothing is dragged.
+            case refused
+        }
+
+        /// Start a drag of the page's selection as the core's copy fragment, so
+        /// another app reads only ink and placeholders (ADR-0047 point 2).
+        func beginPageDrag() -> DragStart {
+            pageDrag = nil
+            guard !writesNote, let textView, let storage = textView.textStorage,
+                  let sheet = currentSheet, !sheet.isFileID, let document
+            else { return .ordinary }
+            guard textView.answersChords else { return .refused }
+            let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+            guard ranges.count == 1 else {
+                guard ranges.contains(where: { Self.containsChip(storage, in: $0) }) else {
+                    return .ordinary
+                }
+                model.flash(PageModel.severalStretchesDragLine)
+                return .refused
+            }
+            guard let item = model.dragFragment(sheet: sheet, range: ranges[0])?.pasteboardItem()
+            else { return .refused }
+            pageDrag = PageDrag(range: ranges[0], document: document, generation: generation)
+            return .fragment(item)
+        }
+
+        /// A drag that starts on an object drags the selection holding it, or the
+        /// object alone, by the page's own drag rather than AppKit's attachment drag.
+        public func textView(
+            _ view: NSTextView, draggedCell cell: any NSTextAttachmentCellProtocol,
+            in rect: NSRect, event: NSEvent, at charIndex: Int
+        ) {
+            guard let textView = view as? InkTextView, textView === self.textView else { return }
+            if !NSLocationInRange(charIndex, textView.selectedRange()) {
+                textView.setSelectedRange(NSRange(location: charIndex, length: 1))
+            }
+            _ = textView.dragSelection(with: event, offset: .zero, slideBack: true)
+        }
+
+        /// The page's own drag, while the page still reads as it did when the drag began.
+        private var standingPageDrag: PageDrag? {
+            guard let drag = pageDrag, drag.document == document, drag.generation == generation
+            else { return nil }
+            return drag
+        }
+
+        /// What the page's own drag would do dropped at `index`: a move inside its own
+        /// range is no drop, and a refused page takes none.
+        func pageDragOperation(at index: Int, offered mask: NSDragOperation) -> NSDragOperation {
+            guard let drag = standingPageDrag, textView?.isEditable == true else { return [] }
+            let operation = InkTextView.pageDropOperation(offered: mask)
+            let inside = drag.range.location...NSMaxRange(drag.range)
+            return operation == .move && inside.contains(index) ? [] : operation
+        }
+
+        /// The page's own drag dropped on it at `index`: moved, or cloned for ⌥,
+        /// through the core as one step; stands aside while a field holds the keys.
+        func dropPageDrag(at index: Int, offered mask: NSDragOperation) -> Bool {
+            let operation = pageDragOperation(at: index, offered: mask)
+            guard operation != [], let drag = standingPageDrag, let textView,
+                  let sheet = currentSheet, admitsDrop(from: textView)
+            else { return false }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard let placed = model.dropRange(
+                drag.range, sheet: sheet, at: index, cloning: operation == .copy)
+            else { return false }
+            settleRewrite(selecting: placed.range)
+            return true
+        }
+
+        /// Whether a fragment from another page or app can drop here: an editable page.
+        var takesFragmentDrop: Bool {
+            guard !writesNote, let textView, textView.isEditable, let sheet = currentSheet
+            else { return false }
+            return !sheet.isFileID
+        }
+
+        /// Whether a drop from `source` may land here: not while a field or note other
+        /// than the drag's own source holds the keys (ADR-0046), and the line says why.
+        func admitsDrop(from source: NSView?) -> Bool {
+            guard let textView else { return false }
+            guard textView.yieldsKeys(toAnyBut: source) else { return true }
+            model.flash(PageModel.dropWaitsLine)
+            return false
+        }
+
+        /// A fragment dragged from another page or app, dropped at `index`: pasted
+        /// through the core as ⌘V pastes it, never sealed as its public text.
+        func dropFragment(from board: NSPasteboard, at index: Int, source: NSView? = nil) -> Bool {
+            guard takesFragmentDrop, let textView, let sheet = currentSheet,
+                  admitsDrop(from: source)
+            else { return false }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard case .placed(let placed) = model.pasteFragment(
+                from: board, sheet: sheet, ranges: [NSRange(location: index, length: 0)])
+            else { return false }
+            settleRewrite(selecting: placed.range)
+            return true
+        }
+
+        /// The page and range of another page's drag that a drop here moves through the
+        /// core (ADR-0054 point 5): a move, while that drag stands, between two pages.
+        func pageDragToMove(
+            from source: Coordinator?, offered mask: NSDragOperation
+        ) -> (sheet: UInt64, range: NSRange)? {
+            guard InkTextView.pageDropOperation(offered: mask) == .move, takesFragmentDrop,
+                  let source, source !== self, source.model === model,
+                  let drag = source.standingPageDrag, case .sheet(let from) = drag.document,
+                  let sheet = currentSheet, from != sheet
+            else { return nil }
+            return (from, drag.range)
+        }
+
+        /// Another page's drag dropped here at `index` as a move: the core takes its range
+        /// off that page and stands it here keeping every object, and both pages restate.
+        func dropMovedPageDrag(
+            from source: Coordinator, at index: Int, offered mask: NSDragOperation
+        ) -> Bool {
+            guard let drag = pageDragToMove(from: source, offered: mask), let textView,
+                  let sheet = currentSheet, admitsDrop(from: source.textView)
+            else { return false }
+            InkEditorView.discardComposition(in: textView)
+            invalidateOrdinaryPasteMeasurement()
+            guard let placed = model.dropRange(drag.range, sheet: drag.sheet, onto: sheet, at: index)
+            else { return false }
+            source.invalidateOrdinaryPasteMeasurement()
+            source.settleRewrite(selecting: NSRange(location: drag.range.location, length: 0))
+            settleRewrite(selecting: placed.range)
+            return true
+        }
+
+        /// The page's drag ended. A move between pages went through the core at the drop
+        /// (ADR-0054), so the end removes nothing here, whatever the destination answered.
+        func endPageDrag() {
+            pageDrag = nil
+        }
+
+        // MARK: The decrypted drag from a block's handle (ADR-0047 point 11, ADR-0050)
+
+        /// The decrypted drag under way, held until its session ends.
+        private(set) var decryptedDrag: DecryptedDrag?
+
+        /// Start the decrypted drag of the object at `index`: its source and its one item,
+        /// whose payload the core writes when a destination asks. Nil while a field holds the keys.
+        func beginDecryptedDrag(at index: Int) -> (source: DecryptedDrag, item: NSPasteboardItem)? {
+            guard !writesNote, let textView, let attachment = chipAttachment(at: index),
+                  let type = DecryptedDrag.pasteboardType(forKind: attachment.info.kind)
+            else { return nil }
+            guard textView.answersChords else {
+                model.flash(PageModel.decryptedDragWaitsLine)
+                return nil
+            }
+            let chip = attachment.info.chipId
+            let source = DecryptedDrag(chip: chip, type: type) { [weak model] board, item, type in
+                model?.provideDecryptedDrag(chip: chip, pasteboard: board, item: item, type: type)
+                    ?? false
+            }
+            guard let item = source.pasteboardItem() else { return nil }
+            source.onEnd = { [weak self, weak source] in
+                if let self, self.decryptedDrag === source { self.decryptedDrag = nil }
+            }
+            decryptedDrag = source
+            return (source, item)
+        }
+
+        /// After the core rewrote the page under the editor: lay the styles back
+        /// down and stand the selection, as a step does.
+        func settleRewrite(selecting selection: NSRange) {
+            guard let textView else { return }
+            restyle()
+            let clamped = Self.clamped(selection, to: textView.textStorage?.length ?? 0)
+            textView.setSelectedRange(clamped)
+            textView.scrollRangeToVisible(clamped)
+            noteHost?.inkDidChange()
         }
 
         /// The chip standing at the selection, when the selection is
@@ -2585,15 +3017,42 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Copy the chip at `index` back out through the core, and say
         /// so with the block's own size class in the line.
-        func copyOutChip(at index: Int) {
-            guard let storage = textView?.textStorage, index < storage.length,
-                  let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
-                    as? ChipAttachment
-            else { return }
-            model.copyOutChip(
+        @discardableResult
+        func copyOutChip(at index: Int) -> Bool {
+            guard let attachment = chipAttachment(at: index) else { return false }
+            return model.copyOutChip(
                 attachment.info.chipId,
                 size: SealedBlockCell.displayedSizeClass(attachment.info.sizeLabel)
             )
+        }
+
+        /// Copy the name of the chip at `index`, which is ambient ink.
+        @discardableResult
+        func copyName(at index: Int) -> Bool {
+            guard let name = chipAttachment(at: index)?.info.name else { return false }
+            return model.copyChipName(name)
+        }
+
+        /// Copy `NAME=value` for the chip at `index` by copy decrypted's
+        /// route; the core composes and writes it.
+        @discardableResult
+        func copyNameValue(at index: Int) -> Bool {
+            guard let attachment = chipAttachment(at: index), attachment.info.name != nil
+            else { return false }
+            return model.copyChipNameValue(
+                attachment.info.chipId,
+                size: SealedBlockCell.displayedSizeClass(attachment.info.sizeLabel)
+            )
+        }
+
+        /// A named row's zone, clicked: each zone takes its own route.
+        @discardableResult
+        func copy(_ zone: SealedBlockLayout.Zone, chipAt index: Int) -> Bool {
+            switch zone {
+            case .name: copyName(at: index)
+            case .equals: copyNameValue(at: index)
+            case .value: copyOutChip(at: index)
+            }
         }
 
         // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
@@ -2633,6 +3092,147 @@ public struct InkEditorView: NSViewRepresentable {
             copyOutChip(at: index)
         }
 
+        @objc private func copyChipName(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            copyName(at: index)
+        }
+
+        @objc private func copyChipNameValue(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            copyNameValue(at: index)
+        }
+
+        @objc private func nameChip(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            beginNaming(at: index)
+        }
+
+        @objc private func openChipNote(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            beginNote(at: index)
+        }
+
+        // MARK: The note, in a popover over the page (Law 0001)
+
+        /// The popover a sealed object's note is written in, made on first use.
+        private(set) var noteEditor: SealedNoteEditor?
+
+        /// Opens the note of the block at `index`, on an editable page.
+        func beginNote(at index: Int) {
+            guard let textView, textView.isEditable, let sheet = currentSheet, !sheet.isFileID
+            else { return }
+            keepNaming()
+            let editor = noteEditor ?? SealedNoteEditor(model: model)
+            noteEditor = editor
+            editor.pageView = textView
+            editor.open(chipAt: index, sheet: sheet)
+        }
+
+        /// Closes an open note when its page goes from under it.
+        func closeNote() {
+            guard let noteEditor else { return }
+            noteEditor.close(returningKeys: noteEditor.holdsKeys)
+        }
+
+        /// Stands an open note under its object again after the page moved.
+        func followNote() {
+            guard let noteEditor, noteEditor.isOpen else { return }
+            noteEditor.follow()
+        }
+
+        // MARK: A note's own surface, over the note's routes (ADR-0045)
+
+        /// Puts the note of `chip` under this surface, its text from the core;
+        /// false, with nothing loaded, where the core refuses the note (ADR-0052).
+        @discardableResult
+        func loadNote(chip: UInt64) -> Bool {
+            unloadNote()
+            guard let text = model.noteText(chip: chip) else { return false }
+            noteChip = chip
+            showNote(text)
+            return true
+        }
+
+        /// Takes the note away; its edits are already the core's, and the
+        /// surface keeps none of its ink.
+        func unloadNote() {
+            guard let chip = noteChip else { return }
+            // A composition settles on the note it was typed in, as a page swap's does.
+            if let textView { InkEditorView.discardComposition(in: textView) }
+            invalidateOrdinaryPasteMeasurement()
+            noteChip = nil
+            noteFenceLanguages = [:]
+            fenceRegions = []
+            (textView?.layoutManager as? InkLayoutManager)?.fenceRegions = []
+            if let storage = textView?.textStorage {
+                model.applyingProjection {
+                    storage.replaceCharacters(
+                        in: NSRange(location: 0, length: storage.length), with: "")
+                }
+            }
+            model.finishNoteEditingGroup(chip: chip)
+        }
+
+        /// The note's text from the core, with no edit crossing for it. A refusal
+        /// empties the surface and settles as the timer would (ADR-0052).
+        private func restateNote() {
+            guard let noteChip else { return }
+            guard let text = model.noteText(chip: noteChip) else {
+                showNote("")
+                model.settleRefusal(sheet: noteHost?.sheet, told: true)
+                return
+            }
+            showNote(text)
+        }
+
+        /// Lays `text` down as the note's whole storage, styled as the page's ink.
+        private func showNote(_ text: String) {
+            guard let storage = textView?.textStorage else { return }
+            model.applyingProjection {
+                storage.setAttributedString(NSAttributedString(
+                    string: text,
+                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]))
+            }
+            restyle()
+        }
+
+        /// A refused batch: the core's text again, once the storage has
+        /// finished processing the edit it refused.
+        private func restateNoteNextTurn() {
+            guard let chip = noteChip else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.noteChip == chip else { return }
+                self.restateNote()
+                self.noteHost?.inkDidChange()
+            }
+        }
+
+        // MARK: The name, in its seat (Law 0007)
+
+        /// The field a sealed object's name is typed into, made on first use.
+        private(set) var nameEditor: SealedNameEditor?
+
+        /// Opens the name field over the block at `index`, on an editable page.
+        func beginNaming(at index: Int) {
+            guard let textView, let sheet = currentSheet, !sheet.isFileID else { return }
+            closeNote()
+            let editor = nameEditor ?? SealedNameEditor(model: model)
+            nameEditor = editor
+            editor.textView = textView
+            editor.begin(chipAt: index, sheet: sheet)
+        }
+
+        /// Keeps the name a field stands over when its page goes from under it.
+        func keepNaming() {
+            nameEditor?.keep(returningKeys: nameEditor?.holdsKeys ?? false)
+        }
+
+        /// Stands an open name field over its object again after the page moved.
+        func followNaming() {
+            guard let nameEditor, nameEditor.isOpen else { return }
+            nameEditor.follow()
+        }
+
         /// The chip's ↗: open the inline confirmation. The bytes stay
         /// core-side; the conceal moves them core → client → network.
         @objc private func concealChip(_ sender: NSMenuItem) {
@@ -2648,13 +3248,59 @@ public struct InkEditorView: NSViewRepresentable {
             let range = NSRange(location: index, length: 1)
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
-                textView.didChangeText() // travels as a del op; the core reaps the chip
-                // The line says what happened. Its Undo steps the
-                // core's stack back once the core keeps a removed
-                // object to step back to (issue 170); until then the
-                // model offers the line without the button.
-                model.noteRemoval { [weak self] in self?.step(back: true) }
+                textView.didChangeText() // travels as a del op; the core detaches the chip
+                noteRemoval()
             }
+        }
+
+        /// D-30's first press: a caret beside an object selects it whole and removes nothing.
+        func selectObjectBeside(forward: Bool) -> Bool {
+            guard !writesNote, let textView, textView.isEditable, !textView.hasMarkedText(),
+                  textView.selectedRanges.count == 1
+            else { return false }
+            let caret = textView.selectedRange()
+            guard caret.location != NSNotFound, caret.length == 0 else { return false }
+            let index = forward ? caret.location : caret.location - 1
+            guard chipAttachment(at: index) != nil else { return false }
+            textView.setSelectedRange(NSRange(location: index, length: 1))
+            return true
+        }
+
+        /// Whether a deletion of the page's selection would take an object with it.
+        var selectionHoldsObject: Bool {
+            guard !writesNote, let textView, let storage = textView.textStorage else { return false }
+            return textView.selectedRanges.contains { Self.containsChip(storage, in: $0.rangeValue) }
+        }
+
+        /// After a deletion took an object: end its step, so Undo stands the object alone,
+        /// and say so with Undo beside the line (D-30).
+        func noteRemoval() {
+            guard let document, let textView else { return }
+            model.finishEditingGroup(document, selection: textView.selectedRange())
+            removalStamp = (document, generation)
+            model.noteRemoval { [weak self] in self?.undoRemoval() }
+        }
+
+        /// The removal line's Undo: one step back, while the removal is still the page's latest edit.
+        func undoRemoval() {
+            guard let stamp = removalStamp, stamp.document == document,
+                  stamp.generation == generation, let textView
+            else { return }
+            guard textView.answersChords else {
+                model.flash(PageModel.undoWaitsLine)
+                return
+            }
+            removalStamp = nil
+            step(back: true)
+        }
+
+        /// Any later edit or another page retires the removal's Undo from its line.
+        private func retireRemovalUndo() {
+            guard let stamp = removalStamp,
+                  stamp.document != document || stamp.generation != generation
+            else { return }
+            removalStamp = nil
+            model.withdrawRemovalUndo()
         }
 
         // MARK: Markdown — styled, never rewritten
@@ -2667,7 +3313,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// blocks receive trailing-edge affordances without
         /// touching how it edits.
         func restyle() {
-            guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            guard let storage = textView?.textStorage, let document else { return }
             defer { textView?.refreshHover() }
             // Locations are storage offsets. Any structural restyle may
             // move the hovered block underneath a fixed offset, so leave
@@ -2676,59 +3322,78 @@ public struct InkEditorView: NSViewRepresentable {
             // `.never` uses the plain visual profile everywhere. Markdown-capable
             // pages still need the Markdown walk's classifications and fence ranges
             // for editing and paste safety, but neither result is rendered.
-            if model.previewRendering == .never {
-                restylePlainFile(
-                    storage, sheet: sheet,
-                    preservingMarkdownStructure: !sheet.isFileID
-                )
+            let previewScope = writesNote ? model.previewRendering : currentSheet.map {
+                model.previewRendering(for: $0)
+            } ?? model.previewRendering
+            appliedPreviewRendering = previewScope
+            if previewScope == .never {
+                restylePlainFile(storage, preservingMarkdownStructure: file == nil)
                 return
             }
-            if sheet.isFileID {
-                switch model.fileRenderMode(for: sheet) {
+            if let file {
+                switch model.fileRenderMode(for: file) {
                 case .plainText:
-                    restylePlainFile(storage, sheet: sheet)
+                    restylePlainFile(storage)
                     return
                 case .source(let language):
-                    restyleSourceFile(storage, sheet: sheet, language: language)
+                    restyleSourceFile(storage, language: language)
                     return
                 case .markdown:
                     break
                 }
             }
-            // A file gets no block stamps, and the route is not merely
-            // skipped for dull values: `blocks(sheet:)` is a
-            // companion_sheet_* route, and a tagged id reaching it is
-            // refused core-side. Asking anyway would spend a refused
-            // call on every keystroke. A file's document does carry
-            // change timestamps, because it is a SheetDocument like any
-            // other, but they describe when this process happened to
-            // read the file rather than when a person wrote a
-            // paragraph, so there is nothing true to show
-            // (decisions.md item 15).
-            let metas = sheet.isFileID ? [] : model.coreClient.blocks(sheet: sheet)
             let (regions, displays, kinds) = Self.applyMarkdownStyling(
-                to: storage, sheet: sheet, blockMetas: metas,
+                to: storage, blockMetas: blockMetas(),
                 syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
+                fenceRenderingLanguages: fenceLanguages(),
+                renderBlockLabels: !writesNote
             )
             blockDisplays = displays
             fenceRegions = regions
             lineKinds = kinds
             lineKindsStamp = generation
-            lineKindsSheet = sheet
+            lineKindsDocument = document
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = fenceRegions
                 textView?.needsDisplay = true
             }
-            // Block metadata rides the first line instead of taking a row
-            // above it, so the page keeps its ordinary top inset regardless
-            // of which blocks have been edited.
-            if let textView, textView.textContainerInset.height != Self.topInset {
-                textView.textContainerInset.height = Self.topInset
-            }
+            keepPageInset()
             _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
+        }
+
+        /// The file under the surface, when the document is one.
+        private var file: UInt64? {
+            guard case .sheet(let sheet) = document, sheet.isFileID else { return nil }
+            return sheet
+        }
+
+        /// The page's block stamps; a file and a note show none (ADR-0045).
+        ///
+        /// A file gets no block stamps, and the route is not merely
+        /// skipped for dull values: `blocks(sheet:)` is a
+        /// companion_sheet_* route, and a tagged id reaching it is
+        /// refused core-side. Asking anyway would spend a refused
+        /// call on every keystroke. A file's document does carry
+        /// change timestamps, because it is a SheetDocument like any
+        /// other, but they describe when this process happened to
+        /// read the file rather than when a person wrote a
+        /// paragraph, so there is nothing true to show
+        /// (decisions.md item 15). A note's chip id is not a page id.
+        private func blockMetas() -> [BlockInfo] {
+            guard case .sheet(let sheet) = document, !sheet.isFileID else { return [] }
+            return model.coreClient.blocks(sheet: sheet)
+        }
+
+        /// Block metadata rides the first line instead of taking a row
+        /// above it, so the page keeps its ordinary top inset regardless
+        /// of which blocks have been edited. A note keeps its own.
+        private func keepPageInset() {
+            guard !writesNote, let textView,
+                  textView.textContainerInset.height != Self.topInset
+            else { return }
+            textView.textContainerInset.height = Self.topInset
         }
 
         /// The pure part of `restyle()`: walk the storage block by block
@@ -2739,7 +3404,6 @@ public struct InkEditorView: NSViewRepresentable {
         /// same as the mounted editor would over its live one.
         static func applyMarkdownStyling(
             to storage: NSTextStorage,
-            sheet: UInt64,
             blockMetas: [BlockInfo],
             syntaxHighlightingEnabled: Bool,
             fenceRenderingLanguages: [Int: String],
@@ -2920,17 +3584,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// as literal characters. Markdown-capable pages may retain a structural
         /// reading for editor behavior while using this same visual profile.
         private func restylePlainFile(
-            _ storage: NSTextStorage, sheet: UInt64,
-            preservingMarkdownStructure: Bool = false
+            _ storage: NSTextStorage, preservingMarkdownStructure: Bool = false
         ) {
             let text = storage.string as NSString
             let full = NSRange(location: 0, length: storage.length)
             let structure = preservingMarkdownStructure
                 ? Self.applyMarkdownStyling(
-                    to: storage, sheet: sheet,
-                    blockMetas: model.coreClient.blocks(sheet: sheet),
+                    to: storage, blockMetas: blockMetas(),
                     syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                    fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet),
+                    fenceRenderingLanguages: fenceLanguages(),
                     renderBlockLabels: false
                 )
                 : nil
@@ -2952,7 +3614,7 @@ public struct InkEditorView: NSViewRepresentable {
             lineKinds = structure?.lineKinds
                 ?? (text.length == 0 ? [] : [(range: full, kind: .body)])
             lineKindsStamp = generation
-            lineKindsSheet = sheet
+            lineKindsDocument = document
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 // The ranges remain available to the editor's behavior gates, but
@@ -2960,9 +3622,7 @@ public struct InkEditorView: NSViewRepresentable {
                 layoutManager.fenceRegions = []
                 textView?.needsDisplay = true
             }
-            if textView?.textContainerInset.height != Self.topInset {
-                textView?.textContainerInset.height = Self.topInset
-            }
+            keepPageInset()
             _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
@@ -2970,7 +3630,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// Source mode tokenizes the complete buffer as code. No Markdown
         /// scanner runs here, so `#`, lists, links, and fence markers retain
         /// their literal source meaning.
-        private func restyleSourceFile(_ storage: NSTextStorage, sheet: UInt64, language: String) {
+        private func restyleSourceFile(_ storage: NSTextStorage, language: String) {
             let text = storage.string as NSString
             var tokenizer = CodeInk.Tokenizer(
                 language: CodeInk.renderingLanguage(ofInfoString: language)
@@ -3009,15 +3669,13 @@ public struct InkEditorView: NSViewRepresentable {
             fenceRegions = []
             lineKinds = paragraphs.map { (range: $0, kind: .code(language: language)) }
             lineKindsStamp = generation
-            lineKindsSheet = sheet
+            lineKindsDocument = document
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = []
                 textView?.needsDisplay = true
             }
-            if textView?.textContainerInset.height != Self.topInset {
-                textView?.textContainerInset.height = Self.topInset
-            }
+            keepPageInset()
             _ = refreshBlockMetadataFocus()
             updateBlockLabelViews()
         }
@@ -3293,7 +3951,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// so any edit since retires the reading.
         private var generation = 0
         private var lineKindsStamp = -1
-        private var lineKindsSheet: UInt64?
+        private var lineKindsDocument: InkDocument?
 
         /// The classification of the paragraph beginning exactly at
         /// `location`, or nil when the walk has nothing trustworthy to
@@ -3302,7 +3960,7 @@ public struct InkEditorView: NSViewRepresentable {
         func classifiedKind(ofParagraphAt location: Int) -> InkStyle.LineKind? {
             guard textView?.textStorage != nil,
                   generation == lineKindsStamp,
-                  let sheet = currentSheet, sheet == lineKindsSheet
+                  let document, document == lineKindsDocument
             else { return nil }
             return lineKinds.first { $0.range.location == location }?.kind
         }
@@ -3556,7 +4214,7 @@ public struct InkEditorView: NSViewRepresentable {
             func layOutBlockLabels(forMetas metas: [BlockInfo]) {
                 guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
                 let (_, displays, _) = Self.applyMarkdownStyling(
-                    to: storage, sheet: sheet, blockMetas: metas,
+                    to: storage, blockMetas: metas,
                     syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
                     fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
                 )
@@ -3802,7 +4460,7 @@ final class BlockMetadataField: NSTextField {
     /// dark carries them along.
     func refreshPillColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            textColor = .secondaryLabelColor
+            textColor = .secondaryInk
             backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
             layer?.borderColor = NSColor.separatorColor
                 .withAlphaComponent(0.35).cgColor
@@ -3939,8 +4597,19 @@ final class InkLayoutManager: NSLayoutManager {
     var canDetectCodeLanguage: Bool { get }
     var canChooseCodeLanguage: Bool { get }
     func detectCodeLanguage(_ sender: Any?)
-    func chooseCodeLanguage(_ language: String)
+    /// `sender` is a `CodeLanguageChoice`, so the language rides the chain.
+    func chooseCodeLanguage(_ sender: Any?)
     func pasteWithoutDetection(_ sender: Any?)
+}
+
+/// The language Edit → Choose Language sends down the responder chain, to
+/// whichever surface holds the keys (ADR-0046).
+public final class CodeLanguageChoice: NSObject {
+    public let language: String
+
+    public init(language: String) {
+        self.language = language
+    }
 }
 
 /// The seal of a selection, posted by Edit → Seal Selected Content down
@@ -4044,7 +4713,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// is the card, `NSWindow` the editor window.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, let model = coordinator?.model else { return }
+        guard let window, let model = coordinator?.model, coordinator?.writesNote == false
+        else { return }
         let surface = String(describing: type(of: window))
         Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
             .info("editor=mounted window=\(surface, privacy: .public)")
@@ -4085,11 +4755,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     var canChooseCodeLanguage: Bool {
-        coordinator?.manualLanguageTargetAvailable == true
+        answersChords && coordinator?.manualLanguageTargetAvailable == true
     }
 
-    func chooseCodeLanguage(_ language: String) {
-        coordinator?.applyManualLanguage(language)
+    @objc func chooseCodeLanguage(_ sender: Any?) {
+        guard answersChords, let choice = sender as? CodeLanguageChoice else { return }
+        coordinator?.applyManualLanguage(choice.language)
     }
 
     /// The sealed block under the pointer, if any, so the block can
@@ -4104,6 +4775,122 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
                 redrawChip(at: index)
             }
         }
+    }
+
+    /// The zone of the hovered block's named row under the pointer, so
+    /// its pill and seat words can be drawn (ADR-0042 point 8).
+    private(set) var hoveredZone: SealedBlockLayout.Zone?
+
+    /// A zone's copy, worn in ember for `SealedBlockCell.beatDuration`.
+    struct CopyBeat: Equatable {
+        let index: Int
+        let chip: UInt64
+        let zone: SealedBlockLayout.Zone
+        let started: TimeInterval
+    }
+
+    private(set) var copyBeat: CopyBeat?
+    private var copyBeatTimer: Timer?
+
+    /// Lights the beat on the zone at `index` and lets it rest after
+    /// its second; a second copy restarts it where it fell.
+    func beginCopyBeat(_ zone: SealedBlockLayout.Zone, at index: Int) {
+        guard let chip = chipCell(at: index)?.info.chipId else { return }
+        copyBeatTimer?.invalidate()
+        if let previous = copyBeat { redrawChip(at: previous.index) }
+        copyBeat = CopyBeat(
+            index: index, chip: chip, zone: zone, started: ProcessInfo.processInfo.systemUptime)
+        redrawChip(at: index)
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let timer = Timer(
+            timeInterval: reduceMotion ? SealedBlockCell.beatDuration : 1.0 / 30,
+            repeats: !reduceMotion
+        ) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            MainActor.assumeIsolated { self.advanceCopyBeat() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        copyBeatTimer = timer
+    }
+
+    private func advanceCopyBeat() {
+        guard let beat = copyBeat else {
+            copyBeatTimer?.invalidate()
+            copyBeatTimer = nil
+            return
+        }
+        if ProcessInfo.processInfo.systemUptime - beat.started >= SealedBlockCell.beatDuration {
+            copyBeat = nil
+            copyBeatTimer?.invalidate()
+            copyBeatTimer = nil
+        }
+        redrawChip(at: beat.index)
+    }
+
+    /// The block whose name seat is a field, and how wide the field is (Law 0007).
+    struct Naming: Equatable {
+        let index: Int
+        let chip: UInt64
+        let width: CGFloat
+    }
+
+    var naming: Naming?
+
+    /// Where the chip with `chip` as its id stands on this page, if it does.
+    func chipIndex(ofChip chip: UInt64) -> Int? {
+        guard let storage = textStorage else { return nil }
+        var found: Int?
+        storage.enumerateAttribute(
+            .attachment, in: NSRange(location: 0, length: storage.length)
+        ) { value, range, stop in
+            guard (value as? ChipAttachment)?.info.chipId == chip else { return }
+            found = range.location
+            stop.pointee = true
+        }
+        return found
+    }
+
+    /// Whether another text view or field holds the keys, in this window or
+    /// in a key window over it, so the page's chords stand aside (ADR-0046).
+    var yieldsKeys: Bool { yieldsKeys(toAnyBut: nil) }
+
+    /// Whether a text view other than this one and `source` holds the keys, in this
+    /// window or in a key window over it: a drag's source holds them for its own gesture.
+    func yieldsKeys(toAnyBut source: NSView?) -> Bool {
+        if keysHeldInAnotherWindow(besides: source) { return true }
+        guard let holder = window?.firstResponder as? NSTextView else { return false }
+        return holder !== self && holder !== source
+    }
+
+    /// Whether this surface answers its chords and Edit menu: a note while it
+    /// holds the keys, the page unless another text view does (ADR-0046).
+    var answersChords: Bool {
+        guard coordinator?.writesNote == true else { return !yieldsKeys }
+        return window?.firstResponder === self && !keysHeldInAnotherWindow()
+    }
+
+    /// A text field in another key window, such as a pad's in Settings, other than `source`.
+    private func keysHeldInAnotherWindow(besides source: NSView? = nil) -> Bool {
+        guard let key = NSApp?.keyWindow, key !== window,
+              let holder = key.firstResponder as? NSTextView
+        else { return false }
+        return holder !== source
+    }
+
+    /// The sealed block's cell standing at `index`, if one does.
+    func chipCell(at index: Int) -> SealedBlockCell? {
+        guard let storage = textStorage, index >= 0, index < storage.length else { return nil }
+        return (storage.attribute(.attachment, at: index, effectiveRange: nil) as? ChipAttachment)?
+            .attachmentCell as? SealedBlockCell
+    }
+
+    /// The named row's zone under `point` on the block at `index`; nil
+    /// off the row, between runs, and on an unnamed block.
+    func chipZone(at point: NSPoint, chipAt index: Int) -> SealedBlockLayout.Zone? {
+        guard naming?.index != index,
+              let frame = chipFrame(at: index), let cell = chipCell(at: index)
+        else { return nil }
+        return cell.namedRow(in: frame)?.geometry.zone(at: point)
     }
 
     private var hoverTracking: NSTrackingArea?
@@ -4171,7 +4958,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     private func applyHover(at point: NSPoint?) {
-        hoveredChipIndex = point.flatMap { coordinator?.chipIndex(at: $0, in: self) }
+        let index = point.flatMap { coordinator?.chipIndex(at: $0, in: self) }
+        let zone = index.flatMap { index in point.flatMap { chipZone(at: $0, chipAt: index) } }
+        let zoneMoved = zone != hoveredZone
+        hoveredZone = zone
+        hoveredChipIndex = index
+        if zoneMoved, let index { redrawChip(at: index) }
         coordinator?.updateBlockMetadataHover(at: point)
     }
 
@@ -4180,7 +4972,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         applyHover(at: nil)
     }
 
-    private func redrawChip(at index: Int) {
+    func redrawChip(at index: Int) {
         guard let layoutManager, let textContainer,
               let storage = textStorage, index < storage.length else { return }
         let glyphs = layoutManager.glyphRange(
@@ -4218,11 +5010,61 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         isEditable || super.acceptsFirstMouse(for: event)
     }
 
+    /// How far past the doorway's word a click still opens the note.
+    static let doorwaySlop: CGFloat = 3
+
+    /// The zone a click acts on: the one under it, once the seat has named
+    /// it under the pointer, and otherwise none (Law 0001, ADR-0044 point 2).
+    nonisolated static func actingZone(
+        pointed: SealedBlockLayout.Zone?, index: Int,
+        hoveredIndex: Int?, hoveredZone: SealedBlockLayout.Zone?
+    ) -> SealedBlockLayout.Zone? {
+        guard let pointed, hoveredIndex == index, hoveredZone == pointed else { return nil }
+        return pointed
+    }
+
+    /// What a primary click on a sealed block does past its actions seat
+    /// (Law 0001, ADR-0042 points 2 and 3).
+    enum ChipClick: Equatable {
+        /// AppKit's path, whose delegate selects the whole object (D-40).
+        case select
+        /// A named row's zone, on its first click.
+        case copy(SealedBlockLayout.Zone)
+        /// The name field, from a double click (Law 0007).
+        case openName
+        /// The note, from a click on the seat's `note` (Law 0001).
+        case openNote
+        /// A later click on a zone that acted on its first.
+        case ignore
+    }
+
+    /// Pure, so the rule is an assertion. A named row opens the field only
+    /// from the name zone; an unnamed one from anywhere on its row.
+    nonisolated static func chipClick(
+        named: Bool, zone: SealedBlockLayout.Zone?, inRow: Bool, onDoorway: Bool = false,
+        clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> ChipClick {
+        guard modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
+        else { return .select }
+        if onDoorway { return clickCount == 1 ? .openNote : .ignore }
+        guard named else {
+            guard inRow, clickCount >= 2 else { return .select }
+            return clickCount == 2 ? .openName : .ignore
+        }
+        guard let zone else { return .select }
+        switch clickCount {
+        case 1: return .copy(zone)
+        case 2 where zone == .name: return .openName
+        default: return .ignore
+        }
+    }
+
     /// A click on the explicit actions affordance opens the object's menu.
     /// Control-primary over a chip takes the same direct route as a
-    /// secondary click, avoiding text-system additions to the menu. Every
-    /// other primary click stays on AppKit's attachment path, whose
-    /// delegate selects the object without opening anything.
+    /// secondary click, avoiding text-system additions to the menu. A
+    /// named row's zones copy (`chipClick`). Every other primary click
+    /// stays on AppKit's attachment path, whose delegate selects the
+    /// object without opening anything.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if Self.shouldFocusBlankSpace(
@@ -4232,31 +5074,109 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         ), consumeBlankFocusClick(event) {
             return
         }
-        if Self.shouldOpenChipContextMenu(
-            clickCount: event.clickCount, modifierFlags: event.modifierFlags),
-           let coordinator,
-           let index = coordinator.chipIndex(at: point, in: self)
-        {
-            setSelectedRange(NSRange(location: index, length: 1))
-            coordinator.openChipMenu(at: index, from: point, in: self)
-            return
-        }
-        guard Self.shouldOpenChipActions(
-            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
-        else {
+        guard let coordinator, let index = coordinator.chipIndex(at: point, in: self) else {
             super.mouseDown(with: event)
             return
         }
-        if let coordinator,
-           let index = coordinator.chipIndex(at: point, in: self),
-           let frame = chipFrame(at: index),
-           SealedBlockCell.actionsRect(in: frame).contains(point)
+        if Self.shouldOpenChipContextMenu(
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+            || (Self.shouldOpenChipActions(
+                clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+                && chipFrame(at: index).map { SealedBlockCell.actionsRect(in: $0).contains(point) }
+                    == true)
         {
             setSelectedRange(NSRange(location: index, length: 1))
             coordinator.openChipMenu(at: index, from: point, in: self)
             return
         }
-        super.mouseDown(with: event)
+        let frame = chipFrame(at: index)
+        let cell = chipCell(at: index)
+        if let handle = frame.flatMap({ cell?.decryptedDragRect(in: $0) }),
+           Self.startsDecryptedDrag(
+               onHandle: handle.contains(point),
+               handleShown: hoveredChipIndex == index
+                   || selectedRange() == NSRange(location: index, length: 1),
+               clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        {
+            trackDecryptedDrag(from: event, chipAt: index, handle: handle)
+            return
+        }
+        switch Self.chipClick(
+            named: cell?.info.name != nil,
+            zone: Self.actingZone(
+                pointed: chipZone(at: point, chipAt: index), index: index,
+                hoveredIndex: hoveredChipIndex, hoveredZone: hoveredZone),
+            inRow: frame.map { SealedBlockCell.contentLayout(in: $0).rowBand.contains(point) }
+                ?? false,
+            onDoorway: frame.flatMap { cell?.doorwayRect(in: $0) }.map {
+                $0.insetBy(dx: -Self.doorwaySlop, dy: -Self.doorwaySlop).contains(point)
+            } ?? false,
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        {
+        case .copy(let zone):
+            if coordinator.copy(zone, chipAt: index) { beginCopyBeat(zone, at: index) }
+        case .openName:
+            coordinator.beginNaming(at: index)
+        case .openNote:
+            coordinator.beginNote(at: index)
+        case .ignore:
+            return
+        case .select:
+            super.mouseDown(with: event)
+        }
+    }
+
+    /// Only a first plain press on the handle while it is drawn starts the decrypted drag.
+    nonisolated static func startsDecryptedDrag(
+        onHandle: Bool, handleShown: Bool, clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        onHandle && handleShown
+            && shouldOpenChipActions(clickCount: clickCount, modifierFlags: modifierFlags)
+    }
+
+    /// How far a press on the handle travels before it becomes a drag.
+    nonisolated static let decryptedDragSlop: CGFloat = 3
+
+    nonisolated static func pressBecomesDrag(from start: NSPoint, to point: NSPoint) -> Bool {
+        hypot(point.x - start.x, point.y - start.y) >= decryptedDragSlop
+    }
+
+    /// A press on the handle: once it moves, the decrypted drag begins; a press that
+    /// lifts first selects the object, as a click elsewhere on the block does.
+    private func trackDecryptedDrag(from event: NSEvent, chipAt index: Int, handle: NSRect) {
+        guard let window else { return }
+        while true {
+            guard let next = window.nextEvent(
+                matching: [.leftMouseDragged, .leftMouseUp],
+                until: Date(timeIntervalSinceNow: 0.1), inMode: .eventTracking, dequeue: true)
+            else {
+                if NSEvent.pressedMouseButtons & 1 == 0 { return }
+                continue
+            }
+            if next.type == .leftMouseUp {
+                setSelectedRange(NSRange(location: index, length: 1))
+                return
+            }
+            if Self.pressBecomesDrag(from: event.locationInWindow, to: next.locationInWindow) {
+                beginDecryptedDrag(chipAt: index, handle: handle, event: next)
+                return
+            }
+        }
+    }
+
+    /// The session, its image the handle as drawn rather than the block (ADR-0051 point 5).
+    private func beginDecryptedDrag(chipAt index: Int, handle: NSRect, event: NSEvent) {
+        guard let (source, item) = coordinator?.beginDecryptedDrag(at: index) else { return }
+        let dragging = NSDraggingItem(pasteboardWriter: item)
+        let image = NSImage(size: handle.size)
+        if let snapshot = bitmapImageRepForCachingDisplay(in: handle) {
+            cacheDisplay(in: handle, to: snapshot)
+            image.addRepresentation(snapshot)
+        }
+        dragging.setDraggingFrame(handle, contents: image)
+        let session = beginDraggingSession(with: [dragging], event: event, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
     }
 
     /// Plain blank-space clicks preserve the existing caret even if the
@@ -4394,6 +5314,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         updateChipEditorMeasure()
         super.layout()
         coordinator?.refitBlockLabels()
+        coordinator?.followNaming()
+        coordinator?.followNote()
     }
 
     /// TextKit's attachment sizing callback is explicitly nonisolated,
@@ -4435,8 +5357,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// through `keyDown` below, which fires only while this page holds
     /// the keyboard.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let command = editorCommand(for: event), command.modifiers.contains(.command),
-           dispatch(command.id) {
+        if answersChords, let command = editorCommand(for: event),
+           command.modifiers.contains(.command), dispatch(command.id) {
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -4458,10 +5380,12 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// either. The guard itself sits inside `step`, where every route
     /// meets, rather than being spelled once per door.
     @objc func undo(_ sender: Any?) {
+        guard answersChords else { return }
         coordinator?.step(back: true)
     }
 
     @objc func redo(_ sender: Any?) {
+        guard answersChords else { return }
         coordinator?.step(back: false)
     }
 
@@ -4469,7 +5393,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// method the chord and the context menu row run; a page shown
     /// read-only refuses it here, as it refuses the chord.
     @objc func sealSelectedContent(_ sender: Any?) {
-        guard isEditable else { return }
+        guard isEditable, answersChords else { return }
         coordinator?.sealSelectionOrLine()
     }
 
@@ -4482,20 +5406,26 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// its two items while the editor is first responder. A native field
     /// editor answers the same selectors through AppKit's own validation.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        guard let sheet = coordinator?.currentSheet, let model = coordinator?.model else {
+        guard let document = coordinator?.document, let model = coordinator?.model else {
             return super.validateMenuItem(item)
         }
         switch item.action {
-        case #selector(undo(_:)):
-            item.title = model.undoActionName(sheet: sheet).map { "Undo \($0)" } ?? "Undo"
-            return isEditable && model.canUndoEdit(sheet: sheet)
-        case #selector(redo(_:)):
-            item.title = model.redoActionName(sheet: sheet).map { "Redo \($0)" } ?? "Redo"
-            return isEditable && model.canRedoEdit(sheet: sheet)
+        case #selector(undo(_:)), #selector(redo(_:)):
+            let back = item.action == #selector(undo(_:))
+            let verb = back ? "Undo" : "Redo"
+            item.title = model.editStepName(document, back: back).map { "\(verb) \($0)" } ?? verb
+            return isEditable && answersChords && model.canStepEdit(document, back: back)
         case #selector(detectCodeLanguage(_:)):
             return canDetectCodeLanguage
+        case #selector(chooseCodeLanguage(_:)):
+            return canChooseCodeLanguage
         case #selector(pasteWithoutDetection(_:)):
-            return PageModel.languageDetectionFeaturesAvailable && isEditable
+            return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
+        case #selector(copy(_:)), #selector(cut(_:)), #selector(paste(_:)),
+             #selector(pasteAsPlainText(_:)):
+            return answersChords && super.validateMenuItem(item)
+        case #selector(selectAll(_:)) where coordinator?.writesNote != true:
+            return answersChords && super.validateMenuItem(item)
         default:
             return super.validateMenuItem(item)
         }
@@ -4605,42 +5535,163 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             // would have had it.
             guard isEditable else { return false }
             coordinator.step(back: command == .editorUndo)
+        case .noteToggleExpanded:
+            guard let note = coordinator.noteHost else { return false }
+            note.toggleExpanded()
+        case .editorToggleWrap where coordinator.writesNote:
+            // A note always wraps; the page's setting is not the note's to flip.
+            return false
         default:
             return coordinator.model.perform(command)
         }
         return true
     }
 
-    /// Ordinary paste remains plain when the preference is off. When it is on,
-    /// Option bypasses automatic fencing for this paste only.
+    /// A fragment pastes through the core; other paste stays plain, with Option bypassing
+    /// automatic fencing once. Stands aside while another surface holds the keys (ADR-0046).
     override func paste(_ sender: Any?) {
+        guard answersChords else { return }
+        if coordinator?.pasteFragment() == true { return }
         let bypass = NSApp.currentEvent?.modifierFlags.contains(.option) == true
         performOrdinaryPaste(sender, bypassingAutomaticFencing: bypass) { [unowned self] sender in
             pasteAsPlainText(sender)
         }
     }
 
+    /// A page copies by the core's fragment and stands aside while another
+    /// surface holds the keys (ADR-0046); a note or a file copies as AppKit does.
+    override func copy(_ sender: Any?) {
+        guard answersChords else { return }
+        guard let coordinator, !coordinator.writesNote,
+              let sheet = coordinator.currentSheet, !sheet.isFileID
+        else {
+            guard givesOutShownText else { return }
+            return copyAsAppKitDoes(sender)
+        }
+        coordinator.copySelection()
+    }
+
+    /// AppKit's copy of the selection, written on the model's ambient board, which a
+    /// test replaces, rather than the general board `super.copy` names.
+    private func copyAsAppKitDoes(_ sender: Any?) {
+        guard let board = coordinator?.model.ambientPasteboard else { return super.copy(sender) }
+        guard selectedRanges.contains(where: { $0.rangeValue.length > 0 }) else { return }
+        _ = super.writeSelection(to: board, types: writablePasteboardTypes)
+    }
+
+    /// Whether AppKit may write out what this view shows (ADR-0052); a bare view may.
+    private var givesOutShownText: Bool {
+        coordinator?.givesOutShownText() ?? true
+    }
+
+    /// The page's select all stands aside while another surface holds the keys.
+    override func selectAll(_ sender: Any?) {
+        if coordinator?.writesNote != true, !answersChords { return }
+        super.selectAll(sender)
+    }
+
+    /// A page cuts through the core, never by `super.cut`, whose `copy:` writes
+    /// a copy's fragment; a note, a file and ink stretches cut as AppKit does.
     override func cut(_ sender: Any?) {
+        guard answersChords else { return }
+        if let coordinator, !coordinator.writesNote,
+           let sheet = coordinator.currentSheet, !sheet.isFileID,
+           coordinator.cutSelection() != .inkStretches
+        { return }
+        guard givesOutShownText else { return }
         withEditIntent(.cut) {
             super.cut(sender)
         }
     }
 
-    override func deleteBackward(_ sender: Any?) {
-        withEditIntent(.deletion) {
-            super.deleteBackward(sender)
+    // MARK: Services and other requesters of the page's selection (Law 0001)
+
+    /// A selection holding an object offers a requester the copy's two types alone.
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        guard coordinator?.selectionHoldsObject == true else { return super.writablePasteboardTypes }
+        return [SealedFragment.pasteboardType, .string, SealedFragment.legacyStringType]
+    }
+
+    /// No service is offered while another surface holds the keys (ADR-0046), nor
+    /// one that would write its answer over a selection holding an object.
+    override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        guard answersChords else { return nil }
+        if returnType != nil, coordinator?.selectionHoldsObject == true { return nil }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    /// A selection holding an object is written as the copy composes it, in whichever
+    /// of its two types were asked for; any other selection writes as AppKit does.
+    override func writeSelection(
+        to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        guard let composition = requestedComposition() else {
+            guard givesOutShownText else { return false }
+            return super.writeSelection(to: pboard, types: types)
         }
+        guard case .composed(let fragment) = composition,
+              let item = fragment.pasteboardItem(offering: types)
+        else { return false }
+        pboard.clearContents()
+        return pboard.writeObjects([item])
+    }
+
+    override func writeSelection(
+        to pboard: NSPasteboard, type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        guard let composition = requestedComposition() else {
+            guard givesOutShownText else { return false }
+            return super.writeSelection(to: pboard, type: type)
+        }
+        guard case .composed(let fragment) = composition else { return false }
+        if type == .string || type == SealedFragment.legacyStringType {
+            return pboard.setString(fragment.plainText, forType: .string)
+        }
+        guard type == SealedFragment.pasteboardType, let envelope = fragment.envelope
+        else { return false }
+        return pboard.setData(envelope, forType: type)
+    }
+
+    /// The copy's composition of a page selection holding an object; nil for AppKit
+    /// to write any other, and refused whole while another surface holds the keys.
+    private func requestedComposition() -> PageModel.SelectionComposition? {
+        guard answersChords else { return .refused }
+        guard let coordinator, coordinator.selectionHoldsObject else { return nil }
+        let composition = coordinator.composeSelection()
+        if let composition, let line = PageModel.refusalLine(for: composition, .copy) {
+            coordinator.model.flash(line)
+        }
+        return composition
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        deleting(forward: false) { super.deleteBackward(sender) }
     }
 
     override func deleteForward(_ sender: Any?) {
-        withEditIntent(.deletion) {
-            super.deleteForward(sender)
+        deleting(forward: true) { super.deleteForward(sender) }
+    }
+
+    /// On a page the first press beside an object selects it and the second removes it (D-30);
+    /// the page's delete stands aside while another surface holds the keys (ADR-0046).
+    private func deleting(forward: Bool, _ delete: () -> Void) {
+        guard let coordinator, !coordinator.writesNote else {
+            return withEditIntent(.deletion, perform: delete)
         }
+        guard answersChords else { return }
+        if coordinator.selectObjectBeside(forward: forward) { return }
+        let takesObject = coordinator.selectionHoldsObject
+        let length = textStorage?.length
+        withEditIntent(.deletion, perform: delete)
+        if takesObject, textStorage?.length != length { coordinator.noteRemoval() }
     }
 
     var canDetectCodeLanguage: Bool {
         PageModel.languageDetectionFeaturesAvailable
-            && isEditable
+            && isEditable && answersChords
             && coordinator?.canDetectCodeLanguage == true
     }
 
@@ -4649,8 +5700,16 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.detectCodeLanguage()
     }
 
+    /// Paste and Match Style takes a sealed fragment through the core, as ⌘V does.
+    override func pasteAsPlainText(_ sender: Any?) {
+        guard answersChords else { return }
+        if coordinator?.pasteFragment() == true { return }
+        super.pasteAsPlainText(sender)
+    }
+
     @objc func pasteWithoutDetection(_ sender: Any?) {
-        guard PageModel.languageDetectionFeaturesAvailable, isEditable else { return }
+        guard PageModel.languageDetectionFeaturesAvailable, isEditable, answersChords else { return }
+        if coordinator?.pasteFragment() == true { return }
         performOrdinaryPaste(sender, bypassingAutomaticFencing: true) { [unowned self] sender in
             pasteAsPlainText(sender)
         }
@@ -5046,50 +6105,210 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         }
     }
 
-    /// Esc hands the keyboard back (docs/spec/04, the focus law).
+    /// Esc hands the keyboard back (docs/spec/04, the focus law); in a note
+    /// it contracts an expanded note and closes one that is not.
     override func cancelOperation(_ sender: Any?) {
+        if let note = coordinator?.noteHost { return note.escape() }
         coordinator?.model.escape()
+    }
+
+    /// A note given up closes, on the next turn, once the keys have landed;
+    /// the Edit menu's answers follow the keys either way (ADR-0046).
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            coordinator?.noteHost?.keysMayHaveLeft()
+            coordinator?.keysMoved()
+        }
+        return resigned
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { coordinator?.keysMoved() }
+        return became
     }
 
     // MARK: Drop-to-seal
 
-    /// An external drag seals, and only where a seal can land. Anywhere
-    /// else (over a file, or a view that takes no edits) this view takes
-    /// nothing: dragging onto this pad means "stage this", and over a
-    /// file the alternative was writing what was dragged into the file
-    /// as plaintext the next save puts on disk. The cursor says so
-    /// rather than promising a seal.
-    private func sealsExternalDrag(_ sender: NSDraggingInfo) -> Bool {
-        isExternalDrag(sender) && coordinator?.sealsHere == true
+    /// Where a drop on this surface goes, one answer for the cursor and the drop.
+    enum DropRoute: Equatable {
+        /// Nothing lands: a decrypted drag (ADR-0050), another surface's drag on a
+        /// note (ADR-0044 point 4), or another app's where no seal can stand.
+        case refused
+        /// The page's own drag, moved or cloned in place through the core.
+        case ownDrag
+        /// Another page's standing drag, moved here through the core (ADR-0054).
+        case move
+        /// A copy fragment, pasted through the core as ⌘V pastes it.
+        case fragment
+        /// Ink from a page or note of this app, which AppKit drops as ink.
+        case ink
+        /// Any other drag, another app's above all, sealed where a seal can land.
+        case seal
+    }
+
+    /// The route a drop from `sender` takes here. A drag from elsewhere seals, and only
+    /// where a seal can land: over a file it would write plaintext the next save keeps.
+    func dropRoute(for sender: NSDraggingInfo) -> DropRoute {
+        if isDecryptedDrag(sender) { return .refused }
+        let editor = sender.draggingSource as? InkTextView
+        if editor === self { return coordinator?.dragsPageSelection == true ? .ownDrag : .ink }
+        guard let coordinator, !coordinator.writesNote else { return .refused }
+        let mask = sender.draggingSourceOperationMask
+        if coordinator.pageDragToMove(from: editor?.coordinator, offered: mask) != nil {
+            return .move
+        }
+        if carriesFragment(sender) { return coordinator.takesFragmentDrop ? .fragment : .refused }
+        // This app's own ink was never meant to be staged, so it never meets drop to seal.
+        if editor != nil { return coordinator.takesFragmentDrop ? .ink : .refused }
+        return coordinator.sealsHere ? .seal : .refused
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isExternalDrag(sender) else { return super.draggingEntered(sender) }
-        return sealsExternalDrag(sender) ? .copy : []
+        switch dropRoute(for: sender) {
+        case .refused: []
+        case .seal: .copy
+        case .ownDrag, .move, .fragment, .ink: super.draggingEntered(sender)
+        }
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isExternalDrag(sender) else { return super.draggingUpdated(sender) }
-        return sealsExternalDrag(sender) ? .copy : []
+        switch dropRoute(for: sender) {
+        case .refused: []
+        case .seal: .copy
+        case .ownDrag, .move, .fragment, .ink: super.draggingUpdated(sender)
+        }
     }
 
     /// Dragging content to a secrecy tool is already the "stage this"
     /// gesture: an external drop seals. The core reads the drag
     /// pasteboard itself — the dropped bytes never enter this process.
-    /// Internal drags (moving ink within the page) stay ordinary text
-    /// editing.
+    /// The page's own drag and a fragment go through the core instead.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard isExternalDrag(sender) else {
+        // Read before drop to seal touches the drag board, which would ask our provider.
+        let route = dropRoute(for: sender)
+        let index = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
+        let mask = sender.draggingSourceOperationMask
+        let editor = sender.draggingSource as? InkTextView
+        switch route {
+        case .refused:
+            return false
+        case .ownDrag:
+            return coordinator?.dropPageDrag(at: index, offered: mask) ?? false
+        case .move:
+            guard let source = editor?.coordinator else { return false }
+            return coordinator?.dropMovedPageDrag(from: source, at: index, offered: mask) ?? false
+        case .fragment:
+            return coordinator?.dropFragment(
+                from: sender.draggingPasteboard, at: index, source: editor) ?? false
+        case .ink:
+            guard editor === self || coordinator?.admitsDrop(from: editor) == true else {
+                return false
+            }
             return super.performDragOperation(sender)
+        case .seal:
+            return coordinator?.sealDrop(at: index) ?? false
         }
-        guard sealsExternalDrag(sender) else { return false }
-        let point = convert(sender.draggingLocation, from: nil)
-        let index = characterIndexForInsertion(at: point)
-        return coordinator?.sealDrop(at: index) ?? false
     }
 
-    private func isExternalDrag(_ sender: NSDraggingInfo) -> Bool {
-        (sender.draggingSource as? NSView) !== self
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isDecryptedDrag(sender) ? false : super.prepareForDragOperation(sender)
+    }
+
+    /// This app's own decrypted drag, which the page and the note refuse (ADR-0050 point 2).
+    private func isDecryptedDrag(_ sender: NSDraggingInfo) -> Bool {
+        sender.draggingSource is DecryptedDrag
+    }
+
+    // MARK: Drags of the page's selection (ADR-0047 point 10)
+
+    /// The page's selection drags as the core's copy fragment, with its own
+    /// drawing as the image; several stretches of ink drag as AppKit drags them.
+    override func dragSelection(
+        with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool
+    ) -> Bool {
+        guard let coordinator else {
+            return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+        }
+        switch coordinator.beginPageDrag() {
+        case .ordinary:
+            guard givesOutShownText else { return false }
+            return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+        case .refused:
+            return false
+        case .fragment(let item):
+            var origin = NSPoint.zero
+            let image = dragImageForSelection(with: event, origin: &origin)
+                ?? NSImage(size: NSSize(width: 1, height: 1))
+            // AppKit gives the image's lower left corner; a flipped frame starts at its top.
+            let top = isFlipped ? origin.y - image.size.height : origin.y
+            let dragging = NSDraggingItem(pasteboardWriter: item)
+            dragging.setDraggingFrame(
+                NSRect(origin: NSPoint(x: origin.x, y: top), size: image.size), contents: image)
+            let session = beginDraggingSession(with: [dragging], event: event, source: self)
+            session.animatesToStartingPositionsOnCancelOrFail = slideBack
+            session.draggingFormation = .none
+            return true
+        }
+    }
+
+    override func draggingSession(
+        _ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        guard coordinator?.dragsPageSelection == true else {
+            return super.draggingSession(session, sourceOperationMaskFor: context)
+        }
+        return Self.pageDragMask(for: context, editable: isEditable)
+    }
+
+    override func draggingSession(
+        _ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation
+    ) {
+        guard let coordinator, coordinator.dragsPageSelection else {
+            return super.draggingSession(session, endedAt: screenPoint, operation: operation)
+        }
+        coordinator.endPageDrag()
+    }
+
+    /// The operation AppKit's drop caret follows for the page's own drag, a move or a
+    /// fragment, which removes nothing from its source; any other drag keeps AppKit's answer.
+    override func dragOperation(
+        for dragInfo: NSDraggingInfo, type: NSPasteboard.PasteboardType
+    ) -> NSDragOperation {
+        let mask = dragInfo.draggingSourceOperationMask
+        switch dropRoute(for: dragInfo) {
+        case .refused:
+            return []
+        case .ownDrag:
+            let index = characterIndexForInsertion(
+                at: convert(dragInfo.draggingLocation, from: nil))
+            return coordinator?.pageDragOperation(at: index, offered: mask) ?? []
+        case .move:
+            return .move
+        case .fragment:
+            return mask.contains(.copy) ? .copy : []
+        case .ink, .seal:
+            return super.dragOperation(for: dragInfo, type: type)
+        }
+    }
+
+    private func carriesFragment(_ sender: NSDraggingInfo) -> Bool {
+        SealedFragment.item(on: sender.draggingPasteboard) != nil
+    }
+
+    /// What a page's drag offers: a move or a copy inside the app, and only a copy
+    /// outside it, so no other app can take the selection off the page.
+    nonisolated static func pageDragMask(
+        for context: NSDraggingContext, editable: Bool
+    ) -> NSDragOperation {
+        context == .withinApplication && editable ? [.move, .copy] : .copy
+    }
+
+    /// A drop of a page's drag: a move, or a copy when ⌥ leaves only the copy.
+    nonisolated static func pageDropOperation(offered mask: NSDragOperation) -> NSDragOperation {
+        if mask.contains(.move) { return .move }
+        return mask.contains(.copy) ? .copy : []
     }
 }
 
@@ -5099,7 +6318,11 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 /// carrying only the chip's id and mechanical face. There is no
 /// affordance — and no data — to reveal what it stands for.
 final class ChipAttachment: NSTextAttachment {
-    let info: ChipInfo
+    /// The face the block draws; a name or note changes it in place.
+    @MainActor
+    var info: ChipInfo {
+        didSet { (attachmentCell as? SealedBlockCell)?.info = info }
+    }
 
     @MainActor
     init(info: ChipInfo) {
@@ -5135,7 +6358,8 @@ final class ChipAttachment: NSTextAttachment {
 /// size metadata above its mechanical excerpt. It is deliberately a
 /// bordered rectangle rather than a pill or button (D-27).
 final class SealedBlockCell: NSTextAttachmentCell {
-    let info: ChipInfo
+    @MainActor
+    var info: ChipInfo
 
     #if DEBUG
     /// Test-only record of the frame handed to the drawing path.
@@ -5195,27 +6419,29 @@ final class SealedBlockCell: NSTextAttachmentCell {
         )
     }
 
+    /// The block's quieter words: the secondary ink at rest, ink on a
+    /// selected block, where the selection highlight shows through the
+    /// fill and leaves the secondary label near 4:1 (record section 9, row 5).
+    nonisolated static func quietInk(selected: Bool) -> NSColor {
+        selected ? .labelColor : .secondaryInk
+    }
+
     @MainActor
-    private var classificationLabel: NSAttributedString {
+    private func classificationLabel(selected: Bool = false) -> NSAttributedString {
         NSAttributedString(
             string: Self.classification,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: Self.quietInk(selected: selected),
                 .kern: 1.15,
             ]
         )
     }
 
     @MainActor
-    private var metadata: NSAttributedString {
-        NSAttributedString(
-            string: Self.displayedSizeClass(info.sizeLabel),
-            attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        )
+    private func metadata(selected: Bool) -> NSAttributedString {
+        Self.seatString(
+            Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: info.hasNote), selected: selected)
     }
 
     /// The current core returns this closed vocabulary. Refuse to draw
@@ -5226,6 +6452,195 @@ final class SealedBlockCell: NSTextAttachmentCell {
         guard ["tiny", "small", "medium", "large", "huge"].contains(normalized)
         else { return "size unknown" }
         return normalized
+    }
+
+    /// What the size class's seat says a click on `zone` will do,
+    /// before the click (Law 0001, ADR-0042 point 8).
+    nonisolated static func seatWords(for zone: SealedBlockLayout.Zone) -> String {
+        switch zone {
+        case .name: "copies the name"
+        case .equals: "copies name=value, decrypted"
+        case .value: "copies the value, decrypted"
+        }
+    }
+
+    /// The seat's word for the beat after a zone's copy.
+    nonisolated static let copiedWords = "copied"
+
+    /// The word in the seat that opens the note, once one exists (ADR-0042 point 8).
+    nonisolated static let doorwayWord = "note"
+
+    /// The seat at rest: the size class first, then the note's doorway.
+    nonisolated static func restingSeat(sizeLabel: String, hasNote: Bool) -> String {
+        displayedSizeClass(sizeLabel) + (hasNote ? " · \(doorwayWord)" : "")
+    }
+
+    /// What the seat reads: the beat's word, a hovered zone's words, or
+    /// the seat at rest.
+    nonisolated static func seatText(
+        sizeLabel: String, hasNote: Bool = false, hovered: SealedBlockLayout.Zone?, copied: Bool
+    ) -> String {
+        if copied { return copiedWords }
+        if let hovered { return seatWords(for: hovered) }
+        return restingSeat(sizeLabel: sizeLabel, hasNote: hasNote)
+    }
+
+    /// Where `note` stands in the resting seat of a block drawn at
+    /// `cellFrame`; nil without a note.
+    @MainActor
+    func doorwayRect(in cellFrame: NSRect) -> NSRect? {
+        guard info.hasNote else { return nil }
+        let seat = Self.seatString(Self.restingSeat(sizeLabel: info.sizeLabel, hasNote: true))
+        let word = Self.seatString(Self.doorwayWord).size()
+        let origin = Self.contentLayout(in: cellFrame).metadataOrigin(width: seat.size().width)
+        return NSRect(
+            x: origin.x + seat.size().width - word.width, y: origin.y,
+            width: word.width, height: word.height)
+    }
+
+    /// The doorway's rule: 0.8 points, 2.5 under the word's baseline.
+    @MainActor
+    private func drawDoorwayRule(in cellFrame: NSRect) {
+        guard let word = doorwayRect(in: cellFrame) else { return }
+        let font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let y = word.minY + font.ascender + 2.5
+        let rule = NSBezierPath()
+        rule.move(to: NSPoint(x: word.minX, y: y))
+        rule.line(to: NSPoint(x: word.maxX, y: y))
+        rule.lineWidth = 0.8
+        NSColor.tertiaryLabelColor.setStroke()
+        rule.stroke()
+    }
+
+    /// A long name keeps this many characters and an ellipsis before
+    /// the value gives way at all.
+    nonisolated static let nameFloorCharacters = 4
+
+    /// A named row as drawn: the three runs, fitted to the row, and
+    /// where they stand.
+    struct NamedRow {
+        let name: NSAttributedString
+        let equals: NSAttributedString
+        let value: NSAttributedString
+        let geometry: SealedBlockLayout.NamedRow
+    }
+
+    /// The named row in a block drawn at `cellFrame`, nil when unnamed (ADR-0042
+    /// point 2); measured against the seat's widest words, not its current ones.
+    /// With `editingWidth` the name's seat is a field that wide (Law 0007),
+    /// drawn by the field, and the row follows it whether named or not.
+    @MainActor
+    func namedRow(
+        in cellFrame: NSRect, editingWidth: CGFloat? = nil, selected: Bool = false
+    ) -> NamedRow? {
+        let name: String
+        if editingWidth != nil {
+            name = ""
+        } else if let typed = info.name, !typed.isEmpty {
+            name = typed
+        } else {
+            return nil
+        }
+        let layout = Self.contentLayout(in: cellFrame)
+        let nameAttributes: [NSAttributedString.Key: Any] = [
+            .font: InkStyle.chipNameFont, .foregroundColor: NSColor.labelColor,
+        ]
+        let valueAttributes: [NSAttributedString.Key: Any] = [
+            .font: InkStyle.chipFont, .foregroundColor: NSColor.labelColor,
+        ]
+        let equals = NSAttributedString(string: "=", attributes: [
+            .font: InkStyle.chipFont, .foregroundColor: Self.quietInk(selected: selected),
+        ])
+        let floor = NSAttributedString(
+            string: String(name.prefix(Self.nameFloorCharacters)) + "…",
+            attributes: nameAttributes)
+        let wholeValue = NSAttributedString(string: info.excerpt, attributes: valueAttributes)
+        let available = SealedBlockLayout.excerptWidth(
+            containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth)
+        let allotment = editingWidth.map {
+            (name: $0, value: max(0, available - $0 - equals.size().width))
+        } ?? SealedBlockLayout.rowAllotment(
+            available: available,
+            name: NSAttributedString(string: name, attributes: nameAttributes).size().width,
+            equals: equals.size().width,
+            value: wholeValue.size().width,
+            nameFloor: floor.size().width
+        )
+        let fittedName = Self.fitted(name, attributes: nameAttributes, width: allotment.name)
+        let fittedValue = Self.fitted(
+            info.excerpt, attributes: valueAttributes, width: allotment.value)
+        return NamedRow(
+            name: fittedName,
+            equals: equals,
+            value: fittedValue,
+            geometry: layout.namedRow(
+                nameWidth: editingWidth ?? fittedName.size().width,
+                equalsWidth: equals.size().width,
+                valueWidth: fittedValue.size().width,
+                height: wholeValue.size().height,
+                copiesNameValue: SealedBlockLayout.copiesNameValue(kind: info.kind)
+            )
+        )
+    }
+
+    /// The most the name field may take of a block drawn at `cellFrame`:
+    /// the row, less the `=` that follows it.
+    @MainActor
+    func nameFieldRoom(in cellFrame: NSRect) -> CGFloat {
+        let equals = NSAttributedString(string: "=", attributes: [.font: InkStyle.chipFont])
+        return SealedBlockLayout.excerptWidth(
+            containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth
+        ) - equals.size().width
+    }
+
+    /// The widest thing a named row's seat can say, which its row
+    /// leaves room for.
+    @MainActor
+    static var widestSeatWidth: CGFloat {
+        let words = SealedBlockLayout.Zone.allCases.map(seatWords(for:))
+            + [copiedWords, restingSeat(sizeLabel: "size unknown", hasNote: true)]
+        return words.map { seatString($0).size().width }.max() ?? 0
+    }
+
+    @MainActor
+    static func seatString(_ text: String, selected: Bool = false) -> NSAttributedString {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
+                .foregroundColor: quietInk(selected: selected),
+            ]
+        )
+    }
+
+    /// `text` cut at its tail with an ellipsis to fit `width`, or whole
+    /// when it fits; the longest prefix that fits is kept.
+    @MainActor
+    static func fitted(
+        _ text: String, attributes: [NSAttributedString.Key: Any], width: CGFloat
+    ) -> NSAttributedString {
+        let whole = NSAttributedString(string: text, attributes: attributes)
+        guard whole.size().width > width else { return whole }
+        let characters = Array(text)
+        func candidate(_ count: Int) -> NSAttributedString {
+            NSAttributedString(
+                string: String(characters.prefix(count)) + "…", attributes: attributes)
+        }
+        var kept = 0
+        var tooMany = characters.count
+        while tooMany - kept > 1 {
+            let middle = (kept + tooMany) / 2
+            if candidate(middle).size().width <= width { kept = middle } else { tooMany = middle }
+        }
+        let fitted = candidate(kept)
+        return fitted.size().width <= width ? fitted : NSAttributedString(string: "")
+    }
+
+    /// The block as VoiceOver names it: what it is, its name, its size.
+    override func accessibilityLabel() -> String? {
+        [Self.classification.lowercased(), info.name, Self.displayedSizeClass(info.sizeLabel)]
+            .compactMap { $0 }
+            .joined(separator: ", ")
     }
 
     struct ContentLayout {
@@ -5243,11 +6658,28 @@ final class SealedBlockCell: NSTextAttachmentCell {
         /// seat shares, and the baseline its smaller face sits on.
         let metadataRight: CGFloat
         let metadataY: CGFloat
+        /// The bottom row's band, the block's lower half, where a named
+        /// row's zones answer the pointer.
+        let rowBand: NSRect
 
         /// The size class is drawn at its own measured width, ending at
         /// the column's trailing edge.
         func metadataOrigin(width: CGFloat) -> NSPoint {
             NSPoint(x: metadataRight - width, y: metadataY)
+        }
+
+        /// A named row's three runs end to end from the leading edge, at
+        /// the widths they are drawn at.
+        func namedRow(
+            nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat,
+            copiesNameValue: Bool
+        ) -> SealedBlockLayout.NamedRow {
+            let name = NSRect(x: left, y: bottomRowY, width: nameWidth, height: height)
+            let equals = NSRect(x: name.maxX, y: bottomRowY, width: equalsWidth, height: height)
+            let value = NSRect(x: equals.maxX, y: bottomRowY, width: valueWidth, height: height)
+            return SealedBlockLayout.NamedRow(
+                name: name, equals: equals, value: value, band: rowBand, metrics: metrics,
+                copiesNameValue: copiesNameValue)
         }
 
         /// Where the excerpt is drawn and where its tail is cut: the
@@ -5288,7 +6720,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
             lockRect: lockRect,
             labelOrigin: NSPoint(x: lockRect.maxX + metrics.lockToLabelGap, y: topRowY),
             metadataRight: cellFrame.maxX - metrics.horizontalPadding,
-            metadataY: bottomRowY + metrics.metadataBaselineNudge
+            metadataY: bottomRowY + metrics.metadataBaselineNudge,
+            rowBand: NSRect(
+                x: cellFrame.minX, y: cellFrame.midY,
+                width: cellFrame.width, height: cellFrame.maxY - cellFrame.midY)
         )
     }
 
@@ -5316,14 +6751,66 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    private var actions: NSAttributedString {
+    private func actions(selected: Bool) -> NSAttributedString {
         NSAttributedString(
             string: Self.actionsGlyph,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: Self.quietInk(selected: selected),
             ]
         )
+    }
+
+    /// The decrypted drag's handle, labelled in the design record's words (D-29).
+    nonisolated static let decryptedDragWords = "drag decrypted"
+
+    /// The handle's seat: on the classification's row, a gap before the actions seat and
+    /// as wide as its words; nil where it would meet the classification (ADR-0051 point 2).
+    nonisolated static func decryptedDragRect(
+        in cellFrame: NSRect, wordsWidth: CGFloat, labelWidth: CGFloat
+    ) -> NSRect? {
+        let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
+        let actions = actionsRect(in: cellFrame)
+        let width = wordsWidth + metrics.handleInset * 2
+        let handle = NSRect(
+            x: actions.minX - metrics.handleGap - width, y: actions.minY,
+            width: width, height: actions.height)
+        let labelEnd = contentLayout(in: cellFrame).labelOrigin.x + labelWidth
+        return handle.minX >= labelEnd + metrics.handleGap ? handle : nil
+    }
+
+    /// The handle in a block drawn at `cellFrame`, measured in the faces it is drawn in;
+    /// nil for a kind with no type to drag as.
+    @MainActor
+    func decryptedDragRect(in cellFrame: NSRect) -> NSRect? {
+        guard DecryptedDrag.pasteboardType(forKind: info.kind) != nil else { return nil }
+        return Self.decryptedDragRect(
+            in: cellFrame, wordsWidth: Self.decryptedDragString.size().width,
+            labelWidth: classificationLabel().size().width)
+    }
+
+    @MainActor
+    static var decryptedDragString: NSAttributedString {
+        NSAttributedString(
+            string: decryptedDragWords,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+    }
+
+    /// The handle: its words in an ember outline, apart from the block's other ink.
+    @MainActor
+    static func drawDecryptedDragHandle(in rect: NSRect) {
+        let outline = NSBezierPath(
+            roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
+        outline.lineWidth = 1
+        NSColor.ember.setStroke()
+        outline.stroke()
+        let words = decryptedDragString
+        let size = words.size()
+        words.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
     }
 
 
@@ -5396,11 +6883,43 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let selected = view.map { $0.selectedRange() == NSRange(location: charIndex, length: 1) }
             ?? false
         let hovered = view?.hoveredChipIndex == charIndex
-        draw(withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered)
+        let beat = view?.copyBeat.flatMap {
+            $0.index == charIndex && $0.chip == info.chipId ? $0 : nil
+        }
+        let naming = view?.naming.flatMap {
+            $0.index == charIndex && $0.chip == info.chipId ? $0 : nil
+        }
+        draw(
+            withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered,
+            editingWidth: naming?.width,
+            zone: hovered ? view?.hoveredZone : nil,
+            beat: beat.flatMap { beat in
+                Self.beatStrength(
+                    elapsed: ProcessInfo.processInfo.systemUptime - beat.started,
+                    reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ).map { (beat.zone, $0) }
+            }
+        )
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        draw(withFrame: cellFrame, in: controlView, selected: false, hovered: false)
+        draw(
+            withFrame: cellFrame, in: controlView, selected: false, hovered: false,
+            editingWidth: nil, zone: nil, beat: nil)
+    }
+
+    /// How long a zone wears ember after its copy (ADR-0044 point 1).
+    nonisolated static let beatDuration: TimeInterval = 1
+    /// The fade at each end of the beat, which Reduce Motion drops (ADR-0044 point 2).
+    nonisolated static let beatFade: TimeInterval = 0.15
+
+    /// How strongly the beat is drawn `elapsed` seconds after the copy,
+    /// from 0 to 1, or nil once the row rests.
+    nonisolated static func beatStrength(elapsed: TimeInterval, reduceMotion: Bool) -> CGFloat? {
+        guard elapsed >= 0, elapsed < beatDuration else { return nil }
+        guard !reduceMotion else { return 1 }
+        let edge = min(elapsed, beatDuration - elapsed)
+        return CGFloat(min(1, edge / beatFade))
     }
 
     /// State first, identity second, actions third: the lock and the
@@ -5410,7 +6929,11 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// way the card says it holds the keyboard, paired with the
     /// selection itself so the colour is never the only carrier.
     @MainActor
-    private func draw(withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool) {
+    private func draw(
+        withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool,
+        editingWidth: CGFloat?,
+        zone: SealedBlockLayout.Zone?, beat: (zone: SealedBlockLayout.Zone, strength: CGFloat)?
+    ) {
         #if DEBUG
         lastDrawnFrame = cellFrame
         #endif
@@ -5456,24 +6979,73 @@ final class SealedBlockCell: NSTextAttachmentCell {
             )
         }
 
-        classificationLabel.draw(at: layout.labelOrigin)
+        classificationLabel(selected: selected).draw(at: layout.labelOrigin)
         if hovered || selected {
-            let glyph = actions
+            let glyph = actions(selected: selected)
             let size = glyph.size()
             let seat = Self.actionsRect(in: cellFrame)
             glyph.draw(at: NSPoint(
                 x: seat.maxX - size.width,
                 y: seat.midY - size.height / 2
             ))
+            if let handle = decryptedDragRect(in: cellFrame) {
+                Self.drawDecryptedDragHandle(in: handle)
+            }
         }
 
-        let excerptLine = excerpt
-        let metadataSize = metadata.size()
-        excerptLine.draw(in: layout.excerptRect(
-            metadataWidth: metadataSize.width,
-            height: excerptLine.size().height
-        ))
-        metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
+        guard let row = namedRow(in: cellFrame, editingWidth: editingWidth, selected: selected)
+        else {
+            let excerptLine = excerpt
+            let metadata = metadata(selected: selected)
+            let metadataSize = metadata.size()
+            excerptLine.draw(in: layout.excerptRect(
+                metadataWidth: metadataSize.width,
+                height: excerptLine.size().height
+            ))
+            metadata.draw(at: layout.metadataOrigin(width: metadataSize.width))
+            drawDoorwayRule(in: cellFrame)
+            return
+        }
+        if editingWidth == nil {
+            drawPills(row.geometry, metrics: layout.metrics, zone: zone, beat: beat)
+        }
+        row.name.draw(at: row.geometry.name.origin)
+        row.equals.draw(at: row.geometry.equals.origin)
+        row.value.draw(at: row.geometry.value.origin)
+        let hovered = editingWidth == nil ? zone : nil
+        let copied = editingWidth == nil && beat != nil
+        let seat = Self.seatString(Self.seatText(
+            sizeLabel: info.sizeLabel, hasNote: info.hasNote, hovered: hovered, copied: copied),
+            selected: selected)
+        seat.draw(at: layout.metadataOrigin(width: seat.size().width))
+        if hovered == nil, !copied { drawDoorwayRule(in: cellFrame) }
+    }
+
+    /// The hovered zone's pill, and the beat's ember over the zone it
+    /// copied from; the beat wins where both would fall.
+    @MainActor
+    private func drawPills(
+        _ row: SealedBlockLayout.NamedRow, metrics: SealedBlockLayout.Metrics,
+        zone: SealedBlockLayout.Zone?, beat: (zone: SealedBlockLayout.Zone, strength: CGFloat)?
+    ) {
+        func pill(_ zone: SealedBlockLayout.Zone, inset: CGFloat = 0) -> NSBezierPath {
+            NSBezierPath(
+                roundedRect: row.pill(for: zone).insetBy(dx: inset, dy: inset),
+                xRadius: metrics.pillRadius, yRadius: metrics.pillRadius)
+        }
+        if let zone, zone != beat?.zone {
+            NSColor.sealedZonePill.setFill()
+            pill(zone).fill()
+        }
+        guard let beat else { return }
+        NSColor.sealedZonePill.withAlphaComponent(zone == beat.zone ? 1 : beat.strength).setFill()
+        pill(beat.zone).fill()
+        NSColor.sealedZoneEmberTint.withAlphaComponent(beat.strength).setFill()
+        pill(beat.zone).fill()
+        let stroke = pill(beat.zone, inset: 0.5)
+        stroke.lineWidth = 1
+        NSColor.ember.withAlphaComponent(beat.strength).setStroke()
+        stroke.stroke()
     }
 }
 
@@ -5635,6 +7207,11 @@ public enum InkStyle {
     /// reads as a token rather than a word, in the page's own face.
     public static var chipFont: NSFont {
         typeface.font(size: max(typeface.size - 2, Typeface.sizeRange.lowerBound), weight: .medium)
+    }
+
+    /// A sealed object's name, in the excerpt's face set semibold (ADR-0042 point 8).
+    public static var chipNameFont: NSFont {
+        typeface.font(size: chipFont.pointSize, weight: .semibold)
     }
 
     /// `### deploy friday` → (level 3, markerLength 4). Scope for rev C

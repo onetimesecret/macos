@@ -37,3 +37,8 @@
 - [Bookmark resolution facts](project_bookmark_resolution_facts.md): a bookmark follows its file into the Trash, and resolves to the recorded path when another file sits there; rename chains cannot be staged by renaming in a test
 - [swiftc default target refused by LaunchServices](project_swiftc_default_target_refused_by_launchservices.md): bare swiftc stamps minos 28.0 here, `open` answers -10825; pass -target and an absolute app path
 - [Locate and held files](project_locate_held_files.md): a held row is pending and accessRefused and can read dirty with nothing in it, samePath fails on a path with nothing at it, and ModalSessionTests pins two ModalSession.run sites in FileCoordinator
+- [ADR-0042 open questions](project_adr0042_open_questions.md): answers and #244/#246 details live in ADR-0044; never edit an accepted ADR's sections
+- [Issue #241 to #243 core](project_issue241_243_core.md): name and note live on SealedChip (ADR-0043); note routes are keyed by chip id, which overlaps page ids; #245/#246 must markDirty
+- [Epic 252 Track A](project_epic252_track_a.md): SwiftUI field state lives in TabRename.Field, PadRename and PadPickerRoutes; #245 reuses holdNotice; hand checks live in rename-in-place.md
+- [Issues #244 to #246 shell](project_issue244_246_shell.md): zones act after hover; the note is an InkTextView routed by InkDocument; answersChords gives keys and menu to the holder; tests copy only via useMemoryPasteboardForTests
+- [Issues #170 and #247](project_issue170_247_fragment.md): all eight units built, app 0.34.0; ⇧⌘V still seals our placeholder; ADR-0052 gates core reads of a due page and the shell settles on refusal, wake and AppKit asks; ADR-0053 cap line built; ADR-0054 drop wired via dropRoute; app ink never meets drop to seal

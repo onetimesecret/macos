@@ -101,6 +101,11 @@
       // over ink or over an object stays an ordinary copy.
       "cmd-shift-c": "chip::CopyDecrypted",
 
+      // A sealed object's note grows to the card's content area and back
+      // (issue #246). Answered by the note's own writing surface while it
+      // holds the keys, and by nothing else.
+      "shift-escape": "note::ToggleExpanded",
+
       // Undo and redo. Bound here rather than left to the standard Edit
       // menu, because the stack they drive is the core's now and not
       // AppKit's (issue #132): the page's text view sees the chord

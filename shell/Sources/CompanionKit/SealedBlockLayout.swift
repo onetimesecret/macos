@@ -56,6 +56,87 @@ enum SealedBlockLayout {
         /// head and tail, so at a narrow measure the excerpt is cut at
         /// this gap rather than run under the size class.
         let excerptTrailingGap: CGFloat
+        /// The pill under a hovered zone of a named row (ADR-0042 point 8):
+        /// its height and radius, and how far it runs past its run each side.
+        let pillHeight: CGFloat
+        let pillRadius: CGFloat
+        let pillOverhang: CGFloat
+        /// What the `=` zone takes from the runs beside it, each side.
+        let equalsSlop: CGFloat
+        /// The decrypted drag's handle (ADR-0051): its clearance from the
+        /// actions seat and from the classification, and its words' inset from its outline.
+        let handleGap: CGFloat
+        let handleInset: CGFloat
+    }
+
+    /// A zone of a named object's bottom row (Law 0001, ADR-0042 point 8).
+    enum Zone: Equatable, Sendable, CaseIterable {
+        case name
+        case equals
+        case value
+    }
+
+    /// Whether an object of `kind` copies `NAME=value`: text alone, as
+    /// the core composes it (ADR-0043 point 7, ADR-0044).
+    static func copiesNameValue(kind: String) -> Bool {
+        kind == "text"
+    }
+
+    /// Where a named row's three runs stand and what the pointer finds
+    /// there, in the coordinates the block is drawn in.
+    struct NamedRow: Equatable, Sendable {
+        let name: CGRect
+        let equals: CGRect
+        let value: CGRect
+        /// The band a zone answers in: the block's lower half.
+        let band: CGRect
+        let metrics: Metrics
+        /// Whether `=` is a zone; false on an object that copies no `NAME=value`.
+        let copiesNameValue: Bool
+
+        /// The name and value zones are their runs; the `=` zone is its
+        /// glyph and `equalsSlop` either side, taken from those runs.
+        func zone(at point: CGPoint) -> Zone? {
+            guard point.y >= band.minY, point.y < band.maxY else { return nil }
+            let slop = metrics.equalsSlop
+            if copiesNameValue, point.x >= equals.minX - slop, point.x < equals.maxX + slop {
+                return .equals
+            }
+            if point.x >= name.minX, point.x < name.maxX { return .name }
+            if point.x >= value.minX, point.x < value.maxX { return .value }
+            return nil
+        }
+
+        /// The pill under `zone`, `pillOverhang` past its run each side;
+        /// over `=` one pill spans the line, name to value.
+        func pill(for zone: Zone) -> CGRect {
+            let runs: (CGRect, CGRect) = switch zone {
+            case .name: (name, name)
+            case .equals: (name, value)
+            case .value: (value, value)
+            }
+            let overhang = metrics.pillOverhang
+            return CGRect(
+                x: runs.0.minX - overhang,
+                y: name.midY - metrics.pillHeight / 2,
+                width: runs.1.maxX - runs.0.minX + overhang * 2,
+                height: metrics.pillHeight
+            )
+        }
+    }
+
+    /// How wide a named row's name and value may be drawn in `available` points:
+    /// the name gives way first, down to `nameFloor`, then the value (ADR-0044).
+    static func rowAllotment(
+        available: CGFloat, name: CGFloat, equals: CGFloat, value: CGFloat,
+        nameFloor: CGFloat
+    ) -> (name: CGFloat, value: CGFloat) {
+        let room = max(0, available)
+        guard name + equals + value > room else { return (name, value) }
+        let floor = min(name, max(0, nameFloor))
+        let nameWidth = min(name, max(floor, room - equals - value))
+        guard nameWidth + equals <= room else { return (max(0, room - equals), 0) }
+        return (nameWidth, min(value, room - nameWidth - equals))
     }
 
     /// The measure the excerpt may run to before its tail is cut: the
@@ -91,7 +172,13 @@ enum SealedBlockLayout {
             lockTopNudge: 1,
             lockToLabelGap: 5,
             metadataBaselineNudge: 1,
-            excerptTrailingGap: 8
+            excerptTrailingGap: 8,
+            pillHeight: 15,
+            pillRadius: 4,
+            pillOverhang: 3,
+            equalsSlop: 2,
+            handleGap: 8,
+            handleInset: 5
         )
     }
 }

@@ -19,6 +19,12 @@ extension Color {
     /// appearance. ThemeContrastTests measures both.
     public static let emberText = Color(nsColor: .emberText)
 
+    /// The quieter ink for captions, help, headings and stamps: the
+    /// system's secondary label, darkened under light, where it reads
+    /// 3.95:1 on white against the record's 4.5:1. ThemeContrastTests
+    /// measures it.
+    public static let secondaryInk = Color(nsColor: .secondaryInk)
+
     /// Surface colours degrade to solid, legible fills under Increase
     /// Contrast / Reduce Transparency because they come from the system
     /// palette (docs/spec/05 a11y).
@@ -34,6 +40,24 @@ extension NSColor {
     /// Ember as ink, the AppKit side of `Color.emberText`, for the
     /// places that draw with an `NSColor`. Light #B0361A, dark #F5865F.
     public static let emberText = NSColor.appearanceAware(light: 0xB0361A, dark: 0xF5865F)
+
+    /// The quieter ink, the AppKit side of `Color.secondaryInk`: black
+    /// at 60% under light, about 5.7:1 on white, and the system's own
+    /// secondary label under dark and under Increase Contrast, where it
+    /// already clears the bar.
+    public static let secondaryInk = NSColor(name: nil) { appearance in
+        let match = appearance.bestMatch(from: [
+            .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+        ])
+        return match == .aqua
+            ? NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.6)
+            : .secondaryLabelColor
+    }
+
+    /// A named sealed row's hover pill and its ember beat's tint; the
+    /// dark shades are ADR-0042's drawing, the light ones ADR-0044's.
+    static let sealedZonePill = NSColor.appearanceAware(light: 0xE4E4E9, dark: 0x3B3B40)
+    static let sealedZoneEmberTint = NSColor.appearanceAware(light: 0xF8DED5, dark: 0x4A2F27)
 
     /// The four inks a fenced block's tokens wear (D-06), and the only
     /// place they are written down. Each starts from the system hue a

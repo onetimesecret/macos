@@ -2083,7 +2083,7 @@ final class FileAccessTests: XCTestCase {
         XCTAssertFalse(launched.model.saveFile(id))
         XCTAssertEqual(
             launched.model.notice,
-            "notes.txt is no longer at its path. Choose Locate, keep mine, or Save As before saving.")
+            "notes.txt is no longer at its path. Choose Locate…, Keep Mine, or Save As… before saving.")
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
 
         // And the core refuses the same draft when asked directly.
@@ -2123,7 +2123,7 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(row.conflict, .missing)
         XCTAssertEqual(
             launched.model.notice,
-            "notes.txt is no longer at its path. Choose Locate, keep mine, or Save As before saving.")
+            "notes.txt is no longer at its path. Choose Locate…, Keep Mine, or Save As… before saving.")
         XCTAssertEqual(launched.model.noticeTone, .actionable)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "nothing was recreated")
         assertBalanced(launched.scope)

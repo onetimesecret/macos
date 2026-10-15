@@ -118,7 +118,7 @@ public struct TimeRailView: View {
             surfaceShowsRoll: rollIsShowing,
             stampFormat: model.stampFormat
         )
-        // `FILES` and `PAD` are group labels in one navigation column.
+        // `Files` and `Pad` are group labels in one navigation column.
         // The default stack centres its intrinsic text while the PAD
         // heading itself fills the column for its trailing plus, which
         // made the two labels look unrelated. One leading alignment line
@@ -132,7 +132,7 @@ public struct TimeRailView: View {
             // is the ADR-0020 guarantee kept structurally: a file never
             // enters `tabs`, so the projection cannot see one.
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileShelfRow(
                         file: file,
@@ -152,7 +152,6 @@ public struct TimeRailView: View {
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
-            hiddenPages(count: projection.hiddenBlankPages)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
@@ -164,6 +163,7 @@ public struct TimeRailView: View {
     /// They do not reorder slots or change a page's creation day.
     private var experimentalRail: some View {
         let projection = model.timeUnits
+        let dayDirection = model.pads.daySortDirection(for: model.pads.activeID)
         let showingRoll = !model.showingLedger && model.selectedFile == nil
         let nodes = StreamNavigator.nodes(
             projection: projection, tabs: model.navigationTabs,
@@ -173,12 +173,13 @@ public struct TimeRailView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 3) {
-                    GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
+                    sortMenu(
+                        direction: dayDirection,
+                        subject: CompanionL10n.string("pad.sort.days"), select: model.setDaySort
+                    ) {
+                        GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
+                    }
                     Spacer(minLength: 0)
-                    sortControl(
-                        direction: model.pads.daySortDirection(for: model.pads.activeID),
-                        label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort
-                    )
                     Button(action: model.newPage) { Image(systemName: "plus") }
                         .buttonStyle(.plain).help(CompanionL10n.string("pad.page.new"))
                         .accessibilityLabel(CompanionL10n.string("pad.page.new"))
@@ -186,18 +187,19 @@ public struct TimeRailView: View {
                 ForEach(projection.units) { unit in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 3) {
-                            Text(unit.railLabel).font(.caption).foregroundStyle(.secondary)
-                            Spacer(minLength: 0)
-                            sortControl(
+                            sortMenu(
                                 direction: model.pads.checkpointSortDirection(
                                     for: model.pads.activeID,
                                     onDate: model.dateKey(forDayBucket: unit.bucket)
                                 ),
-                                label: CompanionL10n.format("pad.sort.checkpoints", unit.spokenLabel),
-                                action: { model.toggleCheckpointSort(dayBucket: unit.bucket) }
-                            )
+                                subject: CompanionL10n.format("pad.sort.checkpoints", unit.spokenLabel),
+                                select: { model.setCheckpointSort($0, dayBucket: unit.bucket) }
+                            ) {
+                                Text(unit.railLabel).font(.caption).foregroundStyle(Color.secondaryInk)
+                            }
+                            Spacer(minLength: 0)
                         }
-                        ForEach(nodes.filter { $0.bucket == unit.bucket }) { node in
+                        ForEach(Self.nodes(for: unit, in: nodes)) { node in
                             Button {
                                 model.select(target: node.target)
                                 if Self.drivesRoll(surface: surface, owner: model.owner),
@@ -223,7 +225,6 @@ public struct TimeRailView: View {
                         }
                     }
                 }
-                hiddenPages(count: projection.hiddenBlankPages)
                 if !model.navigationFiles.isEmpty {
                     Divider().padding(.vertical, 4)
                     GroupLabel(text: CompanionL10n.string("pad.files.heading"))
@@ -239,18 +240,40 @@ public struct TimeRailView: View {
         .frame(width: Self.width(experimental: true)).background(Color.panelBackground)
     }
 
-    private func sortControl(
-        direction: PadSortDirection, label: String, action: @escaping () -> Void
-    ) -> some View {
-        let copy = PadSortCopy(direction: direction, subject: label)
-        return Button(action: action) {
-            Image(systemName: direction == .chronological ? "arrow.down" : "arrow.up")
-                .font(.system(size: 10)).frame(width: 18, height: 18)
+    static func nodes(for unit: TimeUnitProjection.Unit, in nodes: [StreamNavigator.Node]) -> [StreamNavigator.Node] {
+        let pages = Set(unit.pageIDs)
+        return nodes.filter { node in
+            if let page = node.page { return pages.contains(page) }
+            return pages.isEmpty && node.bucket == unit.bucket
         }
-        .buttonStyle(.plain).help(copy.action)
+    }
+
+    private func sortMenu<Heading: View>(
+        direction: PadSortDirection, subject: String,
+        select: @escaping (PadSortDirection) -> Void,
+        @ViewBuilder heading: () -> Heading
+    ) -> some View {
+        let copy = PadSortCopy(direction: direction, subject: subject)
+        return Menu {
+            Picker(copy.label, selection: Binding(get: { direction }, set: select)) {
+                ForEach(PadSortCopy.orders, id: \.self) { order in
+                    Text(PadSortCopy(direction: order, subject: subject).currentOrder).tag(order)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 4) {
+                heading()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.secondaryInk)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(copy.help)
         .accessibilityLabel(copy.label)
         .accessibilityValue(copy.currentOrder)
-        .accessibilityHint(copy.action)
     }
 
     /// The PAD group's heading with the strip's + on it. The plus sits
@@ -264,7 +287,7 @@ public struct TimeRailView: View {
     /// two ways.
     private var padHeading: some View {
         HStack(spacing: 0) {
-            GroupLabel(text: "PAD")
+            GroupLabel(text: "Pad")
             Spacer(minLength: 0)
             Button(action: model.newPage) {
                 Image(systemName: "plus")
@@ -306,31 +329,6 @@ public struct TimeRailView: View {
         return chords
     }
 
-    /// The count of what the mode is hiding, and the instrument for the
-    /// content predicate itself.
-    ///
-    /// Old pages with nothing on them draw no nodes here, so without a
-    /// count a person would not know they exist, or that the strip
-    /// still holds them. The count says so out loud, and its tooltip
-    /// names the toggle that brings those pages back. They cost nothing
-    /// else, since the strip has no cap (issue #158), and nothing is
-    /// auto-discarded: reaping blank pages is a lifetime mechanism
-    /// nobody asked for (ADR-0016).
-    ///
-    /// A number that is routinely above zero in dogfood means the
-    /// content bar is set wrong, which is ADR-0020's fifth eject
-    /// trigger, so this line is a measurement as much as a message.
-    @ViewBuilder
-    private func hiddenPages(count: Int) -> some View {
-        if let line = Self.hiddenPagesLine(count: count) {
-            Text(line)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .help(Self.hiddenPagesHelp(count: count))
-                .accessibilityLabel(Text(Self.hiddenPagesHelp(count: count)))
-        }
-    }
 
     /// Which day the rail marks as the one the surface is showing.
     ///
@@ -383,27 +381,7 @@ public struct TimeRailView: View {
         return keymap.hintKeystroke(for: command)
     }
 
-    /// What the footer prints, or nothing at all when nothing is being
-    /// held back. Short, because it is a footer and not a node: it
-    /// counts what the rail is not showing, and a sentence at the
-    /// bottom of the column would weigh more than the days above it.
-    /// The sentence rides the tooltip and the accessibility label
-    /// instead, and "3 blank" is words rather than an abbreviation, so
-    /// doc 05's rule is answered at both ends.
-    static func hiddenPagesLine(count: Int) -> String? {
-        guard count > 0 else { return nil }
-        return "\(count) blank"
-    }
 
-    /// The same fact at length: how many live pages the days are not
-    /// showing, and the one place they can be reached from.
-    static func hiddenPagesHelp(count: Int) -> String {
-        let pages = count == 1
-            ? "One live page has nothing on it"
-            : "\(count) live pages have nothing on them"
-        return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
-            + "to reach them, nothing is discarded to make room."
-    }
 }
 
 /// The navigator itself: the track, the nodes on it, the band over the
@@ -555,7 +533,7 @@ struct StreamNavigatorView: View {
                 .frame(width: 7, height: 1)
             Text("7d")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
         }
         .offset(x: Metrics.trackX - 3, y: y - 6)
         .help("seven-day window ends here; the pages below are retained because they hold content")
@@ -572,7 +550,7 @@ struct StreamNavigatorView: View {
                 .frame(width: 5, height: 5)
             Text(StreamNavigator.emptyDaysLabel(count))
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
                 .lineLimit(1)
         }
         .offset(x: Metrics.trackX - 2, y: y)
@@ -636,20 +614,20 @@ struct StreamNavigatorView: View {
                 if first {
                     Text(node.dayLabel)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(node.active ? .primary : .secondary)
+                        .foregroundStyle(node.active ? Color.primary : Color.secondaryInk)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
                 if !node.stamp.isEmpty {
                     Text(node.stamp)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(node.active ? .secondary : .tertiary)
+                        .foregroundStyle(node.active ? Color.primary : Color.secondaryInk)
                         .lineLimit(1)
                 }
                 if node.trailing {
                     Text(StreamNavigator.retainedLabel)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                         .lineLimit(1)
                 }
                 if node.active, !node.trailing, node.hasPage {
@@ -919,7 +897,7 @@ public struct SlotRailView: View {
         // them must not make the Files and Pad labels jump sideways.
         VStack(alignment: .leading, spacing: 2) {
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileShelfRow(
                         file: file,
@@ -927,7 +905,7 @@ public struct SlotRailView: View {
                         model: model
                     )
                 }
-                GroupLabel(text: "PAD")
+                GroupLabel(text: "Pad")
             }
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 2) {
@@ -960,13 +938,13 @@ public struct SlotRailView: View {
                     .frame(width: 24, height: 20)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
             .accessibilityLabel(Text("New page"))
             if blankCount > 0 {
                 Text("\(blankCount) blank")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityLabel(Text("\(blankCount) blank slot\(blankCount == 1 ? "" : "s")"))
             }
         }
@@ -1003,9 +981,10 @@ private struct SlotRailRow: View {
     let endReorder: () -> Void
 
     @State private var hovering = false
-    @State private var renaming = false
-    @State private var renameDraft = ""
+    @State private var rename = TabRename.Field()
     @FocusState private var renameFocused: Bool
+
+    private var renaming: Bool { rename.isOpen }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -1025,7 +1004,7 @@ private struct SlotRailRow: View {
                         .font(.system(size: 7, weight: .bold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .accessibilityLabel(Text("Close tab"))
@@ -1060,7 +1039,7 @@ private struct SlotRailRow: View {
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
-            Button("Rename tab…") { beginRename() }
+            Button("Rename Tab") { beginRename() }
             Button(SheetTab.holdMenuTitle(
                 paused: sheet.paused, toppedUp: sheet.holdToppedUp)
             ) { model.pause(sheet.id) }
@@ -1073,14 +1052,14 @@ private struct SlotRailRow: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
-            Button("Close tab", role: .destructive) { model.close(sheet.id) }
+            Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
 
     private var reorderHandle: some View {
         Image(systemName: "line.3.horizontal")
             .font(.system(size: 8, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .frame(width: 12, height: 18)
             .contentShape(Rectangle())
             .help("Drag to reorder tab")
@@ -1096,30 +1075,26 @@ private struct SlotRailRow: View {
     }
 
     private func beginRename() {
-        renameDraft = sheet.title
-        renaming = true
+        rename.open(on: sheet.title)
     }
 
     private var renameField: some View {
-        TextField("", text: $renameDraft)
+        TextField("", text: $rename.draft)
             .textFieldStyle(.plain)
             .font(.system(.caption, design: .monospaced))
             .focused($renameFocused)
             .onSubmit { endRename(committed: true) }
             .onExitCommand { endRename(committed: false) }
             .onChange(of: renameFocused) { focused in
-                if !focused { endRename(committed: false) }
+                if focused { TabRename.selectWholeDraft() } else { endRename(committed: false) }
             }
             .onAppear { DispatchQueue.main.async { renameFocused = true } }
             .accessibilityLabel(Text("Tab name"))
     }
 
     private func endRename(committed: Bool) {
-        guard renaming else { return }
-        renaming = false
-        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
-        case .rename(let name): model.renameTab(sheet.id, to: name)
-        case .keep: break
+        if case .rename(let name)? = rename.end(committed: committed) {
+            model.renameTab(sheet.id, to: name)
         }
     }
 
@@ -1136,19 +1111,21 @@ private struct SlotRailRow: View {
     }
 }
 
-/// VoiceOver announces the current ordering as the value and the next ordering
-/// as the action, rather than presenting the next state as the current state.
+/// The menu's order choices and current value share their localized labels.
 struct PadSortCopy {
     let direction: PadSortDirection
     let subject: String
+    static let orders: [PadSortDirection] = [.natural, .chronological, .reverseChronological]
 
     var label: String { CompanionL10n.format("pad.sort.label", subject) }
     var currentOrder: String {
-        CompanionL10n.string(direction == .chronological ? "pad.sort.oldest" : "pad.sort.newest")
+        switch direction {
+        case .natural: return CompanionL10n.string("pad.sort.natural")
+        case .chronological: return CompanionL10n.string("pad.sort.oldest")
+        case .reverseChronological: return CompanionL10n.string("pad.sort.newest")
+        }
     }
-    var action: String {
-        CompanionL10n.format(direction == .chronological ? "pad.sort.toNewest" : "pad.sort.toOldest", subject)
-    }
+    var help: String { CompanionL10n.format("pad.sort.help", label, currentOrder) }
 }
 
 private struct SlotRailFramesKey: PreferenceKey {
@@ -1181,7 +1158,7 @@ struct FileShelfRow: View {
             HStack(spacing: 3) {
                 Image(systemName: "doc")
                     .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true)
                 Text(file.name)
                     .font(.system(.caption, design: .monospaced))

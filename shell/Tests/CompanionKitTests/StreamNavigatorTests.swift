@@ -270,15 +270,15 @@ final class StreamNavigatorTests: XCTestCase {
     /// page, the time alone on the pages under it, the day alone for
     /// the empty place, and the retained words past the window.
     func testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage() {
-        XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "today", stamp: "11:39"), "today · 11:39")
-        XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "today", stamp: "11:55", firstOfDay: false),
-            "11:55")
-        XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: nil), "today")
-        XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: ""), "today")
-        XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "today", stamp: nil, firstOfDay: false), "today")
+        func reading(_ stamp: String?, firstOfDay: Bool = true) -> String {
+            DayHeaderView.words(spokenLabel: "today", stamp: stamp, firstOfDay: firstOfDay)
+                .reading(name: nil)
+        }
+        XCTAssertEqual(reading("11:39"), "today · 11:39")
+        XCTAssertEqual(reading("11:55", firstOfDay: false), "11:55")
+        XCTAssertEqual(reading(nil), "today")
+        XCTAssertEqual(reading(""), "today")
+        XCTAssertEqual(reading(nil, firstOfDay: false), "today")
         XCTAssertEqual(DayHeaderView.retainedText(pageDayOffset: -3), "")
         XCTAssertEqual(DayHeaderView.retainedText(pageDayOffset: nil), "")
         XCTAssertEqual(

@@ -9,6 +9,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The app reads as a Mac app: menus, the editor window and the pads**
+  (app 0.35.0; ADR-0055, ADR-0039 Amendment 1). Menu items and buttons
+  are title case, and the items that rename in place lose their
+  ellipsis: *Rename*, *Rename Tab*, *Rename Page*. The sealed object has
+  one noun, *Remove Sealed Content*, and the conceal sheet says
+  *create a one-time link*. The sheet gains Cancel, which Escape
+  presses, a label for each field, plain help under the expiry, and a
+  *Connection Settings…* link where it sends as a guest. The editor
+  window has one toolbar band: the pad switcher stands where the title
+  would, and the expand control moves into the toolbar with a glyph
+  that is not the full screen arrows. The pad switcher is a menu, the
+  active pad checked and ⌘0 to ⌘9 beside the pads; folders, apps,
+  renames and removals move to a new Pads tab of Settings, with the
+  experiment's switch. Section headings are title case in the system
+  font. Captions, help, headings, gutter times, hints and the ledger's
+  stamps wear a secondary ink that clears 4.5:1 in both appearances
+  (the system's secondary label reads 3.95:1 on white, and the tertiary
+  one about 2:1), and a selected sealed block's quieter words go to ink
+  over the selection.
+
+- **A page's copy of ink alone is plain text** (app 0.34.0; ADR-0047
+  point 2, issue #170). ⌘C and ⌘X on a page write the text the core
+  composes, so ink pasted into Mail or TextEdit arrives without the
+  page's fonts. A note and a file copy as before.
+
+- **Removing a sealed object keeps it, and ⌘Z puts it back** (app
+  0.33.0; `companion-core` 0.29.0; Law 0001, ADR-0047, issue #170). A
+  backspace, *Remove protected content*, a cut or a restate takes the
+  object off the page but keeps it, on the page's clock, until the page
+  ends; ⌘Z, redo, or the editor putting its attachment back stands the
+  same object again, so moving one by the editor's own delete and insert
+  no longer destroys it. A seal stays one way: the first standing of a
+  fresh seal still clears the page's undo. *Burn local copy* after a
+  conceal still destroys at once. The ledger no longer records a
+  removal; when a page ends it records each object it held, removed or
+  not, as expired or discarded under the object's own identity, beside
+  the page's record. Removed objects are written to the state file after
+  the page's floor, so the format's version does not change; an older
+  build drops them at its next save.
+
+- **A sealed object's note is written on the page's own surface** (app
+  0.32.0; Law 0001, ADR-0045, issue #246). The note reads and types as
+  the page does: headings, lists that continue on Return and nest on
+  Tab, links that a ⌘-click opens and a plain click edits, code fences
+  with their colours, and Detect Code Language, Choose Language and
+  Paste Without Detection acting on the note. Its undo stays its own.
+  No seal lands in a note, by chord, menu or drop; no sealed object
+  stands in one; it shows no block stamps; and ⌥Z leaves the page's
+  wrap setting alone there, since a note always wraps. A language
+  chosen for a bare fence's colours in a note is the note's alone, and
+  goes at the note's next edit or when it closes, as a page's goes at
+  its next edit.
+
+- **A pad is renamed in its own cell** (app 0.28.0; Law 0007, issue
+  #249). *Rename pad…* turns the pad's name into a field where it
+  stands, on the name, selected whole, and the list stays open. Return
+  renames; Return over an unchanged name, Escape, the keyboard leaving
+  and the list closing all keep the name. An empty name, or one over 80
+  characters, is said in the line under the page and the field stays
+  open; the line stays while the field does, and goes when the draft
+  becomes a name the pad can take. The *Rename pad* sheet, with its
+  Rename and Cancel buttons, is gone. Creating a pad still uses its
+  sheet.
+
 - **Development bundles no longer take the TestFlight copy's name.**
   `scripts/dev.sh` builds `dist/OnetimePad Debug.app` and
   `scripts/install.sh` installs `/Applications/OnetimePad Local.app`;
@@ -285,8 +349,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ember keyline. The lines after the actions read "copied decrypted
   contents — small. the clipboard clears in 60 seconds.", "the link is on the
   clipboard — paste it where it needs to go." and "protected content
-  removed." (its Undo is gated until issue 170 lands the detached
-  state). The interval is the core constant read through the seam; the
+  removed." with an Undo button that stands the same object again
+  (issue #170). The interval is the core constant read through the seam; the
   clear is attempted only if the general pasteboard still holds that write.
 
 - **A day's gutter says the day and the minute, and draws a gauge.**
@@ -345,6 +409,197 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the interval through `companion_clipboard_clear_seconds`.
 
 ### Added
+
+- **The editor copies, cuts, pastes and drags a sealed object by
+  reference** (app 0.34.0; Law 0001, ADR-0047, ADR-0048, ADR-0050,
+  ADR-0051, issues #170 and #247).
+  - ⌘C on a selection holding a sealed object writes one pasteboard
+    item: the core's envelope under
+    `com.onetimesecret.onetimepad.sealed-fragment` (`.debug` in a debug
+    build) and the public text, the ink with
+    `[sealed content · <size class>]` for each object. Another app
+    receives the public text alone.
+  - ⌘X cuts through the core as one undo step. The objects leave the
+    page and are kept, and a line under the page names them by their
+    faces beside a `place here` button that places the cut at the
+    caret.
+  - ⌘V, Paste and Match Style and Paste Without Detection place a
+    fragment through the core as one undo step. The first paste of a
+    cut brings the same objects back with their names and notes; a
+    paste after a copy, or a later paste of a cut, clones each one with
+    its name and note; an object that has ended places
+    `[sealed content · expired]`, `[sealed content · burned]` or
+    `[sealed content · unavailable]` where it stood. A note takes the
+    public text. A paste that swept a page past its deadline settles
+    that page at once.
+  - The first ⌫ beside an object, or ⌦ before it, selects it, and the
+    second removes it. The line "protected content removed." offers
+    Undo, which stands the same object again until the page moves on.
+  - A drag of the selection inside a page moves it, or with ⌥ clones
+    its objects, as one undo step. A drag to another page pastes it
+    there and removes it from the first, where ⌘Z brings it back. A
+    drag to another app carries the public text alone.
+  - `drag decrypted`, a handle on a hovered or selected block, drags
+    the object's plaintext to another app. The core writes it only when
+    the destination asks and records one `sent` to `drag`; the object
+    stays and the general pasteboard is untouched. The drag offers no
+    operation inside OnetimePad, and its pages and notes refuse it.
+  - A service asking for a selection holding an object is handed the
+    public text, and no service that would write back over the
+    selection is offered.
+  - Each of these stands aside while a sealed name or a note holds the
+    keys (ADR-0046).
+
+- **The core cuts, copies and pastes a sealed fragment, in one
+  transaction** (`companion-core` 0.29.0, `companion-ffi` 0.38.0,
+  `companion-pasteboard` 0.4.0; Law 0001, ADR-0047, issue #170). The
+  editor's copy, cut, paste, clipboard slot and drags use these routes
+  (the entry above).
+  - `companion_sheet_copy_fragment` answers a selection as a versioned
+    envelope of ordered ink and object references, never payload, and
+    its public text, the ink with `[sealed content · <size class>]` for
+    each object. A selection of ink alone has no envelope.
+  - `companion_sheet_cut_fragment` deletes the selection as one undo
+    step and keeps its objects as the one active cut, whose faces
+    `companion_active_cut_json` gives the clipboard slot.
+  - `companion_sheet_paste_fragment` places an envelope as one undo
+    step: the active cut's objects reattach from its own envelope, any
+    other live object is cloned under a new identity, and a reference
+    whose object has ended places `[sealed content · expired]` or
+    `[sealed content · burned]` while the ledger holds its end, else
+    `[sealed content · unavailable]`. An envelope the core cannot read
+    places the item's public text and says so. A body that refuses
+    the edit partway is reverted, and nothing else moves.
+  - `companion_sheet_paste_active_cut` places the cut from the slot;
+    `companion_sheet_move_range` and `companion_sheet_clone_range` are
+    the drag and the ⌥ drag inside a page.
+  - `companion_chip_provide_drag` writes a decrypted drag's payload
+    into the drag's pasteboard item, core side, when a destination
+    asks, and records one `sent` to the new `drag` destination. It
+    refuses the general pasteboard and any type but the object's own.
+  - The active cut is written with the page it came from, so a relaunch
+    between a cut and its paste still reattaches. A ledger holding a
+    `drag` record cannot be read by an older build.
+
+- **A sealed object's name and note travel in its fragment**
+  (`companion-core` 0.30.0; Law 0001, ADR-0047, issue #247). A
+  reference carries the object's name and note. A clone takes them, the
+  name judged by the rule a typed one is, so one the rule refuses is
+  dropped and the object kept; a reattached object keeps its own; a
+  placeholder and the public text carry neither. The private type sits
+  on the general pasteboard, so the note's text goes wherever a
+  clipboard manager takes it.
+
+- **A shell test can keep the core's copies off the general pasteboard**
+  (`companion_test_memory_pasteboard`; `companion-ffi` 0.37.0). An
+  ephemeral handle writes the system pasteboard, so a Swift test of copy
+  decrypted or `name=value` put a test value on the clipboard of whoever
+  ran the suite and then cleared it, taking what they had copied with
+  it. Under `test-util` this seam gives the handle a board in process
+  memory, after taking back any write of its own on the old one. Like
+  the other seams it is absent from release builds, and
+  `scripts/package-app.sh` and `scripts/verify-release-core.sh` refuse a
+  binary that exports it.
+
+- **A sealed object's note opens in a popover over the page** (app
+  0.31.0; Law 0001, ADR-0042, ADR-0043, issue #246). *Note…* on an
+  object with no note, *Edit note…* on one with a note, or a click on
+  `note` in the block's seat opens it. The seat reads `small · note`,
+  the size class first, once the note holds anything but whitespace.
+  The popover hangs under the block at the block's measure, its arrow
+  under the doorway, or across the card's content width when the block
+  is narrower than 320 points, headed `NOTE · <name>` or `NOTE`. It
+  holds a writing surface in the page's face whose ⌘Z and ⇧⌘Z step the
+  note's own undo and never the page's, and the page's caret, ink and
+  undo are as they were when it closes. The diagonal arrows or ⇧Esc
+  grow it to the card's content area and back, and Esc contracts an
+  expanded note before it closes one. A click elsewhere, the page
+  changing or going read only, the object leaving the page and opening
+  the name field all close it. It stands in the page's own window
+  rather than in a window of its own. The keymap binds `shift-escape`
+  to the new `note::ToggleExpanded`.
+
+- **A sealed object is named in its own seat** (app 0.30.0; Law 0007,
+  ADR-0042, issue #245). *Name…* on an unnamed object, *Rename…* on a
+  named one, a double click on an unnamed object's bottom row or on a
+  named one's name opens a field where the name stands, on the name,
+  selected whole, with `NAME` as its placeholder and the excerpt to its
+  right. Return names the object and the block redraws in place; an
+  empty Return clears the name; Return over the name it opened on,
+  Escape, the keyboard leaving, the object leaving the page and the
+  page going read only all keep it. A name outside 1 to 64 characters
+  of `A` to `Z`, `a` to `z`, digits and `_`, not starting with a digit,
+  is said in the line under the page and the field stays open; the line
+  stays while the field does and goes once the draft is a name the core
+  takes. While the field holds the keys the page's chords stand aside,
+  so ⌘Z cannot step the page back under a draft. No dialog is involved.
+
+- **A named sealed object's bottom row copies by zone** (app 0.29.0;
+  Law 0001, ADR-0042, issue #244). The row reads `NAME=excerpt`: the
+  name semibold, `=` in the secondary colour, then the excerpt. The
+  pointer finds three zones. The name copies the name to the clipboard
+  as ordinary text, says `copied the name.` and arms no clear. The value
+  copies the decrypted contents, and `=` copies `NAME=value`, both by
+  copy decrypted's route, with its line and its clear after the core's
+  interval. Before the click the size class's seat names what the zone
+  will do, over a pill under the zone; after it the zone wears ember
+  for a second and the seat reads `copied`, without the fade under
+  Reduce Motion. A zone acts on its first click only, a click
+  elsewhere on the block still selects it, and an unnamed block has no
+  zones. A long name gives way before the value. The object's menu
+  gains *Copy name* and *Copy name=value, decrypted* on a named
+  object, and VoiceOver hears the name with the block.
+
+- **A sealed object can carry a note, in the core** (Law 0001, ADR-0043,
+  issue #243; `companion-core` 0.28.0, `companion-ffi` 0.36.0). The
+  note is ink of its own beside the object, with its own undo: undoing
+  in the note never touches the page, and undoing the page never
+  touches the note. It holds no sealed object. Nine routes keyed by the
+  chip, `companion_chip_note_runs_json` through `companion_chip_note_redo`,
+  read and edit it the way the file routes read and edit a file. The
+  chip's face carries `has_note`, true while the note holds anything but
+  whitespace. The note has no clock of its own and no ledger record: it
+  goes with its object, kept while the object is removed and destroyed
+  when the page ends or the object is burned.
+  It is written as text after the name in the chip's record, so the
+  format's version does not change, and its undo starts empty after a
+  relaunch. An older build drops it at its next save, as it drops the
+  name.
+
+- **The core copies `NAME=value` for a named sealed object** (Law 0001,
+  ADR-0043, issue #242; `companion-core` 0.27.0, `companion-ffi`
+  0.35.0). `companion_chip_copy_name_value` puts the name, `=` and the
+  object's contents, raw and unquoted (ADR-0042), on the clipboard by
+  the same route as copy decrypted: written by the core, marked
+  transient and concealed, cleared after the core's interval only if
+  the clipboard still holds that write, and one `sent` record that does
+  not carry the name. It refuses an unnamed object and an image. The
+  buffer is allocated at its final size.
+
+- **A sealed object can carry a typed name, in the core** (Law 0001,
+  ADR-0043, issue #241; `companion-core` 0.26.0, `companion-ffi`
+  0.34.0). `companion_chip_set_name` names a chip, or clears its name
+  given a blank draft. `companion_chip_name_refusal` judges a draft by
+  the same rule without a handle: at most 64 characters of
+  `[A-Za-z_][A-Za-z0-9_]*`, the charset judged first (ADR-0042). The
+  chip's face carries `name`, null when unnamed, on the seal routes and
+  in `companion_sheet_document_json`; no ledger record carries it. The
+  name is a trailing field of the chip's record in the sealed state
+  file, so the format's version does not change, and an older build
+  that opens the file restores the chip without its name and drops the
+  name at its next save.
+
+- **A click on a page's time in the gutter labels it** (app 0.27.0;
+  Law 0007, issue #248). The field opens where the time stood, on the
+  time, selected whole, and the time moves to the field's right. A
+  labelled gutter reads the day, the label and then the time, as
+  `today · Deploy notes · 13:00`; a later page on the same day reads
+  `Rotate keys · 13:41`. A click on the label opens the field on the
+  label, as does a click on the time beside it. Return over an untouched
+  draft changes nothing, an empty Return drops the label, and a click on
+  the day still focuses the page. *Rename page…* opens the same field on
+  the same draft. The label belongs to the tab, so a page opened later
+  in the same tab carries it.
 
 - **The Help menu exports diagnostics and sends reviewed feedback**
   (app 0.26.0). **Copy Diagnostic Summary** copies a summary: version,
@@ -582,7 +837,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anything does, must not be a thin bar running the width of the
   bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
+### Fixed
+
+- **A paste takes nothing from a page past its deadline**
+  (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
+  issue #170). Between a page's deadline and the timer's sweep, a paste,
+  the slot's place, a move or a clone could still resolve the page's
+  objects. A paste naming an object now sweeps every due page first, so
+  a cut whose page ran out places `[sealed content · expired]`, and the
+  slot, a move and a clone refuse a due page. The placed fragment's
+  `pages_expired` says how many pages the sweep took. Copy, cut, copy
+  decrypted and the decrypted drag still read a due page until its
+  timer fires.
+
+- **The pad list stays above the line under the page** (app 0.32.2;
+  Law 0007, issue #249). On a short card or editor window the list,
+  up to 620 points tall under the pad picker, could stand over the line
+  that says why a pad name was refused, so the refusal could not be
+  read while the field it describes was open. The list now ends above
+  the lines under the page and scrolls within what room is left.
+
+- **A field holding the keys keeps the page's chords and Edit menu off
+  the page** (app 0.32.1 and 0.32.3; Law 0007, ADR-0046). The page
+  answered its chords whoever held the keys, so ⌘Z under a gutter
+  label's draft stepped the page back, and Edit, Choose Language acted
+  on the page even while a sealed name or a note held them. Now the page
+  answers its chords and the Edit menu only when no other field or text
+  view holds the keys: ⌘Z undoes the field's own typing, the seal chords
+  do nothing there, and Choose Language goes to whoever holds the keys,
+  the note included. While a field holds them the menu greys Seal
+  Selected Content, Detect Code Language, Choose Language and Paste
+  Without Detection, the pad list's field in its own window included.
+
+- **Typing over a refused name leaves another notice standing** (app
+  0.31.5; Law 0007, issues #245 and #249). While a pad name or a sealed
+  name was refused and another notice stood in front of the refusal,
+  such as an autosave refusal with Retry, each keystroke that left the
+  draft refused took that notice and its button down at once. The
+  refusal now changes its words in place: a notice in front keeps its
+  few seconds and its button, and the line comes back on the refusal
+  the draft earns.
+
+- **A named image offers no `name=value` copy** (app 0.31.4; ADR-0044,
+  issue #244). A sealed image could be named, and its row then offered
+  an `=` zone whose seat read `copies name=value, decrypted`, and its
+  menu *Copy name=value, decrypted*, though the core composes
+  `NAME=value` for text alone. Both did nothing when clicked. An image's
+  row still reads `NAME=excerpt`, but its `=` is not a zone and the
+  item is gone; its name and contents copy as before.
+
+- **A closed note, or a shut name field, holds none of its text**
+  (Law 0001, ADR-0043, issues #245 and #246). The note's view kept the
+  last note's text after it closed, past its object's removal and its
+  page's expiry, until another note opened; the name field kept its
+  last draft the same way. Closing now empties both, as a page's
+  storage is emptied when the page leaves. The text is dropped, not
+  wiped, as a page's ink is.
+
+- **A drop on a sealed object's note or name field lands nowhere**
+  (app 0.31.3; ADR-0044, issues #245 and #246). Text dragged from
+  another app onto an open note, or onto the name field, went into it
+  as plain text, and the note's went to the core as the note's ink,
+  where the same drop on the page would have been sealed. Both now take
+  only a drag of their own text, as the page takes nothing over a file.
+
+- **The Edit menu leaves the page alone while a sealed name is typed**
+  (app 0.31.2; Law 0007, issue #245). The name's field stood inside
+  the page's text view, so the menu's Undo and Redo, which ⌘Z and ⇧⌘Z
+  reach once the page's own chords stand aside, stepped the page back
+  under the draft, and Seal Selected Content, Detect Code Language and
+  Paste Without Detection acted on the page too. The menu now passes
+  the page by: Undo and Redo reach the window, as they do from any
+  other text field, and the other three do nothing until the field
+  closes.
+
+- **A zone copies only after its seat has said what it copies** (app
+  0.31.1; Law 0001, ADR-0042, issue #244). The pill and the seat's
+  words follow the pointer only in the window that holds the keys, so
+  the click that brought another window forward copied a named
+  object's value with nothing said first. That click now selects the
+  block, and the next one, with the seat's words showing, copies.
+
+- **A pad name's refusal stays while its field is open** (app 0.28.2;
+  Law 0007, issue #249). Any other notice replaced the refusal and
+  cleared the line 4 s later, and a new page, a closed tab, a seal or
+  a conceal took it down at once, while the field still held the
+  refused draft. Another notice now stands in front of the refusal for
+  its own few seconds and then gives the line back, and those clears
+  return to the refusal instead of an empty line.
+
+- **A gutter label's field gives the keys back to the page** (app
+  0.28.1; Law 0007, issue #248). A click on one page's time while
+  another field held the keys, such as a second page's time or the slot
+  rail's rename, remembered the window's shared field editor as the
+  place to return to. After Escape or Return the keys then stayed in
+  the gutter or went nowhere. The field now returns them to the page.
+
+- **An untouched tab rename no longer freezes an old title** (app
+  0.27.1; Law 0007, issue #250). The strip's and the slot rail's field
+  judged its draft against the tab's title as it read when the field
+  closed, so a title that derived anew while the field was open turned
+  an untouched Return into a rename to the old text. The field now
+  judges against the title it opened on, and selects its draft whole
+  when it takes the keyboard.
+
 ### Security
+
+- **A pasted envelope is bounded** (`companion-core` 0.31.1; Law 0001,
+  ADR-0049, issue #170). An envelope longer than 8 MiB, naming more
+  than 1024 objects, or naming one object twice is refused whole and
+  pastes its public text, so a crafted fragment cannot clone one object
+  many times over. A copy or cut past those caps writes an envelope
+  this build then refuses to read.
 
 - **A response body no longer grows in place** (Law 0004, draft;
   `companion-transport` 0.2.1, `companion-ffi` 0.33.1). The transport

@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use loro::cursor::{Cursor, PosType, Side};
 use loro::event::{Diff, DiffEvent};
 use loro::{
-    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, LoroDoc, LoroText, LoroValue,
-    StyleConfig, StyleConfigMap, TextDelta, UndoItemMeta, UndoManager, VersionVector,
+    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, Frontiers, LoroDoc, LoroText,
+    LoroValue, StyleConfig, StyleConfigMap, TextDelta, UndoItemMeta, UndoManager, VersionVector,
 };
 use zeroize::Zeroizing;
 
@@ -177,6 +177,9 @@ pub(crate) struct SheetDocument {
     take_theirs_commit: Arc<Mutex<Option<i64>>>,
     /// Take theirs generation of the last popped item.
     popped_take_theirs: Arc<Mutex<Option<i64>>>,
+    /// Writes left before one is refused, so a test can force a rollback.
+    #[cfg(test)]
+    fail_after: Cell<Option<usize>>,
 }
 
 impl SheetDocument {
@@ -215,7 +218,42 @@ impl SheetDocument {
             popped_edit_intent: binding.popped_edit_intent,
             take_theirs_commit: binding.take_theirs_commit,
             popped_take_theirs: binding.popped_take_theirs,
+            #[cfg(test)]
+            fail_after: Cell::new(None),
         }
+    }
+
+    /// Refuse one write after `writes` more, as an unexpected failure would.
+    #[cfg(test)]
+    pub(crate) fn fail_writes_after(&self, writes: usize) {
+        self.fail_after.set(Some(writes));
+    }
+
+    /// A test's forced refusal; nothing in a build trips it.
+    fn trip(&self) -> Result<(), InvalidRange> {
+        #[cfg(test)]
+        if let Some(left) = self.fail_after.get() {
+            if left == 0 {
+                self.fail_after.set(None);
+                return Err(InvalidRange);
+            }
+            self.fail_after.set(Some(left - 1));
+        }
+        Ok(())
+    }
+
+    /// The body's state now, for [`SheetDocument::rollback`].
+    pub(crate) fn checkpoint(&self) -> Frontiers {
+        self.doc.state_frontiers()
+    }
+
+    /// Revert the body to `checkpoint` after an edit refused partway, and
+    /// clear the undo stack, which could replay the half edit (ADR-0047).
+    pub(crate) fn rollback(&self, checkpoint: &Frontiers) {
+        // Refused only for a target before a shallow start; a checkpoint is the present.
+        let _ = self.doc.revert_to(checkpoint);
+        self.commit_now(None);
+        self.forget_undo();
     }
 
     /// Undo one step of this peer's own edits; returns whether anything moved.
@@ -506,6 +544,7 @@ impl SheetDocument {
                 Err(InvalidRange)
             };
         }
+        self.trip()?;
         self.body.insert_utf16(pos, text).map_err(|_| InvalidRange)
     }
 
@@ -518,12 +557,14 @@ impl SheetDocument {
                 Err(InvalidRange)
             };
         }
+        self.trip()?;
         self.body.delete_utf16(pos, len).map_err(|_| InvalidRange)
     }
 
     /// Insert a chip sentinel marked with its identity; if marking fails the
     /// sentinel is removed again.
     pub(crate) fn insert_chip(&self, pos: usize, id: ItemId) -> Result<(), InvalidRange> {
+        self.trip()?;
         self.body
             .insert_utf16(pos, CHIP_SENTINEL)
             .map_err(|_| InvalidRange)?;
@@ -1064,27 +1105,7 @@ fn parse_mark_value(value: &LoroValue) -> Option<ItemId> {
     let LoroValue::String(text) = value else {
         return None;
     };
-    parse_item_id(text)
-}
-
-/// Parse the 8-4-4-4-12 hex form, the inverse of [`ItemId`]'s `Display`.
-fn parse_item_id(text: &str) -> Option<ItemId> {
-    if text.len() != 36 {
-        return None;
-    }
-    let hex: Vec<u32> = text
-        .bytes()
-        .filter(|byte| *byte != b'-')
-        .map(|byte| (byte as char).to_digit(16))
-        .collect::<Option<_>>()?;
-    if hex.len() != 32 {
-        return None;
-    }
-    let mut bytes = [0u8; 16];
-    for (index, pair) in hex.chunks(2).enumerate() {
-        bytes[index] = ((pair[0] << 4) | pair[1]) as u8;
-    }
-    Some(ItemId::from_bytes(bytes))
+    ItemId::parse(text)
 }
 
 #[cfg(test)]

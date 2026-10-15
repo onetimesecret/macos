@@ -1,37 +1,43 @@
 import AppKit
 import SwiftUI
 
-/// Experimental pad chrome shared by the panel and primary editor.
+/// The pad switcher shared by the card and the editor window's toolbar:
+/// the active pad's name opens a menu of pads, New Pad… and Manage Pads…
+/// (ADR-0039 Amendment 1). Folders, apps, renames and removals are the
+/// Pads tab of Settings (`PadSettingsView`).
 public struct PadPickerView: View {
+    /// Where the picker stands: a row of its own over the card's page,
+    /// or an item in the editor window's toolbar, which has its own inset.
+    public enum Placement: Sendable { case row, toolbar }
+
     @ObservedObject private var model: PageModel
+    private let placement: Placement
     @Environment(\.presentationSurface) private var surface
     @StateObject private var keyboard = PadShortcutMonitor()
-    @State private var menuOpen = false
-    @State private var namingPad = false
-    @State private var editingPad: PadEntry?
-    @State private var removingPad: PadEntry?
-    @State private var confirmingRemoval = false
-    @State private var nameDraft = ""
-    @State private var nameSubmitted = false
-    @State private var nameFailure: String?
+    @State private var creating = false
+    @State private var anchor = PadMenuAnchor()
 
-    public init(model: PageModel) { self.model = model }
+    public init(model: PageModel, placement: Placement = .row) {
+        self.model = model
+        self.placement = placement
+    }
 
     public var body: some View {
         HStack(spacing: 12) {
-            Button { menuOpen.toggle() } label: {
+            Button(action: showMenu) {
                 HStack(spacing: 8) {
                     Text(model.pads.activePad.name).lineLimit(1)
                     Image(systemName: "chevron.down").font(.caption)
                     if !model.pads.activePad.isScratch {
                         Label(folderTally, systemImage: "folder")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(Color.secondaryInk)
                     }
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .background(PadMenuAnchorView(anchor: anchor))
             .accessibilityLabel(CompanionL10n.format("pad.picker.current", model.pads.activePad.name))
-            .popover(isPresented: $menuOpen, arrowEdge: .bottom) { pickerMenu }
             Spacer(minLength: 0)
             if model.pads.appAssociationsEnabled {
                 ForEach(model.pads.activePad.applicationBundleIDs, id: \.self) { bundleID in
@@ -39,115 +45,32 @@ public struct PadPickerView: View {
                 }
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .font(.system(.body, design: .monospaced))
+        .padding(.horizontal, placement == .row ? 12 : 4)
+        .padding(.vertical, placement == .row ? 9 : 0)
         .onAppear { keyboard.install(model: model, surface: surface) }
         .onDisappear { keyboard.stop() }
-        .onChange(of: model.owner) { _ in
-            keyboard.commandHeld = false
-            menuOpen = false
-        }
-        .onReceive(keyboard.$selectedPad) { id in
-            if id != nil { menuOpen = false }
-        }
-        .sheet(isPresented: $namingPad) { nameEditor }
-        .alert(CompanionL10n.format("pad.remove.title", removingPad?.name ?? ""),
-               isPresented: $confirmingRemoval) {
-            Button(CompanionL10n.string("pad.remove"), role: .destructive) {
-                if let pad = removingPad, !model.removePad(pad.id) {
-                    model.flash(CompanionL10n.string("pad.remove.failed"))
-                }
-                removingPad = nil
-            }
-            Button(CompanionL10n.string("pad.cancel"), role: .cancel) { removingPad = nil }
-        } message: {
-            Text(CompanionL10n.string("pad.remove.explanation"))
-        }
+        .sheet(isPresented: $creating) { PadCreateSheet(model: model, isPresented: $creating) }
     }
 
-    private var nameEditor: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(CompanionL10n.string(editingPad == nil ? "pad.new.title" : "pad.rename.title"))
-                .font(.headline)
-            TextField(CompanionL10n.string("pad.name"), text: $nameDraft)
-                .onSubmit { submitName() }
-            if let message = nameFailure ?? PadNameDraft.validationMessage(nameDraft),
-               nameSubmitted || !nameDraft.isEmpty {
-                Text(message).font(.caption).foregroundStyle(Color.emberText)
-            }
-            HStack {
-                Spacer()
-                Button(CompanionL10n.string("pad.cancel")) { namingPad = false }
-                    .keyboardShortcut(.cancelAction)
-                Button(CompanionL10n.string(editingPad == nil ? "pad.create" : "pad.rename")) { submitName() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20).frame(width: 340)
-        .onChange(of: nameDraft) { _ in nameFailure = nil }
-    }
-
-    private func beginNaming(_ pad: PadEntry? = nil) {
-        editingPad = pad
-        nameDraft = pad?.name ?? ""
-        nameSubmitted = false
-        nameFailure = nil
-        menuOpen = false
-        namingPad = true
-    }
-
-    private func submitName() {
-        nameSubmitted = true
-        guard PadNameDraft.validationMessage(nameDraft) == nil else { return }
-        let succeeded: Bool
-        if let pad = editingPad {
-            succeeded = model.renamePad(pad.id, to: nameDraft)
-        } else {
-            // Creating already activates the new pad; do not persist a second activation.
-            succeeded = model.createPad(named: nameDraft) != nil
-        }
-        if succeeded { namingPad = false }
-        else { nameFailure = CompanionL10n.string("pad.name.failed") }
+    /// The menu, built at each click so its checkmark and shortcuts are
+    /// the catalog's and the keymap's as they stand, and dropped below
+    /// the button as a pull-down.
+    private func showMenu() {
+        guard let view = anchor.view else { return }
+        let menu = PadSwitcherMenu.menu(
+            entries: PadSwitcherMenu.entries(
+                pads: model.pads.entries, activeID: model.pads.activeID, keymap: model.keymap),
+            select: { [model] id in model.activatePad(id) },
+            newPad: { [$creating] in $creating.wrappedValue = true },
+            manage: { [model] in model.openSettings(.pads) }
+        )
+        let below = NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4)
+        menu.popUp(positioning: nil, at: below, in: view)
     }
 
     private var folderTally: String {
         let count = model.pads.activePad.folderPaths.count
         return CompanionL10n.format(count == 1 ? "pad.folder.one" : "pad.folder.many", count)
-    }
-
-    private var pickerMenu: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(CompanionL10n.string("pad.picker.heading")).font(.caption).foregroundStyle(.secondary).padding(8)
-                ForEach(Array(model.pads.entries.enumerated()), id: \.element.id) { index, pad in
-                    PadPickerCell(
-                        model: model, pad: pad,
-                        shortcut: keyboard.commandHeld && PadShortcutMonitor.allows(
-                            number: index, keymap: model.keymap
-                        ) && index <= 9 ? "⌘\(index)" : nil,
-                        select: { model.activatePad(pad.id); menuOpen = false },
-                        rename: { beginNaming(pad) },
-                        remove: { removingPad = pad; menuOpen = false; confirmingRemoval = true }
-                    )
-                }
-                Divider().padding(.vertical, 6)
-                Button(CompanionL10n.string("pad.new.menu")) { beginNaming() }
-                    .buttonStyle(.plain).padding(8)
-                Toggle(CompanionL10n.string("pad.app.enabled"), isOn: Binding(
-                    get: { model.pads.appAssociationsEnabled },
-                    set: { model.pads.appAssociationsEnabled = $0 }
-                ))
-                .toggleStyle(.switch)
-                Text(CompanionL10n.string("pad.app.caption"))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(CompanionL10n.string("pad.paths.full"), isOn: Binding(
-                    get: { model.pads.showFullPaths }, set: { model.pads.showFullPaths = $0 }
-                ))
-                .toggleStyle(.switch).padding(.top, 8)
-            }
-            .padding(10)
-        }
-        .frame(width: 350).frame(maxHeight: 620)
     }
 
     @ViewBuilder
@@ -168,94 +91,135 @@ public struct PadPickerView: View {
     }
 }
 
-private struct PadPickerCell: View {
-    @ObservedObject var model: PageModel
-    let pad: PadEntry
-    let shortcut: String?
-    let select: () -> Void
-    let rename: () -> Void
-    let remove: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Button(action: select) {
-                    HStack {
-                        Text(pad.name).lineLimit(1)
-                        Spacer()
-                        if let shortcut { Text(shortcut).foregroundStyle(.secondary) }
-                        if pad.id == model.pads.activeID { Image(systemName: "checkmark") }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if !pad.isScratch {
-                    Menu {
-                        Button(CompanionL10n.string("pad.rename.menu"), action: rename)
-                        Button(CompanionL10n.string("pad.remove.menu"), role: .destructive, action: remove)
-                    } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .accessibilityLabel(CompanionL10n.format("pad.actions", pad.name))
-                }
-            }
-            if pad.isScratch {
-                Text(CompanionL10n.string("pad.scratch.expiry"))
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                if pad.folderPaths.isEmpty {
-                    Label(CompanionL10n.string("pad.folder.none"), systemImage: "folder")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(pad.folderPaths, id: \.self) { path in
-                    HStack {
-                        Label(model.pads.showFullPaths ? path : URL(fileURLWithPath: path).lastPathComponent,
-                              systemImage: "folder")
-                            .font(.caption).foregroundStyle(.secondary).help(path)
-                        Spacer(minLength: 8)
-                        Button { model.removeFolder(path, fromPad: pad.id) } label: {
-                            Image(systemName: "xmark").font(.caption)
-                        }
-                        .buttonStyle(.plain).accessibilityLabel(CompanionL10n.format("pad.folder.remove", path, pad.name))
-                    }
-                }
-                Button { model.addFolder(toPad: pad.id) } label: {
-                    Label(CompanionL10n.string("pad.folder.add"), systemImage: "plus").font(.caption)
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-            }
-            if model.pads.appAssociationsEnabled {
-                Menu {
-                    ForEach(model.runningAssociationApplications, id: \.processIdentifier) { app in
-                        if let bundleID = app.bundleIdentifier {
-                            Button(app.localizedName ?? bundleID) {
-                                model.addApplication(bundleID, toPad: pad.id)
-                            }
-                            .disabled(pad.applicationBundleIDs.contains(bundleID))
-                        }
-                    }
-                    if !pad.applicationBundleIDs.isEmpty {
-                        Divider()
-                        ForEach(pad.applicationBundleIDs, id: \.self) { bundleID in
-                            Button(CompanionL10n.format("pad.app.remove", applicationName(bundleID))) {
-                                model.removeApplication(bundleID, fromPad: pad.id)
-                            }
-                        }
-                    }
-                } label: {
-                    Label(CompanionL10n.string("pad.app.menu"), systemImage: "app").font(.caption)
-                }
-                .menuStyle(.borderlessButton).fixedSize()
-            }
-        }
-        .padding(10)
-        .background(hovered ? Color.primary.opacity(0.08) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onHover { hovered = $0 }
+/// The pads as a native menu: each pad once, the active one checked in
+/// the leading column, ⌘0 to ⌘9 shown where the keymap leaves the digit
+/// to pads, then New Pad… and Manage Pads…. The shortcuts are labels:
+/// `PadShortcutMonitor` is what switches on them.
+enum PadSwitcherMenu {
+    struct Entry: Equatable {
+        let id: UUID
+        let name: String
+        let checked: Bool
+        let digit: Int?
     }
 
-    private func applicationName(_ id: String) -> String {
-        model.runningAssociationApplications.first { $0.bundleIdentifier == id }?.localizedName ?? id
+    static func entries(pads: [PadEntry], activeID: UUID, keymap: ResolvedKeymap) -> [Entry] {
+        pads.enumerated().map { index, pad in
+            Entry(
+                id: pad.id, name: pad.name, checked: pad.id == activeID,
+                digit: PadShortcutMonitor.allows(number: index, keymap: keymap) ? index : nil)
+        }
+    }
+
+    @MainActor
+    static func menu(
+        entries: [Entry],
+        select: @escaping (UUID) -> Void,
+        newPad: @escaping () -> Void,
+        manage: @escaping () -> Void
+    ) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for entry in entries {
+            let item = self.item(entry.name, { select(entry.id) })
+            item.state = entry.checked ? .on : .off
+            if let digit = entry.digit {
+                item.keyEquivalent = String(digit)
+                item.keyEquivalentModifierMask = .command
+            }
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        menu.addItem(item(CompanionL10n.string("pad.new.menu"), newPad))
+        menu.addItem(item(CompanionL10n.string("pad.manage.menu"), manage))
+        return menu
+    }
+
+    @MainActor
+    private static func item(_ title: String, _ perform: @escaping () -> Void) -> NSMenuItem {
+        let action = PadMenuAction(perform)
+        let item = NSMenuItem(title: title, action: #selector(PadMenuAction.fire(_:)), keyEquivalent: "")
+        item.target = action
+        // The menu holds its items and an item its represented object,
+        // which keeps the weakly held target alive as long as the menu.
+        item.representedObject = action
+        return item
+    }
+}
+
+/// One menu item's action, as a target AppKit can send to.
+@MainActor
+final class PadMenuAction: NSObject {
+    private let perform: () -> Void
+
+    init(_ perform: @escaping () -> Void) {
+        self.perform = perform
+    }
+
+    @objc func fire(_ sender: Any?) {
+        perform()
+    }
+}
+
+/// The view the pad menu drops from, kept by reference so the button's
+/// action can find it.
+@MainActor
+final class PadMenuAnchor {
+    weak var view: NSView?
+}
+
+struct PadMenuAnchorView: NSViewRepresentable {
+    let anchor: PadMenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
+    }
+}
+
+/// The create sheet, from the switcher's New Pad… and the Pads tab's,
+/// which Law 0007 exempts until a new row has a seat; a rename happens
+/// in the pad's own row (`PadRename`).
+struct PadCreateSheet: View {
+    @ObservedObject var model: PageModel
+    @Binding var isPresented: Bool
+    @State private var draft = ""
+    @State private var submitted = false
+    @State private var failure: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(CompanionL10n.string("pad.new.title"))
+                .font(.headline)
+            TextField(CompanionL10n.string("pad.name"), text: $draft)
+                .onSubmit(submit)
+            if let message = failure ?? PadNameDraft.validationMessage(draft),
+               submitted || !draft.isEmpty {
+                Text(message).font(.caption).foregroundStyle(Color.emberText)
+            }
+            HStack {
+                Spacer()
+                Button(CompanionL10n.string("pad.cancel")) { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Button(CompanionL10n.string("pad.create"), action: submit)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 340)
+        .onChange(of: draft) { _ in failure = nil }
+    }
+
+    private func submit() {
+        submitted = true
+        guard PadNameDraft.validationMessage(draft) == nil else { return }
+        // Creating already activates the new pad; do not persist a second activation.
+        if model.createPad(named: draft) != nil { isPresented = false }
+        else { failure = CompanionL10n.string("pad.name.failed") }
     }
 }
 
@@ -270,15 +234,122 @@ enum PadNameDraft {
     }
 }
 
+/// One item of a pad's Applications pop-up: a running app or an
+/// associated one, checked when it is associated.
+struct PadApplicationChoice: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let associated: Bool
+
+    /// The running apps in their order, then any associated app that is
+    /// not running, so an association can be unchecked while its app is quit.
+    static func choices(
+        running: [(bundleID: String, name: String)], associated: [String]
+    ) -> [PadApplicationChoice] {
+        var seen = Set<String>()
+        var choices: [PadApplicationChoice] = []
+        for app in running where seen.insert(app.bundleID).inserted {
+            choices.append(.init(
+                id: app.bundleID, name: app.name, associated: associated.contains(app.bundleID)))
+        }
+        for bundleID in associated where seen.insert(bundleID).inserted {
+            choices.append(.init(id: bundleID, name: bundleID, associated: true))
+        }
+        return choices
+    }
+
+    /// The pop-up's menu: each choice once, checked when associated; a
+    /// choice handed to `toggle` is the state it had when chosen.
+    @MainActor
+    static func menu(
+        choices: [PadApplicationChoice], toggle: @escaping (PadApplicationChoice) -> Void
+    ) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for choice in choices {
+            let action = PadMenuAction { toggle(choice) }
+            let item = NSMenuItem(
+                title: choice.name, action: #selector(PadMenuAction.fire(_:)), keyEquivalent: "")
+            item.target = action
+            item.representedObject = action
+            item.state = choice.associated ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+}
+
+/// The pad row's rename field from opening to ending (Law 0007), apart
+/// from the SwiftUI field so a test drives the code the row runs. A
+/// refusal is said under the field, in the row, rather than under a page
+/// in another window.
+@MainActor
+struct PadRename {
+    private var field = TabRename.Field()
+    /// The pad whose row holds the field, or nil while it is shut.
+    private(set) var pad: UUID?
+    /// What the field refuses, said under it, if anything.
+    private(set) var refusal: String?
+
+    var draft: String { field.draft }
+    var isOpen: Bool { pad != nil }
+    var isRefusing: Bool { refusal != nil }
+
+    /// Opens in `entry`'s row on its name; a field open on another pad keeps.
+    mutating func open(_ entry: PadEntry) {
+        guard pad != entry.id else { return }
+        keep()
+        field.open(on: entry.name)
+        pad = entry.id
+    }
+
+    /// A keystroke in the field. A refusal already said is judged again,
+    /// so the line never describes a draft the field no longer holds.
+    mutating func edit(_ draft: String) {
+        guard isOpen else { return }
+        field.draft = draft
+        guard isRefusing else { return }
+        refusal = PadNameDraft.validationMessage(draft)
+    }
+
+    /// Return: an untouched draft keeps, a name the catalog cannot take is
+    /// said under the field with the field still open, and any other renames.
+    mutating func commit(in model: PageModel) {
+        guard let pad, let opened = field.opened else { return }
+        guard case .rename(let name) = TabRename.outcome(
+            draft: field.draft, current: opened, committed: true
+        ) else { return keep() }
+        if let message = PadNameDraft.validationMessage(name) {
+            refusal = message
+            return
+        }
+        guard model.renamePad(pad, to: name) else {
+            refusal = CompanionL10n.string("pad.name.failed")
+            return
+        }
+        shut()
+    }
+
+    /// Escape, the keyboard leaving, or the tab closing: the name stands.
+    /// A row's ending names its pad, so a field moved to another row stays.
+    mutating func keep(_ id: UUID? = nil) {
+        guard isOpen, id == nil || id == pad else { return }
+        shut()
+    }
+
+    private mutating func shut() {
+        _ = field.end(committed: false)
+        pad = nil
+        refusal = nil
+    }
+}
+
 /// App-local interception, never a system-wide hotkey or activity observer.
 @MainActor
 final class PadShortcutMonitor: ObservableObject {
-    @Published var commandHeld = false
-    @Published var selectedPad: UUID?
     // AppKit monitor tokens are not Sendable; registration and use happen on
     // main. Their removal is also safe during a nonisolated deinitialization.
     private nonisolated(unsafe) var monitor: Any?
-    private nonisolated(unsafe) var resignObserver: NSObjectProtocol?
 
     /// User-remapped digit bindings retain their existing command. A digit
     /// still assigned to its bundled page selector can be reclaimed by the
@@ -299,11 +370,9 @@ final class PadShortcutMonitor: ObservableObject {
 
     func install(model: PageModel, surface: PresentationOwner) {
         stop()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self, weak model] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak model] event in
             let consumed = MainActor.assumeIsolated {
-                guard let self, let model, model.pads.isEnabled, model.owner == surface else { return false }
-                self.commandHeld = event.modifierFlags.contains(.command)
-                guard event.type == .keyDown,
+                guard let model, model.pads.isEnabled, model.owner == surface,
                       event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
                       Self.allowsPadSwitch(isModal: NSApp.modalWindow != nil, windows: NSApp.windows),
                       let key = event.charactersIgnoringModifiers, let number = Int(key),
@@ -311,26 +380,19 @@ final class PadShortcutMonitor: ObservableObject {
                 else { return false }
                 // A claimed digit with no pad must not fall through to a slot.
                 guard model.pads.entries.indices.contains(number) else { return true }
-                let pad = model.pads.entries[number]
-                model.activatePad(pad.id)
-                self.selectedPad = pad.id
+                model.activatePad(model.pads.entries[number].id)
                 return true
             }
             return consumed ? nil : event
         }
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.commandHeld = false } }
     }
 
     func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
-        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
-        monitor = nil; resignObserver = nil; commandHeld = false
+        monitor = nil
     }
 
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
-        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
     }
 }

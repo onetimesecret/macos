@@ -65,17 +65,17 @@ The snap must be on. Settings, the section headed "A rung names a
 duration; this lets the deadline land where the clock does"
 (`shell/Sources/CompanionKit/SettingsSections.swift:122`), toggle
 "Round a page's deadline up to the hour, or to midnight". It defaults
-to on (`shell/Sources/CompanionKit/PageModel.swift:1414`) and is
+to on (`shell/Sources/CompanionKit/PageModel.swift:1534`) and is
 carried to the core by `companion_set_grace_snap`
-(`crates/ffi/src/lib.rs:2229`).
+(`crates/ffi/src/lib.rs:2564`).
 
 ## What the code actually promises, so the expectations below are not guesses
 
 - The snap runs **once**, when a rung is applied to a page, in
-  `SheetStore::life_for` (`crates/core/src/store.rs:275`). It asks
+  `SheetStore::life_for` (`crates/core/src/store.rs:234`). It asks
   `graced_life` (`crates/core/src/ttl.rs:156`) for a **duration**, and
   the store immediately turns that into a monotonic deadline
-  (`now + life`, `crates/core/src/store.rs:352`).
+  (`now + life`, `crates/core/src/store.rs:292`).
 - Therefore the stored deadline is an **instant**, not a wall-clock
   label. A later zone change or daylight-saving transition
   recalculates nothing (ADR-0011 section 4, lines 119 to 121; the doc
@@ -87,7 +87,7 @@ carried to the core by `companion_set_grace_snap`
   the rung (`Ttl::max_extension`, `crates/core/src/ttl.rs:88`), which
   is also what bounds a restored page's claimed life
   (`Ttl::longest_life`, `crates/core/src/ttl.rs:83`, used by restore
-  at `crates/core/src/persist.rs:896`).
+  at `crates/core/src/persist.rs:691`).
 - The surface shows **remaining time** as the gauge under each tab
   while the strip is the navigation, and in words in the day gutter's
   label while the days are (`shell/Sources/CompanionKit/TabStripView.swift`,
@@ -100,28 +100,28 @@ carried to the core by `companion_set_grace_snap`
   the remaining time shown".
 - Undo is the core's stack, bound to the document's peer id
   (`crates/core/src/document.rs:130`), reached through
-  `SheetStore::undo` (`crates/core/src/store.rs:923`),
-  `companion_sheet_undo` (`crates/ffi/src/lib.rs:1032`) and
-  `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:4343`).
+  `SheetStore::undo` (`crates/core/src/store.rs:773`),
+  `companion_sheet_undo` (`crates/ffi/src/lib.rs:968`) and
+  `PageModel.undoEdit` (`shell/Sources/CompanionKit/PageModel.swift:6461`).
   `canUndo` is what greys the Edit menu
-  (`shell/Sources/CompanionKit/PageModel.swift:364`).
+  (`shell/Sources/CompanionKit/PageModel.swift:401`).
 - Undo **does not survive a relaunch, by design**. Every construction
   path binds a fresh stack to a freshly minted peer
   (`crates/core/src/document.rs:156`, and the comment at
-  `crates/core/src/document.rs:189`), and restore reads a snapshot
+  `crates/core/src/document.rs:192`), and restore reads a snapshot
   into a document minted by that function
-  (`crates/core/src/document.rs:398`).
+  (`crates/core/src/document.rs:436`).
 - Undo **does not survive compaction** either: the ceremony rebuilds
   the body into a fresh document and then calls `forget_undo`
-  explicitly (`crates/core/src/document.rs:686`,
-  `crates/core/src/document.rs:286`), because the rebuild is itself
+  explicitly (`crates/core/src/document.rs:727`,
+  `crates/core/src/document.rs:324`), because the rebuild is itself
   typed in as local operations and would otherwise leave one step that
   undoes the whole page to nothing.
 - What triggers compaction **today** is a rung transition
-  (`crates/core/src/store.rs:1750`) and a pause top-up, which is the
-  second press of the pause cycle (`crates/core/src/store.rs:1807`),
+  (`crates/core/src/store.rs:1531`) and a pause top-up, which is the
+  second press of the pause cycle (`crates/core/src/store.rs:1570`),
   both through `Sheet::compact_or_defer`
-  (`crates/core/src/sheet.rs:496`). There is no size-budget trigger
+  (`crates/core/src/sheet.rs:507`). There is no size-budget trigger
   and no timer in the shipped code: ADR-0025 section 2 proposes moving
   the schedule to a deliberate shed plus a size budget, and it is
   still **proposed**, so case E uses the rung click.
@@ -135,7 +135,7 @@ log show --last 30m --style compact --predicate \
 
 ## Case A: a zone change moves no deadline already set
 
-Exercises `SheetStore::life_for` (`crates/core/src/store.rs:275`) and
+Exercises `SheetStore::life_for` (`crates/core/src/store.rs:234`) and
 `Clock::local_offset_seconds_at`
 (`crates/core/src/clock.rs:88` on to `crates/core/src/clock.rs:100`).
 The automated analogue is
@@ -318,11 +318,11 @@ arithmetic won over the elapsed arithmetic; a deadline landing on the
 ## Case D: undo does not survive a relaunch, and says so
 
 Exercises `SheetDocument::new` (`crates/core/src/document.rs:156`, and
-the comment at `crates/core/src/document.rs:189`),
+the comment at `crates/core/src/document.rs:192`),
 `SheetDocument::import_snapshot`
-(`crates/core/src/document.rs:398`), `SheetStore::can_undo`
-(`crates/core/src/store.rs:949`) and the Edit menu binding at
-`shell/Sources/CompanionKit/PageModel.swift:4383`.
+(`crates/core/src/document.rs:436`), `SheetStore::can_undo`
+(`crates/core/src/store.rs:799`) and the Edit menu binding at
+`shell/Sources/CompanionKit/PageModel.swift:6501`.
 
 No clock work in this case, so it can be run first, on an honest
 machine.
@@ -352,11 +352,11 @@ restored document carried a live stack into a rebound peer.
 
 ## Case E: undo does not survive compaction either
 
-Exercises `Sheet::compact` (`crates/core/src/sheet.rs:473`),
-`SheetDocument::compact` (`crates/core/src/document.rs:643`) and its
-explicit `forget_undo` at `crates/core/src/document.rs:686`, reached
-from the rung transition at `crates/core/src/store.rs:1750` through
-`Sheet::compact_or_defer` (`crates/core/src/sheet.rs:496`).
+Exercises `Sheet::compact` (`crates/core/src/sheet.rs:494`),
+`SheetDocument::compact` (`crates/core/src/document.rs:684`) and its
+explicit `forget_undo` at `crates/core/src/document.rs:727`, reached
+from the rung transition at `crates/core/src/store.rs:1531` through
+`Sheet::compact_or_defer` (`crates/core/src/sheet.rs:507`).
 
 Compaction has no dogfood hook and no threshold to wait for. On a solo
 page, with no peer attached, the two gestures that run the ceremony
@@ -381,7 +381,7 @@ out**: the ceremony destroyed the operations any step pointed into,
 and the rebuild's own operations, which would otherwise stand as a
 single step that undoes the whole page to nothing, went with them. The
 rung change itself sets a new deadline from the new rung
-(`crates/core/src/store.rs:1730`), so the remaining time changes; that
+(`crates/core/src/store.rs:1525`), so the remaining time changes; that
 is the rung click, not the ceremony.
 
 **Fail:** ⌘Z after the rung click removing the whole page's text in
@@ -397,7 +397,7 @@ reordering of the surviving text; or a chip disappearing.
    items greyed.
 6. Note for the record that a **release** press, the third
    double-click, is deliberately **not** a boundary
-   (`crates/core/src/store.rs:1823`), so undo state after it is
+   (`crates/core/src/store.rs:1583`), so undo state after it is
    whatever the top-up left, which is empty.
 7. Cleanup: none.
 

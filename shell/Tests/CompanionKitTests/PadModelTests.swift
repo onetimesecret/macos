@@ -46,6 +46,36 @@ final class PadModelTests: XCTestCase {
         model.select(index: 1)
         XCTAssertEqual(model.selection, familiaTab)
     }
+    func testReorderingPadsKeepsActivePageSelectionAndStorage() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let familia = try XCTUnwrap(model.createPad(named: "Familia"))
+        model.newPage()
+        let familiaTab = try XCTUnwrap(model.selection)
+        let familiaPage = try XCTUnwrap(model.selectedPageID)
+        let storage = model.storage(for: familiaPage)
+        storage.append(NSAttributedString(string: "Familia ink"))
+        let otto = try XCTUnwrap(model.createPad(named: "Otto"))
+        model.newPage()
+        model.activatePad(familia)
+        let tabs = model.tabs
+        let navigation = model.navigationTabs
+        let remembered = model.pads.rememberedTab(for: familia)
+
+        XCTAssertTrue(model.pads.moveDown(familia))
+        XCTAssertEqual(model.pads.entries.map(\.id), [PadCatalog.scratchID, otto, familia])
+        XCTAssertEqual(model.pads.activeID, familia)
+        XCTAssertEqual(model.selection, familiaTab)
+        XCTAssertEqual(model.selectedPageID, familiaPage)
+        XCTAssertEqual(model.tabs.map(\.id), tabs.map(\.id))
+        XCTAssertEqual(model.navigationTabs.map(\.id), navigation.map(\.id))
+        XCTAssertEqual(model.pads.owner(ofTabUUID: model.selectedTab?.uuid), familia)
+        XCTAssertEqual(model.pads.rememberedTab(for: familia), remembered)
+        XCTAssertTrue(model.storage(for: familiaPage) === storage)
+        XCTAssertEqual(storage.string, "Familia ink")
+    }
+
     func testOpenFileRoutesUsingOnlyExplicitSuppliedPath() throws {
         let defaults = try defaults()
         let model = isolatedModel(defaults: defaults)
@@ -416,6 +446,32 @@ final class PadModelTests: XCTestCase {
         XCTAssertTrue(model.storage(for: page) === ink)
         XCTAssertEqual(ink.string, "keep this ink")
     }
+    func testSortMenuChoicesSetTheRequestedOrderWithoutCyclingOtherPads() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let first = try XCTUnwrap(model.createPad(named: "First"))
+        model.newPage()
+        let date = model.dateKey(forDayBucket: 0)
+        XCTAssertFalse(date.isEmpty)
+        model.setDaySort(.reverseChronological)
+        model.setCheckpointSort(.reverseChronological, dayBucket: 0)
+        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .reverseChronological)
+        model.setCheckpointSort(.natural, dayBucket: 0)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .natural)
+        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
+
+        let second = try XCTUnwrap(model.createPad(named: "Second"))
+        model.newPage()
+        model.setDaySort(.chronological)
+        model.setCheckpointSort(.chronological, dayBucket: 0)
+        XCTAssertEqual(model.pads.daySortDirection(for: second), .chronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: second, onDate: date), .chronological)
+        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .natural)
+    }
+
     func testPageExpiryPrunesDateOrderButRetainsSurvivingTabOwnership() throws {
         let model = isolatedModel(defaults: try defaults())
         model.loadStateIfNeeded()
@@ -426,12 +482,12 @@ final class PadModelTests: XCTestCase {
         let uuid = try XCTUnwrap(model.selectedTab?.uuid)
         let date = model.dateKey(forDayBucket: 0)
         model.toggleCheckpointSort(dayBucket: 0)
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .chronological)
         XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
         model.coreClient.ageForTests(byMs: 3 * 24 * 60 * 60 * 1_000)
         model.coreClient.expireDue()
         model.refresh()
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .chronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .natural)
         XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), pad)
         model.closeCurrent()
         XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), PadCatalog.scratchID)
@@ -487,14 +543,14 @@ final class PadModelTests: XCTestCase {
         catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-02")
         catalog.assign(tabUUID: "closed", to: pad)
         catalog.reconcileTabs([], checkpointKeys: nil)
-        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .chronological)
         XCTAssertEqual(catalog.owner(ofTabUUID: "closed"), PadCatalog.scratchID)
         let stableReference = try XCTUnwrap(PageModel.validatedPadRosterDate(readStartedAt: after, readFinishedAt: after.addingTimeInterval(1), calendar: calendar, finishedCalendar: calendar))
         let stableKey = pad.uuidString + "/" + PageModel.padDateKey(forDayBucket: -1, now: stableReference, calendar: calendar)
         catalog.reconcileTabs([], checkpointKeys: [stableKey])
-        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
-        catalog.reconcileTabs([], checkpointKeys: [])
         XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .chronological)
+        catalog.reconcileTabs([], checkpointKeys: [])
+        XCTAssertEqual(catalog.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .natural)
     }
     func testRosterDateValidationRejectsTimezoneAndBackwardsClockChanges() throws {
         var calendar = Calendar(identifier: .gregorian)
@@ -541,7 +597,7 @@ final class PadModelTests: XCTestCase {
         let catalog = PadCatalog(defaults: try defaults())
         catalog.toggleCheckpointSort(for: owner, onDate: "2026-10-02")
         catalog.reconcileTabs([], checkpointKeys: onlyFuture)
-        XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-02"), .reverseChronological)
+        XCTAssertEqual(catalog.checkpointSortDirection(for: owner, onDate: "2026-10-02"), .chronological)
     }
 
     func testFailedContentRestoreDoesNotPruneSavedPadOwnership() throws {
@@ -563,7 +619,7 @@ final class PadModelTests: XCTestCase {
         model.refresh()
         XCTAssertEqual(model.pads.owner(ofTabUUID: "unrestored-tab"), pad)
         XCTAssertEqual(model.pads.rememberedTab(for: pad), "unrestored-tab")
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
     }
 
 }

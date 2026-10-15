@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::SizeClass;
+use crate::note::Note;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
@@ -54,6 +55,26 @@ impl ItemId {
     #[must_use]
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
+    }
+
+    /// Parse the 8-4-4-4-12 hex form, the inverse of `Display`.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        if text.len() != 36 {
+            return None;
+        }
+        let hex: Vec<u32> = text
+            .bytes()
+            .filter(|byte| *byte != b'-')
+            .map(|byte| (byte as char).to_digit(16))
+            .collect::<Option<_>>()?;
+        if hex.len() != 32 {
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        for (index, pair) in hex.chunks(2).enumerate() {
+            bytes[index] = ((pair[0] << 4) | pair[1]) as u8;
+        }
+        Some(Self(bytes))
     }
 }
 
@@ -159,7 +180,59 @@ pub struct Conceal {
     pub receipt_id: String,
 }
 
-/// A sealed chip: secret bytes and the non-secret face it shows.
+/// The longest sealed name, in characters (ADR-0042 point 1).
+pub const NAME_CAP: usize = 64;
+
+/// Why a sealed name was refused. A refusal leaves the name as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameRefusal {
+    /// No such chip.
+    UnknownChip,
+    /// Longer than [`NAME_CAP`] once trimmed.
+    TooLong,
+    /// Outside `[A-Za-z_][A-Za-z0-9_]*`.
+    OutsideCharset,
+}
+
+impl std::fmt::Display for NameRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameRefusal::UnknownChip => write!(f, "no such sealed object"),
+            NameRefusal::TooLong => write!(f, "a name is at most {NAME_CAP} characters"),
+            NameRefusal::OutsideCharset => write!(
+                f,
+                "a name is letters, digits and underscores, and does not start with a digit"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for NameRefusal {}
+
+/// Judge a draft name: trimmed, empty clears (`None`), anything else must
+/// be [`NAME_CAP`] characters of `[A-Za-z_][A-Za-z0-9_]*` (ADR-0042, ADR-0043).
+///
+/// # Errors
+/// [`NameRefusal::OutsideCharset`], judged first, or [`NameRefusal::TooLong`].
+pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
+    let name = draft.trim();
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Ok(None);
+    };
+    let leads = first.is_ascii_alphabetic() || first == '_';
+    if !leads || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(NameRefusal::OutsideCharset);
+    }
+    // ASCII by now, so bytes count characters.
+    if name.len() > NAME_CAP {
+        return Err(NameRefusal::TooLong);
+    }
+    Ok(Some(name))
+}
+
+/// A sealed chip: secret bytes, the non-secret face it shows, and the
+/// typed name and note beside it (ADR-0043).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
@@ -168,6 +241,12 @@ pub struct SealedChip {
     pub(crate) excerpt: String,
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
+    pub(crate) name: Option<String>,
+    /// Made by its first accepted edit.
+    pub(crate) note: Option<Note>,
+    /// Whether its sentinel has stood in a body; the first standing is the
+    /// seal's, which no step may take back (D-30).
+    pub(crate) stood: bool,
 }
 
 impl SealedChip {
@@ -187,6 +266,9 @@ impl SealedChip {
             excerpt,
             size_label,
             conceal: None,
+            name: None,
+            note: None,
+            stood: false,
         }
     }
 
@@ -207,7 +289,25 @@ impl SealedChip {
             excerpt,
             size_label: SizeClass::of(byte_len).to_string(),
             conceal: None,
+            name: None,
+            note: None,
+            stood: false,
         }
+    }
+
+    /// A clone under a new identity (ADR-0047 point 6): the payload copied
+    /// core-side at its exact size, with no receipt, name or note.
+    pub(crate) fn duplicate(&self, id: ChipId) -> Self {
+        let mut clone = match self.meta {
+            ChipMeta::Text { .. } => Self::text(
+                id,
+                std::str::from_utf8(self.bytes.expose()).expect("a text chip is sealed from UTF-8"),
+            ),
+            ChipMeta::Image { .. } => Self::image(id, self.bytes.expose().to_vec()),
+        };
+        // Its first standing is a paste, which a step may take back.
+        clone.stood = true;
+        clone
     }
 
     /// Identifier.
@@ -244,6 +344,18 @@ impl SealedChip {
     #[must_use]
     pub fn conceal(&self) -> Option<&Conceal> {
         self.conceal.as_ref()
+    }
+
+    /// The typed name, if one was given.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Whether a note holds anything but whitespace: the block's doorway.
+    #[must_use]
+    pub fn has_note(&self) -> bool {
+        self.note.as_ref().is_some_and(Note::has_content)
     }
 }
 
@@ -296,7 +408,10 @@ pub struct Sheet {
     pub(crate) segments: Vec<Segment>,
     /// Paragraph identities, kept across edits (ADR-0013).
     pub(crate) blocks: BlockIndex,
+    /// Chips whose sentinels stand in the body.
     pub(crate) chips: Vec<SealedChip>,
+    /// Chips the body no longer shows, kept on the page's clock (ADR-0047).
+    pub(crate) detached: Vec<SealedChip>,
     pub(crate) clock: SheetClock,
     /// Held time from lapsed holds (open question №8).
     pub(crate) total_held: Duration,
@@ -321,6 +436,25 @@ impl Sheet {
     #[must_use]
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    /// Detach each chip whose sentinel left the body and reattach each
+    /// detached chip whose sentinel stands again (ADR-0047).
+    pub(crate) fn settle_roster(&mut self) {
+        let live = self.document.live_chips();
+        let (standing, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.chips)
+            .into_iter()
+            .partition(|chip| live.contains(&chip.uuid));
+        let (back, away): (Vec<_>, Vec<_>) = std::mem::take(&mut self.detached)
+            .into_iter()
+            .partition(|chip| live.contains(&chip.uuid));
+        self.chips = standing;
+        self.chips.extend(back);
+        for chip in &mut self.chips {
+            chip.stood = true;
+        }
+        self.detached = away;
+        self.detached.extend(gone);
     }
 
     /// Rebuild `segments` from the document. A sentinel matching no owned
@@ -406,6 +540,26 @@ impl Sheet {
         self.chips.iter().find(|c| c.id == id)
     }
 
+    /// The chips the body no longer shows, kept for undo and for a paste
+    /// that names them (ADR-0047).
+    pub fn detached(&self) -> impl Iterator<Item = &SealedChip> {
+        self.detached.iter()
+    }
+
+    /// A chip by id, attached or detached.
+    pub(crate) fn owned_chip(&self, id: ChipId) -> Option<&SealedChip> {
+        self.chips.iter().chain(&self.detached).find(|c| c.id == id)
+    }
+
+    /// Every identity the page owns, attached or detached.
+    pub(crate) fn owned_uuids(&self) -> Vec<ItemId> {
+        self.chips
+            .iter()
+            .chain(&self.detached)
+            .map(|chip| chip.uuid)
+            .collect()
+    }
+
     /// Number of chips on the sheet.
     #[must_use]
     pub fn chip_count(&self) -> usize {
@@ -472,6 +626,13 @@ impl Sheet {
         }
     }
 
+    /// Whether the countdown has run out at `now`, whether or not a sweep
+    /// has taken the page yet (ADR-0048, ADR-0052).
+    #[must_use]
+    pub fn is_due(&self, now: Instant) -> bool {
+        self.remaining(now).is_zero()
+    }
+
     /// The countdown label text ("3h 40m").
     #[must_use]
     pub fn remaining_label(&self, now: Instant) -> String {
@@ -508,8 +669,8 @@ impl Sheet {
         self.created_wall_ms
     }
 
-    /// A non-whitespace line or a chip: the ledger's bar for a page worth
-    /// recording.
+    /// A non-whitespace line or a standing chip: what the page shows. The
+    /// ledger also records a page holding only detached chips.
     #[must_use]
     pub fn has_content(&self) -> bool {
         !self.chips.is_empty()
@@ -954,6 +1115,16 @@ mod tests {
     }
 
     #[test]
+    fn an_item_id_parses_back_from_the_form_it_displays() {
+        let id = ItemId::random();
+        assert_eq!(ItemId::parse(&id.to_string()), Some(id));
+        assert_eq!(ItemId::parse(&id.to_string().to_uppercase()), Some(id));
+        assert_eq!(ItemId::parse(""), None);
+        assert_eq!(ItemId::parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398"), None);
+        assert_eq!(ItemId::parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398g"), None);
+    }
+
+    #[test]
     fn item_id_clock_boundaries_clamp_without_changing_random_bits() {
         let random = [0xAB; 16];
         let earliest = ItemId::version_seven_at(UNIX_EPOCH - Duration::from_millis(1), random);
@@ -1299,6 +1470,7 @@ mod tests {
             segments: Vec::new(),
             blocks,
             chips: Vec::new(),
+            detached: Vec::new(),
             clock: SheetClock::Running {
                 deadline: Instant::now(),
             },

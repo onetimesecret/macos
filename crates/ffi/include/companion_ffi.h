@@ -28,6 +28,17 @@
  * companion_next_event_ms() — it folds page expiries AND pause-hold
  * lapses; when it fires call companion_expire_due() and re-arm.
  * -1 means nothing to schedule.
+ *
+ * Deadline rule (ADR-0052): a page past its deadline gives nothing out,
+ * whether or not a sweep has taken it. Copy decrypted, copy NAME=value,
+ * the decrypted drag, the note's runs and the fragment's copy and cut
+ * refuse it as they refuse an unknown id; both conceals answer the
+ * error "this page has expired". Each writes, sends and records
+ * nothing. The timer can be late, so after any refusal call
+ * companion_expire_due() and settle as when the timer fires. Text the
+ * caller already holds, the open note's or a page's ink, never passes
+ * these routes, so the caller must not give it out past the deadline
+ * through AppKit's own copy, cut, drag or services either.
  */
 
 #ifndef COMPANION_FFI_H
@@ -177,6 +188,15 @@ bool companion_test_wire_stub(CompanionHandle *handle, uint16_t status,
  * with companion_string_free(). Test-util builds only (ADR-0018). */
 char *companion_test_wire_last_json(CompanionHandle *handle);
 
+/* Replace the handle's pasteboard with one in process memory, after
+ * taking back any write of ours on the old one, so a shell test's copy
+ * decrypted and name=value copies never reach the general pasteboard
+ * the person at the keyboard is using. Returns whether it was
+ * installed; null answers false. The symbol exists only in test-util
+ * builds of the core (ADR-0018), on the same terms as
+ * companion_new_ephemeral() above. */
+bool companion_test_memory_pasteboard(CompanionHandle *handle);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
@@ -227,8 +247,8 @@ bool companion_tab_close(CompanionHandle *handle, uint64_t tab);
 
 /*
  * Discard the page a slot holds and leave the slot standing: sealed
- * bytes zeroized, one discarded record in the ledger, and the tab keeps
- * its name, its rung, its position and its number key. Returns whether
+ * bytes zeroized, discarded recorded for the page and each object, and
+ * the tab keeps its name, rung, position and number key. Returns whether
  * a page by that id was standing. Page addressed because the burn
  * offered after a conceal names the content that travelled and not
  * the slot it travelled from.
@@ -275,6 +295,8 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  *   page_id (the PAGE's id, or null when has_page is false, what the
  *     sealing and document routes address, and what a shell-side
  *     storage map is keyed by),
+ *   page_uuid (string or null: the PAGE's Sheet.uuid() in lowercase
+ *     hyphenated UUID form; null when has_page is false),
  *   title (the tab's label, resolved three ways: the name the user
  *     typed; else the live page's derived title, its first non-empty
  *     ink line with markdown stripped, capped at 80 characters; else
@@ -358,7 +380,9 @@ bool companion_store_emptiness(CompanionHandle *handle,
  * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label (a size
- *   class, "tiny" through "huge", never a count), concealed (bool).
+ *   class, "tiny" through "huge", never a count), concealed (bool),
+ *   name (the typed name, or null; ADR-0043), has_note (bool, true
+ *   while the note holds anything but whitespace).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -435,7 +459,8 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
  * the batch's earlier ops leave it. Parsing is reject-whole; a batch
  * that parses is validated whole against the page and applied
  * atomically or not at all. Chip liveness follows the document: a
- * delete that swallows a chip's sentinel zeroizes the chip. Returns
+ * delete that swallows a chip's sentinel detaches the chip, and a chip
+ * op naming one of the page's detached chips reattaches it (ADR-0047). Returns
  * whether the batch applied; on false, restate the page through
  * companion_sheet_sync_document (the recovery path).
  */
@@ -522,7 +547,8 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  * this survives as the RECOVERY path: a page restated whole after a
  * rejected batch, at the price of that page's provenance. STILL
  * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
- * deleted in the editor and is zeroized here. Malformed snapshots (bad
+ * deleted in the editor and is detached here, and a detached chip it
+ * names reattaches (ADR-0047). Malformed snapshots (bad
  * JSON, foreign chip, duplicate reference) are rejected whole. Returns
  * acceptance.
  */
@@ -534,7 +560,8 @@ bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
  * after companion_persist_restore(): a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
  * sits, the chip object carrying the same non-secret face the seal
- * routes return (chip_id, kind, excerpt, size_label, concealed). Ink
+ * routes return (chip_id, kind, excerpt, size_label, concealed, name,
+ * has_note). The note's own text is never here. Ink
  * renders anyway; a chip crosses as its face, never its bytes. Free
  * with companion_string_free(). Null for an unknown page.
  */
@@ -577,7 +604,8 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
  * Copy a chip back out: the core writes the pasteboard itself, marked
  * transient AND ConcealedType (a chip is sealed by definition). Does
  * not consume the chip — multi-paste is a core moment. Returns whether
- * the chip existed.
+ * the chip existed; false, writing and recording nothing, for a page
+ * past its deadline (ADR-0052).
  *
  * A successful copy-out is an auditable egress: it leaves one "sent"
  * ledger record with destination "clipboard". The pasteboard is the
@@ -586,10 +614,240 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
 bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
 /*
- * Remove a chip now, wiping its bytes (backspace removes it whole;
- * there is no resurrection path). Returns whether it existed.
+ * Copy NAME=<plaintext>: the name, "=", then the payload raw and
+ * unquoted (ADR-0042 point 4), by companion_chip_copy_out()'s route
+ * (Law 0001, ADR-0043). The core composes the bytes at their final
+ * size and writes them itself, transient and ConcealedType, keeps the
+ * receipt for companion_clear_clipboard_if_ours(), and leaves one
+ * "sent" record to "clipboard" at the payload's size class, titled with
+ * the tab's label as every record is, never the name. The shell never
+ * holds the bytes.
+ * Returns false, writing and recording nothing, for an unknown chip, an
+ * unnamed one, an image or a page past its deadline (ADR-0052).
+ */
+bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Burn a chip, attached or detached: its bytes are wiped, its page's
+ * undo stack goes with it, and one `discarded` is recorded. A removal
+ * by backspace is not a burn; it detaches (ADR-0047). Returns whether
+ * it existed.
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Judge a draft sealed name by the rule companion_chip_set_name()
+ * refuses with (ADR-0042 point 1, ADR-0043). The draft is trimmed. 0
+ * takes it, and an empty draft is taken as clearing the name; 1 is
+ * longer than 64 characters; 2 is outside [A-Za-z_][A-Za-z0-9_]*,
+ * which is judged first. Null and non-UTF-8 answer 2. Stateless and
+ * handle free, so the shell can judge a draft as it is typed; the
+ * words for each code are the shell's.
+ */
+uint32_t companion_chip_name_refusal(const char *draft);
+
+/*
+ * Name a sealed object, or clear its name with an empty or blank draft.
+ * The name is page-owned ink beside the object: it rides the chip's
+ * face as "name" and reaches no ledger record. Returns false for an
+ * unknown chip or a draft companion_chip_name_refusal() refuses, and
+ * the name is then as it was.
+ */
+bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
+                             const char *name);
+
+/* ------------------------------------------------------------------ */
+/* A sealed object's note (ADR-0043)                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The note is ink of its own beside the object: a document that holds
+ * no chips, with an undo stack of its own and no clock. It goes with
+ * its chip: detached with it at a removal, destroyed with it at expiry,
+ * discard, close or a burn (ADR-0047), and no ledger record names it. These routes take a CHIP id and mirror the file routes; no
+ * page route reaches the note and no note route reaches a page, so the
+ * page's undo and the note's never cross.
+ */
+
+/*
+ * The note as document runs: [] without one, else [{"ink": text}], the
+ * shape companion_file_runs_json() answers. Null for an unknown chip or
+ * a page past its deadline (ADR-0052). Free with companion_string_free().
+ */
+char *companion_chip_note_runs_json(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Apply an edit batch to the note, with the TextKit gesture and
+ * selections companion_sheet_apply_ops_with_intent() takes. Whole or not
+ * at all; a chip op is refused, since sealed objects do not nest. The
+ * first accepted batch makes the note.
+ */
+bool companion_chip_note_apply_ops_with_intent(CompanionHandle *handle,
+                                               uint64_t chip,
+                                               const char *json,
+                                               uint32_t intent,
+                                               uint32_t before_location,
+                                               uint32_t before_length,
+                                               uint32_t after_location,
+                                               uint32_t after_length);
+
+/*
+ * End the note's typing run without an undo item; UINT32_MAX twice for
+ * no selection. False for an unknown chip or a half-given selection.
+ */
+bool companion_chip_note_finish_editing_group(CompanionHandle *handle,
+                                              uint64_t chip, uint32_t location,
+                                              uint32_t length);
+
+/* Whether the note has a step of its own waiting in either direction. */
+bool companion_chip_note_can_undo(CompanionHandle *handle, uint64_t chip);
+bool companion_chip_note_can_redo(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Content-free label for the note's next step in either direction. Null
+ * when none waits. Free a non-null result with companion_string_free().
+ */
+char *companion_chip_note_undo_action_name(CompanionHandle *handle,
+                                           uint64_t chip);
+char *companion_chip_note_redo_action_name(CompanionHandle *handle,
+                                           uint64_t chip);
+
+/*
+ * Take back the note's last step, or put it back. Both return the
+ * StepOutcome the file routes below describe, or null for an unknown
+ * chip. Free with companion_string_free().
+ */
+char *companion_chip_note_undo(CompanionHandle *handle, uint64_t chip);
+char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);
+
+/* ------------------------------------------------------------------ */
+/* The sealed fragment: copy, cut, paste, drags (ADR-0047)             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The core alone composes and reads the envelope the private type
+ * com.onetimesecret.onetimepad.sealed-fragment carries (".debug" in a
+ * debug build, the shell's choice): ordered ink and UUID references,
+ * each with the object's name and note, never payload. The shell
+ * writes and reads its bytes unread. Ranges are UTF-16 code units
+ * against the page's body. Every route below takes a page id, refuses
+ * a file id, and frees as companion_string_free().
+ */
+
+/*
+ * Copy a range: {"envelope": string|null, "plain": string}. The
+ * envelope is null for ink alone, so the shell writes plain text and an
+ * in-app paste keeps its ordinary path; "plain" is the ink with
+ * "[sealed content · <size class>]" for each object, the public
+ * representation. Null for an unknown page, a page past its deadline
+ * (ADR-0052) or an empty or bad range.
+ *
+ * An envelope past a cap the paste keeps (ADR-0049) is refused whole,
+ * naming the cap and its limit (ADR-0053):
+ *   {"error": "tooLarge", "limit": 8388608}       bytes
+ *   {"error": "tooManyObjects", "limit": 1024}    references
+ * Nothing is handed back to write, not even "plain". A selection of ink
+ * alone writes no envelope and meets no cap.
+ */
+char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
+                                    uint32_t at_utf16, uint32_t len_utf16);
+
+/*
+ * As companion_sheet_copy_fragment(), then delete the range as one undo
+ * step. Its objects detach on the page's clock as the store's one
+ * active cut, whose envelope names it; a later cut holding an object
+ * replaces it. Null, or the copy's cap refusal, where the copy or the
+ * page refuses; either changes nothing, and an earlier active cut
+ * stands.
+ */
+char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
+                                   uint32_t at_utf16, uint32_t len_utf16);
+
+/*
+ * Paste envelope bytes over a range as one undo step. Each reference
+ * resolves in order: the active cut's objects, from its own envelope,
+ * reattach; any other live object is cloned with the envelope's name
+ * and note; else the ledger's newest terminal record places
+ * "[sealed content · expired]" or "[sealed content · burned]"; else
+ * "[sealed content · unavailable]". An envelope the core cannot read
+ * places `plain` (nullable) instead. Before an envelope naming an
+ * object resolves, every page past its deadline is swept, as
+ * companion_expire_due() does (ADR-0048). Returns
+ *   {"location_utf16": u32, "length_utf16": u32, "reattached": n,
+ *    "cloned": n, "expired": n, "burned": n, "unavailable": n,
+ *    "unreadable": bool, "pages_expired": n}
+ * naming the placed run and the pages swept, or null, changing nothing,
+ * for an unknown page, a page past its deadline, a bad range or nothing
+ * to place. Restate the page from companion_sheet_document_json() after
+ * it, and settle as after companion_expire_due().
+ */
+char *companion_sheet_paste_fragment(CompanionHandle *handle, uint64_t sheet,
+                                     uint32_t at_utf16, uint32_t len_utf16,
+                                     const uint8_t *envelope,
+                                     size_t envelope_len, const char *plain);
+
+/*
+ * The clipboard slot's route: place the active cut over a range, as a
+ * paste of its own envelope. Null when no cut stands.
+ */
+char *companion_sheet_paste_active_cut(CompanionHandle *handle,
+                                       uint64_t sheet, uint32_t at_utf16,
+                                       uint32_t len_utf16);
+
+/*
+ * A drag inside a page: move a range to to_utf16, measured before the
+ * move, as one undo step that keeps every object's identity. Returns
+ * the placed JSON or null for a to_utf16 inside or at the range's edge,
+ * or a page past its deadline.
+ */
+char *companion_sheet_move_range(CompanionHandle *handle, uint64_t sheet,
+                                 uint32_t from_utf16, uint32_t len_utf16,
+                                 uint32_t to_utf16);
+
+/*
+ * A drag between pages (ADR-0054): delete a range on source and stand
+ * it at at_utf16 on dest as one transaction, every object keeping its
+ * identity, name and note; nothing is recorded. dest takes one undo
+ * step, and a move holding an object clears source's undo. Returns the
+ * placed JSON, its run on dest, or null with neither page changed for
+ * one page, a file id, a bad range or point, or either page past its
+ * deadline. Both pages restate from the core after a move; the source
+ * deletes nothing itself. The option drag pastes the copy fragment.
+ */
+char *companion_sheet_move_range_to(CompanionHandle *handle, uint64_t source,
+                                    uint32_t from_utf16, uint32_t len_utf16,
+                                    uint64_t dest, uint32_t at_utf16);
+
+/*
+ * The option drag inside a page: insert a copy of a range at to_utf16,
+ * every object cloned, as one undo step. Returns the placed JSON or null.
+ */
+char *companion_sheet_clone_range(CompanionHandle *handle, uint64_t sheet,
+                                  uint32_t from_utf16, uint32_t len_utf16,
+                                  uint32_t to_utf16);
+
+/*
+ * The clipboard slot: {"page_id": u64|null, "objects": [face]}, the
+ * active cut's page and its objects' faces (the chip face of
+ * companion_sheet_document_json()) in order; null and [] when no cut
+ * stands. Faces only, never payload.
+ */
+char *companion_active_cut_json(CompanionHandle *handle);
+
+/*
+ * Decrypted drag, from the shell's NSPasteboardItemDataProvider: write
+ * a chip's payload into `item` (an NSPasteboardItem) on `pasteboard`
+ * (its NSPasteboard) under `type`, and record one "sent" to "drag". The
+ * core writes the bytes, as copy decrypted does; the shell never holds
+ * them. Returns false, writing and recording nothing, for an unknown
+ * or removed chip, a page past its deadline (ADR-0052), a null or
+ * foreign pointer, the general pasteboard, or a type other than the
+ * chip's own: "public.utf8-plain-text" for text, "public.png" for an
+ * image. Always false off macOS.
+ */
+bool companion_chip_provide_drag(CompanionHandle *handle, uint64_t chip,
+                                 void *pasteboard, void *item,
+                                 const char *type);
 
 /*
  * Clear the pasteboard iff it still holds our last copy-out (change-
@@ -682,7 +940,7 @@ bool companion_tab_pause_press(CompanionHandle *handle, uint64_t tab);
  *   created_at_ms when the item's page was created, epoch milliseconds
  *   size          "tiny"|"small"|"medium"|"large"|"huge", a coarse
  *                 bucket, never a byte count
- *   destination   "none"|"clipboard"|"link"
+ *   destination   "none"|"clipboard"|"link"|"drag"
  *
  * Records accumulate on ordinary use, not only on death: a page's
  * creation, each seal, each egress, each discard. Do not assume an
@@ -919,7 +1177,9 @@ char *companion_connection_test(CompanionHandle *handle);
  * and only the receipt id stays on the chip. BLOCKS for the round-trip
  * — call from a background queue; the core mutex is released during
  * the network call. Returns {"ok": true, "receipt_id"} or
- * {"ok": false, "error"}; free with companion_string_free().
+ * {"ok": false, "error"}; free with companion_string_free(). A chip on
+ * a page past its deadline sends nothing and answers the error "this
+ * page has expired" (ADR-0052).
  */
 char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
                              const char *opts_json);
@@ -927,7 +1187,8 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 /*
  * Conceal the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
- * chip. Options, blocking, and result shape as companion_chip_conceal.
+ * chip, and a page past its deadline as companion_chip_conceal does.
+ * Options, blocking, and result shape as companion_chip_conceal.
  * No per-chip mark is set, the link stands for the page, but the
  * egress is recorded: one "sent" record against the page's own
  * identity, destination "link", with a size class and no content.

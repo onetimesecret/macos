@@ -297,7 +297,7 @@ ceiling is seven days.
 Quit performs one synchronous state flush and presents no alert. If the
 flush is refused, or the session has content under a withheld save
 licence, the first ⌘Q is cancelled and an ember line under the page says
-what the quit would lose, with a "quit anyway (⌘Q)" button beside it;
+what the quit would lose, with a "Quit Anyway (⌘Q)" button beside it;
 the existing inline save or recovery state remains above it. A second
 ⌘Q, or the button, quits. A restore failure at
 launch also logs to the unified log under the `persistence` category and

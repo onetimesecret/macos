@@ -19,7 +19,7 @@ use zeroize::Zeroizing;
 use crate::diagnostics::diag_fault;
 use crate::{
     Companion, CompanionHandle, cstr, edit_intent, edit_selection, into_c_string, parse_ops,
-    persist, wall_now_ms,
+    persist, step_outcome_json, wall_now_ms,
 };
 
 /// The drafts envelope magic, also its associated data.
@@ -655,19 +655,7 @@ unsafe fn step(handle: *mut CompanionHandle, file: u64, back: bool) -> *mut c_ch
     } else {
         guard.files.redo(id)
     };
-    let Some(outcome) = outcome else {
-        return ptr::null_mut();
-    };
-    let value = serde_json::json!({
-        "applied": outcome.applied,
-        "caretUTF16": outcome.caret_u16.map_or(-1, i64::from),
-        "selectionLocationUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.location_u16)),
-        "selectionLengthUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.length_u16)),
-    });
-    match serde_json::to_string(&value) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
 /// Save the buffer to the file's path. False on refusal, including nothing at

@@ -14,11 +14,13 @@ use crate::blocks::{BlockIndex, MaterializedMeta, PersistedBlock};
 use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title,
+    SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
+use crate::transfer::ActiveCut;
 use crate::ttl::Ttl;
 
 /// Magic and version of a plaintext content snapshot. Earlier versions
@@ -89,18 +91,11 @@ impl<C: Clock> SheetStore<C> {
     pub fn snapshot(&self, wall_ms: u64) -> Zeroizing<Vec<u8>> {
         let now = self.clock.now();
         // Exported once, so both passes see the same bytes (Law 0004).
-        let blobs: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets()
-            .map(|sheet| sheet.document.export_snapshot())
-            .collect();
-        let metas: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets()
-            .map(|sheet| encode_materialized(&sheet.blocks, &sheet.document))
-            .collect();
+        let pages: Vec<PageExport> = self.sheets().map(PageExport::of).collect();
         let mut sizer = Sizer(0);
-        emit(self, &blobs, &metas, now, wall_ms, &mut sizer);
+        emit(self, &pages, now, wall_ms, &mut sizer);
         let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
-        emit(self, &blobs, &metas, now, wall_ms, &mut Writer(&mut buffer));
+        emit(self, &pages, now, wall_ms, &mut Writer(&mut buffer));
         debug_assert_eq!(buffer.len(), sizer.0, "sizing pass drifted from the write");
         buffer
     }
@@ -131,9 +126,10 @@ impl<C: Clock> SheetStore<C> {
         let mut next_tab_id = 1;
         let mut next_sheet_id = 1;
         let mut next_chip_id = 1;
+        let mut active_cut = None;
         for _ in 0..tab_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            tabs.push(read_tab(
+            let (tab, cut) = read_tab(
                 &mut record,
                 now,
                 away,
@@ -141,7 +137,10 @@ impl<C: Clock> SheetStore<C> {
                 &mut next_tab_id,
                 &mut next_sheet_id,
                 &mut next_chip_id,
-            )?);
+            )?;
+            tabs.push(tab);
+            // One cut stands at a time; a second record of one is not believed.
+            active_cut = active_cut.or(cut);
         }
         if !reader.done() {
             return Err(RestoreError::Malformed);
@@ -152,6 +151,7 @@ impl<C: Clock> SheetStore<C> {
         self.next_tab_id = next_tab_id;
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = next_chip_id;
+        self.active_cut = active_cut;
         Ok(restored)
     }
 
@@ -298,10 +298,45 @@ pub(crate) fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
     body(out);
 }
 
+/// What a live page writes that a walk must not produce twice (Law 0004).
+struct PageExport {
+    /// The whole document, history included.
+    blob: Zeroizing<Vec<u8>>,
+    /// The block section (ADR-0013).
+    meta: Zeroizing<Vec<u8>>,
+    /// Each chip's note text, in chip order; an empty note writes none.
+    notes: Vec<Option<Zeroizing<String>>>,
+    /// The same for the detached chips (ADR-0047).
+    detached_notes: Vec<Option<Zeroizing<String>>>,
+}
+
+impl PageExport {
+    fn of(sheet: &Sheet) -> Self {
+        Self {
+            blob: sheet.document.export_snapshot(),
+            meta: encode_materialized(&sheet.blocks, &sheet.document),
+            notes: notes_of(&sheet.chips),
+            detached_notes: notes_of(&sheet.detached),
+        }
+    }
+}
+
+/// Each chip's note text, taken once at its exact size (Law 0004).
+fn notes_of(chips: &[SealedChip]) -> Vec<Option<Zeroizing<String>>> {
+    chips
+        .iter()
+        .map(|chip| {
+            chip.note
+                .as_ref()
+                .map(Note::text)
+                .filter(|text| !text.is_empty())
+        })
+        .collect()
+}
+
 fn emit<C: Clock>(
     store: &SheetStore<C>,
-    blobs: &[Zeroizing<Vec<u8>>],
-    metas: &[Zeroizing<Vec<u8>>],
+    pages: &[PageExport],
     now: Instant,
     wall_ms: u64,
     out: &mut dyn Sink,
@@ -310,18 +345,28 @@ fn emit<C: Clock>(
     out.u64(wall_ms);
     out.u64(store.tabs.len() as u64);
     // Consumed out here because the framed body runs twice.
-    let mut pages = blobs.iter().zip(metas);
+    let mut pages = pages.iter();
     for tab in &store.tabs {
         let page = tab.page.as_ref().map(|sheet| {
-            let (blob, meta) = pages.next().expect("one export per live page");
-            (sheet, blob.as_slice(), meta.as_slice())
+            let export = pages.next().expect("one export per live page");
+            // The active cut rides with the page it came from (ADR-0047).
+            let cut = store
+                .active_cut
+                .as_ref()
+                .filter(|cut| cut.page == sheet.id)
+                .map(|cut| cut.envelope.as_slice());
+            (sheet, export, cut)
         });
         framed(&mut *out, |out| emit_tab(tab, page, now, out));
     }
 }
 
+/// A live page, what it writes once, and the active cut's envelope if the
+/// cut came from it.
+type PageWrite<'a> = (&'a Sheet, &'a PageExport, Option<&'a [u8]>);
+
 /// One tab record: identity, birthday, name, rung, then the framed page.
-fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: &mut dyn Sink) {
+fn emit_tab(tab: &Tab, page: Option<PageWrite<'_>>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(tab.uuid.as_bytes());
     out.u64(tab.created_wall_ms);
@@ -335,16 +380,16 @@ fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: 
     out.u64(tab.rung.duration().as_secs());
     match page {
         None => out.u8(0),
-        Some((sheet, blob, meta)) => {
+        Some(page) => {
             out.u8(1);
-            framed(&mut *out, |out| emit_sheet(sheet, blob, meta, now, out));
+            framed(&mut *out, |out| emit_sheet(page, now, out));
         }
     }
 }
 
 /// One page record. No title: it is derived and recomputed at restore
 /// (ADR-0017).
-fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut dyn Sink) {
+fn emit_sheet((sheet, export, cut): PageWrite<'_>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(sheet.uuid.as_bytes());
     out.u64(sheet.created_wall_ms);
@@ -371,13 +416,14 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
     out.u64(ms(sheet.total_held(now)));
     // Chips first, so every identity is known before a mark resolves one.
     out.u64(sheet.chips.len() as u64);
-    for chip in &sheet.chips {
-        framed(&mut *out, |out| emit_chip(chip, out));
+    for (chip, note) in sheet.chips.iter().zip(&export.notes) {
+        let note = note.as_ref().map(|text| text.as_str());
+        framed(&mut *out, |out| emit_chip(chip, note, out));
     }
     // The whole document, history included; the projection derives from it.
-    out.bytes(blob);
+    out.bytes(&export.blob);
     // Materialized metadata from the compaction ceremony (ADR-0013).
-    out.bytes(meta);
+    out.bytes(&export.meta);
     // Trailing page-level floor: a deletion's stamp, which no block can
     // carry.
     match sheet.blocks.compaction_frontier() {
@@ -387,10 +433,24 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
             out.u64(frontier_s.max(0) as u64);
         }
     }
+    // Trailing: the chips the body no longer shows, framed as attached ones are.
+    out.u64(sheet.detached.len() as u64);
+    for (chip, note) in sheet.detached.iter().zip(&export.detached_notes) {
+        let note = note.as_ref().map(|text| text.as_str());
+        framed(&mut *out, |out| emit_chip(chip, note, out));
+    }
+    // Then the active cut's envelope, on the page it came from.
+    match cut {
+        None => out.u8(0),
+        Some(envelope) => {
+            out.u8(1);
+            out.bytes(envelope);
+        }
+    }
 }
 
 /// One chip record. The face is recomputed on the way back in.
-fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
+fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
     out.raw(chip.uuid.as_bytes());
     out.u8(match chip.meta {
         ChipMeta::Text { .. } => 0,
@@ -404,6 +464,21 @@ fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
         }
     }
     out.bytes(chip.bytes.expose());
+    // Trailing, so a build that predates them skips both (ADR-0043).
+    match &chip.name {
+        None => out.u8(0),
+        Some(name) => {
+            out.u8(1);
+            out.bytes(name.as_bytes());
+        }
+    }
+    match note {
+        None => out.u8(0),
+        Some(text) => {
+            out.u8(1);
+            out.bytes(text.as_bytes());
+        }
+    }
 }
 
 /// Encode a sheet's block section (frozen summaries, then grouping) into
@@ -491,6 +566,7 @@ fn emit_ledger<C: Clock>(store: &SheetStore<C>, out: &mut dyn Sink) {
                 DestinationClass::None => 0,
                 DestinationClass::Clipboard => 1,
                 DestinationClass::OneTimeLink => 2,
+                DestinationClass::Drag => 3,
             });
         });
     }
@@ -581,7 +657,7 @@ fn read_tab(
     next_tab_id: &mut u64,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
-) -> Result<Tab, RestoreError> {
+) -> Result<(Tab, Option<ActiveCut>), RestoreError> {
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
@@ -599,15 +675,15 @@ fn read_tab(
         _ => return Err(Malformed),
     };
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
-    let page = match reader.u8().ok_or(Malformed)? {
-        0 => None,
+    let (page, cut) = match reader.u8().ok_or(Malformed)? {
+        0 => (None, None),
         1 => {
             let mut body = reader.framed().ok_or(Malformed)?;
             // A page flag over an empty frame is damage.
             if body.buf.is_empty() {
                 return Err(Malformed);
             }
-            Some(read_page(
+            let (page, cut) = read_page(
                 &mut body,
                 now,
                 away,
@@ -615,7 +691,8 @@ fn read_tab(
                 rung.longest_life(),
                 next_sheet_id,
                 next_chip_id,
-            )?)
+            )?;
+            (Some(page), cut)
         }
         _ => return Err(Malformed),
     };
@@ -623,14 +700,15 @@ fn read_tab(
     let id = TabId::from_raw(*next_tab_id);
     *next_tab_id += 1;
 
-    Ok(Tab {
+    let tab = Tab {
         id,
         uuid,
         created_wall_ms,
         name,
         rung,
         page,
-    })
+    };
+    Ok((tab, cut))
 }
 
 /// One page record. `ceiling` ([`Ttl::longest_life`]) bounds every life
@@ -643,7 +721,7 @@ fn read_page(
     ceiling: Duration,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
-) -> Result<Sheet, RestoreError> {
+) -> Result<(Sheet, Option<ActiveCut>), RestoreError> {
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
@@ -682,35 +760,7 @@ fn read_page(
     };
     let total_held = span(reader.u64().ok_or(Malformed)?) + held_while_away;
 
-    let chip_count = count(reader)?;
-    let mut chips = Vec::new();
-    for _ in 0..chip_count {
-        let mut record = reader.framed().ok_or(Malformed)?;
-        let chip_uuid = record.uuid().ok_or(Malformed)?;
-        let kind = record.u8().ok_or(Malformed)?;
-        let conceal = match record.u8().ok_or(Malformed)? {
-            0 => None,
-            1 => Some(Conceal {
-                receipt_id: record.str().ok_or(Malformed)?.to_string(),
-            }),
-            _ => return Err(Malformed),
-        };
-        let bytes = record.bytes().ok_or(Malformed)?;
-        let chip_id = ChipId::from_raw(*next_chip_id);
-        *next_chip_id += 1;
-        // The face is rebuilt by the sealing constructors, never trusted.
-        let mut chip = match kind {
-            0 => SealedChip::text_with_uuid(
-                chip_id,
-                chip_uuid,
-                std::str::from_utf8(bytes).map_err(|_| Malformed)?,
-            ),
-            1 => SealedChip::image_with_uuid(chip_id, chip_uuid, bytes.to_vec()),
-            _ => return Err(Malformed),
-        };
-        chip.conceal = conceal;
-        chips.push(chip);
-    }
+    let chips = read_chips(reader, next_chip_id)?;
 
     // The materialized slot is believed only against the imported document.
     let blob = reader.bytes().ok_or(Malformed)?;
@@ -723,6 +773,28 @@ fn read_page(
             0 => None,
             1 => Some(clamp_stamp(reader.u64().ok_or(Malformed)?, wall_ms)),
             // An unknown tag is damage, not a newer dialect.
+            _ => return Err(Malformed),
+        }
+    };
+    // And the detached chips (ADR-0047), which a file written before them lacks.
+    let detached = if reader.done() {
+        Vec::new()
+    } else {
+        read_chips(reader, next_chip_id)?
+    };
+    let mut identities: Vec<ItemId> = chips.iter().chain(&detached).map(|c| c.uuid).collect();
+    identities.sort_unstable();
+    identities.dedup();
+    if identities.len() != chips.len() + detached.len() {
+        return Err(Malformed);
+    }
+    // And the active cut's envelope, on the page it came from.
+    let cut = if reader.done() {
+        None
+    } else {
+        match reader.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(reader.bytes().ok_or(Malformed)?),
             _ => return Err(Malformed),
         }
     };
@@ -764,7 +836,7 @@ fn read_page(
 
     let derived_title = derive_title(&segments);
 
-    Ok(Sheet {
+    let sheet = Sheet {
         id,
         uuid,
         derived_title,
@@ -773,11 +845,86 @@ fn read_page(
         segments,
         blocks,
         chips,
+        detached,
         clock,
         total_held,
         // Not persisted: no sync session survives a restart (issue #101).
         ceremony: CeremonyState::Immediate,
-    })
+    };
+    // A cut whose objects are not all detached here restores as no cut.
+    let cut = cut.and_then(|envelope| ActiveCut::restored(&sheet, envelope));
+    Ok((sheet, cut))
+}
+
+/// A count, then that many framed chip records; ids are minted in order.
+fn read_chips(
+    reader: &mut Reader<'_>,
+    next_chip_id: &mut u64,
+) -> Result<Vec<SealedChip>, RestoreError> {
+    let chip_count = count(reader)?;
+    let mut chips = Vec::new();
+    for _ in 0..chip_count {
+        let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
+        chips.push(read_chip(&mut record, next_chip_id)?);
+    }
+    Ok(chips)
+}
+
+/// One chip record. The face is rebuilt by the sealing constructors, never
+/// trusted.
+fn read_chip(record: &mut Reader<'_>, next_chip_id: &mut u64) -> Result<SealedChip, RestoreError> {
+    use RestoreError::Malformed;
+    let chip_uuid = record.uuid().ok_or(Malformed)?;
+    let kind = record.u8().ok_or(Malformed)?;
+    let conceal = match record.u8().ok_or(Malformed)? {
+        0 => None,
+        1 => Some(Conceal {
+            receipt_id: record.str().ok_or(Malformed)?.to_string(),
+        }),
+        _ => return Err(Malformed),
+    };
+    let bytes = record.bytes().ok_or(Malformed)?;
+    // A record written before the name ends here (ADR-0043).
+    let name = if record.done() {
+        None
+    } else {
+        match record.u8().ok_or(Malformed)? {
+            0 => None,
+            // A name this build's rule refuses is dropped, not damage.
+            1 => judge_name(record.str().ok_or(Malformed)?)
+                .ok()
+                .flatten()
+                .map(str::to_owned),
+            _ => return Err(Malformed),
+        }
+    };
+    // And one written before the note ends here; its undo starts empty.
+    let note = if record.done() {
+        None
+    } else {
+        match record.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(Note::holding(record.str().ok_or(Malformed)?)),
+            _ => return Err(Malformed),
+        }
+    };
+    let chip_id = ChipId::from_raw(*next_chip_id);
+    *next_chip_id += 1;
+    let mut chip = match kind {
+        0 => SealedChip::text_with_uuid(
+            chip_id,
+            chip_uuid,
+            std::str::from_utf8(bytes).map_err(|_| Malformed)?,
+        ),
+        1 => SealedChip::image_with_uuid(chip_id, chip_uuid, bytes.to_vec()),
+        _ => return Err(Malformed),
+    };
+    chip.conceal = conceal;
+    chip.name = name;
+    chip.note = note;
+    // A written chip stood when it was written; its seal is long past.
+    chip.stood = true;
+    Ok(chip)
 }
 
 /// Decode a sheet's block slot into candidates for [`BlockIndex::adopt`]
@@ -861,6 +1008,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         0 => DestinationClass::None,
         1 => DestinationClass::Clipboard,
         2 => DestinationClass::OneTimeLink,
+        3 => DestinationClass::Drag,
         _ => return Err(Malformed),
     };
     Ok(LedgerRecord {
@@ -908,6 +1056,28 @@ mod tests {
             .seal_image(first, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
             .unwrap();
         assert!(store.mark_chip_concealed(token, "receipt-42".into()));
+        store.set_chip_name(token, "DEPLOY_TOKEN").unwrap();
+        assert!(store.apply_note_ops(
+            token,
+            &[crate::store::EditOp::Insert {
+                pos_u16: 0,
+                text: "rotate after \u{1F511} the audit".into(),
+            }],
+            crate::document::EditIntent::Typing,
+            None,
+        ));
+        let removed = store.seal_text(first, "removed but kept").unwrap();
+        store.set_chip_name(removed, "KEPT").unwrap();
+        assert!(store.apply_note_ops(
+            removed,
+            &[crate::store::EditOp::Insert {
+                pos_u16: 0,
+                text: "detached \u{1F511} note".into(),
+            }],
+            crate::document::EditIntent::Typing,
+            None,
+        ));
+        assert!(store.sync_document(first, vec![Segment::Chip(removed)]));
         assert!(store.sync_document(
             first,
             vec![
@@ -917,6 +1087,7 @@ mod tests {
                 Segment::Chip(image),
             ],
         ));
+        assert_eq!(store.sheet(first).unwrap().detached().count(), 1);
         let second = store.new_tab().1;
         assert!(store.sync_document(second, vec![Segment::Ink("errands".into())]));
         let doomed = store.new_tab().1;
@@ -970,8 +1141,19 @@ mod tests {
                 .excerpt()
         );
         assert_eq!(chips[0].conceal().unwrap().receipt_id, "receipt-42");
+        assert_eq!(chips[0].name(), Some("DEPLOY_TOKEN"));
+        assert_eq!(
+            &**revived.note_text(chips[0].id()).unwrap(),
+            "rotate after \u{1F511} the audit"
+        );
+        assert!(
+            !revived.note_can_undo(chips[0].id()),
+            "a note's undo starts empty after a restore"
+        );
         assert_eq!(chips[1].excerpt(), "PNG image");
         assert!(chips[1].conceal().is_none());
+        assert_eq!(chips[1].name(), None);
+        assert!(!chips[1].has_note());
 
         let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
         assert_eq!(&*bytes, b"ghp_expected-to-survive");
@@ -988,6 +1170,76 @@ mod tests {
         assert_eq!(sheet.document.first_change_timestamp(), stamped);
 
         assert_eq!(revived.ledger().count(), 0);
+    }
+
+    #[test]
+    fn a_detached_chip_comes_back_detached_with_its_name_and_note() {
+        let (original, clock, first, _) = populated();
+        let kept = original.sheet(first).unwrap().detached().next().unwrap();
+        let uuid = kept.uuid();
+        let snapshot = original.snapshot(1_000_000);
+
+        let mut revived = store_on(clock.clone());
+        revived.restore(&snapshot, 1_000_000).unwrap();
+        let sheet = revived.sheet(first).unwrap();
+        let back: Vec<&SealedChip> = sheet.detached().collect();
+        assert_eq!(back.len(), 1, "kept apart, on the page's clock");
+        assert_eq!(back[0].uuid(), uuid);
+        assert_eq!(back[0].name(), Some("KEPT"));
+        let id = back[0].id();
+        assert!(
+            revived.note_text(id).is_none(),
+            "the note's routes reach only a standing object"
+        );
+        assert!(sheet.chips().all(|chip| chip.uuid() != uuid));
+
+        // A restate naming it stands it again, payload and note intact.
+        assert!(revived.sync_document(first, vec![Segment::Chip(id)]));
+        assert_eq!(&**revived.copy_out_chip(id).unwrap().0, b"removed but kept");
+        assert_eq!(&**revived.note_text(id).unwrap(), "detached \u{1F511} note");
+    }
+
+    #[test]
+    fn a_page_written_before_detached_chips_existed_restores_with_none() {
+        let (store, clock, id) = page_cut_after_it_was_written();
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let tab = first_tab(&snapshot);
+        let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
+        let page_at = UNNAMED_TAB_PREFIX + 8;
+        let page = &tab[page_at..page_at + page_len];
+        // An empty detached list, eight bytes, then a cut flag of one.
+        for (older_by, what) in [(9, "both fields"), (1, "the cut flag")] {
+            let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
+            rebuilt_tab.extend_from_slice(&frame(&page[..page.len() - older_by]));
+            let older = with_first_tab(&snapshot, &rebuilt_tab);
+
+            let mut revived = store_on(clock.clone());
+            assert_eq!(revived.restore(&older, wall).unwrap(), 1, "without {what}");
+            let sheet = revived.sheets().next().unwrap();
+            assert_eq!(sheet.detached().count(), 0);
+            assert_eq!(sheet.segments(), store.sheet(id).unwrap().segments());
+            assert!(revived.active_cut().is_none());
+        }
+    }
+
+    #[test]
+    fn a_detached_chip_repeating_an_identity_is_malformed() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "standing", 0, 0).unwrap();
+        let twin = store.seal_text_at(id, "its twin", 1, 0).unwrap();
+        // The twin detaches, then takes the standing chip's identity.
+        assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
+        let uuid = store.sheet(id).unwrap().chip(chip).unwrap().uuid();
+        let sheet = store.tabs[0].page.as_mut().unwrap();
+        let index = sheet.detached.iter().position(|c| c.id == twin).unwrap();
+        sheet.detached[index].uuid = uuid;
+        let snapshot = store.snapshot(0);
+
+        let mut revived = store_on(clock);
+        assert_eq!(revived.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        assert!(revived.has_no_tabs(), "the store is untouched");
     }
 
     #[test]
@@ -1493,6 +1745,31 @@ mod tests {
     }
 
     #[test]
+    fn every_destination_class_round_trips_in_the_ledger() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "sent three ways", 0, 0).unwrap();
+        let classes = [
+            DestinationClass::Clipboard,
+            DestinationClass::OneTimeLink,
+            DestinationClass::Drag,
+        ];
+        for class in classes {
+            assert!(store.record_sent(chip, class));
+        }
+        let mut revived = store_on(clock.clone());
+        revived
+            .restore_ledger(&store.ledger_snapshot(), clock.wall_ms())
+            .unwrap();
+        let sent: Vec<DestinationClass> = revived
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Sent)
+            .map(LedgerRecord::destination)
+            .collect();
+        assert_eq!(sent, [classes[2], classes[1], classes[0]], "newest first");
+    }
+
+    #[test]
     fn a_ledger_restore_keeps_the_records_the_store_already_holds() {
         let (original, clock, ..) = populated();
         let file = original.ledger_snapshot();
@@ -1783,8 +2060,11 @@ mod tests {
         with_first_tab(snapshot, &rebuilt_tab)
     }
 
+    /// The floor and the fields after it, for a page holding no detached chip
+    /// and no cut.
     fn floor_len(sheet: &Sheet) -> usize {
-        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8
+        assert!(sheet.detached.is_empty(), "the helper counts an empty list");
+        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8 + 8 + 1
     }
 
     const UNNAMED_TAB_PREFIX: usize = 16 + 8 + 1 + 8 + 1;
@@ -1951,17 +2231,123 @@ mod tests {
         doc.insert_chip(0, uuid).unwrap();
         doc.insert(1, " and ink \u{1F600}").unwrap();
         doc.commit(None);
-        let snapshot = sheet_snapshot_with_tails(
-            &[(uuid, "ghp_still-here")],
-            &doc.export_snapshot(),
-            b"a chip field from 2027",
-        );
+        // No name, no note, then the field this build does not know.
+        let tail = [&[0u8, 0][..], b"a chip field from 2027"].concat();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_still-here")], &doc.export_snapshot(), &tail);
 
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
         let chip = store.sheets().next().unwrap().chips().next().unwrap();
         assert_eq!(chip.uuid(), uuid);
         let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
         assert_eq!(&*bytes, b"ghp_still-here");
+    }
+
+    fn one_chip_document(uuid: ItemId) -> Zeroizing<Vec<u8>> {
+        let doc = SheetDocument::new();
+        doc.insert_chip(0, uuid).unwrap();
+        doc.commit(None);
+        doc.export_snapshot()
+    }
+
+    /// A present name or note: flag 1, then the length prefixed text.
+    fn text_field(text: &str) -> Vec<u8> {
+        let mut field = vec![1u8];
+        field.extend_from_slice(&(text.len() as u64).to_le_bytes());
+        field.extend_from_slice(text.as_bytes());
+        field
+    }
+
+    #[test]
+    fn a_chip_written_before_names_existed_restores_unnamed() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let snapshot = sheet_snapshot(&[(uuid, "ghp_older-build")], &one_chip_document(uuid));
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), None);
+        let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+        assert_eq!(&*bytes, b"ghp_older-build");
+    }
+
+    #[test]
+    fn a_written_name_comes_back_and_one_the_rule_refuses_is_dropped() {
+        let uuid = ItemId::random();
+        let document = one_chip_document(uuid);
+        for (written, expected) in [
+            ("API_KEY", Some("API_KEY")),
+            ("my.key", None),
+            ("9lives", None),
+            (&"A".repeat(65)[..], None),
+        ] {
+            let (mut store, _clock) = store();
+            let snapshot = sheet_snapshot_with_tails(
+                &[(uuid, "ghp_named-or-not")],
+                &document,
+                &text_field(written),
+            );
+            assert_eq!(store.restore(&snapshot, 0).unwrap(), 1, "{written}");
+            let chip = store.sheets().next().unwrap().chips().next().unwrap();
+            assert_eq!(chip.name(), expected, "{written}");
+            let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+            assert_eq!(&*bytes, b"ghp_named-or-not", "the chip outlived its name");
+        }
+    }
+
+    #[test]
+    fn a_chip_written_before_notes_existed_keeps_its_name_and_has_no_note() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let snapshot = sheet_snapshot_with_tails(
+            &[(uuid, "ghp_named-only")],
+            &one_chip_document(uuid),
+            &text_field("API_KEY"),
+        );
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), Some("API_KEY"));
+        assert!(!chip.has_note());
+        assert_eq!(&**store.note_text(chip.id()).unwrap(), "");
+    }
+
+    #[test]
+    fn a_written_note_comes_back_beside_its_name() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), None);
+        assert!(chip.has_note());
+        assert_eq!(
+            &**store.note_text(chip.id()).unwrap(),
+            "kept \u{1F600} beside it"
+        );
+    }
+
+    #[test]
+    fn an_unknown_note_flag_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let uuid = ItemId::random();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[0, 7]);
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn an_unknown_name_flag_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let uuid = ItemId::random();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[2]);
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
     }
 
     #[test]

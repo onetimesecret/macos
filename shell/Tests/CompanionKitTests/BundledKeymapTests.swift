@@ -46,6 +46,9 @@ final class BundledKeymapTests: XCTestCase {
         // The one chord that puts plaintext on the board, over a
         // selected sealed object only (D-29).
         "cmd-shift-c": .chipCopyDecrypted,
+        // A sealed object's note grows to the card and back, answered by
+        // the note's own surface (issue #246).
+        "shift-escape": .noteToggleExpanded,
         // Undo names its chords here rather than leaving them to the
         // standard Edit menu, because the stack behind them is the
         // core's now and not AppKit's (issue #132).
@@ -113,7 +116,7 @@ final class BundledKeymapTests: XCTestCase {
             Set(editorRoute),
             [
                 .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
-                .editorUndo, .editorRedo,
+                .editorUndo, .editorRedo, .noteToggleExpanded,
             ])
     }
 

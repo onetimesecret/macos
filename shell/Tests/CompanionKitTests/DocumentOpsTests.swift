@@ -506,9 +506,33 @@ final class DocumentOpsWiringTests: XCTestCase {
     }
 
     func testTheChipMenuOffersPlaintextByName() throws {
+        // D-41's order as ADR-0042 extends it; nil is a separator.
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles,
-            ["Copy decrypted contents", "Create one-time link…", "Remove protected content"])
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
+            [
+                "Copy Decrypted Contents", "Create One-Time Link…", nil, "Name", "Note…", nil,
+                "Remove Sealed Content",
+            ])
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: true, kind: "text"),
+            [
+                "Copy Name", "Copy Decrypted Contents", "Copy Name=Value, Decrypted",
+                "Create One-Time Link…", nil, "Rename", "Edit Note…", nil,
+                "Remove Sealed Content",
+            ])
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "text")[5...6],
+            ["Rename", "Note…"])
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true, kind: "text")[3...4],
+            ["Name", "Edit Note…"])
+        // The core composes `NAME=value` for text alone (ADR-0043 point 7).
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "image"),
+            [
+                "Copy Name", "Copy Decrypted Contents", "Create One-Time Link…", nil, "Rename",
+                "Note…", nil, "Remove Sealed Content",
+            ])
         makeEditor()
         textView.insertText(
             "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -521,12 +545,16 @@ final class DocumentOpsWiringTests: XCTestCase {
         // unrelated contract.
         let menu = NSMenu()
         coordinator.appendChipItems(to: menu, at: 3)
+        XCTAssertEqual(
+            menu.items.map { $0.isSeparatorItem ? nil : $0.title },
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
+            "an unnamed object's menu is not the unnamed order")
         let copy = try XCTUnwrap(
-            menu.items.first { $0.title == "Copy decrypted contents" })
+            menu.items.first { $0.title == "Copy Decrypted Contents" })
         let link = try XCTUnwrap(
-            menu.items.first { $0.title == "Create one-time link…" })
+            menu.items.first { $0.title == "Create One-Time Link…" })
         let remove = try XCTUnwrap(
-            menu.items.first { $0.title == "Remove protected content" })
+            menu.items.first { $0.title == "Remove Sealed Content" })
         XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
         // The two egresses come first, in the order D-41 renders them,
         // and the separator keeps the removal below both.
@@ -603,21 +631,34 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 1))
     }
 
-    func testAnUndoResurrectingADeadChipIsStrippedSilently() {
+    /// Seals "seal me" and removes the object whole, as a backspace on it selected would.
+    private func sealThenRemove() -> ChipInfo? {
         makeEditor()
         textView.insertText(
             "seal me", replacementRange: NSRange(location: NSNotFound, length: 0))
         textView.setSelectedRange(NSRange(location: 0, length: 7))
         coordinator.sealSelectionOrLine()
-        guard case .chip(let face)? = coreRuns().first else {
-            return XCTFail("the seal left no chip")
-        }
-        // The chip dies (deleted whole, as backspace would).
+        guard case .chip(let face)? = coreRuns().first else { return nil }
         storage.deleteCharacters(in: NSRange(location: 0, length: 1))
-        XCTAssertTrue(coreRuns().isEmpty)
-        // A stale undo replays the attachment: the core rejects the
-        // chip op, recovery strips the glyph, and no chip returns,
-        // because undo never un-seals.
+        XCTAssertTrue(coreRuns().isEmpty, "the removal took the object off the page")
+        return face
+    }
+
+    func testUndoAfterRemovingAChipStandsTheSameObjectAgain() throws {
+        let face = try XCTUnwrap(sealThenRemove(), "the seal left no chip")
+        // The core kept the object detached, so its step puts it back (D-30).
+        coordinator.step(back: true)
+        guard case .chip(let back)? = coreRuns().first else {
+            return XCTFail("undo left no object on the page")
+        }
+        XCTAssertEqual(back.chipId, face.chipId)
+        assertParity()
+    }
+
+    func testPuttingARemovedChipsAttachmentBackReattachesIt() throws {
+        let face = try XCTUnwrap(sealThenRemove(), "the seal left no chip")
+        // The attachment put back travels as a chip op, which a detached
+        // object of this page answers (ADR-0047).
         storage.insert(
             InkEditorView.Coordinator.chipString(
                 ChipInfo(
@@ -625,10 +666,10 @@ final class DocumentOpsWiringTests: XCTestCase {
                     sizeLabel: face.sizeLabel, concealed: face.concealed)),
             at: 0
         )
-        XCTAssertFalse(InkEditorView.Coordinator.runs(of: storage).contains {
-            if case .chip = $0 { true } else { false }
-        }, "the dead chip's glyph survived recovery")
-        XCTAssertTrue(coreRuns().isEmpty)
+        guard case .chip(let back)? = coreRuns().first else {
+            return XCTFail("the object did not stand again")
+        }
+        XCTAssertEqual(back.chipId, face.chipId)
         assertParity()
     }
 
@@ -663,7 +704,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testOnlyEditedBlocksProduceAnAffordance() {
         let storage = NSTextStorage(string: "first\nsecond")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "first", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "second", createdS: 2_000, modifiedS: 3_000, paragraphs: 1),
@@ -685,7 +726,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testAnAffordanceSkipsItsBlockLeadingBlankLine() {
         let storage = NSTextStorage(string: "alpha\n\nbeta words")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "beta", createdS: 2_000, modifiedS: 3_000, paragraphs: 2),
@@ -704,7 +745,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testAFenceCoalescesToOneEditedAffordance() {
         let storage = NSTextStorage(string: "```\ncode\n```")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "open", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "body", createdS: 2_000, modifiedS: 2_000, paragraphs: 1),
@@ -720,7 +761,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testCaretFocusCoversTheCompleteLogicalBlock() {
         let storage = NSTextStorage(string: "first\nsecond")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "paste", createdS: 1_000, modifiedS: 3_000, paragraphs: 2)
             ],
@@ -940,7 +981,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testTheAccessibilityLabelKeepsBothStampsInFull() {
         let storage = NSTextStorage(string: "first\nsecond")
         let result = InkEditorView.Coordinator.applyMarkdownStyling(
-            to: storage, sheet: 1,
+            to: storage,
             blockMetas: [
                 BlockInfo(id: "first", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
                 BlockInfo(id: "second", createdS: 2_000, modifiedS: 300_000, paragraphs: 1),

@@ -148,6 +148,11 @@ the mechanical excerpt and the size class on the row under them.
   `SealedBlockCell.actionsRect(in:)` is the one seat the drawing reads;
   `Coordinator.openChipMenu(at:from:in:)` is the one menu all three
   routes open.
+  *Amended 2026-10-13:* a named block's bottom row carries three copy
+  zones, name, `=` and value, which act on the first click; a plain
+  click outside the bottom row still only selects, and an unnamed block
+  keeps this decision whole
+  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
 - **D-41 (fixed)** The menu, in the design's words and order:
 
   ```text
@@ -169,6 +174,15 @@ the mechanical excerpt and the size class on the row under them.
   *Acceptance:* `DocumentOpsTests.testTheChipMenuOffersPlaintextByName`,
   `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`,
   `BundledKeymapTests`.
+  *Amended 2026-10-13:* the menu gains *Copy name*, *Copy name=value,
+  decrypted*, *Name…* or *Rename…* and *Note…* or *Edit note…*, in the
+  order and with the unnamed variants that
+  [ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
+  records. The chord stays on *Copy decrypted contents*.
+  *Amended 2026-10-14:* the items are title case, *Name* and *Rename*
+  edit in place and carry no ellipsis, and the removal reads *Remove
+  Sealed Content*
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the
@@ -188,6 +202,9 @@ the mechanical excerpt and the size class on the row under them.
     reports stays four.
   *Acceptance:* `SealedCapsuleTests.testTheLinesReadAsTheDesignWroteThem`,
   `PasteboardOfferTests.testACopyOutArmsTheClearAndFlashesTheInterval`.
+  *Amended 2026-10-14:* the removal line reads `sealed content removed.`,
+  one noun for the object
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-43 (fixed)** The clear after copy is **90 seconds**, the interval
   the design names. It stays one core constant,
   `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi/src/lib.rs`, read by the

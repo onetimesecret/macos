@@ -35,15 +35,16 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditIntent, EditOp, EditSelection, FILE_SIZE_LIMIT, FileId,
-    LedgerEvent, RestoreError, Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab,
-    TabId, TextSelection, Ttl, detect_source_language, local_day,
+    ChipId, ChipMeta, Copied, CopyRefusal, DestinationClass, EditIntent, EditOp, EditSelection,
+    EnvelopeCap, FILE_SIZE_LIMIT, FileId, LedgerEvent, NameRefusal, PayloadError, Placed,
+    RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore, StepOutcome, SystemClock,
+    TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, judge_name, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
 use companion_pasteboard::{
-    ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, PasteboardItem,
-    WriteOptions,
+    ChangeCount, ContentKind, DragItem, MemoryPasteboard, Pasteboard, PasteboardContent,
+    PasteboardItem, WriteOptions,
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -368,6 +369,27 @@ pub unsafe extern "C" fn companion_test_wire_last_json(
         Wire::Stub(stub) => stub.last_json().map_or(ptr::null_mut(), into_c_string),
         Wire::Real(_) => ptr::null_mut(),
     }
+}
+
+/// Replace the handle's pasteboard with one in process memory, after taking
+/// back any write of ours on the old one, so a test's copies never reach the
+/// general pasteboard. Returns whether it was installed. `test-util` only
+/// (ADR-0018).
+///
+/// # Safety
+/// `handle` must be null or a valid handle.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_memory_pasteboard(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.retire_last_write();
+    guard.pasteboard = Board::Memory(MemoryPasteboard::new());
+    true
 }
 
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
@@ -711,9 +733,8 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
 
 // ---- The synced document ----
 
-/// Replace a page's document snapshot, a JSON array of `{"ink": "text"}` and
-/// `{"chip": id}` runs. Chips it omits are zeroized; a malformed snapshot is
-/// rejected whole. Returns whether it was accepted.
+/// Replace a page's document with `{"ink": "text"}` and `{"chip": id}` runs:
+/// chips it omits detach, those it names reattach; a malformed one refuses whole.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `json` must be a valid,
@@ -1142,7 +1163,8 @@ pub unsafe extern "C" fn companion_sheet_undo_selection_length_u16(
 /// Copy a chip out: the core writes the pasteboard marked transient and
 /// `ConcealedType`, keeps the receipt for [`companion_clear_clipboard_if_ours`],
 /// and records one `sent` to `clipboard`. The chip survives. Returns whether
-/// it existed.
+/// it existed; false, writing and recording nothing, past its page's deadline
+/// (ADR-0052).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1154,29 +1176,42 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let Some((bytes, meta)) = guard.store.copy_out_chip(ChipId::from_raw(chip)) else {
+    let chip = ChipId::from_raw(chip);
+    let Some((bytes, meta)) = guard.store.copy_out_chip(chip) else {
         return false;
     };
-    let kind = match meta {
-        ChipMeta::Text { .. } => ContentKind::Text,
-        ChipMeta::Image { .. } => ContentKind::Image,
-    };
-    guard.retire_last_write();
-    let receipt = guard.pasteboard.write(
-        bytes,
-        kind,
-        WriteOptions {
-            nspasteboard_concealed: true,
-        },
-    );
-    guard.last_write = Some(receipt);
-    guard
-        .store
-        .record_sent(ChipId::from_raw(chip), DestinationClass::Clipboard);
+    guard.write_decrypted(chip, bytes, content_kind(meta));
     true
 }
 
-/// Remove a chip now, wiping its bytes. Returns whether it existed.
+/// Copy `NAME=<plaintext>` by copy decrypted's route (Law 0001, ADR-0043): the
+/// store composes it and this writes it as [`companion_chip_copy_out`] does.
+/// False, writing and recording nothing, for an unknown, unnamed or image chip,
+/// or a page past its deadline (ADR-0052).
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_copy_name_value(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let chip = ChipId::from_raw(chip);
+    let Some(bytes) = guard.store.copy_out_name_value(chip) else {
+        return false;
+    };
+    guard.write_decrypted(chip, bytes, ContentKind::Text);
+    true
+}
+
+/// Burn a chip, attached or detached, wiping its bytes and its page's undo
+/// stack (ADR-0047). Returns whether it existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1189,6 +1224,576 @@ pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chi
         return false;
     };
     guard.store.delete_chip(ChipId::from_raw(chip))
+}
+
+/// Judge a draft sealed name without a handle (ADR-0043): 0 takes it, an
+/// empty draft clearing; 1 is too long; 2 is outside the charset, as are null
+/// and non-UTF-8.
+///
+/// # Safety
+/// `draft` must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u32 {
+    let Some(draft) = (unsafe { cstr(draft) }) else {
+        return 2;
+    };
+    match judge_name(draft) {
+        Ok(_) => 0,
+        Err(NameRefusal::TooLong) => 1,
+        Err(NameRefusal::OutsideCharset | NameRefusal::UnknownChip) => 2,
+    }
+}
+
+/// Name a sealed object, or clear its name with a blank draft (ADR-0043).
+/// False for an unknown chip or a refused draft; the name is then unchanged.
+///
+/// # Safety
+/// `handle` must be a valid handle. `name` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_set_name(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    name: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(name) = (unsafe { cstr(name) }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .set_chip_name(ChipId::from_raw(chip), name)
+        .is_ok()
+}
+
+// ---- A sealed object's note: its own document, keyed by chip (ADR-0043) ----
+
+/// The note as document runs: `[]` without one, else `[{"ink": text}]`. Null
+/// for an unknown chip or a page past its deadline (ADR-0052). Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_runs_json(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let Some(text) = guard.store.note_text(ChipId::from_raw(chip)) else {
+        return ptr::null_mut();
+    };
+    let runs: Vec<serde_json::Value> = if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![serde_json::json!({ "ink": text.as_str() })]
+    };
+    match serde_json::to_string(&runs) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Apply an edit batch to the note with its `TextKit` gesture, whole or not at
+/// all, as [`companion_sheet_apply_ops_with_intent`] does a page's. A chip op is
+/// refused; the first accepted batch makes the note.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_apply_ops_with_intent(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    json: *const c_char,
+    intent: u32,
+    before_location: u32,
+    before_length: u32,
+    after_location: u32,
+    after_length: u32,
+) -> bool {
+    let Some(intent) = edit_intent(intent) else {
+        return false;
+    };
+    let Some(selection) =
+        edit_selection(before_location, before_length, after_location, after_length)
+    else {
+        return false;
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(ops) = parse_ops(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .apply_note_ops(ChipId::from_raw(chip), &ops, intent, selection)
+}
+
+/// End the note's typing run without an undo item; `u32::MAX` twice for no
+/// selection. False for an unknown chip or a half-given selection.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_finish_editing_group(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    location: u32,
+    length: u32,
+) -> bool {
+    let selection = match (location, length) {
+        (u32::MAX, u32::MAX) => None,
+        (u32::MAX, _) | (_, u32::MAX) => return false,
+        (location_u16, length_u16) => Some(TextSelection {
+            location_u16,
+            length_u16,
+        }),
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .finish_note_editing_group(ChipId::from_raw(chip), selection)
+}
+
+/// Whether the note has a step of its own to take back; false for an
+/// unknown chip. The page's stack is [`companion_sheet_can_undo`]'s.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_can_undo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.note_can_undo(ChipId::from_raw(chip))
+}
+
+/// Whether the note has a step of its own to put back.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_can_redo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.note_can_redo(ChipId::from_raw(chip))
+}
+
+/// Content-free label for the note's next Undo; null when none waits.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_undo_action_name(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_action_name(handle, chip, true) }
+}
+
+/// Content-free label for the note's next Redo; null when none waits.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_redo_action_name(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_action_name(handle, chip, false) }
+}
+
+/// # Safety
+/// As the two callers above.
+unsafe fn note_action_name(handle: *mut CompanionHandle, chip: u64, undo: bool) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let chip = ChipId::from_raw(chip);
+    let name = if undo {
+        guard.store.note_undo_action_name(chip)
+    } else {
+        guard.store.note_redo_action_name(chip)
+    };
+    name.map_or(ptr::null_mut(), |value| into_c_string(value.to_string()))
+}
+
+/// Take back the note's last step, never the page's. Returns a `StepOutcome`,
+/// null for an unknown chip. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_undo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_step(handle, chip, true) }
+}
+
+/// Put back the step [`companion_chip_note_undo`] took, on the same terms.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_note_redo(
+    handle: *mut CompanionHandle,
+    chip: u64,
+) -> *mut c_char {
+    unsafe { note_step(handle, chip, false) }
+}
+
+/// # Safety
+/// As the two callers above.
+unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let chip = ChipId::from_raw(chip);
+    let outcome = if back {
+        guard.store.undo_note(chip)
+    } else {
+        guard.store.redo_note(chip)
+    };
+    outcome.map_or(ptr::null_mut(), step_outcome_json)
+}
+
+// ---- The sealed fragment: copy, cut, paste, drags (ADR-0047) ----
+
+/// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`, or
+/// `{"error", "limit"}` past an envelope cap (ADR-0053); null for a file id,
+/// an unknown page, a page past its deadline (ADR-0052) or a bad range.
+/// Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_copy_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    copy_outcome_json(
+        guard
+            .store
+            .copy_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16),
+    )
+}
+
+/// [`companion_sheet_copy_fragment`], then delete the range as one undo step,
+/// its objects detaching as the active cut. It refuses as the copy does, or
+/// for a body that refuses the edit, and a refusal changes nothing.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_cut_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    copy_outcome_json(
+        guard
+            .store
+            .cut_fragment(SheetId::from_raw(sheet), at_utf16, len_utf16),
+    )
+}
+
+/// Paste envelope bytes over a range as one undo step, `plain` placed for one
+/// the core cannot read. The placed JSON ([`placed_json`]), or null on refusal.
+///
+/// # Safety
+/// `handle` must be a valid handle. `envelope` must be null or readable for
+/// `envelope_len` bytes. `plain` must be null or a valid, NUL-terminated
+/// UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_paste_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+    envelope: *const u8,
+    envelope_len: usize,
+    plain: *const c_char,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let envelope: &[u8] = if envelope.is_null() || envelope_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(envelope, envelope_len) }
+    };
+    let plain = unsafe { cstr(plain) };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .paste_fragment(
+            SheetId::from_raw(sheet),
+            at_utf16,
+            len_utf16,
+            envelope,
+            plain,
+        )
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// Place the active cut over a UTF-16 range, the clipboard slot's route; null
+/// when no cut stands, or as [`companion_sheet_paste_fragment`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_paste_active_cut(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .paste_active_cut(SheetId::from_raw(sheet), at_utf16, len_utf16)
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// A drag inside a page: move a range to `to_utf16`, measured before the move,
+/// as one step. The placed JSON, or null for a `to` inside or at its edge or a
+/// page past its deadline.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_move_range(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    from_utf16: u32,
+    len_utf16: u32,
+    to_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .move_range(SheetId::from_raw(sheet), from_utf16, len_utf16, to_utf16)
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// A drag between pages (ADR-0054): move a range of `source` to `at_utf16` on
+/// `dest` as one transaction keeping every object. The placed JSON, its run on
+/// `dest`, or null with neither page changed.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_move_range_to(
+    handle: *mut CompanionHandle,
+    source: u64,
+    from_utf16: u32,
+    len_utf16: u32,
+    dest: u64,
+    at_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(source) || is_file_id(dest) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .move_range_to(
+            SheetId::from_raw(source),
+            from_utf16,
+            len_utf16,
+            SheetId::from_raw(dest),
+            at_utf16,
+        )
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// The ⌥ drag inside a page: insert a copy of a UTF-16 range at `to_utf16`,
+/// every object cloned, as one step. Returns the placed JSON or null.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_clone_range(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    from_utf16: u32,
+    len_utf16: u32,
+    to_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    guard
+        .store
+        .clone_range(SheetId::from_raw(sheet), from_utf16, len_utf16, to_utf16)
+        .map_or(ptr::null_mut(), placed_json)
+}
+
+/// The clipboard slot: `{"page_id": u64|null, "objects": [face]}`, null and
+/// `[]` with no cut. Free with [`companion_string_free`]; null on error.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let (page, objects) = guard.store.active_cut().unzip();
+    let faces: Vec<serde_json::Value> = objects
+        .unwrap_or_default()
+        .into_iter()
+        .map(chip_face)
+        .collect();
+    let value = serde_json::json!({
+        "page_id": page.map(SheetId::raw),
+        "objects": faces,
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Decrypted drag: write a chip's payload into the drag `item` on `pasteboard`
+/// under its type and record one `sent` to `drag`; false, doing neither, on
+/// refusal, which includes a removed chip and a page past its deadline (ADR-0052).
+///
+/// # Safety
+/// `handle` must be a valid handle. `pasteboard` and `item` must each be null
+/// or the live `NSPasteboard` and `NSPasteboardItem` the provider was handed,
+/// for the call. `pasteboard_type` must be null or a valid C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_provide_drag(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    pasteboard: *mut std::ffi::c_void,
+    item: *mut std::ffi::c_void,
+    pasteboard_type: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(requested) = (unsafe { cstr(pasteboard_type) }) else {
+        return false;
+    };
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (handle, chip, pasteboard, item, requested);
+        false
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: the caller vouches each pointer is null or a live object.
+        let Some(mut drag) =
+            (unsafe { companion_pasteboard::SystemDragItem::from_raw(pasteboard, item) })
+        else {
+            return false;
+        };
+        let Ok(mut guard) = handle.inner.lock() else {
+            return false;
+        };
+        guard.provide_drag(ChipId::from_raw(chip), &mut drag, requested)
+    }
 }
 
 /// Clear the pasteboard only if it still holds our last copy-out. Returns
@@ -1230,6 +1835,58 @@ impl Companion {
         if let Some(receipt) = self.last_write.take() {
             self.pasteboard.clear_if_unchanged(receipt);
         }
+    }
+
+    /// Copy decrypted's write, whatever composed the bytes: retire, write
+    /// transient and concealed, keep the receipt, record one `sent`.
+    fn write_decrypted(&mut self, chip: ChipId, bytes: Zeroizing<Vec<u8>>, kind: ContentKind) {
+        self.retire_last_write();
+        let receipt = self.pasteboard.write(
+            bytes,
+            kind,
+            WriteOptions {
+                nspasteboard_concealed: true,
+            },
+        );
+        self.last_write = Some(receipt);
+        self.store.record_sent(chip, DestinationClass::Clipboard);
+    }
+
+    /// Decrypted drag's write: the chip's own type only, never the general
+    /// pasteboard, one `sent` to `drag` once the item took the bytes.
+    // Only AppKit hands a drag item; off macOS only the tests call this.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn provide_drag(&mut self, chip: ChipId, item: &mut dyn DragItem, requested: &str) -> bool {
+        if item.on_general_pasteboard() {
+            return false;
+        }
+        let Some(meta) = self
+            .store
+            .readable_sheets()
+            .find_map(|sheet| sheet.chip(chip))
+            .map(SealedChip::meta)
+        else {
+            return false;
+        };
+        let kind = content_kind(meta);
+        if kind.pasteboard_type() != requested {
+            return false;
+        }
+        let Some((bytes, _)) = self.store.copy_out_chip(chip) else {
+            return false;
+        };
+        if !item.provide(&bytes, kind) {
+            return false;
+        }
+        self.store.record_sent(chip, DestinationClass::Drag)
+    }
+}
+
+/// The pasteboard kind a chip's payload is written as.
+fn content_kind(meta: ChipMeta) -> ContentKind {
+    match meta {
+        ChipMeta::Text { .. } => ContentKind::Text,
+        ChipMeta::Image { .. } => ContentKind::Image,
     }
 }
 
@@ -1307,7 +1964,7 @@ pub unsafe extern "C" fn companion_store_emptiness(
 /// - `at_ms`: when it happened, Unix epoch milliseconds
 /// - `created_at_ms`: when the item's page was created, epoch ms
 /// - `size`: `tiny` | `small` | `medium` | `large` | `huge`
-/// - `destination`: `none` | `clipboard` | `link`
+/// - `destination`: `none` | `clipboard` | `link` | `drag`
 ///
 /// Free with [`companion_string_free`]; null on error.
 ///
@@ -1338,11 +1995,8 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
                 "at_ms": record.at_wall_ms(),
                 "created_at_ms": record.item_created_wall_ms(),
                 "size": record.size().as_str(),
-                "destination": match record.destination() {
-                    DestinationClass::None => "none",
-                    DestinationClass::Clipboard => "clipboard",
-                    DestinationClass::OneTimeLink => "link",
-                },
+                // The ledger's own vocabulary, so a new class cannot skip the seam.
+                "destination": record.destination().to_string(),
             })
         })
         .collect();
@@ -1395,18 +2049,9 @@ pub unsafe extern "C" fn companion_sheet_document_json(
         .iter()
         .filter_map(|segment| match segment {
             Segment::Ink(text) => Some(serde_json::json!({ "ink": text })),
-            Segment::Chip(chip_id) => sheet.chip(*chip_id).map(|chip| {
-                serde_json::json!({ "chip": {
-                    "chip_id": chip.id().raw(),
-                    "kind": match chip.meta() {
-                        ChipMeta::Text { .. } => "text",
-                        ChipMeta::Image { .. } => "image",
-                    },
-                    "excerpt": chip.excerpt(),
-                    "size_label": chip.size_label(),
-                    "concealed": chip.conceal().is_some(),
-                }})
-            }),
+            Segment::Chip(chip_id) => sheet
+                .chip(*chip_id)
+                .map(|chip| serde_json::json!({ "chip": chip_face(chip) })),
         })
         .collect();
     match serde_json::to_string(&runs) {
@@ -2094,7 +2739,8 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
 /// (ADR-0011 §5), not the page's clock (ADR-0026). Blocks for the round-trip
 /// without holding the core lock; call off the main thread. On success the
 /// link is on the clipboard. Returns `{"ok": true, "receipt_id"}` or
-/// `{"ok": false, "error"}`; free with [`companion_string_free`].
+/// `{"ok": false, "error"}`, sending nothing for a page past its deadline
+/// (ADR-0052); free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
@@ -2123,13 +2769,17 @@ pub unsafe extern "C" fn companion_chip_conceal(
         };
         let holder = guard
             .store
-            .sheets()
+            .readable_sheets()
             .find(|sheet| sheet.chip(chip).is_some());
         let Some(sheet) = holder else {
+            // A page past its deadline still stands until its sweep.
+            if guard.store.sheets().any(|sheet| sheet.chip(chip).is_some()) {
+                return conceal_error(&PayloadError::Expired.to_string());
+            }
             return conceal_error("that content is gone");
         };
         if matches!(
-            sheet.chip(chip).map(companion_core::SealedChip::meta),
+            sheet.chip(chip).map(SealedChip::meta),
             Some(ChipMeta::Image { .. })
         ) {
             return conceal_error(
@@ -2796,6 +3446,7 @@ fn summary_json(
         "uuid": tab.uuid().to_string(),
         "has_page": page.is_some(),
         "page_id": page.map(|sheet| sheet.id().raw()),
+        "page_uuid": page.map(|sheet| sheet.uuid().to_string()),
         "title": tab.label(utc_offset_seconds),
         // `name`, `derived` or `placeholder`, so the shell can skip a redundant label.
         "title_source": tab.label_source().as_str(),
@@ -2829,20 +3480,94 @@ fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *
     let Some(sealed) = store.sheet(sheet).and_then(|s| s.chip(chip)) else {
         return ptr::null_mut();
     };
+    match serde_json::to_string(&chip_face(sealed)) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A copy or cut as `{"envelope": string|null, "plain": string}`.
+fn copied_json(copied: &Copied) -> *mut c_char {
+    // The core writes the envelope as UTF-8 JSON; it crosses as a string.
+    let envelope = copied
+        .envelope
+        .as_ref()
+        .map(|bytes| String::from_utf8_lossy(bytes));
     let value = serde_json::json!({
-        "chip_id": sealed.id().raw(),
-        "kind": match sealed.meta() {
-            ChipMeta::Text { .. } => "text",
-            ChipMeta::Image { .. } => "image",
-        },
-        "excerpt": sealed.excerpt(),
-        "size_label": sealed.size_label(),
-        "concealed": sealed.conceal().is_some(),
+        "envelope": envelope,
+        "plain": copied.plain.as_str(),
     });
     match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// A copy's or a cut's answer: [`copied_json`], `{"error": "tooLarge" |
+/// "tooManyObjects", "limit"}` past a cap (ADR-0053), else null.
+fn copy_outcome_json(outcome: Result<Copied, CopyRefusal>) -> *mut c_char {
+    let cap = match outcome {
+        Ok(copied) => return copied_json(&copied),
+        Err(CopyRefusal::Refused) => return ptr::null_mut(),
+        Err(CopyRefusal::PastCap(cap)) => cap,
+    };
+    let error = match cap {
+        EnvelopeCap::Length => "tooLarge",
+        EnvelopeCap::References => "tooManyObjects",
+    };
+    let limit = cap.limit() as u64;
+    into_c_string(serde_json::json!({ "error": error, "limit": limit }).to_string())
+}
+
+/// What a paste, a move or a clone placed: its run in UTF-16 units, a count
+/// per resolution, `unreadable` when the public text was placed instead, and
+/// `pages_expired`, the due pages its sweep took (ADR-0048).
+fn placed_json(placed: Placed) -> *mut c_char {
+    let value = serde_json::json!({
+        "location_utf16": placed.location_u16,
+        "length_utf16": placed.length_u16,
+        "reattached": placed.reattached,
+        "cloned": placed.cloned,
+        "expired": placed.expired,
+        "burned": placed.burned,
+        "unavailable": placed.unavailable,
+        "unreadable": placed.unreadable,
+        "pages_expired": placed.pages_expired,
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A step's outcome as the header's `StepOutcome`, an owned C string.
+pub(crate) fn step_outcome_json(outcome: StepOutcome) -> *mut c_char {
+    let value = serde_json::json!({
+        "applied": outcome.applied,
+        "caretUTF16": outcome.caret_u16.map_or(-1, i64::from),
+        "selectionLocationUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.location_u16)),
+        "selectionLengthUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.length_u16)),
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A chip's face as the seal routes and the document both send it.
+fn chip_face(chip: &SealedChip) -> serde_json::Value {
+    serde_json::json!({
+        "chip_id": chip.id().raw(),
+        "kind": match chip.meta() {
+            ChipMeta::Text { .. } => "text",
+            ChipMeta::Image { .. } => "image",
+        },
+        "excerpt": chip.excerpt(),
+        "size_label": chip.size_label(),
+        "concealed": chip.conceal().is_some(),
+        "name": chip.name(),
+        "has_note": chip.has_note(),
+    })
 }
 
 /// `{"origin": url}`, JSON so compaction can read it back mechanically.
@@ -3170,6 +3895,75 @@ mod tests {
         }
     }
 
+    #[test]
+    fn page_summary_uuid_matches_the_sheet_not_the_tab() {
+        unsafe {
+            let handle = handle();
+            let (_tab, page) = new_page(handle);
+            let summary = &strip(handle)[0];
+            let page_uuid = summary["page_uuid"].as_str().unwrap();
+            assert_eq!(page_uuid.len(), 36);
+            assert_ne!(summary["page_uuid"], summary["uuid"]);
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let sheet = guard.store.sheet(SheetId::from_raw(page)).unwrap();
+                assert_eq!(page_uuid, sheet.uuid().to_string());
+            }
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn page_summary_uuid_survives_reorder_and_dense_restore_ids() {
+        unsafe {
+            let handle = handle();
+            let first = companion_tab_new(handle);
+            let second = companion_tab_new(handle);
+            let third = companion_tab_new(handle);
+            let before = strip(handle);
+            let second_uuid = before[1]["page_uuid"].as_str().unwrap().to_string();
+            let third_uuid = before[2]["page_uuid"].as_str().unwrap().to_string();
+            assert_ne!(second_uuid, third_uuid);
+            assert!(companion_tab_close(handle, first));
+            assert!(companion_tab_move(handle, third, 0));
+            age_by(handle, 0);
+            let restored = strip(handle);
+            assert_eq!(restored[0]["page_id"], 1);
+            assert_ne!(restored[0]["page_id"], before[2]["page_id"]);
+            assert_eq!(restored[0]["page_uuid"], third_uuid);
+            assert_eq!(restored[1]["page_id"], 2);
+            assert_eq!(restored[1]["page_uuid"], second_uuid);
+            assert_ne!(second, 0);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn page_summary_uuid_is_null_when_empty_and_changes_for_a_replacement() {
+        unsafe {
+            let handle = handle();
+            let (tab, page) = new_page(handle);
+            let before = strip(handle);
+            let page_uuid = before[0]["page_uuid"].as_str().unwrap().to_string();
+            let tab_uuid = before[0]["uuid"].as_str().unwrap().to_string();
+            assert!(companion_page_discard(handle, page));
+            let empty = strip(handle);
+            assert_eq!(empty[0]["id"], tab);
+            assert_eq!(empty[0]["uuid"], tab_uuid);
+            assert!(empty[0].get("page_uuid").unwrap().is_null());
+            let replacement = companion_tab_open_page(handle, tab);
+            assert_ne!(replacement, 0);
+            let after = strip(handle);
+            assert_eq!(after[0]["id"], tab);
+            assert_eq!(after[0]["uuid"], tab_uuid);
+            assert_eq!(after[0]["page_id"], replacement);
+            let replacement_uuid = after[0]["page_uuid"].as_str().unwrap();
+            assert_ne!(replacement_uuid, page_uuid);
+            assert_ne!(replacement_uuid, tab_uuid);
+            companion_free(handle);
+        }
+    }
+
     /// The page a tab holds, or `None` for an empty slot.
     unsafe fn page_of(handle: *mut CompanionHandle, tab: u64) -> Option<u64> {
         let json = unsafe { take_json(companion_tabs_json(handle)) };
@@ -3311,6 +4105,32 @@ mod tests {
             companion_free(first);
             companion_free(second);
             companion_free(third);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_memory_pasteboard_seam_keeps_an_ephemeral_handles_copies_in_process() {
+        let tag = cstring("memory-pasteboard-seam");
+        unsafe {
+            assert!(!companion_test_memory_pasteboard(ptr::null_mut()));
+            let handle = companion_new_ephemeral(tag.as_ptr());
+            assert!(companion_test_memory_pasteboard(handle));
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                assert!(matches!(guard.pasteboard, Board::Memory(_)));
+            }
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("API_KEY").as_ptr()
+            ));
+            assert!(companion_chip_copy_name_value(handle, chip));
+            assert_eq!(board_text(handle).as_deref(), Some("API_KEY=hunter2"));
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(board_text(handle).is_none());
+            companion_free(handle);
         }
     }
 
@@ -3458,12 +4278,38 @@ mod tests {
             assert!(!sheets.contains("n0ts3cr3t"), "{sheets}");
             assert!(sheets.contains("\"chip_count\":2"), "{sheets}");
 
+            // A named chip's face carries the name and still not the bytes.
+            let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
+                .as_u64()
+                .unwrap();
+            assert!(companion_chip_set_name(
+                handle,
+                chip_id,
+                cstring("GH_TOKEN").as_ptr()
+            ));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(doc.contains("\"name\":\"GH_TOKEN\""), "{doc}");
+            assert!(!doc.contains("n0ts3cr3t"), "{doc}");
+
+            // The fragment, its public text and the slot name objects, never bytes.
+            let copied = take_json(companion_sheet_copy_fragment(handle, sheet, 0, 2));
+            assert!(
+                copied.contains("GH_TOKEN"),
+                "the name rides along: {copied}"
+            );
+            assert!(!copied.contains("n0ts3cr3t"), "{copied}");
+            let cut = take_json(companion_sheet_cut_fragment(handle, sheet, 0, 2));
+            assert!(!cut.contains("n0ts3cr3t"), "{cut}");
+            let slot = take_json(companion_active_cut_json(handle));
+            assert!(!slot.contains("n0ts3cr3t"), "{slot}");
+
             // After death the ledger holds metadata only.
             assert!(companion_tab_close(handle, tab));
             let ledger = take_json(companion_ledger_json(handle));
             assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
             assert!(!ledger.contains("tombstone"), "{ledger}");
             assert!(!ledger.contains("excerpt"), "{ledger}");
+            assert!(!ledger.contains("GH_TOKEN"), "{ledger}");
 
             companion_free(handle);
         }
@@ -3938,6 +4784,394 @@ mod tests {
         }
     }
 
+    /// A chip sealed onto a fresh page, with its sentinel placed.
+    unsafe fn sealed_chip(handle: *mut CompanionHandle, text: &str) -> (u64, u64) {
+        let (_tab, sheet) = unsafe { new_page(handle) };
+        let chip = unsafe {
+            take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(text).as_ptr(),
+                0,
+                0,
+            ))
+        };
+        let chip: serde_json::Value = serde_json::from_str(&chip).unwrap();
+        (sheet, chip["chip_id"].as_u64().unwrap())
+    }
+
+    #[test]
+    fn chip_json_carries_the_name() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let face = |handle: *mut CompanionHandle| -> serde_json::Value {
+                let guard = (*handle).inner.lock().unwrap();
+                let json = take_json(chip_json(
+                    &guard.store,
+                    SheetId::from_raw(sheet),
+                    ChipId::from_raw(chip),
+                ));
+                serde_json::from_str(&json).unwrap()
+            };
+            let document = |handle: *mut CompanionHandle| -> serde_json::Value {
+                let runs: serde_json::Value =
+                    serde_json::from_str(&take_json(companion_sheet_document_json(handle, sheet)))
+                        .unwrap();
+                runs[0]["chip"].clone()
+            };
+            assert_eq!(face(handle)["name"], serde_json::Value::Null);
+            assert_eq!(document(handle)["name"], serde_json::Value::Null);
+
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("  DB_PASSWORD ").as_ptr()
+            ));
+            assert_eq!(face(handle)["name"], "DB_PASSWORD");
+            assert_eq!(document(handle)["name"], "DB_PASSWORD");
+            assert_eq!(
+                face(handle),
+                document(handle),
+                "the seal routes and the document send one face"
+            );
+
+            assert!(!companion_chip_set_name(
+                handle,
+                chip,
+                cstring("db.password").as_ptr()
+            ));
+            assert_eq!(face(handle)["name"], "DB_PASSWORD", "a refusal kept it");
+            assert!(companion_chip_set_name(handle, chip, cstring("").as_ptr()));
+            assert_eq!(face(handle)["name"], serde_json::Value::Null);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_name_routes_judge_by_one_rule_and_fail_closed() {
+        unsafe {
+            for (draft, code) in [
+                ("API_KEY", 0),
+                ("  _x9  ", 0),
+                ("", 0),
+                ("   ", 0),
+                (&"A".repeat(64)[..], 0),
+                (&"A".repeat(65)[..], 1),
+                ("my.key", 2),
+                ("9lives", 2),
+                ("two words", 2),
+                (&format!("{}-", "A".repeat(70))[..], 2),
+            ] {
+                assert_eq!(
+                    companion_chip_name_refusal(cstring(draft).as_ptr()),
+                    code,
+                    "{draft:?}"
+                );
+            }
+            assert_eq!(companion_chip_name_refusal(ptr::null()), 2);
+            let not_utf8 = [0xC3u8, 0x28, 0];
+            assert_eq!(companion_chip_name_refusal(not_utf8.as_ptr().cast()), 2);
+
+            let handle = handle();
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            let name = cstring("API_KEY");
+            assert!(!companion_chip_set_name(
+                ptr::null_mut(),
+                chip,
+                name.as_ptr()
+            ));
+            assert!(!companion_chip_set_name(handle, chip, ptr::null()));
+            assert!(!companion_chip_set_name(handle, 4_242, name.as_ptr()));
+            assert!(!companion_chip_set_name(
+                handle,
+                chip,
+                cstring(&"A".repeat(65)).as_ptr()
+            ));
+            assert!(companion_chip_set_name(handle, chip, name.as_ptr()));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_reaches_no_ledger_record() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            let before = take_json(companion_ledger_json(handle));
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("PAGER_ROTA_KEY").as_ptr()
+            ));
+            assert_eq!(
+                take_json(companion_ledger_json(handle)),
+                before,
+                "naming recorded something"
+            );
+            assert!(companion_chip_copy_out(handle, chip));
+            assert!(companion_chip_delete(handle, chip));
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(ledger.contains("\"sent\""), "the control: {ledger}");
+            assert!(!ledger.contains("PAGER_ROTA_KEY"), "{ledger}");
+            assert!(!ledger.contains("ROTA"), "{ledger}");
+            companion_free(handle);
+        }
+    }
+
+    unsafe fn note_runs(handle: *mut CompanionHandle, chip: u64) -> String {
+        unsafe { take_json(companion_chip_note_runs_json(handle, chip)) }
+    }
+
+    unsafe fn note_ops(handle: *mut CompanionHandle, chip: u64, json: &str, intent: u32) -> bool {
+        unsafe {
+            companion_chip_note_apply_ops_with_intent(
+                handle,
+                chip,
+                cstring(json).as_ptr(),
+                intent,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+            )
+        }
+    }
+
+    unsafe fn note_step_json(p: *mut c_char) -> serde_json::Value {
+        serde_json::from_str(&unsafe { take_json(p) }).unwrap()
+    }
+
+    #[test]
+    fn note_routes_edit_the_note_and_leave_the_page_alone() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            assert_eq!(note_runs(handle, chip), "[]");
+            assert!(page.contains("\"has_note\":false"), "{page}");
+            assert!(!companion_chip_note_can_undo(handle, chip));
+
+            assert!(note_ops(
+                handle,
+                chip,
+                "[{\"ins\": {\"at\": 0, \"text\": \"rotate \u{1F511} on friday\"}}]",
+                0
+            ));
+            assert_eq!(
+                note_runs(handle, chip),
+                "[{\"ink\":\"rotate \u{1F511} on friday\"}]"
+            );
+            let after = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(after.contains("\"has_note\":true"), "{after}");
+            assert!(!after.contains("friday"), "the note rode the page: {after}");
+            assert_eq!(
+                after.replace("\"has_note\":true", "\"has_note\":false"),
+                page,
+                "a note edit moved the page"
+            );
+
+            assert!(companion_chip_note_can_undo(handle, chip));
+            assert_eq!(
+                take_json(companion_chip_note_undo_action_name(handle, chip)),
+                "Typing"
+            );
+            assert!(companion_chip_note_redo_action_name(handle, chip).is_null());
+            let step = note_step_json(companion_chip_note_undo(handle, chip));
+            assert_eq!(step["applied"], true, "{step}");
+            assert_eq!(note_runs(handle, chip), "[]");
+            assert!(companion_chip_note_can_redo(handle, chip));
+            let step = note_step_json(companion_chip_note_redo(handle, chip));
+            assert_eq!(step["applied"], true, "{step}");
+            assert!(note_runs(handle, chip).contains("friday"));
+            assert!(companion_chip_note_finish_editing_group(
+                handle,
+                chip,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(companion_chip_note_finish_editing_group(handle, chip, 2, 0));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_note_and_the_page_keep_separate_undo_stacks_across_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let typed = r#"[{"ins": {"at": 1, "text": " page ink"}}]"#;
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(typed).as_ptr()
+            ));
+            assert!(note_ops(
+                handle,
+                chip,
+                r#"[{"ins": {"at": 0, "text": "note ink"}}]"#,
+                0
+            ));
+
+            assert!(companion_sheet_undo(handle, sheet));
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!page.contains("page ink"), "{page}");
+            assert!(
+                note_runs(handle, chip).contains("note ink"),
+                "the page's undo reached the note"
+            );
+            assert!(companion_chip_note_can_undo(handle, chip));
+
+            assert!(companion_sheet_redo(handle, sheet));
+            let step = note_step_json(companion_chip_note_undo(handle, chip));
+            assert_eq!(step["applied"], true);
+            assert_eq!(note_runs(handle, chip), "[]");
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(
+                page.contains("page ink"),
+                "the note's undo reached the page: {page}"
+            );
+            assert!(companion_sheet_can_undo(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_note_routes_fail_closed() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            let (_other_sheet, other) = sealed_chip(handle, "another");
+            let ins = r#"[{"ins": {"at": 0, "text": "x"}}]"#;
+            for bad in [
+                format!(r#"[{{"chip": {{"at": 0, "id": {other}}}}}]"#),
+                r#"[{"del": {"at": 3, "len": 1}}]"#.to_string(),
+                "not json".to_string(),
+            ] {
+                assert!(!note_ops(handle, chip, &bad, 0), "{bad}");
+            }
+            assert!(!note_ops(handle, chip, ins, 99), "an unknown intent");
+            assert!(!companion_chip_note_apply_ops_with_intent(
+                handle,
+                chip,
+                cstring(ins).as_ptr(),
+                0,
+                0,
+                u32::MAX,
+                0,
+                0
+            ));
+            assert!(!companion_chip_note_apply_ops_with_intent(
+                handle,
+                chip,
+                ptr::null(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert_eq!(note_runs(handle, chip), "[]", "a refusal wrote the note");
+            assert!(!companion_chip_note_finish_editing_group(
+                handle,
+                chip,
+                u32::MAX,
+                0
+            ));
+
+            assert!(!note_ops(handle, 4_242, ins, 0));
+            assert!(companion_chip_note_runs_json(handle, 4_242).is_null());
+            assert!(!companion_chip_note_finish_editing_group(
+                handle,
+                4_242,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(!companion_chip_note_can_undo(handle, 4_242));
+            assert!(!companion_chip_note_can_redo(handle, 4_242));
+            assert!(companion_chip_note_undo_action_name(handle, 4_242).is_null());
+            assert!(companion_chip_note_undo(handle, 4_242).is_null());
+            assert!(companion_chip_note_redo(handle, 4_242).is_null());
+
+            assert!(!note_ops(ptr::null_mut(), chip, ins, 0));
+            assert!(companion_chip_note_runs_json(ptr::null_mut(), chip).is_null());
+            assert!(companion_chip_note_undo(ptr::null_mut(), chip).is_null());
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_and_a_note_reach_no_ledger_record_and_no_other_output() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = sealed_chip(handle, "hunter2");
+            let before = take_json(companion_ledger_json(handle));
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("WHARF_LANTERN_KEY").as_ptr()
+            ));
+            let note = "Wq9Fj Zx7Kp Marmot Burrow";
+            assert!(note_ops(
+                handle,
+                chip,
+                &format!(r#"[{{"ins": {{"at": 0, "text": "{note}"}}}}]"#),
+                2
+            ));
+            let _ = note_step_json(companion_chip_note_undo(handle, chip));
+            let _ = note_step_json(companion_chip_note_redo(handle, chip));
+            assert_eq!(
+                take_json(companion_ledger_json(handle)),
+                before,
+                "a name or a note edit recorded something"
+            );
+            for (name, output) in [
+                ("summaries", take_json(companion_tabs_json(handle))),
+                ("meta", take_json(companion_sheet_meta_json(handle, sheet))),
+                (
+                    "blocks",
+                    take_json(companion_sheet_blocks_json(handle, sheet)),
+                ),
+            ] {
+                assert!(
+                    !output.contains("Marmot") && !output.contains("LANTERN"),
+                    "{name} carried the name or the note: {output}"
+                );
+            }
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!document.contains("Marmot"), "{document}");
+            assert!(
+                document.contains("WHARF_LANTERN_KEY"),
+                "the control: the face carries the name"
+            );
+            assert!(note_runs(handle, chip).contains("Marmot"), "the control");
+
+            let tab = (*handle)
+                .inner
+                .lock()
+                .unwrap()
+                .store
+                .tabs()
+                .next()
+                .unwrap()
+                .id()
+                .raw();
+            assert!(companion_tab_close(handle, tab));
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(
+                ledger.contains("\"expired\"") || ledger.contains("\"discarded\""),
+                "{ledger}"
+            );
+            assert!(!ledger.contains("Marmot"), "{ledger}");
+            assert!(!ledger.contains("LANTERN"), "{ledger}");
+            assert!(
+                companion_chip_note_runs_json(handle, chip).is_null(),
+                "the note outlived its page"
+            );
+            companion_free(handle);
+        }
+    }
+
     #[test]
     fn the_clear_interval_is_the_core_constant() {
         assert_eq!(companion_clipboard_clear_seconds(), CLIPBOARD_CLEAR_SECONDS);
@@ -3977,8 +5211,155 @@ mod tests {
         }
     }
 
+    fn board_text(handle: *mut CompanionHandle) -> Option<String> {
+        let guard = unsafe { &*handle }.inner.lock().unwrap();
+        match guard.pasteboard.read()?.content {
+            PasteboardContent::Text(text) => Some(text),
+            PasteboardContent::Image(_) => None,
+        }
+    }
+
+    fn sent_records(handle: *mut CompanionHandle) -> Vec<serde_json::Value> {
+        let ledger = unsafe { take_json(companion_ledger_json(handle)) };
+        let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
+        records
+            .into_iter()
+            .filter(|record| record["event"] == "sent")
+            .collect()
+    }
+
     #[test]
-    fn sync_document_names_the_page_and_reaps_omitted_chips() {
+    fn copy_name_value_writes_the_pasteboard_in_core_marked_nspasteboard_concealed() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "multi-paste me");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("DEPLOY_TOKEN").as_ptr()
+            ));
+
+            assert!(companion_chip_copy_name_value(handle, chip));
+            assert_eq!(
+                board_text(handle).as_deref(),
+                Some("DEPLOY_TOKEN=multi-paste me")
+            );
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                assert!(guard.pasteboard.current_is_transient());
+                assert!(guard.pasteboard.current_is_nspasteboard_concealed());
+            }
+            let sheets = take_json(companion_tabs_json(handle));
+            assert!(sheets.contains("\"chip_count\":1"), "{sheets}");
+
+            // The same guarded clear as copy decrypted: once, then refused.
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(board_text(handle).is_none());
+            assert!(!companion_clear_clipboard_if_ours(handle));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn copy_name_value_refuses_unnamed_image_and_unknown_chips_and_writes_nothing() {
+        let handle = handle();
+        unsafe {
+            let (sheet, unnamed) = sealed_chip(handle, "never on the board");
+            seed(handle, "someone else's copy");
+            assert!(!companion_chip_copy_name_value(handle, unnamed));
+            assert!(!companion_chip_copy_name_value(handle, 4_242));
+            assert!(!companion_chip_copy_name_value(ptr::null_mut(), unnamed));
+
+            {
+                let mut guard = (*handle).inner.lock().unwrap();
+                let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+                png.resize(64, 7);
+                let image = guard
+                    .store
+                    .seal_image_at(SheetId::from_raw(sheet), png, 0, 0)
+                    .unwrap();
+                guard.store.set_chip_name(image, "LOGO").unwrap();
+                drop(guard);
+                assert!(!companion_chip_copy_name_value(handle, image.raw()));
+            }
+
+            assert_eq!(
+                board_text(handle).as_deref(),
+                Some("someone else's copy"),
+                "a refusal wrote the board"
+            );
+            assert!((*handle).inner.lock().unwrap().last_write.is_none());
+            assert!(
+                sent_records(handle).is_empty(),
+                "a refusal recorded an egress"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_value_copy_and_a_copy_out_retire_each_others_receipts() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "copied both ways");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("BOTH_WAYS").as_ptr()
+            ));
+
+            assert!(companion_chip_copy_out(handle, chip));
+            let first = (*handle).inner.lock().unwrap().last_write;
+            assert!(companion_chip_copy_name_value(handle, chip));
+            let second = (*handle).inner.lock().unwrap().last_write;
+            assert_ne!(first, second, "the second write is a new receipt");
+            assert_eq!(
+                board_text(handle).as_deref(),
+                Some("BOTH_WAYS=copied both ways")
+            );
+
+            assert!(companion_chip_copy_out(handle, chip));
+            assert_eq!(board_text(handle).as_deref(), Some("copied both ways"));
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(
+                board_text(handle).is_none(),
+                "the clear answered for the newest write"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_name_value_copy_records_one_sent_and_no_name() {
+        let handle = handle();
+        unsafe {
+            let (_sheet, chip) = sealed_chip(handle, "hunter2");
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("WHARF_LANTERN_KEY").as_ptr()
+            ));
+            assert!(companion_chip_copy_name_value(handle, chip));
+            assert!(companion_chip_copy_name_value(handle, chip));
+
+            let sent = sent_records(handle);
+            assert_eq!(sent.len(), 2, "one per copy: {sent:?}");
+            for record in &sent {
+                assert_eq!(record["destination"], "clipboard");
+                assert_eq!(record["size"], "tiny", "the payload's class");
+            }
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(!ledger.contains("WHARF"), "{ledger}");
+            assert!(!ledger.contains("LANTERN"), "{ledger}");
+            assert!(!ledger.contains("hunter2"), "{ledger}");
+            let saved = (*handle).inner.lock().unwrap().store.ledger_snapshot();
+            assert!(!contains(&saved, b"WHARF_LANTERN_KEY"));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn sync_document_names_the_page_and_detaches_omitted_chips() {
         let handle = handle();
         unsafe {
             let (_tab, sheet) = new_page(handle);
@@ -4016,13 +5397,20 @@ mod tests {
                 cstring(r#"[{"chip": 424242}]"#).as_ptr()
             ));
 
-            // A snapshot that omits the chip zeroizes it.
+            // A snapshot that omits the chip detaches it (ADR-0047).
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
                 cstring(r#"[{"ink": "just ink"}]"#).as_ptr()
             ));
-            assert!(!companion_chip_copy_out(handle, chip_id), "no resurrection");
+            assert!(!companion_chip_copy_out(handle, chip_id), "off the page");
+            let named = format!("[{{\"chip\": {chip_id}}}]");
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(&named).as_ptr()
+            ));
+            assert!(companion_chip_copy_out(handle, chip_id), "back on the page");
 
             companion_free(handle);
         }
@@ -4669,6 +6057,7 @@ mod tests {
             assert_eq!(after[0]["has_page"].as_bool(), Some(false));
             assert_eq!(after[0]["title"].as_str(), Some("payroll"));
             assert!(after[0]["page_day_offset"].is_null(), "{:?}", after[0]);
+            assert!(after[0].get("page_uuid").unwrap().is_null());
             assert_eq!(after[0]["page_has_content"].as_bool(), Some(false));
             companion_free(handle);
         }
@@ -4694,6 +6083,7 @@ mod tests {
                 "uuid",
                 "has_page",
                 "page_id",
+                "page_uuid",
                 "title",
                 "title_source",
                 "rung_code",
@@ -6304,6 +7694,22 @@ mod tests {
             assert!(!companion_tab_close(ptr::null_mut(), 1));
             assert!(!companion_chip_copy_out(ptr::null_mut(), 1));
             assert!(!companion_chip_delete(ptr::null_mut(), 1));
+            assert!(!companion_chip_set_name(
+                ptr::null_mut(),
+                1,
+                cstring("API_KEY").as_ptr()
+            ));
+            assert!(!companion_chip_copy_name_value(ptr::null_mut(), 1));
+            assert!(companion_chip_note_runs_json(ptr::null_mut(), 1).is_null());
+            assert!(!companion_chip_note_can_undo(ptr::null_mut(), 1));
+            assert!(!companion_chip_note_can_redo(ptr::null_mut(), 1));
+            assert!(companion_chip_note_redo_action_name(ptr::null_mut(), 1).is_null());
+            assert!(!companion_chip_note_finish_editing_group(
+                ptr::null_mut(),
+                1,
+                u32::MAX,
+                u32::MAX
+            ));
             assert!(!companion_tab_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
             assert!(
@@ -6820,9 +8226,524 @@ mod tests {
             let opts = cstring("{}");
             assert!(companion_sheet_conceal(handle, tagged, opts.as_ptr()).is_null());
 
+            assert!(companion_sheet_copy_fragment(handle, tagged, 0, 1).is_null());
+            assert!(companion_sheet_cut_fragment(handle, tagged, 0, 1).is_null());
+            let plain = cstring("x");
+            assert!(
+                companion_sheet_paste_fragment(
+                    handle,
+                    tagged,
+                    0,
+                    0,
+                    ptr::null(),
+                    0,
+                    plain.as_ptr()
+                )
+                .is_null()
+            );
+            assert!(companion_sheet_paste_active_cut(handle, tagged, 0, 0).is_null());
+            assert!(companion_sheet_move_range(handle, tagged, 0, 1, 3).is_null());
+            assert!(companion_sheet_clone_range(handle, tagged, 0, 1, 3).is_null());
+            assert!(companion_sheet_move_range_to(handle, tagged, 0, 1, page, 0).is_null());
+            assert!(companion_sheet_move_range_to(handle, page, 0, 1, tagged, 0).is_null());
+
             let after = take_json(companion_sheet_document_json(handle, page));
             assert!(after.contains("hello"));
 
+            companion_free(handle);
+        }
+    }
+
+    unsafe fn json_of(p: *mut c_char) -> serde_json::Value {
+        serde_json::from_str(&unsafe { take_json(p) }).unwrap()
+    }
+
+    /// A page reading `ab`, a sealed chip, `cd`: five units.
+    unsafe fn page_with_a_chip(handle: *mut CompanionHandle, secret: &str) -> (u64, u64) {
+        let (_, sheet) = unsafe { new_page(handle) };
+        let chip = unsafe {
+            json_of(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(secret).as_ptr(),
+                0,
+                0,
+            ))
+        }["chip_id"]
+            .as_u64()
+            .unwrap();
+        let ops =
+            cstring(r#"[{"ins": {"at": 0, "text": "ab"}}, {"ins": {"at": 3, "text": "cd"}}]"#);
+        assert!(unsafe { companion_sheet_apply_ops(handle, sheet, ops.as_ptr()) });
+        (sheet, chip)
+    }
+
+    unsafe fn paste(
+        handle: *mut CompanionHandle,
+        sheet: u64,
+        at: u32,
+        envelope: &str,
+    ) -> serde_json::Value {
+        unsafe {
+            json_of(companion_sheet_paste_fragment(
+                handle,
+                sheet,
+                at,
+                0,
+                envelope.as_ptr(),
+                envelope.len(),
+                ptr::null(),
+            ))
+        }
+    }
+
+    #[test]
+    fn copy_cut_and_paste_carry_the_envelope_unread_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let (_, other) = new_page(handle);
+
+            let copied = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 5));
+            assert_eq!(copied["plain"], "ab[sealed content \u{b7} tiny]cd");
+            let envelope = copied["envelope"].as_str().unwrap().to_string();
+            assert!(!envelope.contains("hunter2"), "{envelope}");
+            let placed = paste(handle, other, 0, &envelope);
+            assert_eq!(placed["cloned"], 1);
+            assert_eq!(placed["length_utf16"], 5);
+            assert_eq!(placed["unreadable"], false);
+
+            let ink = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 2));
+            assert!(ink["envelope"].is_null(), "ink alone writes no envelope");
+
+            let cut = json_of(companion_sheet_cut_fragment(handle, sheet, 2, 1));
+            let slot = json_of(companion_active_cut_json(handle));
+            assert_eq!(slot["page_id"], sheet);
+            assert_eq!(slot["objects"][0]["chip_id"], chip);
+            assert!(
+                slot["objects"][0].get("excerpt").is_some(),
+                "a face, never payload"
+            );
+            let placed = paste(handle, other, 5, cut["envelope"].as_str().unwrap());
+            assert_eq!(placed["reattached"], 1);
+            let slot = json_of(companion_active_cut_json(handle));
+            assert!(slot["page_id"].is_null());
+            assert_eq!(slot["objects"], serde_json::json!([]));
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_copy_or_cut_past_an_envelope_cap_names_the_cap_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (long, _) = page_with_a_chip(handle, "hunter2-secret");
+            let ink = "x".repeat(EnvelopeCap::Length.limit());
+            let ops = cstring(&format!(r#"[{{"ins": {{"at": 0, "text": "{ink}"}}}}]"#));
+            assert!(companion_sheet_apply_ops(handle, long, ops.as_ptr()));
+            let whole = u32::try_from(ink.len() + 5).unwrap();
+            let before = take_json(companion_sheet_document_json(handle, long));
+
+            let refused = serde_json::json!({ "error": "tooLarge", "limit": 8_388_608 });
+            let copied = json_of(companion_sheet_copy_fragment(handle, long, 0, whole));
+            assert_eq!(copied, refused, "no plain to write either");
+            let cut = json_of(companion_sheet_cut_fragment(handle, long, 0, whole));
+            assert_eq!(cut, refused);
+            let after = take_json(companion_sheet_document_json(handle, long));
+            assert!(after == before, "the cut changed nothing");
+            assert!(json_of(companion_active_cut_json(handle))["page_id"].is_null());
+            let ink_alone = json_of(companion_sheet_copy_fragment(handle, long, 0, whole - 5));
+            assert!(ink_alone["envelope"].is_null(), "ink alone meets no cap");
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn each_cap_crosses_the_seam_as_its_own_token_and_limit() {
+        unsafe {
+            let length = copy_outcome_json(Err(CopyRefusal::PastCap(EnvelopeCap::Length)));
+            assert_eq!(
+                json_of(length),
+                serde_json::json!({ "error": "tooLarge", "limit": 8_388_608 })
+            );
+            let objects = copy_outcome_json(Err(CopyRefusal::PastCap(EnvelopeCap::References)));
+            assert_eq!(
+                json_of(objects),
+                serde_json::json!({ "error": "tooManyObjects", "limit": 1024 })
+            );
+            assert!(copy_outcome_json(Err(CopyRefusal::Refused)).is_null());
+        }
+    }
+
+    #[test]
+    fn a_paste_sweeps_a_due_page_and_says_how_many_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, _) = page_with_a_chip(handle, "hunter2-secret");
+            assert!(companion_tab_set_rung(
+                handle,
+                strip(handle)[0]["id"].as_u64().unwrap(),
+                0
+            ));
+            let copied = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 5));
+            let envelope = copied["envelope"].as_str().unwrap().to_string();
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            let (_, fresh) = new_page(handle);
+
+            let placed = paste(handle, fresh, 0, &envelope);
+            assert_eq!(placed["pages_expired"], 1);
+            assert_eq!(
+                (placed["cloned"].as_u64(), placed["expired"].as_u64()),
+                (Some(0), Some(1))
+            );
+            assert_eq!(strip(handle)[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(
+                companion_expire_due(handle),
+                0,
+                "nothing left for the timer"
+            );
+
+            let again = paste(handle, fresh, 0, &envelope);
+            assert_eq!(again["pages_expired"], 0);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn an_unreadable_envelope_pastes_its_public_text_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (_, sheet) = new_page(handle);
+            let garbage = b"not an envelope";
+            let plain = cstring("ink [sealed content \u{b7} small]");
+            let placed = json_of(companion_sheet_paste_fragment(
+                handle,
+                sheet,
+                0,
+                0,
+                garbage.as_ptr(),
+                garbage.len(),
+                plain.as_ptr(),
+            ));
+            assert_eq!(placed["unreadable"], true);
+            let runs = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(runs.contains("ink [sealed content"), "{runs}");
+            assert!(
+                companion_sheet_paste_fragment(handle, sheet, 0, 0, ptr::null(), 0, ptr::null())
+                    .is_null(),
+                "nothing to place"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_slot_move_and_clone_routes_cross_the_seam() {
+        let handle = handle();
+        unsafe {
+            assert!(
+                companion_sheet_paste_active_cut(handle, 1, 0, 0).is_null(),
+                "no cut"
+            );
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            assert!(!companion_sheet_cut_fragment(handle, sheet, 0, 3).is_null());
+            let placed = json_of(companion_sheet_paste_active_cut(handle, sheet, 2, 0));
+            assert_eq!(placed["reattached"], 1);
+
+            // `cd` then `ab` and the chip; move the chip ahead of all.
+            let moved = json_of(companion_sheet_move_range(handle, sheet, 4, 1, 0));
+            assert_eq!(moved["location_utf16"], 0);
+            assert!(companion_chip_copy_out(handle, chip), "the same object");
+            assert!(
+                companion_sheet_move_range(handle, sheet, 0, 1, 1).is_null(),
+                "its own edge"
+            );
+
+            let cloned = json_of(companion_sheet_clone_range(handle, sheet, 0, 1, 5));
+            assert_eq!(cloned["cloned"], 1);
+            let runs = json_of(companion_sheet_document_json(handle, sheet));
+            let chips = runs
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|run| run.get("chip").is_some())
+                .count();
+            assert_eq!(chips, 2);
+            companion_free(handle);
+        }
+    }
+
+    /// The chip ids standing on a page, in order.
+    unsafe fn standing_chips(handle: *mut CompanionHandle, sheet: u64) -> Vec<u64> {
+        let runs = unsafe { json_of(companion_sheet_document_json(handle, sheet)) };
+        runs.as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|run| run.get("chip")?["chip_id"].as_u64())
+            .collect()
+    }
+
+    #[test]
+    fn a_drag_between_pages_crosses_the_seam_keeping_its_object() {
+        let handle = handle();
+        unsafe {
+            let (home, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let (_, away) = new_page(handle);
+            assert!(
+                companion_sheet_move_range_to(handle, home, 2, 1, home, 0).is_null(),
+                "one page"
+            );
+            assert!(companion_sheet_move_range_to(handle, home, 2, 1, 4_242, 0).is_null());
+
+            let moved = json_of(companion_sheet_move_range_to(handle, home, 1, 3, away, 0));
+            assert_eq!(moved["location_utf16"], 0);
+            assert_eq!(moved["length_utf16"], 3);
+            assert_eq!(moved["reattached"], 1);
+            assert_eq!(moved["cloned"], 0);
+            assert_eq!(standing_chips(handle, away), [chip], "the same object");
+            assert!(standing_chips(handle, home).is_empty());
+            assert!(
+                !companion_sheet_can_undo(handle, home),
+                "no step there stands it again"
+            );
+            assert!(companion_chip_copy_out(handle, chip));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_drag_between_pages_refuses_a_page_past_its_deadline_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (due, chip) = a_due_page_with_a_chip(handle);
+            let (_, fresh) = new_page(handle);
+            assert!(companion_sheet_move_range_to(handle, due, 2, 1, fresh, 0).is_null());
+            let ops = cstring(r#"[{"ins": {"at": 0, "text": "x"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, fresh, ops.as_ptr()));
+            assert!(companion_sheet_move_range_to(handle, fresh, 0, 1, due, 0).is_null());
+            assert_eq!(standing_chips(handle, due), [chip], "neither page changed");
+            assert!(standing_chips(handle, fresh).is_empty());
+            assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_fragment_routes_fail_closed() {
+        unsafe {
+            let null = ptr::null_mut();
+            assert!(companion_sheet_copy_fragment(null, 1, 0, 1).is_null());
+            assert!(companion_sheet_cut_fragment(null, 1, 0, 1).is_null());
+            assert!(
+                companion_sheet_paste_fragment(null, 1, 0, 0, ptr::null(), 0, ptr::null())
+                    .is_null()
+            );
+            assert!(companion_sheet_paste_active_cut(null, 1, 0, 0).is_null());
+            assert!(companion_sheet_move_range(null, 1, 0, 1, 3).is_null());
+            assert!(companion_sheet_clone_range(null, 1, 0, 1, 3).is_null());
+            assert!(companion_sheet_move_range_to(null, 1, 0, 1, 2, 0).is_null());
+            assert!(companion_active_cut_json(null).is_null());
+            let kind = cstring("public.utf8-plain-text");
+            assert!(!companion_chip_provide_drag(
+                null,
+                1,
+                null.cast(),
+                null.cast(),
+                kind.as_ptr()
+            ));
+
+            let handle = handle();
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            assert!(
+                companion_sheet_copy_fragment(handle, 4_242, 0, 1).is_null(),
+                "unknown page"
+            );
+            assert!(
+                companion_sheet_copy_fragment(handle, sheet, 0, 99).is_null(),
+                "past the body"
+            );
+            assert!(
+                companion_sheet_copy_fragment(handle, sheet, 1, 0).is_null(),
+                "empty"
+            );
+            assert!(companion_sheet_cut_fragment(handle, sheet, 3, 99).is_null());
+            let runs = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(
+                runs.contains("\"ab\"") && runs.contains("\"cd\""),
+                "a refused cut cut nothing"
+            );
+            assert!(!companion_chip_provide_drag(
+                handle,
+                chip,
+                null.cast(),
+                null.cast(),
+                kind.as_ptr()
+            ));
+            assert!(!companion_chip_provide_drag(
+                handle,
+                chip,
+                null.cast(),
+                null.cast(),
+                ptr::null()
+            ));
+            companion_free(handle);
+        }
+    }
+
+    fn sent_destinations(handle: *mut CompanionHandle) -> Vec<String> {
+        let ledger = unsafe { take_json(companion_ledger_json(handle)) };
+        serde_json::from_str::<Vec<serde_json::Value>>(&ledger)
+            .unwrap()
+            .into_iter()
+            .filter(|record| record["event"] == "sent")
+            .map(|record| record["destination"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_decrypted_drag_writes_its_item_core_side_and_records_one_sent_to_drag() {
+        let handle = handle();
+        unsafe {
+            let (_, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let mut item = companion_pasteboard::MemoryDragItem::new();
+            {
+                let mut guard = (*handle).inner.lock().unwrap();
+                assert!(guard.provide_drag(
+                    ChipId::from_raw(chip),
+                    &mut item,
+                    "public.utf8-plain-text"
+                ));
+            }
+            assert_eq!(
+                item.provided(),
+                Some((&b"hunter2-secret"[..], ContentKind::Text))
+            );
+            assert_eq!(sent_destinations(handle), vec!["drag"]);
+            assert!(
+                !board_text(handle).is_some_and(|text| text.contains("hunter2")),
+                "not the clipboard"
+            );
+            assert!(
+                companion_chip_copy_out(handle, chip),
+                "a drop deletes nothing"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_decrypted_drag_refuses_the_general_pasteboard_a_foreign_type_and_an_unknown_chip() {
+        let handle = handle();
+        unsafe {
+            let (_, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let mut guard = (*handle).inner.lock().unwrap();
+            let chip = ChipId::from_raw(chip);
+            let mut general = companion_pasteboard::MemoryDragItem::on_general();
+            assert!(!guard.provide_drag(chip, &mut general, "public.utf8-plain-text"));
+            assert!(general.provided().is_none());
+            let mut item = companion_pasteboard::MemoryDragItem::new();
+            assert!(!guard.provide_drag(chip, &mut item, "public.png"));
+            assert!(!guard.provide_drag(
+                ChipId::from_raw(4_242),
+                &mut item,
+                "public.utf8-plain-text"
+            ));
+            assert!(item.provided().is_none());
+            drop(guard);
+            assert!(
+                sent_destinations(handle).is_empty(),
+                "nothing provided, nothing recorded"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_decrypted_drag_refuses_a_chip_removed_mid_drag() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let removal = cstring(r#"[{"del": {"at": 2, "len": 1}}]"#);
+            assert!(companion_sheet_apply_ops(handle, sheet, removal.as_ptr()));
+            let mut guard = (*handle).inner.lock().unwrap();
+            let chip = ChipId::from_raw(chip);
+            let page = guard.store.sheet(SheetId::from_raw(sheet)).unwrap();
+            assert!(
+                page.detached().any(|owned| owned.id() == chip),
+                "removed, not burned"
+            );
+            let mut item = companion_pasteboard::MemoryDragItem::new();
+            assert!(!guard.provide_drag(chip, &mut item, "public.utf8-plain-text"));
+            assert!(item.provided().is_none());
+            drop(guard);
+            assert!(sent_destinations(handle).is_empty());
+            companion_free(handle);
+        }
+    }
+
+    /// `ab`, an object named `TOKEN`, `cd` on the hour rung, aged two hours
+    /// with no sweep: its page and object as the restore numbered them.
+    unsafe fn a_due_page_with_a_chip(handle: *mut CompanionHandle) -> (u64, u64) {
+        let (_, chip) = unsafe { page_with_a_chip(handle, "hunter2-secret") };
+        let tab = unsafe { strip(handle) }[0]["id"].as_u64().unwrap();
+        assert!(unsafe { companion_tab_set_rung(handle, tab, 0) });
+        let name = cstring("TOKEN");
+        assert!(unsafe { companion_chip_set_name(handle, chip, name.as_ptr()) });
+        unsafe { age_by(handle, 2 * 60 * 60 * 1_000) };
+        let guard = unsafe { &*handle }.inner.lock().unwrap();
+        let page = guard.store.sheets().next().expect("no sweep took it");
+        let object = page.chips().next().expect("its object stands");
+        assert_eq!(object.name(), Some("TOKEN"), "the name stands too");
+        (page.id().raw(), object.id().raw())
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_gives_nothing_out_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = a_due_page_with_a_chip(handle);
+            {
+                let mut guard = (*handle).inner.lock().unwrap();
+                let mut item = companion_pasteboard::MemoryDragItem::new();
+                let text = "public.utf8-plain-text";
+                assert!(!guard.provide_drag(ChipId::from_raw(chip), &mut item, text));
+                assert!(item.provided().is_none());
+            }
+            assert!(!companion_chip_copy_out(handle, chip));
+            assert!(!companion_chip_copy_name_value(handle, chip));
+            assert!(companion_chip_note_runs_json(handle, chip).is_null());
+            assert!(companion_sheet_copy_fragment(handle, sheet, 0, 5).is_null());
+            assert!(companion_sheet_cut_fragment(handle, sheet, 0, 5).is_null());
+            assert!(board_text(handle).is_none(), "nothing written");
+            assert!(sent_destinations(handle).is_empty(), "nothing recorded");
+            assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn neither_conceal_sends_a_page_past_its_deadline() {
+        let handle = handle();
+        unsafe {
+            let server = cstring(r#"{"server_url": "https://eu.onetimesecret.com"}"#);
+            assert!(companion_connection_configure(handle, server.as_ptr()));
+            assert!(companion_test_wire_stub(handle, 500, ptr::null()));
+            let (sheet, chip) = a_due_page_with_a_chip(handle);
+            for refusal in [
+                json_of(companion_chip_conceal(handle, chip, ptr::null())),
+                json_of(companion_sheet_conceal(handle, sheet, ptr::null())),
+            ] {
+                assert_eq!(refusal["ok"], false);
+                assert_eq!(refusal["error"], "this page has expired");
+            }
+            assert!(
+                companion_test_wire_last_json(handle).is_null(),
+                "nothing sent"
+            );
+            assert!(sent_destinations(handle).is_empty());
             companion_free(handle);
         }
     }

@@ -82,7 +82,7 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertNotNil(choose.submenu?.items.first { $0.title == "Swift" })
         XCTAssertTrue(model.languageActions.canChoose)
 
-        textView.chooseCodeLanguage("swift")
+        textView.chooseCodeLanguage(CodeLanguageChoice(language: "swift"))
 
         XCTAssertEqual(textView.string, "```swift\n\(source)\n```")
     }

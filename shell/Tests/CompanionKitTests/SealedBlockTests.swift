@@ -390,4 +390,184 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertEqual(SealedBlockCell.displayedSizeClass("40 ch"), "size unknown")
         XCTAssertEqual(SealedBlockCell.displayedSizeClass("future-class"), "size unknown")
     }
+
+    // MARK: The named row (Law 0001, ADR-0042 point 8)
+
+    private func named(_ name: String, excerpt: String = "ghp_4kQ9…e0H5jK") -> ChipInfo {
+        ChipInfo(
+            chipId: 7, kind: "text", excerpt: excerpt, sizeLabel: "small", concealed: false,
+            name: name)
+    }
+
+    /// The name and value zones are their own runs; the `=` zone is the
+    /// glyph and two points either side, taken from the runs beside it.
+    func testTheZonesAreTheRunsAndTheEqualsTakesTwoPointsEachSide() {
+        let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.blockHeight)
+        let layout = SealedBlockCell.contentLayout(in: frame)
+        let row = layout.namedRow(
+            nameWidth: 66, equalsWidth: 6, valueWidth: 99, height: 14, copiesNameValue: true)
+        let y = row.name.midY
+
+        XCTAssertEqual(row.name.minX, layout.left)
+        XCTAssertEqual(row.equals.minX, row.name.maxX, "a space was added before =")
+        XCTAssertEqual(row.value.minX, row.equals.maxX, "a space was added after =")
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.name.minX + 1, y: y)), .name)
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.name.maxX - 2.5, y: y)), .name)
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.name.maxX - 1.5, y: y)), .equals)
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.equals.midX, y: y)), .equals)
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.value.minX + 1.5, y: y)), .equals)
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.value.minX + 2.5, y: y)), .value)
+        XCTAssertEqual(row.zone(at: NSPoint(x: row.value.maxX - 1, y: y)), .value)
+        XCTAssertNil(row.zone(at: NSPoint(x: row.value.maxX + 1, y: y)), "past the value")
+        XCTAssertNil(
+            row.zone(at: NSPoint(x: row.name.midX, y: layout.topRowY + 2)),
+            "the top row is outside the bottom row's band")
+        XCTAssertEqual(
+            row.zone(at: NSPoint(x: row.name.midX, y: frame.maxY - 1)), .name,
+            "the band runs to the block's bottom edge")
+    }
+
+    /// The pill stands three points past its run each side, 15 high and
+    /// centred on the row; over `=` one pill spans name to value.
+    func testThePillRunsPastItsRunAndOverTheEqualsSpansTheLine() {
+        let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.blockHeight)
+        let row = SealedBlockCell.contentLayout(in: frame)
+            .namedRow(
+                nameWidth: 66, equalsWidth: 6, valueWidth: 99, height: 14, copiesNameValue: true)
+
+        let name = row.pill(for: .name)
+        XCTAssertEqual(name.minX, row.name.minX - 3)
+        XCTAssertEqual(name.maxX, row.name.maxX + 3)
+        XCTAssertEqual(name.height, 15)
+        XCTAssertEqual(name.midY, row.name.midY)
+        XCTAssertEqual(row.pill(for: .value).minX, row.value.minX - 3)
+        XCTAssertEqual(row.pill(for: .value).maxX, row.value.maxX + 3)
+        XCTAssertEqual(row.pill(for: .equals).minX, row.name.minX - 3)
+        XCTAssertEqual(row.pill(for: .equals).maxX, row.value.maxX + 3)
+    }
+
+    /// A row that does not fit cuts the name first, down to its floor,
+    /// and only then the value; `=` is never cut.
+    func testALongNameGivesWayBeforeTheValueDoes() {
+        let roomy = SealedBlockLayout.rowAllotment(
+            available: 300, name: 100, equals: 6, value: 90, nameFloor: 30)
+        XCTAssertEqual(roomy.name, 100)
+        XCTAssertEqual(roomy.value, 90)
+
+        let tight = SealedBlockLayout.rowAllotment(
+            available: 150, name: 100, equals: 6, value: 90, nameFloor: 30)
+        XCTAssertEqual(tight.value, 90, "the value was cut while the name could still give")
+        XCTAssertEqual(tight.name, 54)
+
+        let narrow = SealedBlockLayout.rowAllotment(
+            available: 100, name: 100, equals: 6, value: 90, nameFloor: 30)
+        XCTAssertEqual(narrow.name, 30, "the name went below its floor")
+        XCTAssertEqual(narrow.value, 64)
+
+        let crushed = SealedBlockLayout.rowAllotment(
+            available: 20, name: 100, equals: 6, value: 90, nameFloor: 30)
+        XCTAssertEqual(crushed.name, 14)
+        XCTAssertEqual(crushed.value, 0)
+        XCTAssertEqual(
+            SealedBlockLayout.rowAllotment(
+                available: -5, name: 10, equals: 6, value: 10, nameFloor: 4
+            ).value, 0)
+    }
+
+    /// The live row at a wide and a narrow measure: contiguous runs, the
+    /// whole of a short row, and at a narrow measure a long name cut to
+    /// an ellipsis while the value is still whole.
+    func testTheDrawnRowAtAWideAndANarrowMeasure() throws {
+        let wideFrame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.blockHeight)
+        let wide = try XCTUnwrap(SealedBlockCell(info: named("MY_API_KEY")).namedRow(in: wideFrame))
+        XCTAssertEqual(wide.name.string, "MY_API_KEY")
+        XCTAssertEqual(wide.equals.string, "=")
+        XCTAssertEqual(wide.value.string, "ghp_4kQ9…e0H5jK")
+        XCTAssertEqual(wide.geometry.equals.minX, wide.geometry.name.maxX, accuracy: 0.01)
+        XCTAssertEqual(wide.geometry.value.minX, wide.geometry.equals.maxX, accuracy: 0.01)
+
+        let longName = "AN_UNCOMMONLY_LONG_NAME_FOR_A_DEPLOY_TOKEN_IN_STAGING"
+        let narrowFrame = NSRect(x: 0, y: 0, width: 360, height: SealedBlockCell.blockHeight)
+        let narrow = try XCTUnwrap(
+            SealedBlockCell(info: named(longName)).namedRow(in: narrowFrame))
+        XCTAssertTrue(narrow.name.string.hasSuffix("…"), "the long name was not cut")
+        XCTAssertTrue(longName.hasPrefix(String(narrow.name.string.dropLast())))
+        XCTAssertEqual(narrow.value.string, "ghp_4kQ9…e0H5jK", "the value gave way first")
+        let seatMinX = SealedBlockCell.contentLayout(in: narrowFrame)
+            .metadataOrigin(width: SealedBlockCell.widestSeatWidth).x
+        XCTAssertLessThanOrEqual(
+            narrow.geometry.value.maxX, seatMinX, "the row ran under the seat's widest words")
+
+        XCTAssertNil(
+            SealedBlockCell(info: chip()).namedRow(in: wideFrame),
+            "an unnamed row has no zones")
+    }
+
+    /// A named image's row reads `NAME=excerpt`, but its `=` is no zone,
+    /// since the core composes `NAME=value` for text alone (ADR-0043 point 7).
+    func testANamedImagesEqualsIsNoZone() throws {
+        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.blockHeight)
+        let image = ChipInfo(
+            chipId: 8, kind: "image", excerpt: "PNG image", sizeLabel: "small",
+            concealed: false, name: "LOGO")
+        let row = try XCTUnwrap(SealedBlockCell(info: image).namedRow(in: frame))
+        XCTAssertEqual(row.name.string + row.equals.string + row.value.string, "LOGO=PNG image")
+        let geometry = row.geometry
+        let y = geometry.name.midY
+        for x in stride(from: geometry.name.minX, to: geometry.value.maxX, by: 0.5) {
+            XCTAssertNotEqual(geometry.zone(at: NSPoint(x: x, y: y)), .equals, "at \(x)")
+        }
+        XCTAssertNil(geometry.zone(at: NSPoint(x: geometry.equals.midX, y: y)))
+        XCTAssertEqual(geometry.zone(at: NSPoint(x: geometry.name.maxX - 1, y: y)), .name)
+        XCTAssertEqual(geometry.zone(at: NSPoint(x: geometry.value.minX + 1, y: y)), .value)
+
+        let text = try XCTUnwrap(SealedBlockCell(info: named("LOGO")).namedRow(in: frame))
+        XCTAssertEqual(
+            text.geometry.zone(at: NSPoint(x: text.geometry.equals.midX, y: y)), .equals,
+            "the control: a text object's `=`")
+        XCTAssertTrue(SealedBlockLayout.copiesNameValue(kind: "text"))
+        XCTAssertFalse(SealedBlockLayout.copiesNameValue(kind: "image"))
+        XCTAssertFalse(SealedBlockLayout.copiesNameValue(kind: "a kind not yet made"))
+    }
+
+    /// The seat says what a click on the hovered zone does, before the
+    /// click; `copied` for the beat after it; the size class at rest.
+    func testEachZoneSaysWhatItsClickDoesInTheSeat() {
+        XCTAssertEqual(
+            SealedBlockCell.seatText(sizeLabel: "small", hovered: .name, copied: false),
+            "copies the name")
+        XCTAssertEqual(
+            SealedBlockCell.seatText(sizeLabel: "small", hovered: .equals, copied: false),
+            "copies name=value, decrypted")
+        XCTAssertEqual(
+            SealedBlockCell.seatText(sizeLabel: "small", hovered: .value, copied: false),
+            "copies the value, decrypted")
+        XCTAssertEqual(
+            SealedBlockCell.seatText(sizeLabel: "small", hovered: .value, copied: true), "copied")
+        XCTAssertEqual(
+            SealedBlockCell.seatText(sizeLabel: "small", hovered: nil, copied: false), "small")
+    }
+
+    /// The beat lasts one second; it fades in and out, and under Reduce
+    /// Motion it comes and goes without a fade.
+    func testTheBeatLastsASecondAndReduceMotionDropsTheFade() throws {
+        XCTAssertEqual(SealedBlockCell.beatDuration, 1)
+        XCTAssertNil(SealedBlockCell.beatStrength(elapsed: -0.1, reduceMotion: false))
+        XCTAssertEqual(try XCTUnwrap(SealedBlockCell.beatStrength(elapsed: 0, reduceMotion: false)), 0)
+        XCTAssertEqual(try XCTUnwrap(SealedBlockCell.beatStrength(elapsed: 0.5, reduceMotion: false)), 1)
+        XCTAssertLessThan(
+            try XCTUnwrap(SealedBlockCell.beatStrength(elapsed: 0.95, reduceMotion: false)), 1)
+        XCTAssertNil(SealedBlockCell.beatStrength(elapsed: 1, reduceMotion: false))
+        XCTAssertEqual(SealedBlockCell.beatStrength(elapsed: 0, reduceMotion: true), 1)
+        XCTAssertEqual(SealedBlockCell.beatStrength(elapsed: 0.99, reduceMotion: true), 1)
+        XCTAssertNil(SealedBlockCell.beatStrength(elapsed: 1, reduceMotion: true))
+    }
+
+    /// VoiceOver hears the object's name with the block (D-10).
+    func testTheBlocksLabelCarriesTheName() {
+        XCTAssertEqual(
+            SealedBlockCell(info: named("MY_API_KEY")).accessibilityLabel(),
+            "sealed content, MY_API_KEY, small")
+        XCTAssertEqual(SealedBlockCell(info: chip()).accessibilityLabel(), "sealed content, small")
+    }
 }

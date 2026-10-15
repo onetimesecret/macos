@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.25.0"
+version = "0.32.0"
 dependencies = [
  "betlang",
  "companion-credentials",
@@ -153,6 +153,7 @@ dependencies = [
  "loro",
  "ots-client",
  "serde",
+ "serde_json",
  "static_assertions",
  "zeroize",
 ]
@@ -169,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "companion-ffi"
-version = "0.33.1"
+version = "0.40.0"
 dependencies = [
  "base64",
  "companion-core",
@@ -190,7 +191,7 @@ version = "0.1.0"
 
 [[package]]
 name = "companion-pasteboard"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "objc2",
  "objc2-app-kit",

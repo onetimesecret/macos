@@ -34,24 +34,11 @@ final class LedgerAppendArmingTests: XCTestCase {
         defaults.removePersistentDomain(forName: "companion-kit-arming-tests")
         let model = isolatedModel(defaults: defaults)
         let client = model.coreClient
-
-        // The copy-out step writes the real clipboard (concealed and
-        // transient, but a write all the same), so hold what the
-        // developer had and put it back when the test is done.
-        let board = NSPasteboard.general
-        let held: [NSPasteboardItem] = (board.pasteboardItems ?? []).map { item in
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    copy.setData(data, forType: type)
-                }
-            }
-            return copy
-        }
-        defer {
-            board.clearContents()
-            if !held.isEmpty { board.writeObjects(held) }
-        }
+        // The copy-out step writes a board in process memory, not the clipboard.
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        // The paste and decrypted drag steps use a board of their own.
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
 
         var chip: ChipInfo?
         // One entry per ledger-appending path the model can drive on
@@ -69,15 +56,31 @@ final class LedgerAppendArmingTests: XCTestCase {
             ("copyOutChip appends sent to clipboard", {
                 model.copyOutChip(chip?.chipId ?? 0)
             }),
-            ("deleting a chip in an edit batch appends discarded", {
-                // The batch also leaves ink behind: a page that dies
-                // empty entombs without a record, and the close step
-                // needs one to assert on.
-                model.applyOps(
-                    sheet: model.selection ?? 0,
-                    opsJSON: #"[{"del":{"at":0,"len":1}},{"ins":{"at":0,"text":"ink"}}]"#)
+            // A paste of a copy clones its object core side (ADR-0047 point 6).
+            ("pasteFragment appends sealed for each clone", {
+                guard let sheet = model.selectedPageID,
+                      let fragment = client.copyFragment(
+                          sheet: sheet, range: NSRange(location: 0, length: 1)),
+                      fragment.write(to: board)
+                else { return }
+                model.pasteFragment(
+                    from: board, sheet: sheet, ranges: [NSRange(location: 1, length: 0)])
             }),
-            ("close appends discarded", {
+            // The ⌥ drag clones its objects core side (ADR-0047 point 10).
+            ("dropRange cloning appends sealed for each clone", {
+                guard let sheet = model.selectedPageID else { return }
+                model.dropRange(
+                    NSRange(location: 0, length: 1), sheet: sheet, at: 0, cloning: true)
+            }),
+            // A destination's ask of the decrypted drag records a sent (ADR-0047 point 11).
+            ("provideDecryptedDrag appends sent to drag", {
+                model.provideDecryptedDrag(
+                    chip: chip?.chipId ?? 0, pasteboard: board, item: NSPasteboardItem(),
+                    type: .string)
+            }),
+            // A removal in an edit batch detaches and appends nothing
+            // (ADR-0047); the close below records the chip's death.
+            ("close appends discarded for the chip and the page", {
                 if let page = model.selection { model.close(page) }
             }),
         ]
@@ -92,5 +95,49 @@ final class LedgerAppendArmingTests: XCTestCase {
                 model.dirtyMarks, marks,
                 "\(step.name): a ledger record was appended and no write was armed (issue #52)")
         }
+    }
+
+    /// A refused read appends nothing and arms nothing. Past a page's deadline it
+    /// records no `sent`, and only the settle's sweep appends, with its write armed (ADR-0052).
+    func testARefusedReadArmsNothingAndPastADeadlineOnlyItsSweepAppends() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "companion-kit-refused-read-tests"))
+        defaults.removePersistentDomain(forName: "companion-kit-refused-read-tests")
+        let model = isolatedModel(defaults: defaults)
+        let client = model.coreClient
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        model.newPage()
+        let chip = try XCTUnwrap(
+            model.sealText("n0ts3cr3t", replacing: NSRange(location: 0, length: 0))?.chipId)
+        XCTAssertTrue(model.setChipName("API_KEY", chip: chip, sheet: model.selectedPageID ?? 0))
+        let reads: [(name: String, run: (UInt64) -> Bool)] = [
+            ("copyOutChip", { model.copyOutChip($0) }),
+            ("copyChipNameValue", { model.copyChipNameValue($0) }),
+            ("provideDecryptedDrag", {
+                model.provideDecryptedDrag(
+                    chip: $0, pasteboard: board, item: NSPasteboardItem(), type: .string)
+            }),
+        ]
+
+        for read in reads {
+            let records = client.ledger().count
+            let marks = model.dirtyMarks
+            XCTAssertFalse(read.run(4_242), "\(read.name) read an unknown object")
+            XCTAssertEqual(client.ledger().count, records, read.name)
+            XCTAssertEqual(model.dirtyMarks, marks, "\(read.name): a refusal armed a write")
+        }
+
+        let tab = try XCTUnwrap(model.selection)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertEqual(client.tabs().first?.hasPage, true, "the control: no sweep ran")
+        let records = client.ledger().count
+        let marks = model.dirtyMarks
+        XCTAssertFalse(reads[0].run(chip), "copy decrypted read a page past its deadline")
+        let appended = client.ledger().dropFirst(records)
+        XCTAssertFalse(appended.isEmpty, "the settle swept nothing")
+        XCTAssertFalse(appended.contains { $0.event == "sent" }, "the refused read recorded a sent")
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the sweep's records armed no write")
     }
 }

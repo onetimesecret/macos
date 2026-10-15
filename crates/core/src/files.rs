@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
 use crate::document::{DocRun, EditIntent, EditSelection, SheetDocument, TextSelection};
+use crate::ink::{self, StepOutcome, document_holding, text_of};
 use crate::store::{EditOp, inferred_intent};
 
 /// The high bit: set on every [`FileId`], on no page id. Mirrored in Swift as
@@ -323,17 +324,6 @@ impl ExternalState {
             Self::Missing => "missing",
         }
     }
-}
-
-/// What one undo or redo did, and where the caret belongs (UTF-16).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StepOutcome {
-    /// Whether the step moved anything.
-    pub applied: bool,
-    /// Where the caret belongs; `None` when the step carried no position.
-    pub caret_u16: Option<u32>,
-    /// The complete selection restored by the step.
-    pub selection_u16: Option<TextSelection>,
 }
 
 /// One open file.
@@ -792,54 +782,10 @@ impl FileStore {
         if ops.is_empty() {
             return true;
         }
-        // Phase one: simulate in UTF-16 so a refusal is atomic. Sized once and
-        // zeroized, so no reallocation leaves plaintext behind.
-        let text = Zeroizing::new(file.text());
-        // Every variant named, so a new inserting op fails to compile here.
-        let room = ops
-            .iter()
-            .fold(text.encode_utf16().count(), |room, op| match op {
-                EditOp::Insert { text: inserted, .. } => {
-                    room.saturating_add(inserted.encode_utf16().count())
-                }
-                EditOp::Delete { .. } | EditOp::InsertChip { .. } => room,
-            });
-        let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::new());
-        if sim.try_reserve_exact(room).is_err() {
+        // False from a validated batch tells the shell to restate the file.
+        let Some(clean) = ink::apply_batch(&mut file.document, ops, intent, selection) else {
             return false;
-        }
-        sim.extend(text.encode_utf16());
-        for op in ops {
-            if !sim_admit(&mut sim, op) {
-                return false;
-            }
-        }
-        let before_selection =
-            selection.and_then(|selection| file.document.snapshot_selection(selection.before));
-        // Phase two: validated, so these cannot refuse; if one does, false tells
-        // the shell to restate the file.
-        let mut clean = true;
-        for op in ops {
-            let outcome = match op {
-                EditOp::Insert { pos_u16, text } => file.document.insert(*pos_u16 as usize, text),
-                EditOp::Delete { pos_u16, len_u16 } => {
-                    file.document.delete(*pos_u16 as usize, *len_u16 as usize)
-                }
-                // Unreachable: phase one refuses chip ops.
-                EditOp::InsertChip { .. } => Err(crate::document::InvalidRange),
-            };
-            if outcome.is_err() {
-                clean = false;
-                break;
-            }
-        }
-        // Close the transaction regardless, or what landed folds into the next.
-        if let (Some(before), Some(selection)) = (before_selection, selection) {
-            file.document
-                .commit_edit_with_selection(intent, None, before, selection.after);
-        } else {
-            file.document.commit_edit(intent, None);
-        }
+        };
         if clean {
             file.last_edited_ms = wall_ms;
         }
@@ -905,24 +851,12 @@ impl FileStore {
     fn step(&mut self, id: FileId, back: bool) -> Option<StepOutcome> {
         let file = self.file_mut(id)?;
         // A pending buffer must not move.
-        let applied = if file.pending_hydration {
-            false
-        } else if back {
-            file.document.undo()
+        let outcome = if file.pending_hydration {
+            StepOutcome::NONE
         } else {
-            file.document.redo()
+            ink::step(&mut file.document, back)
         };
-        let caret_u16 = if applied {
-            file.document
-                .restored_caret()
-                .and_then(|c| u32::try_from(c).ok())
-        } else {
-            None
-        };
-        let selection_u16 = applied
-            .then(|| file.document.restored_selection())
-            .flatten();
-        if applied {
+        if outcome.applied {
             if let Some(generation) = file.document.popped_take_theirs()
                 && file.active_take_theirs_generation == Some(generation)
             {
@@ -931,11 +865,7 @@ impl FileStore {
             }
             file.resettle_dirty();
         }
-        Some(StepOutcome {
-            applied,
-            caret_u16,
-            selection_u16,
-        })
+        Some(outcome)
     }
 
     /// Write the buffer back to its own path, in its own BOM and line endings.
@@ -1575,31 +1505,6 @@ fn resolve_target(io: &dyn FileIo, path: &Path) -> PathBuf {
     }
 }
 
-/// A document holding `text`, with an empty undo stack.
-fn document_holding(text: &str) -> SheetDocument {
-    let document = SheetDocument::new();
-    if !text.is_empty() {
-        document
-            .insert(0, text)
-            .expect("an insert at zero into an empty body");
-    }
-    document.commit(None);
-    document.forget_undo();
-    document
-}
-
-/// The document's text; a chip sentinel, unreachable here, is written as U+FFFC.
-fn text_of(document: &SheetDocument) -> String {
-    let mut text = String::new();
-    for run in document.runs() {
-        match run {
-            DocRun::Ink(ink) => text.push_str(&ink),
-            DocRun::Chip(_) => text.push('\u{FFFC}'),
-        }
-    }
-    text
-}
-
 /// Whether the document holds exactly `expected`, without a full copy.
 fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
     let mut remaining = expected;
@@ -1646,49 +1551,6 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
     file.take_theirs_undone = false;
     file.overwrite_next_save = false;
     Ok(())
-}
-
-/// One op against the simulated UTF-16 body; false refuses the batch.
-fn sim_admit(sim: &mut Vec<u16>, op: &EditOp) -> bool {
-    match op {
-        EditOp::Insert { pos_u16, text } => {
-            let at = *pos_u16 as usize;
-            if !boundary(sim, at) {
-                return false;
-            }
-            // Wiped on drop.
-            let mut units = Zeroizing::new(Vec::with_capacity(text.encode_utf16().count()));
-            units.extend(text.encode_utf16());
-            sim.splice(at..at, units.iter().copied());
-            true
-        }
-        EditOp::Delete { pos_u16, len_u16 } => {
-            let at = *pos_u16 as usize;
-            let Some(end) = at.checked_add(*len_u16 as usize) else {
-                return false;
-            };
-            if end > sim.len() || !boundary(sim, at) || !boundary(sim, end) {
-                return false;
-            }
-            sim.drain(at..end);
-            true
-        }
-        // A file holds no chips.
-        EditOp::InsertChip { .. } => false,
-    }
-}
-
-/// In bounds and not inside a surrogate pair.
-fn boundary(sim: &[u16], at: usize) -> bool {
-    if at > sim.len() {
-        return false;
-    }
-    if at == 0 || at == sim.len() {
-        return true;
-    }
-    let before = sim[at - 1];
-    let after = sim[at];
-    !((0xD800..=0xDBFF).contains(&before) && (0xDC00..=0xDFFF).contains(&after))
 }
 
 #[cfg(test)]

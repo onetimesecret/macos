@@ -253,7 +253,7 @@ front` names it) and leave this window visible but not key.
 - [ ] Reopen the file, make one edit, request close, then press ⌘Z until the
       buffer matches the saved file. The file closes.
 - [ ] Reopen the file, make an edit, modify the same file on disk, and request
-      close. Choose **Take theirs**. The file closes with the on-disk contents
+      close. Choose **Take Theirs**. The file closes with the on-disk contents
       unchanged.
 
 ## Separate procedures, in their own documents
@@ -345,7 +345,7 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   relaunch, the draft's own last edit time on the header, the automatic
   content erase resealing rather than dropping the draft when the last
   page tab closes, the inline dirty-close decision ending the draft,
-  Take theirs remaining undoable, and dirty-file quit asking nothing
+  Take Theirs remaining undoable, and dirty-file quit asking nothing
   (ADR-0028, D-14, D-19). Not an ADR-0016 case: a file is not staged
   content.
 
@@ -364,6 +364,23 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   (ADR-0035). Nothing in the repository's suites runs
   under a sandbox, so this is the only place any of it is checked. Not
   an ADR-0016 case.
+
+- [`rename-in-place.md`](verification-procedures/rename-in-place.md).
+  Owner: delano. The rename fields of Law 0007 in a real key window: a
+  click on a gutter's time opens its field, the keys come back to the
+  page after Escape and Return, the strip's field selects its title
+  whole, and the pad cell's field opens without a sheet, keeps its keys
+  and its refusal line over an empty Return, and keeps the name on
+  Escape (issues #248, #249, #250); a sealed object's name field opens
+  by its double click and keeps its keys over a refusal (issue #245).
+  Not an ADR-0016 case.
+
+- [`sealed-zones-and-note.md`](verification-procedures/sealed-zones-and-note.md).
+  Owner: delano. A named sealed row's zones under a real pointer, the
+  ember beat with Reduce Motion on and off, and the note on the raised
+  card: a press in it leaves the card raised, ⇧Esc and Esc expand,
+  contract and close it, its ⌘Z stays its own, and it follows its block
+  as the page scrolls (issues #244, #246). Not an ADR-0016 case.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally

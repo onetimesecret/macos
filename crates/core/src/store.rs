@@ -10,10 +10,12 @@ use zeroize::Zeroizing;
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
+use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::note::Note;
 use crate::sheet::{
-    CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title,
+    CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
+    SheetClock, SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
 };
 use crate::sync::{ExpiryPolicy, HoldRegister};
 use crate::ttl::{self, Ttl};
@@ -62,6 +64,8 @@ pub enum PayloadError {
     /// The sheet holds an image chip; the conceal payload is text-shaped
     /// (open question 3).
     ImageChip,
+    /// The page's countdown has run out, swept or not (ADR-0052).
+    Expired,
 }
 
 impl std::fmt::Display for PayloadError {
@@ -72,6 +76,7 @@ impl std::fmt::Display for PayloadError {
                 f,
                 "this page holds an image, which cannot travel as a text secret yet"
             ),
+            PayloadError::Expired => write!(f, "this page has expired"),
         }
     }
 }
@@ -177,6 +182,8 @@ pub struct SheetStore<C: Clock> {
     pub(crate) next_tab_id: u64,
     pub(crate) next_sheet_id: u64,
     pub(crate) next_chip_id: u64,
+    /// The last cut that held an object, until it ends (ADR-0047 point 5).
+    pub(crate) active_cut: Option<crate::transfer::ActiveCut>,
 }
 
 impl<C: Clock> SheetStore<C> {
@@ -192,6 +199,7 @@ impl<C: Clock> SheetStore<C> {
             next_tab_id: 1,
             next_sheet_id: 1,
             next_chip_id: 1,
+            active_cut: None,
         }
     }
 
@@ -279,6 +287,7 @@ impl<C: Clock> SheetStore<C> {
             segments: Vec::new(),
             blocks,
             chips: Vec::new(),
+            detached: Vec::new(),
             clock: SheetClock::Running {
                 deadline: now + life,
             },
@@ -298,8 +307,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Close a tab, empty or not: its page's sealed bytes are zeroized,
-    /// one `Discarded` record is kept, and the slot leaves the strip.
-    /// Returns whether the tab existed.
+    /// `Discarded` is recorded for the page and each of its objects, and
+    /// the slot leaves the strip. Returns whether the tab existed.
     pub fn close_tab(&mut self, id: TabId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let Some(index) = self.tab_index(id) else {
@@ -357,6 +366,18 @@ impl<C: Clock> SheetStore<C> {
         self.sheets().find(|s| s.id == id)
     }
 
+    /// The live pages whose countdown still runs; every route that gives a
+    /// page, an object or a note out reads it here (ADR-0052).
+    pub fn readable_sheets(&self) -> impl Iterator<Item = &Sheet> {
+        let now = self.clock.now();
+        self.sheets().filter(move |sheet| !sheet.is_due(now))
+    }
+
+    /// A page by id from [`SheetStore::readable_sheets`].
+    pub(crate) fn readable_sheet(&self, id: SheetId) -> Option<&Sheet> {
+        self.readable_sheets().find(|s| s.id == id)
+    }
+
     /// The local id of the page a cross-device `uuid` names, if it stands
     /// here.
     #[must_use]
@@ -380,7 +401,7 @@ impl<C: Clock> SheetStore<C> {
         self.tabs.iter_mut().find(|tab| tab.id == id)
     }
 
-    fn sheet_mut(&mut self, id: SheetId) -> Option<&mut Sheet> {
+    pub(crate) fn sheet_mut(&mut self, id: SheetId) -> Option<&mut Sheet> {
         self.tabs
             .iter_mut()
             .filter_map(|tab| tab.page.as_mut())
@@ -388,7 +409,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The tab a page stands in.
-    fn tab_of(&self, page: SheetId) -> Option<&Tab> {
+    pub(crate) fn tab_of(&self, page: SheetId) -> Option<&Tab> {
         self.tabs.iter().find(|tab| tab.holds(page))
     }
 
@@ -618,7 +639,8 @@ impl<C: Clock> SheetStore<C> {
     /// Apply a batch of edits to a page's body (ADR-0013). The batch is
     /// validated whole against a simulated body first, so one bad op
     /// mutates nothing; an applied batch commits as one change, and chips
-    /// whose sentinels are gone are zeroized. Returns whether it applied.
+    /// whose sentinels are gone are detached (ADR-0047). Returns whether it
+    /// applied.
     pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
         self.apply_batch(id, ops, inferred_intent(ops), None)
     }
@@ -663,10 +685,15 @@ impl<C: Clock> SheetStore<C> {
         // Phase one: validate the whole batch in exact code units.
         let mut sim = sim_units(&sheet.segments);
         for op in ops {
-            if !sim_admit(&mut sim, &sheet.chips, op) {
+            if !sim_admit(&mut sim, sheet, op) {
                 return false;
             }
         }
+        // A chip's first standing finishes its seal, which is one-way (D-30).
+        let seals = ops.iter().any(|op| {
+            matches!(op, EditOp::InsertChip { chip, .. }
+                if sheet.owned_chip(*chip).is_some_and(|owned| !owned.stood))
+        });
         if ops.is_empty() {
             return true;
         }
@@ -683,7 +710,7 @@ impl<C: Clock> SheetStore<C> {
                 }
                 EditOp::InsertChip { pos_u16, chip } => {
                     let uuid = sheet
-                        .chip(*chip)
+                        .owned_chip(*chip)
                         .expect("phase one admits only owned chips")
                         .uuid();
                     sheet.document.insert_chip(*pos_u16 as usize, uuid)
@@ -715,8 +742,7 @@ impl<C: Clock> SheetStore<C> {
         } else {
             sheet.document.commit_edit(intent, None);
         }
-        // After the commit, which pushes the step an undo would use to zeroize the chip.
-        if ops.iter().any(|op| matches!(op, EditOp::InsertChip { .. })) {
+        if seals {
             sheet.document.forget_undo();
         }
         self.settle_document(id);
@@ -804,9 +830,8 @@ impl<C: Clock> SheetStore<C> {
         self.sheet(id)?.document.restored_selection()
     }
 
-    /// Replace a page's body wholesale; the recovery route (ADR-0013).
-    /// Chips the segments no longer reference are zeroized; a foreign or
-    /// repeated chip rejects the whole call. Returns whether it applied.
+    /// Replace a page's body wholesale, the recovery route (ADR-0013): chips it
+    /// omits detach, those it names reattach, a foreign or repeated one refuses all.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "the segments used to move into the sheet; the signature outlives that so callers of the recovery path stay untouched while stage 3 rebuilds the seam"
@@ -818,7 +843,7 @@ impl<C: Clock> SheetStore<C> {
         let mut referenced: Vec<ChipId> = Vec::new();
         for segment in &segments {
             if let Segment::Chip(chip_id) = segment {
-                if referenced.contains(chip_id) || sheet.chip(*chip_id).is_none() {
+                if referenced.contains(chip_id) || sheet.owned_chip(*chip_id).is_none() {
                     return false;
                 }
                 referenced.push(*chip_id);
@@ -837,7 +862,7 @@ impl<C: Clock> SheetStore<C> {
                         inserted
                     }
                     Segment::Chip(chip_id) => {
-                        let uuid = sheet.chip(*chip_id).expect("validated above").uuid();
+                        let uuid = sheet.owned_chip(*chip_id).expect("validated above").uuid();
                         let inserted = sheet.document.insert_chip(pos, uuid);
                         pos += 1;
                         inserted
@@ -857,15 +882,13 @@ impl<C: Clock> SheetStore<C> {
         clean
     }
 
-    /// Rebuild the projection and derived title, and reap chips whose
-    /// sentinels are gone.
-    fn settle_document(&mut self, id: SheetId) {
-        // Read the clock before the mutable borrow of the tab.
-        let offset = self.clock.local_offset_seconds();
-        let Some(tab) = self.tab_of_mut(id) else {
+    /// Settle the chip roster (ADR-0047), then rebuild the projection and
+    /// derived title.
+    pub(crate) fn settle_document(&mut self, id: SheetId) {
+        let Some(sheet) = self.sheet_mut(id) else {
             return;
         };
-        let sheet = tab.page.as_mut().expect("the tab holds the page found");
+        sheet.settle_roster();
         sheet.rebuild_segments();
         // Rebuilds with fresh identities if the mutation went unnarrated
         // (ADR-0013).
@@ -873,35 +896,7 @@ impl<C: Clock> SheetStore<C> {
         // Derived on edit, never later (ADR-0012); the user's name is on
         // the tab and out of reach here (ADR-0017).
         sheet.derived_title = derive_title(&sheet.segments);
-        // A chip removed with ⌫ leaves the same record as `delete_chip`.
-        let live = sheet.document.live_chips();
-        let mut dropped: Vec<(ItemId, usize)> = Vec::new();
-        sheet.chips.retain(|chip| {
-            let alive = live.contains(&chip.uuid);
-            if !alive {
-                dropped.push((chip.uuid, chip.bytes.len()));
-            }
-            alive
-        });
-        // A dead chip takes the undo stack with it: undo would stand a
-        // sentinel over zeroized bytes. Every chip death passes here.
-        if !dropped.is_empty() {
-            sheet.document.forget_undo();
-        }
-        let created = sheet.created_wall_ms;
-        // Resolved after the re-derivation, so the record carries the
-        // name the page ended up with.
-        let label = tab.label(offset);
-        for (uuid, len) in dropped {
-            self.record(
-                LedgerEvent::Discarded,
-                uuid,
-                label.clone(),
-                created,
-                SizeClass::of(len),
-                DestinationClass::None,
-            );
-        }
+        self.end_a_broken_cut();
     }
 
     /// A page's sync frontier, as opaque bytes (issue #96). `None` for an
@@ -933,7 +928,8 @@ impl<C: Clock> SheetStore<C> {
         let Some(sheet) = self.sheet_mut(id) else {
             return Err(RemoteRefusal::UnknownSheet);
         };
-        let owned: Vec<ItemId> = sheet.chips.iter().map(|chip| chip.uuid).collect();
+        // A detached chip is still the page's own (ADR-0047).
+        let owned = sheet.owned_uuids();
         sheet
             .document
             .import_update(bytes, &owned)
@@ -957,7 +953,7 @@ impl<C: Clock> SheetStore<C> {
         if !sheet.document.is_pristine() {
             return Err(RemoteRefusal::NotFresh);
         }
-        let owned: Vec<ItemId> = sheet.chips.iter().map(|chip| chip.uuid).collect();
+        let owned = sheet.owned_uuids();
         sheet
             .document
             .import_update(frame, &owned)
@@ -1185,19 +1181,161 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
+    /// An attached object and its page, refused past the page's deadline.
     fn chip_home(&self, id: ChipId) -> Option<(SheetId, &SealedChip)> {
-        self.sheets().find_map(|s| s.chip(id).map(|c| (s.id, c)))
+        self.readable_sheets()
+            .find_map(|s| s.chip(id).map(|c| (s.id, c)))
+    }
+
+    fn chip_mut(&mut self, id: ChipId) -> Option<&mut SealedChip> {
+        self.tabs
+            .iter_mut()
+            .filter_map(|tab| tab.page.as_mut())
+            .find_map(|sheet| sheet.chips.iter_mut().find(|chip| chip.id == id))
+    }
+
+    /// Name a sealed object by [`judge_name`]'s rule; an empty draft clears
+    /// the name. A refusal changes nothing, and no outcome is recorded.
+    ///
+    /// # Errors
+    /// [`NameRefusal::UnknownChip`], or the rule's own refusal.
+    pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
+        let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
+        chip.name = judge_name(draft)?.map(str::to_owned);
+        Ok(())
+    }
+
+    fn note(&self, id: ChipId) -> Option<&Note> {
+        self.chip_home(id)?.1.note.as_ref()
+    }
+
+    /// A sealed object's note, empty when it has none; `None` for an unknown
+    /// chip (ADR-0043) or a page past its deadline (ADR-0052).
+    #[must_use]
+    pub fn note_text(&self, id: ChipId) -> Option<Zeroizing<String>> {
+        let (_, chip) = self.chip_home(id)?;
+        Some(
+            chip.note
+                .as_ref()
+                .map_or_else(|| Zeroizing::new(String::new()), Note::text),
+        )
+    }
+
+    /// Apply a batch to a sealed object's note, whole or not at all; the first
+    /// accepted batch makes the note. The page and the ledger are not touched.
+    pub fn apply_note_ops(
+        &mut self,
+        id: ChipId,
+        ops: &[EditOp],
+        intent: EditIntent,
+        selection: Option<EditSelection>,
+    ) -> bool {
+        let Some(chip) = self.chip_mut(id) else {
+            return false;
+        };
+        if ops.is_empty() {
+            return true;
+        }
+        let made = chip.note.is_none();
+        let note = chip.note.get_or_insert_with(|| Note::holding(""));
+        if let Some(clean) = note.apply(ops, intent, selection) {
+            return clean;
+        }
+        // A refused first batch makes no note.
+        if made {
+            chip.note = None;
+        }
+        false
+    }
+
+    /// End the note's typing run without adding a step. False only for an
+    /// unknown chip.
+    pub fn finish_note_editing_group(
+        &mut self,
+        id: ChipId,
+        selection: Option<TextSelection>,
+    ) -> bool {
+        let Some((_, chip)) = self.chip_home(id) else {
+            return false;
+        };
+        if let Some(note) = &chip.note {
+            note.finish_editing_group(selection);
+        }
+        true
+    }
+
+    /// Whether the note has a step of its own to take back.
+    #[must_use]
+    pub fn note_can_undo(&self, id: ChipId) -> bool {
+        self.note(id).is_some_and(Note::can_undo)
+    }
+
+    /// Whether the note has a step of its own to put back.
+    #[must_use]
+    pub fn note_can_redo(&self, id: ChipId) -> bool {
+        self.note(id).is_some_and(Note::can_redo)
+    }
+
+    /// Content-free label for the note's next Undo.
+    pub fn note_undo_action_name(&self, id: ChipId) -> Option<&'static str> {
+        self.note(id)?.undo_action_name()
+    }
+
+    /// Content-free label for the note's next Redo.
+    pub fn note_redo_action_name(&self, id: ChipId) -> Option<&'static str> {
+        self.note(id)?.redo_action_name()
+    }
+
+    /// Take back the note's last step; the page's stack is not touched.
+    /// `None` for an unknown chip.
+    pub fn undo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
+        self.step_note(id, true)
+    }
+
+    /// Put back the step [`SheetStore::undo_note`] took.
+    pub fn redo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
+        self.step_note(id, false)
+    }
+
+    fn step_note(&mut self, id: ChipId, back: bool) -> Option<StepOutcome> {
+        let chip = self.chip_mut(id)?;
+        Some(
+            chip.note
+                .as_mut()
+                .map_or(StepOutcome::NONE, |note| note.step(back)),
+        )
     }
 
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
+    /// `None` for an unknown chip or a page past its deadline (ADR-0052).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
         let (_, chip) = self.chip_home(id)?;
         Some((Zeroizing::new(chip.bytes.expose().to_vec()), chip.meta))
     }
 
-    /// Remove a chip now; its bytes are wiped as it drops (open question
-    /// 5). Returns whether the chip existed.
+    /// The name, `=` and a text chip's payload, raw, in one buffer at its
+    /// final size (ADR-0042 point 4, ADR-0043). `None` for an unknown,
+    /// unnamed or image chip, or a page past its deadline (ADR-0052).
+    /// Consumes nothing and records nothing.
+    #[must_use]
+    pub fn copy_out_name_value(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
+        let (_, chip) = self.chip_home(id)?;
+        if matches!(chip.meta, ChipMeta::Image { .. }) {
+            return None;
+        }
+        let name = chip.name.as_deref()?;
+        let value = chip.bytes.expose();
+        // Exact size: a reallocation would strand sealed bytes unwiped (Law 0004).
+        let mut out = Zeroizing::new(Vec::with_capacity(name.len() + 1 + value.len()));
+        out.extend_from_slice(name.as_bytes());
+        out.push(b'=');
+        out.extend_from_slice(value);
+        Some(out)
+    }
+
+    /// Burn a chip, attached or detached: its bytes wiped and its page's undo
+    /// stack with it (ADR-0047). False for an unknown chip.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let mut removed: Option<(ItemId, usize, String, u64)> = None;
@@ -1206,21 +1344,24 @@ impl<C: Clock> SheetStore<C> {
             let Some(sheet) = tab.page.as_mut() else {
                 continue;
             };
-            let Some(index) = sheet.chips.iter().position(|c| c.id == id) else {
+            let chip = if let Some(index) = sheet.chips.iter().position(|c| c.id == id) {
+                let uuid = sheet.chips[index].uuid;
+                // The sentinel leaves the document before the bytes die.
+                if let Some(pos) = sheet.document.chip_position(uuid) {
+                    let _ = sheet.document.delete(pos, 1);
+                    sheet.document.commit(None);
+                    sheet.blocks.note_delete(pos, 1);
+                }
+                sheet.chips.remove(index)
+            } else if let Some(index) = sheet.detached.iter().position(|c| c.id == id) {
+                sheet.detached.remove(index)
+            } else {
                 continue;
             };
-            let chip = &sheet.chips[index];
-            let uuid = chip.uuid;
-            removed = Some((uuid, chip.bytes.len(), label, sheet.created_wall_ms));
-            // The sentinel leaves the document before the bytes die.
-            if let Some(pos) = sheet.document.chip_position(uuid) {
-                let _ = sheet.document.delete(pos, 1);
-                sheet.document.commit(None);
-                sheet.blocks.note_delete(pos, 1);
-            }
-            // Undo never un-seals (ADR-0009).
+            // A step could stand the burned sentinel again.
             sheet.document.forget_undo();
-            sheet.chips.remove(index); // zeroizes as it drops
+            removed = Some((chip.uuid, chip.bytes.len(), label, sheet.created_wall_ms));
+            drop(chip); // zeroizes
             sheet.rebuild_segments();
             sheet.settle_blocks();
             break;
@@ -1228,6 +1369,7 @@ impl<C: Clock> SheetStore<C> {
         let Some((uuid, len, label, created)) = removed else {
             return false;
         };
+        self.end_a_broken_cut();
         self.record(
             LedgerEvent::Discarded,
             uuid,
@@ -1243,17 +1385,23 @@ impl<C: Clock> SheetStore<C> {
     /// Returns whether the chip existed.
     pub fn record_sent(&mut self, chip: ChipId, destination: DestinationClass) -> bool {
         let offset = self.clock.local_offset_seconds();
-        let Some((sheet_id, sealed)) = self.chip_home(chip) else {
+        // Detached ones too: a conceal's send outlives a removal made mid-flight.
+        let Some((sheet_id, sealed)) = self
+            .sheets()
+            .find_map(|s| s.owned_chip(chip).map(|c| (s.id, c)))
+        else {
             return false;
         };
         let uuid = sealed.uuid;
         let size = SizeClass::of(sealed.bytes.len());
-        let host = self.tab_of(sheet_id).expect("chip_home found it");
+        let host = self
+            .tab_of(sheet_id)
+            .expect("the page was found a line above");
         let label = host.label(offset);
         let created = host
             .page
             .as_ref()
-            .expect("chip_home found the page in it")
+            .expect("the tab holds the page found")
             .created_wall_ms;
         self.record(LedgerEvent::Sent, uuid, label, created, size, destination);
         true
@@ -1287,7 +1435,8 @@ impl<C: Clock> SheetStore<C> {
     /// (doc 03 §5).
     pub fn mark_chip_concealed(&mut self, id: ChipId, receipt_id: String) -> bool {
         for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
-            if let Some(chip) = sheet.chips.iter_mut().find(|c| c.id == id) {
+            let mut owned = sheet.chips.iter_mut().chain(sheet.detached.iter_mut());
+            if let Some(chip) = owned.find(|c| c.id == id) {
                 chip.conceal = Some(Conceal { receipt_id });
                 return true;
             }
@@ -1296,16 +1445,23 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A chip's bytes for the conceal path, which never passes through the
-    /// UI layer.
+    /// UI layer; refused as [`SheetStore::copy_out_chip`] refuses.
     #[must_use]
     pub fn chip_payload(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
         self.copy_out_chip(id).map(|(bytes, _)| bytes)
     }
 
     /// The whole page as one conceal payload, chips inlined in document
-    /// order. Pages holding image chips are refused.
+    /// order. Pages holding image chips, and pages past their deadline
+    /// (ADR-0052), are refused.
     pub fn sheet_payload(&self, id: SheetId) -> Result<Zeroizing<String>, PayloadError> {
-        let sheet = self.sheet(id).ok_or(PayloadError::UnknownSheet)?;
+        let Some(sheet) = self.readable_sheet(id) else {
+            return Err(if self.sheet(id).is_some() {
+                PayloadError::Expired
+            } else {
+                PayloadError::UnknownSheet
+            });
+        };
         if sheet
             .chips
             .iter()
@@ -1363,7 +1519,7 @@ impl<C: Clock> SheetStore<C> {
             return Some(rung);
         };
         normalize(sheet, now);
-        if sheet.remaining(now).is_zero() {
+        if sheet.is_due(now) {
             return None; // due; the timer will reap it
         }
         set_clock(tab, rung, life, now);
@@ -1464,7 +1620,7 @@ impl<C: Clock> SheetStore<C> {
         for tab in &mut self.tabs {
             let spent = tab.page.as_mut().is_some_and(|page| {
                 normalize(page, now);
-                page.remaining(now).is_zero()
+                page.is_due(now)
             });
             if !spent {
                 continue;
@@ -1501,7 +1657,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Append one record, newest first, and evict past the window.
-    fn record(
+    pub(crate) fn record(
         &mut self,
         event: LedgerEvent,
         item: ItemId,
@@ -1523,19 +1679,37 @@ impl<C: Clock> SheetStore<C> {
         evict_expired(&mut self.ledger, at_wall_ms);
     }
 
-    /// Record the page's death and drop it, zeroizing its chips. A page
-    /// without [`Sheet::has_content`] records nothing.
+    /// Record each chip's end, attached or detached, then the page's unless it
+    /// held neither chip nor content (ADR-0047), and drop it, chips zeroized.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
     )]
     fn entomb(&mut self, sheet: Sheet, label: String, event: LedgerEvent) {
-        if !sheet.has_content() {
+        // The page has left the strip, so a cut it held ends here.
+        self.end_a_broken_cut();
+        for chip in sheet.chips.iter().chain(&sheet.detached) {
+            self.record(
+                event,
+                chip.uuid,
+                label.clone(),
+                sheet.created_wall_ms,
+                SizeClass::of(chip.bytes.len()),
+                DestinationClass::None,
+            );
+        }
+        // A detached chip is a payload the page held, though nothing shows it.
+        if !sheet.has_content() && sheet.detached.is_empty() {
             return;
         }
         // The label was resolved by the caller; nothing is derived from ink
         // at death (ADR-0012).
-        let sealed_bytes: usize = sheet.chips.iter().map(|c| c.bytes.len()).sum();
+        let sealed_bytes: usize = sheet
+            .chips
+            .iter()
+            .chain(&sheet.detached)
+            .map(|c| c.bytes.len())
+            .sum();
         self.record(
             event,
             sheet.uuid,
@@ -1602,6 +1776,16 @@ fn sim_units(segments: &[Segment]) -> Vec<SimUnit> {
     units
 }
 
+/// Whether `at..at + len` lies in the body and splits no surrogate pair.
+pub(crate) fn range_in_body(segments: &[Segment], at_u16: u32, len_u16: u32) -> bool {
+    let units = sim_units(segments);
+    let at = at_u16 as usize;
+    let Some(end) = at.checked_add(len_u16 as usize) else {
+        return false;
+    };
+    end <= units.len() && !splits_surrogate_pair(&units, at) && !splits_surrogate_pair(&units, end)
+}
+
 /// Whether `pos` falls between the halves of a surrogate pair.
 fn splits_surrogate_pair(units: &[SimUnit], pos: usize) -> bool {
     if pos == 0 || pos >= units.len() {
@@ -1614,9 +1798,9 @@ fn splits_surrogate_pair(units: &[SimUnit], pos: usize) -> bool {
     )
 }
 
-/// Validate one op against the simulated body and advance it. A chip not
-/// in `chips` never validates.
-fn sim_admit(units: &mut Vec<SimUnit>, chips: &[SealedChip], op: &EditOp) -> bool {
+/// Validate one op against the simulated body and advance it. A chip the
+/// sheet does not own, attached or detached, never validates.
+fn sim_admit(units: &mut Vec<SimUnit>, sheet: &Sheet, op: &EditOp) -> bool {
     match op {
         EditOp::Insert { pos_u16, text } => {
             let pos = *pos_u16 as usize;
@@ -1645,7 +1829,7 @@ fn sim_admit(units: &mut Vec<SimUnit>, chips: &[SealedChip], op: &EditOp) -> boo
             if pos > units.len() || splits_surrogate_pair(units, pos) {
                 return false;
             }
-            if chips.iter().all(|owned| owned.id() != *chip) {
+            if sheet.owned_chip(*chip).is_none() {
                 return false; // foreign: this sheet holds no such chip
             }
             if units.contains(&SimUnit::Chip(*chip)) {
@@ -1677,6 +1861,7 @@ mod tests {
     use super::*;
     use crate::clock::ManualClock;
     use crate::ledger::LEDGER_RETENTION_MS;
+    use crate::sheet::NAME_CAP;
     use crate::sync::PageChannel;
 
     fn eight_hours() -> Ttl {
@@ -1715,6 +1900,15 @@ mod tests {
 
     fn name(store: &SheetStore<ManualClock>, page: SheetId) -> Option<&str> {
         store.tab_of(page).expect("the page is in a tab").name()
+    }
+
+    fn detached_ids(store: &SheetStore<ManualClock>, page: SheetId) -> Vec<ChipId> {
+        store
+            .sheet(page)
+            .expect("the page stands")
+            .detached()
+            .map(SealedChip::id)
+            .collect()
     }
 
     fn events(store: &SheetStore<ManualClock>) -> Vec<LedgerEvent> {
@@ -2037,14 +2231,25 @@ mod tests {
     }
 
     #[test]
-    fn a_sync_that_omits_a_chip_zeroizes_it() {
+    fn a_sync_that_omits_a_chip_detaches_it_and_one_naming_it_reattaches_it() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         let chip = seal(&mut store, id, "deleted in the editor");
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert!(store.sync_document(id, vec![Segment::Ink("just ink now".into())]));
         assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
-        assert!(store.copy_out_chip(chip).is_none(), "no resurrection path");
+        assert_eq!(detached_ids(&store, id), vec![chip]);
+        assert!(
+            store.copy_out_chip(chip).is_none(),
+            "off the page, out of reach"
+        );
+
+        assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
+        assert!(detached_ids(&store, id).is_empty());
+        assert_eq!(
+            &**store.copy_out_chip(chip).unwrap().0,
+            b"deleted in the editor"
+        );
     }
 
     #[test]
@@ -2069,6 +2274,111 @@ mod tests {
             assert!(matches!(meta, ChipMeta::Text { .. }));
         }
         assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
+    }
+
+    #[test]
+    fn a_copy_out_is_written_at_its_exact_size() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        // Copy decrypted and the decrypted drag both write from this buffer.
+        for payload in ["x", "an eleven b", &"a long payload ".repeat(70)] {
+            let chip = seal(&mut store, id, payload);
+            let (bytes, _) = store.copy_out_chip(chip).unwrap();
+            assert_eq!(bytes.capacity(), bytes.len(), "{} bytes", payload.len());
+        }
+    }
+
+    /// A page holding one named, noted chip, its clock run out and no sweep
+    /// yet, with the ledger's length then (ADR-0052).
+    fn a_due_page() -> (SheetStore<ManualClock>, SheetId, ChipId, usize) {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "hunter2");
+        store.set_chip_name(chip, "TOKEN").unwrap();
+        write_note(&mut store, chip, "rotate monthly");
+        assert!(store.copy_out_name_value(chip).is_some(), "readable before");
+        clock.advance(8 * HOUR);
+        let records = store.ledger().count();
+        (store, id, chip, records)
+    }
+
+    /// The refused read recorded nothing, and the timer's sweep still takes
+    /// the page.
+    fn assert_untouched_until_its_sweep(
+        mut store: SheetStore<ManualClock>,
+        id: SheetId,
+        records: usize,
+    ) {
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+        assert!(!events(&store).contains(&LedgerEvent::Sent));
+        assert_eq!(store.expire_due(), vec![id], "the sweep still takes it");
+    }
+
+    #[test]
+    fn copy_decrypted_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.copy_out_chip(chip).is_none());
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn copy_name_value_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.copy_out_name_value(chip).is_none());
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn conceal_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.chip_payload(chip).is_none());
+        assert_eq!(store.sheet_payload(id).err(), Some(PayloadError::Expired));
+        assert_eq!(
+            store.sheet_payload(SheetId::from_raw(4_242)).err(),
+            Some(PayloadError::UnknownSheet)
+        );
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn the_note_refuses_a_page_past_its_deadline_before_its_sweep() {
+        let (store, id, chip, records) = a_due_page();
+        assert!(store.note_text(chip).is_none());
+        assert_untouched_until_its_sweep(store, id, records);
+    }
+
+    #[test]
+    fn the_read_gate_and_the_sweep_agree_on_the_deadline() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "hunter2");
+        clock.advance(8 * HOUR - Duration::from_secs(1));
+        assert!(store.copy_out_chip(chip).is_some());
+        assert!(store.expire_due().is_empty());
+        clock.advance(Duration::from_secs(1));
+        assert!(store.readable_sheets().next().is_none());
+        assert!(store.copy_out_chip(chip).is_none());
+        assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
+    fn a_held_page_reads_until_its_frozen_life_drains() {
+        let (mut store, clock) = store();
+        let (tab, id) = store.new_tab();
+        let chip = seal(&mut store, id, "hunter2");
+        clock.advance(7 * HOUR);
+        assert!(
+            store.pause_press(tab),
+            "an hour frozen under an hour's hold"
+        );
+        clock.advance(HOUR + HOUR / 2);
+        assert!(
+            store.copy_out_chip(chip).is_some(),
+            "past the running deadline"
+        );
+        clock.advance(HOUR / 2);
+        assert!(store.copy_out_chip(chip).is_none());
+        assert_eq!(store.expire_due(), vec![id]);
     }
 
     #[test]
@@ -2278,6 +2588,12 @@ mod tests {
 
     const ORIGIN_URL: &str = "https://origin.example.test/reset?tk=Vq9Zx-Chutney-Rt83mN";
 
+    /// Long enough for `fragments_of`, and in no ledger field by chance.
+    const CHIP_NAME: &str = "QUINCE_MARMALADE_ROTATION_KEY_7ZX";
+
+    /// The same, for a note.
+    const CHIP_NOTE: &str = "Wq9Fj Zx7Kp Marmot Burrow Vq2Ld Gh5Ty";
+
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
     }
@@ -2297,6 +2613,8 @@ mod tests {
     fn assert_content_free(store: &SheetStore<ManualClock>) {
         let mut fragments = fragments_of(TOKEN);
         fragments.extend(fragments_of(ORIGIN_URL));
+        fragments.extend(fragments_of(CHIP_NAME));
+        fragments.extend(fragments_of(CHIP_NOTE));
         let mut checked = 0usize;
         for record in store.ledger() {
             let rendered = format!("{record:?}");
@@ -2342,8 +2660,15 @@ mod tests {
         assert_ne!(record.item(), ItemId::from_bytes([0u8; 16]));
         assert_eq!(record.size(), SizeClass::of(TOKEN.len()));
         assert_eq!(record.destination(), DestinationClass::None);
+        let chip_record = store.ledger().nth(1).unwrap();
+        assert_eq!(chip_record.event(), LedgerEvent::Expired);
+        assert_ne!(chip_record.item(), uuid, "the chip's own identity");
 
-        assert_eq!(store.ledger().count(), 4, "created, sealed, sent, expired");
+        assert_eq!(
+            store.ledger().count(),
+            5,
+            "created, sealed, sent, and an expiry for the chip and the page"
+        );
         assert_content_free(&store);
     }
 
@@ -2357,11 +2682,433 @@ mod tests {
         assert_content_free(&store);
     }
 
+    fn chip_name(store: &SheetStore<ManualClock>, chip: ChipId) -> Option<String> {
+        let (_, sealed) = store.chip_home(chip).expect("the chip stands");
+        sealed.name().map(str::to_owned)
+    }
+
+    #[test]
+    fn a_named_chip_is_content_free_in_the_ledger() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let before = store.ledger().count();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        store.set_chip_name(chip, "").unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        assert_eq!(store.ledger().count(), before, "naming records nothing");
+        assert_eq!(chip_name(&store, chip).as_deref(), Some(CHIP_NAME));
+
+        assert!(store.record_sent(chip, DestinationClass::Clipboard));
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        store.expire_due();
+        assert_eq!(
+            store.ledger().count(),
+            5,
+            "created, sealed, sent, and an expiry for the chip and the page"
+        );
+        assert_content_free(&store);
+        assert!(!contains(&store.ledger_snapshot(), CHIP_NAME.as_bytes()));
+    }
+
+    #[test]
+    fn a_name_survives_a_snapshot_round_trip() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let named = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let unnamed = store.seal_text_at(id, "left unnamed", 1, 0).unwrap();
+        store.set_chip_name(named, CHIP_NAME).unwrap();
+        let uuids: Vec<ItemId> = [named, unnamed]
+            .iter()
+            .map(|chip| store.chip_home(*chip).unwrap().1.uuid())
+            .collect();
+
+        let snapshot = store.snapshot(1_000_000);
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let sheet = revived.sheets().next().unwrap();
+        let names: Vec<Option<&str>> = uuids
+            .iter()
+            .map(|uuid| {
+                sheet
+                    .chips()
+                    .find(|chip| chip.uuid() == *uuid)
+                    .unwrap()
+                    .name()
+            })
+            .collect();
+        assert_eq!(names, vec![Some(CHIP_NAME), None]);
+    }
+
+    #[test]
+    fn after_the_page_expires_the_snapshot_holds_no_name() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        assert!(
+            contains(&store.snapshot(1_000_000), CHIP_NAME.as_bytes()),
+            "the control: a live page writes its chip's name"
+        );
+
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+        assert!(!contains(&store.snapshot(1_000_000), CHIP_NAME.as_bytes()));
+        assert!(!contains(&store.ledger_snapshot(), CHIP_NAME.as_bytes()));
+    }
+
+    fn typed(pos_u16: u32, text: &str) -> Vec<EditOp> {
+        vec![EditOp::Insert {
+            pos_u16,
+            text: text.into(),
+        }]
+    }
+
+    fn write_note(store: &mut SheetStore<ManualClock>, chip: ChipId, text: &str) {
+        assert!(store.apply_note_ops(chip, &typed(0, text), EditIntent::Paste, None));
+    }
+
+    fn note_of(store: &SheetStore<ManualClock>, chip: ChipId) -> String {
+        store.note_text(chip).expect("the chip stands").to_string()
+    }
+
+    #[test]
+    fn a_note_survives_a_snapshot_round_trip() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let noted = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let bare = store.seal_text_at(id, "no note here", 1, 0).unwrap();
+        write_note(&mut store, noted, CHIP_NOTE);
+        let uuids: Vec<ItemId> = [noted, bare]
+            .iter()
+            .map(|chip| store.chip_home(*chip).unwrap().1.uuid())
+            .collect();
+
+        let snapshot = store.snapshot(1_000_000);
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let ids: Vec<ChipId> = uuids
+            .iter()
+            .map(|uuid| {
+                let sheet = revived.sheets().next().unwrap();
+                sheet
+                    .chips()
+                    .find(|chip| chip.uuid() == *uuid)
+                    .unwrap()
+                    .id()
+            })
+            .collect();
+        assert_eq!(note_of(&revived, ids[0]), CHIP_NOTE);
+        assert!(revived.chip_home(ids[0]).unwrap().1.has_note());
+        assert_eq!(note_of(&revived, ids[1]), "");
+        assert!(!revived.chip_home(ids[1]).unwrap().1.has_note());
+        assert!(
+            !revived.note_can_undo(ids[0]),
+            "undo does not survive relaunch"
+        );
+    }
+
+    #[test]
+    fn after_the_page_expires_the_snapshot_holds_no_note() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        write_note(&mut store, chip, CHIP_NOTE);
+        assert!(
+            contains(&store.snapshot(1_000_000), CHIP_NOTE.as_bytes()),
+            "the control: a live page writes its chip's note"
+        );
+
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+        assert!(
+            store.note_text(chip).is_none(),
+            "the note went with its chip"
+        );
+        assert!(!contains(&store.snapshot(1_000_000), CHIP_NOTE.as_bytes()));
+        assert!(!contains(&store.ledger_snapshot(), CHIP_NOTE.as_bytes()));
+    }
+
+    #[test]
+    fn undo_inside_the_note_is_separate_from_the_pages_undo() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        assert!(store.apply_ops(id, &typed(1, " page ink")));
+        assert!(store.apply_note_ops(chip, &typed(0, "note ink"), EditIntent::Typing, None));
+        let page_ink =
+            |store: &SheetStore<ManualClock>| {
+                store.sheet(id).unwrap().segments().iter().any(
+                    |segment| matches!(segment, Segment::Ink(text) if text.contains("page ink")),
+                )
+            };
+        assert_eq!(store.note_undo_action_name(chip), Some("Typing"));
+
+        assert!(store.undo_note(chip).unwrap().applied);
+        assert_eq!(note_of(&store, chip), "", "the note's step came back");
+        assert!(page_ink(&store), "the note's undo reached the page");
+        assert!(store.can_undo(id), "the page's step still waits");
+        assert!(!store.note_can_undo(chip));
+
+        assert!(store.undo(id));
+        assert!(!page_ink(&store));
+        assert!(
+            store.note_can_redo(chip),
+            "the page's undo took the note's redo"
+        );
+        assert_eq!(note_of(&store, chip), "");
+
+        assert!(store.redo_note(chip).unwrap().applied);
+        assert_eq!(note_of(&store, chip), "note ink");
+        assert!(store.can_redo(id), "the note's redo took the page's");
+        assert!(store.redo(id));
+        assert!(page_ink(&store));
+        assert_eq!(note_of(&store, chip), "note ink");
+
+        assert!(store.undo_note(chip).unwrap().applied, "its own step again");
+        assert!(page_ink(&store));
+        assert!(store.undo_note(ChipId::from_raw(4_242)).is_none());
+    }
+
+    #[test]
+    fn note_edits_leave_the_ledger_unchanged() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        let before: Vec<LedgerRecord> = store.ledger().cloned().collect();
+
+        write_note(&mut store, chip, CHIP_NOTE);
+        assert!(store.apply_note_ops(
+            chip,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 6
+            }],
+            EditIntent::Deletion,
+            None
+        ));
+        assert!(store.undo_note(chip).unwrap().applied);
+        assert!(store.finish_note_editing_group(chip, None));
+        let after: Vec<LedgerRecord> = store.ledger().cloned().collect();
+        assert_eq!(after, before, "a note edit recorded something");
+        assert_content_free(&store);
+
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        store.expire_due();
+        assert_content_free(&store);
+        assert!(!contains(&store.ledger_snapshot(), b"Marmot"));
+    }
+
+    #[test]
+    fn a_note_takes_no_chip_and_a_refused_first_batch_makes_no_note() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let other = store.seal_text_at(id, "another", 1, 0).unwrap();
+
+        let refused = [
+            vec![EditOp::InsertChip {
+                pos_u16: 0,
+                chip: other,
+            }],
+            vec![EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 1,
+            }],
+            typed(5, "past the end"),
+        ];
+        for ops in &refused {
+            assert!(!store.apply_note_ops(chip, ops, EditIntent::Typing, None));
+            assert!(
+                store.chip_home(chip).unwrap().1.note.is_none(),
+                "a refused first batch made a note: {ops:?}"
+            );
+        }
+
+        write_note(&mut store, chip, "kept");
+        for ops in &refused {
+            assert!(!store.apply_note_ops(chip, ops, EditIntent::Typing, None));
+            assert_eq!(note_of(&store, chip), "kept", "{ops:?}");
+        }
+        assert!(store.apply_note_ops(chip, &[], EditIntent::Typing, None));
+        assert!(!store.apply_note_ops(
+            ChipId::from_raw(4_242),
+            &typed(0, "x"),
+            EditIntent::Typing,
+            None
+        ));
+        assert_eq!(
+            store.sheet(id).unwrap().chip_count(),
+            2,
+            "the page's chips stand"
+        );
+    }
+
+    #[test]
+    fn a_note_of_only_whitespace_opens_no_doorway() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        let doorway = |store: &SheetStore<ManualClock>| store.chip_home(chip).unwrap().1.has_note();
+        assert!(!doorway(&store));
+        write_note(&mut store, chip, "  \n\t");
+        assert!(!doorway(&store));
+        assert!(store.apply_note_ops(chip, &typed(4, "x"), EditIntent::Typing, None));
+        assert!(doorway(&store));
+    }
+
+    #[test]
+    fn a_name_and_a_note_are_never_payload() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        store.set_chip_name(chip, CHIP_NAME).unwrap();
+        write_note(&mut store, chip, CHIP_NOTE);
+
+        let one = store.chip_payload(chip).unwrap();
+        assert_eq!(
+            &**one,
+            TOKEN.as_bytes(),
+            "a chip's conceal payload is its bytes"
+        );
+        let page = store.sheet_payload(id).unwrap();
+        assert!(
+            page.contains(TOKEN),
+            "the control: the page inlines its chip"
+        );
+        for text in [CHIP_NAME, CHIP_NOTE] {
+            assert!(!page.contains(text), "{text} rode the page's payload");
+        }
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, TOKEN.as_bytes());
+    }
+
+    #[test]
+    fn name_value_is_composed_raw_at_its_exact_size() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        // 21 bytes, so a buffer grown by doubling would end with spare capacity.
+        let value = "s3cr3t \"q\" $HOME\nline";
+        let chip = seal(&mut store, id, value);
+        store.set_chip_name(chip, "DB_PASSWORD").unwrap();
+        let before = store.ledger().count();
+
+        let composed = store.copy_out_name_value(chip).unwrap();
+        assert_eq!(&**composed, format!("DB_PASSWORD={value}").as_bytes());
+        assert_eq!(
+            composed.capacity(),
+            composed.len(),
+            "a grown buffer strands sealed bytes"
+        );
+        assert_eq!(
+            store.ledger().count(),
+            before,
+            "the seam records the egress"
+        );
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, value.as_bytes(), "the chip survives");
+    }
+
+    #[test]
+    fn name_value_refuses_an_unnamed_an_image_and_an_unknown_chip() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let unnamed = seal(&mut store, id, TOKEN);
+        assert!(store.copy_out_name_value(unnamed).is_none());
+
+        let image = store
+            .seal_image(id, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
+            .unwrap();
+        store.set_chip_name(image, "LOGO").unwrap();
+        assert!(
+            store.copy_out_name_value(image).is_none(),
+            "an image has no text to stand after `=`"
+        );
+        assert!(store.copy_out_name_value(ChipId::from_raw(4_242)).is_none());
+
+        store.set_chip_name(unnamed, "API_KEY").unwrap();
+        store.set_chip_name(unnamed, "").unwrap();
+        assert!(
+            store.copy_out_name_value(unnamed).is_none(),
+            "a cleared name refuses again"
+        );
+    }
+
+    #[test]
+    fn a_name_outside_the_charset_is_refused_and_an_empty_one_clears() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, TOKEN);
+        store.set_chip_name(chip, "  API_KEY \n").unwrap();
+        assert_eq!(
+            chip_name(&store, chip).as_deref(),
+            Some("API_KEY"),
+            "trimmed"
+        );
+
+        for refused in [
+            "my.key",
+            "my-key",
+            "9lives",
+            "two words",
+            "na\u{EF}ve",
+            "API_KEY=x",
+            "API\0KEY",
+            "\u{FF21}PI_KEY",
+        ] {
+            assert_eq!(
+                store.set_chip_name(chip, refused),
+                Err(NameRefusal::OutsideCharset),
+                "{refused:?}"
+            );
+            assert_eq!(
+                chip_name(&store, chip).as_deref(),
+                Some("API_KEY"),
+                "a refusal moved the name"
+            );
+        }
+        for taken in ["_", "a", "Z9", "_9_lives"] {
+            store.set_chip_name(chip, taken).unwrap();
+            assert_eq!(chip_name(&store, chip).as_deref(), Some(taken));
+        }
+
+        let longest = "A".repeat(NAME_CAP);
+        store.set_chip_name(chip, &longest).unwrap();
+        assert_eq!(chip_name(&store, chip), Some(longest.clone()));
+        assert_eq!(
+            store.set_chip_name(chip, &"A".repeat(NAME_CAP + 1)),
+            Err(NameRefusal::TooLong)
+        );
+        assert_eq!(
+            store.set_chip_name(chip, &format!("{}.", "A".repeat(NAME_CAP + 9))),
+            Err(NameRefusal::OutsideCharset),
+            "the charset is judged before the length"
+        );
+        assert_eq!(chip_name(&store, chip), Some(longest));
+
+        store.set_chip_name(chip, "   ").unwrap();
+        assert_eq!(chip_name(&store, chip), None, "an empty draft clears");
+        store.set_chip_name(chip, "API_KEY").unwrap();
+        store.set_chip_name(chip, "").unwrap();
+        assert_eq!(chip_name(&store, chip), None);
+
+        assert_eq!(
+            store.set_chip_name(ChipId::from_raw(4_242), "API_KEY"),
+            Err(NameRefusal::UnknownChip)
+        );
+    }
+
     #[test]
     fn closing_a_page_records_the_page_and_the_chip_separately() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
-        let _chip = seal(&mut store, id, "sealed then never synced");
+        let chip = seal(&mut store, id, "sealed then never synced");
+        let chip_uuid = store.chip_home(chip).unwrap().1.uuid();
         let tab = slot(&store, id);
         assert!(store.close_tab(tab));
         assert!(!store.close_tab(tab), "already gone");
@@ -2370,13 +3117,17 @@ mod tests {
             events(&store),
             vec![
                 LedgerEvent::Discarded,
+                LedgerEvent::Discarded,
                 LedgerEvent::Sealed,
                 LedgerEvent::Created
             ]
         );
         let page = store.ledger().next().unwrap();
         assert_eq!(page.title(), PLACEHOLDER);
-        let chip_record = store.ledger().nth(1).unwrap();
+        let chip_death = store.ledger().nth(1).unwrap();
+        assert_eq!(chip_death.item(), chip_uuid, "the chip's own death");
+        let chip_record = store.ledger().nth(2).unwrap();
+        assert_eq!(chip_record.item(), chip_uuid);
         assert_ne!(chip_record.item(), page.item());
         assert_eq!(
             chip_record.size(),
@@ -2500,7 +3251,7 @@ mod tests {
     }
 
     #[test]
-    fn every_lifecycle_step_lands_exactly_one_record() {
+    fn every_lifecycle_step_lands_one_record_per_item_it_touches() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         assert_eq!(events(&store), vec![LedgerEvent::Created]);
@@ -2526,10 +3277,12 @@ mod tests {
             events(&store),
             vec![
                 LedgerEvent::Discarded,
+                LedgerEvent::Discarded,
                 LedgerEvent::Sent,
                 LedgerEvent::Sealed,
                 LedgerEvent::Created
-            ]
+            ],
+            "the close ends the chip and the page, one record each"
         );
     }
 
@@ -2569,19 +3322,26 @@ mod tests {
     }
 
     #[test]
-    fn a_chip_removed_in_the_editor_records_the_same_as_an_explicit_delete() {
+    fn a_chip_removed_in_the_editor_records_nothing_until_its_page_ends() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         let chip = seal(&mut store, id, "removed with a backspace");
+        let uuid = store.chip_home(chip).unwrap().1.uuid();
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert!(store.sync_document(id, vec![Segment::Ink("just ink now".into())]));
         assert_eq!(
             events(&store),
-            vec![
-                LedgerEvent::Discarded,
-                LedgerEvent::Sealed,
-                LedgerEvent::Created
-            ]
+            vec![LedgerEvent::Sealed, LedgerEvent::Created],
+            "a removal is structural, not a death"
+        );
+
+        assert!(store.close_tab(slot(&store, id)));
+        let chip_death = store.ledger().nth(1).unwrap();
+        assert_eq!(chip_death.event(), LedgerEvent::Discarded);
+        assert_eq!(
+            chip_death.item(),
+            uuid,
+            "the detached chip died with its page"
         );
     }
 
@@ -2903,6 +3663,22 @@ mod tests {
     }
 
     #[test]
+    fn a_conceal_finished_after_its_object_was_removed_still_lands() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "sent, then removed", 0, 0).unwrap();
+        // The send is on the wire when the object leaves the page.
+        remove_at(&mut store, id, 0);
+        assert!(store.mark_chip_concealed(chip, "9f2abc".into()));
+        assert!(store.record_sent(chip, DestinationClass::OneTimeLink));
+        let sent = store.ledger().next().unwrap();
+        assert_eq!(sent.destination(), DestinationClass::OneTimeLink);
+        assert!(store.undo(id));
+        let face = store.sheet(id).unwrap().chip(chip).unwrap();
+        assert_eq!(face.conceal().unwrap().receipt_id, "9f2abc");
+    }
+
+    #[test]
     fn the_gauge_drains_linearly_and_turns_last_hour_under_sixty_minutes() {
         let (mut store, clock) = store();
         let id = store.new_tab().1; // 8h
@@ -3105,7 +3881,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_snapshot_is_select_all_delete_and_zeroizes_every_chip() {
+    fn an_empty_snapshot_is_select_all_delete_and_detaches_every_chip() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         let a = seal(&mut store, id, "first secret");
@@ -3113,6 +3889,9 @@ mod tests {
         assert!(store.sync_document(id, vec![Segment::Chip(a), Segment::Chip(b)]));
         assert!(store.sync_document(id, Vec::new()));
         assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
+        let mut detached = detached_ids(&store, id);
+        detached.sort();
+        assert_eq!(detached, vec![a, b], "kept on the page's clock");
         assert!(store.copy_out_chip(a).is_none());
         assert!(store.copy_out_chip(b).is_none());
     }
@@ -3396,7 +4175,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_sentinel_by_op_zeroizes_the_chip() {
+    fn deleting_a_sentinel_by_op_detaches_the_chip_and_records_nothing() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         let chip = seal(&mut store, id, "deleted in the editor");
@@ -3409,19 +4188,16 @@ mod tests {
             }]
         ));
         assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
-        assert!(store.copy_out_chip(chip).is_none(), "no resurrection path");
+        assert_eq!(detached_ids(&store, id), vec![chip]);
+        assert!(store.can_undo(id), "the removal is a step");
         assert_eq!(
             events(&store),
-            vec![
-                LedgerEvent::Discarded,
-                LedgerEvent::Sealed,
-                LedgerEvent::Created
-            ]
+            vec![LedgerEvent::Sealed, LedgerEvent::Created]
         );
     }
 
     #[test]
-    fn a_select_all_delete_batch_zeroizes_every_chip() {
+    fn a_select_all_delete_batch_detaches_every_chip_and_undo_stands_them_again() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         let a = seal(&mut store, id, "first secret");
@@ -3452,8 +4228,15 @@ mod tests {
         ));
         assert!(store.sheet(id).unwrap().segments().is_empty());
         assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
+        assert_eq!(detached_ids(&store, id).len(), 2);
         assert!(store.copy_out_chip(a).is_none());
         assert!(store.copy_out_chip(b).is_none());
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "\u{FFFC} \u{1F5FF} \u{FFFC}");
+        assert!(detached_ids(&store, id).is_empty());
+        assert_eq!(&**store.copy_out_chip(a).unwrap().0, b"first secret");
+        assert_eq!(&**store.copy_out_chip(b).unwrap().0, b"second secret");
     }
 
     #[test]
@@ -3761,7 +4544,7 @@ mod tests {
     }
 
     #[test]
-    fn a_chip_delivered_first_lets_its_sentinel_land_and_die() {
+    fn a_chip_delivered_first_lets_its_sentinel_land_and_detach() {
         let (mut alpha, _) = store();
         let (mut beta, _) = store();
         let a = alpha.new_tab().1;
@@ -3798,10 +4581,10 @@ mod tests {
         ));
         ship(&alpha, a, &mut beta, b).unwrap();
         assert_eq!(beta.sheet(b).unwrap().chip_count(), 0);
+        assert_eq!(detached_ids(&beta, b), vec![ChipId(9001)]);
         assert!(
-            beta.ledger()
-                .any(|record| record.event == LedgerEvent::Discarded && record.item == uuid),
-            "the remote deletion left no Discarded record"
+            !beta.ledger().any(|record| record.item == uuid),
+            "a remote removal is structural and records nothing"
         );
     }
 
@@ -4575,7 +5358,7 @@ mod tests {
     }
 
     #[test]
-    fn undo_after_a_drag_that_carries_a_chip_leaves_the_chip_standing() {
+    fn undo_after_a_drag_that_carries_a_chip_stands_it_where_it_was() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         assert!(store.apply_ops(
@@ -4607,8 +5390,10 @@ mod tests {
         ));
         assert_eq!(body(&store, id), "\u{FFFC}ab  ef");
 
-        assert!(!store.undo(id));
-        assert!(!store.redo(id));
+        assert!(store.undo(id), "a move is structural, so it is a step");
+        assert_eq!(body(&store, id), "ab \u{FFFC} ef");
+        assert!(detached_ids(&store, id).is_empty());
+        assert!(store.redo(id));
         assert_eq!(body(&store, id), "\u{FFFC}ab  ef");
         assert_eq!(&**store.copy_out_chip(chip).unwrap().0, b"dragged");
         assert!(!events(&store).contains(&LedgerEvent::Discarded));
@@ -4683,10 +5468,10 @@ mod tests {
     }
 
     #[test]
-    fn a_deleted_chip_leaves_no_step_that_would_stand_it_again() {
+    fn undo_stands_a_removed_chip_again_from_the_detached_store() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
-        store.seal_text_at(id, "sealed", 0, 0).unwrap();
+        let chip = store.seal_text_at(id, "sealed", 0, 0).unwrap();
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -4703,7 +5488,164 @@ mod tests {
         ));
         assert_eq!(body(&store, id), "ink");
         assert!(store.sheet(id).unwrap().chips().next().is_none());
-        assert!(!store.can_undo(id));
+        assert_eq!(detached_ids(&store, id), vec![chip]);
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "\u{FFFC}ink");
+        assert_eq!(&**store.copy_out_chip(chip).unwrap().0, b"sealed");
+        assert!(store.undo(id), "the ink's step");
+        assert_eq!(body(&store, id), "\u{FFFC}");
+        assert!(!store.can_undo(id), "the seal is never stepped back");
+
+        assert!(store.redo(id));
+        assert!(store.redo(id));
+        assert_eq!(body(&store, id), "ink");
+        assert_eq!(detached_ids(&store, id), vec![chip]);
+    }
+
+    fn remove_at(store: &mut SheetStore<ManualClock>, id: SheetId, pos_u16: u32) {
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16,
+                len_u16: 1,
+            }],
+        ));
+    }
+
+    #[test]
+    fn burning_a_detached_chip_destroys_it_and_takes_the_stack_with_it() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store
+            .seal_text_at(id, "removed, then burned", 0, 0)
+            .unwrap();
+        let uuid = store.chip_home(chip).unwrap().1.uuid();
+        remove_at(&mut store, id, 0);
+        assert!(store.can_undo(id));
+
+        assert!(store.delete_chip(chip));
+        assert!(detached_ids(&store, id).is_empty());
+        assert!(!store.can_undo(id), "no step may stand a burned sentinel");
+        assert!(!store.delete_chip(chip), "already gone");
+        let burn = store.ledger().next().unwrap();
+        assert_eq!((burn.event(), burn.item()), (LedgerEvent::Discarded, uuid));
+    }
+
+    #[test]
+    fn an_expiring_page_destroys_its_detached_chips_and_records_each() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let kept = store.seal_text_at(id, "still standing", 0, 0).unwrap();
+        let removed = store.seal_text_at(id, "removed first", 1, 0).unwrap();
+        let uuids = [kept, removed].map(|chip| store.chip_home(chip).unwrap().1.uuid());
+        remove_at(&mut store, id, 1);
+        assert_eq!(detached_ids(&store, id), vec![removed]);
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+
+        let expired: Vec<ItemId> = store
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Expired)
+            .map(LedgerRecord::item)
+            .collect();
+        for uuid in uuids {
+            assert!(
+                expired.contains(&uuid),
+                "each chip's death is its own record"
+            );
+        }
+        assert!(store.copy_out_chip(kept).is_none());
+        assert!(store.copy_out_chip(removed).is_none());
+    }
+
+    #[test]
+    fn a_page_holding_only_a_removed_chip_still_records_its_own_end() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = store
+            .seal_text_at(id, "the page's one secret", 0, 0)
+            .unwrap();
+        let uuid = store.chip_home(chip).unwrap().1.uuid();
+        let page = store.sheet(id).unwrap().uuid();
+        remove_at(&mut store, id, 0);
+        assert!(!store.sheet(id).unwrap().has_content(), "nothing shows");
+
+        assert!(store.close_tab(slot(&store, id)));
+        let ends: Vec<ItemId> = store
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Discarded)
+            .map(LedgerRecord::item)
+            .collect();
+        assert_eq!(ends, vec![page, uuid], "the page's own beside the chip's");
+    }
+
+    #[test]
+    fn a_seal_finished_through_ops_cannot_be_stepped_back_to_its_ink() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "hunter2".into(),
+            }],
+        ));
+        let chip = store.seal_text(id, "hunter2").unwrap();
+        // A settle before the standing parks the fresh chip apart.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 7,
+                text: " ".into(),
+            }],
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 7,
+                },
+                EditOp::InsertChip { pos_u16: 0, chip },
+            ],
+        ));
+        assert_eq!(body(&store, id), "\u{FFFC} ");
+        assert!(!store.can_undo(id), "undo would bring the ink back (D-30)");
+    }
+
+    #[test]
+    fn an_editor_move_in_two_batches_detaches_and_then_reattaches_the_chip() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "ab".into(),
+            }],
+        ));
+        let chip = store.seal_text_at(id, "moved", 2, 0).unwrap();
+        remove_at(&mut store, id, 2);
+        assert!(store.apply_ops(id, &[EditOp::InsertChip { pos_u16: 0, chip }]));
+        assert_eq!(body(&store, id), "\u{FFFC}ab");
+        assert_eq!(&**store.copy_out_chip(chip).unwrap().0, b"moved");
+        assert!(store.undo(id));
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "ab\u{FFFC}", "both halves step back");
+    }
+
+    #[test]
+    fn a_chip_detached_on_another_page_cannot_be_stood_here() {
+        let (mut store, _) = store();
+        let home = store.new_tab().1;
+        let other = store.new_tab().1;
+        let chip = store.seal_text_at(home, "stays home", 0, 0).unwrap();
+        remove_at(&mut store, home, 0);
+        assert!(!store.apply_ops(other, &[EditOp::InsertChip { pos_u16: 0, chip }]));
+        assert!(!store.sync_document(other, vec![Segment::Chip(chip)]));
+        assert_eq!(detached_ids(&store, home), vec![chip]);
     }
 
     #[test]
@@ -4743,10 +5685,10 @@ mod tests {
     }
 
     #[test]
-    fn a_peers_chip_deletion_forgets_this_devices_steps() {
+    fn a_peers_chip_deletion_detaches_it_and_leaves_this_devices_steps() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
-        store.seal_text_at(id, "sealed", 0, 0).unwrap();
+        let sealed = store.seal_text_at(id, "sealed", 0, 0).unwrap();
         let chip = store.sheet(id).unwrap().chips().next().unwrap().uuid;
 
         let mirror = SheetDocument::new();
@@ -4773,10 +5715,10 @@ mod tests {
 
         assert_eq!(body(&store, id), "ink");
         assert!(store.sheet(id).unwrap().chips().next().is_none());
-        assert!(
-            !store.can_undo(id),
-            "a step survived the death of the chip it could stand again"
-        );
+        assert_eq!(detached_ids(&store, id), vec![sealed]);
+        assert!(store.can_undo(id), "nothing died, so no step had to go");
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "", "this device's ink, and only that");
     }
 
     #[test]
