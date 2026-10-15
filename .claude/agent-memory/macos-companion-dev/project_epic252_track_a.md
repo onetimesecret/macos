@@ -1,6 +1,6 @@
 ---
 name: epic252-track-a
-description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, why a trap under xctest hangs, and AskingTextView with Law 0001's AppKit text routes table, where every new AppKit reader or rewrite is sorted, and where links open (Coordinator.openLink, the openURL seam) and what the spelling panel's buttons reach
+description: Epic 252 on feature/editing-seals, Track A (#248, #250, #249) and the phase 4 close at app 0.35.0 on 2026-10-14; where the SwiftUI fields' state lives, the held notice #245 must reuse, where the owed hand checks are written, what the close left open, that sync carries no sealed object, where the editor strips U+FFFC, why a drag test must never reach drop to seal, why the next event asks is_due, the find, name, Share and Writing Tools gates, why a ballot always advances with an empty frame for a page it cannot give out, why a board's text inherits the attachment before it, where a page's own U+FFFC leaves outside undo, the look up and speech gates, why a trap under xctest hangs, and AskingTextView with Law 0001's AppKit text routes table, where every new AppKit reader or rewrite is sorted, and where links open (Coordinator.openLink, the openURL seam) and what the spelling panel's buttons reach, and why Edit Link's panel is refused
 metadata:
   type: project
 ---
@@ -202,6 +202,16 @@ for review fixes; shell only.
   nothing. Data detection is per view and never persists. A test sets
   `NSApp.currentEvent` by `postEvent` then `nextEvent(dequeue:)`. The
   auto mode classifier refused an Edit that took `openLink`'s gate out.
+- Phase 9 finding P9-1 (2026-10-14): "stays in process" was wrong for
+  Edit Link… (`orderFrontLinkPanel:`). Its panel is a sheet whose URL
+  field edits through a plain NSTextView, so ⌘C there wrote the URL to
+  the general board past any deadline. Before sorting a route as in
+  process, ask whether its window shows page text in a field of its
+  own. Now refused like the share picker: `TextOffers.isEditLink`, the
+  override and `refusedPanels` in `validateMenuItem`. Probed: the sheet
+  attaches within one `drainMainQueue` and orders an unordered test
+  window on screen, so end the sheet and `orderOut` in a defer; Remove
+  Link writes no board and shows no window.
 - Test traps: any Swift trap (assert, precondition) under xctest stops
   the process at `_assertionFailure` with no output until killed;
   `assertProjectionParity` now writes its line and exits instead, so a
