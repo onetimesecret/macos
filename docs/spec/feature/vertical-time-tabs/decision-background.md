@@ -547,7 +547,7 @@ the toggle alone.
    but only the day is built and only the day is tested. A week needs a
     week-start policy (Sunday or Monday, locale or fixed) and probably a
    second core field, and a prototype has no basis to guess either.
-2. **Amending docs/spec/design/04-interaction-model.md.** The tab law
+2. **Amending docs/spec/design/2026-0707-interaction-model.md.** The tab law
    there describes the horizontal strip, which is unchanged. It is
    amended only if this ADR is accepted after the dogfood window, and
    then in a named section in the open rather than by editing the

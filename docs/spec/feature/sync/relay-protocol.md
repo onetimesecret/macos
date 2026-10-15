@@ -18,7 +18,7 @@ are not renegotiated here: the storage bound and join rule
 (ADR-0021 §1, §5), structural purge (§2), account-is-not-the-device
 (§3), the metadata admission (§4), the expiry rule (§6), and the
 network boundary of at most two outbound destinations, TLS-only
-(`docs/spec/design/05-technical-direction.md`,
+(`docs/spec/design/2026-0707-technical-direction.md`,
 `crates/transport/src/lib.rs`).
 
 ## 1. The channel model
@@ -109,7 +109,7 @@ lifetimes:
   open, until a waking device publishes the terminal marker and its
   ceremony purges (§5, ADR-0021 §6) or the channel ages out. The
   derivable per-page bound is the next ceremony, not the page's own
-  TTL (`docs/spec/design/05-technical-direction.md` states the
+  TTL (`docs/spec/design/2026-0707-technical-direction.md` states the
   per-device story this bound approximates).
 
 ## 4. The message set

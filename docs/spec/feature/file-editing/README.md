@@ -8,12 +8,12 @@ text or Markdown file from disk, edit it in the same editor a page
 uses, and save it back on an explicit request. Pages, their TTLs, the
 strip, the day roll and the sealed page format are untouched.
 Governs against:
-[`../../design/03-design-principles.md`](../../design/03-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
 (§1 comfortable being temporary, §3 content plays second fiddle, §4
 frugal),
-[`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
 (Markdown: styled, never rewritten, and the keyboard map),
-[`../../design/05-technical-direction.md`](../../design/05-technical-direction.md)
+[`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
 (the accessibility commitments),
 [ADR-0001](../../../adr/0001-rust-core-thin-shell.md) (a Rust core
 under a thin shell),

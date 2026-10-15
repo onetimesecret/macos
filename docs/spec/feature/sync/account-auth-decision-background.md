@@ -39,7 +39,7 @@ Three constraints bound the answer before any flow is chosen.
    (docs/design-brief.md). Every state this ADR names has to
    leave the pad fully usable.
 2. **The network boundary is two destinations, TLS only**
-   (docs/spec/design/05-technical-direction.md). Account auth
+   (docs/spec/design/2026-0707-technical-direction.md). Account auth
    adds no third: the token endpoint lives on the configured OTS
    server, which is destination one, and the relay is destination two.
    The driver's transport is built bounded to exactly those two hosts.
@@ -288,7 +288,7 @@ the user revoking the grant in their account settings, and it is the
 server's to improve.
 
 Issue #98's answer to open question 21
-(docs/spec/design/06-open-questions.md) stands: the desktop
+(docs/spec/design/2026-0707-open-questions.md) stands: the desktop
 app's requirement of v3 auth is a long idle refresh window and nothing
 else. It does not want a device claim inside the token, which would re
 entangle the two gates ADR-0021 section 3 separated.

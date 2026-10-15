@@ -12,9 +12,9 @@ blocks, driven by the fence's info string. Both live entirely in the
 Swift shell (`InkEditorView.swift` and one new file); the core, the
 block model, the FFI seam and the sealed format are untouched.
 Governs against:
-[`../../design/03-design-principles.md`](../../design/03-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
 (§3 content plays second fiddle, §4 frugal, amendment B),
-[`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
 ("Markdown: styled, never rewritten"),
 [ADR-0013](../../../adr/0013-bounded-document-history-and-block-metadata.md)
 (the editable-surface rule) and
