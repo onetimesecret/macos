@@ -16,12 +16,13 @@ text holding U+FFFC landing beside an object.
 2026-10-13.
 **Governs:** [Law 0001](../../law/0001-sealed-object.md), whose copy,
 paste, drag and decrypted drag rows cite this procedure for what the
-runner cannot drive; [ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md);
-[ADR-0048](../../adr/0048-a-transfer-sweeps-due-pages-before-it-resolves.md);
-[ADR-0052](../../adr/0052-a-page-past-its-deadline-gives-nothing-out.md);
-[ADR-0053](../../adr/0053-a-copy-or-cut-past-an-envelope-cap-composes-nothing.md);
-[ADR-0050](../../adr/0050-a-decrypted-drag-lands-only-in-another-app.md);
-[ADR-0051](../../adr/0051-the-decrypted-drag-handle-sits-before-the-actions-glyph.md).
+runner cannot drive, and whose expiry, copy and cut rows hold the
+deadline gate and the envelope's caps;
+[ADR-0045](../../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md)
+and [ADR-0046](../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md),
+both proposed; the
+[sealed row spec](../../spec/feature/sealed-content/sealed-row-note-and-handles.md)'s
+decrypted drag handle.
 **Owner:** delano.
 **Status:** open; not yet run. The editor's copy and cut write the
 fragment, its paste reads it, the slot's button places a cut, two
@@ -79,7 +80,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `Look Up “…”`, no `Translate “…”` and no Speech submenu; the
       file's menu holds all three. **Fail:** any of them shows over a
       page, a note or a name, or the file's menu has lost one.
-- [ ] **Look Up reaches the page's gate** (ADR-0052, ADR-0046). The
+- [ ] **Look Up reaches the page's gate** (Law 0001, expiry row; Law
+      0007, keys row). The
       tests refuse look up past a deadline through the routes AppKit
       documents, but cannot send ⌃⌘D, a system shortcut, or a real
       force click, and a page past its deadline settles at the wake
@@ -245,21 +247,24 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       relaunch, paste. **Pass:** the slot's line is back before the
       paste and the object returns. **Fail:** the paste places
       `[sealed content · unavailable]`.
-- [ ] **A cut that outlives its page's deadline** (ADR-0048). On a one
+- [ ] **A cut that outlives its page's deadline** (Law 0001, expiry
+      row). On a one
       hour page, seal a word and cut it. Sleep the Mac for more than an
       hour, wake it, and paste onto another page at once. **Pass:** the
       paste places `[sealed content · expired]`, the first page's tab
       stands empty, the slot's line is gone, and the ledger shows the
       object expired. **Fail:** the object returns, or the first page
       still shows its ink after the paste.
-- [ ] **A page that comes due asleep** (ADR-0052). On the raised card,
+- [ ] **A page that comes due asleep** (Law 0001, expiry row). On the
+      raised card,
       open a one hour page, seal a word and write a note on it. Sleep the
       Mac for more than an hour, wake it, and look at the card before
       touching anything. **Pass:** the page has gone at the wake: its tab
       stands empty, the ledger shows it expired, and
       `osascript -e 'clipboard info'` shows nothing new. **Fail:** the
       page's ink, its block or its note still shows after the wake.
-- [ ] **A selection past an envelope cap** (ADR-0053). Put more than
+- [ ] **A selection past an envelope cap** (Law 0001, copy and cut
+      rows). Put more than
       8 MiB of text on a page, for example by pasting the output of
       `head -c 9000000 /dev/zero | tr '\0' x | pbcopy`, seal a word in
       it, select all, then try ⌘C, ⌘X, a drag and a service that takes
@@ -395,7 +400,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
 - [ ] **A drag between pages.** Where two pages show at once (the
       editor window and the card), click into the first page so its
       window holds the keys, then drag a selection holding a named
-      object with a note from it to the other page (ADR-0054). Do it
+      object with a note from it to the other page (Law 0001, drag
+      row). Do it
       once from the card to the editor window and once back. **Pass:**
       the run lands on the second page with the object's name and note,
       leaves the first, and the ledger gains no `sealed`; ⌘Z on the
@@ -476,13 +482,14 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       `osascript -e 'clipboard info'` shows the general pasteboard
       unchanged. **Fail:** the drop is empty, the image shows the
       excerpt, the object leaves, or the general pasteboard holds the
-      word. An empty drop is the third eject trigger of ADR-0050.
+      word. An empty drop is the last eject trigger of ADR-0045.
 - [ ] **A cancelled decrypted drag.** Start the decrypted drag and press
       Esc before releasing, then wait a minute and start an ordinary
       drag in another app. **Pass:** the ledger gains no `sent`, since no
       destination asked. **Fail:** a `sent` lands for a drag no
       destination took.
-- [ ] **A decrypted drag dropped on the app** (ADR-0050). Drag from the
+- [ ] **A decrypted drag dropped on the app** (Law 0001, decrypted drag
+      row). Drag from the
       handle and hover, then release, over: the same page below the
       object; the other page where two show at once; an open note; a
       tab's name field; the pad list's name field; a Settings field; and
