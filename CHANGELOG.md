@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **A drag between pages moves its objects** (app 0.35.0;
-  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0054,
-  issue #170). A selection dragged from one page onto another leaves
+  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag
+  row, issue #170). A selection dragged from one page onto another leaves
   the first and lands on the second in one transaction, each sealed
   object keeping its identity, name and note, and the ledger records no
   `sealed`. ⌘Z on the second page takes the run off; a move that
@@ -40,17 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes the page while a name or a note holds the keys.
 
 - **The decrypted drag's handle shows an open hand** (app 0.35.0;
-  Law 0001, ADR-0055, issue #170). Over a drawn handle a press would
+  Law 0001,
+  `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
+  issue #170). Over a drawn handle a press would
   drag from, the pointer is an open hand; while a name or a note holds
   the keys it stays the text cursor.
 
-- **A page's copy of ink alone is plain text** (app 0.34.0; ADR-0047
+- **A page's copy of ink alone is plain text** (app 0.34.0; ADR-0045
   point 2, issue #170). ⌘C and ⌘X on a page write the text the core
   composes, so ink pasted into Mail or TextEdit arrives without the
   page's fonts. A note and a file copy as before.
 
 - **Removing a sealed object keeps it, and ⌘Z puts it back** (app
-  0.33.0; `companion-core` 0.29.0; Law 0001, ADR-0047, issue #170). A
+  0.33.0; `companion-core` 0.29.0; Law 0001, ADR-0046, issue #170). A
   backspace, *Remove protected content*, a cut or a restate takes the
   object off the page but keeps it, on the page's clock, until the page
   ends; ⌘Z, redo, or the editor putting its attachment back stands the
@@ -65,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build drops them at its next save.
 
 - **A sealed object's note is written on the page's own surface** (app
-  0.32.0; Law 0001, ADR-0045, issue #246). The note reads and types as
+  0.32.0; Law 0001, ADR-0044, issue #246). The note reads and types as
   the page does: headings, lists that continue on Return and nest on
   Tab, links that a ⌘-click opens and a plain click edits, code fences
   with their colours, and Detect Code Language, Choose Language and
@@ -426,8 +428,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The editor copies, cuts, pastes and drags a sealed object by
-  reference** (app 0.34.0; Law 0001, ADR-0047, ADR-0048, ADR-0050,
-  ADR-0051, issues #170 and #247).
+  reference** (app 0.34.0; Law 0001, ADR-0045, ADR-0046,
+  `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
+  issues #170 and #247).
   - ⌘C on a selection holding a sealed object writes one pasteboard
     item: the core's envelope under
     `com.onetimesecret.onetimepad.sealed-fragment` (`.debug` in a debug
@@ -463,11 +466,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     public text, and no service that would write back over the
     selection is offered.
   - Each of these stands aside while a sealed name or a note holds the
-    keys (ADR-0046).
+    keys (Law 0007's keys row).
 
 - **The core cuts, copies and pastes a sealed fragment, in one
   transaction** (`companion-core` 0.29.0, `companion-ffi` 0.38.0,
-  `companion-pasteboard` 0.4.0; Law 0001, ADR-0047, issue #170). The
+  `companion-pasteboard` 0.4.0; Law 0001, ADR-0045, ADR-0046, issue
+  #170). The
   editor's copy, cut, paste, clipboard slot and drags use these routes
   (the entry above).
   - `companion_sheet_copy_fragment` answers a selection as a versioned
@@ -497,7 +501,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `drag` record cannot be read by an older build.
 
 - **A sealed object's name and note travel in its fragment**
-  (`companion-core` 0.30.0; Law 0001, ADR-0047, issue #247). A
+  (`companion-core` 0.30.0; Law 0001, ADR-0043, ADR-0045, issue #247). A
   reference carries the object's name and note. A clone takes them, the
   name judged by the rule a typed one is, so one the rule refuses is
   dropped and the object kept; a reattached object keeps its own; a
@@ -517,7 +521,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binary that exports it.
 
 - **A sealed object's note opens in a popover over the page** (app
-  0.31.0; Law 0001, ADR-0042, ADR-0043, issue #246). *Note…* on an
+  0.31.0; Law 0001, ADR-0043,
+  `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
+  issue #246). *Note…* on an
   object with no note, *Edit note…* on one with a note, or a click on
   `note` in the block's seat opens it. The seat reads `small · note`,
   the size class first, once the note holds anything but whitespace.
@@ -550,7 +556,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so ⌘Z cannot step the page back under a draft. No dialog is involved.
 
 - **A named sealed object's bottom row copies by zone** (app 0.29.0;
-  Law 0001, ADR-0042, issue #244). The row reads `NAME=excerpt`: the
+  Law 0001, ADR-0042,
+  `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
+  issue #244). The row reads `NAME=excerpt`: the
   name semibold, `=` in the secondary colour, then the excerpt. The
   pointer finds three zones. The name copies the name to the clipboard
   as ordinary text, says `copied the name.` and arms no clear. The value
@@ -582,8 +590,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name.
 
 - **The core copies `NAME=value` for a named sealed object** (Law 0001,
-  ADR-0043, issue #242; `companion-core` 0.27.0, `companion-ffi`
-  0.35.0). `companion_chip_copy_name_value` puts the name, `=` and the
+  `docs/development/sealed-objects-core-interface.md`, issue #242;
+  `companion-core` 0.27.0, `companion-ffi` 0.35.0).
+  `companion_chip_copy_name_value` puts the name, `=` and the
   object's contents, raw and unquoted (ADR-0042), on the clipboard by
   the same route as copy decrypted: written by the core, marked
   transient and concealed, cleared after the core's interval only if
@@ -856,7 +865,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A refusal over an object that no longer stood never says a page
   expired** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
-  0.40.0; Law 0001, ADR-0052, issue #170). Copy decrypted, Copy
+  0.40.0; Law 0001's expiry row, issue #170). Copy decrypted, Copy
   `NAME=value` or a conceal over an object no page held, from a menu
   left open after it went, said `this page has expired.` whenever
   another page came due at the same moment. It now says the route's
@@ -866,12 +875,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A copy, cut or drag past an envelope cap does nothing and names
   the cap** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
-  0.40.0; Law 0001, ADR-0053, issue #170). A selection holding sealed
-  objects past 8 MiB or 1024 objects wrote an envelope this build then
-  refused to read. Its copy, cut, drag and a service's request now
-  write nothing, a cut detaches nothing and an earlier cut stays, and
-  the line under the page names the limit. The seam answers `tooLarge` or
-  `tooManyObjects` with the core's limit. Ink alone still copies.
+  0.40.0; Law 0001's copy and cut rows, issue #170). A selection
+  holding sealed objects past 8 MiB or 1024 objects wrote an envelope
+  this build then refused to read. Its copy, cut, drag and a service's
+  request now write nothing, a cut detaches nothing and an earlier cut
+  stays, and the line under the page names the limit. The seam answers
+  `tooLarge` or `tooManyObjects` with the core's limit. Ink alone still
+  copies.
 
 - **A paste over several stretches is refused** (app 0.35.0; Law 0001,
   issue #170). A fragment's paste, and the slot's place, replaced the
@@ -880,7 +890,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   several.`
 
 - **An item whose fragment cannot be read pastes its public text and
-  says so** (app 0.35.0; Law 0001, ADR-0047, issue #170). A board item
+  says so** (app 0.35.0; Law 0001, ADR-0045, issue #170). A board item
   naming the private type with no data under it went to AppKit's paste
   with no line, and a drop of one placed nothing. Both now paste the
   item's public text with the unreadable line, or refuse with a line
@@ -898,7 +908,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds the keys.
 
 - **⇧⌘V and the summon offer leave this app's own copy alone** (app
-  0.35.0; Law 0001, ADR-0047, issue #170). After a copy or a cut the
+  0.35.0; Law 0001's copy row, issue #170). After a copy or a cut the
   card offered to seal the clipboard, and ⇧⌘V sealed the copy's public
   text and cleared the board, losing the fragment. Neither now acts on
   a board holding this app's own copy, whether a release or a debug
@@ -908,13 +918,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than sealing it.
 
 - **The summon offer's button waits while a name or a note is
-  written** (app 0.35.0; Law 0001, Law 0007, ADR-0046, issue #170). The
+  written** (app 0.35.0; Law 0001, Law 0007's keys row, issue #170). The
   button sealed the clipboard into the page under an open name field
   or note, where ⇧⌘V stands aside. It now seals nothing there and says
   why.
 
 - **A refused object copy says why, and says expired only for its own
-  page** (app 0.35.0; Law 0001, ADR-0052, issue #170). Copy decrypted
+  page** (app 0.35.0; Law 0001's expiry row, issue #170). Copy decrypted
   and copy `NAME=value` refused while some other page came due said
   `this page has expired.` though the object's page still stood, and a
   copy refused for any other reason said nothing. The line now names
@@ -948,8 +958,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once.
 
 - **A paste takes nothing from a page past its deadline**
-  (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001, ADR-0048,
-  issue #170). Between a page's deadline and the timer's sweep, a paste,
+  (`companion-core` 0.31.0, `companion-ffi` 0.39.0; Law 0001's expiry
+  row, issue #170). Between a page's deadline and the timer's sweep, a paste,
   the slot's place, a move or a clone could still resolve the page's
   objects. A paste naming an object now sweeps every due page first, so
   a cut whose page ran out places `[sealed content · expired]`, and the
@@ -966,7 +976,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the lines under the page and scrolls within what room is left.
 
 - **A field holding the keys keeps the page's chords and Edit menu off
-  the page** (app 0.32.1 and 0.32.3; Law 0007, ADR-0046). The page
+  the page** (app 0.32.1 and 0.32.3; Law 0007's keys row). The page
   answered its chords whoever held the keys, so ⌘Z under a gutter
   label's draft stepped the page back, and Edit, Choose Language acted
   on the page even while a sealed name or a note held them. Now the page
@@ -986,13 +996,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   few seconds and its button, and the line comes back on the refusal
   the draft earns.
 
-- **A named image offers no `name=value` copy** (app 0.31.4; ADR-0044,
-  issue #244). A sealed image could be named, and its row then offered
-  an `=` zone whose seat read `copies name=value, decrypted`, and its
-  menu *Copy name=value, decrypted*, though the core composes
-  `NAME=value` for text alone. Both did nothing when clicked. An image's
-  row still reads `NAME=excerpt`, but its `=` is not a zone and the
-  item is gone; its name and contents copy as before.
+- **A named image offers no `name=value` copy** (app 0.31.4; Law
+  0001's `=` zone row, issue #244). A sealed image could be named, and
+  its row then offered an `=` zone whose seat read
+  `copies name=value, decrypted`, and its menu *Copy name=value,
+  decrypted*, though the core composes `NAME=value` for text alone.
+  Both did nothing when clicked. An image's row still reads
+  `NAME=excerpt`, but its `=` is not a zone and the item is gone; its
+  name and contents copy as before.
 
 - **A closed note, or a shut name field, holds none of its text**
   (Law 0001, ADR-0043, issues #245 and #246). The note's view kept the
@@ -1003,7 +1014,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wiped, as a page's ink is.
 
 - **A drop on a sealed object's note or name field lands nowhere**
-  (app 0.31.3; ADR-0044, issues #245 and #246). Text dragged from
+  (app 0.31.3; Law 0001's note and naming rows, issues #245 and #246).
+  Text dragged from
   another app onto an open note, or onto the name field, went into it
   as plain text, and the note's went to the core as the note's ink,
   where the same drop on the page would have been sealed. Both now take
@@ -1020,7 +1032,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closes.
 
 - **A zone copies only after its seat has said what it copies** (app
-  0.31.1; Law 0001, ADR-0042, issue #244). The pill and the seat's
+  0.31.1; Law 0001's zone gate row, issue #244). The pill and the seat's
   words follow the pointer only in the window that holds the keys, so
   the click that brought another window forward copied a named
   object's value with nothing said first. That click now selects the
@@ -1052,8 +1064,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **No route gives out a page past its deadline** (app 0.35.0;
-  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
-  issue #170). Between a page's deadline and its timer's sweep, copy
+  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's expiry
+  row, issue #170). Between a page's deadline and its timer's sweep, copy
   decrypted, Copy `NAME=value`, the decrypted drag, both conceals, the
   note's text and a fragment's copy and cut could still read the page,
   and a Mac asleep past the deadline left the page readable until the
@@ -1107,7 +1119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replace a sealed object, so it was not made.`
 
 - **A link on a page opens only while the page stands** (app 0.35.0;
-  Law 0001, ADR-0052, issue #170). A ⌘-click on a link sent its URL to
+  Law 0001's expiry row, issue #170). A ⌘-click on a link sent its URL to
   the browser even past the page's deadline, and the text menu's Open
   With handed it to any browser. A link on a page or in a note now
   opens, by ⌘-click or by the menu's Open Link, only while its page
@@ -1132,8 +1144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note and a name field. A regular text file keeps both.
 
 - **Sync sends nothing of a page past its deadline** (app 0.35.0;
-  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001, ADR-0052,
-  issue #170). With sync on, a page past its deadline but not yet swept
+  `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's expiry
+  row, issue #170). With sync on, a page past its deadline but not yet swept
   still exported its new ops to the relay, a ceremony could cut its
   whole document as the channel's key frame, and ops queued just
   before the deadline were sealed and sent after it. Now the core
@@ -1153,7 +1165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   device reads that accept late.
 
 - **A page a peer's hold leaves no life goes at once** (app 0.35.0;
-  `companion-core` 0.32.0; Law 0001, ADR-0052, issue #170). A paired
+  `companion-core` 0.32.0; Law 0001's expiry row, issue #170). A paired
   device, faulty or compromised, could publish a hold with no life left
   under it. The page here then refused every way out but stood on
   screen for as long as the hold claimed, up to a day, since the timer
@@ -1163,15 +1175,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stood held here.
 
 - **A page drag's image shows no object's contents** (app 0.35.0;
-  Law 0001, ADR-0051, issue #170). The image AppKit drew for a drag of
+  Law 0001's plain drag row, issue #170). The image AppKit drew for a drag of
   a page's selection showed each sealed block as the page does,
   excerpt included, in the image that follows the pointer over other
   apps. It now draws the ink and each object's face: its lock,
   classification, size class and any name, with no excerpt and no
   value.
 
-- **A pasted envelope is bounded** (`companion-core` 0.31.1; Law 0001,
-  ADR-0049, issue #170). An envelope longer than 8 MiB, naming more
+- **A pasted envelope is bounded** (`companion-core` 0.31.1; Law 0001's
+  paste row, issue #170). An envelope longer than 8 MiB, naming more
   than 1024 objects, or naming one object twice is refused whole and
   pastes its public text, so a crafted fragment cannot clone one object
   many times over. A copy or cut past those caps wrote an envelope
