@@ -1,4 +1,4 @@
-# Two lanes, both required (docs/spec/07-repo-skeleton.md):
+# Two lanes, both required (docs/spec/design/2026-0707-repo-skeleton.md):
 #   logic    — ubuntu: the crates that hold all the logic, cheap and fast
 #   platform — macos:  full workspace, incl. the pasteboard adapter
 #
