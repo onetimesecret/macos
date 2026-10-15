@@ -637,8 +637,8 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
 /*
  * Copy NAME=<plaintext>: the name, "=", then the payload raw and
- * unquoted (ADR-0042 point 2, proposed), by companion_chip_copy_out()'s
- * route (Law 0001; ADR-0042 point 3, proposed). The core composes the
+ * unquoted (ADR-0047 point 1, proposed), by companion_chip_copy_out()'s
+ * route (Law 0001; ADR-0047 point 2, proposed). The core composes the
  * bytes at their final size and writes them itself, transient and
  * ConcealedType, keeps the receipt for companion_clear_clipboard_if_ours(),
  * and leaves one "sent" record to "clipboard" at the payload's size

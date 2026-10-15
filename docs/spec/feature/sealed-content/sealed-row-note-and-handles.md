@@ -11,7 +11,9 @@ field is [Law 0007](../../../law/0007-edit-in-place.md)'s; a law row says
 what happens, and this file says how it looks. The decisions under them
 are proposed:
 [ADR-0042](../../../adr/0042-a-sealed-name-is-a-shell-identifier.md)
-(the name's charset and `NAME=value`),
+(the name's charset),
+[ADR-0047](../../../adr/0047-name-value-copies-the-value-unquoted.md)
+(`NAME=value` unquoted),
 [ADR-0043](../../../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md)
 (where the name and note live) and
 [ADR-0044](../../../adr/0044-a-sealed-objects-note-is-edited-on-the-pages-own-surface.md)
@@ -20,7 +22,8 @@ them is in the
 [sealed objects core interface](../../../development/sealed-objects-core-interface.md).
 
 Sources: the drafts ADR-0042, ADR-0044, ADR-0047, ADR-0051 and ADR-0055,
-written 2026-10-13 and withdrawn on 2026-10-14 without ratification. They
+written 2026-10-13 and 2026-10-14 and withdrawn on 2026-10-14 without
+ratification. They
 took these details from the
 [name and note mockup](../../../mockups/sealed-name-and-note.md), its
 [drawing](../../../mockups/sealed-name-and-note.svg) and the build. The
@@ -168,9 +171,9 @@ the cut's envelope would. No mockup draws it.
   object's menu remains its path.
 - No move handle exists, so D-29's "visually distinct" has nothing to be
   distinct from. Issue #255 records the maintainer's direction of
-  2026-10-14 that there should be a move handle (⠿) beside this one,
-  visually distinct from it, and leaves open which gives way first on a
-  narrow block.
+  2026-10-14 that there should be a move handle; its scope asks for the
+  handle (⠿) beside this one, visually distinct from it, and leaves open
+  which gives way first on a narrow block.
 
 ## Open
 

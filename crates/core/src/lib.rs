@@ -20,7 +20,7 @@ pub mod secret;
 pub mod sheet;
 pub mod store;
 pub mod sync;
-// Copy, cut, paste and the drags inside a page (ADR-0045 and ADR-0046, proposed).
+// Copy, cut, paste and the drags (Law 0001: the copy, cut, paste and drag rows).
 mod transfer;
 pub mod ttl;
 

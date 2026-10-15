@@ -1242,7 +1242,7 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
 }
 
 /// Copy `NAME=<plaintext>` by copy decrypted's route
-/// (Law 0001; ADR-0042 point 3, proposed): the store composes it and this
+/// (Law 0001; ADR-0047 point 2, proposed): the store composes it and this
 /// writes it as [`companion_chip_copy_out`] does. False, writing and recording
 /// nothing, for an unknown, unnamed or image chip, or a page past its deadline
 /// (Law 0001, expiry row).

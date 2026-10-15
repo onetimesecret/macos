@@ -82,8 +82,9 @@ lifecycle states. The bytes at rest are in the
 
 1. **Sync.** A peer's update that takes a sentinel out detaches the
    chip here, and one naming it again reattaches it. Issue #257 records
-   the maintainer's direction of 2026-10-14 that a peer imports a batch
-   standing an object it does not hold. Whether such an object detaches
+   the maintainer's direction of 2026-10-14 that a batch never fails to
+   sync because of a sealed object, and its scope asks that a peer
+   import a batch standing an object it does not hold. Whether such an object detaches
    and reattaches on that peer as it does here, and what a cut made
    there can carry, is open until the successor to
    [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md) that #257

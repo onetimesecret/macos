@@ -1557,7 +1557,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Conceal the whole page (ink verbatim, sealed bytes inlined,
     /// core-side). Refused when the page holds an image chip or is past
-    /// its deadline (Law 0001, expiry row). **Blocks** — call off the main actor.
+    /// its deadline (Law 0001, expiry row). **Blocks**: call off the main actor.
     public func concealSheet(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {

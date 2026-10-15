@@ -13,16 +13,16 @@ decisions are proposed:
 [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
 [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md),
 [ADR-0044](../adr/0044-a-sealed-objects-note-is-edited-on-the-pages-own-surface.md),
-[ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md)
+[ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md),
+[ADR-0046](../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
 and
-[ADR-0046](../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md).
+[ADR-0047](../adr/0047-name-value-copies-the-value-unquoted.md).
 The looks and words are in the
 [sealed row, note and handles](../spec/feature/sealed-content/sealed-row-note-and-handles.md)
 spec.
 
-These notes were first written into six drafts of 2026-10-13, withdrawn
-on 2026-10-14 without ratification:
-draft ADR-0043, ADR-0046, ADR-0047, ADR-0049, ADR-0052 and ADR-0053.
+These notes were first written into the drafts ADR-0043 to ADR-0054 of
+2026-10-13, withdrawn on 2026-10-14 without ratification.
 Where this file and the code disagree, the code is right and this file
 is fixed.
 
@@ -162,7 +162,7 @@ exists, a cut's with its `cut` field.
 | `companion_sheet_paste_fragment(handle, sheet, at_utf16, len_utf16, envelope, envelope_len, plain)` | pastes envelope bytes over a range as one undo step, `plain` placed for an envelope the core cannot read | the placed JSON, or null on refusal |
 | `companion_sheet_paste_active_cut` | the clipboard slot's place over a range | the placed JSON; null when no cut stands, or as the paste |
 | `companion_sheet_move_range` | a drag inside a page, as one step | the placed JSON, or null for a target inside or at the range's edge, or a page past its deadline |
-| `companion_sheet_move_range_to` | a drag between pages, as one transaction keeping every object | the placed JSON for its run on the destination, or null with neither page changed |
+| `companion_sheet_move_range_to` | a drag between pages, as one transaction keeping every object; sweeps nothing | the placed JSON for its run on the destination, or null with neither page changed: for one page at both ends, an unknown page or a file at either end, a range or point outside its body, or a page past its deadline at either end |
 | `companion_sheet_clone_range` | the ⌥ drag inside a page, every object cloned, as one step | the placed JSON, or null |
 | `companion_active_cut_json` | the clipboard slot | `{"page_id": u64 or null, "objects": [face]}`, null and `[]` with no cut |
 | `companion_chip_provide_drag` | the decrypted drag's write into its item | false, writing and recording nothing, on refusal |
@@ -217,6 +217,12 @@ and cut find their page or object through it. To word its refusal a
 page's conceal asks whether the page still stands, and a chip's conceal
 whether any page still holds the chip (`SheetStore::chip_stands`, over
 the seam `companion_chip_stands`); neither reads either.
+
+The routes that draw a page do not go through it:
+`companion_sheet_document_json` (the ink and the objects' faces),
+`companion_sheet_meta_json` and `companion_sheet_blocks_json` read
+`SheetStore::sheet` and still answer for a page past its deadline, so the
+shell shows the page until it settles and the sweep takes it.
 
 ## The keys holder
 

@@ -1398,7 +1398,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The name, `=` and a text chip's payload, raw, in one buffer at its
-    /// final size (ADR-0042 point 2, proposed; core interface, `NAME=value`).
+    /// final size (ADR-0047 point 1, proposed; core interface, `NAME=value`).
     /// `None` for an unknown, unnamed or image chip, or a page past its
     /// deadline (Law 0001, expiry row).
     /// Consumes nothing and records nothing.

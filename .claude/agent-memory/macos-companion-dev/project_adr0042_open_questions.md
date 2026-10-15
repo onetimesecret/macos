@@ -9,15 +9,15 @@ The draft ADR-0042 (`0042-sealed-names-copy-zones-and-rename-seats`,
 epic 252, #240) and the draft ADR-0044 (`0044-sealed-row-and-note-details`)
 were written on 2026-10-13, marked accepted, and withdrawn on 2026-10-14
 without ratification, with the other drafts up to 0055. Their numbers
-now name other records, both proposed: ADR-0042 is the name's charset
-and `NAME=value` unquoted, and ADR-0044 is the note on the page's own
-surface (draft 0045's). The full map is Law 0001's 2026-10-14 drafts
+now name other records, all proposed: ADR-0042 is the name's charset,
+ADR-0047 is `NAME=value` unquoted (split from ADR-0042 the same day),
+and ADR-0044 is the note on the page's own surface (draft 0045's). The full map is Law 0001's 2026-10-14 drafts
 withdrawn amendment.
 
 Where the two drafts' points went:
 
-- The charset, 1 to 64 of `[A-Za-z_][A-Za-z0-9_]*`, and the value copied
-  raw: ADR-0042 points 1 and 2.
+- The charset, 1 to 64 of `[A-Za-z_][A-Za-z0-9_]*`: ADR-0042. The value
+  copied raw: ADR-0047 point 1.
 - No zones on an unnamed row, the name zone's double click, value and
   `=` acting on the first click, the narrow card's note width, a zone's
   click leaving the selection, the zone gate (the seat names a zone

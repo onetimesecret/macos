@@ -556,7 +556,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so ⌘Z cannot step the page back under a draft. No dialog is involved.
 
 - **A named sealed object's bottom row copies by zone** (app 0.29.0;
-  Law 0001, ADR-0042,
+  Law 0001, ADR-0042, ADR-0047,
   `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
   issue #244). The row reads `NAME=excerpt`: the
   name semibold, `=` in the secondary colour, then the excerpt. The
@@ -593,7 +593,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/development/sealed-objects-core-interface.md`, issue #242;
   `companion-core` 0.27.0, `companion-ffi` 0.35.0).
   `companion_chip_copy_name_value` puts the name, `=` and the
-  object's contents, raw and unquoted (ADR-0042), on the clipboard by
+  object's contents, raw and unquoted (ADR-0047), on the clipboard by
   the same route as copy decrypted: written by the core, marked
   transient and concealed, cleared after the core's interval only if
   the clipboard still holds that write, and one `sent` record that does

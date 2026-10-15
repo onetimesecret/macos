@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0045: The core composes and resolves the sealed fragment, and the shell carries its bytes unread
+# ADR-0045: The core composes and reads the sealed fragment and writes the decrypted drag; the shell carries both unread
 
 - **Status:** proposed
 - **Date:** 2026-10-14
@@ -118,3 +118,4 @@ The envelope's layout, its caps, the routes and the refusals are in Law
 
 - 2026-10-14: Proposed.
 - 2026-10-14: Consolidated from draft ADR-0047 (the sealed fragment, the detached store and decrypted drag) points 1 (the boundary, not the layout), 2, 3 and 11's boundary, written 2026-10-13 and never ratified; its points 4 and 5 are [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md), and its other points stand in Law 0001's rows, the sealed row spec and the core interface note. The eject triggers for the caps come from drafts ADR-0049 and ADR-0053, and the one for the main thread from draft ADR-0050.
+- 2026-10-14: Retitled to name the decrypted drag's write, which point 5 already decided, so the title states the whole decision.

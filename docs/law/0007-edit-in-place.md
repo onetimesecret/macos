@@ -4,7 +4,7 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; ADR-0042 and ADR-0043, proposed 2026-10-14, so the rows that cite them rest on a proposal; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered
+decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered and awaiting the maintainer's ratification (the proposed ADR-0042 they cite is under sources, not here)
 consumed-by:
   - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment; its rows cite this law's keys row)
   - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (proposed; the sealed name's charset, and an empty draft clearing it)
@@ -13,6 +13,7 @@ consumed-by:
 sources:
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
   - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in proposed ADR-0042 and ADR-0043, and in the development note)
+  - ADR-0042, proposed 2026-10-14 (the sealed name's charset; the rows that cite it rest on a proposal)
   - docs/development/sealed-objects-core-interface.md (`InkTextView.answersChords`, the keys holder's predicate; the name's routes and refusal codes)
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
   - docs/spec/design/2026-0916-rail-redundancy.md, D-44 and D-46 (the gutter's time and typed name)
@@ -211,8 +212,8 @@ goes through the catalog (`PadCatalogTests`). The sealed object's is
 judged by `judge_name` (`crates/core/src/sheet.rs`), which
 `companion_chip_set_name` refuses by and `companion_chip_name_refusal`
 answers with, so a field can say why a draft will not take while it is
-typed ([ADR-0043](../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md),
-proposed; the routes and codes in the
+typed ([ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
+proposed; the one rule both share, its routes and codes in the
 [core interface](../development/sealed-objects-core-interface.md)).
 
 Tests that pin the contradicting build and are rewritten when the owed
@@ -318,13 +319,15 @@ Owed: a first run of the rename in place procedure.
   and draft ADR-0044, which the sealed name's rows already build on: the core
   judge and refusal, and no drop from elsewhere into the field.
 - 2026-10-14: Drafts withdrawn amendment. The drafts ADR-0042 to ADR-0055,
-  written on 2026-10-13, were marked accepted and never ratified, and
-  are withdrawn; the entries above name each as a draft. The sealed
-  name's charset and an empty draft clearing it rest on
-  [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md), and
-  the one rule the setter and the handle free judge share on
-  [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md),
-  both proposed. These now stand on this law itself: a pad cell opening
+  written on 2026-10-13 and 2026-10-14, were marked accepted and never
+  ratified, and are withdrawn; the entries above name each as a draft.
+  The sealed name's charset and an empty draft clearing it rest on
+  [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
+  proposed; the one rule the setter and the handle free judge share is
+  the [core interface](../development/sealed-objects-core-interface.md)'s.
+  The rows below carry the drafts' other content on this law itself;
+  like every amendment written on this branch, they await the
+  maintainer's ratification: a pad cell opening
   only through *Rename pad…* and an empty pad name refused in the line
   (draft ADR-0042 points 5 and 6, already the pad rows); the name zone's
   double click and the zones that ignore the clicks after their first
