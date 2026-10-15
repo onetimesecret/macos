@@ -746,6 +746,79 @@ final class CheckpointInsertionTests: XCTestCase {
         XCTAssertEqual(projection.units.flatMap(\.tabIDs), tabs.map(\.id))
         XCTAssertEqual(projection.units.flatMap(\.pageIDs), tabs.compactMap(\.pageID))
     }
+
+    // MARK: Today's place
+
+    /// Yesterday's page selected with its caret mid text, today empty.
+    /// The place gesture mints today's first page without touching
+    /// yesterday's: a place is not ⌘N.
+    private func startTodayFromYesterday(
+        _ gesture: (PageModel) -> Void, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let (model, client) = try makeSyntheticCalendarModel()
+        let yesterday = try seed("yesterday page", in: model)
+        try fileSyntheticDay(-1, for: yesterday, in: model, client: client)
+        model.refresh()
+        model.select(yesterday.tab)
+        XCTAssertEqual(model.tabs.first { $0.id == yesterday.tab }?.pageDayOffset, -1, file: file, line: line)
+        XCTAssertEqual(model.timeUnits.units.first { $0.bucket == 0 }?.tabIDs ?? [], [], file: file, line: line)
+        let roll = try mountRoll(model)
+        defer { unmount(roll) }
+        let editor = try XCTUnwrap(roll.stack.editor, file: file, line: line)
+        editor.setSelectedRange(NSRange(location: 5, length: 0))
+        model.viewStates.saveCaret(NSRange(location: 5, length: 0), for: yesterday.sheet)
+        gesture(model)
+        XCTAssertEqual(model.tabs.count, 2, file: file, line: line)
+        let created = try XCTUnwrap(model.selection, file: file, line: line)
+        let page = try XCTUnwrap(model.selectedPageID, file: file, line: line)
+        XCTAssertNotEqual(created, yesterday.tab, file: file, line: line)
+        XCTAssertEqual(model.tabs.map(\.id), [yesterday.tab, created], file: file, line: line)
+        XCTAssertEqual(ink(yesterday.sheet, in: client), "yesterday page", file: file, line: line)
+        XCTAssertEqual(model.storage(for: yesterday.sheet).string, "yesterday page", file: file, line: line)
+        XCTAssertEqual(ink(page, in: client), "", file: file, line: line)
+        XCTAssertEqual(model.tabs.first { $0.id == created }?.pageDayOffset, 0, file: file, line: line)
+        XCTAssertEqual(model.timeUnits.units.first { $0.bucket == 0 }?.tabIDs, [created], file: file, line: line)
+        XCTAssertEqual(model.viewStates.carets[yesterday.sheet], NSRange(location: 5, length: 0), file: file, line: line)
+        XCTAssertNil(model.notice, file: file, line: line)
+        // The place fires again: it finds the page it made and mints nothing.
+        gesture(model)
+        XCTAssertEqual(model.tabs.count, 2, file: file, line: line)
+        XCTAssertEqual(model.selection, created, file: file, line: line)
+        XCTAssertEqual(ink(yesterday.sheet, in: client), "yesterday page", file: file, line: line)
+    }
+
+    func testStartTodayFromYesterdaysPageMintsABlankTodayWithoutSplitting() throws {
+        try startTodayFromYesterday { $0.startToday() }
+    }
+
+    func testTheTodayTargetFromYesterdaysPageMintsABlankTodayWithoutSplitting() throws {
+        try startTodayFromYesterday { $0.select(target: .today) }
+    }
+
+    func testStartTodayWithTodayPeopledSelectsItsFirstPageAndMintsNothing() throws {
+        let (model, client) = try makeSyntheticCalendarModel()
+        let today = try seed("today page", in: model)
+        let yesterday = try seed("yesterday page", in: model)
+        try fileSyntheticDay(-1, for: yesterday, in: model, client: client)
+        model.refresh()
+        model.select(yesterday.tab)
+        model.viewStates.saveCaret(NSRange(location: 5, length: 0), for: yesterday.sheet)
+        let order = model.tabs.map(\.id)
+        model.startToday()
+        XCTAssertEqual(model.tabs.map(\.id), order)
+        XCTAssertEqual(model.selection, today.tab)
+        XCTAssertEqual(ink(yesterday.sheet, in: client), "yesterday page")
+        XCTAssertEqual(ink(today.sheet, in: client), "today page")
+    }
+
+    func testStartTodayOnAnEmptyPadMintsExactlyOnePage() throws {
+        let model = try makeModel()
+        XCTAssertTrue(model.tabs.isEmpty)
+        model.startToday()
+        XCTAssertEqual(model.tabs.count, 1)
+        XCTAssertEqual(model.selection, model.tabs.first?.id)
+        XCTAssertEqual(ink(try XCTUnwrap(model.selectedPageID), in: model.coreClient), "")
+    }
 }
 
 // Calendar summaries are synthetic; the underlying core birth stamps and operations stay real.

@@ -5321,16 +5321,18 @@ public final class PageModel: ObservableObject {
     /// Timeline creation splits the current page at its caret; Tabs opens a blank page.
     public func newPage() {
         let insertionTab = showsTimeUnits && selectedFile == nil && !showingLedger ? selection : nil
-        let source = insertionTab.flatMap { tab in tabs.first { $0.id == tab }?.pageID }
-        let sourceDay = insertionTab.flatMap { tab in tabs.first { $0.id == tab }?.pageDayOffset }
-        let sourceLength = source.map { id in
-            client.documentRuns(sheet: id).reduce(0) { length, run in
-                switch run {
-                case .ink(let text): return length + text.utf16.count
-                case .chip: return length + 1
-                }
+        guard let insertionTab,
+              let source = tabs.first(where: { $0.id == insertionTab })?.pageID else {
+            createBlankPage()
+            return
+        }
+        let sourceDay = tabs.first { $0.id == insertionTab }?.pageDayOffset
+        let sourceLength = client.documentRuns(sheet: source).reduce(0) { length, run in
+            switch run {
+            case .ink(let text): return length + text.utf16.count
+            case .chip: return length + 1
             }
-        } ?? 0
+        }
         let editor = (activeEditor as? InkTextView).flatMap { view in
             view.coordinator?.currentSheet == source ? view : nil
         }
@@ -5338,9 +5340,58 @@ public final class PageModel: ObservableObject {
             flash("finish composing text before inserting a checkpoint")
             return
         }
-        let caret = source.flatMap { editor?.selectedRange() ?? viewStates.carets[$0] }
+        let caret = editor?.selectedRange() ?? viewStates.carets[source]
             ?? NSRange(location: sourceLength, length: 0)
         let splitAt = min(max(caret.location, 0), sourceLength)
+        guard let created = mintTab() else { return }
+        if let dest = tabs.first(where: { $0.id == created })?.pageID {
+            let naturalTabs = tabs.filter { $0.id != created }
+            guard let sourceIndex = naturalTabs.firstIndex(where: { $0.id == insertionTab }),
+                  client.moveTab(id: created, to: UInt64(sourceIndex + 1)) else {
+                _ = client.closeTab(id: created)
+                refresh()
+                flash("the checkpoint could not be inserted")
+                return
+            }
+            // A caret at the very start asks for a blank checkpoint, not
+            // for the whole page to move and leave an empty one behind.
+            if splitAt > 0, splitAt < sourceLength {
+                let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
+                guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
+                    _ = client.closeTab(id: created)
+                    refresh()
+                    flash("the checkpoint could not be inserted")
+                    return
+                }
+            } else {
+                refresh()
+            }
+            editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
+            viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
+            viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
+            if pads.isEnabled, padRosterDate != nil {
+                pads.setCheckpointSort(.natural, for: pads.activeID,
+                    onDate: dateKey(forDayBucket: 0))
+                if let sourceDay, sourceDay < 0 {
+                    pads.setDaySort(.natural, for: pads.activeID)
+                    pads.setCheckpointSort(.natural, for: pads.activeID,
+                        onDate: dateKey(forDayBucket: sourceDay))
+                }
+            }
+        }
+        adoptCreatedTab(created)
+    }
+
+    /// A blank page at the ladder's top rung, selected. Never splits
+    /// anything: Tabs mode, a page asked for from the ledger or a file,
+    /// and today's place all take this path.
+    private func createBlankPage() {
+        guard let created = mintTab() else { return }
+        adoptCreatedTab(created)
+    }
+
+    /// Ask the core for a new tab and refresh. Nil when the core could not answer.
+    private func mintTab() -> UInt64? {
         clearNotice()
         clearPendingFileClose()
         // A page asked for now is a page to look at now, so the file
@@ -5352,62 +5403,29 @@ public final class PageModel: ObservableObject {
             flash(Self.newPageFailed)
         }
         refresh()
-        if created != 0 {
-            if let insertionTab, let source, let dest = tabs.first(where: { $0.id == created })?.pageID {
-                let naturalTabs = tabs.filter { $0.id != created }
-                guard let sourceIndex = naturalTabs.firstIndex(where: { $0.id == insertionTab }),
-                      client.moveTab(id: created, to: UInt64(sourceIndex + 1)) else {
-                    _ = client.closeTab(id: created)
-                    refresh()
-                    flash("the checkpoint could not be inserted")
-                    return
-                }
-                // A caret at the very start asks for a blank checkpoint, not
-                // for the whole page to move and leave an empty one behind.
-                if splitAt > 0, splitAt < sourceLength {
-                    let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
-                    guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
-                        _ = client.closeTab(id: created)
-                        refresh()
-                        flash("the checkpoint could not be inserted")
-                        return
-                    }
-                } else {
-                    refresh()
-                }
-                editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
-                viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
-                viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
-                if pads.isEnabled, padRosterDate != nil {
-                    pads.setCheckpointSort(.natural, for: pads.activeID,
-                        onDate: dateKey(forDayBucket: 0))
-                    if let sourceDay, sourceDay < 0 {
-                        pads.setDaySort(.natural, for: pads.activeID)
-                        pads.setCheckpointSort(.natural, for: pads.activeID,
-                            onDate: dateKey(forDayBucket: sourceDay))
-                    }
-                }
-            }
-            // A new page cannot borrow a plain tab switch's assumption
-            // that the editor still holds the keys (issue #22). A switch
-            // keeps one persistent editor focused and swaps its content
-            // beneath it, so `select` refocuses only when it leaves the
-            // ledger. Conjuring a page can instead tear the mount whole:
-            // an empty window's catcher gives way to a freshly built
-            // editor, and the + tab is chrome whose click resigns first
-            // responder before we arrive. Left to `select`'s conditional
-            // refocus alone the page mounts with nothing focused and every
-            // keystroke beeps, so this path always hands the editor the
-            // keys once it appears. Set selection inline rather than
-            // through `select`, whose own leaving-ledger refocus would
-            // otherwise schedule a second, redundant focus poll here.
-            // `refocusEditorIfKeyed` only ever accepts, staying a quiet
-            // no-op on the switch paths where focus never left.
-            showingLedger = false
-            selection = created
-            if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
-            refocusEditorIfKeyed()
-        }
+        return created == 0 ? nil : created
+    }
+
+    private func adoptCreatedTab(_ created: UInt64) {
+        // A new page cannot borrow a plain tab switch's assumption
+        // that the editor still holds the keys (issue #22). A switch
+        // keeps one persistent editor focused and swaps its content
+        // beneath it, so `select` refocuses only when it leaves the
+        // ledger. Conjuring a page can instead tear the mount whole:
+        // an empty window's catcher gives way to a freshly built
+        // editor, and the + tab is chrome whose click resigns first
+        // responder before we arrive. Left to `select`'s conditional
+        // refocus alone the page mounts with nothing focused and every
+        // keystroke beeps, so this path always hands the editor the
+        // keys once it appears. Set selection inline rather than
+        // through `select`, whose own leaving-ledger refocus would
+        // otherwise schedule a second, redundant focus poll here.
+        // `refocusEditorIfKeyed` only ever accepts, staying a quiet
+        // no-op on the switch paths where focus never left.
+        showingLedger = false
+        selection = created
+        if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
+        refocusEditorIfKeyed()
     }
 
     /// Legacy day-navigation helper; creation commands now use `newPage()` directly.
@@ -5449,13 +5467,14 @@ public final class PageModel: ObservableObject {
     /// appeared, a double click on the region, a chord landing during
     /// the relayout, and a place that made a page a moment ago must
     /// find that page and select it rather than stack a blank one
-    /// beside it. ⌘N is the gesture that asks for another; this is not.
+    /// beside it. ⌘N is the gesture that asks for another; this is not,
+    /// so it never takes ⌘N's checkpoint split of the selected page.
     public func startToday() {
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
             select(tab)
             return
         }
-        newPage()
+        createBlankPage()
     }
 
     /// A summon: put the surface back on today (issue #79).
