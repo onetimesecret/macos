@@ -54,18 +54,18 @@ final class ThemeContrastTests: XCTestCase {
     static func contrastRatio(
         _ ink: NSColor, on backing: NSColor, appearance name: NSAppearance.Name
     ) -> CGFloat {
-        contrastRatio(ink, over: [backing], appearance: name)
+        contrastRatio(ink, over: { [backing] }, appearance: name)
     }
 
-    /// The same, over a stack of layers laid bottom to top, for an ink
-    /// drawn on a translucent wash that itself sits on the page.
+    /// Build layers bottom to top inside the drawing appearance;
+    /// transforms such as `withAlphaComponent` resolve dynamic colours eagerly.
     static func contrastRatio(
-        _ ink: NSColor, over layers: [NSColor], appearance name: NSAppearance.Name
+        _ ink: NSColor, over layers: () -> [NSColor], appearance name: NSAppearance.Name
     ) -> CGFloat {
         let appearance = NSAppearance(named: name)!
         var ratio: CGFloat = 0
         appearance.performAsCurrentDrawingAppearance {
-            let ground = layers.reduce(NSColor.white) { composite($1, over: $0) }
+            let ground = layers().reduce(NSColor.white) { composite($1, over: $0) }
             let figure = composite(ink, over: ground)
             let lighter = max(relativeLuminance(figure), relativeLuminance(ground))
             let darker = min(relativeLuminance(figure), relativeLuminance(ground))
@@ -147,6 +147,24 @@ final class ThemeContrastTests: XCTestCase {
         XCTAssertGreaterThan(darkLabel, 0.6)
     }
 
+    func testLayerTransformsResolveUnderTheRequestedAppearance() {
+        for startingAppearance in Self.appearances {
+            NSAppearance(named: startingAppearance)!.performAsCurrentDrawingAppearance {
+                for appearance in Self.appearances {
+                    let expected = Self.contrastRatio(
+                        .labelColor, on: .textBackgroundColor, appearance: appearance)
+                    let ratio = Self.contrastRatio(
+                        .labelColor,
+                        over: { [NSColor.textBackgroundColor.withAlphaComponent(1)] },
+                        appearance: appearance)
+                    XCTAssertEqual(
+                        ratio, expected, accuracy: 0.0001,
+                        "layers created under \(startingAppearance.rawValue), drawn under \(appearance.rawValue)")
+                }
+            }
+        }
+    }
+
     // MARK: The system's own text ink, on both backings
 
     func testThePrimaryLabelClearsTheBarOnPageAndCard() {
@@ -198,7 +216,7 @@ final class ThemeContrastTests: XCTestCase {
         for (inkName, ink) in inks {
             for appearance in Self.appearances {
                 for (washName, layers) in Self.fenceWashes {
-                    let ratio = Self.contrastRatio(ink, over: layers, appearance: appearance)
+                    let ratio = Self.contrastRatio(ink, over: { layers }, appearance: appearance)
                     XCTAssertGreaterThanOrEqual(
                         ratio, Self.bar,
                         "\(inkName) on \(washName) under \(appearance.rawValue) reads \(ratio):1")
@@ -212,7 +230,7 @@ final class ThemeContrastTests: XCTestCase {
     func testTheSystemHuesThemselvesMissTheWashUnderLight() {
         for hue in [NSColor.systemPurple, .systemRed, .systemBlue] {
             let ratio = Self.contrastRatio(
-                hue, over: Self.fenceWashes[0].1, appearance: .aqua)
+                hue, over: { Self.fenceWashes[0].1 }, appearance: .aqua)
             XCTAssertLessThan(ratio, Self.bar)
         }
     }
@@ -251,19 +269,23 @@ final class ThemeContrastTests: XCTestCase {
         XCTAssertEqual(ink, system)
     }
 
-    /// A selected sealed block lets the selection highlight through its
-    /// fill, and its quieter words go to ink there: the secondary label
-    /// over the highlight read near 4:1 in the audit.
+    /// Match SealedBlockCell.draw's fill construction under each drawing appearance,
+    /// starting in either appearance to exercise a light-mode test runner too.
     func testASelectedSealedBlocksQuieterWordsClearTheBarOnTheHighlight() {
-        let layers: [NSColor] = [
-            .windowBackgroundColor, .selectedTextBackgroundColor,
-            NSColor.textBackgroundColor.withAlphaComponent(0.34),
-        ]
-        for appearance in Self.appearances {
-            let ratio = Self.contrastRatio(
-                SealedBlockCell.quietInk(selected: true), over: layers, appearance: appearance)
-            XCTAssertGreaterThanOrEqual(
-                ratio, Self.bar, "a selected block's words under \(appearance.rawValue) read \(ratio):1")
+        for startingAppearance in Self.appearances {
+            NSAppearance(named: startingAppearance)!.performAsCurrentDrawingAppearance {
+                for appearance in Self.appearances {
+                    let ratio = Self.contrastRatio(
+                        SealedBlockCell.quietInk(selected: true),
+                        over: {
+                            [.windowBackgroundColor, .selectedTextBackgroundColor,
+                             NSColor.textBackgroundColor.withAlphaComponent(0.34)]
+                        }, appearance: appearance)
+                    XCTAssertGreaterThanOrEqual(
+                        ratio, Self.bar,
+                        "a selected block's words under \(appearance.rawValue) starting in \(startingAppearance.rawValue) read \(ratio):1")
+                }
+            }
         }
         XCTAssertEqual(SealedBlockCell.quietInk(selected: false), .secondaryInk)
     }
