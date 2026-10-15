@@ -370,6 +370,11 @@ final class PadPickerTests: XCTestCase {
         let otherPadPages = Set(model.navigationTabs.compactMap(\.pageID))
         let namedPad = try XCTUnwrap(model.createPad(named: "Familia"))
         model.activatePad(namedPad)
+        for experimental in [false, true] {
+            let caption = GeneralSettingsView.pageLayoutCaption(experimental: experimental)
+            XCTAssertTrue(caption.contains("older blank pages are hidden"))
+            XCTAssertFalse(caption.contains("counted"))
+        }
         for text in ["First checkpoint", "Second checkpoint", "Third checkpoint"] {
             model.newPage()
             let page = try XCTUnwrap(model.selectedPageID)

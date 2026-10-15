@@ -264,14 +264,7 @@ public struct TimeStripView: View {
                     }
                 }
             }
-            if projection.hiddenBlankPages > 0 {
-                Text("\(projection.hiddenBlankPages) blank")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Color.secondaryInk)
-                    .help(TimeRailView.hiddenPagesHelp(count: projection.hiddenBlankPages))
-                    .accessibilityLabel(Text(TimeRailView.hiddenPagesHelp(
-                        count: projection.hiddenBlankPages)))
-            }
+
             Spacer(minLength: 8)
         }
         .padding(.horizontal, 6)

@@ -321,7 +321,7 @@ public struct GeneralSettingsView: View {
         return "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
             + "that groups live pages by the day they were written, newest first, down the "
             + "side, taking \(Int(TimeRailView.width(experimental: experimental))) points from the page; lines always wrap and older blank pages "
-            + "are counted rather than drawn. Changing this moves no content and writes "
+            + "are hidden. Changing this moves no content and writes "
             + "nothing new to disk."
     }
 

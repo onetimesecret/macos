@@ -152,7 +152,6 @@ public struct TimeRailView: View {
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
-            hiddenPages(count: projection.hiddenBlankPages)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
@@ -224,7 +223,6 @@ public struct TimeRailView: View {
                         }
                     }
                 }
-                hiddenPages(count: projection.hiddenBlankPages)
                 if !model.navigationFiles.isEmpty {
                     Divider().padding(.vertical, 4)
                     GroupLabel(text: CompanionL10n.string("pad.files.heading"))
@@ -316,31 +314,6 @@ public struct TimeRailView: View {
         return chords
     }
 
-    /// The count of what the mode is hiding, and the instrument for the
-    /// content predicate itself.
-    ///
-    /// Old pages with nothing on them draw no nodes here, so without a
-    /// count a person would not know they exist, or that the strip
-    /// still holds them. The count says so out loud, and its tooltip
-    /// names the toggle that brings those pages back. They cost nothing
-    /// else, since the strip has no cap (issue #158), and nothing is
-    /// auto-discarded: reaping blank pages is a lifetime mechanism
-    /// nobody asked for (ADR-0016).
-    ///
-    /// A number that is routinely above zero in dogfood means the
-    /// content bar is set wrong, which is ADR-0020's fifth eject
-    /// trigger, so this line is a measurement as much as a message.
-    @ViewBuilder
-    private func hiddenPages(count: Int) -> some View {
-        if let line = Self.hiddenPagesLine(count: count) {
-            Text(line)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(Color.secondaryInk)
-                .lineLimit(1)
-                .help(Self.hiddenPagesHelp(count: count))
-                .accessibilityLabel(Text(Self.hiddenPagesHelp(count: count)))
-        }
-    }
 
     /// Which day the rail marks as the one the surface is showing.
     ///
@@ -393,27 +366,7 @@ public struct TimeRailView: View {
         return keymap.hintKeystroke(for: command)
     }
 
-    /// What the footer prints, or nothing at all when nothing is being
-    /// held back. Short, because it is a footer and not a node: it
-    /// counts what the rail is not showing, and a sentence at the
-    /// bottom of the column would weigh more than the days above it.
-    /// The sentence rides the tooltip and the accessibility label
-    /// instead, and "3 blank" is words rather than an abbreviation, so
-    /// doc 05's rule is answered at both ends.
-    static func hiddenPagesLine(count: Int) -> String? {
-        guard count > 0 else { return nil }
-        return "\(count) blank"
-    }
 
-    /// The same fact at length: how many live pages the days are not
-    /// showing, and the one place they can be reached from.
-    static func hiddenPagesHelp(count: Int) -> String {
-        let pages = count == 1
-            ? "One live page has nothing on it"
-            : "\(count) live pages have nothing on them"
-        return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
-            + "to reach them, nothing is discarded to make room."
-    }
 }
 
 /// The navigator itself: the track, the nodes on it, the band over the
