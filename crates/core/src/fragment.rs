@@ -1,5 +1,5 @@
-//! The sealed fragment (Law 0001, ADR-0047): a selection's ordered ink and
-//! object references, composed and read only here, never payload.
+//! The sealed fragment (Law 0001; ADR-0045 point 1, proposed): a selection's
+//! ordered ink and object references, composed and read only here, never payload.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -16,14 +16,15 @@ use crate::sheet::{ItemId, SealedChip, Segment, Sheet};
 /// The one envelope version this build writes and reads.
 pub(crate) const VERSION: u32 = 1;
 
-/// The longest envelope this build reads: twice the largest file it opens (ADR-0049).
+/// The longest envelope this build reads: twice the largest file it opens
+/// (core interface, Envelope, version 1).
 pub(crate) const ENVELOPE_CAP: usize = 2 * FILE_SIZE_LIMIT;
 
-/// The most references one envelope may name (ADR-0049).
+/// The most references one envelope may name (Law 0001, paste row).
 pub(crate) const REFERENCE_CAP: usize = 1024;
 
-/// A cap of ADR-0049, which the parse and, since ADR-0053, the copy and
-/// the cut hold an envelope to.
+/// An envelope cap the parse holds an envelope to (Law 0001, paste row), and
+/// the copy and the cut too (Law 0001, copy row and cut row).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvelopeCap {
     /// Its length in bytes, [`EnvelopeCap::limit`] at most.
@@ -58,10 +59,10 @@ impl EnvelopeCap {
 /// Why a copy or a cut composed nothing and changed nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyRefusal {
-    /// An unknown page, one past its deadline (ADR-0052), a range
+    /// An unknown page, one past its deadline (Law 0001, expiry row), a range
     /// [`Sheet::select`] refuses, or a cut the body refused.
     Refused,
-    /// The envelope would pass a cap (ADR-0053).
+    /// The envelope would pass a cap (Law 0001, copy row and cut row).
     PastCap(EnvelopeCap),
 }
 
@@ -166,8 +167,8 @@ impl Fragment {
     }
 
     /// Read an envelope. `None` when this build cannot: another version, an
-    /// unknown key, a malformed UUID, bytes that are not UTF-8 JSON, or past
-    /// a cap of ADR-0049, which counts one object named twice.
+    /// unknown key, a malformed UUID, bytes that are not UTF-8 JSON, past a
+    /// cap, or naming one object twice (Law 0001, paste row).
     pub(crate) fn parse(bytes: &[u8]) -> Option<Self> {
         if EnvelopeCap::passed(bytes.len(), 0).is_some() {
             return None;
@@ -191,7 +192,7 @@ impl Fragment {
                 }
                 WireNode::Ref(reference) => {
                     let uuid = ItemId::parse(&reference.uuid)?;
-                    // A second naming of one object would clone it twice (ADR-0049).
+                    // A second naming of one object would clone it twice (Law 0001, paste row).
                     if !named.insert(uuid)
                         || EnvelopeCap::passed(bytes.len(), named.len()).is_some()
                     {
@@ -322,7 +323,7 @@ impl Write for Counter {
     }
 }
 
-/// The envelope as JSON (ADR-0047 point 1).
+/// The envelope as JSON (core interface, Envelope, version 1).
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WireFragment<'a> {

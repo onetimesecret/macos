@@ -264,7 +264,8 @@ impl SheetDocument {
     }
 
     /// Revert the body to `checkpoint` after an edit refused partway, and
-    /// clear the undo stack, which could replay the half edit (ADR-0047).
+    /// clear the undo stack, which could replay the half edit
+    /// (Law 0001, sealed fragment representation).
     pub(crate) fn rollback(&self, checkpoint: &Frontiers) {
         // Refused only for a target before a shallow start; a checkpoint is the present.
         let _ = self.doc.revert_to(checkpoint);

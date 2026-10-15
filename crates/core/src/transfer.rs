@@ -1,6 +1,6 @@
-//! Copy, cut, paste and the drags inside a page and between pages (Law 0001,
-//! ADR-0047, ADR-0054): the fragment's routes, the one active cut, and how a
-//! reference resolves.
+//! Copy, cut, paste and the drags inside a page and between pages (Law 0001;
+//! ADR-0045 and ADR-0046, proposed): the fragment's routes, the one active
+//! cut, and how a reference resolves.
 
 use std::borrow::Cow;
 
@@ -14,7 +14,7 @@ use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Sheet, SheetId, judge_name};
 use crate::store::{SheetStore, range_in_body};
 
-/// The store's one active cut (ADR-0047 point 5).
+/// The store's one active cut (ADR-0046 point 3, proposed).
 pub(crate) struct ActiveCut {
     /// The page the cut came from, whose detached store holds its objects.
     pub(crate) page: SheetId,
@@ -28,7 +28,7 @@ pub(crate) struct ActiveCut {
 
 impl ActiveCut {
     /// The cut a page record carries, when its envelope names a cut whose
-    /// every object is detached on that page (ADR-0047 point 9).
+    /// every object is detached on that page (core interface, At rest).
     pub(crate) fn restored(sheet: &Sheet, envelope: &[u8]) -> Option<Self> {
         let fragment = Fragment::parse(envelope)?;
         let token = fragment.cut?;
@@ -43,7 +43,7 @@ impl ActiveCut {
     }
 }
 
-/// What a paste, a move or a clone placed (ADR-0047 point 6).
+/// What a paste, a move or a clone placed (Law 0001, sealed fragment representation).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Placed {
     /// Where the placed run starts, in UTF-16 code units.
@@ -62,7 +62,8 @@ pub struct Placed {
     pub unavailable: u32,
     /// The envelope could not be read, so its public text was placed.
     pub unreadable: bool,
-    /// Pages past their deadline the route swept before resolving (ADR-0048).
+    /// Pages past their deadline the route swept before resolving
+    /// (Law 0001, expiry row).
     pub pages_expired: u32,
 }
 
@@ -91,8 +92,9 @@ impl Planned<'_> {
 
 impl<C: Clock> SheetStore<C> {
     /// Copy a selection: its envelope when it holds an object, and its public
-    /// text. Refused for an unknown page, a page past its deadline (ADR-0052),
-    /// a range [`Sheet::select`] refuses or an envelope past a cap (ADR-0053).
+    /// text. Refused for an unknown page, a page past its deadline
+    /// (Law 0001, expiry row), a range [`Sheet::select`] refuses or an
+    /// envelope past a cap (Law 0001, copy row).
     pub fn copy_fragment(
         &self,
         id: SheetId,
@@ -160,8 +162,9 @@ impl<C: Clock> SheetStore<C> {
         self.place(id, at_u16, len_u16, &fallback, true)
     }
 
-    /// Place the active cut's own envelope, the slot's route (ADR-0047 point
-    /// 12). `None` when no cut stands, or as [`SheetStore::paste_fragment`].
+    /// Place the active cut's own envelope, the slot's route
+    /// (sealed row spec, The clipboard slot). `None` when no cut stands, or
+    /// as [`SheetStore::paste_fragment`].
     pub fn paste_active_cut(&mut self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Placed> {
         let envelope = self.active_cut.as_ref()?.envelope.clone();
         self.paste_fragment(id, at_u16, len_u16, &envelope, None)
@@ -211,9 +214,9 @@ impl<C: Clock> SheetStore<C> {
         stood.then_some(placed)
     }
 
-    /// A drag between pages (ADR-0054): move a range from `source` to `at` on
-    /// `dest` as one transaction keeping every object. `None`, changing
-    /// neither page, for one page, a bad range or point, or a due page.
+    /// A drag between pages (Law 0001, drag row): move a range from `source`
+    /// to `at` on `dest` as one transaction keeping every object. `None`,
+    /// changing neither page, for one page, a bad range or point, or a due page.
     pub fn move_range_to(
         &mut self,
         source: SheetId,
@@ -276,7 +279,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The active cut's page and objects, for the app's clipboard slot
-    /// (ADR-0047 point 12). Faces only; nothing here reads a payload.
+    /// (sealed row spec, The clipboard slot). Faces only; nothing here reads a
+    /// payload.
     #[must_use]
     pub fn active_cut(&self) -> Option<(SheetId, Vec<&SealedChip>)> {
         let cut = self.active_cut.as_ref()?;
@@ -332,7 +336,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Stand a plan over a range in one step, then move the chips it names:
-    /// the transaction of ADR-0047 point 8. `None` once the body reverts.
+    /// the transaction of Law 0001's sealed fragment representation. `None`
+    /// once the body reverts.
     fn stand_plan(
         &mut self,
         id: SheetId,
@@ -397,7 +402,8 @@ impl<C: Clock> SheetStore<C> {
         Some(placed)
     }
 
-    /// Resolve each node in order (ADR-0047 point 6), preparing clones.
+    /// Resolve each node in order (Law 0001, sealed fragment representation),
+    /// preparing clones.
     fn resolve<'a>(&mut self, fragment: &'a Fragment, placed: &mut Placed) -> Vec<Planned<'a>> {
         let cut = self
             .active_cut
@@ -457,7 +463,8 @@ impl<C: Clock> SheetStore<C> {
         plan
     }
 
-    /// A readable page's range as a fragment and its public text (ADR-0052).
+    /// A readable page's range as a fragment and its public text
+    /// (Law 0001, expiry row).
     fn selected(
         &self,
         id: SheetId,
@@ -477,7 +484,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The newest `expired` or `discarded` record for an identity, the only
-    /// evidence of how an object ended (ADR-0047 point 7).
+    /// evidence of how an object ended (Law 0001, lifecycle states).
     fn terminal_cause(&self, uuid: ItemId) -> Option<LedgerEvent> {
         self.ledger
             .iter()
@@ -536,8 +543,9 @@ fn stand(sheet: &mut Sheet, at: usize, plan: &[Planned<'_>]) -> Result<(), Inval
     Ok(())
 }
 
-/// One structural edit of a body as one undo step (ADR-0047 point 8). A
-/// refusal partway reverts the body, clears its undo and returns false.
+/// One structural edit of a body as one undo step
+/// (Law 0001, sealed fragment representation). A refusal partway reverts the
+/// body, clears its undo and returns false.
 fn edit_body(
     sheet: &mut Sheet,
     intent: EditIntent,

@@ -66,7 +66,7 @@ pub enum PayloadError {
     /// The sheet holds an image chip; the conceal payload is text-shaped
     /// (open question 3).
     ImageChip,
-    /// The page's countdown has run out, swept or not (ADR-0052).
+    /// The page's countdown has run out, swept or not (Law 0001, expiry row).
     Expired,
 }
 
@@ -192,7 +192,7 @@ pub struct SheetStore<C: Clock> {
     pub(crate) next_tab_id: u64,
     pub(crate) next_sheet_id: u64,
     pub(crate) next_chip_id: u64,
-    /// The last cut that held an object, until it ends (ADR-0047 point 5).
+    /// The last cut that held an object, until it ends (ADR-0046 point 3, proposed).
     pub(crate) active_cut: Option<crate::transfer::ActiveCut>,
 }
 
@@ -377,7 +377,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The live pages whose countdown still runs; every route that gives a
-    /// page, an object or a note out reads it here (ADR-0052).
+    /// page, an object or a note out reads it here
+    /// (core interface, The deadline gate).
     pub fn readable_sheets(&self) -> impl Iterator<Item = &Sheet> {
         let now = self.clock.now();
         self.sheets().filter(move |sheet| !sheet.is_due(now))
@@ -664,8 +665,8 @@ impl<C: Clock> SheetStore<C> {
     /// Apply a batch of edits to a page's body (ADR-0013). The batch is
     /// validated whole against a simulated body first, so one bad op
     /// mutates nothing; an applied batch commits as one change, and chips
-    /// whose sentinels are gone are detached (ADR-0047). Returns whether it
-    /// applied.
+    /// whose sentinels are gone are detached (ADR-0046 point 1, proposed).
+    /// Returns whether it applied.
     pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
         self.apply_batch(id, ops, inferred_intent(ops), None)
     }
@@ -955,8 +956,8 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
-    /// Settle the chip roster (ADR-0047), then rebuild the projection and
-    /// derived title.
+    /// Settle the chip roster (ADR-0046 point 1, proposed), then rebuild the
+    /// projection and derived title.
     pub(crate) fn settle_document(&mut self, id: SheetId) {
         let Some(sheet) = self.sheet_mut(id) else {
             return;
@@ -988,7 +989,8 @@ impl<C: Clock> SheetStore<C> {
 
     /// The operations a page's document holds beyond `since`, plaintext
     /// for the seam to seal (ADR-0021 section 2). `None` for an unknown
-    /// page, a page past its deadline (ADR-0052) or an undecodable frontier.
+    /// page, a page past its deadline (Law 0001, expiry row) or an
+    /// undecodable frontier.
     #[must_use]
     pub fn export_document_updates(&self, id: SheetId, since: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         self.readable_sheet(id)?
@@ -1003,7 +1005,7 @@ impl<C: Clock> SheetStore<C> {
         let Some(sheet) = self.sheet_mut(id) else {
             return Err(RemoteRefusal::UnknownSheet);
         };
-        // A detached chip is still the page's own (ADR-0047).
+        // A detached chip is still the page's own (ADR-0046 point 1, proposed).
         let owned = sheet.owned_uuids();
         sheet
             .document
@@ -1061,7 +1063,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Whether a deferred page has a transition waiting on a ceremony it can
-    /// perform; never a page past its deadline (ADR-0052).
+    /// perform; never a page past its deadline (Law 0001, expiry row).
     #[must_use]
     pub fn ceremony_due(&self, id: SheetId) -> bool {
         self.readable_sheet(id)
@@ -1070,8 +1072,8 @@ impl<C: Clock> SheetStore<C> {
 
     /// Perform a confirmed ceremony on a deferred page and return the new
     /// key frame (ADR-0021 sections 1 and 5). `None`, changing nothing,
-    /// unless deferred, or for a page past its deadline (ADR-0052). The
-    /// caller pairs it with the GOP key rotation.
+    /// unless deferred, or for a page past its deadline
+    /// (Law 0001, expiry row). The caller pairs it with the GOP key rotation.
     pub fn perform_ceremony(&mut self, id: SheetId) -> Option<Zeroizing<Vec<u8>>> {
         self.readable_sheet(id)?;
         let sheet = self.sheet_mut(id)?;
@@ -1289,7 +1291,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A sealed object's note, empty when it has none; `None` for an unknown
-    /// chip (ADR-0043) or a page past its deadline (ADR-0052).
+    /// chip (core interface, The note's routes) or a page past its deadline
+    /// (Law 0001, expiry row).
     #[must_use]
     pub fn note_text(&self, id: ChipId) -> Option<Zeroizing<String>> {
         let (_, chip) = self.chip_home(id)?;
@@ -1386,7 +1389,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
-    /// `None` for an unknown chip or a page past its deadline (ADR-0052).
+    /// `None` for an unknown chip or a page past its deadline
+    /// (Law 0001, expiry row).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
         let (_, chip) = self.chip_home(id)?;
@@ -1394,8 +1398,9 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The name, `=` and a text chip's payload, raw, in one buffer at its
-    /// final size (ADR-0042 point 4, ADR-0043). `None` for an unknown,
-    /// unnamed or image chip, or a page past its deadline (ADR-0052).
+    /// final size (ADR-0042 point 2, proposed; core interface, `NAME=value`).
+    /// `None` for an unknown, unnamed or image chip, or a page past its
+    /// deadline (Law 0001, expiry row).
     /// Consumes nothing and records nothing.
     #[must_use]
     pub fn copy_out_name_value(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
@@ -1414,7 +1419,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Burn a chip, attached or detached: its bytes wiped and its page's undo
-    /// stack with it (ADR-0047). False for an unknown chip.
+    /// stack with it (ADR-0046 point 2, proposed). False for an unknown chip.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let mut removed: Option<(ItemId, usize, String, u64)> = None;
@@ -1532,7 +1537,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// The whole page as one conceal payload, chips inlined in document
     /// order. Pages holding image chips, and pages past their deadline
-    /// (ADR-0052), are refused.
+    /// (Law 0001, expiry row), are refused.
     pub fn sheet_payload(&self, id: SheetId) -> Result<Zeroizing<String>, PayloadError> {
         let Some(sheet) = self.readable_sheet(id) else {
             return Err(if self.sheet(id).is_some() {
@@ -1745,7 +1750,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Record each chip's end, attached or detached, then the page's unless it
-    /// held neither chip nor content (ADR-0047), and drop it, chips zeroized.
+    /// held neither chip nor content (Law 0001, lifecycle states), and drop it,
+    /// chips zeroized.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
@@ -2359,7 +2365,7 @@ mod tests {
     }
 
     /// A page holding one named, noted chip, its clock run out and no sweep
-    /// yet, with the ledger's length then (ADR-0052).
+    /// yet, with the ledger's length then (Law 0001, expiry row).
     fn a_due_page() -> (SheetStore<ManualClock>, SheetId, ChipId, usize) {
         let (mut store, clock) = store();
         let id = store.new_tab().1;
@@ -5206,8 +5212,8 @@ mod tests {
         );
     }
 
-    /// ADR-0052 points 1 and 4: the timer the shell settles by asks
-    /// the gate's question.
+    /// Law 0001's expiry row and the core interface's deadline gate: the
+    /// timer the shell settles by asks the gate's question.
     #[test]
     fn a_peer_hold_with_no_life_left_settles_the_page_at_once() {
         let (_, mut beta, _a, b, uuid, _, _) = shared_page(0);
