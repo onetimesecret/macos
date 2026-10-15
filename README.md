@@ -43,13 +43,13 @@ documentation tree. Start at
 
 | Doc | Contents |
 | --- | --- |
-| [01-problem-space](docs/spec/design/01-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
-| [02-overlooked-opportunities](docs/spec/design/02-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
-| [03-design-principles](docs/spec/design/03-design-principles.md) | Six principles and the arguments they settle |
-| [04-interaction-model](docs/spec/design/04-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
-| [05-technical-direction](docs/spec/design/05-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
-| [06-open-questions](docs/spec/design/06-open-questions.md) | Everything unresolved, honestly |
-| [07-repo-skeleton](docs/spec/design/07-repo-skeleton.md) | The prescription this repository was initialized from |
+| [2026-0707-problem-space](docs/spec/design/2026-0707-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
+| [2026-0707-overlooked-opportunities](docs/spec/design/2026-0707-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
+| [2026-0707-design-principles](docs/spec/design/2026-0707-design-principles.md) | Six principles and the arguments they settle |
+| [2026-0707-interaction-model](docs/spec/design/2026-0707-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
+| [2026-0707-technical-direction](docs/spec/design/2026-0707-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
+| [2026-0707-open-questions](docs/spec/design/2026-0707-open-questions.md) | Everything unresolved, honestly |
+| [2026-0707-repo-skeleton](docs/spec/design/2026-0707-repo-skeleton.md) | The prescription this repository was initialized from |
 | [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the conceal path (draft feature spec) |
 | [feature/background-surface](docs/spec/feature/background-surface/README.md) | The background-surface form factor, and the macOS research behind it (exploration) |
 
