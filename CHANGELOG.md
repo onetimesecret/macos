@@ -1582,7 +1582,7 @@ deadline that lands where the clock does.
 ### Added
 
 - **Links: ⌘-click opens, a plain click edits** (ADR-0023,
-  `docs/spec/design/04-interaction-model.md`). A bare http(s) URL in
+  `docs/spec/design/2026-0707-interaction-model.md`). A bare http(s) URL in
   body ink, and a markdown `[text](url)` with an http(s) target, now
   render as links — link color, underlined, the markdown syntax dimmed
   in place like a fence's rules, never hidden. Opening is an aimed
@@ -1966,7 +1966,7 @@ deadline that lands where the clock does.
   compares the rendered stamps: identical stamps read as one, and the
   arrow appears only once the range would actually say something.
 - **A fence typed line by line carries one stamp, not one per line**
-  (ADR-0022, `docs/spec/design/04-interaction-model.md`). The core
+  (ADR-0022, `docs/spec/design/2026-0707-interaction-model.md`). The core
   commits each typed line as its own block, so a fenced code block
   entered by hand arrived as a stack of blocks and the page stood a
   created/modified label between every line of the slab. The restyle
@@ -1979,7 +1979,7 @@ deadline that lands where the clock does.
   the contiguous slab it reads as. Display only: the core's block model
   and every stamp in it are untouched.
 - **The code-block wash is one slab, not a stack of stripes**
-  (`docs/spec/design/04-interaction-model.md`). The wash behind a fence
+  (`docs/spec/design/2026-0707-interaction-model.md`). The wash behind a fence
   was painted as a per-paragraph `.backgroundColor` attribute, so it
   rendered as per-line slabs with unpainted stripes at every paragraph
   seam, hugging the glyph runs instead of forming the one rectangle a
