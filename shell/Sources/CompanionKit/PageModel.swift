@@ -5362,7 +5362,9 @@ public final class PageModel: ObservableObject {
                     flash("the checkpoint could not be inserted")
                     return
                 }
-                if splitAt < sourceLength {
+                // A caret at the very start asks for a blank checkpoint, not
+                // for the whole page to move and leave an empty one behind.
+                if splitAt > 0, splitAt < sourceLength {
                     let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
                     guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
                         _ = client.closeTab(id: created)

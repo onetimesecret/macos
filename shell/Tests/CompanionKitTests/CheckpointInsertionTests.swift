@@ -155,9 +155,40 @@ final class CheckpointInsertionTests: XCTestCase {
             prefix: "before\n", suffix: "after")
     }
 
-    func testMountedCaretAtStartMovesTheWholePage() throws {
-        try mountedSplit("whole page", selection: NSRange(location: 0, length: 0),
-            prefix: "", suffix: "whole page")
+    /// A caret at offset 0 inserts a blank checkpoint. Moving the whole
+    /// page would leave an empty source behind that the timeline no
+    /// longer lists, so nothing moves.
+    func testMountedCaretAtStartInsertsABlankCheckpointAndMovesNothing() throws {
+        let model = try makeModel()
+        let source = try seed("whole page", in: model)
+        let order = model.tabs.map(\.id)
+        let roll = try mountRoll(model)
+        defer { unmount(roll) }
+        let editor = try XCTUnwrap(roll.stack.editor)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        model.newPage()
+        let inserted = try assertInsertion(
+            in: model, after: source, previousOrder: order, prefix: "whole page", suffix: "")
+        XCTAssertEqual(model.viewStates.carets[source.sheet], NSRange(location: 0, length: 0))
+        XCTAssertEqual(model.viewStates.carets[inserted.sheet], NSRange(location: 0, length: 0))
+        roll.stack.update(projection: model.timeUnits, selectedPage: inserted.sheet, readOnly: false)
+        XCTAssertEqual(roll.coordinator.currentSheet, inserted.sheet)
+        XCTAssertEqual(editor.string, "")
+        XCTAssertEqual(
+            roll.stack.laidOut.compactMap { $0.header.pageIdentity },
+            model.timeUnits.units.flatMap(\.pageIDs))
+    }
+
+    func testSavedCaretAtStartWithoutAnEditorMovesNothing() throws {
+        let model = try makeModel()
+        let source = try seed("whole page", in: model)
+        let order = model.tabs.map(\.id)
+        XCTAssertNil(model.activeEditor)
+        model.viewStates.saveCaret(NSRange(location: 0, length: 0), for: source.sheet)
+        model.newPage()
+        try assertInsertion(
+            in: model, after: source, previousOrder: order, prefix: "whole page", suffix: "")
+        XCTAssertEqual(model.viewStates.carets[source.sheet], NSRange(location: 0, length: 0))
     }
 
     func testMountedCaretAtEndInsertsABlankCheckpoint() throws {
