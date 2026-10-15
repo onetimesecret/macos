@@ -42,8 +42,8 @@ RECIPROCAL_FIELDS = {
 ADR_FILE = re.compile(r"^(\d{4})-(?:[a-z0-9]+-)*[a-z0-9]+\.md$")
 TITLE = re.compile(r"^# ADR-(\d{4}): \S")
 # An optional first line naming the file's own path, as in
-# "# docs/adr/0035-slug.md". It is a header comment above the frontmatter,
-# not the record's title.
+# "# docs/adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md".
+# It is a header comment above the frontmatter, not the record's title.
 FILE_HEADER = re.compile(r"^#[ \t]+(\S+\.md)[ \t]*$")
 # A canonical metadata bullet: "- **Field:** value", value optionally on
 # the following lines.
