@@ -60,7 +60,7 @@ Primary source locations:
 
 - `shell/Sources/CompanionKit/PageModel.swift:723-975`
 - `shell/Sources/CompanionKit/PageModel.swift:1480-1556`
-- `shell/Sources/CompanionKit/PageModel.swift:6749-6786`
+- `shell/Sources/CompanionKit/PageModel.swift:6834-6882`
 - `shell/Sources/CompanionKit/SyncController.swift:4-43`
 - `shell/Sources/CompanionKit/SyncController.swift:83-91`
 - `shell/Sources/CompanionKit/SyncController.swift:147-208`
@@ -287,7 +287,7 @@ Automatic paste fencing currently remains storable while language detection is d
 
 ### Connection validation
 
-Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6751-6767`.
+Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:6841-6853`.
 
 The API token and non-secret connection fields require a defined transaction outcome when one persistence operation succeeds and the other fails.
 
