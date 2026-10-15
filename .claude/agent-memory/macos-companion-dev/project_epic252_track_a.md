@@ -39,12 +39,13 @@ for review fixes; shell only.
   name and note in it), finished on the same branch at app 0.34.0; see
   [[issue170-247-sealed-fragment-core]]. Every new editor route stands
   aside on `answersChords` while a rename field or the note holds the
-  keys (ADR-0046). None of the epic's hand procedures (rename in place,
+  keys (Law 0007's keys row). None of the epic's hand procedures (rename in place,
   sealed zones and note, sealed fragment) has been run.
 
 - Phase 4 (security review F1 to F3, critic W01 to W26) closed on
   2026-10-14 at app 0.35.0, companion-core 0.32.0, companion-ffi 0.40.0,
-  with ADR-0052 to ADR-0054. Every unrun hand check in a law row reads
+  with drafts ADR-0052 to ADR-0054, withdrawn 2026-10-14 and now Law
+  0001's expiry, copy, cut and drag rows. Every unrun hand check in a law row reads
   `owed: hand check, [procedure]`; keep that form. Still open at the
   close: the Linux CI lane was audited by reading only (ring needs a
   Linux C compiler here; `cargo clippy --target x86_64-unknown-linux-gnu
@@ -56,7 +57,8 @@ for review fixes; shell only.
   a sentinel the page does not own, so a page holding an object stops
   reaching its peers (client protocol 10.31, Law 0001 sync move
   amendment); the `TwoPages` tests in store.rs pin it and must change
-  when objects travel. The ADR-0052 gate now covers sync:
+  when objects travel. The deadline gate (Law 0001's expiry row) now
+  covers sync:
   `export_document_updates`, `perform_ceremony` and `ceremony_due` read
   through `readable_sheet`, the sweep withdraws a due or gone page's
   unsealed ops, a device stays out of a ballot for its due page. The
@@ -78,7 +80,8 @@ for review fixes; shell only.
   drag test must check `dropRoute == .ink` before any
   `performDragOperation`. `SealedFragment.anyBuildsItem` knows the
   release and debug type for the own copy check and the drop; reading
-  an envelope stays per build. ADR-0055 records the handle's open hand.
+  an envelope stays per build. The sealed row spec's Pointer and image
+  records the handle's open hand.
   `citecheck.py` resolves relative citations such as
   `(../../shell/...swift:N)` since phase 6 unit 2.
 - Phase 6 unit 1 (2026-10-14): `Sheet::next_event` answers now once

@@ -1,12 +1,14 @@
 ---
 name: issue241-243-sealed-name-note-core
-description: Epic 252 Track B core (#241 name, #242 NAME=value, #243 note) landed 2026-10-13 under ADR-0043; where the seams are, what the shell tickets still owe, and the traps in the tests
+description: Epic 252 Track B core (#241 name, #242 NAME=value, #243 note) landed 2026-10-13 under draft ADR-0043, now ADR-0043 (proposed) and the sealed objects core interface; where the seams are, what the shell tickets still owe, and the traps in the tests
 metadata:
   type: project
 ---
 
 Built on feature/editing-seals 2026-10-13, companion-core 0.28.0 and
-companion-ffi 0.36.0, recorded in ADR-0043.
+companion-ffi 0.36.0, recorded in draft ADR-0043 (withdrawn 2026-10-14).
+Its decision is ADR-0043 (proposed); the routes, refusal codes and
+bytes at rest are docs/development/sealed-objects-core-interface.md.
 
 - Name and note live on `SealedChip` (`name`, `note: Option<Note>`,
   `crates/core/src/note.rs`). The rule is `judge_name` in sheet.rs;

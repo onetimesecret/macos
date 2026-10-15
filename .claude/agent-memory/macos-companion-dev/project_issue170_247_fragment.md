@@ -1,13 +1,14 @@
 ---
 name: issue170-247-sealed-fragment-core
-description: Issues 170 and 247 built 2026-10-13 under ADR-0047 to ADR-0054, app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the closed ⇧⌘V own copy trap and the offer's wait, print with no path, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names, a nil control view under the drag image, drop to seal reading the real drag board)
+description: Issues 170 and 247 built 2026-10-13 under drafts ADR-0047 to ADR-0054 (withdrawn 2026-10-14; now ADR-0045, ADR-0046 and Law 0001's rows), app 0.34.0; the deadline gate (readable_sheets) and the shell's settle on refusal, on wake and before AppKit gives text out; copy and cut refuse past an envelope cap with a line naming the limit; the move between pages wired through one dropRoute, this app's ink never sealed, drops exempt their own source from the key holder check; paste and the slot refuse several stretches, an unreadable item pastes as unreadable, a refusal settles only when an event was due; the seams, all eight units (copy, cut and slot, paste, two press removal, drags, decrypted drag, services), the closed ⇧⌘V own copy trap and the offer's wait, print with no path, and the traps (stood flag, per chip death records, rollback hook, no general pasteboard in tests, in-process provider reentry, legacy pasteboard type names, a nil control view under the drag image, drop to seal reading the real drag board)
 metadata:
   type: project
 ---
 
 Built on feature/editing-seals 2026-10-13: companion-core 0.29.0 (#170)
 and 0.30.0 (#247), companion-ffi 0.38.0, companion-pasteboard 0.4.0,
-app 0.33.0. Decisions in ADR-0047; Law 0001 rows cite the tests. No
+app 0.33.0. Decisions in draft ADR-0047, now ADR-0045 and ADR-0046
+(proposed) and Law 0001's rows, which cite the tests. No
 editor UI was built: every row's editor half is owed to issue 170.
 
 Seams for the editor half (all page ids, all refuse a file id):
@@ -35,7 +36,8 @@ Seams for the editor half (all page ids, all refuse a file id):
   A decrypted drag dropped on our own page meets drop to seal, which
   reads the drag board core side and fires the provider: decide it.
 - Slot: `activeCut()` (page and faces) and `pasteActiveCut(sheet:range:)`;
-  ADR-0047 point 12 makes it a standing line under the page with a
+  the sealed row spec's clipboard slot makes it a standing line under
+  the page with a
   Place button.
 - ⌘Z after a removal now reattaches. The two presses and the line's
   Undo are built (shell unit 5, `SealedRemovalTests`): see below.
@@ -63,17 +65,20 @@ Seams for the editor half (all page ids, all refuse a file id):
   build's copy as external text and still offers to seal it.
   Mutation test runs are refused by the auto mode classifier.
 
-- Core guards (unit 2, ADR-0048 and ADR-0049, core 0.31.1, ffi 0.39.0):
+- Core guards (unit 2, Law 0001's expiry and paste rows, core 0.31.1,
+  ffi 0.39.0):
   paste, slot, move and clone refuse a page past its deadline (nil,
   nothing changed); a paste naming an object first runs `expire_due`, and
   `PlacedFragment.pagesExpired` counts the pages it took. So every
   paste, move and clone route must `markDirty()` then `refresh()`, as
   `settleCoreEvent` does, or a swept page stays on screen until the
   timer. An envelope over 8 MiB, over 1024 refs, or naming one UUID
-  twice is unreadable. ADR-0052 (phase 4, core 0.32.0, ffi 0.40.0)
-  replaced ADR-0048's consequence that copy and cut still read a due page.
+  twice is unreadable. The deadline gate (phase 4, core 0.32.0, ffi
+  0.40.0; draft ADR-0052, now Law 0001's expiry row) replaced draft
+  ADR-0048's consequence that copy and cut still read a due page.
 
-- Envelope caps (ADR-0053, phase 4): copy and cut ask the parse's own
+- Envelope caps (Law 0001's copy and cut rows, phase 4): copy and cut
+  ask the parse's own
   `EnvelopeCap::passed` before any buffer and return
   `Result<Copied, CopyRefusal>`; past a cap nothing is written, deleted
   or detached. The FFI answers `{"error": "tooLarge" | "tooManyObjects",
@@ -87,7 +92,8 @@ Seams for the editor half (all page ids, all refuse a file id):
   chips one FFI call at a time takes about 21 s in a debug test, so seam
   tests use the 8 MiB length cap; the store seals 1026 in well under 1 s.
 
-- Deadline gate (ADR-0052): `SheetStore::readable_sheets` is the one
+- Deadline gate (Law 0001's expiry row; the core interface's deadline
+  gate): `SheetStore::readable_sheets` is the one
   accessor for any route that gives a page out; it asks `Sheet::is_due`,
   the sweep's own predicate. `chip_home` goes through it, so every
   `chip_home` caller (note undo names, `finish_note_editing_group`)
@@ -109,7 +115,7 @@ Seams for the editor half (all page ids, all refuse a file id):
   page with no sweep; ids re-mint densely, so a one page fixture keeps
   its ids (assert it). Mutation checks by Edit ran unrefused.
 
-- Move between pages (ADR-0054, phase 4, core and seam only):
+- Move between pages (Law 0001's drag row, phase 4, core and seam only):
   `SheetStore::move_range_to` / `companion_sheet_move_range_to` /
   `client.moveRange(sheet:range:toSheet:at:)`. The source deletes and
   settles first, then the shared `stand_plan` (which `place` also
@@ -167,7 +173,7 @@ Seams for the editor half (all page ids, all refuse a file id):
   one item (`SealedFragment.pasteboardItem()`); the `draggedCell` delegate
   sends a drag starting on an object there. Own drop: `dropPageDrag` to
   `PageModel.dropRange` (core move or clone). Another page: the core
-  move between pages (see the ADR-0054 paragraph above); both check the
+  move between pages (see the move between pages paragraph above); both check the
   `(document, generation)` stamp. `dragOperation(for:type:)` feeds
   AppKit's drop caret (unobserved). A drag whose source is the page with
   no `pageDrag` still falls to `super.performDragOperation`; never make
@@ -182,7 +188,8 @@ Seams for the editor half (all page ids, all refuse a file id):
   offscreen pixels of two objects differing only in contents.
 
 - Decrypted drag is built (shell unit 7, `SealedDecryptedDragTests`,
-  ADR-0050 and ADR-0051): `DecryptedDrag` is the session's source and
+  Law 0001's decrypted drag row and the sealed row spec's handle):
+  `DecryptedDrag` is the session's source and
   the item's provider; `Coordinator.beginDecryptedDrag(at:)` makes both;
   `InkTextView.mouseDown` sends a first plain press on a drawn handle
   (`SealedBlockCell.decryptedDragRect`) to `trackDecryptedDrag`. Probed
