@@ -296,9 +296,8 @@ impl SealedChip {
         }
     }
 
-    /// A clone under a new identity (Law 0001, sealed fragment representation):
-    /// the payload copied core-side at its exact size, with no receipt, name or
-    /// note.
+    /// A clone under a new identity: the payload copied core-side at its exact size, with
+    /// no receipt, name or note; resolution then sets the envelope's (Law 0001, sealed fragment).
     pub(crate) fn duplicate(&self, id: ChipId) -> Self {
         let mut clone = match self.meta {
             ChipMeta::Text { .. } => Self::text(
