@@ -152,7 +152,8 @@ the mechanical excerpt and the size class on the row under them.
   zones, name, `=` and value, which act on the first click; a plain
   click outside the bottom row still only selects, and an unnamed block
   keeps this decision whole
-  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
+  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  note amendment and its zone rows).
 - **D-41 (fixed)** The menu, in the design's words and order:
 
   ```text
@@ -176,9 +177,9 @@ the mechanical excerpt and the size class on the row under them.
   `BundledKeymapTests`.
   *Amended 2026-10-13:* the menu gains *Copy name*, *Copy name=value,
   decrypted*, *Name…* or *Rename…* and *Note…* or *Edit note…*, in the
-  order and with the unnamed variants that
-  [ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
-  records. The chord stays on *Copy decrypted contents*.
+  order and with the unnamed variants that the
+  [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)
+  records under The object's menu. The chord stays on *Copy decrypted contents*.
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the

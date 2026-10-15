@@ -57,7 +57,7 @@ only between round trips.
 | Step | Code | Rule |
 | --- | --- | --- |
 | 1 | `ensure_access` | refresh if no access token (§4.2); a failure ends the turn |
-| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (ADR-0052) or gone queues no ops, and its unsealed ops are withdrawn (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`); its expiry, hold and marker still queue |
+| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (Law 0001, expiry row) or gone queues no ops, and its unsealed ops are withdrawn (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`); its expiry, hold and marker still queue |
 | 3 | `tick` | abandon a ballot open 60 s (`BALLOT_PATIENCE_MS`, relay-protocol §5; §7.7) |
 | 4 | `publish_round` | if `PUBLISH_INTERVAL_MS` (2 s, relay-protocol §8) has passed, anything is queued or in flight, and no frame of this device's for the chain's epoch waits (§4.4) |
 | 5 | `fetch_request` | long poll, `wait` at most 25 s (`LONG_POLL_WAIT_S`, relay-protocol §8; §4.5) |

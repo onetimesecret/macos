@@ -305,7 +305,9 @@ D-40 and D-41.
 *Amended 2026-10-13:* a named object's menu gains *Copy name* and *Copy
 name=value, decrypted*, and every object's gains *Name…* or *Rename…*
 and *Note…* or *Edit note…*
-([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
+([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and note
+amendment; the order is the
+[sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)'s).
 
 After a decrypted copy, one line confirms the boundary crossing with the
 core's interval: `copied decrypted contents — small. the clipboard
@@ -409,7 +411,8 @@ in plain; the fragment adds order, not payload exposure.
   *Amended 2026-10-13:* a named block's bottom row carries three copy
   zones, each also in the object's menu, and a click on one copies;
   outside the bottom row a click still only selects
-  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
+  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  note amendment and its zone rows).
 - **D-27 (fixed)** Sealed content is a full-measure block, not an inline
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
   with a lock over the mechanical excerpt, the size class right-aligned
@@ -426,7 +429,8 @@ in plain; the fragment adds order, not payload exposure.
   *Amended 2026-10-13:* a named block's bottom row reads
   `NAME=excerpt`, and its three copy zones show a pill and their
   consequence under the pointer before a click
-  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
+  (the [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)'s
+  named row).
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
   operations act on the whole object; the caret never lands inside it
@@ -904,6 +908,6 @@ moved a decision.
   D-19, issue 172, resolved 2026-09-16).
 - 2026-10-14, D-30's *Owed* clause: met under issue 170. A chip the
   page stops showing is detached, not zeroized
-  ([ADR-0047](../../adr/0047-the-sealed-fragment-the-detached-store-and-decrypted-drag.md)
-  point 4), so ⌘Z stands the same object again; Law 0001's two
+  ([ADR-0046](../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
+  point 1, proposed), so ⌘Z stands the same object again; Law 0001's two
   backspace rows cite the tests. The clause stays as written.
