@@ -416,6 +416,32 @@ final class PadModelTests: XCTestCase {
         XCTAssertTrue(model.storage(for: page) === ink)
         XCTAssertEqual(ink.string, "keep this ink")
     }
+    func testSortMenuChoicesSetTheRequestedOrderWithoutCyclingOtherPads() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let first = try XCTUnwrap(model.createPad(named: "First"))
+        model.newPage()
+        let date = model.dateKey(forDayBucket: 0)
+        XCTAssertFalse(date.isEmpty)
+        model.setDaySort(.reverseChronological)
+        model.setCheckpointSort(.reverseChronological, dayBucket: 0)
+        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .reverseChronological)
+        model.setCheckpointSort(.natural, dayBucket: 0)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .natural)
+        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
+
+        let second = try XCTUnwrap(model.createPad(named: "Second"))
+        model.newPage()
+        model.setDaySort(.chronological)
+        model.setCheckpointSort(.chronological, dayBucket: 0)
+        XCTAssertEqual(model.pads.daySortDirection(for: second), .chronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: second, onDate: date), .chronological)
+        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
+        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .natural)
+    }
+
     func testPageExpiryPrunesDateOrderButRetainsSurvivingTabOwnership() throws {
         let model = isolatedModel(defaults: try defaults())
         model.loadStateIfNeeded()
@@ -446,32 +472,6 @@ final class PadModelTests: XCTestCase {
         try "hello".write(to: file, atomically: true, encoding: .utf8)
         addTeardownBlock { try? FileManager.default.removeItem(at: file) }
         model.openFile(at: file)
-    func testSortMenuChoicesSetTheRequestedOrderWithoutCyclingOtherPads() throws {
-        let model = isolatedModel(defaults: try defaults())
-        model.loadStateIfNeeded()
-        model.pads.isEnabled = true
-        let first = try XCTUnwrap(model.createPad(named: "First"))
-        model.newPage()
-        let date = model.dateKey(forDayBucket: 0)
-        XCTAssertFalse(date.isEmpty)
-        model.setDaySort(.reverseChronological)
-        model.setCheckpointSort(.reverseChronological, dayBucket: 0)
-        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .reverseChronological)
-        model.setCheckpointSort(.natural, dayBucket: 0)
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .natural)
-        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
-
-        let second = try XCTUnwrap(model.createPad(named: "Second"))
-        model.newPage()
-        model.setDaySort(.chronological)
-        model.setCheckpointSort(.chronological, dayBucket: 0)
-        XCTAssertEqual(model.pads.daySortDirection(for: second), .chronological)
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: second, onDate: date), .chronological)
-        XCTAssertEqual(model.pads.daySortDirection(for: first), .reverseChronological)
-        XCTAssertEqual(model.pads.checkpointSortDirection(for: first, onDate: date), .natural)
-    }
-
         let path = try XCTUnwrap(model.activeFile?.path)
         XCTAssertEqual(model.pads.owner(ofFile: path), pad)
         _ = model.closeActiveFile()

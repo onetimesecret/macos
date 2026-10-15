@@ -348,6 +348,11 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(TimeRailView.width, TimeRailView.width(experimental: false))
         XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: false).contains("110 points"))
         XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: true).contains("150 points"))
+        for experimental in [false, true] {
+            let caption = GeneralSettingsView.pageLayoutCaption(experimental: experimental)
+            XCTAssertTrue(caption.contains("older blank pages are hidden"))
+            XCTAssertFalse(caption.contains("counted"))
+        }
     }
 
     func testPadLocalizedFormatsKeepNamesAndPathsLiteral() {
@@ -370,11 +375,6 @@ final class PadPickerTests: XCTestCase {
         let otherPadPages = Set(model.navigationTabs.compactMap(\.pageID))
         let namedPad = try XCTUnwrap(model.createPad(named: "Familia"))
         model.activatePad(namedPad)
-        for experimental in [false, true] {
-            let caption = GeneralSettingsView.pageLayoutCaption(experimental: experimental)
-            XCTAssertTrue(caption.contains("older blank pages are hidden"))
-            XCTAssertFalse(caption.contains("counted"))
-        }
         for text in ["First checkpoint", "Second checkpoint", "Third checkpoint"] {
             model.newPage()
             let page = try XCTUnwrap(model.selectedPageID)
