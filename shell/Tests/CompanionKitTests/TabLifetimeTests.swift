@@ -398,7 +398,7 @@ final class TabLifetimeTests: XCTestCase {
     }
 
     /// The event timer does not count sleep, so the system's wake settles as the
-    /// timer would: a page that came due asleep goes at once, with its write armed (ADR-0052).
+    /// timer would: a page that came due asleep goes at once, with its write armed (Law 0001, expiry row).
     func testAWakeSettlesAPageThatCameDueWhileTheMachineSlept() throws {
         let wake = NotificationCenter()
         let model = try makeModel(wake: wake)

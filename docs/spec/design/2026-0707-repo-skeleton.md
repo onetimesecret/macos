@@ -1,19 +1,24 @@
-# docs/spec/design/07-repo-skeleton.md
+# docs/spec/design/2026-0707-repo-skeleton.md
 ---
 
 # Repo Skeleton — Initialization Prescription
 
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
+
 How to initialize the application repository, written before doing it.
 This is a prescription, not implementation: executing it is the first act
 of milestone 2. Everything here is chosen to be cheap now and hard to
-retrofit later — the same logic as the accessibility commitments in doc 05.
+retrofit later — the same logic as the accessibility commitments in [Technical direction](2026-0707-technical-direction.md).
 
 ## Ground rules
 
 - **A new repository, not this one.** The companion is standalone-useful
   and independently versioned; it does not live in the web app's monorepo.
   Initialize as `onetimesecret/macos-companion` — a deliberately unbranded
-  name, because the product name is unresolved (doc 06 §8) and GitHub
+  name, because the product name is unresolved ([Open questions](2026-0707-open-questions.md) §8) and GitHub
   renames redirect. The product name must appear only as a UI string and
   a bundle display name, never as an identifier (crate names, bundle id,
   repo name), so the eventual rename is a one-file change.
@@ -42,7 +47,7 @@ macos-companion/
 │   └── pasteboard/          # NSPasteboard adapter (objc2) — macOS-only
 ├── shell/                   # empty until ADR-0002 (the milestone-2 decision)
 ├── spikes/
-│   ├── tauri-panel/         # the two-way spike, doc 05 — disposable
+│   ├── tauri-panel/         # the two-way spike — disposable
 │   └── swift-panel/         #   by construction, excluded from workspace
 ├── docs/
 │   ├── spec/                # imported from this repo
@@ -59,7 +64,7 @@ macos-companion/
 └── CHANGELOG.md             # Keep a Changelog, seeded with [Unreleased]
 ```
 
-One refinement over the doc 05 diagram: the pasteboard adapter is its own
+One refinement over the [Technical direction](2026-0707-technical-direction.md) diagram: the pasteboard adapter is its own
 crate rather than a module of `core`. This keeps `core` and `ots-client`
 free of macOS dependencies, so the crates that hold all the logic build
 and test on cheap Linux CI runners — the macOS runner is reserved for
@@ -75,7 +80,7 @@ and test on cheap Linux CI runners — the macOS runner is reserved for
   surface is auditable by crate boundary, not by grep.
 - **`panic = "unwind"` in release, on purpose.** `panic = "abort"` is the
   usual size win, but aborting skips `Drop` — and zeroize-on-drop *is* the
-  security posture (doc 05). Unwinding panics scrub buffers on the way
+  security posture ([Technical direction](2026-0707-technical-direction.md)). Unwinding panics scrub buffers on the way
   down. Record this in the manifest as a comment so nobody "optimizes" it
   away.
 - **Release profile:** `lto = "thin"`, `strip = "symbols"`,
@@ -101,7 +106,7 @@ Two lanes in one workflow, both required:
 
 Not in CI at init, recorded as future jobs in the workflow file as
 comments: signing/notarization (a release-engineering ADR of its own) and
-the frugality-budget assertions from doc 05, which become measurable only
+the frugality-budget assertions from [Technical direction](2026-0707-technical-direction.md), which become measurable only
 once a binary exists.
 
 ## Governance files
@@ -109,9 +114,9 @@ once a binary exists.
 - **LICENSE:** MIT, same as the parent project.
 - **SECURITY.md:** no parallel process — point at Onetime Secret's
   existing disclosure channel, with a note that memory-hygiene claims
-  (doc 05) are explicitly in scope for reports.
+  ([Technical direction](2026-0707-technical-direction.md)) are explicitly in scope for reports.
 - **CONTRIBUTING.md:** short. Spec-first (changes to behaviour start in
-  `docs/spec/`), decisions land as ADRs, anti-goals (doc 01) are the
+  `docs/spec/`), decisions land as ADRs, anti-goals ([Problem space](2026-0707-problem-space.md)) are the
   review bar for feature PRs.
 - **README.md:** states plainly that this is a design-first project with
   no releases yet, links the spec's reading order, and repeats the
@@ -123,7 +128,7 @@ once a binary exists.
 consequences, **eject triggers** — the observable conditions under which
 the decision gets revisited. Two ADRs exist at init:
 
-- **ADR-0001, accepted:** UI-agnostic Rust core + thin shell (doc 05's
+- **ADR-0001, accepted:** UI-agnostic Rust core + thin shell ([Technical direction](2026-0707-technical-direction.md)'s
   architecture shape) — the one decision milestone 1 actually made.
 - **ADR-0002, proposed & empty:** shell selection. Filled in only after
   the two-way panel spike; `spikes/` exists so the evidence has a home

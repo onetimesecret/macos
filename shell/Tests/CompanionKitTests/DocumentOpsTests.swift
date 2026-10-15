@@ -506,7 +506,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     }
 
     func testTheChipMenuOffersPlaintextByName() throws {
-        // D-41's order as ADR-0042 extends it; nil is a separator.
+        // D-41's order as Law 0001's presentation invariants extend it; nil is a separator.
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
             [
@@ -526,7 +526,7 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true, kind: "text")[3...4],
             ["Name", "Edit Note…"])
-        // The core composes `NAME=value` for text alone (ADR-0043 point 7).
+        // The core composes `NAME=value` for text alone (Law 0001, `=` zone row).
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "image"),
             [
@@ -658,7 +658,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     func testPuttingARemovedChipsAttachmentBackReattachesIt() throws {
         let face = try XCTUnwrap(sealThenRemove(), "the seal left no chip")
         // The attachment put back travels as a chip op, which a detached
-        // object of this page answers (ADR-0047).
+        // object of this page answers (ADR-0046 point 1).
         storage.insert(
             InkEditorView.Coordinator.chipString(
                 ChipInfo(

@@ -1,9 +1,9 @@
 import AppKit
 
-/// The sealed fragment on a pasteboard (ADR-0047): the shell writes the
+/// The sealed fragment on a pasteboard (ADR-0045 points 1 and 2): the shell writes the
 /// core's two representations and never reads the envelope.
 extension SealedFragment {
-    /// The private type as AppKit names it (ADR-0047 point 13).
+    /// The private type as AppKit names it (core interface, Type name).
     static var pasteboardType: NSPasteboard.PasteboardType {
         NSPasteboard.PasteboardType(CompanionClient.sealedFragmentType)
     }
@@ -11,6 +11,18 @@ extension SealedFragment {
     /// The first item carrying the private type, the one a paste reads.
     static func item(on pasteboard: NSPasteboard) -> NSPasteboardItem? {
         pasteboard.pasteboardItems?.first { $0.types.contains(pasteboardType) }
+    }
+
+    /// The private type as every build names it, release and debug.
+    static let everyBuildsType: Set<NSPasteboard.PasteboardType> = [
+        NSPasteboard.PasteboardType(CompanionClient.releaseSealedFragmentType),
+        NSPasteboard.PasteboardType(CompanionClient.debugSealedFragmentType),
+    ]
+
+    /// Whether an item on `pasteboard` carries any build's private type, a copy of this
+    /// app's own even where this build cannot read its envelope.
+    static func anyBuildsItem(on pasteboard: NSPasteboard) -> Bool {
+        pasteboard.pasteboardItems?.contains { !everyBuildsType.isDisjoint(with: $0.types) } ?? false
     }
 
     /// Several selected stretches of ink as one plain text, by line.

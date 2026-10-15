@@ -9,11 +9,11 @@ is off by default. Horizontal tabs keep their behaviour and their
 pixels. The sealed format, the tab model, the TTL ladder and the cap are
 untouched.
 Governs against:
-[`../../design/03-design-principles.md`](../../design/03-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
 (§1 comfortable being temporary, §4 frugal),
-[`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
 ("Sheets, several: tabs at the bottom", and the keyboard map),
-[`../../design/05-technical-direction.md`](../../design/05-technical-direction.md)
+[`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
 (the accessibility commitments and the frugality budget),
 [ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) (one
 persistent editor),
@@ -583,7 +583,7 @@ branch 6 is the one the stack exists for. Nothing is outstanding except
 the dogfood window ADR-0020 waits on.
 
 1. **The spec and the decision** (this document and ADR-0020). Docs only.
-   `docs/spec/design/04-interaction-model.md` is deliberately **not**
+   `docs/spec/design/2026-0707-interaction-model.md` is deliberately **not**
    amended: a prototype behind a default-off toggle has not earned an
    amendment to the standing interaction model, and the ADR carries its
    own acceptance gate and eject triggers instead.

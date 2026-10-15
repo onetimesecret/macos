@@ -27,7 +27,8 @@ objc2 = "0.6"
 # and to keep the unsafe surface auditable.
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSPasteboard",
-  # A decrypted drag's payload is written into the drag's item (ADR-0047).
+  # A decrypted drag's payload is written into the drag's item
+  # (ADR-0045 point 5, proposed).
   "NSPasteboardItem",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [

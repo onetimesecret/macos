@@ -1,14 +1,19 @@
-# docs/spec/design/03-design-principles.md
+# docs/spec/design/2026-0707-design-principles.md
 ---
 
 # Design Principles
 
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
+
 Six principles, each earning its place by settling real design arguments.
-Every one traces back to the problem restatement (doc 01) or an overlooked
-opportunity (doc 02). When two principles conflict, the earlier-numbered
+Every one traces back to the problem restatement ([Problem space](2026-0707-problem-space.md)) or an overlooked
+opportunity ([Overlooked opportunities](2026-0707-overlooked-opportunities.md)). When two principles conflict, the earlier-numbered
 one wins.
 
-Still binding as of interaction-model revision C (doc 04), with four
+Still binding as of interaction-model revision C ([Interaction model](2026-0707-interaction-model.md)), with four
 narrow, argued amendments recorded at the end of this document rather
 than silently edited into the principles: the ledger (amending §1),
 markdown headings, fenced code color, and visible-page preview rendering
@@ -61,7 +66,7 @@ surface).
 In resources: native code, memory-only store, tens of MB resident,
 near-zero idle CPU (expiry is scheduled, never polled), no network in the
 core loop, single-digit MB download. In attention: principle 2. In scope:
-the anti-goals of doc 01 are load-bearing; features that add retention,
+the anti-goals of [Problem space](2026-0707-problem-space.md) are load-bearing; features that add retention,
 organization, or engagement are declined by default.
 
 *Settles:* "Electron/Chromium bundle?" — No. "Auto-update daemon always
@@ -79,7 +84,7 @@ hold, when does each item die, and does anything ever leave this machine
 UI makes that boundary visible).
 No hidden state, no background capture, no surprise persistence. The
 codebase is open source so every one of these claims is auditable; the
-security posture (doc 05) exists to make them true, not merely plausible.
+security posture ([Technical direction](2026-0707-technical-direction.md)) exists to make them true, not merely plausible.
 
 *Settles:* "Capture clipboard automatically for convenience?" — Never;
 deliberate placement is the privacy model. "Cache concealed-secret
@@ -115,7 +120,7 @@ roll made several readable pages visible together.
 
 ### A. The ledger (amends §1, "Comfortable being temporary")
 
-§1 banned any "recently expired" bin. The ledger (doc 04) is the narrow
+§1 banned any "recently expired" bin. The ledger ([Interaction model](2026-0707-interaction-model.md)) is the narrow
 exception: a page that expires mid-thought takes typed context with it —
 the errand list around the secret, not just the secret. The ledger keeps
 the **dimmed ink of dead pages**, read-only, in memory, for the session
@@ -134,7 +139,7 @@ the bytes of the page never change; select-all-copy returns exactly what
 was typed. The principle's substance — no rich previews, no in-place
 reformatting, recognition over consumption — stands; a sheet the user
 deliberately typed structure into is allowed to show that structure.
-Inline emphasis stays out (doc 06).
+Inline emphasis stays out ([Open questions](2026-0707-open-questions.md)).
 
 ### C. Fenced code color (amends §3, "Content plays second fiddle")
 

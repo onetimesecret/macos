@@ -119,8 +119,8 @@ corrects an earlier one rather than editing it in place. See
 
 ## spec/
 
-The design work. `spec/design/` is the numbered milestone-1 series, from
-problem space through to open questions. `spec/feature/` holds one
+The design work. [`spec/design/`](spec/design/README.md) holds the dated
+milestone-1 documents and later design decision records. `spec/feature/` holds one
 directory per feature, each with a README and whatever side documents
 the design needed. `spec/icon/` covers icon and identity work. A feature
 directory is the home for a design in progress; conclusions firm enough
@@ -129,7 +129,7 @@ to constrain later work move into an ADR.
 ## Conventions
 
 - Kebab-case filenames for new documents.
-- Dated prefixes, `YYYY-MMDD`, for research reports and for side documents inside a feature spec. SOTO entries use `YYYY-MM-DD` per their own convention.
+- Dated prefixes, `YYYY-MMDD`, for design documents, research reports, and side documents inside a feature spec. SOTO entries use `YYYY-MM-DD` per their own convention.
 - Archive rather than delete. A superseded document keeps its history and its links.
 - ADRs follow [the template](adr/template.md) and [ADR conventions](adr/README.md); they can be reopened by a good argument.
 - Relative links between documents, so the tree reads the same on disk and on GitHub.

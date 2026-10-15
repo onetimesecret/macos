@@ -67,7 +67,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       below the note. Then open the name field on a block and drag the
       word onto the field. **Pass:** the cursor offers nothing over the
       note or the field and nothing lands in either, while the drop on
-      the page becomes a sealed block (ADR-0044). **Fail:** the word
+      the page becomes a sealed block (Law 0001, note and naming rows).
+      **Fail:** the word
       appears in the note or the field, or the drop on the page lands
       as plain ink.
 - [ ] **The page's own surface in the note.** Open a note and type
@@ -79,7 +80,7 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       slab and colours read as the same lines would on the page; the
       Return after `- monthly` starts `- `; the plain click puts the
       caret in the URL and the ⌘-click opens it in the browser
-      (ADR-0023, ADR-0045); the word lands in the note at its caret and
+      (ADR-0023, ADR-0044); the word lands in the note at its caret and
       the page is unchanged. **Fail:** the note reads as plain text, the
       list does not continue, a plain click opens the link, or the paste
       lands on the page.

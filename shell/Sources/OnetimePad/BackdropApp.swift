@@ -65,6 +65,9 @@ struct BackdropApp: App {
                         closeShortcut: appDelegate.shortcut(for: .pageClose)
                     )
                 }
+                // No Print… until a print that emits placeholders is designed
+                // (Law 0001, the export, print, share row); a later scene must not bring one.
+                CommandGroup(replacing: .printItem) {}
                 // These buttons establish the menu placement, labels and
                 // configured shortcuts. Once AppKit has built the menu,
                 // `routeUndoRedoThroughResponder` turns the items into
@@ -221,7 +224,7 @@ enum ManualLanguageChoiceTarget: Equatable {
     }
 
     /// Runs a choice: an editor's goes down the responder chain to whichever
-    /// surface holds the keys (ADR-0046), a file's render mode to the model.
+    /// surface holds the keys (Law 0007, keys row), a file's render mode to the model.
     @MainActor
     func choose(
         _ language: String,
@@ -1060,7 +1063,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The same, with a sender the answer reads, as Choose Language's
-    /// `CodeLanguageChoice` (ADR-0046).
+    /// `CodeLanguageChoice` (Law 0007, keys row).
     func sendToResponder(_ selector: Selector, carrying sender: Any?) {
         NSApp.sendAction(selector, to: nil, from: sender)
     }

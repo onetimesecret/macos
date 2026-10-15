@@ -50,7 +50,7 @@ it would demand key status the window was never given.
   `activeEditor` is nil synchronously and the focus call must defer to
   the next runloop turn. Anyone inlining `makeFirstResponder` at the
   create site reintroduces the beep.
-- docs/spec/design/04-interaction-model.md must name the third and fourth
+- docs/spec/design/2026-0707-interaction-model.md must name the third and fourth
   grants, or spec and behaviour diverge again the moment someone reads
   the law as exhaustive.
 - We give up type-to-create only where the window is unkeyed: a

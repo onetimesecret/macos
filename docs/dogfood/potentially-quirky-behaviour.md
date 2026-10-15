@@ -80,7 +80,7 @@ must be resolved before proceeding to #185–#190. The relevant implementation i
 Changing focus alone does **not** dismiss the surface:
 
 - `windowDidResignKey` only sets `holdsKeys = false`; it explicitly does not rest the surface: `shell/Sources/OnetimePad/BackdropWindowController.swift:697`.
-- `openSettings()` activates and shows Settings but does not call `model.rest()`: `shell/Sources/OnetimePad/BackdropApp.swift:771`.
+- `openSettings()` activates and shows Settings but does not call `model.rest()`: `shell/Sources/OnetimePad/BackdropApp.swift:1070`.
 - Consequently, opening Settings with `⌘,` can leave the surface raised and visible.
 
 Mouse-driven routes can behave differently:

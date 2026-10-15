@@ -96,7 +96,7 @@ pub enum DestinationClass {
     /// A one-time link.
     OneTimeLink,
     /// A decrypted drag's pasteboard item, written when a destination asks
-    /// (ADR-0012 Amendment 1, ADR-0047).
+    /// (ADR-0012 Amendment 1; Law 0001, decrypted drag row).
     Drag,
 }
 

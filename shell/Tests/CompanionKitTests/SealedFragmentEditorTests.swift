@@ -4,7 +4,7 @@ import XCTest
 @testable import CompanionKit
 
 /// The editor's half of the sealed fragment (Law 0001's copy and select all
-/// rows, ADR-0047): what the page's copy writes, on a pasteboard of the
+/// rows, ADR-0045): what the page's copy writes, on a pasteboard of the
 /// test's own, against the live core.
 @MainActor
 final class SealedFragmentEditorTests: XCTestCase {
@@ -17,9 +17,15 @@ final class SealedFragmentEditorTests: XCTestCase {
         let pasteboard: NSPasteboard
         let sheet: UInt64
         let chips: [UInt64]
+        let opened: OpenedLinks
     }
 
-    /// The envelope's documented shape (ADR-0047 point 1), read only here.
+    /// The links a page opened, recorded in place of the browser.
+    private final class OpenedLinks {
+        var urls: [URL] = []
+    }
+
+    /// The envelope's documented shape (core interface, Envelope, version 1), read only here.
     private struct Envelope: Decodable {
         let version: Int
         let cut: String?
@@ -58,12 +64,13 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertTrue(client.useMemoryPasteboardForTests())
         let pasteboard = NSPasteboard.withUniqueName()
         addTeardownBlock { pasteboard.releaseGlobally() }
+        let opened = OpenedLinks()
         let model = PageModel(
             formFactor: .backdrop, defaults: defaults,
             seams: .init(
                 stateDirectory: directory, client: client,
                 clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard,
-                writeCutFragment: writeCutFragment))
+                writeCutFragment: writeCutFragment, openURL: { opened.urls.append($0) }))
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -95,7 +102,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         drainMainQueue()
         return Page(
             model: model, coordinator: coordinator, textView: textView, field: field,
-            window: window, pasteboard: pasteboard, sheet: sheet, chips: chips)
+            window: window, pasteboard: pasteboard, sheet: sheet, chips: chips, opened: opened)
     }
 
     private func envelope(on pasteboard: NSPasteboard) throws -> Envelope {
@@ -159,7 +166,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// Ink alone writes plain text and no private type, so an in-app paste
-    /// keeps its ordinary path (ADR-0047 point 2).
+    /// keeps its ordinary path (ADR-0045 point 2).
     func testACopyOfInkAloneWritesPlainTextOnly() throws {
         let page = try makePage()
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))
@@ -327,7 +334,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// No service reaches the page, and the page writes nothing for one,
-    /// while a field or the note holds the keys (ADR-0046).
+    /// while a field or the note holds the keys (Law 0007, keys row).
     func testServicesStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         let board = NSPasteboard.withUniqueName()
@@ -360,6 +367,363 @@ final class SealedFragmentEditorTests: XCTestCase {
         drainMainQueue()
         XCTAssertTrue(page.textView.writeSelection(to: board, types: [legacy]))
         XCTAssertEqual(board.string(forType: .string), "ab \(placeholder) cd \(placeholder) ef")
+    }
+
+    // MARK: Share and Writing Tools
+
+    /// A secondary click near the view's top left corner, over ink and no object.
+    private func secondaryClick(in view: NSView) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: view.convert(NSPoint(x: 4, y: 4), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    /// A file over its own coordinator, as a mount over a file stands it; the view
+    /// holds its coordinator weakly, so the caller keeps both.
+    private func fileView(beside page: Page) -> (InkTextView, InkEditorView.Coordinator) {
+        let storage = NSTextStorage(string: "line one\nline two\n")
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 200, height: 200))
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        let file = InkTextView(
+            frame: NSRect(x: 220, y: 8, width: 200, height: 24), textContainer: container)
+        let coordinator = InkEditorView.Coordinator(model: page.model)
+        file.coordinator = coordinator
+        coordinator.textView = file
+        coordinator.currentSheet = CompanionClient.fileIDTag | 9_001
+        page.window.contentView?.addSubview(file)
+        return (file, coordinator)
+    }
+
+    /// The readers this machine's services may or may not add to a text menu, as items of
+    /// the test's own: Search With, Writing Tools, Look Up and Translate.
+    private func readerControls() -> [NSMenuItem] {
+        [
+            ("Search With Google", "_searchWithGoogleFromMenu:"),
+            ("Show Writing Tools", "showWritingTools:"),
+            ("Look Up “ab”", "_rvMenuItemAction:"),
+            ("Translate “ab”", "_rvMenuItemAction:"),
+        ].map { NSMenuItem(title: $0.0, action: Selector(($0.1)), keyEquivalent: "") }
+    }
+
+    /// The text menu AppKit builds over `view` on a base holding `readerControls()`, so a
+    /// control's item is there whatever the machine offers, and the view's filter meets it.
+    private func seededMenu(_ view: NSTextView) throws -> NSMenu {
+        let base = NSMenu()
+        readerControls().forEach(base.addItem)
+        let kept = view.menu
+        view.menu = base
+        defer { view.menu = kept }
+        return try XCTUnwrap(view.menu(for: secondaryClick(in: view)))
+    }
+
+    /// Whether `menu` holds every reader `readerControls()` seeds.
+    private func holdsEveryReaderControl(_ menu: NSMenu) -> Bool {
+        let titles = Set(menu.items.map(\.title))
+        return readerControls().allSatisfy { titles.contains($0.title) }
+    }
+
+    /// Share… builds its picker over the selection with the menu, before any gate is
+    /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
+    /// page's, a sealed name's and a note's text offer neither; nor Search With Google,
+    /// which hands the selection to the browser, nor the typing suggestions and inline
+    /// predictions made from the text around the caret as it moves. A file keeps them all.
+    /// Search With and Writing Tools come from this machine's services, so each menu is also
+    /// built on items of the test's own, which a file keeps and the others take out.
+    func testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.setSelectedRange(NSRange(location: 0, length: 4))
+        let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
+        XCTAssertTrue(fileMenu.items.contains(where: TextOffers.isShare), "the control: a file shares")
+        XCTAssertTrue(holdsEveryReaderControl(try seededMenu(file)), "the control: a file keeps them")
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        let pageSeeded = try seededMenu(page.textView)
+        XCTAssertFalse(pageMenu.items.contains(where: TextOffers.isShare), "the page shares")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        let name = try openNameField(page)
+        let nameMenu = try XCTUnwrap(name.menu(for: secondaryClick(in: name)))
+        let nameSeeded = try seededMenu(name)
+        XCTAssertFalse(nameMenu.items.contains(where: TextOffers.isShare), "the name shares")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        note.selectAll(nil)
+        let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
+        let noteSeeded = try seededMenu(note)
+        XCTAssertFalse(noteMenu.items.contains(where: TextOffers.isShare), "the note shares")
+        for menu in [pageMenu, nameMenu, noteMenu, pageSeeded, nameSeeded, noteSeeded] {
+            XCTAssertFalse(zip(menu.items, menu.items.dropFirst()).contains {
+                $0.isSeparatorItem && $1.isSeparatorItem
+            }, "Share left a doubled separator")
+        }
+
+        let surfaces = [
+            (pageMenu, "page"), (nameMenu, "name"), (noteMenu, "note"),
+            (pageSeeded, "page's seeded"), (nameSeeded, "name's seeded"), (noteSeeded, "note's seeded"),
+        ]
+        for (menu, surface) in surfaces {
+            XCTAssertFalse(menu.items.contains(where: TextOffers.isWebSearch), "the \(surface) searches")
+            XCTAssertFalse(menu.items.contains(where: TextOffers.isWritingTools), "the \(surface) writes")
+        }
+        XCTAssertTrue(file.isAutomaticTextCompletionEnabled, "the control: a file suggests")
+        for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
+            XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface) suggests")
+            view.toggleAutomaticTextCompletion(nil)
+            XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface)'s toggle")
+        }
+        file.toggleAutomaticDataDetection(nil)
+        XCTAssertTrue(file.isAutomaticDataDetectionEnabled, "the control: a file detects")
+        for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
+            XCTAssertFalse(view.isAutomaticDataDetectionEnabled, "the \(surface) detects")
+            view.toggleAutomaticDataDetection(nil)
+            XCTAssertFalse(view.isAutomaticDataDetectionEnabled, "the \(surface)'s toggle")
+        }
+
+        guard #available(macOS 15.0, *) else { return }
+        XCTAssertEqual(file.writingToolsBehavior, .default)
+        XCTAssertEqual(page.textView.writingToolsBehavior, .none, "the page")
+        XCTAssertEqual(note.writingToolsBehavior, .none, "the note")
+        XCTAssertEqual(name.writingToolsBehavior, .none, "the name")
+        XCTAssertEqual(file.inlinePredictionType, .default, "the control: a file predicts")
+        XCTAssertEqual(page.textView.inlinePredictionType, .no, "the page predicts")
+        XCTAssertEqual(note.inlinePredictionType, .no, "the note predicts")
+        XCTAssertEqual(name.inlinePredictionType, .no, "the name predicts")
+        fileCoordinator.currentSheet = page.sheet
+        XCTAssertEqual(file.writingToolsBehavior, .none, "a page mounted where a file stood")
+        XCTAssertFalse(file.isAutomaticTextCompletionEnabled, "a page mounted where a file stood")
+        XCTAssertEqual(file.inlinePredictionType, .no, "a page mounted where a file stood")
+        XCTAssertFalse(file.isAutomaticDataDetectionEnabled, "a page mounted where a file stood")
+    }
+
+    /// Look Up and Translate are built titled with the selection they hold, Speech reads it
+    /// out and Spelling and Grammar hands it to the spell server, so no gate at the click
+    /// can stop a menu held open past a deadline: a page's, a sealed name's and a note's
+    /// text menu offer none of them; a file keeps all. Look Up and Translate come from this
+    /// machine's services, so each menu is also built on items of the test's own.
+    func testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        func offers(_ menu: NSMenu) -> [String] {
+            var found: [String] = []
+            if menu.items.contains(where: TextOffers.isLookUpOrTranslate) { found.append("Look Up") }
+            if menu.items.contains(where: TextOffers.isSpeech) { found.append("Speech") }
+            if menu.items.contains(where: TextOffers.isSpelling) { found.append("Spelling") }
+            return found
+        }
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.setSelectedRange(NSRange(location: 0, length: 4))
+        let fileMenu = try XCTUnwrap(file.menu(for: secondaryClick(in: file)))
+        XCTAssertEqual(
+            offers(fileMenu).filter { $0 != "Look Up" }, ["Speech", "Spelling"],
+            "the control: a file offers them")
+        XCTAssertTrue(holdsEveryReaderControl(try seededMenu(file)), "the control: Look Up and Translate")
+
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        XCTAssertEqual(offers(pageMenu), [], "the page")
+        XCTAssertEqual(offers(try seededMenu(page.textView)), [], "the page's seeded")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        let name = try openNameField(page)
+        name.selectAll(nil)
+        let nameMenu = try XCTUnwrap(name.menu(for: secondaryClick(in: name)))
+        XCTAssertEqual(offers(nameMenu), [], "the name")
+        XCTAssertEqual(offers(try seededMenu(name)), [], "the name's seeded")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        note.selectAll(nil)
+        let noteMenu = try XCTUnwrap(note.menu(for: secondaryClick(in: note)))
+        XCTAssertEqual(offers(noteMenu), [], "the note")
+        XCTAssertEqual(offers(try seededMenu(note)), [], "the note's seeded")
+        for menu in [pageMenu, nameMenu, noteMenu] {
+            XCTAssertNotEqual(menu.items.first?.isSeparatorItem, true, "a separator led the menu")
+        }
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// Over a word continuous spelling marked, AppKit heads the menu with its guesses, two
+    /// Provide Feedback items, Ignore Spelling and Learn Spelling, by these actions on
+    /// macOS 27.2; the filter takes them with the submenu.
+    func testTheSpellingItemsOverAMisspelledWordLeaveWithTheSubmenu() {
+        let menu = NSMenu()
+        for action in [
+            "_changeSpellingFromMenu:", "_invokeProofreadingFeedbackThumbsUp:",
+            "_invokeProofreadingFeedbackThumbsDown:", "_ignoreSpellingFromMenu:",
+            "_learnSpellingFromMenu:",
+        ] {
+            menu.addItem(NSMenuItem(title: action, action: Selector((action)), keyEquivalent: ""))
+        }
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: ""))
+
+        TextOffers.removeSelectionReaders(from: menu)
+
+        XCTAssertEqual(menu.items.map(\.title), ["Cut"])
+    }
+
+    /// The spelling panel's Learn takes the word it shows to the spell server by
+    /// `NSSpellChecker` itself, which no text view's gate sees, so a panel held open past a
+    /// deadline would give a page's word out: a page, a note and a name never show it,
+    /// by Show Spelling and Grammar or by Edit's item for it. A file keeps the panel.
+    func testAPageANoteAndANameNeverShowTheSpellingPanel() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        let show = NSMenuItem(
+            title: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)),
+            keyEquivalent: "")
+        let panel = NSSpellChecker.shared.spellingPanel
+        let alpha = panel.alphaValue
+        panel.alphaValue = 0
+        defer {
+            panel.orderOut(nil)
+            panel.alphaValue = alpha
+        }
+        XCTAssertFalse(panel.isVisible)
+        func neverShows(_ view: NSTextView, _ surface: String) {
+            XCTAssertFalse(view.validateMenuItem(show), "the \(surface)'s Edit item")
+            view.showGuessPanel(nil)
+            XCTAssertFalse(panel.isVisible, "the \(surface) showed the panel")
+        }
+
+        neverShows(page.textView, "page")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        neverShows(try openNameField(page), "name")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        neverShows(try XCTUnwrap(page.coordinator.noteEditor?.textView), "note")
+        page.coordinator.noteEditor?.escape()
+        drainMainQueue()
+        XCTAssertNil(page.model.notice)
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        XCTAssertTrue(file.validateMenuItem(show), "the control: a file's Edit item")
+        file.showGuessPanel(nil)
+        XCTAssertTrue(panel.isVisible, "the control: a file shows the panel")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// With the panel up from a file, a page's Check Document Now and the panel's Find Next
+    /// would put a word of the page in it, so they stand aside; with it down they check.
+    /// The misspelling is the test's own.
+    func testAPagesSpellingCheckStandsAsideWhileThePanelIsUp() throws {
+        try SpellCheckerOnTheRunner.requireSpelling()
+        let page = try makePage()
+        page.textView.insertText("wrnog ", replacementRange: NSRange(location: 0, length: 0))
+        let start = NSRange(location: 0, length: 0)
+        let panel = NSSpellChecker.shared.spellingPanel
+        let alpha = panel.alphaValue
+        panel.alphaValue = 0
+        defer {
+            panel.orderOut(nil)
+            panel.alphaValue = alpha
+        }
+
+        panel.orderFront(nil)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertTrue(page.textView.answersChords, "the refusal must be the panel's")
+        page.textView.setSelectedRange(start)
+        page.textView.checkSpelling(nil)
+        XCTAssertEqual(page.textView.selectedRange(), start, "the page checked under the panel")
+
+        panel.orderOut(nil)
+        page.textView.checkSpelling(nil)
+        XCTAssertEqual(
+            page.textView.selectedRange(), NSRange(location: 0, length: 5),
+            "the control: with the panel down the check selects the misspelling")
+        XCTAssertFalse(panelShows("wrnog", in: panel), "the hidden panel kept the page's word")
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.string = "wrnog line"
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        file.setSelectedRange(start)
+        file.checkSpelling(nil)
+        XCTAssertTrue(panelShows("wrnog", in: panel), "the control: the hidden panel keeps a file's word")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// Whether any field of the spelling panel reads `word`.
+    private func panelShows(_ word: String, in panel: NSPanel) -> Bool {
+        func fields(in view: NSView) -> [NSTextField] {
+            ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(fields(in:))
+        }
+        return panel.contentView.map(fields(in:))?.contains { $0.stringValue == word } == true
+    }
+
+    /// A page's Transformations keep the three its rewrite carries round an object; the
+    /// conversions AppKit adds beside them, where an input source asks, leave the page's
+    /// menu, and a note's keeps them.
+    func testAPagesTransformationsAreTheThreeItsRewriteCarries() throws {
+        let page = try makePage()
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        let pageMenu = try XCTUnwrap(page.textView.menu(for: secondaryClick(in: page.textView)))
+        let transformations = { (menu: NSMenu) in
+            menu.items.compactMap(\.submenu).first {
+                $0.items.contains { $0.action == #selector(NSResponder.uppercaseWord(_:)) }
+            }?.items.compactMap(\.action).map(NSStringFromSelector)
+        }
+        XCTAssertEqual(
+            transformations(pageMenu), ["uppercaseWord:", "lowercaseWord:", "capitalizeWord:"])
+
+        let built = NSMenu()
+        let submenu = NSMenu()
+        for action in ["uppercaseWord:", "lowercaseWord:", "capitalizeWord:", "convertToFullWidth:"] {
+            submenu.addItem(NSMenuItem(title: action, action: Selector((action)), keyEquivalent: ""))
+        }
+        built.addItem(NSMenuItem(title: "Transformations", action: nil, keyEquivalent: ""))
+        built.items[0].submenu = submenu
+
+        TextOffers.removeUncarriedTransformations(from: built)
+
+        XCTAssertEqual(
+            transformations(built), ["uppercaseWord:", "lowercaseWord:", "capitalizeWord:"])
+    }
+
+    /// Continuous spelling reaches the spell server only through `checkTextInRange`, the
+    /// one method the asking views gate for it, so a change of AppKit's route fails here.
+    /// Its text is the test's own, never a page's.
+    func testContinuousSpellingChecksThroughTheOneGatedMethod() throws {
+        try SpellCheckerOnTheRunner.requireSpelling()
+        final class Checked: NSTextView {
+            var onCheck: (() -> Void)?
+            override func checkText(
+                in range: NSRange, types checkingTypes: NSTextCheckingTypes,
+                options: [NSSpellChecker.OptionKey: Any] = [:]
+            ) {
+                if checkingTypes & NSTextCheckingResult.CheckingType.spelling.rawValue != 0 {
+                    onCheck?()
+                }
+            }
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        let view = Checked(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        window.contentView?.addSubview(view)
+        XCTAssertTrue(window.makeFirstResponder(view))
+        view.isContinuousSpellCheckingEnabled = true
+        let checked = expectation(description: "a spelling check came through checkTextInRange")
+        checked.assertForOverFulfill = false
+        view.onCheck = { checked.fulfill() }
+
+        view.insertText("wrnog speling ", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        wait(for: [checked], timeout: 10)
     }
 
     // MARK: Select all
@@ -412,7 +776,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.model.noteText(chip: clone.chipId), "rotate monthly")
     }
 
-    // MARK: The keys' holder (ADR-0046)
+    // MARK: The keys' holder (Law 0007, keys row)
 
     /// While a field or the note holds the keys, the menu's Copy and Select
     /// All reach the holder, and the page's own routes write and select nothing.
@@ -618,7 +982,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, Cut reaches the holder, the
-    /// page cuts nothing and the slot's button places nothing (ADR-0046).
+    /// page cuts nothing and the slot's button places nothing (Law 0007, keys row).
     func testCutAndThePlaceStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         page.textView.setSelectedRange(NSRange(location: 3, length: 1))
@@ -863,7 +1227,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// A paste that swept a due page settles at once: the swept page leaves the
-    /// model's tabs without waiting for the timer (ADR-0048).
+    /// model's tabs without waiting for the timer (Law 0001, expiry row).
     func testAPasteThatSweepsADuePageSettlesAtOnce() throws {
         let page = try makePage()
         let client = page.model.coreClient
@@ -962,7 +1326,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
-    /// A core whose paste sweeps as one naming an object does (ADR-0048) and then
+    /// A core whose paste sweeps as one naming an object does (Law 0001, expiry row) and then
     /// refuses, as a body refusing partway leaves it.
     private final class SweepThenRefuseClient: CompanionClient, @unchecked Sendable {
         private(set) var pagesSwept: UInt64 = 0
@@ -1003,7 +1367,160 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.model.notice, PageModel.pasteRefusedLine)
     }
 
-    // MARK: Past an envelope cap (ADR-0053)
+    // MARK: The sealed paste and its offer
+
+    /// A core whose board always holds what a sealed paste could take, and which
+    /// counts the takes it is asked for rather than reading any board.
+    private final class SealWitness: CompanionClient, @unchecked Sendable {
+        private(set) var takes = 0
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func pasteboardHasContent() -> Bool { true }
+
+        override func sealFromPasteboard(
+            sheet: UInt64, at: UInt32, length: UInt32
+        ) -> (chip: ChipInfo?, cleared: Bool) {
+            takes += 1
+            return (nil, false)
+        }
+    }
+
+    /// ⇧⌘V as the bundled keymap binds it.
+    private func sealChord(in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "v",
+            charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+    }
+
+    /// A board holding this app's own copy or cut holds nothing to seal: no
+    /// offer is made, and ⇧⌘V and the offer's button take nothing and point at ⌘V.
+    func testThisAppsOwnCopyOnTheBoardOffersNothingToSeal() throws {
+        let client = SealWitness(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.announce(page.textView)
+        let caret = NSRange(location: 0, length: 0)
+
+        func offerAnotherAppsText() {
+            page.pasteboard.clearContents()
+            page.pasteboard.setString("another app's text", forType: .string)
+            page.model.refreshPasteboardOffer(from: .panel)
+            XCTAssertTrue(page.model.pasteboardOffer, "the control: another app's text is offered")
+        }
+
+        for act in ["copy", "cut"] {
+            offerAnotherAppsText()
+            page.textView.setSelectedRange(NSRange(location: 0, length: 4))
+            if act == "copy" { page.textView.copy(nil) } else { page.textView.cut(nil) }
+            XCTAssertNotNil(SealedFragment.item(on: page.pasteboard), "\(act) wrote no fragment")
+            let board = page.pasteboard.changeCount
+            let length = page.textView.textStorage?.length
+            let objects = chips(page).map(\.chipId)
+            page.textView.setSelectedRange(caret)
+
+            page.model.performSealedPaste?()
+            XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "\(act): the button")
+            XCTAssertFalse(page.model.pasteboardOffer, "\(act): the refused button's offer stood")
+            page.model.flash("before the chord")
+            XCTAssertTrue(
+                page.textView.performKeyEquivalent(with: try sealChord(in: page.window)), act)
+            XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "\(act): the chord")
+            page.model.refreshPasteboardOffer(from: .panel)
+            XCTAssertFalse(page.model.pasteboardOffer, "\(act): an offer was made over our own")
+
+            XCTAssertEqual(client.takes, 0, "\(act): the core was asked to take our own")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(act): the board was touched")
+            XCTAssertNotNil(SealedFragment.item(on: page.pasteboard), act)
+            XCTAssertEqual(page.textView.textStorage?.length, length, act)
+            XCTAssertEqual(chips(page).map(\.chipId), objects, act)
+        }
+
+        offerAnotherAppsText()
+        XCTAssertNil(page.model.sealPasteboard(replacing: caret))
+        XCTAssertEqual(client.takes, 1, "the control: another app's text goes to the core")
+    }
+
+    /// The private type a build other than this one writes, release or debug.
+    static var otherBuildsType: NSPasteboard.PasteboardType {
+        let other = CompanionClient.sealedFragmentType == CompanionClient.releaseSealedFragmentType
+            ? CompanionClient.debugSealedFragmentType : CompanionClient.releaseSealedFragmentType
+        return NSPasteboard.PasteboardType(other)
+    }
+
+    /// A copy another build of this app wrote is ours too: no offer, and ⇧⌘V and the
+    /// offer's button take nothing; this build reads no envelope from it, so ⌘V is AppKit's.
+    func testAnotherBuildsCopyOnTheBoardOffersNothingToSeal() throws {
+        let client = SealWitness(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.announce(page.textView)
+        let caret = NSRange(location: 0, length: 0)
+        let item = NSPasteboardItem()
+        XCTAssertTrue(item.setData(Data([1, 2, 3]), forType: Self.otherBuildsType))
+        XCTAssertTrue(item.setString("[sealed content · tiny]", forType: .string))
+        page.pasteboard.clearContents()
+        XCTAssertTrue(page.pasteboard.writeObjects([item]))
+        let board = page.pasteboard.changeCount
+        let length = page.textView.textStorage?.length
+
+        page.model.refreshPasteboardOffer(from: .panel)
+        XCTAssertFalse(page.model.pasteboardOffer, "an offer was made over another build's copy")
+        page.model.performSealedPaste?()
+        XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "the button")
+        page.model.flash("before the chord")
+        XCTAssertTrue(page.textView.performKeyEquivalent(with: try sealChord(in: page.window)))
+        XCTAssertEqual(page.model.notice, PageModel.ownCopySealLine, "the chord")
+        XCTAssertEqual(client.takes, 0, "the core was asked to take another build's copy")
+        XCTAssertEqual(page.pasteboard.changeCount, board, "the board was touched")
+        XCTAssertEqual(page.textView.textStorage?.length, length)
+
+        XCTAssertNil(SealedFragment.item(on: page.pasteboard), "this build read another's envelope")
+        page.textView.setSelectedRange(caret)
+        XCTAssertFalse(page.coordinator.pasteFragment(), "⌘V read another build's envelope")
+    }
+
+    /// While a field or the note holds the keys the offer's button seals nothing
+    /// and says why, as the slot's place does (Law 0007, keys row).
+    func testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let client = SealWitness(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.announce(page.textView)
+        page.pasteboard.clearContents()
+        page.pasteboard.setString("another app's text", forType: .string)
+        page.model.refreshPasteboardOffer(from: .panel)
+        XCTAssertTrue(page.model.pasteboardOffer, "the fixture made no offer")
+        let length = page.textView.textStorage?.length
+
+        func standsAside(_ holder: String) {
+            page.model.flash("before the press")
+            page.model.performSealedPaste?()
+            XCTAssertEqual(page.model.notice, PageModel.sealWaitsLine, holder)
+            XCTAssertEqual(client.takes, 0, "the button sealed under the \(holder)")
+            XCTAssertEqual(page.textView.textStorage?.length, length, holder)
+            XCTAssertTrue(page.model.pasteboardOffer, "the \(holder)'s wait withdrew the offer")
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        standsAside("field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        standsAside("note")
+
+        note.escape()
+        drainMainQueue()
+        XCTAssertTrue(page.window.firstResponder === page.textView)
+        page.model.performSealedPaste?()
+        XCTAssertEqual(client.takes, 1, "the button did not come back")
+    }
+
+    // MARK: Past an envelope cap (Law 0001, copy and cut rows)
 
     /// A copy, cut or drag whose envelope would pass a cap writes, deletes and detaches
     /// nothing, an earlier cut stands, and the line names the core's own limit.
@@ -1041,7 +1558,74 @@ final class SealedFragmentEditorTests: XCTestCase {
             "a selection can hold at most 1024 sealed objects, so nothing was cut.")
     }
 
-    // MARK: A page past its deadline (ADR-0052)
+    /// A core answering the object count cap for every copy and cut once asked to,
+    /// since sealing 1025 objects through the seam is too slow for a unit test.
+    private final class ObjectCapClient: CompanionClient, @unchecked Sendable {
+        var capped = false
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func copyFragmentResult(
+            sheet: UInt64, range: NSRange
+        ) -> Result<SealedFragment, FragmentRefusal> {
+            capped ? .failure(.tooManyObjects(limit: 1_024))
+                : super.copyFragmentResult(sheet: sheet, range: range)
+        }
+
+        override func cutFragmentResult(
+            sheet: UInt64, range: NSRange
+        ) -> Result<SealedFragment, FragmentRefusal> {
+            capped ? .failure(.tooManyObjects(limit: 1_024))
+                : super.cutFragmentResult(sheet: sheet, range: range)
+        }
+    }
+
+    /// The editor's copy, cut, drag and service write past the object count cap each
+    /// name the core's limit and change nothing, and an earlier cut stands.
+    func testEveryEditorRoutePastTheObjectCapNamesItsLimitAndChangesNothing() throws {
+        let client = ObjectCapClient(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.textView.setSelectedRange(NSRange(location: 8, length: 1))
+        page.textView.cut(nil)
+        let standing = try XCTUnwrap(page.model.activeCut, "the control: the cut")
+        client.capped = true
+        let service = NSPasteboard.withUniqueName()
+        addTeardownBlock { service.releaseGlobally() }
+        let all = NSRange(location: 0, length: 11)
+        let capped = "a selection can hold at most 1024 sealed objects, so"
+        let routes: [(name: String, line: String, run: () -> Void)] = [
+            ("copy", "\(capped) nothing was copied.", { page.textView.copy(nil) }),
+            ("cut", "\(capped) nothing was cut.", { page.textView.cut(nil) }),
+            ("drag", "\(capped) the drag did not start.", {
+                guard case .refused = page.coordinator.beginPageDrag() else {
+                    return XCTFail("the drag began")
+                }
+            }),
+            ("service", "\(capped) nothing was copied.", {
+                XCTAssertFalse(page.textView.writeSelection(
+                    to: service, types: page.textView.writablePasteboardTypes))
+            }),
+        ]
+        for route in routes {
+            page.textView.setSelectedRange(all)
+            let board = page.pasteboard.changeCount
+            let written = service.changeCount
+            let text = page.textView.string
+
+            route.run()
+
+            XCTAssertEqual(page.model.notice, route.line, route.name)
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(route.name) wrote the board")
+            XCTAssertEqual(service.changeCount, written, "\(route.name) wrote the service's board")
+            XCTAssertEqual(page.textView.string, text, "\(route.name) changed the page")
+            XCTAssertEqual(chips(page).map(\.chipId), [page.chips[0]], route.name)
+            XCTAssertEqual(page.model.activeCut, standing, "\(route.name): the earlier cut went")
+        }
+    }
+
+    // MARK: A page past its deadline (Law 0001, expiry row)
 
     /// Puts `page` past its deadline with no sweep: a one hour rung, two hours on.
     /// After a cut the re-mint moves the chip ids, so `keepsChipIDs` is false there.
@@ -1073,6 +1657,7 @@ final class SealedFragmentEditorTests: XCTestCase {
             }),
             ("copy decrypted", { XCTAssertFalse($0.coordinator.copyOutChip(at: 3)) }),
             ("copy NAME=value", { XCTAssertFalse($0.coordinator.copyNameValue(at: 3)) }),
+            ("copy name", { XCTAssertFalse($0.coordinator.copyName(at: 3)) }),
             ("the note", {
                 $0.coordinator.beginNote(at: 3)
                 XCTAssertNotEqual($0.coordinator.noteEditor?.isOpen, true, "the note opened")
@@ -1083,7 +1668,7 @@ final class SealedFragmentEditorTests: XCTestCase {
                     return XCTFail("the drag began")
                 }
             }),
-        ]
+        ] + appKitReaders.map { way in (way.name, { way.run($0.textView) }) }
         for route in routes {
             let page = try makePage()
             XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
@@ -1100,6 +1685,127 @@ final class SealedFragmentEditorTests: XCTestCase {
             XCTAssertEqual(sent(page), [], "\(route.name) recorded a sent")
             XCTAssertNil(page.model.activeCut, route.name)
         }
+    }
+
+    /// AppKit's readers outside the text menu: look up, speech, spelling, grammar, text
+    /// checking, completion, Quick Look and the style copies. Run only where a gate refuses:
+    /// one that ran would speak, look up, hand the text to the spell server or write a board
+    /// every process reads. A refused toggle leaves its setting as it stood.
+    private var appKitReaders: [(name: String, run: (NSTextView) -> Void)] {
+        let everything = { (view: NSTextView) in NSRange(location: 0, length: view.string.utf16.count) }
+        return [
+            ("Speech", {
+                $0.selectAll(nil)
+                $0.startSpeaking(nil)
+            }),
+            ("Look Up by force click", { view in
+                guard let event = NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: view.convert(NSPoint(x: 4, y: 4), to: nil),
+                    modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                else { return XCTFail("no event") }
+                view.quickLook(with: event)
+            }),
+            ("Look Up by key", {
+                $0.selectAll(nil)
+                $0.quickLookPreviewItems(nil)
+            }),
+            ("the definition of a range", {
+                $0.showDefinition(
+                    for: nil, range: NSRange(location: 0, length: 2), options: nil,
+                    baselineOriginProvider: nil)
+            }),
+            ("the definition at a point", {
+                $0.showDefinition(for: NSAttributedString(string: "ab"), at: .zero)
+            }),
+            ("Check Document Now", { $0.checkSpelling(nil) }),
+            ("Replace All", { $0.checkTextInDocument(nil) }),
+            ("Replace in Selection", {
+                $0.selectAll(nil)
+                $0.checkTextInSelection(nil)
+            }),
+            ("Check Spelling While Typing", {
+                $0.toggleContinuousSpellChecking(nil)
+                XCTAssertFalse($0.isContinuousSpellCheckingEnabled, "it turned on")
+            }),
+            ("Check Grammar With Spelling", {
+                let grammar = $0.isGrammarCheckingEnabled
+                $0.toggleGrammarChecking(nil)
+                XCTAssertEqual($0.isGrammarCheckingEnabled, grammar, "it toggled")
+            }),
+            ("the spelling panel's Ignore", { $0.ignoreSpelling(NSTextField(string: "ab")) }),
+            ("a check as the text changes", {
+                $0.checkText(in: everything($0), types: NSTextCheckingAllTypes, options: [:])
+            }),
+            ("completion", { $0.complete(nil) }),
+            ("Quick Look Attachments", {
+                $0.selectAll(nil)
+                $0.toggleQuickLookPreviewPanel(nil)
+            }),
+            ("Copy Style", {
+                $0.selectAll(nil)
+                $0.copyFont(nil)
+            }),
+            ("Copy Ruler", {
+                $0.selectAll(nil)
+                $0.copyRuler(nil)
+            }),
+        ]
+    }
+
+    /// While a field or the note holds the keys, the page's readers stand aside without
+    /// asking the page (Law 0007, keys row); the note's own, and the page's once the keys
+    /// come back, refuse past the deadline and settle (Law 0001, expiry row).
+    func testAppKitsReadersStandAsideForTheKeysAndRefusePastTheDeadline() throws {
+        for way in appKitReaders {
+            let page = try makePage()
+            page.coordinator.beginNote(at: 3)
+            drainMainQueue()
+            let note = try XCTUnwrap(page.coordinator.noteEditor)
+            XCTAssertTrue(note.holdsKeys)
+            try age(page)
+
+            way.run(page.textView)
+            XCTAssertNotEqual(page.model.notice, PageModel.pageExpiredLine, "\(way.name) under the note")
+            XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+
+            way.run(note.textView)
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, "the note's \(way.name)")
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+        }
+        for way in appKitReaders {
+            let page = try makePage()
+            XCTAssertTrue(page.window.makeFirstResponder(page.field))
+            drainMainQueue()
+            try age(page)
+
+            way.run(page.textView)
+            XCTAssertNotEqual(page.model.notice, PageModel.pageExpiredLine, "\(way.name) under the field")
+            XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+
+            XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+            drainMainQueue()
+            way.run(page.textView)
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, way.name)
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, way.name)
+        }
+    }
+
+    /// The core refuses to enrol a page past its deadline in sync, and that refusal
+    /// settles the page with its line as every other does; a standing page enrols.
+    func testARefusedEnrolmentOfAPagePastItsDeadlineSettlesIt() throws {
+        let standing = try makePage()
+        standing.model.sync.enrol(page: standing.sheet, on: true)
+        XCTAssertTrue(standing.model.sync.isEnrolled(standing.sheet), "the control: it enrols")
+        XCTAssertNotEqual(standing.model.notice, PageModel.pageExpiredLine)
+
+        let page = try makePage()
+        try age(page)
+        page.model.sync.enrol(page: page.sheet, on: true)
+
+        XCTAssertFalse(page.model.sync.isEnrolled(page.sheet))
+        XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine)
+        XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, "no settle")
     }
 
     /// A conceal of a page or an object past its deadline sends nothing, and its
@@ -1128,9 +1834,144 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
+    /// A core that refuses every note batch once asked to, as a batch it cannot place.
+    private final class NoteRefusingClient: CompanionClient, @unchecked Sendable {
+        var refusesNoteBatches = false
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func applyNoteOps(
+            chip: UInt64, json: String, intent: EditorEditIntent = .typing,
+            selection: EditorEditSelection? = nil
+        ) -> Bool {
+            !refusesNoteBatches
+                && super.applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        }
+    }
+
+    /// An open note whose text the core refuses after a refused batch closes rather
+    /// than standing empty, and the settle takes its page with the line (Law 0001, expiry row).
+    func testAnOpenNoteTheCoreRefusesClosesAndTheSettleTakesItsPage() throws {
+        let client = NoteRefusingClient(tag: UUID().uuidString)
+        let page = try makePage(client: client)
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        note.textView.insertText("rotate", replacementRange: NSRange(location: NSNotFound, length: 0))
+        drainMainQueue()
+        XCTAssertEqual(page.model.noteText(chip: page.chips[0]), "rotate", "the control")
+        try age(page)
+        client.refusesNoteBatches = true
+
+        note.textView.insertText("!", replacementRange: NSRange(location: NSNotFound, length: 0))
+        drainMainQueue()
+
+        XCTAssertFalse(note.isOpen, "the refused note stood open")
+        XCTAssertEqual(note.textView.string, "", "the closed note kept ink")
+        XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine)
+        XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, "no settle")
+    }
+
+    /// A core that refuses both decrypted copies of a live object, as a failed
+    /// pasteboard write would.
+    private final class RefusedCopyClient: CompanionClient, @unchecked Sendable {
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func copyOutChip(id: UInt64) -> Bool { false }
+        override func copyNameValue(chip: UInt64) -> Bool { false }
+    }
+
+    /// An object's copy or conceal refused for its own reason, while another page's
+    /// late timer is due, settles that page but never says this one expired.
+    func testAnObjectsRefusalSaysExpiredOnlyWhenItsOwnPageWent() throws {
+        let routes: [(name: String, line: String?, run: (Page) -> Void)] = [
+            ("copy decrypted", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.coordinator.copyOutChip(at: 3))
+            }),
+            ("copy NAME=value", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.coordinator.copyNameValue(at: 3))
+            }),
+            ("conceal", nil, { page in
+                let target = ConcealDraft.Target.chip(page.chips[0])
+                page.model.beginConceal(target)
+                guard let draft = page.model.concealDraft else { return XCTFail("no draft") }
+                page.model.finishConceal(
+                    ConcealOutcome(ok: false, receiptId: nil, error: "the server did not answer"),
+                    for: target, draftID: draft.id)
+                XCTAssertNotNil(page.model.concealDraft, "the draft went with another page")
+            }),
+        ]
+        for route in routes {
+            let client = RefusedCopyClient(tag: UUID().uuidString)
+            let page = try makePage(client: client)
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+            let other = try anotherPageComesDue(beside: page)
+            let notice = page.model.notice
+
+            route.run(page)
+
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == other }, "\(route.name): no settle")
+            XCTAssertTrue(
+                page.model.tabs.contains { $0.pageID == page.sheet }, "\(route.name) took its page")
+            XCTAssertEqual(page.model.notice, route.line ?? notice, route.name)
+        }
+    }
+
+    /// A second page with ink, past its deadline with no sweep; `page`'s own stays young.
+    private func anotherPageComesDue(beside page: Page) throws -> UInt64 {
+        let client = page.model.coreClient
+        page.model.newPage()
+        let other = try XCTUnwrap(page.model.selectedPageID)
+        XCTAssertTrue(client.applyOps(sheet: other, json: #"[{"ins":{"at":0,"text":"due"}}]"#))
+        let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == other }?.id)
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertTrue(client.tabs().contains { $0.pageID == other }, "the control: a sweep ran")
+        return other
+    }
+
+    /// An object that stood on no page when its route refused, as a stale menu's would,
+    /// takes the route's own line, though the settle takes another page that came due.
+    func testAnUnknownObjectsRefusalNeverSaysAPageExpired() throws {
+        let unknown: UInt64 = 4_242
+        let routes: [(name: String, line: String?, run: (Page) -> Void)] = [
+            ("copy decrypted", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.model.copyOutChip(unknown))
+            }),
+            ("copy NAME=value", PageModel.copyRefusedLine, {
+                XCTAssertFalse($0.model.copyChipNameValue(unknown))
+            }),
+            ("conceal", nil, {
+                $0.model.finishConceal(
+                    ConcealOutcome(ok: false, receiptId: nil, error: "that content is gone"),
+                    for: .chip(unknown), draftID: UUID())
+            }),
+        ]
+        for route in routes {
+            let page = try makePage()
+            XCTAssertFalse(page.model.coreClient.chipStands(unknown), "the control: no such object")
+            XCTAssertTrue(page.model.coreClient.chipStands(page.chips[0]), "the control: one stands")
+            let other = try anotherPageComesDue(beside: page)
+            let notice = page.model.notice
+
+            route.run(page)
+
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == other }, "\(route.name): no settle")
+            XCTAssertEqual(page.model.notice, route.line ?? notice, route.name)
+        }
+    }
+
     /// AppKit's own ways out, which no core route sees, ask first: past the deadline a
-    /// service's write of ink alone, a drag of ink stretches and the note's copy, cut,
-    /// drag and service give nothing out, and the settle takes the page with its line.
+    /// service's write of ink alone, a drag of ink stretches, Use Selection for Find and
+    /// the note's copy, cut, drag, service and Use Selection for Find give nothing out, and
+    /// the settle takes the page with its line. The finder is asked only through its gate,
+    /// since a finder that ran would write the find pasteboard every process reads.
     func testAppKitsWaysOutOfAPagePastItsDeadlineAskFirstAndSettle() throws {
         let board = NSPasteboard.withUniqueName()
         addTeardownBlock { board.releaseGlobally() }
@@ -1160,13 +2001,22 @@ final class SealedFragmentEditorTests: XCTestCase {
                     note.textView.coordinator?.givesOutShownText(), false,
                     "the note's copy, cut or drag would run")
             }),
+            ("use selection for find", {
+                $0.textView.setSelectedRange(NSRange(location: 0, length: 2))
+                XCTAssertTrue($0.textView.refusesFinderAction(self.useSelectionForFind))
+            }),
+            ("the note's use selection for find", {
+                let note = try XCTUnwrap($0.coordinator.noteEditor?.textView)
+                note.selectAll(nil)
+                XCTAssertTrue(note.refusesFinderAction(self.useSelectionForFind))
+            }),
         ]
         for ask in asks {
             let page = try makePage()
             XCTAssertTrue(page.model.applyNoteOps(
                 chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
                 intent: .typing, selection: nil))
-            if ask.name == "the note" {
+            if ask.name.hasPrefix("the note") {
                 page.coordinator.beginNote(at: 3)
                 drainMainQueue()
             }
@@ -1183,6 +2033,105 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
+    /// The name field's own editor over the object at 3, holding the keys, its draft selected.
+    private func openNameField(_ page: Page) throws -> SealedNameTextView {
+        page.coordinator.beginNaming(at: 3)
+        drainMainQueue()
+        let field = try XCTUnwrap(page.coordinator.nameEditor?.field, "no field opened")
+        let editor = try XCTUnwrap(field.currentEditor() as? SealedNameTextView, "not its own")
+        editor.selectAll(nil)
+        return editor
+    }
+
+    /// While its page stands a name leaves as a person asks: Copy name and the name
+    /// field's copy and cut write it on the ambient board, and the field serves it.
+    func testANameCopiesFromTheZoneAndTheFieldWhileItsPageStands() throws {
+        let page = try makePage()
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        XCTAssertTrue(page.coordinator.copyName(at: 3))
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "API_KEY")
+        XCTAssertEqual(page.model.notice, PageModel.copiedNameLine)
+
+        let editor = try openNameField(page)
+        page.pasteboard.clearContents()
+        editor.copy(nil)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "API_KEY", "the field's copy")
+        XCTAssertTrue(editor.givesOut, "the field's drag")
+        XCTAssertTrue(editor.writeSelection(to: board, types: editor.writablePasteboardTypes))
+        XCTAssertEqual(board.string(forType: .string), "API_KEY", "the field's service")
+        page.pasteboard.clearContents()
+        editor.cut(nil)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), "API_KEY", "the field's cut")
+        XCTAssertEqual(editor.string, "", "the cut took the draft")
+        XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet })
+    }
+
+    /// A name is part of its page: past the deadline Copy name (above) and the name
+    /// field's copy, cut, drag, service and AppKit's readers give nothing out, and the
+    /// settle takes the page with its line. The drag is asked only through its gate, as
+    /// a drag that ran would write the system's drag board.
+    func testANamePastItsPagesDeadlineGivesNothingOutAndTheSettleTakesThePage() throws {
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        let asks: [(name: String, run: (SealedNameTextView) -> Void)] = [
+            ("the field's copy", { $0.copy(nil) }),
+            ("the field's cut", { $0.cut(nil) }),
+            ("the field's service", {
+                let legacy = SealedFragment.legacyStringType
+                XCTAssertFalse($0.writeSelection(to: board, types: $0.writablePasteboardTypes))
+                XCTAssertFalse($0.writeSelection(to: board, type: legacy), "once gone")
+            }),
+            ("the field's drag", { XCTAssertFalse($0.givesOut, "AppKit's drag would run") }),
+        ] + appKitReaders.map { way in ("the field's \(way.name)", { way.run($0) }) }
+        for ask in asks {
+            let page = try makePage()
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+            let editor = try openNameField(page)
+            XCTAssertEqual(editor.string, "API_KEY", "the control: the field holds the name")
+            try age(page)
+            let written = (page.pasteboard.changeCount, board.changeCount)
+
+            ask.run(editor)
+
+            XCTAssertEqual(page.pasteboard.changeCount, written.0, "\(ask.name) wrote the board")
+            XCTAssertEqual(board.changeCount, written.1, "\(ask.name) served the name")
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, ask.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet }, "\(ask.name): no settle")
+        }
+    }
+
+    /// Use Selection for Find as the Find menu sends it; only the tag is read.
+    private var useSelectionForFind: NSMenuItem {
+        let item = NSMenuItem(
+            title: "Use Selection for Find",
+            action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "")
+        item.tag = NSTextFinder.Action.setSearchString.rawValue
+        return item
+    }
+
+    /// While the page stands, Use Selection for Find over ink goes to the finder, on the
+    /// page and in the note, and over an object still refuses with its own line.
+    func testUseSelectionForFindGoesToTheFinderWhileThePageStands() throws {
+        let page = try makePage()
+        XCTAssertTrue(page.model.applyNoteOps(
+            chip: page.chips[0], json: #"[{"ins":{"at":0,"text":"rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        page.textView.setSelectedRange(NSRange(location: 0, length: 2))
+        XCTAssertFalse(page.textView.refusesFinderAction(useSelectionForFind))
+        page.textView.setSelectedRange(NSRange(location: 3, length: 1))
+        XCTAssertTrue(page.textView.refusesFinderAction(useSelectionForFind))
+        XCTAssertEqual(page.model.notice, "a chip has no text to search for")
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        note.selectAll(nil)
+        XCTAssertFalse(note.refusesFinderAction(useSelectionForFind))
+        XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet })
+    }
+
     /// What another app reads from a copy: a rich or a plain text reader gets
     /// the public text, with a placeholder where each object stood.
     func testAnotherAppReadsThePublicTextAlone() throws {
@@ -1197,7 +2146,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, Paste and Paste and Match Style
-    /// reach the holder and the page places nothing (ADR-0046).
+    /// reach the holder and the page places nothing (Law 0007, keys row).
     func testPasteStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         page.textView.setSelectedRange(whole)
@@ -1243,5 +2192,377 @@ final class SealedFragmentEditorTests: XCTestCase {
         page.textView.setSelectedRange(caret)
         page.textView.paste(nil)
         XCTAssertEqual(chips(page).count, 4, "the paste did not come back")
+    }
+
+    // MARK: Links (ADR-0023, Law 0001's AppKit text routes)
+
+    private static let secretLink = URL(string: "https://example.invalid/?token=s3cr3t")!
+
+    /// Types a markdown link at the end of `view` and gives the point over its label.
+    private func appendLink(to view: NSTextView) throws -> NSPoint {
+        view.setSelectedRange(NSRange(location: view.string.utf16.count, length: 0))
+        view.insertText(
+            " [x](\(Self.secretLink.absoluteString))",
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        drainMainQueue()
+        let storage = try XCTUnwrap(view.textStorage)
+        let index = try XCTUnwrap(
+            (0..<storage.length).first { storage.attribute(.link, at: $0, effectiveRange: nil) != nil },
+            "no link was styled")
+        let layout = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        layout.ensureLayout(for: container)
+        let glyphs = layout.glyphRange(
+            forCharacterRange: NSRange(location: index + 1, length: 1), actualCharacterRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
+        return NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
+    }
+
+    /// The text menu a secondary click over `point` builds, on a base of `seeds` when given.
+    private func textMenu(
+        over point: NSPoint, in view: NSTextView, seeding seeds: [NSMenuItem] = []
+    ) throws -> NSMenu {
+        let kept = view.menu
+        if !seeds.isEmpty {
+            let base = NSMenu()
+            seeds.forEach(base.addItem)
+            view.menu = base
+        }
+        defer { view.menu = kept }
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: view.convert(point, to: nil), modifierFlags: [],
+            timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1))
+        return try XCTUnwrap(view.menu(for: event))
+    }
+
+    /// An Open With of the test's own, since AppKit builds the real one from the apps this
+    /// machine has for the link.
+    private func openWithControl() -> NSMenuItem {
+        let item = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        item.identifier = NSUserInterfaceItemIdentifier("__NSTextViewContextSubmenuIdentifierOpenWith")
+        let app = NSMenuItem(title: "Browser.app", action: nil, keyEquivalent: "")
+        app.representedObject = URL(fileURLWithPath: "/Applications/Browser.app")
+        item.submenu = NSMenu()
+        item.submenu?.addItem(app)
+        return item
+    }
+
+    /// Chooses the menu's item sending `action`, as the menu would.
+    private func choose(_ action: Selector, in menu: NSMenu) throws {
+        let item = try XCTUnwrap(menu.items.first { $0.action == action }, "no \(action) item")
+        let target = try XCTUnwrap(item.target as? NSObject, "\(action) has no target")
+        target.perform(action, with: item)
+    }
+
+    /// Makes the application's current event a click with `flags`, as a real one would be.
+    private func click(with flags: NSEvent.ModifierFlags) throws {
+        let app = NSApplication.shared
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        app.postEvent(event, atStart: true)
+        let current = app.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true)
+        XCTAssertEqual(current?.modifierFlags.contains(.command), flags.contains(.command))
+        XCTAssertTrue(app.currentEvent === current, "the click is not the current event")
+    }
+
+    /// A ⌘-click on the link at `point`, through the delegate, as AppKit's tracking sends it.
+    private func commandClick(at point: NSPoint, in view: NSTextView) throws {
+        let link = try XCTUnwrap((view as? InkTextView)?.linkTarget(at: point), "no link under the point")
+        try click(with: .command)
+        defer { try? click(with: []) }
+        XCTAssertTrue(view.delegate?.textView?(view, clickedOnLink: link.link, at: link.index) == true)
+    }
+
+    private static let openLink = #selector(InkTextView.openLinkFromMenu(_:))
+    private static let copyLink = #selector(InkTextView.copyLinkFromMenu(_:))
+
+    /// A link on a standing page opens by ⌘-click and by the menu's Open Link, and its Copy
+    /// Link writes the URL; a plain click edits. The page's menu offers no Open With, which
+    /// would hand the URL to an app no delegate asks, and a file's keeps it and opens too.
+    func testALinkOnAStandingPageOpensWhenAimedAndItsMenuOffersNoOpenWith() throws {
+        let page = try makePage()
+        let point = try appendLink(to: page.textView)
+        let link = try XCTUnwrap(page.textView.linkTarget(at: point))
+
+        try click(with: [])
+        XCTAssertTrue(page.coordinator.textView(page.textView, clickedOnLink: link.link, at: link.index))
+        XCTAssertEqual(page.opened.urls, [], "a plain click opened the link")
+
+        try commandClick(at: point, in: page.textView)
+        XCTAssertEqual(page.opened.urls, [Self.secretLink], "⌘-click")
+        let menu = try textMenu(over: point, in: page.textView)
+        XCTAssertFalse(menu.items.contains(where: TextOffers.isOpenWith), "the page offers Open With")
+        let seeded = try textMenu(over: point, in: page.textView, seeding: [openWithControl()])
+        XCTAssertFalse(seeded.items.contains(where: TextOffers.isOpenWith), "the page keeps the test's own")
+        XCTAssertFalse(menu.items.contains { $0.action == TextOffers.openLinkAction }, "AppKit's Open Link")
+        XCTAssertFalse(menu.items.contains { $0.action == TextOffers.copyLinkAction }, "AppKit's Copy Link")
+        try choose(Self.openLink, in: menu)
+        XCTAssertEqual(page.opened.urls, [Self.secretLink, Self.secretLink], "Open Link")
+        try choose(Self.copyLink, in: menu)
+        XCTAssertEqual(page.pasteboard.string(forType: .string), Self.secretLink.absoluteString)
+        XCTAssertEqual(page.pasteboard.string(forType: .URL), Self.secretLink.absoluteString)
+        XCTAssertNil(page.model.notice)
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.delegate = fileCoordinator
+        let fileStorage = try XCTUnwrap(file.textStorage)
+        fileStorage.addAttribute(.link, value: Self.secretLink, range: NSRange(location: 0, length: 4))
+        let filePoint = try XCTUnwrap(file.layoutManager.map { layout in
+            let rect = layout.boundingRect(
+                forGlyphRange: NSRange(location: 1, length: 1), in: file.textContainer!)
+            return NSPoint(x: rect.midX + file.textContainerOrigin.x, y: rect.midY + file.textContainerOrigin.y)
+        })
+        let fileMenu = try textMenu(over: filePoint, in: file)
+        let fileSeeded = try textMenu(over: filePoint, in: file, seeding: [openWithControl()])
+        XCTAssertTrue(fileSeeded.items.contains(where: TextOffers.isOpenWith), "the control: a file keeps it")
+        XCTAssertTrue(fileMenu.items.contains { $0.action == TextOffers.copyLinkAction }, "a file's Copy Link")
+        try choose(Self.openLink, in: fileMenu)
+        try commandClick(at: filePoint, in: file)
+        XCTAssertEqual(page.opened.urls.count, 4, "a file's link did not open")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// Past the page's deadline, before any sweep, a link opens and copies nothing by
+    /// ⌘-click or by a menu built while the page stood, on the page or in its note, and the
+    /// settle takes the page with its line.
+    func testALinkPastItsPagesDeadlineGivesNothingOutAndTheSettleTakesIt() throws {
+        let ways: [(name: String, note: Bool, run: (NSTextView, NSPoint, NSMenu) throws -> Void)] = [
+            ("⌘-click", false, { view, point, _ in try self.commandClick(at: point, in: view) }),
+            ("Open Link", false, { _, _, menu in try self.choose(Self.openLink, in: menu) }),
+            ("Copy Link", false, { _, _, menu in try self.choose(Self.copyLink, in: menu) }),
+            ("the note's ⌘-click", true, { view, point, _ in try self.commandClick(at: point, in: view) }),
+            ("the note's Open Link", true, { _, _, menu in try self.choose(Self.openLink, in: menu) }),
+            ("the note's Copy Link", true, { _, _, menu in try self.choose(Self.copyLink, in: menu) }),
+        ]
+        for way in ways {
+            let page = try makePage()
+            var view: NSTextView = page.textView
+            if way.note {
+                page.coordinator.beginNote(at: 3)
+                drainMainQueue()
+                view = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+            }
+            let point = try appendLink(to: view)
+            let menu = try textMenu(over: point, in: view)
+            try age(page)
+            let board = page.pasteboard.changeCount
+
+            try way.run(view, point, menu)
+
+            XCTAssertEqual(page.opened.urls, [], "\(way.name) opened the link")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "\(way.name) wrote the board")
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, way.name)
+            XCTAssertFalse(page.model.tabs.contains { $0.pageID == page.sheet }, "\(way.name): no settle")
+        }
+    }
+
+    /// While a field or the note holds the keys, the page's link opens and copies nothing
+    /// and asks nothing (Law 0007, keys row); once the keys come back it opens.
+    func testAPagesLinkStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
+        let page = try makePage()
+        let point = try appendLink(to: page.textView)
+        let menu = try textMenu(over: point, in: page.textView)
+        let board = page.pasteboard.changeCount
+        func standsAside(_ holder: String) throws {
+            XCTAssertFalse(page.textView.answersChords, holder)
+            try commandClick(at: point, in: page.textView)
+            try choose(Self.openLink, in: menu)
+            try choose(Self.copyLink, in: menu)
+            XCTAssertEqual(page.opened.urls, [], "the link opened under the \(holder)")
+            XCTAssertEqual(page.pasteboard.changeCount, board, "Copy Link wrote under the \(holder)")
+            XCTAssertNil(page.model.notice, holder)
+        }
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        try standsAside("field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        page.coordinator.beginNote(at: 3)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        try standsAside("note")
+
+        note.escape()
+        drainMainQueue()
+        try commandClick(at: point, in: page.textView)
+        XCTAssertEqual(page.opened.urls, [Self.secretLink], "the control: the link opens")
+    }
+
+    private static let editLink = #selector(NSTextView.orderFrontLinkPanel(_:))
+
+    /// An Edit Link… of the test's own, so the filter meets one whatever AppKit builds.
+    private func editLinkControl() -> NSMenuItem {
+        NSMenuItem(title: "Edit Link…", action: Self.editLink, keyEquivalent: "")
+    }
+
+    /// Whether a sheet stands over `view`'s window, or a shown window's field holds the URL.
+    private func linkPanelShows(over view: NSView) -> Bool {
+        func fields(_ view: NSView) -> [NSTextField] {
+            ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(fields)
+        }
+        return view.window?.attachedSheet != nil || NSApplication.shared.windows.contains { window in
+            window.isVisible && (window.contentView.map(fields) ?? []).contains {
+                $0.stringValue.contains(Self.secretLink.absoluteString)
+            }
+        }
+    }
+
+    /// The range of the first link in `view`, as Edit Link… would find it selected.
+    private func linkRange(in view: NSTextView) throws -> NSRange {
+        let storage = try XCTUnwrap(view.textStorage)
+        let index = try XCTUnwrap(
+            (0..<storage.length).first { storage.attribute(.link, at: $0, effectiveRange: nil) != nil },
+            "no link")
+        var range = NSRange()
+        _ = storage.attribute(.link, at: index, effectiveRange: &range)
+        return range
+    }
+
+    /// Edit Link…'s panel shows the URL in a field whose editor asks no gate, past any deadline,
+    /// so a page, a note and a name neither offer nor open it. A file does both.
+    func testAPageANoteAndANameOfferNoEditLinkAndNeverShowItsPanel() throws {
+        let page = try makePage()
+        defer {
+            if let sheet = page.window.attachedSheet { page.window.endSheet(sheet) }
+            page.window.orderOut(nil)
+        }
+        func neverShows(_ view: NSTextView, over point: NSPoint, _ surface: String) throws {
+            let menu = try textMenu(over: point, in: view)
+            let seeded = try textMenu(over: point, in: view, seeding: [editLinkControl()])
+            for menu in [menu, seeded] {
+                XCTAssertFalse(
+                    menu.items.contains { $0.action == Self.editLink }, "the \(surface) offers Edit Link")
+            }
+            XCTAssertFalse(view.validateMenuItem(editLinkControl()), "the \(surface)'s Edit Link")
+            view.orderFrontLinkPanel(nil)
+            drainMainQueue()
+            XCTAssertFalse(linkPanelShows(over: view), "the \(surface) showed the link panel")
+            if let window = view.window, let sheet = window.attachedSheet { window.endSheet(sheet) }
+        }
+
+        let point = try appendLink(to: page.textView)
+        page.textView.setSelectedRange(try linkRange(in: page.textView))
+        try neverShows(page.textView, over: point, "page")
+        XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chips[0], sheet: page.sheet))
+        try neverShows(try openNameField(page), over: NSPoint(x: 4, y: 4), "name")
+        page.coordinator.nameEditor?.keep(returningKeys: true)
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        let notePoint = try appendLink(to: note)
+        note.setSelectedRange(try linkRange(in: note))
+        try neverShows(note, over: notePoint, "note")
+        page.coordinator.noteEditor?.escape()
+        drainMainQueue()
+        XCTAssertNil(page.model.notice)
+
+        let (file, fileCoordinator) = fileView(beside: page)
+        file.delegate = fileCoordinator
+        let range = NSRange(location: 0, length: 4)
+        try XCTUnwrap(file.textStorage).addAttribute(.link, value: Self.secretLink, range: range)
+        let filePoint = try XCTUnwrap(file.layoutManager.map { layout in
+            let rect = layout.boundingRect(
+                forGlyphRange: NSRange(location: 1, length: 1), in: file.textContainer!)
+            return NSPoint(x: rect.midX + file.textContainerOrigin.x, y: rect.midY + file.textContainerOrigin.y)
+        })
+        let fileMenu = try textMenu(over: filePoint, in: file)
+        XCTAssertTrue(fileMenu.items.contains { $0.action == Self.editLink }, "the control: a file's Edit Link")
+        XCTAssertTrue(file.validateMenuItem(editLinkControl()), "the control: a file's item")
+        XCTAssertTrue(page.window.makeFirstResponder(file))
+        file.setSelectedRange(range)
+        file.orderFrontLinkPanel(nil)
+        drainMainQueue()
+        XCTAssertTrue(linkPanelShows(over: file), "the control: a file shows the link panel")
+        withExtendedLifetime(fileCoordinator) {}
+    }
+
+    /// What AppKit drives from attributes on its own: a page and a note find no links as
+    /// typed, the restyle pass alone does (ADR-0023), and an object's attachment holds no
+    /// contents and no file, with no delegate answer to name one, so AppKit's double click,
+    /// Quick Look and attachment drag have nothing of it to open, show or write.
+    func testAppKitFindsNoLinkOnAPageAndAnObjectGivesItNothingToHandOut() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        drainMainQueue()
+        let note = try XCTUnwrap(page.coordinator.noteEditor?.textView)
+        XCTAssertFalse(page.textView.isAutomaticLinkDetectionEnabled, "the page finds links")
+        XCTAssertFalse(note.isAutomaticLinkDetectionEnabled, "the note finds links")
+        for index in [3, 8] {
+            let chip = try XCTUnwrap(page.coordinator.chipAttachment(at: index))
+            XCTAssertNil(chip.contents, "the object at \(index) holds contents")
+            XCTAssertNil(chip.fileWrapper, "the object at \(index) holds a file")
+        }
+        for (selector, name) in [
+            (#selector(NSTextViewDelegate.textView(_:urlForContentsOf:at:)), "a URL"),
+            (#selector(NSTextViewDelegate.textView(_:writablePasteboardTypesFor:at:)), "board types"),
+            (#selector(NSTextViewDelegate.textView(_:write:at:to:type:)), "a board write"),
+            (#selector(NSTextViewDelegate.textView(_:doubleClickedOn:in:at:)), "a double click"),
+        ] {
+            XCTAssertFalse(page.coordinator.responds(to: selector), "the delegate answers \(name)")
+        }
+    }
+
+    /// A held press on a link selects it and drags the selection through
+    /// `dragSelection(with:offset:slideBack:)`, the method a page's and a note's drag gate,
+    /// so a change of AppKit's route fails here. The view and its link are the test's own.
+    func testALinkDragsAsTheSelectionThroughTheOneGatedMethod() throws {
+        final class Dragged: NSTextView {
+            var dragged: [NSRange] = []
+            override func dragSelection(
+                with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool
+            ) -> Bool {
+                dragged.append(selectedRange())
+                return false
+            }
+        }
+        let app = NSApplication.shared
+        let storage = NSTextStorage(string: "see link here and more text to drag over")
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 400, height: 200))
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled],
+            backing: .buffered, defer: false)
+        let view = Dragged(frame: NSRect(x: 0, y: 0, width: 400, height: 200), textContainer: container)
+        window.contentView?.addSubview(view)
+        let linkRange = NSRange(location: 4, length: 4)
+        storage.addAttribute(.link, value: URL(string: "https://example.invalid/route")!, range: linkRange)
+        layout.ensureLayout(for: container)
+        let rect = layout.boundingRect(forGlyphRange: NSRange(location: 5, length: 1), in: container)
+        let point = NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
+        XCTAssertTrue(window.makeFirstResponder(view))
+        let dragBoard = NSPasteboard(name: .drag).changeCount
+        let pressed = ProcessInfo.processInfo.systemUptime
+        func mouse(_ type: NSEvent.EventType, _ offset: CGFloat) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type, location: view.convert(NSPoint(x: point.x + offset, y: point.y), to: nil),
+                modifierFlags: [], timestamp: pressed + (type == .leftMouseDown ? 0 : 1.5),
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                pressure: 1)
+        }
+        let down = try XCTUnwrap(mouse(.leftMouseDown, 0))
+        var moves = try [4.0, 12, 30, 60].map { try XCTUnwrap(mouse(.leftMouseDragged, $0)) }
+        moves.append(try XCTUnwrap(mouse(.leftMouseUp, 60)))
+        nonisolated(unsafe) let held = moves
+        nonisolated(unsafe) let application = app
+        // The press is held before it moves, as a person's is; posted at once, AppKit selects text.
+        let release = Timer(timeInterval: 1.2, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                for index in held.indices { application.postEvent(held[index], atStart: false) }
+            }
+        }
+        RunLoop.main.add(release, forMode: .common)
+        RunLoop.main.add(release, forMode: .eventTracking)
+        defer { release.invalidate() }
+
+        view.mouseDown(with: down)
+
+        XCTAssertEqual(view.dragged, [linkRange], "the link's drag went another way")
+        XCTAssertEqual(NSPasteboard(name: .drag).changeCount, dragBoard, "the drag board was written")
     }
 }

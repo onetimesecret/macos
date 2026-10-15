@@ -392,6 +392,38 @@ pub unsafe extern "C" fn companion_test_memory_pasteboard(handle: *mut Companion
     true
 }
 
+/// Write `text` as ink at `pos_u16` of page `sheet`, below the guard that
+/// refuses U+FFFC and outside the undo stack, as an earlier build's page or a
+/// peer's batch lands it. Returns whether it landed. `test-util` only (ADR-0018).
+///
+/// # Safety
+/// `handle` must be null or a valid handle. `text` must be null or a valid,
+/// NUL-terminated UTF-8 C string.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_ink_below_the_guard(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    pos_u16: u32,
+    text: *const c_char,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(text) = (unsafe { cstr(text) }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .ink_below_the_guard(SheetId::from_raw(sheet), pos_u16, text)
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     #[cfg(target_os = "macos")]
@@ -763,6 +795,31 @@ pub unsafe extern "C" fn companion_sheet_sync_document(
     guard
         .store
         .sync_document(SheetId::from_raw(sheet), segments)
+}
+
+/// Take every U+FFFC out of a page's ink, a peer's or an earlier build's
+/// (Law 0001), as an edit its peers receive and no undo puts back. Returns
+/// whether any went; false for a file, an unknown page or a page with none.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_take_out_object_characters(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .take_out_unmarked_object_characters(SheetId::from_raw(sheet))
 }
 
 /// Apply an ordered batch of `{"ins": {"at", "text"}}`, `{"del": {"at",
@@ -1164,7 +1221,7 @@ pub unsafe extern "C" fn companion_sheet_undo_selection_length_u16(
 /// `ConcealedType`, keeps the receipt for [`companion_clear_clipboard_if_ours`],
 /// and records one `sent` to `clipboard`. The chip survives. Returns whether
 /// it existed; false, writing and recording nothing, past its page's deadline
-/// (ADR-0052).
+/// (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1184,10 +1241,11 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
     true
 }
 
-/// Copy `NAME=<plaintext>` by copy decrypted's route (Law 0001, ADR-0043): the
-/// store composes it and this writes it as [`companion_chip_copy_out`] does.
-/// False, writing and recording nothing, for an unknown, unnamed or image chip,
-/// or a page past its deadline (ADR-0052).
+/// Copy `NAME=<plaintext>` by copy decrypted's route
+/// (Law 0001; ADR-0047 point 2, proposed): the store composes it and this
+/// writes it as [`companion_chip_copy_out`] does. False, writing and recording
+/// nothing, for an unknown, unnamed or image chip, or a page past its deadline
+/// (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1210,8 +1268,25 @@ pub unsafe extern "C" fn companion_chip_copy_name_value(
     true
 }
 
+/// Whether a chip stands on a live page, past its deadline or not, as the
+/// chip conceal's error asks; the shell words a refusal by it. False for an
+/// unknown chip or a null handle.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_stands(handle: *mut CompanionHandle, chip: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.chip_stands(ChipId::from_raw(chip))
+}
+
 /// Burn a chip, attached or detached, wiping its bytes and its page's undo
-/// stack (ADR-0047). Returns whether it existed.
+/// stack (ADR-0046 point 2, proposed). Returns whether it existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1226,9 +1301,9 @@ pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chi
     guard.store.delete_chip(ChipId::from_raw(chip))
 }
 
-/// Judge a draft sealed name without a handle (ADR-0043): 0 takes it, an
-/// empty draft clearing; 1 is too long; 2 is outside the charset, as are null
-/// and non-UTF-8.
+/// Judge a draft sealed name without a handle (ADR-0042 point 1, proposed):
+/// 0 takes it, an empty draft clearing; 1 is too long; 2 is outside the
+/// charset, as are null and non-UTF-8.
 ///
 /// # Safety
 /// `draft` must be null or a valid NUL-terminated C string.
@@ -1244,8 +1319,9 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
     }
 }
 
-/// Name a sealed object, or clear its name with a blank draft (ADR-0043).
-/// False for an unknown chip or a refused draft; the name is then unchanged.
+/// Name a sealed object, or clear its name with a blank draft
+/// (ADR-0042 point 1, proposed). False for an unknown chip or a refused draft;
+/// the name is then unchanged.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `name` must be a valid,
@@ -1271,11 +1347,11 @@ pub unsafe extern "C" fn companion_chip_set_name(
         .is_ok()
 }
 
-// ---- A sealed object's note: its own document, keyed by chip (ADR-0043) ----
+// ---- A sealed object's note: its own document, keyed by chip (ADR-0043 point 2, proposed) ----
 
 /// The note as document runs: `[]` without one, else `[{"ink": text}]`. Null
-/// for an unknown chip or a page past its deadline (ADR-0052). Free with
-/// [`companion_string_free`].
+/// for an unknown chip or a page past its deadline (Law 0001, expiry row).
+/// Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1500,11 +1576,12 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
     outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
-// ---- The sealed fragment: copy, cut, paste, drags (ADR-0047) ----
+// ---- The sealed fragment: copy, cut, paste, drags (ADR-0045 and ADR-0046, proposed) ----
 
 /// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`, or
-/// `{"error", "limit"}` past an envelope cap (ADR-0053); null for a file id,
-/// an unknown page, a page past its deadline (ADR-0052) or a bad range.
+/// `{"error", "limit"}` past an envelope cap (Law 0001, copy row); null for a
+/// file id, an unknown page, a page past its deadline (Law 0001, expiry row)
+/// or a bad range.
 /// Free with [`companion_string_free`].
 ///
 /// # Safety
@@ -1661,9 +1738,9 @@ pub unsafe extern "C" fn companion_sheet_move_range(
         .map_or(ptr::null_mut(), placed_json)
 }
 
-/// A drag between pages (ADR-0054): move a range of `source` to `at_utf16` on
-/// `dest` as one transaction keeping every object. The placed JSON, its run on
-/// `dest`, or null with neither page changed.
+/// A drag between pages (Law 0001, drag row): move a range of `source` to
+/// `at_utf16` on `dest` as one transaction keeping every object. The placed
+/// JSON, its run on `dest`, or null with neither page changed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1756,7 +1833,8 @@ pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle)
 
 /// Decrypted drag: write a chip's payload into the drag `item` on `pasteboard`
 /// under its type and record one `sent` to `drag`; false, doing neither, on
-/// refusal, which includes a removed chip and a page past its deadline (ADR-0052).
+/// refusal, which includes a removed chip and a page past its deadline
+/// (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle. `pasteboard` and `item` must each be null
@@ -2740,7 +2818,7 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
 /// without holding the core lock; call off the main thread. On success the
 /// link is on the clipboard. Returns `{"ok": true, "receipt_id"}` or
 /// `{"ok": false, "error"}`, sending nothing for a page past its deadline
-/// (ADR-0052); free with [`companion_string_free`].
+/// (Law 0001, expiry row); free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
@@ -2773,7 +2851,7 @@ pub unsafe extern "C" fn companion_chip_conceal(
             .find(|sheet| sheet.chip(chip).is_some());
         let Some(sheet) = holder else {
             // A page past its deadline still stands until its sweep.
-            if guard.store.sheets().any(|sheet| sheet.chip(chip).is_some()) {
+            if guard.store.chip_stands(chip) {
                 return conceal_error(&PayloadError::Expired.to_string());
             }
             return conceal_error("that content is gone");
@@ -3179,8 +3257,8 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
 /// Enrol a page into the sync channel, or withdraw it; per page and off
 /// by default (relay protocol §1). Enrolling defers its compaction to
 /// the coordinated ceremony and starts its cursor at the beginning;
-/// withdrawing performs any due ceremony on the spot. `page` is the
-/// PAGE id.
+/// withdrawing performs any due ceremony on the spot. A page past its
+/// deadline does not enrol (Law 0001, expiry row). `page` is the PAGE id.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -3504,7 +3582,7 @@ fn copied_json(copied: &Copied) -> *mut c_char {
 }
 
 /// A copy's or a cut's answer: [`copied_json`], `{"error": "tooLarge" |
-/// "tooManyObjects", "limit"}` past a cap (ADR-0053), else null.
+/// "tooManyObjects", "limit"}` past a cap (Law 0001, copy row), else null.
 fn copy_outcome_json(outcome: Result<Copied, CopyRefusal>) -> *mut c_char {
     let cap = match outcome {
         Ok(copied) => return copied_json(&copied),
@@ -3521,7 +3599,7 @@ fn copy_outcome_json(outcome: Result<Copied, CopyRefusal>) -> *mut c_char {
 
 /// What a paste, a move or a clone placed: its run in UTF-16 units, a count
 /// per resolution, `unreadable` when the public text was placed instead, and
-/// `pages_expired`, the due pages its sweep took (ADR-0048).
+/// `pages_expired`, the due pages its sweep took (Law 0001, expiry row).
 fn placed_json(placed: Placed) -> *mut c_char {
     let value = serde_json::json!({
         "location_utf16": placed.location_u16,
@@ -4130,6 +4208,52 @@ mod tests {
             assert_eq!(board_text(handle).as_deref(), Some("API_KEY=hunter2"));
             assert!(companion_clear_clipboard_if_ours(handle));
             assert!(board_text(handle).is_none());
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_pages_object_character_comes_out_and_every_route_fails_closed() {
+        let tag = cstring("object-character-seam");
+        let text = cstring("x\u{FFFC}y");
+        unsafe {
+            let handle = companion_new_ephemeral(tag.as_ptr());
+            let (sheet, _chip) = sealed_chip(handle, "hunter2");
+            assert!(!companion_test_ink_below_the_guard(
+                ptr::null_mut(),
+                sheet,
+                0,
+                text.as_ptr()
+            ));
+            assert!(!companion_test_ink_below_the_guard(
+                handle,
+                sheet,
+                0,
+                ptr::null()
+            ));
+            assert!(companion_test_ink_below_the_guard(
+                handle,
+                sheet,
+                0,
+                text.as_ptr()
+            ));
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(document.contains('\u{FFFC}'), "the seam wrote no U+FFFC");
+
+            assert!(!companion_sheet_take_out_object_characters(
+                ptr::null_mut(),
+                sheet
+            ));
+            assert!(!companion_sheet_take_out_object_characters(
+                handle,
+                companion_core::FILE_ID_TAG | sheet
+            ));
+            assert!(companion_sheet_take_out_object_characters(handle, sheet));
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!document.contains('\u{FFFC}'));
+            assert!(document.contains("\"chip\""), "the object went with it");
+            assert!(!companion_sheet_take_out_object_characters(handle, sheet));
             companion_free(handle);
         }
     }
@@ -5397,7 +5521,7 @@ mod tests {
                 cstring(r#"[{"chip": 424242}]"#).as_ptr()
             ));
 
-            // A snapshot that omits the chip detaches it (ADR-0047).
+            // A snapshot that omits the chip detaches it (ADR-0046 point 1, proposed).
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
@@ -8719,6 +8843,24 @@ mod tests {
             assert!(board_text(handle).is_none(), "nothing written");
             assert!(sent_destinations(handle).is_empty(), "nothing recorded");
             assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn an_object_stands_over_the_seam_until_its_page_is_swept() {
+        let handle = handle();
+        unsafe {
+            let (_, chip) = a_due_page_with_a_chip(handle);
+            assert!(
+                !companion_chip_copy_out(handle, chip),
+                "the control: it is due"
+            );
+            assert!(companion_chip_stands(handle, chip));
+            assert!(!companion_chip_stands(handle, 4_242), "an unknown object");
+            assert!(!companion_chip_stands(ptr::null_mut(), chip));
+            assert_eq!(companion_expire_due(handle), 1);
+            assert!(!companion_chip_stands(handle, chip), "the sweep took it");
             companion_free(handle);
         }
     }

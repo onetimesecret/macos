@@ -4,7 +4,7 @@ import XCTest
 @testable import CompanionKit
 
 /// The decrypted drag from a block's handle (Law 0001's decrypted drag row,
-/// ADR-0047 point 11, ADR-0050), driven below the session AppKit runs, against
+/// ADR-0045 point 5), driven below the session AppKit runs, against
 /// the live core and on pasteboards of the test's own.
 @MainActor
 final class SealedDecryptedDragTests: XCTestCase {
@@ -21,15 +21,30 @@ final class SealedDecryptedDragTests: XCTestCase {
     /// Where the sealed object stands on a mounted page.
     private let object = 3
 
+    /// A client whose drop to seal counts its asks and never reads the system drag board.
+    private final class DropToSealWitness: CompanionClient, @unchecked Sendable {
+        private(set) var asks = 0
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        override func sealFromDrag(sheet: UInt64, at: UInt32, length: UInt32) -> ChipInfo? {
+            asks += 1
+            return nil
+        }
+    }
+
     /// A model of the test's own, whose ordinary pasteboard is a private one.
-    private func makeModel() throws -> PageModel {
+    private func makeModel(
+        client: CompanionClient = .ephemeral(tag: UUID().uuidString)
+    ) throws -> PageModel {
         let suite = "companion-decrypted-drag-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-decrypted-drag-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let client = CompanionClient.ephemeral(tag: UUID().uuidString)
         XCTAssertTrue(client.useMemoryPasteboardForTests())
         let ambient = privateBoard()
         return PageModel(
@@ -170,6 +185,54 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertTrue(InkTextView.pressBecomesDrag(from: start, to: NSPoint(x: 13, y: 10)))
     }
 
+    /// The pointer turns to an open hand over the handle while it is drawn, hovered or
+    /// selected, and over none while a field or the note holds the keys (Law 0007, keys row).
+    func testTheHandleShowsAnOpenHandWhereAPressWouldStartTheDrag() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let textView = page.textView
+        let frame = try XCTUnwrap(textView.chipFrame(at: object))
+        let handle = try XCTUnwrap(textView.chipCell(at: object)?.decryptedDragRect(in: frame))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "a handle not drawn")
+
+        func hover(_ point: NSPoint, holdsKeys: Bool = true) {
+            textView.hoverRefreshInput = (
+                page.window.convertPoint(toScreen: textView.convert(point, to: nil)),
+                holdsKeys, true)
+            textView.refreshHover()
+        }
+        hover(NSPoint(x: frame.midX, y: frame.midY))
+        XCTAssertEqual(textView.hoveredChipIndex, object)
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the hovered block")
+        hover(NSPoint(x: frame.midX, y: frame.midY), holdsKeys: false)
+        XCTAssertNil(textView.hoveredChipIndex)
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "the hover left")
+
+        textView.setSelectedRange(NSRange(location: 0, length: 2))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "ink is selected")
+        textView.setSelectedRange(NSRange(location: object, length: 0))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "a caret before the block")
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the selected block")
+
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "under the field")
+
+        XCTAssertTrue(page.window.makeFirstResponder(textView))
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        page.coordinator.beginNote(at: object)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        drainMainQueue()
+        XCTAssertTrue(note.holdsKeys)
+        XCTAssertEqual(textView.decryptedDragCursorRects, [], "under the note")
+
+        note.escape()
+        drainMainQueue()
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the hand came back")
+    }
+
     // MARK: The drag and its provider
 
     /// The drag offers a copy to another app and nothing inside this one.
@@ -231,7 +294,7 @@ final class SealedDecryptedDragTests: XCTestCase {
     }
 
     /// An ask past the page's deadline is refused, writes and records nothing, and
-    /// settles the page with no line, since the destination asked (ADR-0052).
+    /// settles the page with no line, since the destination asked (Law 0001, expiry row).
     func testAnAskPastThePagesDeadlineIsRefusedAndSettlesWithoutALine() throws {
         let model = try makeModel()
         let page = try mountPage(on: model)
@@ -253,13 +316,15 @@ final class SealedDecryptedDragTests: XCTestCase {
         source.end(with: [])
     }
 
-    // MARK: Inside the app (ADR-0050)
+    // MARK: Inside the app (Law 0001, decrypted drag row)
 
-    /// The app's own decrypted drag lands on no page: refused before drop to seal reads
-    /// the drag board, so no provider is asked, nothing is recorded and nothing seals.
-    /// A drag from another app still meets drop to seal.
+    /// The app's own decrypted drag lands on no page and no note: each step of the drop
+    /// refuses it, so drop to seal never asks the core, no provider is asked, nothing is
+    /// recorded and nothing seals. A drag from another app still meets drop to seal. The
+    /// witness answers drop to seal, so no step can reach the system drag board.
     func testTheDecryptedDragLandsOnNoPageOfThisApp() throws {
-        let model = try makeModel()
+        let witness = DropToSealWitness(tag: UUID().uuidString)
+        let model = try makeModel(client: witness)
         let page = try mountPage(on: model)
         let other = try mountPage(on: model)
         let (source, item) = try begin(page)
@@ -268,9 +333,9 @@ final class SealedDecryptedDragTests: XCTestCase {
 
         let foreign = FakeDrop(
             source: nil, board: board, location: other.textView.convert(.zero, to: nil))
-        XCTAssertEqual(
-            other.textView.draggingEntered(foreign), .copy,
-            "the control: another app's drag meets drop to seal")
+        XCTAssertEqual(other.textView.draggingEntered(foreign), .copy)
+        XCTAssertFalse(other.textView.performDragOperation(foreign))
+        XCTAssertEqual(witness.asks, 1, "the control: another app's drag meets drop to seal")
 
         other.coordinator.beginNote(at: object)
         let note = try XCTUnwrap(other.coordinator.noteEditor?.textView)
@@ -281,15 +346,13 @@ final class SealedDecryptedDragTests: XCTestCase {
             let drop = FakeDrop(
                 source: source, board: board,
                 location: target.convert(NSPoint(x: 10, y: 10), to: nil))
-            // Checked first, so a regression stops before drop to seal reads a drag board.
-            guard target.draggingEntered(drop) == [] else {
-                return XCTFail("\(name) offered to take the decrypted drag")
-            }
+            XCTAssertEqual(target.draggingEntered(drop), [], name)
             XCTAssertEqual(target.draggingUpdated(drop), [], name)
             XCTAssertEqual(target.dragOperation(for: drop, type: .string), [], name)
             XCTAssertFalse(target.prepareForDragOperation(drop), name)
             XCTAssertFalse(target.performDragOperation(drop), name)
         }
+        XCTAssertEqual(witness.asks, 1, "a surface of this app ran drop to seal")
         XCTAssertEqual(other.model.noteText(chip: try XCTUnwrap(chipID(other))), "")
         XCTAssertEqual(source.asks, 0, "a surface of this app asked the provider")
         XCTAssertNil(model.notice, "drop to seal ran, and said it had nothing to seal")
@@ -298,7 +361,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(shape(other), "ab # cd", "the drop sealed a new object")
     }
 
-    // MARK: Standing aside (ADR-0046)
+    // MARK: Standing aside (Law 0007, keys row)
 
     /// While a name field or the note holds the keys, the handle starts no drag and
     /// the line says why.

@@ -180,7 +180,7 @@ pub struct Conceal {
     pub receipt_id: String,
 }
 
-/// The longest sealed name, in characters (ADR-0042 point 1).
+/// The longest sealed name, in characters (ADR-0042 point 1, proposed).
 pub const NAME_CAP: usize = 64;
 
 /// Why a sealed name was refused. A refusal leaves the name as it was.
@@ -210,7 +210,8 @@ impl std::fmt::Display for NameRefusal {
 impl std::error::Error for NameRefusal {}
 
 /// Judge a draft name: trimmed, empty clears (`None`), anything else must
-/// be [`NAME_CAP`] characters of `[A-Za-z_][A-Za-z0-9_]*` (ADR-0042, ADR-0043).
+/// be [`NAME_CAP`] characters of `[A-Za-z_][A-Za-z0-9_]*`
+/// (ADR-0042 point 1, proposed).
 ///
 /// # Errors
 /// [`NameRefusal::OutsideCharset`], judged first, or [`NameRefusal::TooLong`].
@@ -232,7 +233,7 @@ pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
 }
 
 /// A sealed chip: secret bytes, the non-secret face it shows, and the
-/// typed name and note beside it (ADR-0043).
+/// typed name and note beside it (ADR-0043 point 1, proposed).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
@@ -295,8 +296,8 @@ impl SealedChip {
         }
     }
 
-    /// A clone under a new identity (ADR-0047 point 6): the payload copied
-    /// core-side at its exact size, with no receipt, name or note.
+    /// A clone under a new identity: the payload copied core-side at its exact size, with
+    /// no receipt, name or note; resolution then sets the envelope's (Law 0001, sealed fragment).
     pub(crate) fn duplicate(&self, id: ChipId) -> Self {
         let mut clone = match self.meta {
             ChipMeta::Text { .. } => Self::text(
@@ -410,7 +411,8 @@ pub struct Sheet {
     pub(crate) blocks: BlockIndex,
     /// Chips whose sentinels stand in the body.
     pub(crate) chips: Vec<SealedChip>,
-    /// Chips the body no longer shows, kept on the page's clock (ADR-0047).
+    /// Chips the body no longer shows, kept on the page's clock
+    /// (ADR-0046 point 1, proposed).
     pub(crate) detached: Vec<SealedChip>,
     pub(crate) clock: SheetClock,
     /// Held time from lapsed holds (open question №8).
@@ -439,7 +441,7 @@ impl Sheet {
     }
 
     /// Detach each chip whose sentinel left the body and reattach each
-    /// detached chip whose sentinel stands again (ADR-0047).
+    /// detached chip whose sentinel stands again (ADR-0046 point 1, proposed).
     pub(crate) fn settle_roster(&mut self) {
         let live = self.document.live_chips();
         let (standing, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.chips)
@@ -541,7 +543,7 @@ impl Sheet {
     }
 
     /// The chips the body no longer shows, kept for undo and for a paste
-    /// that names them (ADR-0047).
+    /// that names them (ADR-0046 point 1, proposed).
     pub fn detached(&self) -> impl Iterator<Item = &SealedChip> {
         self.detached.iter()
     }
@@ -627,10 +629,33 @@ impl Sheet {
     }
 
     /// Whether the countdown has run out at `now`, whether or not a sweep
-    /// has taken the page yet (ADR-0048, ADR-0052).
+    /// has taken the page yet (Law 0001, expiry row).
     #[must_use]
     pub fn is_due(&self, now: Instant) -> bool {
         self.remaining(now).is_zero()
+    }
+
+    /// When this page's clock next changes: `now` once [`Sheet::is_due`]
+    /// holds, else its hold's lapse or its deadline (Law 0001, expiry row).
+    #[must_use]
+    pub(crate) fn next_event(&self, now: Instant) -> Instant {
+        if self.is_due(now) {
+            return now;
+        }
+        match self.clock {
+            SheetClock::Running { deadline } => deadline,
+            SheetClock::Held {
+                until,
+                frozen_remaining,
+                ..
+            } => {
+                if now < until {
+                    until
+                } else {
+                    until + frozen_remaining
+                }
+            }
+        }
     }
 
     /// The countdown label text ("3h 40m").

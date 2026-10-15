@@ -11,6 +11,10 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Test seams the ffi's own test-util exposes; never in a release build (ADR-0018).
+test-util = []
+
 [dependencies]
 zeroize = { workspace = true }
 companion-language-detection-policy = { path = "../language-detection-policy" }
@@ -35,7 +39,8 @@ getrandom = "0.2"
 # allowances annotated in deny.toml.
 loro = { version = "=1.13.9", default-features = false }
 # The sealed fragment's envelope is JSON the core alone writes and reads
-# (ADR-0047). Both are already in the lock, by way of loro and the ffi crate.
+# (ADR-0045 point 1, proposed). Both are already in the lock, by way of loro
+# and the ffi crate.
 serde = { workspace = true }
 serde_json = { workspace = true }
 

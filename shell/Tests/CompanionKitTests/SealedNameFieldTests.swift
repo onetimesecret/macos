@@ -3,8 +3,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// A sealed object's name, edited in the name's seat (Law 0007, ADR-0042
-/// points 1 and 3), against the live core through an isolated model.
+/// A sealed object's name, edited in the name's seat (Law 0007; ADR-0042 point 1;
+/// Law 0001, name zone row), against the live core through an isolated model.
 @MainActor
 final class SealedNameFieldTests: XCTestCase {
     private struct Page {
@@ -104,7 +104,7 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertFalse(named.items.contains { $0.title == "Name" })
     }
 
-    /// The double click opens the field only where ADR-0042 point 3 says:
+    /// The double click opens the field only where Law 0007's sealed opening row says:
     /// a named row's name zone, or anywhere on an unnamed row.
     func testADoubleClickOpensTheFieldOnlyWhereTheRuleSays() {
         XCTAssertEqual(
@@ -255,7 +255,7 @@ final class SealedNameFieldTests: XCTestCase {
         )
     }
 
-    // MARK: The write a name arms (ADR-0043 point 5)
+    // MARK: The write a name arms (core interface, The name)
 
     /// A name set or cleared and a note edited each mark the page dirty;
     /// a name the core refuses marks nothing.

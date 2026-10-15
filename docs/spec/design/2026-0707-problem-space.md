@@ -1,7 +1,12 @@
-# docs/spec/design/01-problem-space.md
+# docs/spec/design/2026-0707-problem-space.md
 ---
 
 # Problem Space
+
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
 
 ## The busiest, least-designed surface on the desktop
 

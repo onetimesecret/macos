@@ -73,7 +73,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       field's letters and nothing on the page; ⇧⌘V and ⌘↩ seal nothing;
       in the Edit menu Seal Selected Content, Detect Code Language,
       Choose Language and Paste Without Detection are greyed while the
-      field holds the keys, and come back once it closes (ADR-0046).
+      field holds the keys, and come back once it closes (Law 0007,
+      keys row).
       **Fail:** the page steps back or seals, or a greyed item is
       enabled and acts on the page.
 - [ ] **Sealed name, the double click.** Seal a line with ⌘↩, then

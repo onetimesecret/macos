@@ -463,7 +463,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     public let excerpt: String
     public let sizeLabel: String
     public let concealed: Bool
-    /// The typed name beside the object; nil until one is given (ADR-0043).
+    /// The typed name beside the object; nil until one is given (ADR-0043 point 1).
     public let name: String?
     /// Whether the note holds anything but whitespace: the block's
     /// doorway. The note's text is read with `noteRuns(chip:)`.
@@ -490,7 +490,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// A copied selection (ADR-0047): the private type's bytes, which the
+/// A copied selection (ADR-0045 points 1 and 2): the private type's bytes, which the
 /// shell writes and reads unread, and the public text any app receives.
 public struct SealedFragment: Hashable, Sendable {
     /// The envelope for `CompanionClient.sealedFragmentType`; nil for ink alone.
@@ -498,7 +498,7 @@ public struct SealedFragment: Hashable, Sendable {
     /// The ink, with `[sealed content · <size class>]` for each object.
     public let plainText: String
 
-    /// A copy, or a cap's refusal with `error` and `limit` (ADR-0053).
+    /// A copy, or a cap's refusal with `error` and `limit` (core interface, Entry points).
     struct Wire: Decodable {
         let envelope: String?
         let plain: String?
@@ -526,13 +526,13 @@ public struct SealedFragment: Hashable, Sendable {
 public enum FragmentRefusal: Error, Equatable, Sendable {
     /// An unknown page, one past its deadline, a bad range or a cut the body refused.
     case refused
-    /// Its envelope would be longer than `limit` bytes (ADR-0053).
+    /// Its envelope would be longer than `limit` bytes (Law 0001, copy and cut rows).
     case tooLarge(limit: Int)
-    /// Its envelope would name more than `limit` sealed objects (ADR-0053).
+    /// Its envelope would name more than `limit` sealed objects (Law 0001, copy and cut rows).
     case tooManyObjects(limit: Int)
 }
 
-/// What a paste, a move or a clone placed (ADR-0047 point 6).
+/// What a paste, a move or a clone placed (Law 0001, sealed fragment representation).
 public struct PlacedFragment: Codable, Hashable, Sendable {
     public let locationUTF16: Int
     public let lengthUTF16: Int
@@ -544,7 +544,7 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     public let unavailable: Int
     /// The envelope could not be read, so its public text was placed.
     public let unreadable: Bool
-    /// Due pages the core swept first; the caller settles as its timer does (ADR-0048).
+    /// Due pages the core swept first; the caller settles as its timer does (Law 0001, expiry row).
     public let pagesExpired: Int
 
     /// The placed run, in UTF-16 code units.
@@ -558,7 +558,7 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     }
 }
 
-/// The app's clipboard slot (ADR-0047 point 12): the active cut's page and
+/// The app's clipboard slot (sealed row spec): the active cut's page and
 /// its objects' faces, never their payload.
 public struct ActiveCut: Codable, Hashable, Sendable {
     public let pageID: UInt64
@@ -575,8 +575,8 @@ public struct ActiveCut: Codable, Hashable, Sendable {
     }
 }
 
-/// Why the core would refuse a draft sealed name (ADR-0042 point 1,
-/// ADR-0043). The rule is the core's alone; the words for each case
+/// Why the core would refuse a draft sealed name (ADR-0042 point 1; core
+/// interface, The name). The rule is the core's alone; the words for each case
 /// are the name field's.
 public enum ChipNameRefusal: UInt32, Sendable {
     /// Longer than 64 characters once trimmed.
@@ -1094,8 +1094,8 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Apply an ordered edit batch (JSON operations, UTF-16 offsets)
     /// to the page's body core-side, the ADR-0013 operation path.
-    /// False means the batch was rejected whole and nothing moved;
-    /// the caller re-converges through `syncDocument`.
+    /// False means the batch was rejected whole and nothing moved, as for
+    /// ink holding U+FFFC; the caller re-converges through `syncDocument`.
     ///
     /// `intent` supplies the editing gesture; the core owns grouping.
     @discardableResult
@@ -1134,6 +1134,13 @@ public class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func syncDocument(sheet: UInt64, json: String) -> Bool {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
+    }
+
+    /// Take every U+FFFC out of a page's ink, a peer's or an earlier build's
+    /// (Law 0001), as an edit peers receive and no undo puts back; whether any went.
+    @discardableResult
+    public func takeOutObjectCharacters(sheet: UInt64) -> Bool {
+        companion_sheet_take_out_object_characters(handle, sheet)
     }
 
     // MARK: Undo (issue #132)
@@ -1197,7 +1204,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Copy a chip back out. The core writes the pasteboard itself,
     /// marked transient + concealed; this process never holds the bytes.
-    /// False for an unknown chip or a page past its deadline (ADR-0052).
+    /// False for an unknown chip or a page past its deadline (Law 0001, expiry row).
     @discardableResult
     public func copyOutChip(id: UInt64) -> Bool {
         companion_chip_copy_out(handle, id)
@@ -1206,14 +1213,20 @@ public class CompanionClient: @unchecked Sendable {
     /// Copy `NAME=<plaintext>` by `copyOutChip`'s route: the core composes
     /// and writes it and records one `sent`, so the caller arms the same
     /// guarded clear. False, with nothing written, for an unknown, unnamed
-    /// or image chip, or a page past its deadline (ADR-0052).
+    /// or image chip, or a page past its deadline (Law 0001, expiry row).
     @discardableResult
     public func copyNameValue(chip: UInt64) -> Bool {
         companion_chip_copy_name_value(handle, chip)
     }
 
+    /// Whether a chip stands on a live page, past its deadline or not, as the
+    /// chip conceal asks to word its error.
+    public func chipStands(_ chip: UInt64) -> Bool {
+        companion_chip_stands(handle, chip)
+    }
+
     /// Burn a chip, attached or detached: bytes zeroized and its page's undo
-    /// gone. A backspace is no burn; its delete op detaches (ADR-0047).
+    /// gone. A backspace is no burn; its delete op detaches (ADR-0046 points 1 and 2).
     @discardableResult
     public func deleteChip(id: UInt64) -> Bool {
         companion_chip_delete(handle, id)
@@ -1254,20 +1267,26 @@ public class CompanionClient: @unchecked Sendable {
         companion_clipboard_clear_seconds()
     }
 
-    // MARK: The sealed fragment (ADR-0047)
+    // MARK: The sealed fragment (ADR-0045)
 
     /// The private pasteboard type a fragment's envelope travels under,
     /// with `.debug` in a debug build so the two cannot read each other's.
     public static var sealedFragmentType: String {
         #if DEBUG
-        "com.onetimesecret.onetimepad.sealed-fragment.debug"
+        debugSealedFragmentType
         #else
-        "com.onetimesecret.onetimepad.sealed-fragment"
+        releaseSealedFragmentType
         #endif
     }
 
-    /// Copy a UTF-16 range of a page. Nil for an empty or bad range, a
-    /// page past its deadline (ADR-0052) or an envelope past a cap (ADR-0053).
+    /// The private type as a release build names it (core interface, Type name).
+    static let releaseSealedFragmentType = "com.onetimesecret.onetimepad.sealed-fragment"
+
+    /// The private type as a debug build names it.
+    static let debugSealedFragmentType = releaseSealedFragmentType + ".debug"
+
+    /// Copy a UTF-16 range of a page. Nil for an empty or bad range, a page
+    /// past its deadline or an envelope past a cap (Law 0001, expiry and copy rows).
     public func copyFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
         try? copyFragmentResult(sheet: sheet, range: range).get()
     }
@@ -1333,7 +1352,7 @@ public class CompanionClient: @unchecked Sendable {
             from: companion_sheet_move_range(handle, sheet, wire.0, wire.1, to))
     }
 
-    /// A drag between pages (ADR-0054): move `range` to `at` on `toSheet` as one
+    /// A drag between pages (Law 0001, drag row): move `range` to `at` on `toSheet` as one
     /// transaction keeping every object. Nil with neither page changed.
     @discardableResult
     public func moveRange(
@@ -1388,17 +1407,17 @@ public class CompanionClient: @unchecked Sendable {
         SealedFragment.outcome(of: decodeJSON(SealedFragment.Wire.self, from: ptr))
     }
 
-    // MARK: A sealed object's note (ADR-0043)
+    // MARK: A sealed object's note (core interface, The note's routes)
 
     /// The note's runs, in the shape a page's and a file's arrive in;
     /// empty without a note, nil for an unknown chip or a page past its
-    /// deadline (ADR-0052).
+    /// deadline (Law 0001, expiry row).
     public func noteRuns(chip: UInt64) -> [RestoredRun]? {
         decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip))
     }
 
     /// Apply an edit batch to the note. False means it was refused whole
-    /// and nothing moved; a batch with a chip op is refused.
+    /// and nothing moved; a chip op or ink holding U+FFFC is refused.
     @discardableResult
     public func applyNoteOps(
         chip: UInt64,
@@ -1529,7 +1548,7 @@ public class CompanionClient: @unchecked Sendable {
     /// travel core → client → transport and never enter this process;
     /// on success the link is on the clipboard and only the receipt id
     /// stays on the chip. **Blocks** for the round-trip — call off the
-    /// main actor. A page past its deadline sends nothing (ADR-0052).
+    /// main actor. A page past its deadline sends nothing (Law 0001, expiry row).
     public func concealChip(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {
@@ -1540,7 +1559,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Conceal the whole page (ink verbatim, sealed bytes inlined,
     /// core-side). Refused when the page holds an image chip or is past
-    /// its deadline (ADR-0052). **Blocks** — call off the main actor.
+    /// its deadline (Law 0001, expiry row). **Blocks**: call off the main actor.
     public func concealSheet(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> ConcealOutcome {

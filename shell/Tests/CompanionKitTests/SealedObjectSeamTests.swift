@@ -3,7 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// A sealed object's name across the seam (ADR-0043), against the live
+/// A sealed object's name across the seam (ADR-0043; core interface, The name), against the live
 /// core through an ephemeral handle. Nothing here persists; the one
 /// name=value copy goes to a board in process memory.
 final class SealedObjectSeamTests: XCTestCase {
@@ -118,6 +118,29 @@ final class SealedObjectSeamTests: XCTestCase {
         XCTAssertFalse(client.applyNoteOps(chip: chip.chipId, json: chipOp), "objects do not nest")
         XCTAssertFalse(client.applyNoteOps(chip: 4_242, json: #"[{"ins":{"at":0,"text":"x"}}]"#))
         XCTAssertNil(client.undoNote(chip: 4_242))
+    }
+
+    /// Only a chip stands as U+FFFC, so neither a page nor a note takes it as ink across
+    /// the seam (Law 0001): each write carrying it is refused whole.
+    func testNeitherAPageNorANoteTakesTheObjectCharacterAsInk() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        let (sheet, chip) = try sealedChip(client)
+        XCTAssertTrue(
+            client.applyNoteOps(chip: chip.chipId, json: #"[{"ins":{"at":0,"text":"kept"}}]"#))
+        let inked = #"[{"ins":{"at":0,"text":"x\#u{FFFC}y"}}]"#
+
+        XCTAssertFalse(client.applyOps(sheet: sheet, json: inked), "a page took it as ink")
+        XCTAssertFalse(client.applyNoteOps(chip: chip.chipId, json: inked), "a note took it as ink")
+        XCTAssertFalse(
+            client.syncDocument(
+                sheet: sheet, json: #"[{"ink":"\#u{FFFC}"},{"chip":\#(chip.chipId)}]"#),
+            "the recovery took it as ink")
+
+        XCTAssertEqual(pageInk(client, sheet: sheet), "")
+        XCTAssertEqual(face(client, sheet: sheet)?.chipId, chip.chipId)
+        XCTAssertEqual(noteText(client, chip: chip.chipId), "kept")
+        XCTAssertTrue(
+            client.applyOps(sheet: sheet, json: #"[{"ins":{"at":0,"text":"xy"}}]"#), "the control")
     }
 
     func testANoteNeverReachesTheLedger() throws {

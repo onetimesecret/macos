@@ -32,8 +32,8 @@ amended by [2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md)
 
 *Amended 2026-10-13:* D-40's plain click and D-41's menu, as
 incorporated here, are narrowed and extended for a sealed object's name
-and note by
-[ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md).
+and note by [Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13
+name and note amendment.
 
 ## D-42 · Confirmation after decrypted copy
 

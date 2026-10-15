@@ -1,5 +1,6 @@
-//! A sealed object's note (ADR-0043): chipless ink beside the chip, with an
-//! undo stack of its own and no clock; it goes when its chip goes.
+//! A sealed object's note (ADR-0043 points 2 and 3, proposed): chipless ink
+//! beside the chip, with an undo stack of its own and no clock; it goes when
+//! its chip goes.
 
 use zeroize::Zeroizing;
 
@@ -30,13 +31,17 @@ impl Note {
         !self.text().trim().is_empty()
     }
 
-    /// [`ink::apply_batch`]; `None` refused the batch whole.
+    /// [`ink::apply_batch`]; `None` refused the batch whole, as is one that
+    /// would write the chip sentinel as ink.
     pub(crate) fn apply(
         &mut self,
         ops: &[EditOp],
         intent: EditIntent,
         selection: Option<EditSelection>,
     ) -> Option<bool> {
+        if ops.iter().any(EditOp::inks_sentinel) {
+            return None;
+        }
         ink::apply_batch(&mut self.document, ops, intent, selection)
     }
 

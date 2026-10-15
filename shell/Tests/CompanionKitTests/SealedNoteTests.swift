@@ -3,9 +3,9 @@ import XCTest
 
 @testable import CompanionKit
 
-/// A sealed object's note (Law 0001's note row, ADR-0042 points 7 and 8,
-/// ADR-0043 point 4): the doorway, the popover over the page, and its
-/// edits on the note's own routes, against the live core.
+/// A sealed object's note (Law 0001's note row; sealed row spec, Doorway and The
+/// note's popover; core interface, The note's routes): the doorway, the popover over
+/// the page, and its edits on the note's own routes, against the live core.
 @MainActor
 final class SealedNoteTests: XCTestCase {
     private struct Page {
@@ -102,7 +102,7 @@ final class SealedNoteTests: XCTestCase {
             charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
     }
 
-    // MARK: Where the popover stands (ADR-0042 points 7 and 8)
+    // MARK: Where the popover stands (Law 0001, note row; sealed row spec, Placement)
 
     func testThePopoverHangsUnderTheBlockAtTheBlocksMeasure() {
         let content = CGRect(x: 0, y: 0, width: 600, height: 500)
@@ -120,7 +120,7 @@ final class SealedNoteTests: XCTestCase {
     }
 
     /// A block narrower than the popover's minimum puts the note across
-    /// the card's content width (ADR-0042 point 7).
+    /// the card's content width (Law 0001, note row).
     func testANarrowBlockPutsTheNoteAcrossTheContentWidth() {
         let content = CGRect(x: 0, y: 0, width: 360, height: 500)
         let minimum = NotePopoverLayout.minimumWidth
@@ -161,7 +161,7 @@ final class SealedNoteTests: XCTestCase {
             "the arrow left the popover's straight edge")
     }
 
-    // MARK: The doorway (ADR-0042 point 8)
+    // MARK: The doorway (sealed row spec, Doorway)
 
     /// Once a note exists the seat reads `small · note`, size class first;
     /// a hovered zone or a copy takes the seat whole.
@@ -234,7 +234,7 @@ final class SealedNoteTests: XCTestCase {
     }
 
     /// A click on the doorway opens the note; Esc closes it and gives the
-    /// keys back to the page; *Edit note…* reads so once a note exists.
+    /// keys back to the page; *Edit Note…* reads so once a note exists.
     func testTheDoorwayOpensTheNoteAndEscClosesIt() throws {
         let page = try makePage()
         page.coordinator.beginNote(at: 3)
@@ -419,7 +419,7 @@ final class SealedNoteTests: XCTestCase {
     }
 
     /// A drag from elsewhere finds nowhere to land in the note, since a
-    /// seal cannot stand in it (ADR-0043 point 3); a drag of the note's own
+    /// seal cannot stand in it (ADR-0043 point 2); a drag of the note's own
     /// ink still moves it.
     func testTheNoteTakesNoDropFromElsewhere() throws {
         let page = try makePage()
@@ -445,7 +445,7 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertEqual(page.model.noteText(chip: page.chip), "kept")
     }
 
-    // MARK: The page's own surface (ADR-0045)
+    // MARK: The page's own surface (ADR-0044)
 
     /// The same ink reads the same in the note as on the page, by font, colour
     /// and link, and a link's click goes to the page's handler (ADR-0023).
@@ -606,7 +606,7 @@ final class SealedNoteTests: XCTestCase {
     }
 
     /// While the note holds the keys the Edit menu's actions reach the note,
-    /// not the page, and the menu shows what the note can do (ADR-0046).
+    /// not the page, and the menu shows what the note can do (Law 0007, keys row).
     func testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys() throws {
         let page = try makePage()
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))

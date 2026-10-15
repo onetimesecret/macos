@@ -56,20 +56,20 @@ enum SealedBlockLayout {
         /// head and tail, so at a narrow measure the excerpt is cut at
         /// this gap rather than run under the size class.
         let excerptTrailingGap: CGFloat
-        /// The pill under a hovered zone of a named row (ADR-0042 point 8):
+        /// The pill under a hovered zone of a named row (sealed row spec, Hover pill and seat words):
         /// its height and radius, and how far it runs past its run each side.
         let pillHeight: CGFloat
         let pillRadius: CGFloat
         let pillOverhang: CGFloat
         /// What the `=` zone takes from the runs beside it, each side.
         let equalsSlop: CGFloat
-        /// The decrypted drag's handle (ADR-0051): its clearance from the
+        /// The decrypted drag's handle (sealed row spec, Seat and look): its clearance from the
         /// actions seat and from the classification, and its words' inset from its outline.
         let handleGap: CGFloat
         let handleInset: CGFloat
     }
 
-    /// A zone of a named object's bottom row (Law 0001, ADR-0042 point 8).
+    /// A zone of a named object's bottom row (Law 0001; sealed row spec, Zones).
     enum Zone: Equatable, Sendable, CaseIterable {
         case name
         case equals
@@ -77,7 +77,7 @@ enum SealedBlockLayout {
     }
 
     /// Whether an object of `kind` copies `NAME=value`: text alone, as
-    /// the core composes it (ADR-0043 point 7, ADR-0044).
+    /// the core composes it (Law 0001, `=` zone row; core interface, `NAME=value`).
     static func copiesNameValue(kind: String) -> Bool {
         kind == "text"
     }
@@ -126,7 +126,7 @@ enum SealedBlockLayout {
     }
 
     /// How wide a named row's name and value may be drawn in `available` points:
-    /// the name gives way first, down to `nameFloor`, then the value (ADR-0044).
+    /// the name gives way first, down to `nameFloor`, then the value (sealed row spec, Row).
     static func rowAllotment(
         available: CGFloat, name: CGFloat, equals: CGFloat, value: CGFloat,
         nameFloor: CGFloat

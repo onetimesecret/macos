@@ -67,8 +67,8 @@ final class SealedCapsuleTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: 2, length: 2))
         XCTAssertNil(coordinator.selectedChipIndex, "a mixed selection offered the chord a payload")
 
-        // Named, the menu gains the two copies in D-41's order as
-        // ADR-0042 extends it, and the chord stays on copy decrypted.
+        // Named, the menu gains the two copies in D-41's order as Law 0001's
+        // presentation invariants extend it, and the chord stays on copy decrypted.
         name(textView, chipAt: 3, model: model, as: "MY_API_KEY")
         let named = try XCTUnwrap(coordinator.chipMenu(at: 3))
         XCTAssertEqual(
@@ -86,7 +86,7 @@ final class SealedCapsuleTests: XCTestCase {
         }
     }
 
-    // MARK: The named row's zones (Law 0001, ADR-0042 points 2, 3 and 8)
+    // MARK: The named row's zones (Law 0001, unnamed row and zone rows; sealed row spec, Zones)
 
     /// Names the chip at `index` core-side and stands its new face in.
     private func name(
@@ -774,24 +774,25 @@ final class SealedCapsuleTests: XCTestCase {
     /// keeps the object detached; withdrawn, the words stay and the button goes.
     func testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords() throws {
         let model = try makeModel()
-        var undone = 0
+        model.newPage()
+        let sheet = try XCTUnwrap(model.selectedPageID)
         XCTAssertTrue(PageModel.offersRemovalUndo)
-        model.noteRemoval { undone += 1 }
+        model.noteRemoval(sheet: sheet)
         XCTAssertEqual(model.notice, PageModel.removedLine)
         XCTAssertEqual(model.noticeTone, .plain)
         XCTAssertEqual(model.noticeAction?.label, "Undo")
-        XCTAssertEqual(undone, 0)
 
         model.withdrawRemovalUndo()
         XCTAssertEqual(model.notice, PageModel.removedLine)
         XCTAssertNil(model.noticeAction)
-        model.performNoticeAction()
-        XCTAssertEqual(undone, 0, "a withdrawn Undo still ran")
 
         // Another line's button is not the removal's to withdraw.
+        var undone = 0
         model.flash("a line with a button", action: .init(label: "Undo") { undone += 1 })
         model.withdrawRemovalUndo()
         XCTAssertEqual(model.noticeAction?.label, "Undo")
+        model.performNoticeAction()
+        XCTAssertEqual(undone, 1)
     }
 
     /// A notice's action runs once and takes the line down with it;

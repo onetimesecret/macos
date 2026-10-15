@@ -7,7 +7,8 @@ pub mod clock;
 mod document;
 pub mod file_persist;
 pub mod files;
-// The sealed fragment's envelope; the shell carries its bytes unread (ADR-0047).
+// The sealed fragment's envelope; the shell carries its bytes unread
+// (ADR-0045 point 1, proposed).
 mod fragment;
 pub mod harden;
 mod ink;
@@ -19,7 +20,7 @@ pub mod secret;
 pub mod sheet;
 pub mod store;
 pub mod sync;
-// Copy, cut, paste and the drags inside a page (ADR-0047).
+// Copy, cut, paste and the drags (Law 0001: the copy, cut, paste and drag rows).
 mod transfer;
 pub mod ttl;
 

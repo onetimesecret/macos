@@ -1501,7 +1501,7 @@ final class DayScrollTests: XCTestCase {
     }
 
     /// While the gutter's field holds the keys the page's ⌘Z and the Edit
-    /// menu's actions stand aside for the draft (Law 0007, ADR-0046).
+    /// menu's actions stand aside for the draft (Law 0007, keys row).
     func testTheGuttersFieldTakesThePagesChordsAndMenuAway() throws {
         let model = try makeModel()
         let selected = try page(in: model, saying: "first line")

@@ -369,7 +369,7 @@ public struct PageStatusStack: View {
                 ownsPresentation: model.owner == surface
             )
         {
-            // The clipboard slot (ADR-0047 point 12): faces and one button, no menu or panel.
+            // The clipboard slot (sealed row spec): faces and one button, no menu or panel.
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))

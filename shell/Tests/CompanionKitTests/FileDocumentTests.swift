@@ -1779,6 +1779,41 @@ final class FileCloseSweepTests: XCTestCase {
         XCTAssertNil(model.viewStates.scrolls[id], "and the scroll offset")
     }
 
+    /// A file's text is its own, so U+FFFC typed into it stays, where a page or a
+    /// note drops it (Law 0001, object character amendment).
+    func testAFileKeepsTheObjectCharacterAPageDrops() throws {
+        let fixture = try makeFixture()
+        let model = PageModel(
+            formFactor: .panel,
+            defaults: fixture.defaults,
+            seams: .init(
+                stateDirectory: fixture.state,
+                client: .ephemeral(tag: "object-\(UUID().uuidString)"),
+                saveDebounce: 0.05
+            )
+        )
+        model.fileCoordinator = FileCoordinator(panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = fixture.workspace.appendingPathComponent("notes.txt")
+        try Data("ab\n".utf8).write(to: url)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: id, coordinator: coordinator
+        ))
+        textView.isEditable = true
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+
+        textView.insertText("\u{FFFC}", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertEqual(textView.string, "a\u{FFFC}b\n")
+        let core = model.coreClient.fileRuns(id).reduce(into: "") {
+            if case .ink(let text) = $1 { $0 += text }
+        }
+        XCTAssertEqual(core, "a\u{FFFC}b\n")
+    }
+
     /// The sweep no longer needs an editor to be standing anywhere. The
     /// place is the model's, so a file whose editor was torn down before
     /// the file went is swept all the same, where the coordinator's own

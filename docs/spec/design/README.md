@@ -6,13 +6,63 @@
 An open-source, Rust-based macOS desktop companion to Onetime Secret.
 Working title: **CompanionApp** (see naming note below).
 
-This is a *design* spec, produced ahead of implementation. Milestone 1
-restated the problem space and mapped the opportunities neighbouring
-applications overlook; the interaction model has since been through three
-revisions of design rounds and is now at **revision C** (doc 04), with a
-working HTML prototype alongside.
+This directory holds the milestone-1 design and later dated decision
+records. The milestone-1 interaction model reached **revision C**, with a
+working HTML prototype alongside. Later records below amend parts of that
+design; the original documents are not a consolidated current specification.
 
-## One-paragraph summary
+## Reading historical security claims
+
+**Publication clarification, 2026-10-14:** the foundational documents retain
+historical proposals and amendments. Their disappearance, memory-only,
+non-reading, capture, and runtime-hardening assertions are not a statement
+of validated current product guarantees.
+
+- **Persistence and disappearance.** Accepted
+  [ADR-0016, Decision](../../adr/0016-content-persists-across-restart.md#decision)
+  states:
+
+  > Unexpired staged content survives ordinary process termination, crash, force
+  > termination, logout, restart, shutdown, and compatible app updates.
+
+  Its [Consequences](../../adr/0016-content-persists-across-restart.md#consequences)
+  also state:
+
+  > A copied ciphertext plus both copied halves can remain decryptable after the
+  > live app rotates its copies. APFS snapshots and rollback of an older authentic
+  > state file remain accepted residual exposures.
+
+  Earlier memory-only, quit-amnesia, and universal-disappearance language
+  must not be read as the accepted persistence model or an erasure guarantee.
+- **Excerpts and non-reading.** Accepted
+  [Law 0001](../../law/0001-sealed-object.md#why-this-rule) states:
+
+  > the shell never receives the sealed
+  > payload from the core. It may hold visible ink before sealing, and the
+  > policy-approved mechanical excerpt and the object's name and note
+  > afterward.
+
+  Earlier claims that content is never read or rendered are design shorthand,
+  not literal claims that no content-derived characters reach the UI.
+- **Capture and runtime hardening.** Naming `sharingType = .none`, locked
+  memory, or Hardened Runtime does not validate universal screenshot
+  prevention, absence of residual copies, or immunity to privileged memory
+  access. Absolute guarantees of that kind are unsupported by this collection.
+- **Relay retention and destinations.** The foundational no-retention wording
+  must not be read as proof of server-side deletion. Accepted
+  [ADR-0021, Eject triggers](../../adr/0021-multi-device-sync-over-a-blind-relay.md#eject-triggers)
+  explicitly lists:
+
+  > The design starts relying on server-side deletion rather than key rotation for
+  > confidentiality.
+
+  The technical survey's fixed destination count also coexists with a release-feed
+  check. It is not a verified inventory of current network traffic.
+
+These qualifications document limits and point to accepted decisions; they
+are not implementation tests or new security guarantees.
+
+## Milestone-1 summary
 
 A menu-bar-resident staging area for content in transition. Summoning the
 non-activating window shows a **sheet** — a little text file of visible
@@ -25,22 +75,57 @@ Secondarily, a chip or a whole page can be concealed into a Onetime Secret
 link (v3 API) when the content needs to travel to another person or
 machine.
 
-## Reading order
+## Foundational design: reading order
 
-| Doc | Contents | Status |
+Design Markdown filenames use `YYYY-MMDD-subject.md`. The seven foundational
+documents use `2026-0707`, their first-added date in Git history, not an
+acceptance or last-revised date. Their former `01`–`07` prefixes expressed
+only the reading order preserved below. Statuses in this table describe the
+milestone-1 documents; consult the later decision records for amendments.
+
+| Doc | Contents | Original status |
 | --- | --- | --- |
-| [01-problem-space.md](01-problem-space.md) | Restatement of the problem, the cache analogy taken seriously, anti-goals | **Core deliverable** |
-| [02-overlooked-opportunities.md](02-overlooked-opportunities.md) | Landscape of neighbouring apps and the gaps they leave | **Core deliverable** |
-| [03-design-principles.md](03-design-principles.md) | The principles that fall out of 01 + 02 | Binding, as amended by rev C |
-| [04-interaction-model.md](04-interaction-model.md) | Sheets, ink and sealed chips, the window, tabs, the ledger, the keyboard map | **Revision C** — consolidates design rounds v7–v10 and the 12 Jul 2026 decision rounds |
-| [05-technical-direction.md](05-technical-direction.md) | Rust framework survey, v3 API integration, security posture, a11y | Supporting — draft, amended by rev C |
-| [06-open-questions.md](06-open-questions.md) | Everything unresolved, honestly | Supporting — updated for rev C |
-| [07-repo-skeleton.md](07-repo-skeleton.md) | Prescription for initializing the app repository | Executed |
+| [2026-0707-problem-space.md](2026-0707-problem-space.md) | Restatement of the problem, the cache analogy taken seriously, anti-goals | **Core deliverable** |
+| [2026-0707-overlooked-opportunities.md](2026-0707-overlooked-opportunities.md) | Landscape of neighbouring apps and the gaps they leave | **Core deliverable** |
+| [2026-0707-design-principles.md](2026-0707-design-principles.md) | The principles that fall out of the problem space and overlooked opportunities | Binding, as amended by rev C |
+| [2026-0707-interaction-model.md](2026-0707-interaction-model.md) | Sheets, ink and sealed chips, the window, tabs, the ledger, the keyboard map | **Revision C** — consolidates design rounds v7–v10 and the 12 Jul 2026 decision rounds |
+| [2026-0707-technical-direction.md](2026-0707-technical-direction.md) | Rust framework survey, v3 API integration, security posture, a11y | Supporting — draft, amended by rev C |
+| [2026-0707-open-questions.md](2026-0707-open-questions.md) | Everything unresolved, honestly | Supporting — updated for rev C |
+| [2026-0707-repo-skeleton.md](2026-0707-repo-skeleton.md) | Prescription for initializing the app repository | Executed |
+
+## Accepted dated decisions
+
+These records carry `status: accepted`. Follow their amendment links;
+acceptance does not mean every original passage remains unchanged.
+
+| Record | Scope | Relationship |
+| --- | --- | --- |
+| [2026-0915-ui-ux-decisions.md](2026-0915-ui-ux-decisions.md) | Background-surface interactions, presentation, copy, and acceptance criteria | Supersedes the September 14 record; carries later amendment links |
+| [2026-0916-clipboard-clear-interval.md](2026-0916-clipboard-clear-interval.md) | General-pasteboard clear interval and incorporated navigator/capsule decisions | Supersedes the stream-navigator record in full, incorporating D-34–D-41 and amending D-42–D-43 |
+| [2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md) | Rail marks, timestamps, gutters, and derived titles | Amends the preceding records; carries later amendment links |
+
+## Draft proposals
+
+| Record | Scope | Status |
+| --- | --- | --- |
+| [2026-0930-file-conflict-locate.md](2026-0930-file-conflict-locate.md) | Locate actions, unavailable-file banners, and held-file wording | Draft; not an accepted amendment to D-17 |
+
+## Superseded decision history
+
+| Record | Successor |
+| --- | --- |
+| [2026-0914-ui-ux-decisions.md](2026-0914-ui-ux-decisions.md) | [September 15 UI/UX decisions](2026-0915-ui-ux-decisions.md) |
+| [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) | [September 16 clear-interval record](2026-0916-clipboard-clear-interval.md), which incorporates its navigator/capsule decisions |
+
+The [rail wireframe](2026-0916-rail-redundancy-wireframe.svg) accompanies
+the rail-redundancy record. The illustrated
+[UI/UX decision record](UI-UX%20Decision%20Record%20-%20Sealed%20Content.html)
+accompanies the UI/UX Markdown records; consult the dated records for status
+and amendments.
 
 ## Feature specifications
 
-The documents above are the standing *design* spec. Specifications for
-individual features, written against it, live under
+Specifications for individual features live under
 [`docs/spec/feature/`](../feature/):
 
 | Feature | Contents | Status |
@@ -53,8 +138,8 @@ individual features, written against it, live under
 The interaction model's revisions live as rendered documents in
 [`docs/archive/airlock-prototype/`](../../archive/airlock-prototype/):
 
-- `Airlock Spec.dc.html` — **rev C**, the authoritative interaction
-  model; doc 04 is its markdown consolidation (including the rev B
+- `Airlock Spec.dc.html` — **rev C**, the milestone-1 interaction
+  model; [Interaction model](2026-0707-interaction-model.md) is its markdown consolidation (including the rev B
   material it references).
 - `Airlock Prototype.dc.html` — interactive HTML prototype implementing
   rev C against a real clipboard (excerpt rule, sealing gestures, tabs,
@@ -87,4 +172,4 @@ network. The Onetime Secret v3 API appears only at the conceal step,
 turning local ephemeral content into a one-time link. Authentication
 starts with HTTP Basic (organization `extid` + API token pair) and
 migrates to PASETO when the v3 auth work lands. See
-[05-technical-direction.md](05-technical-direction.md).
+[2026-0707-technical-direction.md](2026-0707-technical-direction.md).

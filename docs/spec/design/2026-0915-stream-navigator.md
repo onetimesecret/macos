@@ -8,7 +8,7 @@ superseded-by: docs/spec/design/2026-0916-clipboard-clear-interval.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface), Days + side
 sources:
-  - claude.ai/design project ec4e1925-a907-418a-8020-270fb6353d23, "Stream Navigator (Sol feedback).html" and stream-navigator-sol.jsx (the maintainer's interactive design)
+  - the maintainer's interactive design, "Stream Navigator (Sol feedback).html" and stream-navigator-sol.jsx
   - docs/spec/design/2026-0915-ui-ux-decisions.md
   - docs/law/0001-sealed-object.md
   - shell/Sources/CompanionKit/StreamNavigator.swift
@@ -21,6 +21,9 @@ sources:
 ---
 
 # The stream navigator and the sealed capsule's actions
+
+*Publication cleanup, 2026-10-14:* the source attribution omits the private
+AI project identifier; the artifact names and decision history are retained.
 
 The maintainer's interactive design of 2026-09-15 ("Stream Navigator,
 Sol feedback") redraws the Days + side presentation as one track of
@@ -152,7 +155,8 @@ the mechanical excerpt and the size class on the row under them.
   zones, name, `=` and value, which act on the first click; a plain
   click outside the bottom row still only selects, and an unnamed block
   keeps this decision whole
-  ([ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)).
+  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  note amendment and its zone rows).
 - **D-41 (fixed)** The menu, in the design's words and order:
 
   ```text
@@ -176,9 +180,9 @@ the mechanical excerpt and the size class on the row under them.
   `BundledKeymapTests`.
   *Amended 2026-10-13:* the menu gains *Copy name*, *Copy name=value,
   decrypted*, *Name…* or *Rename…* and *Note…* or *Edit note…*, in the
-  order and with the unnamed variants that
-  [ADR-0042](../../adr/0042-sealed-names-copy-zones-and-rename-seats.md)
-  records. The chord stays on *Copy decrypted contents*.
+  order and with the unnamed variants that the
+  [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)
+  records under The object's menu. The chord stays on *Copy decrypted contents*.
   *Amended 2026-10-14:* the items are title case, *Name* and *Rename*
   edit in place and carry no ellipsis, and the removal reads *Remove
   Sealed Content*

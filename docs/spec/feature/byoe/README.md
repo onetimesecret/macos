@@ -6,9 +6,9 @@
 Status: **draft**, for review · 2026-07-15
 Scope: the **create/conceal path only** (the encrypt half). Reveal is a
 recipient concern and is explicitly out of scope (see Non-goals).
-Governs against: [`../../design/05-technical-direction.md`](../../design/05-technical-direction.md)
+Governs against: [`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
 (concealing, security posture) and
-[`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
 (the conceal gesture). Protocol source of truth: the `byoe/1` spec in
 the `byoe-proxy` repository (`docs/byoe-protocol.md`).
 
@@ -255,7 +255,7 @@ exist.
 
 - `byoe/1` protocol spec: `byoe-proxy` repo, `docs/byoe-protocol.md`.
 - Reference implementation and test vectors: `byoe-proxy` repo.
-- Conceal architecture: [`../../design/05-technical-direction.md`](../../design/05-technical-direction.md),
+- Conceal architecture: [`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md),
   `crates/ffi/src/conceal.rs`, `crates/ffi/src/lib.rs`.
 - State-file crypto precedent (`ring`, Keychain custody):
   `crates/ffi/src/persist.rs`.

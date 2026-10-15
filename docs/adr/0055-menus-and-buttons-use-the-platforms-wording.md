@@ -6,7 +6,6 @@ documentation_status: needs-review
 
 - **Status:** accepted
 - **Date:** 2026-10-14
-- **Supersedes in part:** [ADR-0042](0042-sealed-names-copy-zones-and-rename-seats.md), specifically the case and the ellipses of the menu words its Menu point lists, and its *Remove protected content*. The order, the items and the chord stand.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -78,3 +77,12 @@ Menus and buttons are worded as the platform words them.
   (fix/ui-guidelines). The stream navigator record carries dated notes at
   D-41 and D-42, the 2026-0915 UI/UX record at D-09, and Laws 0001 and
   0007 amendments cite this record.
+- 2026-10-15: The ADR-0042 this record superseded in part, *Sealed
+  names, copy zones and rename seats*
+  (`0042-sealed-names-copy-zones-and-rename-seats.md`, last at
+  `8a10020f`), was a draft withdrawn without ratification
+  (feature/editing-seals), so the relation is dropped. The proposed
+  ADR-0042 now in this directory is a different record. The menu it
+  amended is Law 0001's menu block and the
+  [sealed row spec](../spec/feature/sealed-content/sealed-row-note-and-handles.md)'s
+  The object's menu, both in this record's words.

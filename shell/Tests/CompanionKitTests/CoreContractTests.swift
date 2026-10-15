@@ -94,7 +94,7 @@ final class CoreContractTests: XCTestCase {
         let ledger = client.ledger()
 
         // The page's creation, the seal, then the close, which ends the chip
-        // and the page apart (ADR-0047). Nothing else in this test emits.
+        // and the page apart (Law 0001, lifecycle states). Nothing else in this test emits.
         XCTAssertEqual(ledger.map(\.event), ["discarded", "discarded", "sealed", "created"])
         let discarded = try XCTUnwrap(ledger.first)
         let chipDeath = ledger[1]

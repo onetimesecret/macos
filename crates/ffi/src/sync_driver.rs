@@ -20,7 +20,7 @@ use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
 
 use crate::diagnostics::diag_fault;
-use crate::gop::GopKeyChain;
+use crate::gop::{GopKeyChain, KeyFrame};
 use crate::pairing::{self, MailboxMessage};
 use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
 use crate::sync_session::{KeyPackage, KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
@@ -149,7 +149,7 @@ pub(crate) struct EngineState {
     pub pending_packages: Option<KeyPackageKeeper>,
     /// A committed ceremony's frame the relay has not yet accepted:
     /// kept until a 2xx or 409, so a dropped round retries.
-    pub unpublished_frame: Option<Vec<u8>>,
+    pub unpublished_frame: Option<KeyFrame>,
 }
 
 /// Per enrolled page: the delta cursor and what was last published for
@@ -369,7 +369,8 @@ fn wall_now_ms() -> u64 {
 }
 
 /// Enrol a page into the channel, or withdraw it, which performs any due
-/// ceremony on the spot (client protocol §2).
+/// ceremony on the spot (client protocol §2). A page past its deadline
+/// does not enrol (Law 0001, expiry row).
 pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bool) -> bool {
     let Some(page) = companion
         .store
@@ -379,6 +380,9 @@ pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bo
         return false;
     };
     if enrolled {
+        if companion.store.is_due(sheet) {
+            return false;
+        }
         if !companion.store.set_compaction_deferred(sheet, true) {
             return false;
         }
@@ -718,9 +722,10 @@ fn sign_out_locked(companion: &mut Companion) {
     }
 }
 
-/// One outbound sweep, under the lock and off the network: queue each
-/// page's new ops, moved deadline or hold, or a dead page's marker, then
-/// rotate when a page is due (client protocol §3 step 2, §7.1).
+/// One outbound sweep, under the lock and off the network: seal an owed
+/// frame, queue each page's new ops, moved deadline or hold, or a dead
+/// page's marker, then rotate when a page is due (client protocol §3
+/// step 2, §7.1, §7.6).
 pub(crate) fn sweep_outbound(
     companion: &mut Companion,
     now_ms: u64,
@@ -742,13 +747,21 @@ pub(crate) fn sweep_outbound(
     let Some(engine) = engine.as_mut() else {
         return;
     };
+    // A frame a refused seal left owed goes first, so the relay can follow.
+    if let Some(page) = engine.session.seal_owed_frame(store, &engine.chain) {
+        settle_frontier(store, enrolled, staged_batch, &mut engine.session, page);
+    }
     let mut rotate = false;
     let mut due_target: Option<ItemId> = None;
-    let mut fallback: Option<ItemId> = None;
     for (page, tracking) in enrolled.iter_mut() {
         match sheet_of(store, *page) {
             Some(sheet) => {
-                if let Some(version) = store.document_version(sheet)
+                // Law 0001, expiry row: past its deadline a page gives the relay no ops,
+                // and none queued earlier reach a seal.
+                let past_deadline = store.is_due(sheet);
+                if past_deadline {
+                    engine.session.withdraw_ops(*page);
+                } else if let Some(version) = store.document_version(sheet)
                     && version != tracking.frontier
                     && let Some(update) = store.export_document_updates(sheet, &tracking.frontier)
                 {
@@ -776,11 +789,10 @@ pub(crate) fn sweep_outbound(
                 if store.ceremony_due(sheet) {
                     rotate = true;
                     due_target = due_target.or(Some(*page));
-                } else {
-                    fallback = fallback.or(Some(*page));
                 }
             }
             None => {
+                engine.session.withdraw_ops(*page);
                 // The page died here: sign its marker every sweep until
                 // it queues, once per engine, then rotate (§6, §7.1).
                 if !tracking.terminal_sent
@@ -793,12 +805,21 @@ pub(crate) fn sweep_outbound(
             }
         }
     }
-    if rotate
-        && let Some(target) = due_target.or(fallback)
-        && rotate_channel(store, engine, &**credentials, target, now_ms, events)
-    {
-        settle_frontier(store, enrolled, staged_batch, target);
+    if rotate && let Some(target) = due_target.or_else(|| live_anchor(store, enrolled)) {
+        rotate_channel(store, sync, &**credentials, target, now_ms, events);
     }
+}
+
+/// The first enrolled page held here before its deadline, the anchor of a
+/// rotation no page is owed; a page past it would refuse (Law 0001, expiry row).
+fn live_anchor(
+    store: &companion_core::SheetStore<companion_core::SystemClock>,
+    enrolled: &BTreeMap<ItemId, PageTracking>,
+) -> Option<ItemId> {
+    enrolled
+        .keys()
+        .copied()
+        .find(|page| sheet_of(store, *page).is_some_and(|sheet| !store.is_due(sheet)))
 }
 
 /// Whether a re-read hold register is a new fact. `until_wall_ms` is
@@ -828,14 +849,18 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
 }
 
 /// Move a page's export and acknowledged cursors to its rebuilt
-/// version without exporting, and drop the page from any staged batch:
-/// the rebuild travels only as the frame (client protocol §7.6).
+/// version without exporting, drop the page from any staged batch, and
+/// withdraw its unsealed ops: the rebuild travels only as the frame
+/// (client protocol §7.6).
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
     staged: &mut Option<StagedBatch>,
+    session: &mut SyncSession,
     page: ItemId,
 ) {
+    // Ops queued before the rebuild are history from behind the boundary.
+    session.withdraw_ops(page);
     if let Some(tracking) = enrolled.get_mut(&page)
         && let Some(sheet) = sheet_of(store, page)
         && let Some(version) = store.document_version(sheet)
@@ -850,11 +875,31 @@ fn settle_frontier(
 }
 
 /// Build the publish request and, for a newly sealed batch, record each
-/// page's export cursor; a resend keeps the first record (client
-/// protocol §4.4).
+/// page's export cursor; a resend keeps the first record, a batch the
+/// chain has moved past is dropped and its pages rewound, and nothing
+/// goes while this device's frame for the epoch waits (client protocol
+/// §4.4).
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
     let engine = companion.sync.engine.as_mut()?;
-    let EngineState { session, chain, .. } = engine;
+    let EngineState {
+        session,
+        chain,
+        unpublished_frame,
+        ..
+    } = engine;
+    if session.drop_stale_batch(chain) {
+        companion.sync.staged_batch = None;
+        for (page, tracking) in &mut companion.sync.enrolled {
+            if rewind_export(tracking) {
+                session.withdraw_ops(*page);
+            }
+        }
+    }
+    // The relay refuses this epoch's deltas until it holds this epoch's frame.
+    let _ = crate::gop::take_stale(unpublished_frame, chain);
+    if unpublished_frame.is_some() || session.frame_outstanding() {
+        return None;
+    }
     let request = session.publish_request(now_ms, chain)?;
     let batch = session.in_flight_batch();
     let known = companion
@@ -906,13 +951,23 @@ fn absorb_publish_locked(
     Some(Ok(()))
 }
 
+/// Rewind a page's export cursor to its acknowledged one, so the next
+/// sweep exports what the relay never took. Whether it moved.
+fn rewind_export(tracking: &mut PageTracking) -> bool {
+    if tracking.frontier == tracking.acked {
+        return false;
+    }
+    tracking.frontier = tracking.acked.clone();
+    true
+}
+
 /// Dissolve the engine, handing back its keeper, and rewind every page
 /// to its acknowledged cursor (client protocol §2).
 pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
     // The batch and its record die with the session that sealed it.
     companion.sync.staged_batch = None;
     for tracking in companion.sync.enrolled.values_mut() {
-        tracking.frontier = tracking.acked.clone();
+        let _ = rewind_export(tracking);
         tracking.deadline_wall_ms = None;
         tracking.hold = None;
         tracking.terminal_sent = false;
@@ -926,16 +981,25 @@ pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> 
 }
 
 /// Rotate the channel at `target`: a ballot to the verified peers, or
-/// solo when there are none (client protocol §7.2, §7.3, §7.9). True
-/// when the solo path committed and the page owes a settled cursor.
+/// solo when there are none (client protocol §7.2, §7.3, §7.9). A solo
+/// commit settles the page's cursor, whichever trigger asked.
 fn rotate_channel(
     store: &mut companion_core::SheetStore<companion_core::SystemClock>,
-    engine: &mut EngineState,
+    sync: &mut SyncState,
     credentials: &dyn CredentialStore,
     target: ItemId,
     now_ms: u64,
     events: &mut Vec<serde_json::Value>,
-) -> bool {
+) {
+    let SyncState {
+        engine,
+        enrolled,
+        staged_batch,
+        ..
+    } = sync;
+    let Some(engine) = engine.as_mut() else {
+        return;
+    };
     let identities: Vec<(String, Vec<u8>)> = pairing::peer_records(credentials)
         .into_iter()
         .map(|record| (record.fingerprint, record.identity_pub))
@@ -951,7 +1015,7 @@ fn rotate_channel(
             events.push(serde_json::json!({
                 "kind": "ceremony_committed", "page": page, "page_id": page_id
             }));
-            return true;
+            settle_frontier(store, enrolled, staged_batch, &mut engine.session, target);
         }
     } else {
         let own = engine.packages.package().clone();
@@ -964,7 +1028,6 @@ fn rotate_channel(
             }));
         }
     }
-    false
 }
 
 /// A terminal marker: the page id and wall stamp, signed by the device
@@ -1080,6 +1143,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                                         store,
                                         &mut sync.enrolled,
                                         &mut sync.staged_batch,
+                                        session,
                                         *page,
                                     );
                                 }
@@ -1121,14 +1185,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
             .sync
             .engine
             .as_mut()
-            .and_then(|engine| {
-                if let Some(frame) = engine.session.take_frame() {
-                    engine.unpublished_frame = Some(frame);
-                }
-                let frame = engine.unpublished_frame.as_deref()?;
-                let EngineState { session, chain, .. } = engine;
-                session.publish_frame_request(chain, frame)
-            })
+            .and_then(stage_frame)
             .zip(transport)
     };
     if let Some((request, transport)) = staged
@@ -1144,6 +1201,17 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
     }
 
     pump_result(handle, None, &events)
+}
+
+/// The frame PUT this turn owes: a freshly staged frame replaces an older
+/// one, and one sealed behind the chain's epoch is dropped unsent.
+fn stage_frame(engine: &mut EngineState) -> Option<ots_client::HttpRequest> {
+    if let Some(frame) = engine.session.take_frame() {
+        engine.unpublished_frame = Some(frame);
+    }
+    let _ = crate::gop::take_stale(&mut engine.unpublished_frame, &engine.chain);
+    let frame = engine.unpublished_frame.as_ref()?;
+    engine.session.publish_frame_request(frame)
 }
 
 /// Send one publish batch, absorbing the answer; a `401` refreshes
@@ -1198,25 +1266,25 @@ fn publish_round(
         }
         Err(refusal) => {
             if matches!(refusal, RelayRefusal::CeremonyRequired) {
-                // Client protocol §4.4: at the cap, rotate now.
-                let now = guard.sync.now_ms();
-                let Companion {
-                    store,
-                    sync,
-                    credentials,
-                    ..
-                } = &mut *guard;
-                let SyncState {
-                    engine, enrolled, ..
-                } = sync;
-                if let Some(engine) = engine.as_mut()
-                    && let Some(target) = enrolled.keys().next().copied()
-                {
-                    rotate_channel(store, engine, &**credentials, target, now, events);
-                }
+                rotate_at_cap(&mut guard, events);
             }
             events.push(refusal_json(&refusal));
         }
+    }
+}
+
+/// Client protocol §4.4: at the cap, rotate now on the first enrolled page
+/// held here before its deadline.
+fn rotate_at_cap(companion: &mut Companion, events: &mut Vec<serde_json::Value>) {
+    let now = companion.sync.now_ms();
+    let Companion {
+        store,
+        sync,
+        credentials,
+        ..
+    } = companion;
+    if let Some(target) = live_anchor(store, &sync.enrolled) {
+        rotate_channel(store, sync, &**credentials, target, now, events);
     }
 }
 
@@ -1837,6 +1905,7 @@ mod tests {
     use std::sync::Arc;
 
     use companion_credentials::InMemoryCredentialStore;
+    use companion_sync::DeltaEnvelope;
     use ots_client::{HttpRequest, HttpResponse, TransportError};
 
     use super::*;
@@ -2374,6 +2443,17 @@ mod tests {
         }
     }
 
+    /// Play the relay taking the frame PUT this turn owes, as the pump
+    /// clears it on a 2xx; the epoch the PUT named.
+    fn land_frame(companion: &mut Companion) -> Option<u64> {
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let request = stage_frame(engine)?;
+        engine.unpublished_frame = None;
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        body["epoch"].as_u64()
+    }
+
     #[test]
     fn a_sign_out_mid_session_keeps_the_unpublished_edits_for_the_next_attach() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
@@ -2768,7 +2848,7 @@ mod tests {
                 .any(|event| event["kind"] == "ceremony_committed")
         );
         let frame = engine.session.take_frame().expect("a frame to publish");
-        let opened = engine.chain.open(&frame).unwrap();
+        let opened = engine.chain.open(frame.sealed()).unwrap();
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(!contains(&opened, b"DOOMED"));
 
@@ -2786,6 +2866,286 @@ mod tests {
         let engine = companion.sync.engine.as_mut().unwrap();
         assert!(
             !engine.session.publish_due(4_000),
+            "the rebuild must not be republished as a delta"
+        );
+    }
+
+    #[test]
+    fn a_compacted_page_s_queued_ops_never_cross_the_boundary() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "keep DOOMED");
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Delete {
+                pos_u16: 4,
+                len_u16: 7,
+            }],
+        ));
+        let tab = companion.store.tabs().next().unwrap().id();
+        let other = inked_page(&mut companion, "the other page");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, other, true));
+        companion.store.cycle_rung(tab).unwrap();
+
+        // One sweep queues both pages' ops, then compacts the due page.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        let sealed = staged_envelopes(&mut companion, 0);
+        let wire = |sheet: SheetId| {
+            crate::sync_session::page_wire_id(companion.store.sheet(sheet).unwrap().uuid())
+        };
+        let carries_ops = |sheet: SheetId| {
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire(sheet)))
+        };
+        assert!(
+            !carries_ops(page),
+            "the deleted text would open under the new key"
+        );
+        assert!(carries_ops(other), "the control: a page not compacted");
+    }
+
+    #[test]
+    fn a_frame_sealed_behind_the_chain_s_epoch_never_goes_out() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let tab = companion.store.tabs().next().unwrap().id();
+
+        // The first ceremony's PUT never hears back, so its frame waits.
+        companion.store.cycle_rung(tab).unwrap();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let request = stage_frame(engine).expect("the first frame's PUT");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        assert!(engine.unpublished_frame.is_some());
+
+        // The next ceremony's seal refuses after the chain moved: the epoch
+        // 1 frame is dropped unsent, and epoch 2's is owed.
+        companion.store.cycle_rung(tab).unwrap();
+        assert!(companion.store.ceremony_due(page));
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.chain.refuse_next_seal();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert_eq!(engine.chain.epoch(), 2);
+        assert!(stage_frame(engine).is_none());
+        assert!(engine.unpublished_frame.is_none());
+    }
+
+    #[test]
+    fn a_solo_commit_whose_frame_seal_refused_moves_the_relay_on_the_next_turn() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+
+        // The rebuild and the advance stand, so the commit is reported and
+        // the cursor settles, but no frame exists at epoch 1 yet.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.chain.refuse_next_seal();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed")
+        );
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(stage_frame(engine).is_none());
+
+        // The next turn seals it at the same epoch, so the relay moves with
+        // the device, and the page's cursor settles on the fresh rebuild.
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let request = stage_frame(engine).expect("the owed frame's PUT");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!((engine.chain.epoch(), body["epoch"].as_u64()), (1, Some(1)));
+        let frame = engine.unpublished_frame.as_ref().unwrap();
+        assert!(!engine.chain.open(frame.sealed()).unwrap().is_empty());
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, rebuilt);
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+    }
+
+    #[test]
+    fn no_batch_goes_out_at_an_epoch_before_the_relay_holds_its_frame() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "the page that comes due");
+        let tab = companion.store.tabs().next().unwrap().id();
+        let other = inked_page(&mut companion, "the other page");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, other, true));
+        let wire = crate::sync_session::page_wire_id(companion.store.sheet(other).unwrap().uuid());
+
+        // The sweep queues the other page's ops and rotates solo, and its
+        // seal refuses: the relay stays at epoch 0, so nothing goes.
+        companion.store.cycle_rung(tab).unwrap();
+        companion
+            .sync
+            .engine
+            .as_ref()
+            .unwrap()
+            .chain
+            .refuse_next_seal();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        assert!(
+            stage_publish(&mut companion, 0).is_none(),
+            "the frame is owed"
+        );
+
+        // Sealed next turn but unanswered, the frame still holds the batch.
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(stage_frame(engine).is_some());
+        assert!(stage_publish(&mut companion, 2_000).is_none(), "unanswered");
+
+        // Once the relay takes it, the batch follows at epoch 1.
+        assert_eq!(land_frame(&mut companion), Some(1));
+        let request = stage_publish(&mut companion, 4_000).expect("the held batch");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        assert!(
+            opened_envelopes(chain, &request)
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+    }
+
+    #[test]
+    fn a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink no peer has yet");
+        let due = inked_page(&mut companion, "the page that comes due");
+        let due_tab = companion.store.tabs().last().unwrap().id();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, due, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let wire = crate::sync_session::page_wire_id(uuid);
+        let acked = companion.sync.enrolled[&uuid].acked.clone();
+
+        // A batch sealed at epoch 0 hears no answer, and then an empty room
+        // rotates the channel on the other page.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        companion.store.cycle_rung(due_tab).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+
+        // Its resend would carry epoch 0's blobs: it is dropped and the
+        // page's cursor rewinds. Once epoch 1's frame lands, its expiry goes
+        // again at epoch 1.
+        assert!(stage_publish(&mut companion, 4_000).is_none());
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, acked);
+        assert_eq!(land_frame(&mut companion), Some(1));
+        let request = stage_publish(&mut companion, 4_000).expect("the restated facts");
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let sealed = opened_envelopes(chain, &request);
+        assert!(
+            !sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+        assert!(
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Expiry { page, .. } if *page == wire))
+        );
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, acked);
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        // The next sweep exports the page again, sealed at epoch 1.
+        sweep_outbound(&mut companion, 6_000, &mut events);
+        let request = stage_publish(&mut companion, 6_000).expect("the page's ops");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(opened_envelopes(chain, &request).iter().any(|e| matches!(
+            e,
+            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(&ops.0, b"no peer has")
+        )));
+    }
+
+    #[test]
+    fn a_solo_commit_at_the_relay_cap_settles_the_page_s_cursor() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+
+        // The relay answers the page's batch with its cap, and the room is
+        // empty, so the rotation commits solo.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let EngineState { session, chain, .. } = engine;
+        let _ = session.publish_request(0, chain).unwrap();
+        let cap = HttpResponse {
+            status: 413,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            session.absorb_publish(&cap).unwrap_err(),
+            RelayRefusal::CeremonyRequired
+        );
+        rotate_at_cap(&mut companion, &mut events);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed")
+        );
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, rebuilt);
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+
+        // The kept batch was sealed at epoch 0, so after the frame only its
+        // restated facts go, and the rebuild is owed only as the frame.
+        assert_eq!(land_frame(&mut companion), Some(1));
+        let request = stage_publish(&mut companion, 4_000).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["epoch"], 1);
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        sweep_outbound(&mut companion, 8_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(
+            !engine.session.publish_due(8_000),
             "the rebuild must not be republished as a delta"
         );
     }
@@ -2872,6 +3232,270 @@ mod tests {
         sweep_outbound(&mut companion, 4_000, &mut events);
         let tracking = companion.sync.enrolled.values().next().unwrap();
         assert!(tracking.terminal_sent);
+    }
+
+    /// Age every page by `gap_ms` through snapshot and restore, as a launch
+    /// after a long sleep does. Local ids are re-minted; page uuids stand.
+    fn age_by(companion: &mut Companion, gap_ms: u64) {
+        let sealed_wall_ms = 1_700_000_000_000;
+        let snapshot = companion.store.snapshot(sealed_wall_ms);
+        companion
+            .store
+            .restore(&snapshot, sealed_wall_ms + gap_ms)
+            .expect("a store reads back its own snapshot");
+    }
+
+    const THREE_HOURS_MS: u64 = 3 * 60 * 60 * 1_000;
+
+    /// A page on the one hour rung, which [`THREE_HOURS_MS`] takes past its
+    /// deadline, unswept.
+    fn short_lived_page(companion: &mut Companion, text: &str) -> ItemId {
+        let page = inked_page(companion, text);
+        let tab = companion.store.tabs().last().unwrap().id();
+        assert!(
+            companion
+                .store
+                .set_rung(tab, companion_core::Ttl::MIN)
+                .is_some()
+        );
+        companion.store.sheet(page).unwrap().uuid()
+    }
+
+    /// Make the channel view current, as one drain does (client protocol §6).
+    fn drain_nothing(companion: &mut Companion) {
+        let empty = HttpResponse {
+            status: 200,
+            body: br#"{"epoch":0,"blobs":[],"next_seq":0}"#.to_vec(),
+        };
+        let Companion { store, sync, .. } = companion;
+        let EngineState {
+            session,
+            chain,
+            packages,
+            pending_packages,
+            ..
+        } = sync.engine.as_mut().unwrap();
+        session
+            .absorb_deltas(&empty, store, chain, packages, pending_packages, &[], 0)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let uuid = short_lived_page(&mut companion, "queued before the deadline");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        let page = companion.store.sheet_id_of(uuid).unwrap();
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let ops_for_it = |companion: &Companion| {
+            let wire = crate::sync_session::page_wire_id(uuid);
+            let session = &companion.sync.engine.as_ref().unwrap().session;
+            session
+                .queued()
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        };
+        assert!(ops_for_it(&companion), "queued while readable, not sealed");
+
+        // Past its deadline before the publish seals the queue, and written
+        // to since, as the seam's write routes still allow.
+        age_by(&mut companion, THREE_HOURS_MS);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "after the deadline ".into(),
+            }],
+        ));
+        let frontier = companion.sync.enrolled[&uuid].frontier.clone();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(!ops_for_it(&companion), "nothing of it reaches a seal");
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, frontier);
+        let session = &companion.sync.engine.as_ref().unwrap().session;
+        assert!(
+            session
+                .queued()
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Expiry { ttl_ms: 0, .. })),
+            "its deadline still goes, so a peer's copy dies too"
+        );
+    }
+
+    /// Stage the next publish and open what it seals, as a peer would.
+    fn staged_envelopes(companion: &mut Companion, now_ms: u64) -> Vec<DeltaEnvelope> {
+        let EngineState { session, chain, .. } = companion.sync.engine.as_mut().unwrap();
+        let Some(request) = session.publish_request(now_ms, chain) else {
+            return Vec::new();
+        };
+        opened_envelopes(chain, &request)
+    }
+
+    /// Open a publish request's blobs as a peer at `chain`'s epoch would;
+    /// a blob sealed at any other epoch fails the test.
+    fn opened_envelopes(
+        chain: &GopKeyChain,
+        request: &ots_client::HttpRequest,
+    ) -> Vec<DeltaEnvelope> {
+        let mut body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        body["next_seq"] = 0.into();
+        let batch = companion_sync::relay::RelayApi::parse_deltas(&HttpResponse {
+            status: 200,
+            body: body.to_string().into_bytes(),
+        })
+        .unwrap();
+        batch
+            .blobs
+            .iter()
+            .map(|blob| {
+                let plaintext = chain.open(blob).unwrap();
+                DeltaEnvelope::decode(companion_sync::pad::unpad(&plaintext).unwrap()).unwrap()
+            })
+            .collect()
+    }
+
+    /// The review's case: ink typed before the deadline, published by no
+    /// sweep yet, when the machine sleeps past it.
+    #[test]
+    fn a_sleep_past_the_deadline_publishes_none_of_the_ink_typed_before_it() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "shared ink");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(!staged_envelopes(&mut companion, 0).is_empty());
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.session.absorb_publish(&accepted()).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(staged_envelopes(&mut companion, 2_000).is_empty());
+
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "hunter2 ".into(),
+            }],
+        ));
+        age_by(&mut companion, 365 * 24 * 60 * 60 * 1_000);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        let frontier = companion.sync.enrolled[&uuid].frontier.clone();
+        sweep_outbound(&mut companion, 4_000, &mut events);
+
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, frontier,
+            "nothing exported"
+        );
+        let wire = crate::sync_session::page_wire_id(uuid);
+        let sealed = staged_envelopes(&mut companion, 4_000);
+        assert!(
+            matches!(
+                sealed.as_slice(),
+                [DeltaEnvelope::Expiry { page, ttl_ms: 0, .. }] if *page == wire
+            ),
+            "only its deadline goes, so a peer's copy dies too: {sealed:?}"
+        );
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let uuid = short_lived_page(&mut companion, "hunter2, typed before the deadline");
+        age_by(&mut companion, THREE_HOURS_MS);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        companion.sync.engine = Some(attached_engine(&*credentials));
+
+        assert!(!enrol_page(&mut companion, page, true));
+        assert!(companion.sync.enrolled.is_empty());
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            staged_envelopes(&mut companion, 0).is_empty(),
+            "no publish is staged"
+        );
+        assert!(events.is_empty(), "and no ceremony");
+        assert!(
+            enrol_page(&mut companion, page, false),
+            "withdrawing answers"
+        );
+    }
+
+    #[test]
+    fn a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (due, live) = loop {
+            let short = short_lived_page(&mut companion, "past its deadline");
+            let long = inked_page(&mut companion, "still readable");
+            let long = companion.store.sheet(long).unwrap().uuid();
+            // The page past its deadline iterates first, so a blind anchor fails.
+            if short < long {
+                break (short, long);
+            }
+        };
+        let gone = inked_page(&mut companion, "closed here");
+        let gone = companion.store.sheet(gone).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        for page in [due, live, gone] {
+            let sheet = companion.store.sheet_id_of(page).unwrap();
+            assert!(enrol_page(&mut companion, sheet, true));
+        }
+        // A restore defers no ceremony, so enrol again; the due page refuses.
+        age_by(&mut companion, THREE_HOURS_MS);
+        for page in [due, live, gone] {
+            let sheet = companion.store.sheet_id_of(page).unwrap();
+            assert_eq!(enrol_page(&mut companion, sheet, true), page != due);
+        }
+        assert!(
+            companion
+                .store
+                .is_due(companion.store.sheet_id_of(due).unwrap())
+        );
+        assert!(
+            !companion
+                .store
+                .is_due(companion.store.sheet_id_of(live).unwrap())
+        );
+
+        // A page closed with its ops still queued owes its marker a rotation
+        // once the view is current, and its ops never reach a seal.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            companion
+                .store
+                .discard_page(companion.store.sheet_id_of(gone).unwrap())
+        );
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        drain_nothing(&mut companion);
+        sweep_outbound(&mut companion, 4_000, &mut events);
+
+        let engine = companion.sync.engine.as_ref().unwrap();
+        let gone = crate::sync_session::page_wire_id(gone);
+        assert!(
+            !engine
+                .session
+                .queued()
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == gone))
+        );
+        assert_eq!(engine.chain.epoch(), 1, "the marker's rotation happened");
+        let wire = crate::sync_session::page_wire_id(live);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed" && event["page"] == wire)
+        );
     }
 
     fn mailbox_response(messages: &[serde_json::Value], next_seq: u64) -> HttpResponse {

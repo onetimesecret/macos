@@ -1,9 +1,9 @@
 import AppKit
 
-/// Where a sealed object's note stands over the page (Law 0001, ADR-0042 points 7
-/// and 8, ADR-0044 point 3), in the overlay's flipped space; pure so the rule is an assertion.
+/// Where a sealed object's note stands over the page (Law 0001, note row; sealed row
+/// spec, Placement), in the overlay's flipped space; pure so the rule is an assertion.
 enum NotePopoverLayout {
-    /// The popover's least width, ADR-0042 point 7's threshold, set in ADR-0044 point 1:
+    /// The popover's least width, the note row's threshold (sealed row spec, Placement):
     /// a block narrower than this puts the note across the card's content width.
     static let minimumWidth: CGFloat = 320
     static let height: CGFloat = 176
@@ -173,7 +173,7 @@ final class NotePopoverView: NSView {
 }
 
 /// Opens, places and closes one sealed object's note over the page, written
-/// on the page's own surface over the note's chip keyed routes (ADR-0045).
+/// on the page's own surface over the note's chip keyed routes (ADR-0044).
 @MainActor
 final class SealedNoteEditor: NSObject {
     let model: PageModel
@@ -221,7 +221,7 @@ final class SealedNoteEditor: NSObject {
               let scroll = pageView.enclosingScrollView
         else { return }
         if isOpen { close(returningKeys: false) }
-        // A note the core refuses opens nothing and settles (ADR-0052).
+        // A note the core refuses opens nothing and settles (Law 0001, expiry row).
         guard coordinator.loadNote(chip: face.chipId) else {
             return model.settleRefusal(sheet: sheet, told: true)
         }

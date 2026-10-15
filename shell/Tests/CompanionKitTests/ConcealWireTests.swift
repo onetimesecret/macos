@@ -93,6 +93,7 @@ final class ConcealWireTests: XCTestCase {
         XCTAssertEqual(model.concealDraft?.ttlSecs, ConcealDraft.defaultTtlSecs)
         model.concealDraft?.ttlSecs = 86_400
         model.concealDraft?.passphrase = "swordfish"
+        let marks = model.dirtyMarks
         model.confirmConceal()
         XCTAssertEqual(model.concealDraft?.inFlight, true)
         // The conceal runs off the main actor and comes back to it, so
@@ -100,6 +101,8 @@ final class ConcealWireTests: XCTestCase {
         waitUntil(model.$concealDraft, description: "the round trip came back") {
             $0?.inFlight == false
         }
+        XCTAssertGreaterThan(
+            model.dirtyMarks, marks, "the round trip's return armed no write (ADR-0016 section 2)")
 
         let draft = try XCTUnwrap(model.concealDraft)
         XCTAssertFalse(draft.inFlight, "the round trip came back")

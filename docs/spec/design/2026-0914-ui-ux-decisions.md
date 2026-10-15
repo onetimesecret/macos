@@ -8,9 +8,9 @@ superseded-by: docs/spec/design/2026-0915-ui-ux-decisions.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
-  - docs/spec/design/03-design-principles.md
-  - docs/spec/design/04-interaction-model.md
-  - docs/spec/design/05-technical-direction.md
+  - docs/spec/design/2026-0707-design-principles.md
+  - docs/spec/design/2026-0707-interaction-model.md
+  - docs/spec/design/2026-0707-technical-direction.md
   - docs/spec/feature/background-surface/README.md
   - shell/Sources/OnetimePad/BackdropStance.swift
   - shell/Sources/OnetimePad/Views/BackdropRootView.swift
@@ -37,8 +37,13 @@ the complete-payload egress inventory. Use
 What the shipping surface looks like, what each visible decision is, and
 what a build has to satisfy before the decision counts as honoured. The
 illustrated companion (mockups with callouts) lives with the design
-record; the shipping surface sets `sharingType = .none` and cannot be
-screenshotted, so every visual is a recreation from this source tree.
+record. Every visual is a recreation from this source tree.
+
+*Publication clarification, 2026-10-14:* this record specifies
+`sharingType = .none`; that setting is not evidence that every screenshot
+or screen-sharing mechanism excludes the surface. The earlier absolute
+capture claim is withdrawn. This is a documentation correction, not a new
+interaction decision.
 
 ## 0 · Pipeline and status
 

@@ -96,13 +96,13 @@ lifetimes are chosen for that shape:
   ceremony again.
 
 This is the answer to open question 21
-(`docs/spec/design/06-open-questions.md`) fed back into v3
+(`docs/spec/design/2026-0707-open-questions.md`) fed back into v3
 auth while it is unbuilt: the desktop app needs refresh rotation with a
 long idle window, and it does not need a device claim inside the token
 — the account is not the device (ADR-0021 §3), and putting a device
 identity into the account credential would re-entangle the two gates
 this design keeps separate. If phase 2 lands PASETO bearer tokens
-(`docs/spec/design/05-technical-direction.md`), nothing here moves:
+(`docs/spec/design/2026-0707-technical-direction.md`), nothing here moves:
 the flow and lifetimes above are format-agnostic, and the bearer's
 encoding is the server's business.
 

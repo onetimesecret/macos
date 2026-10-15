@@ -22,9 +22,25 @@ const CHIP_MARK: &str = "chip";
 /// U+FFFC: one UTF-16 code unit, so a chip's wire width is one.
 const CHIP_SENTINEL: &str = "\u{FFFC}";
 
+/// Whether `ink` holds the chip sentinel, which a page or a note keeps for its
+/// chips alone (Law 0001).
+pub(crate) fn holds_sentinel(ink: &str) -> bool {
+    ink.contains(CHIP_SENTINEL)
+}
+
+/// Takes every chip sentinel out of `ink` in place, so the buffer that held
+/// it is the one a wipe reaches.
+pub(crate) fn strip_sentinels(ink: &mut String) {
+    ink.retain(|c| !CHIP_SENTINEL.contains(c));
+}
+
 /// Undo grouping window; a ceiling on a step's growth, not an idle-gap
 /// detector (block-revisions/2026-0901-pause-boundaries.md). Local only.
 const UNDO_MERGE_INTERVAL_MS: i64 = 2_000;
+
+/// The origin of a change the page makes on its own behalf, which the undo
+/// stack treats as a peer's: undoing it would put back what it took out.
+const UNRECORDED_ORIGIN: &str = "unrecorded";
 
 /// The user-visible action one editor commit represents, which Loro
 /// cannot infer: part of a typing run, or a discrete undo step.
@@ -248,7 +264,8 @@ impl SheetDocument {
     }
 
     /// Revert the body to `checkpoint` after an edit refused partway, and
-    /// clear the undo stack, which could replay the half edit (ADR-0047).
+    /// clear the undo stack, which could replay the half edit
+    /// (Law 0001, sealed fragment representation).
     pub(crate) fn rollback(&self, checkpoint: &Frontiers) {
         // Refused only for a target before a shallow start; a checkpoint is the present.
         let _ = self.doc.revert_to(checkpoint);
@@ -615,6 +632,49 @@ impl SheetDocument {
         None
     }
 
+    /// Delete each sentinel no chip mark names, ink a peer or an earlier build
+    /// wrote (Law 0001), as a local change outside the undo stack. Returns the
+    /// UTF-16 positions taken, last first.
+    pub(crate) fn take_out_unmarked_sentinels(&self) -> Vec<usize> {
+        let mut taken = Vec::new();
+        let mut pos = 0usize;
+        for run in self.runs() {
+            match run {
+                DocRun::Chip(_) => pos += 1,
+                DocRun::Ink(text) => {
+                    for found in text.chars() {
+                        if CHIP_SENTINEL.starts_with(found) {
+                            taken.push(pos);
+                        }
+                        pos += found.len_utf16();
+                    }
+                }
+            }
+        }
+        if taken.is_empty() {
+            return taken;
+        }
+        // An edit still open keeps its own step.
+        self.commit_now(None);
+        let mut gone = Vec::with_capacity(taken.len());
+        for at in taken.into_iter().rev() {
+            if self.delete(at, 1).is_ok() {
+                gone.push(at);
+            }
+        }
+        self.commit_unrecorded();
+        gone
+    }
+
+    /// Commit the open transaction as a change the undo stack keeps as a peer's.
+    pub(crate) fn commit_unrecorded(&self) {
+        self.doc.commit_with(
+            CommitOptions::new()
+                .immediate_renew(true)
+                .origin(UNRECORDED_ORIGIN),
+        );
+    }
+
     /// The whole document, history and deleted text included, for encryption.
     pub(crate) fn export_snapshot(&self) -> Zeroizing<Vec<u8>> {
         Zeroizing::new(
@@ -950,6 +1010,7 @@ struct UndoBinding {
 fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let mut undo = UndoManager::new(doc);
     undo.set_merge_interval(UNDO_MERGE_INTERVAL_MS);
+    undo.add_exclude_origin_prefix(UNRECORDED_ORIGIN);
 
     let take_theirs_commit = Arc::new(Mutex::new(None));
     let take_theirs_source = Arc::clone(&take_theirs_commit);

@@ -56,7 +56,7 @@ final class LedgerAppendArmingTests: XCTestCase {
             ("copyOutChip appends sent to clipboard", {
                 model.copyOutChip(chip?.chipId ?? 0)
             }),
-            // A paste of a copy clones its object core side (ADR-0047 point 6).
+            // A paste of a copy clones its object core side (Law 0001, sealed fragment representation).
             ("pasteFragment appends sealed for each clone", {
                 guard let sheet = model.selectedPageID,
                       let fragment = client.copyFragment(
@@ -66,20 +66,20 @@ final class LedgerAppendArmingTests: XCTestCase {
                 model.pasteFragment(
                     from: board, sheet: sheet, ranges: [NSRange(location: 1, length: 0)])
             }),
-            // The ⌥ drag clones its objects core side (ADR-0047 point 10).
+            // The ⌥ drag clones its objects core side (Law 0001, ⌥ drag row).
             ("dropRange cloning appends sealed for each clone", {
                 guard let sheet = model.selectedPageID else { return }
                 model.dropRange(
                     NSRange(location: 0, length: 1), sheet: sheet, at: 0, cloning: true)
             }),
-            // A destination's ask of the decrypted drag records a sent (ADR-0047 point 11).
+            // A destination's ask of the decrypted drag records a sent (Law 0001, decrypted drag row).
             ("provideDecryptedDrag appends sent to drag", {
                 model.provideDecryptedDrag(
                     chip: chip?.chipId ?? 0, pasteboard: board, item: NSPasteboardItem(),
                     type: .string)
             }),
             // A removal in an edit batch detaches and appends nothing
-            // (ADR-0047); the close below records the chip's death.
+            // (ADR-0046 point 1); the close below records the chip's death.
             ("close appends discarded for the chip and the page", {
                 if let page = model.selection { model.close(page) }
             }),
@@ -98,7 +98,7 @@ final class LedgerAppendArmingTests: XCTestCase {
     }
 
     /// A refused read appends nothing and arms nothing. Past a page's deadline it
-    /// records no `sent`, and only the settle's sweep appends, with its write armed (ADR-0052).
+    /// records no `sent`, and only the settle's sweep appends, with its write armed (Law 0001, expiry row).
     func testARefusedReadArmsNothingAndPastADeadlineOnlyItsSweepAppends() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "companion-kit-refused-read-tests"))
         defaults.removePersistentDomain(forName: "companion-kit-refused-read-tests")

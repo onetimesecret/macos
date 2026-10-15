@@ -24,7 +24,7 @@ the second costs sync and why that cost is kept.
 
 Issue #92 settled the doctrine first: the network boundary now reads "at
 most two outbound destinations, TLS-only, and no others"
-(docs/spec/design/05-technical-direction.md). The first is the
+(docs/spec/design/2026-0707-technical-direction.md). The first is the
 configured OTS server, reached only on an explicit conceal. The second
 is this relay, reached only for a page the user has shared to their own
 enrolled devices. This ADR cannot contradict that boundary and does not:
@@ -421,7 +421,7 @@ establishing that the account is not the device.
   not change shape for sync.
 - The network boundary doctrine holds at two destinations and
   `crates/transport`'s allowlist widens by one entry. Every claim in
-  docs/spec/design/05-technical-direction.md about the relay
+  docs/spec/design/2026-0707-technical-direction.md about the relay
   (ciphertext only, opt-in per page, holds nothing past the page's own
   TTL) is made true by sections 1, 2 and 6 rather than asserted.
 - A compromised relay is bounded, and the bound is stated: one GOP of

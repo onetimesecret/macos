@@ -3,7 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The sealed fragment across the seam (ADR-0047), against the live core;
+/// The sealed fragment across the seam (ADR-0045), against the live core;
 /// nothing persists, and the drag writes an item on a privately named board.
 final class SealedFragmentSeamTests: XCTestCase {
     private let secret = "ghp_" + String(repeating: "n0ts3cr3t", count: 2)

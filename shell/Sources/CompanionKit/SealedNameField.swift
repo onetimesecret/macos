@@ -83,9 +83,15 @@ struct ChipRename {
     }
 }
 
-/// The name field's editor, which takes only drags of its own text: a drop
-/// from elsewhere is the page's to seal, and no seal can stand here (ADR-0044).
-final class OwnDragsOnlyTextView: NSTextView {
+/// The name field's editor: it takes only drags of its own text (Law 0001, naming row), and
+/// its text, part of the object's page, leaves only once that page is asked (Law 0001, expiry row).
+final class SealedNameTextView: AskingTextView {
+    /// The field over the name, which knows the object's page; with none, nothing leaves.
+    weak var owner: SealedNameEditor?
+
+    /// Whether the name may leave by AppKit, asked of the object's page.
+    var givesOut: Bool { owner?.givesOutName() ?? false }
+
     private func isOwn(_ sender: NSDraggingInfo) -> Bool {
         (sender.draggingSource as? NSView) === self
     }
@@ -101,19 +107,66 @@ final class OwnDragsOnlyTextView: NSTextView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         isOwn(sender) && super.performDragOperation(sender)
     }
+
+    /// Copies onto the model's ambient board, which a test replaces, not the general one.
+    override func copy(_ sender: Any?) {
+        guard givesOut else { return }
+        _ = writeToAmbientBoard()
+    }
+
+    /// Writes as copy does, then deletes, so no cut names the general board.
+    override func cut(_ sender: Any?) {
+        guard givesOut, writeToAmbientBoard() else { return }
+        delete(sender)
+    }
+
+    private func writeToAmbientBoard() -> Bool {
+        guard let board = owner?.model.ambientPasteboard,
+              selectedRanges.contains(where: { $0.rangeValue.length > 0 })
+        else { return false }
+        return super.writeSelection(to: board, types: writablePasteboardTypes)
+    }
+
+    override func dragSelection(
+        with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool
+    ) -> Bool {
+        givesOut && super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+    }
+
+    override func writeSelection(
+        to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        givesOut && super.writeSelection(to: pboard, types: types)
+    }
+
+    override func writeSelection(
+        to pboard: NSPasteboard, type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        givesOut && super.writeSelection(to: pboard, type: type)
+    }
+
+    /// AppKit's readers of the name ask its page, as copy does.
+    override var mayReadOut: Bool { givesOut }
 }
 
 /// The name field's cell, which edits through a field editor of its own
-/// that takes no drop from elsewhere (ADR-0044).
+/// that takes no drop from elsewhere (Law 0001, naming row).
 final class SealedNameFieldCell: NSTextFieldCell {
-    private let editor: NSTextView = {
-        let editor = OwnDragsOnlyTextView()
+    let editor: SealedNameTextView = {
+        let editor = SealedNameTextView()
         editor.isFieldEditor = true
         editor.allowsUndo = true
         return editor
     }()
 
     override func fieldEditor(for controlView: NSView) -> NSTextView? { editor }
+
+    /// The setup gives a field editor Writing Tools back, so they are refused after it.
+    override func setUpFieldEditorAttributes(_ textObj: NSText) -> NSText {
+        let editor = super.setUpFieldEditorAttributes(textObj)
+        if let editor = editor as? NSTextView { TextOffers.offerUngatedReaders(false, on: editor) }
+        return editor
+    }
 }
 
 /// The field laid over a sealed block's name seat in the page's text view.
@@ -123,7 +176,7 @@ final class SealedNameField: NSTextField {
         set {}
     }
 
-    /// The outline and fill the drawing gives the field (ADR-0042 point 8).
+    /// The outline and fill the drawing gives the field (docs/mockups/sealed-name-and-note.svg).
     override func draw(_ dirtyRect: NSRect) {
         let metrics = SealedBlockLayout.metrics(containerWidth: bounds.width)
         let outline = NSBezierPath(
@@ -162,9 +215,17 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         field.isHidden = true
         field.delegate = self
         field.setAccessibilityLabel(CompanionL10n.string("chip.name.field"))
+        (field.cell as? SealedNameFieldCell)?.editor.owner = self
     }
 
     var isOpen: Bool { rename.isOpen }
+
+    /// Whether the draft may leave by AppKit: the object's page is asked, as Copy name
+    /// asks it, and a page past its deadline settles and refuses (Law 0001, expiry row).
+    func givesOutName() -> Bool {
+        guard let sheet = rename.sheet else { return false }
+        return model.givesOut(sheet: sheet)
+    }
 
     /// Whether the field's editor holds the keys, so its ending gives them back.
     var holdsKeys: Bool {

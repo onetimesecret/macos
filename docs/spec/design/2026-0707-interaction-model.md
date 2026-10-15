@@ -1,10 +1,15 @@
-# docs/spec/design/04-interaction-model.md
+# docs/spec/design/2026-0707-interaction-model.md
 ---
 
 # Interaction Model (revision C — the window)
 
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
+
 Supporting material for milestone 1 — the concrete model the principles in
-doc 03 are argued against. This is **revision C**, replacing the rev A
+[Design principles](2026-0707-design-principles.md) are argued against. This is **revision C**, replacing the rev A
 text that previously lived in this file. It consolidates two design
 rounds so it reads self-contained:
 
@@ -73,11 +78,11 @@ sense, while remaining a **non-activating accessory**:
 - **Double-clicking the title bar stretches it vertically** to full
   working height — double-click again to return.
 - **Position and size persist** across summons.
-- **Excluded from capture.** Invisible to screen sharing and screenshots
-  by default (`sharingType = .none`). Rev C removed the "excluded from
-  screen capture" caption from the surface — the surface should be quiet
-  about its own plumbing; the exclusion itself is unchanged and lives in
-  settings.
+- **Capture configuration.** The design sets `sharingType = .none` by
+  default. Rev C removed the "excluded from screen capture" caption from
+  the surface and kept the setting. This specifies a configuration, not
+  evidence that every screen-sharing or screenshot mechanism excludes
+  the window. *Publication clarification, 2026-10-14.*
 
 ### Focus: accept, never take
 
@@ -114,7 +119,7 @@ are mechanical; counts are counts; detection never returns.
 | Typing | visible ink | You wrote it; you see it |
 | ⌘V | visible ink | Paste behaves like every text editor on the machine — plain text, no surprises |
 | ⇧⌘V | sealed chip | The masked paste — consent expressed by the gesture; bytes route core-side, never render. Rekeyed from ⌥⌘V (OS collision: Finder's "Move Item Here"); ⌥V held as fallback candidate |
-| Drop onto the window | sealed chip | Dragging content to a secrecy tool is already the "stage this" gesture (doc 06) |
+| Drop onto the window | sealed chip | Dragging content to a secrecy tool is already the "stage this" gesture ([Open questions](2026-0707-open-questions.md)) |
 | ⌘↩ / select → seal | sealed chip | The retrofit — seals the selection, or with no selection the current line, if the line holds content |
 | Images, any route | sealed chip | An image has no inline-text form; the chip shows clipboard metadata only |
 
@@ -161,7 +166,7 @@ teaches ⌘↩.
   **7d**. Click the header label to step one rung **shorter**; each
   click resets the clock to the shown rung. The ladder tapers, `7d → 3d
   → 24h → 8h → 3h → 1h`, and wraps back to `7d` at the bottom. Decided
-  2026-08-08 (doc 06 Q1): the wheel stays one affordance, but the
+  2026-08-08 ([Open questions](2026-0707-open-questions.md) Q1): the wheel stays one affordance, but the
   single-click cliff now sits at the safe end. Cycling upward put a
   168h→1h drop under a stray click on deliberately staged content;
   shortening is the direction that costs something, so it costs five
@@ -194,7 +199,7 @@ teaches ⌘↩.
   no state to clean up. A pause holds the clock; it never extends the
   rung. The honest tension — pausing is a lever against ephemerality —
   is bounded by the top-up ceiling (24h per press, never cumulative)
-  and logged in doc 06.
+  and logged in [Open questions](2026-0707-open-questions.md).
 
   The release was added 2026-08-10, after the two-state form shipped:
   the gesture reads as a toggle, so a stray double-click on a held tab
@@ -220,7 +225,7 @@ bar's way, exactly where a spreadsheet hand already knows to look.
   ⌘1 to ⌘9 stay shortcuts to the first nine slots, the strip scrolls to
   hold the rest, and a tenth slot simply has no chord. What survives is
   the half that mattered: silent eviction of deliberately placed content
-  would break trust (doc 03 §5). Eviction is by the TTL the user chose,
+  would break trust ([Design principles](2026-0707-design-principles.md) §5). Eviction is by the TTL the user chose,
   never LRU surprise.
 - **Drag to reorder**, live; the ⌘-number map follows the visible order.
 - **Close** is an ✕ on tab hover; a closed page rests in the ledger like
@@ -232,7 +237,7 @@ Rev B's law read "no retention: no history, no archive, no trash, no
 recently-expired". Lived experience overruled the absolutism: a page that
 expires mid-thought takes typed context with it — the errand list around
 the secret, not just the secret. The **ledger** is the narrow amendment
-(recorded in docs 03 and 05): a permanent dashed tab at the strip's right
+(recorded in [Design principles](2026-0707-design-principles.md) and [Technical direction](2026-0707-technical-direction.md)): a permanent dashed tab at the strip's right
 end (⌘0) showing expired and closed pages as a list of **dimmed ink**.
 The boundary holds where it matters:
 
@@ -257,7 +262,7 @@ was typed. **Display-only, markup-preserving:** the bytes of the page
 never change; select-all-copy returns exactly what was typed; sealing a
 heading line seals the markup too. Scope for rev C is headings (#, ##,
 ### and deeper) and fenced code blocks; inline emphasis is deliberately
-deferred (doc 06). Tab titles strip the markup because a title is a
+deferred ([Open questions](2026-0707-open-questions.md)). Tab titles strip the markup because a title is a
 name, not a document.
 
 **Inside a fence, markup is inert** (issue #75). A line of three or more
@@ -315,7 +320,7 @@ that decides the styling which decides the automation, so the two can
 never read a line differently.
 
 **Fenced code carries display-only color** (ADR-0024 and ADR-0030,
-recorded as amendments C and D to doc 03 §3). A fence whose opening rule
+recorded as amendments C and D to [Design principles](2026-0707-design-principles.md) §3). A fence whose opening rule
 names a supported language colors keywords, strings, comments and numbers.
 A manually accepted or inferred language may color a bare fence without
 rewriting its info string (ADR-0029). The choice follows the page as

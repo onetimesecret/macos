@@ -1,7 +1,12 @@
-# docs/spec/design/02-overlooked-opportunities.md
+# docs/spec/design/2026-0707-overlooked-opportunities.md
 ---
 
 # Overlooked Opportunities
+
+> **Historical design — publication note, 2026-10-14.** This document retains
+> early design arguments and later amendments, not a consolidated current
+> specification. Read its security assertions with the
+> [historical-claims qualifications](README.md#reading-historical-security-claims).
 
 What the neighbours do, what they systematically miss, and the position
 that leaves open.
@@ -137,19 +142,18 @@ scheduled, not ticked), tens of MB of memory, single-digit MB download, no
 background indexing, and no network until the user conceals something is a
 felt difference on a laptop battery. Frugal also means frugal with
 *attention* (no notifications by default) and *scope* (the anti-goals in
-doc 01). See doc 03.
+[Problem space](2026-0707-problem-space.md)). See [Design principles](2026-0707-design-principles.md).
 
 ### 7. macOS security surface, actually used
 
-The platform provides hooks that neighbours ignore or merely comply with;
-this app can treat them as product features: mark its own copies with
-`ConcealedType` (and a transient pasteboard type) so clipboard managers
-ignore content leaving the window; exclude the window from screen capture
-and screen sharing (`NSWindow.sharingType = .none`); offer clipboard
-clear-after-copy with a countdown; hold sealed content in zeroized,
-non-swappable memory. Individually small; together they make "the right
-place to put a secret for an hour" a defensible technical claim, not a
-slogan. Details in doc 05.
+The early design proposed platform hooks as product features: mark copies
+with `ConcealedType` and a transient pasteboard type; request capture
+exclusion with `NSWindow.sharingType = .none`; offer clipboard
+clear-after-copy; and investigate zeroization and locked memory. These
+mechanisms do not, by their names alone, establish that observers ignore
+content, capture is impossible, or every copy remains out of swap. This
+section records an opportunity, not a validated security guarantee.
+Details in [Technical direction](2026-0707-technical-direction.md).
 
 ### 8. Accessibility in a category that ignores it
 
@@ -159,7 +163,7 @@ state. A staging area whose every operation (add, inspect, extend, copy,
 conceal, discard) is keyboard-complete and VoiceOver-legible, with
 time-remaining exposed as an accessibility value, not just a shrinking
 ring — would be nearly alone in the category. Cheap to do from day one,
-prohibitive to retrofit. Details in doc 05.
+prohibitive to retrofit. Details in [Technical direction](2026-0707-technical-direction.md).
 
 ## Why incumbents won't follow
 

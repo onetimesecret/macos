@@ -5,7 +5,13 @@ documentation_status: draft # draft | needs-review | reviewed | stale
 # The sync client protocol, as built
 
 **Status:** draft, not accepted; grants itself no authority and changes
-no spec. Describes the client at `50044ad`.
+no spec. Describes the client at `50044ad`, with the deadline gate that
+`4fde3d8`, `ba3d5eb`, `999d011` and `b6600bb` added (§2, §3, §4.4,
+§7.1, §7.4, §7.6), the ballot advance `3de557c` made (§7.1, §7.6),
+the frame epoch `9d74837` and the cap settle `09ee545` made (§4.6,
+§7.2, §7.6, 10.11), and the boundary withdrawal `b65dd08`, the batch
+epoch `e7ad509`, the owed frame `1c105a1` and the publish hold
+`7dd32f2` made (§2, §3, §4.4, §4.6, §7.2, §7.6, 10.13, 10.33, 10.34).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
@@ -33,9 +39,9 @@ Persisted (key-material): `sync-device-identity`, `sync-channel-secret`,
 | State | Held in |
 | --- | --- |
 | GOP chain (epoch, key), rebuilt at epoch 0 (§8); standing and pending key package (§5); committed frame not yet accepted | `EngineState` |
-| `next_seq`; attach snapshot (epoch, `frame_present`, roster); outbox; in-flight batch and id; ballot scope (page, opened time) and entropy | `SyncSession` |
+| `next_seq`; attach snapshot (epoch, `frame_present`, roster); outbox; in-flight batch (the epoch that sealed it, and its expiry, hold and terminal envelopes unsealed) and id; ballot scope (page, opened time) and entropy; a committed frame not yet taken, or the page whose frame a refused seal left owed (§7.6) | `SyncSession` |
 | Staged batch: each page's export cursor when the batch was sealed | `SyncState.staged_batch` |
-| Enrolled pages (enrolling defers compaction and starts the export frontier at the pristine version), each with its export frontier, acknowledged cursor, last published deadline and hold, terminal sent | `SyncState.enrolled` |
+| Enrolled pages (enrolling defers compaction and starts the export frontier at the pristine version; a page past its deadline does not enrol, `a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing`), each with its export frontier, acknowledged cursor, last published deadline and hold, terminal sent | `SyncState.enrolled` |
 | Per page channel: epoch, current, hold live, terminal, ballot | `PageChannel` |
 
 **Dissolve** (detach, sign-out, refused refresh) drops the engine,
@@ -51,9 +57,9 @@ only between round trips.
 | Step | Code | Rule |
 | --- | --- | --- |
 | 1 | `ensure_access` | refresh if no access token (§4.2); a failure ends the turn |
-| 2 | `sweep_outbound` | queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1) |
+| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (Law 0001, expiry row) or gone queues no ops, and its unsealed ops are withdrawn (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`); its expiry, hold and marker still queue |
 | 3 | `tick` | abandon a ballot open 60 s (`BALLOT_PATIENCE_MS`, relay-protocol §5; §7.7) |
-| 4 | `publish_round` | if `PUBLISH_INTERVAL_MS` (2 s, relay-protocol §8) has passed and anything is queued or in flight (§4.4) |
+| 4 | `publish_round` | if `PUBLISH_INTERVAL_MS` (2 s, relay-protocol §8) has passed, anything is queued or in flight, and no frame of this device's for the chain's epoch waits (§4.4) |
 | 5 | `fetch_request` | long poll, `wait` at most 25 s (`LONG_POLL_WAIT_S`, relay-protocol §8; §4.5) |
 | 6 | `attach` | if a ceremony committed this turn or a package is owed (§5.4); result discarded |
 | 7 | frame PUT | a committed frame not yet accepted (§4.6) |
@@ -124,16 +130,31 @@ but `unreachable` and `busy` are logged; shell handling is §3.
 
 Envelopes are padded and sealed under the chain (one seal refusal keeps
 the queue); `stage_publish` records each page's export cursor. An
-in-flight batch is resent byte for byte at the current epoch before
-anything new is sealed; with no idempotency key, §6, §7.4 and §7.5
-absorb duplicates.
+in-flight batch is resent byte for byte, at the epoch that sealed it,
+before anything new is sealed; with no idempotency key, §6, §7.4 and
+§7.5 absorb duplicates. Once the chain has moved past that epoch the
+batch never goes out: `stage_publish` drops it through
+`gop::take_stale`, the check a frame shares (§4.6), rewinds every
+page's export cursor to its acknowledged one and withdraws the ops
+queued past it, so the next sweep exports them again under the deadline
+gate, and queues the batch's expiry, hold and terminal envelopes again
+(`a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again`,
+`a_batch_the_chain_moved_past_never_goes_out_and_queues_its_facts_again`).
+Its control envelopes are not queued again, since the commit that
+moved the chain ended their ballot here (interpretation). Nothing is
+sealed or sent while this device's frame for the chain's epoch is
+staged, owed or waiting on its PUT, since the relay refuses a batch at
+an epoch whose frame it lacks
+(`no_batch_goes_out_at_an_epoch_before_the_relay_holds_its_frame`); a
+frame the relay never answers with a 2xx or `409` holds every publish
+(code reading).
 
 | Answer | Batch | Cursors and record | Event |
 | --- | --- | --- | --- |
 | 2xx | cleared | acknowledged cursors move to the recorded ones (`an_answer_to_a_resent_batch_acknowledges_only_what_that_batch_carried`) | |
 | `401` | kept; clock reopened | refresh and resend once: a second `401` is only the event, a failed refresh ends the round silently, a failed resend reports `unreachable` without a fault | `unauthorized` |
 | `409`, `410` | dropped | record dropped; export frontier not rewound | `epoch_conflict`, `rejoin_required` |
-| `413` | kept | `rotate_channel` on the first enrolled page by id | `ceremony_required` |
+| `413` | kept | `rotate_channel` on the first enrolled page by id held here before its deadline (`live_anchor`) | `ceremony_required` |
 | any other answer | kept; resent next tick | | `protocol` |
 | transport failure | kept | fault unreachable | `unreachable` |
 
@@ -149,10 +170,13 @@ absorb duplicates.
 
 ### 4.6 Frames
 
-Every committing device PUTs its staged frame at the chain epoch,
-without `welcome`, at the end of the turn (§7.8). A 2xx or `409` drops
-it; anything else (a `401`, with access kept; a transport failure, with
-no fault or event) keeps it for the next turn. Nothing fetches a frame:
+Every committing device PUTs its staged frame at the epoch whose key
+sealed it, without `welcome`, at the end of the turn (§7.8). A 2xx or
+`409` drops it; anything else (a `401`, with access kept; a transport
+failure, with no fault or event) keeps it for the next turn, until the
+chain moves past its epoch, when `gop::take_stale` drops it unsent
+(`a_frame_sealed_behind_the_chain_s_epoch_never_goes_out`), and no
+publish goes while it waits (§4.4). Nothing fetches a frame:
 `fetch_frame_request` and `absorb_frame` have no caller (§8).
 
 ### 4.7 Pairing mailbox
@@ -223,7 +247,7 @@ lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
 
 | Envelope | Handling |
 | --- | --- |
-| Ops | `admit_delta(batch epoch)`: a terminal page refuses; an equal epoch applies to a page held here; any other emits `rejoin_required`. `applied` only if the document version moved, so an echo is not an arrival; store refusals are dropped silently. |
+| Ops | `admit_delta(batch epoch)`: a terminal page refuses; an equal epoch applies to a page held here; any other emits `rejoin_required`. `applied` only if the document version moved, so an echo is not an arrival; store refusals are dropped silently. A U+FFFC no chip mark carries, which an earlier build took as ink, applies as ink rather than stall the page (10.31), and a later local delete of it applies and reaches the peer (`a_peers_batch_holding_an_unmarked_object_character_lands_and_a_delete_takes_it_out`); the shell makes that delete at its next projection of the page, outside the undo stack (`taking_out_a_peers_object_character_reaches_the_peer_and_no_undo_puts_it_back`). |
 | Expiry | the wall-clock pair read off the live countdown; `observe_peer_expiry` shortens, never extends (ADR-0021: "the earliest known expiry wins"); a held page ignores it |
 | Hold | the register's state, never the press, applied in stream order; a live hold suspends the countdown |
 | Terminal | `marker_trusted`: exactly `page_id(16) ‖ wall_ms(8) ‖ sig(64)`, the envelope's page id, signed over `signing_domain(TERMINAL_SIGN_CONTEXT, claim)` by this device or a peer record (`trusted_identities`); then the page is entombed (`deltas_round_trip_and_the_terminal_gate_needs_a_current_view`) |
@@ -238,15 +262,25 @@ lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
 | --- | --- |
 | a deferred transition is due (`ceremony_due`) | that page |
 | this device queued a terminal marker | a due page, else the first live enrolled page by id; with none, no rotation |
-| a publish answered `413` | the first enrolled page by id, live or not |
+| a publish answered `413` | the first live enrolled page by id; with none, no rotation |
 
+A live page here is one held before its deadline: a page past it gives
+the commit no rebuild (§7.6), so it is never a target, since `ceremony_due`
+answers false for it, or an anchor
+(`a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`,
+`a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`).
 `rotate_channel` proposes (§7.3) or runs solo (§7.2), never during a
 ballot, so a page still due proposes again.
 
 ### 7.2 Solo ceremony
 
 `solo_ceremony` commits at once as §7.6 does; devices absent from this
-device's roster, or without a record, are left behind.
+device's roster, or without a record, are left behind. A solo commit
+settles its page's cursors whichever trigger asked, a `413` included,
+and so does one whose frame seal refused (§7.6)
+(`a_due_transition_with_an_empty_room_rotates_the_channel_solo`,
+`a_solo_commit_at_the_relay_cap_settles_the_page_s_cursor`,
+`a_solo_commit_whose_frame_seal_refused_moves_the_relay_on_the_next_turn`).
 
 ### 7.3 Membership
 
@@ -260,7 +294,8 @@ keys of `entropy_sealed`, unfiltered (untested). Members count as
 
 A follower stays out at the first failed check, only the last
 spending: the ballot id is new; no ballot is in flight (relay-protocol
-§5 has no such rule); the page is held and not terminal;
+§5 has no such rule); the page is held, before its deadline and not
+terminal (`a_proposal_for_a_page_past_its_deadline_here_spends_nothing`);
 `entropy_sealed` names it; its entry opens (§5.3; failure is logged).
 It then opens the ballot and queues its accept.
 
@@ -273,15 +308,54 @@ held id and a named member, so devices commit at the same position
 
 ### 7.6 Commit
 
-On the completing accept, `ceremony_commit` compacts the target page
-only, advances the chain with the ballot's entropy and seals the
-snapshot, unpadded, under the new key; existing page channels take the
-new epoch, the frame is staged, and `settle_frontier` moves both
-cursors to the rebuild, which travels only as the frame. A store
-refusal (page gone or not enrolled; entropy already consumed) rotates
-nothing (`the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`).
-A seal refusal leaves the chain advanced but moves no channel and
-stages no frame, here and in `solo_ceremony` (interpretation).
+On the completing accept, `perform_ceremony` compacts the target page
+only and returns its snapshot; `ceremony_commit` then advances the
+chain with the ballot's entropy and seals the snapshot, unpadded, under
+the new key, and `commit_advance` moves every page channel to the new
+epoch and stages the frame. `settle_frontier` moves both cursors to the
+rebuild, which travels only as the frame, and withdraws the page's
+unsealed ops, whose history from before the rebuild would otherwise
+open under the new key
+(`a_compacted_page_s_queued_ops_never_cross_the_boundary`). Entropy already consumed
+commits nothing. Where the store cuts no rebuild (the page gone, not
+enrolled or past its deadline here), the device still advances and
+moves its channels, and stages a frame sealed over nothing, so it stays
+on its peers' epoch and the relay can take that epoch even when no
+member could cut the page
+(`a_deadline_between_two_devices_drains_keeps_both_on_one_epoch`,
+`a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay`,
+`the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`,
+`a_page_past_its_deadline_owes_no_ceremony_and_cuts_no_key_frame_before_its_sweep`).
+The empty frame's size tells the relay that it holds no page
+(interpretation); opened, it is empty, and a rejoining store lands no
+page and takes no identity from it
+(`the_commit_seals_the_rebuild_or_an_empty_frame_under_the_incoming_key`).
+`solo_ceremony` keeps the store's refusal as a refusal, since no peer
+holds its entropy (`a_solo_ceremony_the_store_refuses_rotates_nothing`).
+A frame or batch sealed before the deadline still goes out on its
+retry, but only while the chain stands at the epoch that sealed it
+(§4.4, §4.6): the frame PUT is what moves the relay's epoch.
+A seal refusal (the RNG declining a nonce) leaves the chain advanced
+and the channels moved but stages no frame
+(`a_refused_frame_seal_stages_nothing_and_the_chain_still_advances`).
+A ballot member still commits on the accept and leaves the epoch's
+frame to a peer
+(`a_member_whose_frame_seal_refuses_still_takes_its_peers_epoch`).
+`solo_ceremony` reports the commit, so `ceremony_committed` goes out
+and the page's cursors settle, and owes the frame, since no peer holds
+the epoch. The next sweep seals it first, at the same epoch with no
+second advance: the page's rebuild, or an empty frame where the store
+cuts none. A refused seal keeps it owed, and a later commit supersedes
+it
+(`a_solo_commit_whose_frame_seal_refuses_owes_the_frame_at_its_epoch`,
+`a_later_commit_supersedes_an_owed_frame`). Its PUT then moves the
+relay with the device, and no publish goes before it
+(`a_solo_commit_whose_frame_seal_refused_moves_the_relay_on_the_next_turn`,
+`no_batch_goes_out_at_an_epoch_before_the_relay_holds_its_frame`).
+Either way a frame an earlier commit left unpublished is dropped,
+never PUT under the new epoch
+(`a_frame_sealed_behind_the_chain_s_epoch_never_goes_out`), which
+10.33 follows.
 
 ### 7.7 Abandonment
 
@@ -402,9 +476,9 @@ Owner questions first; the owner decides which side moves in each.
 | 10.8 | relay-protocol §5: "every device stays on the old GOP"; "on waking it advances its chain" | §7.7, §8 | a sleeper that reads an abandoned ballot confirms alone and its frame wins, leaving the proposer behind; one that accepted then slept finds the remaining accepts purged, gets `410` and stays behind (interpretation) |
 | 10.9 | none | §5.4 | after a follower republishes, the proposer seals to the spent package until it re-attaches; the channel cannot rotate (interpretation) |
 | 10.10 | relay-protocol §5: "the publisher immediately proposes a ceremony" | §7.1 | with no live page left, no rotation; the dead page stays openable (code reading) |
-| 10.11 S | relay-protocol §3: "A refused publisher proposes a size-triggered ceremony"; §4: "Control and content share the stream" | §4.4, §7.1 | the proposal is never sealed while the batch is in flight, so the channel wedges; a dead first page never commits; a solo commit there skips `settle_frontier` and re-exports the rebuild (interpretation) |
+| 10.11 S | relay-protocol §3: "A refused publisher proposes a size-triggered ceremony"; §4: "Control and content share the stream" | §4.4, §7.1 | the proposal is never sealed while the batch is in flight, so the channel wedges; a dead first page never commits (interpretation) |
 | 10.12 S | relay-protocol §4: "`410 rejoin` is the whole recovery story"; account-auth.md §5: "not a hot loop" | §3, §4.5 | a `410` or `protocol` turn re-pumps at once (code reading) |
-| 10.13 S | none | §4.4 | a resend carries the new epoch over blobs sealed under the old key; peers cannot open them, yet cursors advance (interpretation) |
+| 10.13 S | none | §4.4 | a batch goes out only at the epoch that sealed it; once the chain moves past it the batch is dropped unsent, its pages' ops export again from the acknowledged cursors, and its expiry, hold and terminal envelopes queue again, so the relay never sees a batch whose label and seal disagree (`a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again`, `a_batch_the_chain_moved_past_never_goes_out_and_queues_its_facts_again`) |
 | 10.14 | relay-protocol §8: "delivery latency is bounded by the publish clock, not the poll" | §3 | an edit waits up to 25 s (code reading) |
 | 10.15 | ADR-0027: "silently discard unpublished work" | §4.4 | a `409` or `410` batch reaches no peer until a dissolve, and after one only if the relay is at epoch 0; a relaunch also drops the enrolment (interpretation) |
 | 10.16 S | relay-protocol §8: "64 KiB maximum bucket" | `pad::bucket`, §7.6 | the frame is unpadded; above 64 KiB buckets grow in 64 KiB steps (code reading) |
@@ -422,6 +496,10 @@ Owner questions first; the owner decides which side moves in each.
 | 10.28 | none | `settledTrouble` | while the gate still holds an earlier `unreachable`, a `keychain` refusal settles to `.unreachable`, so the sentence blames the server for a locked keychain, for up to the backoff (code reading; `testAQuietRefusalAfterAnUnreachableTurnStillBacksOff`) |
 | 10.29 | surface.md §4: "no peer awake reads `sync waiting`"; §5: "the relay cannot be reached", "waiting on your browser" | `currentPeers`, `sentence` | an asleep rostered peer reads `synced`; the built sentences differ (code reading) |
 | 10.30 | `companion_sync_pump` documents a `signed_out` event | `SyncEvent::SignedOut` | never constructed outside a test; sign-out arrives as the turn's reason (code reading) |
+| 10.31 | ADR-0021: "Sync must move a Page between a user's enrolled devices" | §6, `SheetStore::apply_remote_update` | no envelope carries a sealed object, and a batch that stands a sentinel the peer's page does not own is refused whole (`ChipRoster`) and dropped; every later batch of that page builds on it (`MissingHistory`) and no rejoin exists (§8), so a page holding an object, sealed there or carried onto it by a move or a cut's reattach, stops reaching every peer (`sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer`, `sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`) |
+| 10.32 | relay-protocol §5: "compact, advance, reseal" | §7.6 | a member whose store cuts no rebuild of the page, past its deadline or gone there, advances without compacting and reseals an empty frame, which may win the epoch at the relay (`a_deadline_between_two_devices_drains_keeps_both_on_one_epoch`, `a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay`) |
+| 10.33 S | relay-protocol §4: "`409` unless `epoch` is exactly current+1" | §4.6, §7.1, §7.2 | nothing stops a second commit before the relay takes the first one's frame, as when pages come due solo while the relay cannot be reached; the first frame is then dropped unsent, the second meets a `409`, and every publish after it meets one too until a rejoin (§8). Waiting to rotate until the frame lands keeps the relay in step but defers each page's compaction, which relay-protocol §2 promises is "never less" than a solo page's (interpretation) |
+| 10.34 | none | §4.4, §7.6 | a ballot member whose frame seal refused holds no frame, so its next publish can reach the relay before a peer's frame does and meet a `409` (interpretation) |
 
 ## Appendix A. Signing contexts, info strings, magics
 
