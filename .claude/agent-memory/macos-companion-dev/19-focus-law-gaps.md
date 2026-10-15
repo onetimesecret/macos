@@ -30,10 +30,10 @@ Diagnosed 2026-07-14 from real use of the bundled .app; both root causes adversa
 
 ## Spec position (sweep of docs/spec, CHANGELOG, shell/README)
 
-- Focus law (`docs/spec/04-interaction-model.md:84-89`): keyboard "by deliberate act only — click into the page, or summon with ⌥Space"; never key for chrome interactions. Also `03:36-39` ("Should the window take keyboard focus on drop? — No").
+- Focus law (`docs/spec/design/2026-0707-interaction-model.md:84-89`): keyboard "by deliberate act only — click into the page, or summon with ⌥Space"; never key for chrome interactions. Also `03:36-39` ("Should the window take keyboard focus on drop? — No").
 - Empty state specced only as tone: "a single calm sentence" (`03:127-128`); "Empty is its natural, healthy state" (`01:130-132`). **No specced keyboard grant for a pageless window** — genuine spec gap.
 - Type-to-create: absent everywhere. "First typed line" is naming only (`04:179-181`).
-- Page-switch caret/focus behavior: unspecced (keyboard map entries are bare; `06-open-questions.md` silent).
+- Page-switch caret/focus behavior: unspecced (keyboard map entries are bare; `2026-0707-open-questions.md` silent).
 
 ## Fix design
 
@@ -43,7 +43,7 @@ Diagnosed 2026-07-14 from real use of the bundled .app; both root causes adversa
    - **Caret/scroll:** in the coordinator, before `replaceTextStorage`, save `textView.selectedRange()` + visible rect keyed by outgoing `currentSheet` (dictionary on WindowModel or coordinator; prune with `storages`); after swap + `restyle()`, clamp saved range to `storage.length` and `setSelectedRange` + `scrollRangeToVisible`. Clamp matters: content can change core-side (chip zeroized) while another page shows.
    - Keep `undoManager?.removeAllActions()` on swap (already there; cross-page undo would be wrong anyway).
 4. **Clear stale promotion:** in `close(_:)` (or `refresh()`), if the promotion's target page/chip no longer lives, `promotion = nil`. Careful: promotion target can be `.chip(id)` on the current sheet — clear when its *sheet* dies.
-5. **Spec touch-up:** add the empty-state grant to `04-interaction-model.md` focus-law section ("click on the empty window creates a page and is the deliberate act").
+5. **Spec touch-up:** add the empty-state grant to `2026-0707-interaction-model.md` focus-law section ("click on the empty window creates a page and is the deliberate act").
 
 ## Trade-offs considered
 
