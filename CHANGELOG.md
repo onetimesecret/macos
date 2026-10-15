@@ -1113,9 +1113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opens, by ⌘-click or by the menu's Open Link, only while its page
   stands and no name or note holds the keys; past the deadline the
   page goes and says so. Copy Link asks the same way, and Open With is
-  no longer offered there. Open Link from the text menu used to move
-  the caret and open nothing, on a file too; it now opens the link. A
-  regular text file keeps Open With and Copy Link as they were.
+  no longer offered there. Nor is Edit Link…, on a page, in a note or
+  in a name field: its panel showed the URL in a field whose copy asked
+  nothing, so a panel left open past the deadline, or opened on a page
+  already past it, still copied the URL. Open Link from the text menu
+  used to move the caret and open nothing, on a file too; it now opens
+  the link. A regular text file keeps Open With, Copy Link and Edit
+  Link… as they were.
 
 - **No spelling panel or data detectors over a page** (app 0.35.0; Law
   0001, issue #170). The spelling panel's Learn hands the word it shows
