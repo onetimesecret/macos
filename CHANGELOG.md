@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **A drag between pages moves its objects** (app 0.35.0;
+- **A drag between pages moves its objects** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag
   row, issue #170). A selection dragged from one page onto another leaves
   the first and lands on the second in one transaction, each sealed
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   takes no ink from another editor.
 
 - **Every way of deleting a sealed object takes two presses and offers
-  Undo** (app 0.35.0; Law 0001, D-30, issue #170). ⌥⌫, ⌥⌦, ⌘⌫, ⌃K, ⌃⌫
+  Undo** (app 0.36.0; Law 0001, D-30, issue #170). ⌥⌫, ⌥⌦, ⌘⌫, ⌃K, ⌃⌫
   and the paragraph deletions select an object their first character
   would take, and the next press removes it, as ⌫ and ⌦ do; Edit >
   Delete, Delete to Mark and ⌃Y act at once. Any edit that takes an
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows `sealed content removed.` with Undo. None of these keys
   changes the page while a name or a note holds the keys.
 
-- **The decrypted drag's handle shows an open hand** (app 0.35.0;
+- **The decrypted drag's handle shows an open hand** (app 0.36.0;
   Law 0001,
   `docs/spec/feature/sealed-content/sealed-row-note-and-handles.md`,
   issue #170). Over a drawn handle a press would
@@ -475,7 +475,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Undo, which stands the same object again until the page moves on.
   - A drag of the selection inside a page moves it, or with ⌥ clones
     its objects, as one undo step. A drag to another page moves it
-    there, objects and all (app 0.35.0, under Changed). A drag to
+    there, objects and all (app 0.36.0, under Changed). A drag to
     another app carries the public text alone.
   - `drag decrypted`, a handle on a hovered or selected block, drags
     the object's plaintext to another app. The core writes it only when
@@ -884,7 +884,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A refusal over an object that no longer stood never says a page
-  expired** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
+  expired** (app 0.36.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001's expiry row, issue #170). Copy decrypted, Copy
   `NAME=value` or a conceal over an object no page held, from a menu
   left open after it went, said `this page has expired.` whenever
@@ -894,7 +894,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `companion_chip_stands`.
 
 - **A copy, cut or drag past an envelope cap does nothing and names
-  the cap** (app 0.35.0; `companion-core` 0.32.0, `companion-ffi`
+  the cap** (app 0.36.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001's copy and cut rows, issue #170). A selection
   holding sealed objects past 8 MiB or 1024 objects wrote an envelope
   this build then refused to read. Its copy, cut, drag and a service's
@@ -903,20 +903,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tooLarge` or `tooManyObjects` with the core's limit. Ink alone still
   copies.
 
-- **A paste over several stretches is refused** (app 0.35.0; Law 0001,
+- **A paste over several stretches is refused** (app 0.36.0; Law 0001,
   issue #170). A fragment's paste, and the slot's place, replaced the
   first of several selected stretches and left the rest. Both now
   change nothing and say `sealed objects paste into one selection, not
   several.`
 
 - **An item whose fragment cannot be read pastes its public text and
-  says so** (app 0.35.0; Law 0001, ADR-0045, issue #170). A board item
+  says so** (app 0.36.0; Law 0001, ADR-0045, issue #170). A board item
   naming the private type with no data under it went to AppKit's paste
   with no line, and a drop of one placed nothing. Both now paste the
   item's public text with the unreadable line, or refuse with a line
   when it has none.
 
-- **The removal line's Undo works from any surface** (app 0.35.0;
+- **The removal line's Undo works from any surface** (app 0.36.0;
   Law 0001, issue #170). After the surface that removed an object was
   torn down, as a trip to the ledger does, the line's Undo did nothing;
   and an edit to the page through another surface left an Undo that
@@ -938,13 +938,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than sealing it.
 
 - **The summon offer's button waits while a name or a note is
-  written** (app 0.35.0; Law 0001, Law 0007's keys row, issue #170). The
+  written** (app 0.36.0; Law 0001, Law 0007's keys row, issue #170). The
   button sealed the clipboard into the page under an open name field
   or note, where ⇧⌘V stands aside. It now seals nothing there and says
   why.
 
 - **A refused object copy says why, and says expired only for its own
-  page** (app 0.35.0; Law 0001's expiry row, issue #170). Copy decrypted
+  page** (app 0.36.0; Law 0001's expiry row, issue #170). Copy decrypted
   and copy `NAME=value` refused while some other page came due said
   `this page has expired.` though the object's page still stood, and a
   copy refused for any other reason said nothing. The line now names
@@ -953,7 +953,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   object keeps its draft's error in the same case.
 
 - **⌃Y after ⌃K over an object no longer writes a false object**
-  (app 0.35.0, `companion-core` 0.32.0, `companion-ffi` 0.40.0;
+  (app 0.36.0, `companion-core` 0.32.0, `companion-ffi` 0.40.0;
   Law 0001, issue #170). AppKit's
   kill buffer holds an object as the plain character U+FFFC, so ⌃Y
   wrote that character into the page as ink that looked like an object
@@ -968,7 +968,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that ⌘Z does not undo.
 
 - **Text dropped or pasted right after a sealed object no longer
-  doubles it** (app 0.35.0; Law 0001, issue #170). Text holding U+FFFC,
+  doubles it** (app 0.36.0; Law 0001, issue #170). Text holding U+FFFC,
   dropped from a regular text file or answered by a service right
   after an object, took on that object, so the page showed it twice
   while the core held it once. Every later edit then landed in the
@@ -1083,7 +1083,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **No route gives out a page past its deadline** (app 0.35.0;
+- **No route gives out a page past its deadline** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's expiry
   row, issue #170). Between a page's deadline and its timer's sweep, copy
   decrypted, Copy `NAME=value`, the decrypted drag, both conceals, the
@@ -1102,7 +1102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the settle.
 
 - **A page, a note and a sealed name offer no Share…, Writing Tools,
-  Look Up, Translate or Speech** (app 0.35.0; Law 0001, issue #170).
+  Look Up, Translate or Speech** (app 0.36.0; Law 0001, issue #170).
   The text menu's Share… built its picker over the selection before
   anything could ask whether the page still stood, so a menu left open
   past a page's deadline could still share it, and Writing Tools read a
@@ -1116,7 +1116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a note holds the keys.
 
 - **Spelling and Grammar, Search With Google and typing suggestions give
-  nothing of a page away** (app 0.35.0; Law 0001, issue #170). Spelling
+  nothing of a page away** (app 0.36.0; Law 0001, issue #170). Spelling
   and Grammar handed a page's text to the system's spell server, a
   separate process, even past the page's deadline, and Search With
   Google handed a selection to the browser. Neither is offered in the
@@ -1129,7 +1129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a page past its deadline goes at the first of them, and they wait
   while a name or a note holds the keys.
 
-- **Transformations keep a sealed object** (app 0.35.0; Law 0001,
+- **Transformations keep a sealed object** (app 0.36.0; Law 0001,
   issue #170). Make Upper Case, Make Lower Case or Capitalize over a
   selection holding a sealed object removed the object without its two
   presses. Each now changes the ink around the objects and leaves every
@@ -1138,7 +1138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection holding an object is not made, and says `the change would
   replace a sealed object, so it was not made.`
 
-- **A link on a page opens only while the page stands** (app 0.35.0;
+- **A link on a page opens only while the page stands** (app 0.36.0;
   Law 0001's expiry row, issue #170). A ⌘-click on a link sent its URL to
   the browser even past the page's deadline, and the text menu's Open
   With handed it to any browser. A link on a page or in a note now
@@ -1153,7 +1153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the link. A regular text file keeps Open With, Copy Link and Edit
   Link… as they were.
 
-- **No spelling panel or data detectors over a page** (app 0.35.0; Law
+- **No spelling panel or data detectors over a page** (app 0.36.0; Law
   0001, issue #170). The spelling panel's Learn hands the word it shows
   to the system's spell server without asking the page, so a panel
   left open past a page's deadline could give a word of it out. Show
@@ -1163,7 +1163,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dates and places a click hands to another app, stay off on a page, a
   note and a name field. A regular text file keeps both.
 
-- **Sync sends nothing of a page past its deadline** (app 0.35.0;
+- **Sync sends nothing of a page past its deadline** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's expiry
   row, issue #170). With sync on, a page past its deadline but not yet swept
   still exported its new ops to the relay, a ceremony could cut its
@@ -1184,7 +1184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   none of the page, which also lets the relay move on when every
   device reads that accept late.
 
-- **A page a peer's hold leaves no life goes at once** (app 0.35.0;
+- **A page a peer's hold leaves no life goes at once** (app 0.36.0;
   `companion-core` 0.32.0; Law 0001's expiry row, issue #170). A paired
   device, faulty or compromised, could publish a hold with no life left
   under it. The page here then refused every way out but stood on
@@ -1194,7 +1194,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   millisecond down to none, which ended a peer's copy while the page
   stood held here.
 
-- **A page drag's image shows no object's contents** (app 0.35.0;
+- **A page drag's image shows no object's contents** (app 0.36.0;
   Law 0001's plain drag row, issue #170). The image AppKit drew for a drag of
   a page's selection showed each sealed block as the page does,
   excerpt included, in the image that follows the pointer over other
