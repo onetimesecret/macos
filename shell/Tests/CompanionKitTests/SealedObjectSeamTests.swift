@@ -3,7 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// A sealed object's name across the seam (ADR-0043), against the live
+/// A sealed object's name across the seam (ADR-0043; core interface, The name), against the live
 /// core through an ephemeral handle. Nothing here persists; the one
 /// name=value copy goes to a board in process memory.
 final class SealedObjectSeamTests: XCTestCase {

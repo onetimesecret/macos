@@ -3,7 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// Law 0001's backspace rows (D-30, ADR-0047 point 4): the first press beside
+/// Law 0001's backspace rows (D-30, ADR-0046 point 1): the first press beside
 /// an object selects it, the second detaches it, and the removal line's Undo
 /// stands the same object again, against the live core, for every deletion.
 @MainActor
@@ -456,7 +456,7 @@ final class SealedRemovalTests: XCTestCase {
     }
 
     /// While a field beside the remounted surface holds the keys, the Undo waits and
-    /// says so (ADR-0046); ⌘Z on the page brings the object back once it has them.
+    /// says so (Law 0007, keys row); ⌘Z on the page brings the object back once it has them.
     func testTheUndoAfterTheTeardownStandsAsideWhileAFieldHoldsTheKeys() throws {
         let (model, sheet, removed) = try removeAndTearDown()
         let page = try mount(model, sheet, chips: removed)
@@ -1132,7 +1132,7 @@ final class SealedRemovalTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, no other deletion, ⌃Y, typing over a
-    /// selected object or rewrite of the selection changes anything on the page (ADR-0046).
+    /// selected object or rewrite of the selection changes anything on the page (Law 0007, keys row).
     func testEveryDeletionYankTypingAndRewriteStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage(tail: "\nxy")
         page.textView.setSelectedRange(NSRange(location: 13, length: 0))

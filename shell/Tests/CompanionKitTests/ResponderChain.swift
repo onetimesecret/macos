@@ -15,7 +15,7 @@ func answerer(of action: Selector, in window: NSWindow) -> NSResponder? {
 }
 
 /// The Edit menu's actions a page's text view answers, by the selectors
-/// the app's menu sends (ADR-0046).
+/// the app's menu sends (Law 0007, keys row).
 @MainActor
 let pageMenuActions = [
     #selector(EditStepResponder.undo(_:)), #selector(EditStepResponder.redo(_:)),

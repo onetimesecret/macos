@@ -4,7 +4,7 @@ import XCTest
 @testable import CompanionKit
 
 /// The editor's half of the sealed fragment (Law 0001's copy and select all
-/// rows, ADR-0047): what the page's copy writes, on a pasteboard of the
+/// rows, ADR-0045): what the page's copy writes, on a pasteboard of the
 /// test's own, against the live core.
 @MainActor
 final class SealedFragmentEditorTests: XCTestCase {
@@ -25,7 +25,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         var urls: [URL] = []
     }
 
-    /// The envelope's documented shape (ADR-0047 point 1), read only here.
+    /// The envelope's documented shape (core interface, Envelope, version 1), read only here.
     private struct Envelope: Decodable {
         let version: Int
         let cut: String?
@@ -166,7 +166,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// Ink alone writes plain text and no private type, so an in-app paste
-    /// keeps its ordinary path (ADR-0047 point 2).
+    /// keeps its ordinary path (ADR-0045 point 2).
     func testACopyOfInkAloneWritesPlainTextOnly() throws {
         let page = try makePage()
         page.textView.setSelectedRange(NSRange(location: 0, length: 2))
@@ -334,7 +334,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// No service reaches the page, and the page writes nothing for one,
-    /// while a field or the note holds the keys (ADR-0046).
+    /// while a field or the note holds the keys (Law 0007, keys row).
     func testServicesStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         let board = NSPasteboard.withUniqueName()
@@ -776,7 +776,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(page.model.noteText(chip: clone.chipId), "rotate monthly")
     }
 
-    // MARK: The keys' holder (ADR-0046)
+    // MARK: The keys' holder (Law 0007, keys row)
 
     /// While a field or the note holds the keys, the menu's Copy and Select
     /// All reach the holder, and the page's own routes write and select nothing.
@@ -982,7 +982,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, Cut reaches the holder, the
-    /// page cuts nothing and the slot's button places nothing (ADR-0046).
+    /// page cuts nothing and the slot's button places nothing (Law 0007, keys row).
     func testCutAndThePlaceStandAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         page.textView.setSelectedRange(NSRange(location: 3, length: 1))
@@ -1227,7 +1227,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// A paste that swept a due page settles at once: the swept page leaves the
-    /// model's tabs without waiting for the timer (ADR-0048).
+    /// model's tabs without waiting for the timer (Law 0001, expiry row).
     func testAPasteThatSweepsADuePageSettlesAtOnce() throws {
         let page = try makePage()
         let client = page.model.coreClient
@@ -1326,7 +1326,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
-    /// A core whose paste sweeps as one naming an object does (ADR-0048) and then
+    /// A core whose paste sweeps as one naming an object does (Law 0001, expiry row) and then
     /// refuses, as a body refusing partway leaves it.
     private final class SweepThenRefuseClient: CompanionClient, @unchecked Sendable {
         private(set) var pagesSwept: UInt64 = 0
@@ -1482,7 +1482,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys the offer's button seals nothing
-    /// and says why, as the slot's place does (ADR-0046).
+    /// and says why, as the slot's place does (Law 0007, keys row).
     func testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let client = SealWitness(tag: UUID().uuidString)
         let page = try makePage(client: client)
@@ -1520,7 +1520,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(client.takes, 1, "the button did not come back")
     }
 
-    // MARK: Past an envelope cap (ADR-0053)
+    // MARK: Past an envelope cap (Law 0001, copy and cut rows)
 
     /// A copy, cut or drag whose envelope would pass a cap writes, deletes and detaches
     /// nothing, an earlier cut stands, and the line names the core's own limit.
@@ -1625,7 +1625,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         }
     }
 
-    // MARK: A page past its deadline (ADR-0052)
+    // MARK: A page past its deadline (Law 0001, expiry row)
 
     /// Puts `page` past its deadline with no sweep: a one hour rung, two hours on.
     /// After a cut the re-mint moves the chip ids, so `keepsChipIDs` is false there.
@@ -1754,8 +1754,8 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, the page's readers stand aside without
-    /// asking the page (ADR-0046); the note's own, and the page's once the keys come
-    /// back, refuse past the deadline and settle (ADR-0052).
+    /// asking the page (Law 0007, keys row); the note's own, and the page's once the keys
+    /// come back, refuse past the deadline and settle (Law 0001, expiry row).
     func testAppKitsReadersStandAsideForTheKeysAndRefusePastTheDeadline() throws {
         for way in appKitReaders {
             let page = try makePage()
@@ -1852,7 +1852,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// An open note whose text the core refuses after a refused batch closes rather
-    /// than standing empty, and the settle takes its page with the line (ADR-0052).
+    /// than standing empty, and the settle takes its page with the line (Law 0001, expiry row).
     func testAnOpenNoteTheCoreRefusesClosesAndTheSettleTakesItsPage() throws {
         let client = NoteRefusingClient(tag: UUID().uuidString)
         let page = try makePage(client: client)
@@ -2146,7 +2146,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, Paste and Paste and Match Style
-    /// reach the holder and the page places nothing (ADR-0046).
+    /// reach the holder and the page places nothing (Law 0007, keys row).
     func testPasteStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         page.textView.setSelectedRange(whole)
@@ -2359,7 +2359,7 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// While a field or the note holds the keys, the page's link opens and copies nothing
-    /// and asks nothing (ADR-0046); once the keys come back it opens.
+    /// and asks nothing (Law 0007, keys row); once the keys come back it opens.
     func testAPagesLinkStandsAsideWhileAFieldOrTheNoteHoldsTheKeys() throws {
         let page = try makePage()
         let point = try appendLink(to: page.textView)

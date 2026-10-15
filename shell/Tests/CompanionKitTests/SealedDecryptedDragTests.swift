@@ -4,7 +4,7 @@ import XCTest
 @testable import CompanionKit
 
 /// The decrypted drag from a block's handle (Law 0001's decrypted drag row,
-/// ADR-0047 point 11, ADR-0050), driven below the session AppKit runs, against
+/// ADR-0045 point 5), driven below the session AppKit runs, against
 /// the live core and on pasteboards of the test's own.
 @MainActor
 final class SealedDecryptedDragTests: XCTestCase {
@@ -186,7 +186,7 @@ final class SealedDecryptedDragTests: XCTestCase {
     }
 
     /// The pointer turns to an open hand over the handle while it is drawn, hovered or
-    /// selected, and over none while a field or the note holds the keys (ADR-0046).
+    /// selected, and over none while a field or the note holds the keys (Law 0007, keys row).
     func testTheHandleShowsAnOpenHandWhereAPressWouldStartTheDrag() throws {
         let model = try makeModel()
         let page = try mountPage(on: model)
@@ -294,7 +294,7 @@ final class SealedDecryptedDragTests: XCTestCase {
     }
 
     /// An ask past the page's deadline is refused, writes and records nothing, and
-    /// settles the page with no line, since the destination asked (ADR-0052).
+    /// settles the page with no line, since the destination asked (Law 0001, expiry row).
     func testAnAskPastThePagesDeadlineIsRefusedAndSettlesWithoutALine() throws {
         let model = try makeModel()
         let page = try mountPage(on: model)
@@ -316,7 +316,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         source.end(with: [])
     }
 
-    // MARK: Inside the app (ADR-0050)
+    // MARK: Inside the app (Law 0001, decrypted drag row)
 
     /// The app's own decrypted drag lands on no page and no note: each step of the drop
     /// refuses it, so drop to seal never asks the core, no provider is asked, nothing is
@@ -361,7 +361,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(shape(other), "ab # cd", "the drop sealed a new object")
     }
 
-    // MARK: Standing aside (ADR-0046)
+    // MARK: Standing aside (Law 0007, keys row)
 
     /// While a name field or the note holds the keys, the handle starts no drag and
     /// the line says why.

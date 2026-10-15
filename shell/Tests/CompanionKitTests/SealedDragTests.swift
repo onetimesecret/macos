@@ -4,7 +4,7 @@ import XCTest
 @testable import CompanionKit
 
 /// The editor's drags of a page's selection (Law 0001's drag, ⌥ drag and plain
-/// drag rows, ADR-0047 point 10), driven below the session AppKit runs, against
+/// drag rows), driven below the session AppKit runs, against
 /// the live core and on pasteboards of the test's own.
 @MainActor
 final class SealedDragTests: XCTestCase {
@@ -17,7 +17,7 @@ final class SealedDragTests: XCTestCase {
         let sheet: UInt64
     }
 
-    /// The envelope's documented shape (ADR-0047 point 1), read only here.
+    /// The envelope's documented shape (core interface, Envelope, version 1), read only here.
     private struct Envelope: Decodable {
         let version: Int
         let cut: String?
@@ -355,7 +355,7 @@ final class SealedDragTests: XCTestCase {
 
     /// A drag dropped on another page moves there through the core as one
     /// transaction: the same objects with their names, both pages restated, no
-    /// `sealed` record, and ⌘Z on the source leaves one of each (ADR-0054).
+    /// `sealed` record, and ⌘Z on the source leaves one of each (Law 0001, drag row).
     func testADragToAnotherPageMovesTheSameObjectsAndTheSourceUndoLeavesOne() throws {
         let (model, _) = try makeModel()
         let source = try mountPage(on: model)
@@ -393,7 +393,7 @@ final class SealedDragTests: XCTestCase {
     }
 
     /// ⌥, or a source that changed under its drag, pastes the drag's copy fragment on
-    /// the other page, cloning its objects, and the source keeps its run (ADR-0054 point 5).
+    /// the other page, cloning its objects, and the source keeps its run (Law 0001, drag and ⌥ drag rows).
     func testAnOptionOrStaleDragToAnotherPagePastesACopyAndLeavesItsSource() throws {
         let (model, _) = try makeModel()
         let source = try mountPage(on: model)
@@ -750,7 +750,7 @@ final class SealedDragTests: XCTestCase {
     }
 
     /// A field's own drag lands while the field holds the keys; while the note or another
-    /// field holds them, a drop from this app on the page waits and says why (ADR-0046).
+    /// field holds them, a drop from this app on the page waits and says why (Law 0007, keys row).
     func testADragFromAFieldStandsAsideWhileAnotherHolderHasTheKeys() throws {
         let (model, _) = try makeModel()
         let page = try mountPage(on: model)
@@ -839,7 +839,7 @@ final class SealedDragTests: XCTestCase {
         XCTAssertEqual(model.coreClient.ledger().count, records, "a seal was recorded")
     }
 
-    // MARK: Standing aside (ADR-0046)
+    // MARK: Standing aside (Law 0007, keys row)
 
     /// While a name field or the note holds the keys, the page starts no drag and
     /// takes no drop, its own, another page's move or a fragment, and the line says why.

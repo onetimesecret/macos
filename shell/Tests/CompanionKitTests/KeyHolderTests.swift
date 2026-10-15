@@ -3,7 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// Whoever holds the keys answers the page's chords and Edit menu (ADR-0046),
+/// Whoever holds the keys answers the page's chords and Edit menu (Law 0007, keys row),
 /// shown with a plain field, the shape the SwiftUI rename fields edit through.
 @MainActor
 final class KeyHolderTests: XCTestCase {

@@ -391,7 +391,7 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertEqual(SealedBlockCell.displayedSizeClass("future-class"), "size unknown")
     }
 
-    // MARK: The named row (Law 0001, ADR-0042 point 8)
+    // MARK: The named row (Law 0001; sealed row spec, The named row)
 
     private func named(_ name: String, excerpt: String = "ghp_4kQ9…e0H5jK") -> ChipInfo {
         ChipInfo(
@@ -504,7 +504,7 @@ final class SealedBlockTests: XCTestCase {
     }
 
     /// A named image's row reads `NAME=excerpt`, but its `=` is no zone,
-    /// since the core composes `NAME=value` for text alone (ADR-0043 point 7).
+    /// since the core composes `NAME=value` for text alone (Law 0001, `=` zone row).
     func testANamedImagesEqualsIsNoZone() throws {
         let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.blockHeight)
         let image = ChipInfo(
