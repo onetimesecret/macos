@@ -31,7 +31,7 @@ sources:
   - the maintainer's sealed object model, 2026-09-15
   - docs/spec/design/2026-0915-ui-ux-decisions.md, section 3
   - docs/spec/feature/sealed-content/sealed-content.md (historical design note upstream of this law)
-  - docs/spec/design/04-interaction-model.md
+  - docs/spec/design/2026-0707-interaction-model.md
   - docs/adr/0009-chip-deletion-deliberate-final.md (proposed removal constraint superseded by D-30)
   - docs/adr/0012-framing-threat-boundary-and-persistence-model.md (egress and clear discipline)
   - crates/core/src/sheet.rs (one clock per sheet, no per chip timers; `judge_name`, the name's rule)
