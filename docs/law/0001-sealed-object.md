@@ -43,7 +43,8 @@ sources:
   - shell/Sources/CompanionKit/DecryptedDrag.swift (the decrypted drag's source and data provider)
   - shell/Sources/CompanionKit/SealedBlockLayout.swift (the named row's zones, pill and allotment; the handle's clearances)
   - shell/Sources/CompanionKit/SealedNameField.swift (the name's field; `SealedNameTextView`, its editor, which asks the object's page before the name leaves)
-  - shell/Sources/CompanionKit/TextOffers.swift (the items a page's, a note's and a name's text menu drop, the readers no click gates, and `AskingTextView`, whose readers ask first; the AppKit text routes table)
+  - shell/Sources/CompanionKit/TextOffers.swift (the items a page's, a note's and a name's text menu drop, the readers no click gates, and `AskingTextView`, whose readers ask first and whose link items go to `openAimedLink`; the AppKit text routes table)
+  - shell/Sources/CompanionKit/MarkdownPreviewView.swift (`MarkdownPreviewView`, the page's ink rendered, an `AskingTextView` asking its page; `shownSelection`, the rendered selection as the core composes it; the preview's rows of the AppKit text routes table)
   - shell/Sources/CompanionKit/SealedNotePopover.swift (`NotePopoverLayout.minimumWidth`, the note's popover)
   - shell/Sources/CompanionKit/PageModel.swift (`copyChipName`, `copyChipNameValue`, `setChipName`, the note's routes; `InkDocument`, the routes by document; `cutSelection`, `placeActiveCut`, `cutSlotSentence`, the cut and the clipboard slot; `pasteFragment`, the paste; `boardHoldsOwnCopy`, the board the sealed paste and its offer leave to ⌘V; `noteRemoval`, `undoRemoval` and `withdrawRemovalUndo`, the removal line and its Undo, `countEdit`, the edits sent for each document that retire it, and `surfaceMounted`, a mount of another page that retires it; `provideDecryptedDrag`, the provider's route; `pageRuns`, a page's runs for a projection once any U+FFFC is out, and `storage(for:)`, which takes it out of a page that kept its storage too)
   - shell/Sources/CompanionKit/PageSurface.swift (`PageStatusStack`, the clipboard slot's line)
@@ -382,8 +383,10 @@ AppKit built over a page, a note, a name field and a file on macOS 27.2;
 the link and panel rows also from probes on macOS 27.2 of the text menu
 over a link, of a held press on one, and of the spelling panel's buttons,
 whose Learn was never pressed. The tests are in
-`SealedFragmentEditorTests.swift` (fragment) and
-`SealedRemovalTests.swift` (removal).
+`SealedFragmentEditorTests.swift` (fragment),
+`SealedRemovalTests.swift` (removal) and
+`CheckpointMarkdownPreviewTests.swift` (the Markdown preview, whose rows
+end the table).
 
 | Route | Reached by | Class | Pinned by |
 | --- | --- | --- | --- |
@@ -424,6 +427,11 @@ whose Learn was never pressed. The tests are in
 | `translateWithEvent:` and any private route AppKit adds | system gestures | known, not gated: private, with no hook to ask from | none |
 | input methods, dictation, AutoFill, Emoji & Symbols | typing | known, not gated: an input method, which runs in a process of its own, may read the text around the caret through `NSTextInputClient`, which typing needs | none |
 | accessibility clients the person allowed, screen capture | outside the app | known, not gated | none |
+| the Markdown preview's `copy:` and `writeSelectionToPasteboard:` (`MarkdownPreviewView`) | ⌘C over the selected page's preview, the Services menu | the page's go through the core, `companion_sheet_compose_fragment`, which refuses past the deadline: the rendered text between the objects is the ink, never the source markdown, and each object goes by reference, in rendered order, so the copy writes the copy row's two types and no other; a service takes the public text alone and none writes back over a preview (2026-10-16 Markdown preview amendment) | `CheckpointMarkdownPreviewTests.swift` `testAPreviewCopiesWhatItShowsAsOneFragmentWithEachObjectByReference`, past the deadline `testEveryWayOutOfAPreviewPastItsPagesDeadlineRefusesAndTheSettleTakesIt`; the core's composition, `fragment.rs` `a_shown_selection_composes_as_the_pages_own_would`, `a_shown_selection_naming_an_object_off_the_page_composes_nothing`, `transfer.rs` `a_shown_selection_past_its_pages_deadline_composes_nothing_before_its_sweep`, `lib.rs` `a_shown_selection_composes_over_the_seam_as_the_pages_own_would` |
+| the preview's text menu and AppKit's readers over it | the text menu, Edit, Writing Tools, typing | the preview is an `AskingTextView` asking its page by `PageModel.givesOut(sheet:)`: its menu keeps no Share…, Look Up, Translate, Speech, Spelling and Grammar, Search With Google, Open With or Edit Link…, Writing Tools, typing suggestions, inline predictions, data detectors and link detection are off and their toggles refused, and every reader the rows above sort as asking first asks the preview's page | `testAPreviewOffersNoReaderAndAnswersWritingToolsSuggestionsAndDetectorsWithNone`, `testEveryWayOutOfAPreviewPastItsPagesDeadlineRefusesAndTheSettleTakesIt` |
+| the preview's link: `textView(_:clickedOnLink:at:)`, Open Link, Copy Link | a ⌘-click, the text menu over a link | a ⌘-click and Open Link go to `Coordinator.openLink`, which asks the preview first; a plain click opens nothing; Copy Link asks first, as any copy does, and writes the URL on the ambient board; Open With and Edit Link… leave the menu, as the rows above say | `testAPreviewsLinkOpensOnlyByCommandClickThroughTheGate`, `testEveryWayOutOfAPreviewPastItsPagesDeadlineRefusesAndTheSettleTakesIt`; a real ⌘-click on a preview's link, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
+| the preview's drag: `dragSelection(with:offset:slideBack:)`, `dragImageForSelection(with:origin:)`, `textView(_:draggedCell:in:event:at:)` | a press and a move on the preview's selection or on an object | no drag starts from a preview, with an object in the selection or not, since the drag's image would draw each object's face where no gate sees (the plain drag row) | `testAPreviewStartsNoDragFromASelectionHoldingAnObject` |
+| a preview of a page the roll has not selected | the mouse, the keys | not selectable and never the first responder, as a quiet page is ([ADR-0030](../adr/0030-visible-pages-share-preview-rendering.md)); a click promotes its page, and the saved caret stands since a rendered index is no source index | `testAPreviewOfAnUnselectedPageIsNotSelectableAndAClickPromotesIt`, `testNonselectedPreviewActivationSelectsPageWithoutUsingRenderedSelectionAsSourceCaret` |
 
 ## What the rule forbids
 
@@ -1671,3 +1679,20 @@ paths must stay dialog free.
   the one noun: *Remove Sealed Content*, and the removal line
   `sealed content removed.`. The menu block and two rows follow; the
   amendments above keep the words of their day.
+- 2026-10-16: Markdown preview amendment (PR 261, applying the expiry
+  row and the export, print, share row). The builtin Markdown preview,
+  `MarkdownPreviewView`, shows a page's ink rendered, so it is text the
+  shell shows and every AppKit way out of it asks first. It is an
+  `AskingTextView` asking its page: its text menu keeps no reader, its
+  copy composes through the core's new `companion_sheet_compose_fragment`
+  from what it shows, the rendered text between the objects as the ink
+  runs and each object by reference, never the source markdown, a
+  service takes the public text alone, its link opens only by
+  `Coordinator.openLink`, and no drag starts from it. Only the selected
+  page's preview is selectable; a preview of another page is as
+  ADR-0030's quiet page is, and a click on it promotes the page. The
+  AppKit text routes table gains the preview's five rows, the tests
+  sentence names `CheckpointMarkdownPreviewTests.swift`, the sources name
+  `MarkdownPreviewView.swift`, and the link menu's plumbing moves from
+  the editor into `AskingTextView` so both surfaces aim their items the
+  same way.
