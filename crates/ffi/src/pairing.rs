@@ -1,8 +1,8 @@
 //! Device pairing: two devices trust each other directly, through their
 //! own key exchange and a short authentication string a human compares
-//! and can fail, never through the account (relay decision background section 3, in the
-//! relay decision background; issue #97). The joiner receives the
-//! channel secret, never the content key (relay decision background section 8). Pairing
+//! and can fail, never through the account (relay decision background
+//! section 3; issue #97). The joiner receives the channel secret, never
+//! the content key (relay decision background section 8). Pairing
 //! secrets rest under their own key-material accounts, apart from the
 //! conceal credentials. Ceremony and rules: client protocol §9;
 //! revocation: §7.9.

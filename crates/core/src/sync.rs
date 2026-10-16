@@ -1,8 +1,8 @@
 //! Client-side sync bookkeeping: what replicates, and the gates on it
 //! (ADR-0021, issues #100 and #101). Pure state, no IO and no crypto;
-//! the seam signs and seals these values. Rules: relay decision background section 6 (in
-//! the relay decision background); the built client's use of them is
-//! client protocol §6 and §7.
+//! the seam signs and seals these values. Rules: relay decision
+//! background section 6; the built client's use of them is client
+//! protocol §6 and §7.
 
 use crate::sheet::ItemId;
 
