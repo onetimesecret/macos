@@ -4,7 +4,7 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0011's deadline sentence (the expiry row); the rows the 2026-10-14 drafts withdrawn amendment names, none numbered and awaiting the maintainer's ratification (ADR-0042 to ADR-0047, which they cite and which were accepted 2026-10-16, are under sources, not here); ADR-0055
+decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0011's deadline sentence (the expiry row); the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042 to ADR-0047, which they cite and which were accepted the same day, are under sources, not here); ADR-0055
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
   - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (accepted; the name's charset)
@@ -1672,6 +1672,7 @@ paths must stay dialog free.
   `sealed content removed.`. The menu block and two rows follow; the
   amendments above keep the words of their day.
 - 2026-10-16: Record amendment. ADR-0042 to ADR-0047 were accepted by the
-  maintainer. `decisions`, `sources` and the rows and acceptance lists
-  that cited them as proposals now cite accepted text. No behaviour
-  changes.
+  maintainer, who ratified the rows the 2026-10-14 amendments added in
+  the same reading. `decisions`, `sources` and the rows and acceptance
+  lists that cited them as proposals now cite accepted text. No
+  behaviour changes.

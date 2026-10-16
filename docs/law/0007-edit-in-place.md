@@ -4,7 +4,7 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered and awaiting the maintainer's ratification (ADR-0042, which they cite and which was accepted 2026-10-16, is under sources, not here); ADR-0055 point 2
+decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042, which they cite and which was accepted the same day, is under sources, not here); ADR-0055 point 2
 consumed-by:
   - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment; its rows cite this law's keys row)
   - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (accepted; the sealed name's charset, and an empty draft clearing it)
@@ -354,6 +354,7 @@ Owed: a first run of the rename in place procedure.
   with the short card amendment's tests. The Opening and Refusing
   classes, the exemption, five rows, the acceptance lists and the
   sources follow.
-- 2026-10-16: Record amendment. ADR-0042 was accepted by the maintainer.
-  `decisions`, `sources` and the rows that cited it as a proposal now cite
-  accepted text. No behaviour changes.
+- 2026-10-16: Record amendment. ADR-0042 was accepted by the maintainer,
+  who ratified the rows the 2026-10-14 amendments added in the same
+  reading. `decisions`, `sources` and the rows that cited it as a proposal
+  now cite accepted text. No behaviour changes.
