@@ -220,6 +220,44 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(cells.count, 9, "The empty trailing cell must have its own native paragraph.")
     }
 
+    /// A cell spanning columns (`||`) or rows (`^`) takes a native block of that span, the
+    /// cells it covers take none, and the cells after it stay in their own columns.
+    func testTableCellsSpanningColumnsAndRowsKeepTheirSpansAndTheirNeighboursColumns() throws {
+        let rendered = render("""
+        | one | two | three |
+        | --- | --- | ----- |
+        | wide     || tall  |
+        | left | right | ^   |
+        """)
+        func block(_ text: String) throws -> NSTextTableBlock {
+            try XCTUnwrap(try style(text, in: rendered).textBlocks.last as? NSTextTableBlock)
+        }
+        let wide = try block("wide")
+        XCTAssertEqual(wide.startingRow, 1)
+        XCTAssertEqual(wide.startingColumn, 0)
+        XCTAssertEqual(wide.columnSpan, 2)
+        XCTAssertEqual(wide.rowSpan, 1)
+        XCTAssertEqual(wide.contentWidth, 200 / 3, accuracy: 0.01)
+        let tall = try block("tall")
+        XCTAssertEqual(tall.startingRow, 1)
+        XCTAssertEqual(tall.startingColumn, 2)
+        XCTAssertEqual(tall.columnSpan, 1)
+        XCTAssertEqual(tall.rowSpan, 2)
+        XCTAssertEqual(try block("left").startingColumn, 0)
+        XCTAssertEqual(try block("right").startingColumn, 1)
+        XCTAssertEqual(try block("right").startingRow, 2)
+        XCTAssertEqual(try block("three").columnSpan, 1)
+        var cells: Set<ObjectIdentifier> = []
+        rendered.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: rendered.length)) {
+            value, _, _ in
+            for case let cell as NSTextTableBlock in (value as? NSParagraphStyle)?.textBlocks ?? [] {
+                cells.insert(ObjectIdentifier(cell))
+            }
+        }
+        XCTAssertEqual(cells.count, 7, "three headers, wide, tall, left and right; the covered cells take none")
+        XCTAssertFalse(rendered.string.contains("^"))
+    }
+
     func testTableLayoutWrapsToThePreviewWidthAndReflowsOnResize() throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true

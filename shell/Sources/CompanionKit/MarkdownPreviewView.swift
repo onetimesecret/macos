@@ -464,11 +464,17 @@ private final class MarkdownPreviewRenderer {
         let rows: [[any Markup]] = [Array(node.head.children)] + node.body.children.map { Array($0.children) }
         for (rowIndex, cells) in rows.enumerated() {
             for column in 0..<columnCount {
+                // The parser keeps a cell under a span with a zero span of its own.
+                let source = column < cells.count ? cells[column] as? Markdown.Table.Cell : nil
+                if let source, source.colspan == 0 || source.rowspan == 0 { continue }
+                let columnSpan = min(max(Int(source?.colspan ?? 1), 1), columnCount - column)
+                let rowSpan = min(max(Int(source?.rowspan ?? 1), 1), rows.count - rowIndex)
                 let cell = NSTextTableBlock(
-                    table: table, startingRow: rowIndex, rowSpan: 1,
-                    startingColumn: column, columnSpan: 1
+                    table: table, startingRow: rowIndex, rowSpan: rowSpan,
+                    startingColumn: column, columnSpan: columnSpan
                 )
-                cell.setContentWidth(100 / CGFloat(columnCount), type: .percentageValueType)
+                cell.setContentWidth(
+                    100 * CGFloat(columnSpan) / CGFloat(columnCount), type: .percentageValueType)
                 cell.setValue(0, type: .absoluteValueType, for: .minimumWidth)
                 cell.setWidth(6, type: .absoluteValueType, for: .padding)
                 cell.setWidth(0.5, type: .absoluteValueType, for: .border)
@@ -489,9 +495,8 @@ private final class MarkdownPreviewRenderer {
                 if rowIndex == 0 {
                     attributes[.font] = NSFontManager.shared.convert(InkStyle.baseFont, toHaveTrait: .boldFontMask)
                 }
-                let content = column < cells.count
-                    ? inlineChildren(cells[column], attributes: attributes)
-                    : NSAttributedString(string: "")
+                let content = source.map { inlineChildren($0, attributes: attributes) }
+                    ?? NSAttributedString(string: "")
                 paragraph(content, context: nested, style: style)
             }
         }
