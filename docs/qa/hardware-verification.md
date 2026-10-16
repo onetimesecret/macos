@@ -337,8 +337,11 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   the six digits can be failed on purpose, that a page travels and
   carries the mark while another device writes on it, and that a
   revoke stops new edits without reaching across to the other
-  machine's records (issue #102, ADR-0027 section 5, ADR-0021 section
-  3). Blocked on the relay. Not an ADR-0016 case.
+  machine's records (issue #102, [account-auth decision
+  background](../spec/feature/sync/account-auth-decision-background.md)
+  section 5, [relay decision
+  background](../spec/feature/sync/relay-decision-background.md)
+  section 3). Blocked on the relay. Not an ADR-0016 case.
 
 - [`file-draft-lifecycle.md`](verification-procedures/file-draft-lifecycle.md).
   Owner: delano. A dirty file backed document across a SIGKILL and a

@@ -1,13 +1,13 @@
 //! Client-side sync bookkeeping: what replicates, and the gates on it
 //! (ADR-0021, issues #100 and #101). Pure state, no IO and no crypto;
-//! the seam signs and seals these values. Rules: ADR-0021 section 6 (in
+//! the seam signs and seals these values. Rules: relay decision background section 6 (in
 //! the relay decision background); the built client's use of them is
 //! client protocol §6 and §7.
 
 use crate::sheet::ItemId;
 
 /// What a device publishes for a page's expiry: the policy, never the
-/// deadline (ADR-0021 section 6). Both halves are wall-clock values,
+/// deadline (relay decision background section 6). Both halves are wall-clock values,
 /// read off the live countdown, and each receiver computes its own
 /// deadline from their sum, [`ExpiryPolicy::deadline_wall_ms`] (client
 /// protocol §6).
@@ -33,7 +33,7 @@ impl ExpiryPolicy {
 
 /// The pause machine's state as it replicates, one register per page:
 /// the state, never the press, applied in stream order, and a live hold
-/// suspends the countdown everywhere (ADR-0021 section 6; client
+/// suspends the countdown everywhere (relay decision background section 6; client
 /// protocol §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoldRegister {
@@ -55,8 +55,8 @@ pub enum HoldRegister {
 /// The signed fact of a page's death: published once, by a device the
 /// gate below admits, and absorbing — after it, every delta for the
 /// page is refused and the page's key is destroyed, which kills the
-/// relay's buffered ciphertext for everyone at once (ADR-0021 section
-/// 6). The signature is the seam's business, not this crate's; what
+/// relay's buffered ciphertext for everyone at once (relay decision
+/// background section 6). The signature is the seam's business, not this crate's; what
 /// travels through here is the claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalMarker {
@@ -81,8 +81,8 @@ pub enum DeltaAdmission {
     /// The delta is from another epoch — this device slept through a
     /// ceremony, or the sender did. Either way the recovery is the
     /// same: drop the pre-ceremony history and rejoin at the current
-    /// key frame, never ask for the ops behind it (ADR-0021 sections 1
-    /// and 5).
+    /// key frame, never ask for the ops behind it (relay decision
+    /// background sections 1 and 5).
     RejoinRequired,
     /// The page is terminal. Nothing lands on it again.
     Refused,
@@ -269,7 +269,7 @@ impl PageChannel {
 
     /// Adopt the channel's epoch after rejoining at the current key
     /// frame: the one legal way to cross a ceremony boundary this
-    /// device slept through (ADR-0021 section 5). The pre-ceremony
+    /// device slept through (relay decision background section 5). The pre-ceremony
     /// history was dropped by the rejoin
     /// ([`SheetStore::adopt_key_frame`] only lands on a fresh page),
     /// so adopting the number is honest by the time it happens.

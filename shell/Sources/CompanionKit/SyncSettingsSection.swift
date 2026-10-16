@@ -197,7 +197,7 @@ private struct SyncDeviceRow: View {
 /// The pairing flow inline: a spinner while messages cross, the six
 /// digits large when both sides settle, and the two verdicts — with
 /// the failing one always offered, because a comparison that cannot
-/// fail verifies nothing (ADR-0021 §3).
+/// fail verifies nothing (relay decision background §3).
 private struct SyncPairingStatus: View {
     let stage: SyncPairingStage
     @ObservedObject var sync: SyncController

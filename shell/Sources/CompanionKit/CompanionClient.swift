@@ -1154,7 +1154,7 @@ public class CompanionClient: @unchecked Sendable {
     /// does not reach another device's text and is not meant to: the
     /// library refuses a peer's operations by design, and a device that
     /// joined at a key frame never held the operations an away-device
-    /// undo would have to invert (ADR-0021 section 5).
+    /// undo would have to invert (relay decision background section 5).
     @discardableResult
     public func undo(sheet: UInt64) -> Bool {
         companion_sheet_undo(handle, sheet)

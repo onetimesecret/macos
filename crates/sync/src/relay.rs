@@ -74,7 +74,7 @@ pub struct PeerAttachment {
     /// The signed static X25519 key package it attached with (§6).
     pub key_package: Vec<u8>,
     /// Unix epoch ms the peer attached — the one time the metadata
-    /// admission lets the relay hold (ADR-0021 §4).
+    /// admission lets the relay hold (relay decision background §4).
     pub attached_ms: u64,
 }
 

@@ -6589,7 +6589,7 @@ public final class PageModel: ObservableObject {
     /// is bound to the document's own peer and refuses another peer's
     /// operations by design; and a device that joined a page at a key
     /// frame never received the operations an away-device undo would
-    /// have to invert (ADR-0021 section 5). So ⌘Z here is undo that is
+    /// have to invert (relay decision background section 5). So ⌘Z here is undo that is
     /// safe beside another device's edits, never undo that reaches
     /// across them, and it should not grow into the latter without the
     /// key-frame law being reopened first.

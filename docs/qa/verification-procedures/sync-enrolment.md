@@ -158,7 +158,7 @@ now pass the account gate and neither can read the other's pages.
 
 - [ ] **Look at each device list.** Expected: each shows itself, and
       may show the other as **attached, never paired** in ember. That
-      is correct and is the state ADR-0021 section 5 describes: past
+      is correct and is the state [relay decision background](../../spec/feature/sync/relay-decision-background.md) section 5 describes: past
       the account gate, past no pairing, holding ciphertext it cannot
       open.
 - [ ] **On A press Invite a Device, on B press Join from Here.**

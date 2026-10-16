@@ -3065,7 +3065,7 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
 /// Where the account gate stands, as one machine token (account-auth decision background §5):
 /// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
 /// `ready` or `attached`, the status JSON's `gate`. It says whether this
-/// client may attach and nothing about content (ADR-0021 §3).
+/// client may attach and nothing about content (relay decision background §3).
 ///
 /// Null on a null handle or a poisoned lock: a gate that cannot be read
 /// has not been passed, so null means may not attach. A status JSON
@@ -3225,7 +3225,7 @@ pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHand
 
 /// Sign sync out: drop the held tokens and delete the persisted refresh
 /// token, exactly one Keychain account; the conceal token, content and
-/// ledger keys, pairing accounts and the pad all stand (ADR-0021 §3). A
+/// ledger keys, pairing accounts and the pad all stand (relay decision background §3). A
 /// ceremony out on the browser ends with it. True when the delete was
 /// accepted.
 ///
@@ -3456,7 +3456,7 @@ pub unsafe extern "C" fn companion_sync_pairing_poll(handle: *mut CompanionHandl
 
 /// The human's verdict on the short authentication string. A match
 /// moves the ceremony forward; a mismatch drops it whole with nothing
-/// stored on this device (ADR-0021 §3). Returns the stage as
+/// stored on this device (relay decision background §3). Returns the stage as
 /// [`companion_sync_pairing_poll`] does. Free with
 /// [`companion_string_free`].
 ///

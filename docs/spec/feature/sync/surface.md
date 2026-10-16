@@ -110,7 +110,7 @@ carries.
 section: an invite or a join, a spinner while the mailbox messages
 cross, and then the six digits large on both devices with two verdicts
 under them. The failing verdict is always offered, because a
-comparison that cannot fail verifies nothing (ADR-0021 section 3). A
+comparison that cannot fail verifies nothing ([relay decision background](relay-decision-background.md) section 3). A
 mismatch aborts whole and stores nothing.
 
 ## 3. The device list
@@ -124,14 +124,14 @@ channel knows, each labelled as what it is.
 - **A paired device**, with its label, the head of its fingerprint,
   and when the channel last saw it. The stamp is the attach time the
   relay reported for that peer: attachment times are one of the items
-  ADR-0021 section 4 admits the relay may hold. It says "seen" rather
+  [relay decision background](relay-decision-background.md) section 4 admits the relay may hold. It says "seen" rather
   than "active" because it is when the device joined the channel, and
   it is coarse because the roster refreshes when this Mac attaches and
   ages between attaches. A stamp from the future is two clocks
   disagreeing and reads as just now.
 - **An attached stranger**, a device that passed the account gate and
   no pairing vouches for, marked "attached, never paired" in ember. It
-  can open nothing (ADR-0021 section 5) and it is worth showing
+  can open nothing ([relay decision background](relay-decision-background.md) section 5) and it is worth showing
   exactly that loudly.
 
 **Revocation** is on each paired row and nowhere else: no revoke

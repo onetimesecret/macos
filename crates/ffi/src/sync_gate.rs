@@ -1,6 +1,7 @@
-//! The account gate as one value (account-auth decision background §5). ADR-0021 §3 gave the
-//! account exactly one job, to say whether this client may attach to
-//! the channel, and this module says where that answer stands.
+//! The account gate as one value (account-auth decision background §5).
+//! The relay decision background §3 gave the account exactly one job,
+//! to say whether this client may attach to the channel, and this
+//! module says where that answer stands.
 //!
 //! It exists because the shell used to infer the answer from refusal
 //! strings scattered across attach, pump and sign-in, which is an

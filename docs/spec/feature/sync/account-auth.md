@@ -16,7 +16,7 @@ them (`crates/sync/src/oauth.rs` for §1's ceremony and §2's lifetimes,
 `crates/sync/src/loopback.rs` for the redirect, `BearerAuth` in
 `crates/ots-client` for §3, driven by `crates/ffi/src/sync_driver.rs`
 and `SyncController.swift`). The one job this document covers is
-ADR-0021 §3's first gate: prove to the relay that the attaching client
+the [relay decision background](relay-decision-background.md) §3's first gate: prove to the relay that the attaching client
 belongs to the account, and nothing else. Device trust is pairing
 (issue #97, `crates/ffi/src/pairing.rs`) and is not renegotiated here.
 
@@ -99,7 +99,7 @@ This is the answer to open question 21
 (`docs/spec/design/2026-0707-open-questions.md`) fed back into v3
 auth while it is unbuilt: the desktop app needs refresh rotation with a
 long idle window, and it does not need a device claim inside the token
-— the account is not the device (ADR-0021 §3), and putting a device
+— the account is not the device ([relay decision background](relay-decision-background.md) §3), and putting a device
 identity into the account credential would re-entangle the two gates
 this design keeps separate. If phase 2 lands PASETO bearer tokens
 (`docs/spec/design/2026-0707-technical-direction.md`), nothing here moves:
@@ -113,7 +113,7 @@ the `AuthStrategy` trait (`crates/ots-client/src/auth.rs`),
 stored under the `api-token` account. The sync tokens are a different
 credential for a different act: a conceal is deliberate and foreground,
 sync is background, and one credential serving both would make the
-background act as powerful as the deliberate one (ADR-0021 §3).
+background act as powerful as the deliberate one ([relay decision background](relay-decision-background.md) §3).
 
 - The refresh token rests in the credential store under its own
   account, `sync-oauth-refresh` — beside, and never inside, the

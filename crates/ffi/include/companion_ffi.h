@@ -1270,7 +1270,7 @@ char *companion_sync_status_json(CompanionHandle *handle);
  * section 5): "off", "signed_out", "signing_in", "refused",
  * "unreachable", "ready" or "attached", the status JSON's "gate". It
  * says whether this client may attach and nothing about content
- * (ADR-0021 section 3).
+ * (relay decision background section 3).
  *
  * Null on a null handle or a poisoned lock: a gate that cannot be read
  * has not been passed, so null means may not attach. A status JSON
@@ -1432,7 +1432,7 @@ char *companion_sync_pairing_poll(CompanionHandle *handle);
 /*
  * The human's verdict on the short authentication string. A match
  * moves the ceremony forward; a mismatch drops it whole with nothing
- * stored on this device (ADR-0021 section 3). Returns the stage as
+ * stored on this device (relay decision background section 3). Returns the stage as
  * companion_sync_pairing_poll does. Free with companion_string_free().
  */
 char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);

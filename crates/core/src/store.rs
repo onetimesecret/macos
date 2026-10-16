@@ -94,13 +94,13 @@ pub enum RemoteRefusal {
     /// The bytes do not decode as an update batch or key frame.
     Malformed,
     /// The update depends on operations this document does not hold. The
-    /// recovery is [`SheetStore::adopt_key_frame`] (ADR-0021 section 1).
+    /// recovery is [`SheetStore::adopt_key_frame`] (relay decision background section 1).
     MissingHistory,
     /// The update would stand a chip sentinel this page does not own, or
     /// stand one twice.
     ChipRoster,
     /// A key frame was offered to a page whose document already holds
-    /// history (ADR-0021 sections 1 and 5).
+    /// history (relay decision background sections 1 and 5).
     NotFresh,
 }
 
@@ -798,7 +798,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// Take back the page's last local edit group. Returns whether
     /// anything was reverted. Only this device's own operations can be
-    /// undone (ADR-0021 section 5); the block index rebuilds afterwards.
+    /// undone (relay decision background section 5); the block index rebuilds afterwards.
     pub fn undo(&mut self, id: SheetId) -> bool {
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
@@ -988,7 +988,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The operations a page's document holds beyond `since`, plaintext
-    /// for the seam to seal (ADR-0021 section 2). `None` for an unknown
+    /// for the seam to seal (relay decision background section 2). `None` for an unknown
     /// page, a page past its deadline (Law 0001, expiry row) or an
     /// undecodable frontier.
     #[must_use]
@@ -1015,8 +1015,8 @@ impl<C: Clock> SheetStore<C> {
         Ok(())
     }
 
-    /// Join a fresh page to a channel's key frame (ADR-0021 section 5),
-    /// taking over the cross-device identity `page` (ADR-0021 section 6).
+    /// Join a fresh page to a channel's key frame (relay decision background section 5),
+    /// taking over the cross-device identity `page` (relay decision background section 6).
     /// A page that already holds history is refused.
     pub fn adopt_key_frame(
         &mut self,
@@ -1071,7 +1071,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Perform a confirmed ceremony on a deferred page and return the new
-    /// key frame (ADR-0021 sections 1 and 5). `None`, changing nothing,
+    /// key frame (relay decision background sections 1 and 5). `None`, changing nothing,
     /// unless deferred, or for a page past its deadline
     /// (Law 0001, expiry row). The caller pairs it with the GOP key rotation.
     pub fn perform_ceremony(&mut self, id: SheetId) -> Option<Zeroizing<Vec<u8>>> {
@@ -1101,7 +1101,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Apply a peer's published expiry: it can only shorten the local
-    /// deadline, and a live hold ignores it (ADR-0021 section 6). Returns
+    /// deadline, and a live hold ignores it (relay decision background section 6). Returns
     /// whether the deadline moved.
     pub fn observe_peer_expiry(&mut self, page: ItemId, policy: ExpiryPolicy) -> bool {
         let now = self.clock.now();
@@ -1147,7 +1147,7 @@ impl<C: Clock> SheetStore<C> {
         })
     }
 
-    /// Apply a peer's hold register (ADR-0021 section 6). It extends the
+    /// Apply a peer's hold register (relay decision background section 6). It extends the
     /// hold under the gesture's ceiling, never the frozen life; a due page
     /// refuses. Returns whether the clock changed.
     pub fn observe_peer_hold(&mut self, page: ItemId, register: HoldRegister) -> bool {
@@ -1222,7 +1222,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A peer's terminal marker: entomb this device's copy now, as an
-    /// expiry (ADR-0021 section 6). `None` when no such page stands.
+    /// expiry (relay decision background section 6). `None` when no such page stands.
     pub fn observe_terminal(&mut self, page: ItemId) -> Option<SheetId> {
         let offset = self.clock.local_offset_seconds();
         let (dead, label, id) = self.tabs.iter_mut().find_map(|tab| {
