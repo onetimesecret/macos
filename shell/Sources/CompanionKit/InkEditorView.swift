@@ -2996,6 +2996,12 @@ public struct InkEditorView: NSViewRepresentable {
             return drag
         }
 
+        /// The standing drag's page and range, for a destination sorting what it brings.
+        var standingDragOnPage: (sheet: UInt64, range: NSRange)? {
+            guard let drag = standingPageDrag, case .sheet(let sheet) = drag.document else { return nil }
+            return (sheet, drag.range)
+        }
+
         /// What the page's own drag would do dropped at `index`: a move inside its own
         /// range is no drop, and a refused page takes none.
         func pageDragOperation(at index: Int, offered mask: NSDragOperation) -> NSDragOperation {
@@ -6715,24 +6721,78 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         case seal
     }
 
+    /// What a drag brings, read once so the page's surface and the page's tab sort
+    /// one drag the same way (issue 254).
+    enum DragCargo {
+        /// This app's decrypted drag.
+        case decrypted
+        /// A page's standing drag from a surface of the same model, with its page and range,
+        /// and whether its board has the copy's fragment on it (ink alone has none).
+        case pageDrag(source: InkEditorView.Coordinator, sheet: UInt64, range: NSRange, fragment: Bool)
+        /// The core's copy fragment: a copy, a stale drag or ⌥ over another page's drag.
+        case fragment
+        /// Any other drag from inside this app, or another build's fragment.
+        case thisApp
+        /// Another app's drag.
+        case otherApp
+    }
+
+    /// What `sender` brings into a destination of `model`.
+    static func cargo(of sender: NSDraggingInfo, in model: PageModel) -> DragCargo {
+        if sender.draggingSource is DecryptedDrag { return .decrypted }
+        let fragment = SealedFragment.item(on: sender.draggingPasteboard) != nil
+        if let coordinator = (sender.draggingSource as? InkTextView)?.coordinator,
+           coordinator.model === model, let drag = coordinator.standingDragOnPage {
+            return .pageDrag(
+                source: coordinator, sheet: drag.sheet, range: drag.range, fragment: fragment)
+        }
+        if fragment { return .fragment }
+        // AppKit names a source only inside this app; nothing from here, nor another build's
+        // fragment, was meant to be staged.
+        if sender.draggingSource != nil || SealedFragment.anyBuildsItem(on: sender.draggingPasteboard) {
+            return .thisApp
+        }
+        return .otherApp
+    }
+
+    /// Where `cargo` goes on `page`, for a destination that takes a fragment, takes
+    /// ink or seals as its flags say: the one sorting the surface and the tab share.
+    static func dropRoute(
+        _ cargo: DragCargo, offered mask: NSDragOperation, ontoPage page: UInt64?,
+        takesFragment: Bool, takesInk: Bool, seals: Bool
+    ) -> DropRoute {
+        switch cargo {
+        case .decrypted:
+            return .refused
+        case .pageDrag(_, let from, _, let fragment):
+            if pageDropOperation(offered: mask) == .move, let page, from != page {
+                return takesFragment ? .move : .refused
+            }
+            // ⌥ pastes the copy's fragment where the board has one; ink alone is AppKit's drop.
+            if fragment { return takesFragment ? .fragment : .refused }
+            return takesInk ? .ink : .refused
+        case .fragment:
+            return takesFragment ? .fragment : .refused
+        case .thisApp:
+            return takesInk ? .ink : .refused
+        case .otherApp:
+            return seals ? .seal : .refused
+        }
+    }
+
     /// The route a drop from `sender` takes here. Another app's drag seals, and only
     /// where a seal can land: over a file it would write plaintext the next save keeps.
     func dropRoute(for sender: NSDraggingInfo) -> DropRoute {
         if isDecryptedDrag(sender) { return .refused }
-        let editor = sender.draggingSource as? InkTextView
-        if editor === self { return coordinator?.dragsPageSelection == true ? .ownDrag : .ink }
+        if (sender.draggingSource as? InkTextView) === self {
+            return coordinator?.dragsPageSelection == true ? .ownDrag : .ink
+        }
         guard let coordinator, !coordinator.writesNote else { return .refused }
-        let mask = sender.draggingSourceOperationMask
-        if coordinator.pageDragToMove(from: editor?.coordinator, offered: mask) != nil {
-            return .move
-        }
-        if carriesFragment(sender) { return coordinator.takesFragmentDrop ? .fragment : .refused }
-        // AppKit names a source only inside this app; nothing from here, nor another build's
-        // fragment, was meant to be staged.
-        if sender.draggingSource != nil || SealedFragment.anyBuildsItem(on: sender.draggingPasteboard) {
-            return coordinator.takesFragmentDrop ? .ink : .refused
-        }
-        return coordinator.sealsHere ? .seal : .refused
+        return Self.dropRoute(
+            Self.cargo(of: sender, in: coordinator.model),
+            offered: sender.draggingSourceOperationMask, ontoPage: coordinator.currentSheet,
+            takesFragment: coordinator.takesFragmentDrop, takesInk: coordinator.takesFragmentDrop,
+            seals: coordinator.sealsHere)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -6871,10 +6931,6 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         case .ink, .seal:
             return super.dragOperation(for: dragInfo, type: type)
         }
-    }
-
-    private func carriesFragment(_ sender: NSDraggingInfo) -> Bool {
-        SealedFragment.item(on: sender.draggingPasteboard) != nil
     }
 
     /// What a page's drag offers: a move or a copy inside the app, and only a copy

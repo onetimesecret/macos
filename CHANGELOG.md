@@ -447,6 +447,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A time tab takes a drop** (app 0.37.0; Law 0001's drag and ⌥ drag
+  rows, issue #254). Content dragged onto a tab is placed at the end of
+  that tab's page by the routes a drop on the page takes: a page's own drag
+  moves there, ⌥ clones there, another page's standing drag moves there
+  as the one core transaction keeping every object's identity, name and
+  note, a copy fragment pastes there, and another app's drag seals there
+  through the core's read of the drag board. Ink from inside this app is
+  refused on a tab, since a tab has no text surface to lay it on, as is
+  another build's fragment. A tab takes a drop only on the raised card
+  and only in the window that owns the page content, and every route
+  waits while a name or note has the keys. A slot with no page offers
+  no operation, and a page that comes due between the drag and the drop
+  refuses and settles with the expired line. The tab's click, double
+  click hold and reorder handle are untouched.
+  Spring loading is not built: opening the page under a drag from the
+  same window's editor would leave that drag stale.
+
 - **A move handle on the sealed block** (app 0.37.0; Law 0001's move
   drag row, issue #255). On hover or selection the block's top row shows
   `⠿` in its quiet ink a gap before the labelled `drag decrypted`

@@ -29,9 +29,12 @@ import SwiftUI
 /// ordinary horizontal drag to scroll the strip.
 public struct TabStripView: View {
     @ObservedObject var model: PageModel
+    /// The stance the page content takes; a read only strip's tabs take no drop (issue 254).
+    let readOnly: Bool
 
-    public init(model: PageModel) {
+    public init(model: PageModel, readOnly: Bool = false) {
         self.model = model
+        self.readOnly = readOnly
     }
 
     /// Each tab's frame in the strip's space, kept fresh by preference
@@ -71,6 +74,7 @@ public struct TabStripView: View {
                                 sheet: sheet,
                                 selected: model.selection == sheet.id && !model.showingLedger,
                                 model: model,
+                                readOnly: readOnly,
                                 beginReorder: { model.draggingTab = sheet.id },
                                 reorder: { pointerX in
                                     reorder(dragged: sheet.id, pointerX: pointerX)
@@ -378,6 +382,7 @@ struct SheetTab: View {
     let sheet: TabSummary
     let selected: Bool
     @ObservedObject var model: PageModel
+    let readOnly: Bool
     let beginReorder: () -> Void
     let reorder: (CGFloat) -> Void
     let endReorder: () -> Void
@@ -449,6 +454,8 @@ struct SheetTab: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(selected ? Color.cellBackground : .clear)
         )
+        // The tab takes drops at the end of its page (issue 254); its clicks stay SwiftUI's.
+        .background(TabDropOverlay(model: model, slot: sheet.id, readOnly: readOnly))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // Select on click; a double-click's second tap cycles the hold
