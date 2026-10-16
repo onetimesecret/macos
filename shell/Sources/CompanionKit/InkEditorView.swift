@@ -3223,8 +3223,10 @@ public struct InkEditorView: NSViewRepresentable {
         /// once its view may read out, so past the deadline the page settles (Law 0001, expiry row).
         @discardableResult
         func openLink(_ link: Any, from view: NSTextView) -> Bool {
+            // A file's own view opens at once; any other view asks its own page, since one
+            // coordinator serves every preview in the roll whatever its own sheet is.
             guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)),
-                  writesFile || (view as? AskingTextView)?.mayReadOut == true
+                  (view === textView && writesFile) || (view as? AskingTextView)?.mayReadOut == true
             else { return false }
             model.openURL(url)
             return true
