@@ -5892,16 +5892,54 @@ public final class PageModel: ObservableObject {
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         clearNotice()
-        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
-        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
-        if chip == nil {
-            flash("nothing to seal")
-        } else {
-            countEdit(.sheet(sheet))
-            markDirty()
+        guard let sheet = sealTarget, let chip = sealFromDrag(sheet: sheet, replacing: range) else {
+            return nil
         }
+        countEdit(.sheet(sheet))
+        markDirty()
         return chip
     }
+
+    /// Drop-to-seal at `index` of a named page, the tab's route (issue 254). The page's own
+    /// route places the face itself; this one restates the page as a transfer does.
+    @discardableResult
+    func sealDrag(onto sheet: UInt64, at index: Int) -> ChipInfo? {
+        clearNotice()
+        guard !sheet.isFileID,
+              let chip = sealFromDrag(sheet: sheet, replacing: NSRange(location: index, length: 0))
+        else { return nil }
+        settleTransfer(sheet)
+        return chip
+    }
+
+    /// The core's read of the drag board into `sheet`. A seal is not among the routes the
+    /// core refuses past the deadline, so a late timer settles first (Law 0001, expiry row).
+    private func sealFromDrag(sheet: UInt64, replacing range: NSRange) -> ChipInfo? {
+        guard !settleIfDue(sheet: sheet) else {
+            flash(Self.pageExpiredLine)
+            return nil
+        }
+        guard let (at, length) = Self.wireRange(range) else { return nil }
+        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
+        if chip == nil { flash("nothing to seal") }
+        return chip
+    }
+
+    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab is placed (issue 254),
+    /// read from the core's runs as they stand: it edits nothing and builds no storage.
+    func bodyLength(of sheet: UInt64) -> Int {
+        client.documentRuns(sheet: sheet).reduce(0) { length, run in
+            switch run {
+            case .ink(let text): length + text.utf16.count
+            case .chip: length + 1
+            }
+        }
+    }
+
+    #if DEBUG
+    /// Whether a storage is cached for `id`; a drop on a tab must build none (issue 254).
+    func hasStorage(for id: UInt64) -> Bool { storages[id] != nil }
+    #endif
 
     /// ⌘↩: seal visible ink the editor already holds. The core deletes
     /// `range` from its body and stands the sentinel there in the same
@@ -6456,7 +6494,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// The page surface whose layout reads `sheet`'s storage, when one shows the page.
-    private func surface(showing sheet: UInt64) -> InkTextView? {
+    func surface(showing sheet: UInt64) -> InkTextView? {
         storages[sheet]?.layoutManagers.lazy.flatMap(\.textContainers)
             .compactMap { $0.textView as? InkTextView }.first
     }
