@@ -300,6 +300,7 @@ final class SealedMoveHandleTests: XCTestCase {
         let (move, _, _) = try handles(page)
         var sessions: [(items: [NSDraggingItem], source: NSDraggingSource)] = []
         textView.dragSessionWitness = { sessions.append(($0, $1)) }
+        defer { page.coordinator.endPageDrag() }
 
         textView.beginMoveDrag(
             chipAt: object, event: try dragEvent(page, at: NSPoint(x: move.midX, y: move.midY)))
@@ -446,7 +447,7 @@ final class SealedMoveHandleTests: XCTestCase {
     func testVoiceOverNamesBothHandlesAtTheirSeats() throws {
         let page = try mountPage(on: try makeModel())
         let textView = page.textView
-        XCTAssertEqual(textView.handleAccessibilityElements(), [], "at rest")
+        XCTAssertEqual(textView.handleAccessibilityElements, [], "at rest")
         XCTAssertEqual(
             SealedBlockCell.Handle.move.accessibilityLabel, CompanionL10n.string("chip.handle.move"))
         XCTAssertEqual(
@@ -457,7 +458,7 @@ final class SealedMoveHandleTests: XCTestCase {
 
         let (move, decrypted, frame) = try handles(page)
         hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
-        let elements = textView.handleAccessibilityElements()
+        let elements = textView.handleAccessibilityElements
         XCTAssertEqual(elements.map { $0.accessibilityLabel() }, ["Move", "Drag decrypted"])
         XCTAssertEqual(
             elements.map { $0.accessibilityFrame() },
@@ -466,10 +467,11 @@ final class SealedMoveHandleTests: XCTestCase {
             XCTAssertEqual(element.accessibilityRole(), .handle)
             XCTAssertTrue((element.accessibilityParent() as AnyObject?) === textView)
         }
-        let again = textView.handleAccessibilityElements()
+        textView.handlesMayHaveMoved()
+        let again = textView.handleAccessibilityElements
         XCTAssertEqual(again.count, 2)
         for (first, second) in zip(elements, again) {
-            XCTAssertTrue(first === second, "a new element on every ask")
+            XCTAssertTrue(first === second, "a new element on every rebuild")
         }
         let children = try XCTUnwrap(textView.accessibilityChildren())
         for element in elements {
@@ -477,10 +479,10 @@ final class SealedMoveHandleTests: XCTestCase {
         }
 
         hover(page, at: nil)
-        XCTAssertEqual(textView.handleAccessibilityElements(), [], "the hover left")
+        XCTAssertEqual(textView.handleAccessibilityElements, [], "the hover left")
         textView.setSelectedRange(NSRange(location: object, length: 1))
         XCTAssertEqual(
-            textView.handleAccessibilityElements().map { $0.accessibilityLabel() },
+            textView.handleAccessibilityElements.map { $0.accessibilityLabel() },
             ["Move", "Drag decrypted"], "the selected block")
     }
 
@@ -497,7 +499,7 @@ final class SealedMoveHandleTests: XCTestCase {
 
         let (move, decrypted, frame) = try handles(page)
         hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
-        let elements = textView.handleAccessibilityElements()
+        let elements = textView.handleAccessibilityElements
         XCTAssertEqual(elements.count, 2)
         for (element, seat) in zip(elements, [move, decrypted]) {
             let expected = onScreen(seat, in: page)

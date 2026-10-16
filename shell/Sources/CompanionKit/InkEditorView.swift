@@ -5005,7 +5005,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         let metadataChildren = blockAccessibilityChildren.filter { field in
             !nativeChildren.contains { ($0 as AnyObject) === field }
         }
-        let children = nativeChildren + metadataChildren + handleAccessibilityElements()
+        let children = nativeChildren + metadataChildren + handleAccessibilityElements
         return children.isEmpty ? nil : children
     }
 
@@ -5264,6 +5264,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         for rect in decryptedDragCursorRects + moveHandleCursorRects {
             addCursorRect(rect, cursor: .openHand)
         }
+        rebuildHandleElements()
     }
 
     private struct HandleElementKey: Hashable {
@@ -5271,12 +5272,15 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         let handle: SealedBlockCell.Handle
     }
 
-    /// The elements VoiceOver reaches the handles by, kept between asks so a focused one
-    /// stays the same object while its block stands.
+    /// The elements VoiceOver reaches the handles by, kept between rebuilds so a focused one
+    /// stays the same object while its index stands.
     private var handleElements: [HandleElementKey: NSAccessibilityElement] = [:]
 
-    /// One labelled element per drawn handle, at the handle's seat (issue 255).
-    func handleAccessibilityElements() -> [NSAccessibilityElement] {
+    /// One labelled element per drawn handle, at the handle's seat, in page order (issue 255).
+    private(set) var handleAccessibilityElements: [NSAccessibilityElement] = []
+
+    /// The handles may have moved, so each drawn one's element and seat are set again.
+    private func rebuildHandleElements() {
         var kept: [HandleElementKey: NSAccessibilityElement] = [:]
         var elements: [NSAccessibilityElement] = []
         for index in blocksWithHandles {
@@ -5291,7 +5295,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             }
         }
         handleElements = kept
-        return elements
+        handleAccessibilityElements = elements
     }
 
     /// `rect`, drawn in this flipped view, in the space a child element's parent space frame
@@ -5311,9 +5315,11 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         return element
     }
 
-    /// The hover, the selection or the keys moved, so the handles' cursor rects are stale.
+    /// The hover, the selection or the keys moved, so the handles' cursor rects and
+    /// VoiceOver elements are stale.
     func handlesMayHaveMoved() {
         window?.invalidateCursorRects(for: self)
+        rebuildHandleElements()
     }
 
     func redrawChip(at index: Int) {
@@ -7354,9 +7360,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     /// The handle in a block drawn at `cellFrame`, measured in the faces it is drawn in;
     /// nil for a kind with no type to drag as.
+    /// Whether the block's kind has a type to drag decrypted as, and so a decrypted drag handle.
+    var dragsDecrypted: Bool { DecryptedDrag.pasteboardType(forKind: info.kind) != nil }
+
     @MainActor
     func decryptedDragRect(in cellFrame: NSRect) -> NSRect? {
-        guard DecryptedDrag.pasteboardType(forKind: info.kind) != nil else { return nil }
+        guard dragsDecrypted else { return nil }
         return Self.decryptedDragRect(
             in: cellFrame, wordsWidth: Self.decryptedDragString.size().width,
             labelWidth: classificationLabel().size().width)
@@ -7433,15 +7442,16 @@ final class SealedBlockCell: NSTextAttachmentCell {
         return handle.minX >= labelEnd + metrics.handleGap ? handle : nil
     }
 
-    /// The move handle in a block drawn at `cellFrame`. On a block whose kind has a decrypted
-    /// handle it gives way first: once that handle does not fit, neither does this one, rather
-    /// than this one taking the vacated seat (Law 0001, move drag row).
+    /// The move handle in a block drawn at `cellFrame`: before the decrypted handle where one
+    /// is drawn, before the actions seat on a kind with none, and nowhere once a kind's
+    /// decrypted handle has given way, so it never takes that seat (Law 0001, move drag row).
     @MainActor
     func moveHandleRect(in cellFrame: NSRect) -> NSRect? {
         let neighbour: NSRect
-        if DecryptedDrag.pasteboardType(forKind: info.kind) != nil {
-            guard let decrypted = decryptedDragRect(in: cellFrame) else { return nil }
+        if let decrypted = decryptedDragRect(in: cellFrame) {
             neighbour = decrypted
+        } else if dragsDecrypted {
+            return nil
         } else {
             neighbour = Self.actionsRect(in: cellFrame)
         }
