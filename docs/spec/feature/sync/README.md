@@ -19,6 +19,10 @@ This directory holds the milestone's written specifications:
   the interface the server side implements (issue #99).
 - [client-protocol.md](client-protocol.md): the client as built and
   where it departs from these specs (draft, not accepted).
+- [server-contract.md](server-contract.md): what the built client
+  sends to and expects of the authorization server and the relay, set
+  beside what the one existing server artifact does (draft, not
+  accepted).
 - [account-auth.md](account-auth.md) — the OAuth flow that gates the
   relay channel, token lifetimes for an app that sleeps for days, and
   the sync/conceal credential separation (issue #98).
