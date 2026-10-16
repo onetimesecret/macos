@@ -165,6 +165,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(chips(model, source.sheet).map(\.chipId), [ids[1]])
         XCTAssertEqual(model.coreClient.ledger().count, records, "a move recorded something")
         XCTAssertGreaterThan(model.dirtyMarks, marks, "the move armed no write")
+        XCTAssertFalse(model.hasStorage(for: dest), "the drop built a storage for a page nobody shows")
         XCTAssertFalse(model.storage(for: dest).string.contains(placeholder), "the public text landed")
 
         source.coordinator.endPageDrag()
@@ -203,6 +204,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertTrue(target.performDragOperation(drop))
         XCTAssertEqual(shape(model, dest), "xyab #", "the copy did not land at the end")
         XCTAssertEqual(chips(model, dest).count, 1)
+        XCTAssertFalse(model.hasStorage(for: dest), "the drop built a storage for a page nobody shows")
         XCTAssertFalse(ids.contains(try XCTUnwrap(chips(model, dest).first?.chipId)), "the clone kept the identity")
         XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "⌥ took the source run")
         XCTAssertEqual(chips(model, source.sheet).map(\.chipId), ids)
@@ -300,6 +302,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertTrue(target.performDragOperation(drop))
         XCTAssertEqual(shape(model, dest), "xyab #", "the fragment did not paste at the end")
         XCTAssertEqual(chips(model, dest).count, 1)
+        XCTAssertFalse(model.hasStorage(for: dest), "the drop built a storage for a page nobody shows")
         XCTAssertFalse(ids.contains(try XCTUnwrap(chips(model, dest).first?.chipId)))
         XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "a paste took the source run")
     }
@@ -321,6 +324,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(standIn.drops, [[dest, 2, 0]], "the seal was not aimed at the body's end")
         XCTAssertEqual(shape(model, dest), "xy#", "the seal did not stand at the end")
         XCTAssertEqual(chips(model, dest).count, 1)
+        XCTAssertFalse(model.hasStorage(for: dest), "the drop built a storage for a page nobody shows")
 
         let ink = drag(from: source.textView, board: inkBoard("plain"), mask: move)
         XCTAssertEqual(target.dropRoute(for: ink), .refused, "this app's ink found a surface on a tab")

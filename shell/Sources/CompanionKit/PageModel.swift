@@ -5901,10 +5901,21 @@ public final class PageModel: ObservableObject {
         return chip
     }
 
-    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab lands (issue 254).
-    public func bodyLength(of sheet: UInt64) -> Int {
-        storage(for: sheet).length
+    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab lands (issue 254),
+    /// read from the core's runs so a page nobody shows gets no storage built for it.
+    func bodyLength(of sheet: UInt64) -> Int {
+        runs(of: sheet).reduce(0) { length, run in
+            switch run {
+            case .ink(let text): length + text.utf16.count
+            case .chip: length + 1
+            }
+        }
     }
+
+    #if DEBUG
+    /// Whether a storage is cached for `id`; a drop on a tab must build none (issue 254).
+    func hasStorage(for id: UInt64) -> Bool { storages[id] != nil }
+    #endif
 
     /// After a tab's drop sealed onto `sheet`: the storage restates to the core's runs, and
     /// the surface showing it, if one does, selects the new object as its own seal would.
