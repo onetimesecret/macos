@@ -117,7 +117,7 @@ public final class SyncController: ObservableObject {
         /// No sign-in rests on this device.
         case signedOut
         /// A sign-in rested here and the account refused it; the token
-        /// is gone and signing in again is the way back (ADR-0027 §5).
+        /// is gone and signing in again is the way back (account-auth decision background §5).
         case refused
         /// The relay did not answer; the loop retries.
         case unreachable
@@ -275,8 +275,8 @@ public final class SyncController: ObservableObject {
         attach()
     }
 
-    /// Give up on a sign-in whose browser trip is still out (ADR-0027
-    /// §5); the core ends the wait and the finish reports `abandoned`.
+    /// Give up on a sign-in whose browser trip is still out (account-auth
+    /// decision background §5); the core ends the wait and the finish reports `abandoned`.
     public func giveUpSignin() {
         signinGivenUp = client.syncSigninCancel()
         refreshState()
@@ -693,7 +693,7 @@ public final class SyncController: ObservableObject {
         case nil:
             break
         }
-        // A browser waits on the user, so say so (ADR-0027 §5).
+        // A browser waits on the user, so say so (account-auth decision background §5).
         if status?.gate == .signingIn {
             return "waiting on the browser to finish signing in; Settings can give up on it"
         }
@@ -707,13 +707,13 @@ public final class SyncController: ObservableObject {
     }
 
     /// The header's word for where sync stands, driven by the gate the
-    /// core reports (ADR-0027 §5) and by nothing the shell inferred.
+    /// core reports (account-auth decision background §5) and by nothing the shell inferred.
     /// The words, tones and the `off` rule are surface.md §4.
     public nonisolated static func headerWord(
         enabled: Bool, status: SyncStatus?, trouble: Trouble?, peers: Int?
     ) -> SyncHeaderWord? {
         guard enabled else { return nil }
-        // Falling behind a rotation is not a gate state (ADR-0027 §5),
+        // Falling behind a rotation is not a gate state (account-auth decision background §5),
         // and it outranks the gate's own good news: a device the
         // channel rotated past passed the gate and lacks a key.
         if trouble == .behind {
@@ -798,7 +798,7 @@ public final class SyncController: ObservableObject {
     }
 
     /// The account axis of the standing trouble: where the gate names a
-    /// condition, it wins (ADR-0027 §5). `.behind` is not on this axis
+    /// condition, it wins (account-auth decision background §5). `.behind` is not on this axis
     /// and survives a gate with nothing to report or an unreachable one
     /// (surface.md §4). A nil gate is a core that named none and keeps
     /// what the shell believed; `CompanionClient.syncGate()`'s nil, an
@@ -912,7 +912,7 @@ public final class SyncController: ObservableObject {
         case "busy":
             return "a sign-in is already waiting on the browser"
         case "no_ceremony":
-            // Never a server's word: no server was asked (ADR-0027 §2).
+            // Never a server's word: no server was asked (account-auth decision background §2).
             return "there was no sign-in to finish; nothing was stored"
         case "not_configured":
             return "sync has no server configured to sign in against"

@@ -25,7 +25,7 @@ use crate::persist::{self, Bytes, KEY_LEN};
 /// §8's publish clock: publish at most this often, coalescing
 /// everything since the last publish. Batching on a clock, never on
 /// commit boundaries, so the relay sees 2-second grain instead of
-/// typing rhythm (ADR-0021 §4).
+/// typing rhythm (relay decision background §4).
 pub const PUBLISH_INTERVAL_MS: u64 = 2_000;
 
 /// §8's long-poll patience, inside ordinary load-balancer idle
@@ -294,7 +294,7 @@ pub struct CeremonyPeer {
     pub package: KeyPackage,
 }
 
-/// The engine, one per channel (one per account, ADR-0021 §1), driven
+/// The engine, one per channel (one per account, relay decision background §1), driven
 /// by whoever owns the runloop.
 pub struct SyncSession {
     api: RelayApi,

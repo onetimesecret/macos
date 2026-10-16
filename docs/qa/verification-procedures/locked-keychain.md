@@ -129,7 +129,7 @@ half, a missing keychain item, a superseded disposal line
 
 **Pass:** both pages come back with their chips, drained by the elapsed
 wall clock. The withholding lasted the session and no longer, which is
-what ADR-0016 section 7 promises and prices.
+what the [persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 7 promises and prices.
 
 ## Case 2: the ACL prompt is denied
 

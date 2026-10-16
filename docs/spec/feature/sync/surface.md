@@ -67,7 +67,7 @@ afterwards.
 
 ## 2. Enrolment
 
-**Signing in** is ADR-0027 section 1's browser trip, begun from the
+**Signing in** is the [decision background](account-auth-decision-background.md) section 1's browser trip, begun from the
 one button in Settings. The app opens the system browser and the gate
 moves to `signing_in` for as long as the trip is out, which is a state
 of its own rather than a quieter signed out: a consent screen is open
@@ -99,7 +99,7 @@ because the flag went with the ceremony it ended and there is nothing
 honest left to read. `no_ceremony` therefore covers both a caller out
 of order and a give up the finish never met, and it has a sentence of
 its own: no path here reaches the sentence about a server refusing,
-because in none of them was a server asked anything (ADR-0027 §2,
+because in none of them was a server asked anything ([decision background](account-auth-decision-background.md) §2,
 where silence is never a no). A trip the user ended and a trip that
 never returned are one fact to the core, so the shell keeps the
 difference for the length of one settling and says which it was, and
@@ -110,7 +110,7 @@ carries.
 section: an invite or a join, a spinner while the mailbox messages
 cross, and then the six digits large on both devices with two verdicts
 under them. The failing verdict is always offered, because a
-comparison that cannot fail verifies nothing (ADR-0021 section 3). A
+comparison that cannot fail verifies nothing ([relay decision background](relay-decision-background.md) section 3). A
 mismatch aborts whole and stores nothing.
 
 ## 3. The device list
@@ -124,14 +124,14 @@ channel knows, each labelled as what it is.
 - **A paired device**, with its label, the head of its fingerprint,
   and when the channel last saw it. The stamp is the attach time the
   relay reported for that peer: attachment times are one of the items
-  ADR-0021 section 4 admits the relay may hold. It says "seen" rather
+  the [relay decision background](relay-decision-background.md) section 4 admits the relay may hold. It says "seen" rather
   than "active" because it is when the device joined the channel, and
   it is coarse because the roster refreshes when this Mac attaches and
   ages between attaches. A stamp from the future is two clocks
   disagreeing and reads as just now.
 - **An attached stranger**, a device that passed the account gate and
   no pairing vouches for, marked "attached, never paired" in ember. It
-  can open nothing (ADR-0021 section 5) and it is worth showing
+  can open nothing ([relay decision background](relay-decision-background.md) section 5) and it is worth showing
   exactly that loudly.
 
 **Revocation** is on each paired row and nowhere else: no revoke
@@ -163,7 +163,7 @@ inferred.
 
 Two states are not the gate's and are still the header's. A device the
 channel rotated past reads `sync behind` in ember: it passed the gate
-and lacks a key, which is ADR-0021 amendment 1's axis and not the
+and lacks a key, which is the [relay decision background](relay-decision-background.md) Amendment 1's axis and not the
 account's. That reading outlives a network one. An unreachable turn
 and a quiet turn both leave `behind` standing, because a relay that
 blinked says nothing about which key this pad holds, and letting the
@@ -183,7 +183,7 @@ place with room for the reason.
 
 One standing line above the tab strip, present only while sync is on
 and has something to report. Each condition has its own sentence and
-none is silent. The four ADR-0027 section 5 names are its words; the
+none is silent. The four [decision background](account-auth-decision-background.md) section 5 names are its words; the
 rest are written in the same voice.
 
 | Condition | Sentence | Tone |
@@ -197,7 +197,7 @@ rest are written in the same voice.
 | Attached, nothing awake | no other device is awake; pages sync when one wakes | secondary |
 
 A failed sign in adds its own line in Settings, one sentence per
-ADR-0027 section 1 failure row, standing until the next attempt:
+[decision background](account-auth-decision-background.md) section 1 failure row, standing until the next attempt:
 the browser never returned, the sign in was given up, there was no
 sign in to finish, the sign in came back wrong and was refused, the
 server could not be reached, the Keychain refused to store the sign

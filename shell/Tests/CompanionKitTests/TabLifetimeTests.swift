@@ -264,7 +264,7 @@ final class TabLifetimeTests: XCTestCase {
     }
 
     /// The other predicate's write, and the one that keeps the
-    /// forgetting claim true (ADR-0016 section 6, ADR-0017). When the
+    /// forgetting claim true (persistence decision background section 6, ADR-0017). When the
     /// last page expires and tabs remain, the save rotates both content
     /// key halves and reseals the strip under new ones, so every
     /// ciphertext generation the pages lived in stops being decryptable

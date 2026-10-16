@@ -99,7 +99,7 @@ pub(crate) struct SyncState {
     pub enrolled: BTreeMap<ItemId, PageTracking>,
     /// A pairing ceremony in flight over the relay mailbox.
     pub pairing: Option<PairingState>,
-    /// What the last use of the account credential met (ADR-0027 §5);
+    /// What the last use of the account credential met (account-auth decision background §5);
     /// in memory, cleared by any round trip that succeeds.
     pub fault: Option<GateFault>,
     /// Each page's export cursor when the in-flight batch was sealed:
@@ -687,7 +687,7 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
     response.body.zeroize();
     match absorbed {
         // A rotated token lands before use; none means nothing to
-        // write (ADR-0027 §2).
+        // write (account-auth decision background §2).
         Ok(rotated) => {
             if let Some(rotated) = rotated
                 && !store_refresh(&*guard.credentials, &rotated)
@@ -1347,7 +1347,7 @@ fn pump_result(
 }
 
 /// Note that a round trip reached its host: clears `unreachable` only,
-/// since a refusal stands until the user signs in again (ADR-0027 §2).
+/// since a refusal stands until the user signs in again (account-auth decision background §2).
 fn note_reachable(companion: &mut Companion) {
     if companion.sync.fault == Some(GateFault::Unreachable) {
         companion.sync.fault = None;
@@ -1368,7 +1368,7 @@ pub(crate) fn clear_fault(companion: &mut Companion) {
     companion.sync.fault = None;
 }
 
-/// Where the account gate stands (ADR-0027 §5), from existence checks
+/// Where the account gate stands (account-auth decision background §5), from existence checks
 /// and in-memory reads only.
 pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
     let sync = &companion.sync;
@@ -2670,7 +2670,7 @@ mod tests {
         let page = inked_page(&mut companion, "an ordinary page");
         assert!(enrol_page(&mut companion, page, true));
 
-        // The sealed snapshot carries no credential (ADR-0027 §4).
+        // The sealed snapshot carries no credential (account-auth decision background §4).
         let snapshot = companion.store.snapshot(1_700_000_000_000);
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(

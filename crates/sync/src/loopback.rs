@@ -57,7 +57,7 @@ impl OneShotListener {
     /// it within one poll, and the ceremony reports itself abandoned
     /// exactly as a lapsed deadline would. Without this the surface
     /// could offer a button that stopped nothing, which is worse than
-    /// offering none (ADR-0027 §5, `signing_in`).
+    /// offering none (account-auth decision background §5, `signing_in`).
     #[must_use]
     pub fn accept_redirect(self, patience: Duration, abandoned: &AtomicBool) -> Option<String> {
         let began = std::time::Instant::now();

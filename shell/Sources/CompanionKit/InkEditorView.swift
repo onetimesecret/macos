@@ -2055,7 +2055,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// **A step reverts this device's operations and no others.**
         /// Loro's manager is local to the document's own peer, and a
         /// device that joined at a key frame never held the operations
-        /// an away-device undo would need (ADR-0021 section 5). ⌘Z is
+        /// an away-device undo would need (relay decision background section 5). ⌘Z is
         /// therefore undo that is safe beside another device's edits,
         /// not undo that reaches across them, and nothing on this route
         /// should be built as though it could.

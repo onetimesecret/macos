@@ -162,7 +162,7 @@ the one document shape the restore path calls damage (ADR-0009).
 - **The step boundary is a two second merge interval**, the same
   number part 1's idle gap threshold was seeded from, argued at
   [`2026-0901-pause-boundaries.md`](../spec/feature/block-revisions/2026-0901-pause-boundaries.md).
-  It groups local operations only; ADR-0021 section 4's clock batching
+  It groups local operations only; the [relay decision background](../spec/feature/sync/relay-decision-background.md) section 4's clock batching
   is untouched.
 - **The stack is forgotten wherever a step would be a lie**: the two
   ceremonies, a wholesale restate, a seal, a chip burned out of the

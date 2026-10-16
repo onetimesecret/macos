@@ -113,7 +113,7 @@ final class StateLicenceTests: XCTestCase {
     }
 }
 
-/// The content-side discard (ADR-0016 section 7, issue #49): the mirror
+/// The content-side discard (persistence decision background section 7, issue #49): the mirror
 /// of the ledger's Clear-based re-grant, and the one way back from a
 /// withheld content licence.
 final class ContentClearTests: XCTestCase {
@@ -280,7 +280,7 @@ final class LedgerClearRecoveryTests: XCTestCase {
         // the licence-moving path that runs here, passes the content
         // licence through exactly as it found it. The one thing that
         // does heal it is the user's own discard of the file they
-        // cannot read (`ContentClearTests`, ADR-0016 section 7), which
+        // cannot read (`ContentClearTests`, persistence decision background section 7), which
         // is a decision they made rather than a recovery the app
         // performed for them.
         XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
@@ -331,7 +331,7 @@ final class ContentFileEraseTests: XCTestCase {
     }
 }
 
-/// The other half of the same decision (ADR-0016 section 6, ADR-0017):
+/// The other half of the same decision (persistence decision background section 6, ADR-0017):
 /// the write that rotates both content key halves and reseals the strip
 /// under new ones. It fires on the state the drop refuses, which is what
 /// keeps an emptied pad a forgetting instead of a fresh generation

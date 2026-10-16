@@ -153,7 +153,7 @@ final class TimeUnitModeTests: XCTestCase {
 
         XCTAssertEqual(
             model.dirtyMarks, marks,
-            "a presentation preference armed a ciphertext write (ADR-0016 section 6)")
+            "a presentation preference armed a ciphertext write (persistence decision background section 6)")
     }
 
     /// A model built over defaults that already carry the preference
@@ -543,7 +543,7 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertFalse(model.tabs[1].hasPage, "the toggle minted into the slot it left")
         XCTAssertEqual(
             model.dirtyMarks, marks,
-            "a presentation preference armed a ciphertext write (ADR-0016 section 6)")
+            "a presentation preference armed a ciphertext write (persistence decision background section 6)")
     }
 
     /// And at launch. A pad that opens in the mode on a morning after

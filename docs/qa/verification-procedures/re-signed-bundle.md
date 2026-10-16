@@ -109,7 +109,7 @@ in `SUPERSEDED_MAGICS`, never on a key failure
 - The `ots-companion-key-half-<32 hex>` file is still present and
   unchanged, and the `state-key` keychain item still exists. Nothing
   rotated: rotation has two triggers and a refusal is neither
-  (ADR-0016 section 6).
+  ([persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 6).
 - The first ⌘Q cancels termination and no quit alert appears; the quit
   anyway line stands beside the existing inline recovery state, and the
   second ⌘Q quits.

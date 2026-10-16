@@ -250,7 +250,7 @@ public struct PageStatusStack: View {
             // The standing restore-failure state (issue #49): persistent
             // for the whole session, unlike a notice, because the
             // condition is. One action, the content-side discard that
-            // ADR-0016 section 7 requires; until it is taken, nothing
+            // the persistence decision background section 7 requires; until it is taken, nothing
             // typed here reaches disk and the unreadable file is left
             // untouched.
             HStack(spacing: 8) {
