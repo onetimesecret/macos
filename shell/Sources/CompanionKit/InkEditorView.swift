@@ -2985,10 +2985,7 @@ public struct InkEditorView: NSViewRepresentable {
             in rect: NSRect, event: NSEvent, at charIndex: Int
         ) {
             guard let textView = view as? InkTextView, textView === self.textView else { return }
-            if !NSLocationInRange(charIndex, textView.selectedRange()) {
-                textView.setSelectedRange(NSRange(location: charIndex, length: 1))
-            }
-            _ = textView.dragSelection(with: event, offset: .zero, slideBack: true)
+            textView.beginMoveDrag(chipAt: charIndex, event: event)
         }
 
         /// The page's own drag, while the page still reads as it did when the drag began.
@@ -5008,7 +5005,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         let metadataChildren = blockAccessibilityChildren.filter { field in
             !nativeChildren.contains { ($0 as AnyObject) === field }
         }
-        let children = nativeChildren + metadataChildren
+        let children = nativeChildren + metadataChildren + handleAccessibilityElements
         return children.isEmpty ? nil : children
     }
 
@@ -5231,22 +5228,32 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         applyHover(at: nil)
     }
 
-    /// Whether the block at `index` draws its decrypted drag handle: while it is hovered
-    /// or selected (sealed row spec, Seat and look).
-    func drawsDecryptedDragHandle(at index: Int) -> Bool {
+    /// Whether the block at `index` draws its handles: while it is hovered or selected
+    /// (sealed row spec, The handles).
+    func drawsHandles(at index: Int) -> Bool {
         hoveredChipIndex == index || selectedRange() == NSRange(location: index, length: 1)
+    }
+
+    /// The blocks drawing their handles, in page order.
+    private var blocksWithHandles: [Int] {
+        Set([hoveredChipIndex, selectedRange().location].compactMap { $0 }).sorted()
+            .filter(drawsHandles(at:))
     }
 
     /// Each drawn handle a press would start the decrypted drag from, so none while
     /// another field or the note holds the keys (sealed row spec, Press).
-    var decryptedDragCursorRects: [NSRect] {
+    var decryptedDragCursorRects: [NSRect] { handleCursorRects(.decrypted) }
+
+    /// Each drawn move handle a press would drag the object from (issue 255).
+    var moveHandleCursorRects: [NSRect] { handleCursorRects(.move) }
+
+    private func handleCursorRects(_ handle: SealedBlockCell.Handle) -> [NSRect] {
         guard answersChords else { return [] }
-        let blocks = Set([hoveredChipIndex, selectedRange().location].compactMap { $0 })
-        return blocks.sorted().filter(drawsDecryptedDragHandle(at:)).compactMap { index in
+        return blocksWithHandles.compactMap { index in
             guard let frame = chipFrame(at: index),
-                  let handle = chipCell(at: index)?.decryptedDragRect(in: frame)
+                  let rect = chipCell(at: index)?.handleRect(handle, in: frame)
             else { return nil }
-            let shown = handle.intersection(visibleRect)
+            let shown = rect.intersection(visibleRect)
             return shown.isEmpty ? nil : shown
         }
     }
@@ -5254,14 +5261,65 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// An open hand over each handle a press would drag from, the drag affordance macOS uses.
     override func resetCursorRects() {
         super.resetCursorRects()
-        for rect in decryptedDragCursorRects {
+        for rect in decryptedDragCursorRects + moveHandleCursorRects {
             addCursorRect(rect, cursor: .openHand)
         }
+        rebuildHandleElements()
     }
 
-    /// The hover, the selection or the keys moved, so the handles' cursor rects are stale.
+    private struct HandleElementKey: Hashable {
+        let index: Int
+        let handle: SealedBlockCell.Handle
+    }
+
+    /// The elements VoiceOver reaches the handles by, kept between rebuilds so a focused one
+    /// stays the same object while its index stands.
+    private var handleElements: [HandleElementKey: NSAccessibilityElement] = [:]
+
+    /// One labelled element per drawn handle, at the handle's seat, in page order (issue 255).
+    private(set) var handleAccessibilityElements: [NSAccessibilityElement] = []
+
+    /// The handles may have moved, so each drawn one's element and seat are set again.
+    private func rebuildHandleElements() {
+        var kept: [HandleElementKey: NSAccessibilityElement] = [:]
+        var elements: [NSAccessibilityElement] = []
+        for index in blocksWithHandles {
+            guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { continue }
+            for handle in SealedBlockCell.Handle.allCases {
+                guard let rect = cell.handleRect(handle, in: frame) else { continue }
+                let key = HandleElementKey(index: index, handle: handle)
+                let element = handleElements[key] ?? makeHandleElement(handle)
+                element.setAccessibilityFrameInParentSpace(accessibilityParentSpaceRect(rect))
+                kept[key] = element
+                elements.append(element)
+            }
+        }
+        handleElements = kept
+        handleAccessibilityElements = elements
+    }
+
+    /// `rect`, drawn in this flipped view, in the space a child element's parent space frame
+    /// is read in: the view's bounds with the origin at the lower left.
+    func accessibilityParentSpaceRect(_ rect: NSRect) -> NSRect {
+        guard isFlipped else { return rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY) }
+        return NSRect(
+            x: rect.minX - bounds.minX, y: bounds.maxY - rect.maxY,
+            width: rect.width, height: rect.height)
+    }
+
+    private func makeHandleElement(_ handle: SealedBlockCell.Handle) -> NSAccessibilityElement {
+        let element = NSAccessibilityElement()
+        element.setAccessibilityRole(.handle)
+        element.setAccessibilityLabel(handle.accessibilityLabel)
+        element.setAccessibilityParent(self)
+        return element
+    }
+
+    /// The hover, the selection or the keys moved, so the handles' cursor rects and
+    /// VoiceOver elements are stale.
     func handlesMayHaveMoved() {
         window?.invalidateCursorRects(for: self)
+        rebuildHandleElements()
     }
 
     func redrawChip(at index: Int) {
@@ -5383,12 +5441,18 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         }
         let frame = chipFrame(at: index)
         let cell = chipCell(at: index)
-        if let handle = frame.flatMap({ cell?.decryptedDragRect(in: $0) }),
-           Self.startsDecryptedDrag(
-               onHandle: handle.contains(point), handleShown: drawsDecryptedDragHandle(at: index),
-               clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        let pressed = frame.flatMap { cell?.handle(at: point, in: $0) }
+        if Self.startsHandleDrag(
+            onHandle: pressed != nil, handleShown: drawsHandles(at: index),
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags),
+            let handle = pressed, let frame, let rect = cell?.handleRect(handle, in: frame)
         {
-            trackDecryptedDrag(from: event, chipAt: index, handle: handle)
+            trackHandlePress(from: event, chipAt: index) { moved in
+                switch handle {
+                case .decrypted: beginDecryptedDrag(chipAt: index, handle: rect, event: moved)
+                case .move: beginMoveDrag(chipAt: index, event: moved)
+                }
+            }
             return
         }
         switch Self.chipClick(
@@ -5416,24 +5480,26 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         }
     }
 
-    /// Only a first plain press on the handle while it is drawn starts the decrypted drag.
-    nonisolated static func startsDecryptedDrag(
+    /// Only a first plain press on a handle while it is drawn starts its drag.
+    nonisolated static func startsHandleDrag(
         onHandle: Bool, handleShown: Bool, clickCount: Int, modifierFlags: NSEvent.ModifierFlags
     ) -> Bool {
         onHandle && handleShown
             && shouldOpenChipActions(clickCount: clickCount, modifierFlags: modifierFlags)
     }
 
-    /// How far a press on the handle travels before it becomes a drag.
+    /// How far a press on a handle travels before it becomes a drag.
     nonisolated static let decryptedDragSlop: CGFloat = 3
 
     nonisolated static func pressBecomesDrag(from start: NSPoint, to point: NSPoint) -> Bool {
         hypot(point.x - start.x, point.y - start.y) >= decryptedDragSlop
     }
 
-    /// A press on the handle: once it moves, the decrypted drag begins; a press that
+    /// A press on a handle: once it moves, `begin` starts the handle's drag; a press that
     /// lifts first selects the object, as a click elsewhere on the block does.
-    private func trackDecryptedDrag(from event: NSEvent, chipAt index: Int, handle: NSRect) {
+    private func trackHandlePress(
+        from event: NSEvent, chipAt index: Int, begin: (NSEvent) -> Void
+    ) {
         guard let window else { return }
         while true {
             guard let next = window.nextEvent(
@@ -5448,7 +5514,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                 return
             }
             if Self.pressBecomesDrag(from: event.locationInWindow, to: next.locationInWindow) {
-                beginDecryptedDrag(chipAt: index, handle: handle, event: next)
+                begin(next)
                 return
             }
         }
@@ -5464,8 +5530,36 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             image.addRepresentation(snapshot)
         }
         dragging.setDraggingFrame(handle, contents: image)
-        let session = beginDraggingSession(with: [dragging], event: event, source: source)
-        session.animatesToStartingPositionsOnCancelOrFail = true
+        startDraggingSession([dragging], event: event, source: source, slideBack: true)
+    }
+
+    /// A drag from an object's face or its move handle is the page's own drag, by the same
+    /// session, of the selection the object is in, or of the object alone (Law 0001, move drag row).
+    func beginMoveDrag(chipAt index: Int, event: NSEvent) {
+        if !NSLocationInRange(index, selectedRange()) {
+            setSelectedRange(NSRange(location: index, length: 1))
+        }
+        _ = dragSelection(with: event, offset: .zero, slideBack: true)
+    }
+
+    #if DEBUG
+        /// Takes every session this view would start, in place of AppKit, so a test can read
+        /// the items and the source without a pointer (ADR-0018 seam).
+        var dragSessionWitness: (([NSDraggingItem], NSDraggingSource) -> Void)?
+    #endif
+
+    /// Every drag this view starts, the page's or the decrypted one, leaves through here.
+    private func startDraggingSession(
+        _ items: [NSDraggingItem], event: NSEvent, source: NSDraggingSource, slideBack: Bool
+    ) {
+        #if DEBUG
+            if let dragSessionWitness {
+                dragSessionWitness(items, source)
+                return
+            }
+        #endif
+        let session = beginDraggingSession(with: items, event: event, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = slideBack
         session.draggingFormation = .none
     }
 
@@ -6722,9 +6816,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             let dragging = NSDraggingItem(pasteboardWriter: item)
             dragging.setDraggingFrame(
                 NSRect(origin: NSPoint(x: origin.x, y: top), size: image.size), contents: image)
-            let session = beginDraggingSession(with: [dragging], event: event, source: self)
-            session.animatesToStartingPositionsOnCancelOrFail = slideBack
-            session.draggingFormation = .none
+            startDraggingSession([dragging], event: event, source: self, slideBack: slideBack)
             return true
         }
     }
@@ -7268,9 +7360,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     /// The handle in a block drawn at `cellFrame`, measured in the faces it is drawn in;
     /// nil for a kind with no type to drag as.
+    /// Whether the block's kind has a type to drag decrypted as, and so a decrypted drag handle.
+    var dragsDecrypted: Bool { DecryptedDrag.pasteboardType(forKind: info.kind) != nil }
+
     @MainActor
     func decryptedDragRect(in cellFrame: NSRect) -> NSRect? {
-        guard DecryptedDrag.pasteboardType(forKind: info.kind) != nil else { return nil }
+        guard dragsDecrypted else { return nil }
         return Self.decryptedDragRect(
             in: cellFrame, wordsWidth: Self.decryptedDragString.size().width,
             labelWidth: classificationLabel().size().width)
@@ -7298,6 +7393,91 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let words = decryptedDragString
         let size = words.size()
         words.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+    }
+
+    /// The two handles on the block's top row, and how VoiceOver names each (issue 255).
+    enum Handle: CaseIterable, Hashable, Sendable {
+        case move
+        case decrypted
+
+        var accessibilityLabel: String {
+            switch self {
+            case .move: CompanionL10n.string("chip.handle.move")
+            case .decrypted: CompanionL10n.string("chip.handle.decrypted")
+            }
+        }
+    }
+
+    /// Where `handle` sits in a block drawn at `cellFrame`; nil where the block draws none.
+    @MainActor
+    func handleRect(_ handle: Handle, in cellFrame: NSRect) -> NSRect? {
+        switch handle {
+        case .move: moveHandleRect(in: cellFrame)
+        case .decrypted: decryptedDragRect(in: cellFrame)
+        }
+    }
+
+    /// The handle whose seat `point` is in, in a block drawn at `cellFrame`; nil off both.
+    @MainActor
+    func handle(at point: NSPoint, in cellFrame: NSRect) -> Handle? {
+        Handle.allCases.first { handleRect($0, in: cellFrame)?.contains(point) == true }
+    }
+
+    /// The move handle's glyph, with no words: the decrypted handle is the labelled one,
+    /// and D-29 asks that the two read apart (2026-0915 record, block section; issue 255).
+    nonisolated static let moveHandleGlyph = "\u{283F}"
+
+    /// The move handle's seat: a gap before `neighbourMinX`, the decrypted handle where the
+    /// block has one and the actions seat otherwise; nil where it would meet the classification.
+    nonisolated static func moveHandleRect(
+        in cellFrame: NSRect, glyphWidth: CGFloat, labelWidth: CGFloat, neighbourMinX: CGFloat
+    ) -> NSRect? {
+        let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
+        let actions = actionsRect(in: cellFrame)
+        let width = glyphWidth + metrics.handleInset * 2
+        let handle = NSRect(
+            x: neighbourMinX - metrics.handleGap - width, y: actions.minY,
+            width: width, height: actions.height)
+        let labelEnd = contentLayout(in: cellFrame).labelOrigin.x + labelWidth
+        return handle.minX >= labelEnd + metrics.handleGap ? handle : nil
+    }
+
+    /// The move handle in a block drawn at `cellFrame`: before the decrypted handle where one
+    /// is drawn, before the actions seat on a kind with none, and nowhere once a kind's
+    /// decrypted handle has given way, so it never takes that seat (Law 0001, move drag row).
+    @MainActor
+    func moveHandleRect(in cellFrame: NSRect) -> NSRect? {
+        let neighbour: NSRect
+        if let decrypted = decryptedDragRect(in: cellFrame) {
+            neighbour = decrypted
+        } else if dragsDecrypted {
+            return nil
+        } else {
+            neighbour = Self.actionsRect(in: cellFrame)
+        }
+        return Self.moveHandleRect(
+            in: cellFrame, glyphWidth: Self.moveHandleString(selected: false).size().width,
+            labelWidth: classificationLabel().size().width, neighbourMinX: neighbour.minX)
+    }
+
+    /// The glyph in the block's quiet ink, the actions glyph's, never the decrypted handle's ember.
+    @MainActor
+    static func moveHandleString(selected: Bool) -> NSAttributedString {
+        NSAttributedString(
+            string: moveHandleGlyph,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: quietInk(selected: selected),
+            ]
+        )
+    }
+
+    /// The move handle: its glyph alone, centred in its seat, with no outline and no words.
+    @MainActor
+    static func drawMoveHandle(in rect: NSRect, selected: Bool) {
+        let glyph = moveHandleString(selected: selected)
+        let size = glyph.size()
+        glyph.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
     }
 
 
@@ -7490,6 +7670,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
             ))
             if let handle = decryptedDragRect(in: cellFrame) {
                 Self.drawDecryptedDragHandle(in: handle)
+            }
+            if let handle = moveHandleRect(in: cellFrame) {
+                Self.drawMoveHandle(in: handle, selected: selected)
             }
         }
 
