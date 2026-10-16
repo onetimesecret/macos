@@ -9,7 +9,7 @@ detached store or decrypted drag in code: the C entry points, the JSON
 they answer, the bytes at rest, the type name and the shell's predicates
 and constants. The behaviour is [Law 0001](../law/0001-sealed-object.md)'s
 and, for the name's field, [Law 0007](../law/0007-edit-in-place.md)'s. The
-decisions are proposed:
+decisions were accepted 2026-10-16:
 [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
 [ADR-0043](../adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md),
 [ADR-0044](../adr/0044-a-sealed-objects-note-is-edited-on-the-pages-own-surface.md),

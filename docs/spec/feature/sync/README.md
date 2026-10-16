@@ -19,6 +19,10 @@ This directory holds the milestone's written specifications:
   the interface the server side implements (issue #99).
 - [client-protocol.md](client-protocol.md): the client as built and
   where it departs from these specs (draft, not accepted).
+- [server-contract.md](server-contract.md): what the built client
+  sends to and expects of the authorization server and the relay, set
+  beside what the one existing server artifact does (draft, not
+  accepted).
 - [account-auth.md](account-auth.md) — the OAuth flow that gates the
   relay channel, token lifetimes for an app that sleeps for days, and
   the sync/conceal credential separation (issue #98).
@@ -37,5 +41,6 @@ them to a wire is built too (`companion-sync` and
 `crates/ffi/src/sync_session.rs`, PR #119), as are the shell surface
 and its C ABI (`crates/ffi/src/sync_driver.rs` and
 `SyncController.swift`, issue #102); what remains is the server side
-(onetimesecret/onetimesecret#4303) and ADR-0021 Amendment 1's welcome
-work on both sides of the wire.
+(onetimesecret/onetimesecret#4303) and the
+[relay decision background](relay-decision-background.md) Amendment 1's
+welcome work on both sides of the wire.

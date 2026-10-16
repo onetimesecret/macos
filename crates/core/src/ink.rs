@@ -1,5 +1,5 @@
 //! Ink with no chips in it, the document an open file's body (ADR-0028) and a
-//! sealed object's note (ADR-0043 point 2, proposed) each are: one batch rule,
+//! sealed object's note (ADR-0043 point 2) each are: one batch rule,
 //! one step rule.
 
 use zeroize::{Zeroize, Zeroizing};

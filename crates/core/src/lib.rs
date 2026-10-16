@@ -8,7 +8,7 @@ mod document;
 pub mod file_persist;
 pub mod files;
 // The sealed fragment's envelope; the shell carries its bytes unread
-// (ADR-0045 point 1, proposed).
+// (ADR-0045 point 1).
 mod fragment;
 pub mod harden;
 mod ink;

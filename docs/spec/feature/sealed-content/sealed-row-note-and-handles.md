@@ -11,7 +11,7 @@ lengths, words, timings and order. The behaviour they
 serve is [Law 0001](../../../law/0001-sealed-object.md)'s, and the name's
 field is [Law 0007](../../../law/0007-edit-in-place.md)'s; a law row says
 what happens, and this file says how it looks. The decisions under them
-are proposed:
+were accepted 2026-10-16:
 [ADR-0042](../../../adr/0042-a-sealed-name-is-a-shell-identifier.md)
 (the name's charset),
 [ADR-0047](../../../adr/0047-name-value-copies-the-value-unquoted.md)

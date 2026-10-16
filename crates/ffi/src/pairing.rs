@@ -1,8 +1,8 @@
 //! Device pairing: two devices trust each other directly, through their
 //! own key exchange and a short authentication string a human compares
-//! and can fail, never through the account (ADR-0021 section 3, in the
-//! relay decision background; issue #97). The joiner receives the
-//! channel secret, never the content key (ADR-0021 section 8). Pairing
+//! and can fail, never through the account (relay decision background
+//! section 3; issue #97). The joiner receives the channel secret, never
+//! the content key (relay decision background section 8). Pairing
 //! secrets rest under their own key-material accounts, apart from the
 //! conceal credentials. Ceremony and rules: client protocol §9;
 //! revocation: §7.9.
@@ -27,7 +27,8 @@ const DEVICE_IDENTITY_ACCOUNT: &str = "sync-device-identity";
 /// root of the per GOP transport chain ([`crate::gop`]). Delivered
 /// only by this module's ceremony; `ThisDeviceOnly` like every key in
 /// the key-material store, so it never rides iCloud Keychain
-/// (ADR-0016 section 3, ADR-0021 section 8).
+/// (persistence decision background section 3, relay decision
+/// background section 8).
 const CHANNEL_SECRET_ACCOUNT: &str = "sync-channel-secret";
 
 /// Versioned signing context for transcript signatures (client
@@ -432,8 +433,8 @@ pub fn store_channel_secret(credentials: &dyn CredentialStore, secret: &[u8]) ->
 
 /// Clear this device's pairing: the identity key, the channel secret
 /// and the peer records, nothing else; sync trust and conceal trust are
-/// revoked independently (ADR-0021 section 3). True when every delete
-/// was accepted.
+/// revoked independently (relay decision background section 3). True
+/// when every delete was accepted.
 #[must_use]
 pub fn clear_pairing(credentials: &dyn CredentialStore) -> bool {
     let keys = credentials.key_material_store();

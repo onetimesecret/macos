@@ -267,28 +267,28 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
 - [`reboot.md`](verification-procedures/reboot.md). Owner: delano.
   A real reboot with a live pad; a reboot with the pad emptied first,
   confirming key rotation ran; a reboot with a page held, confirming it
-  returns held. ADR-0016 section 10, case 3.
+  returns held. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10, case 3.
 - [`force-termination.md`](verification-procedures/force-termination.md).
   Owner: delano. A `kill -9` inside the debounce window and a second one
   after a settled write, then the Force Quit dialog and a rebuild over a
-  live instance as the same death by other routes. ADR-0016 section 10,
+  live instance as the same death by other routes. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10,
   case 2.
 - [`power-loss.md`](verification-procedures/power-loss.md). Owner:
   delano. A hard power cut mid session, then the stranded
   `state.sealed.<hex>.tmp` artifacts and the sweep launch runs over
-  them. ADR-0016 section 1 and section 10.
+  them. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 1 and section 10.
 - [`re-signed-bundle.md`](verification-procedures/re-signed-bundle.md).
   Owner: delano. Re-signing with a different identity refuses without
   erasing, and the `dev.onetimesecret.pad.debug` bundle id keeps its state
-  directory separate from the release one. ADR-0016 section 10, case 4.
+  directory separate from the release one. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10, case 4.
 - [`locked-keychain.md`](verification-procedures/locked-keychain.md).
   Owner: delano. A locked keychain at load, and a denied ACL prompt,
-  each refusing with no erase and no overwrite. ADR-0016 section 10,
+  each refusing with no erase and no overwrite. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10,
   case 6. §C above covers the round trip; this covers the refusals.
 - [`clock-step-back.md`](verification-procedures/clock-step-back.md).
   Owner: delano. The machine clock stepped back a day with a live pad,
   across a relaunch and again mid session, confirming a page ages by
-  zero rather than gaining life. ADR-0016 section 4 and section 10,
+  zero rather than gaining life. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 4 and section 10,
   case 7.
 - [`raised-card-drag-tracking.md`](verification-procedures/raised-card-drag-tracking.md).
   Owner: delano. Drag and resize tracking on the raised card. Not an
@@ -337,8 +337,11 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   the six digits can be failed on purpose, that a page travels and
   carries the mark while another device writes on it, and that a
   revoke stops new edits without reaching across to the other
-  machine's records (issue #102, ADR-0027 section 5, ADR-0021 section
-  3). Blocked on the relay. Not an ADR-0016 case.
+  machine's records (issue #102, [account-auth decision
+  background](../spec/feature/sync/account-auth-decision-background.md)
+  section 5, [relay decision
+  background](../spec/feature/sync/relay-decision-background.md)
+  section 3). Blocked on the relay. Not an ADR-0016 case.
 
 - [`file-draft-lifecycle.md`](verification-procedures/file-draft-lifecycle.md).
   Owner: delano. A dirty file backed document across a SIGKILL and a

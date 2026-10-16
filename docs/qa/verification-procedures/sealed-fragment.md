@@ -20,7 +20,7 @@ runner cannot drive, and whose expiry, copy and cut rows hold the
 deadline gate and the envelope's caps;
 [ADR-0045](../../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md)
 and [ADR-0046](../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md),
-both proposed; the
+both accepted; the
 [sealed row spec](../../spec/feature/sealed-content/sealed-row-note-and-handles.md)'s
 decrypted drag handle.
 **Owner:** delano.

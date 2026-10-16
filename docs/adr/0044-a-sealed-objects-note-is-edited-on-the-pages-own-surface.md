@@ -4,8 +4,8 @@ documentation_status: needs-review
 
 # ADR-0044: A sealed object's note is edited on the page's own text surface
 
-- **Status:** proposed
-- **Date:** 2026-10-14
+- **Status:** accepted
+- **Date:** 2026-10-16
 - **Depends on:** [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md), whose note is a document of its own, keyed by its chip and holding no object.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -95,3 +95,4 @@ are in the
 
 - 2026-10-14: Proposed.
 - 2026-10-14: Consolidated from draft ADR-0045 (the note is written on the page's surface) points 1 to 3 and 5, with point 5 as its erratum corrected it, written 2026-10-13 and never ratified; its point 4, what stands aside in a note, stands in Law 0001's rows.
+- 2026-10-16: Accepted.

@@ -4,16 +4,16 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered and awaiting the maintainer's ratification (the proposed ADR-0042 they cite is under sources, not here); ADR-0055 point 2
+decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042, which they cite and which was accepted the same day, is under sources, not here); ADR-0055 point 2
 consumed-by:
   - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment; its rows cite this law's keys row)
-  - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (proposed; the sealed name's charset, and an empty draft clearing it)
+  - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (accepted; the sealed name's charset, and an empty draft clearing it)
   - docs/development/sealed-objects-core-interface.md (the name's routes and the keys holder's predicate)
   - docs/mockups/sealed-name-and-note.md (the drawn states; not authoritative)
 sources:
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
-  - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in proposed ADR-0042 and ADR-0043, and in the development note)
-  - ADR-0042, proposed 2026-10-14 (the sealed name's charset; the rows that cite it rest on a proposal)
+  - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in the accepted ADR-0042 and ADR-0043, and in the development note)
+  - ADR-0042, proposed 2026-10-14 and accepted 2026-10-16 (the sealed name's charset)
   - docs/development/sealed-objects-core-interface.md (`InkTextView.answersChords`, the keys holder's predicate; the name's routes and refusal codes)
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
   - docs/spec/design/2026-0916-rail-redundancy.md, D-44 and D-46 (the gutter's time and typed name)
@@ -110,7 +110,7 @@ the first tenet (the app is furniture, never interrupts) forbids.
   `PadNameDraft.validationMessage`'s words; a sealed name outside its
   charset, 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, refused
   core-side per [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
-  proposed)
+  accepted)
   is said beside the seat or in the line under the page, with the field
   still open; it is never a dialog.
 - **Showing**: a typed name is drawn in the seat; a default is drawn in
@@ -214,7 +214,7 @@ judged by `judge_name` (`crates/core/src/sheet.rs`), which
 `companion_chip_set_name` refuses by and `companion_chip_name_refusal`
 answers with, so a field can say why a draft will not take while it is
 typed ([ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
-proposed; the one rule both share, its routes and codes in the
+accepted; the one rule both share, its routes and codes in the
 [core interface](../development/sealed-objects-core-interface.md)).
 
 Tests that pin the contradicting build and are rewritten when the owed
@@ -354,3 +354,7 @@ Owed: a first run of the rename in place procedure.
   with the short card amendment's tests. The Opening and Refusing
   classes, the exemption, five rows, the acceptance lists and the
   sources follow.
+- 2026-10-16: Record amendment. ADR-0042 was accepted by the maintainer,
+  who ratified the rows the 2026-10-14 amendments added in the same
+  reading. `decisions`, `sources` and the rows that cited it as a proposal
+  now cite accepted text. No behaviour changes.
