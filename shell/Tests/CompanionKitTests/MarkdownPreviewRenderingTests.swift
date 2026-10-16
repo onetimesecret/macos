@@ -102,6 +102,18 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    /// A mailto link keeps the address and loses its query and fragment, which name headers,
+    /// a body and attachments for the mail client; a web link keeps its query.
+    func testAMailtoLinkKeepsTheAddressAndLosesItsQueryAndFragment() throws {
+        let rendered = render("""
+        [mail](mailto:a@example.com?subject=hi&attach=/etc/passwd&bcc=b@example.com#x)
+        [plain](mailto:a@example.com) [web](https://example.com/a?x=1#top)
+        """)
+        XCTAssertEqual(try link("mail", in: rendered)?.absoluteString, "mailto:a@example.com")
+        XCTAssertEqual(try link("plain", in: rendered)?.absoluteString, "mailto:a@example.com")
+        XCTAssertEqual(try link("web", in: rendered)?.absoluteString, "https://example.com/a?x=1#top")
+    }
+
     func testSoftBreaksBecomeSpacesAndHardBreaksStayInsideTheirParagraph() throws {
         let rendered = render("soft\nwrap  \nhard\\\nbreak\n\nnext")
         XCTAssertEqual(rendered.string, "soft wrap\u{2028}hard\u{2028}break\nnext\n")

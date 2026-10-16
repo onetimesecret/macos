@@ -562,12 +562,15 @@ private final class MarkdownPreviewRenderer {
         let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
         guard !destination.contains(tokenPrefix),
               !destination.unicodeScalars.contains(where: { forbidden.contains($0) }),
-              let components = URLComponents(string: destination),
+              var components = URLComponents(string: destination),
               let scheme = components.scheme?.lowercased(),
               ["http", "https", "mailto"].contains(scheme)
         else { return nil }
         if scheme == "mailto" {
             guard !components.path.isEmpty else { return nil }
+            // A mailto query names headers and attachments for the mail client; the address alone opens.
+            components.query = nil
+            components.fragment = nil
         } else {
             guard let host = components.host, !host.isEmpty else { return nil }
         }
