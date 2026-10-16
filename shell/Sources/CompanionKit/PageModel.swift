@@ -789,7 +789,7 @@ public final class PageModel: ObservableObject {
         }
     }
     private static let previewRenderingKey = "previewRendering"
-    private static let pagePreviewKey = "pageMarkdownPreviewV1"
+    private static let pagePreviewKey = "pageMarkdownPreviewV2"
     private var pagePreviewOverrides: [String: Bool] = [:]
 
     private func pagePreviewIdentity(for id: UInt64) -> String? {
@@ -798,14 +798,12 @@ public final class PageModel: ObservableObject {
     }
 
     public func previewRendering(for id: UInt64) -> PreviewRenderingScope {
-        guard let key = pagePreviewIdentity(for: id), let enabled = pagePreviewOverrides[key]
-        else { return previewRendering }
-        return enabled ? .allPages : .never
+        previewRendering
     }
 
-    public func markdownPreviewEnabled(for id: UInt64, quiet: Bool = false) -> Bool {
-        let scope = previewRendering(for: id)
-        return quiet ? scope == .allPages : scope != .never
+    public func markdownPreviewEnabled(for id: UInt64) -> Bool {
+        guard let key = pagePreviewIdentity(for: id) else { return false }
+        return pagePreviewOverrides[key] ?? false
     }
 
     public func toggleMarkdownPreview(for id: UInt64) {
@@ -3331,7 +3329,7 @@ public final class PageModel: ObservableObject {
         // The payload carries the fence regions the styling walk returned
         // so a quiet region's `InkLayoutManager` can paint the same slab
         // the editor would. `.focusedOnly` and `.never` return plain ink.
-        if markdownPreviewEnabled(for: id, quiet: true), !id.isFileID {
+        if previewRendering == .allPages, !id.isFileID {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).
@@ -5206,6 +5204,9 @@ public final class PageModel: ObservableObject {
         // Ownership can transfer before SwiftUI replaces the old mount.
         // A focus request for one window must wait for its own editor.
         if let targetWindow, editor.window !== targetWindow { return nil }
+        if editor.isHidden, let stack = editor.superview as? DayStackView {
+            return stack.selectedPreview
+        }
         return editor
     }
 

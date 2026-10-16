@@ -1902,7 +1902,7 @@ public struct InkEditorView: NSViewRepresentable {
             restyle()
         }
 
-        /// Compare the mounted page's effective scope, including its override.
+        /// Hybrid styling follows the global scope, independently of full preview.
         func applyPreviewRendering(_ scope: PreviewRenderingScope) {
             let effective = writesNote ? scope : currentSheet.map {
                 model.previewRendering(for: $0)
