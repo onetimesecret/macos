@@ -447,7 +447,12 @@ final class SealedMoveHandleTests: XCTestCase {
         let page = try mountPage(on: try makeModel())
         let textView = page.textView
         XCTAssertEqual(textView.handleAccessibilityElements(), [], "at rest")
-        XCTAssertEqual(SealedBlockCell.Handle.move.accessibilityLabel, "Move")
+        XCTAssertEqual(
+            SealedBlockCell.Handle.move.accessibilityLabel, CompanionL10n.string("chip.handle.move"))
+        XCTAssertEqual(
+            SealedBlockCell.Handle.decrypted.accessibilityLabel,
+            CompanionL10n.string("chip.handle.decrypted"))
+        XCTAssertEqual(SealedBlockCell.Handle.move.accessibilityLabel, "Move", "the key is unresolved")
         XCTAssertEqual(SealedBlockCell.Handle.decrypted.accessibilityLabel, "Drag decrypted")
 
         let (move, decrypted, frame) = try handles(page)

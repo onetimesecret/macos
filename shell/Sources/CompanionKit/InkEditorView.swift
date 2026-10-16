@@ -7393,8 +7393,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
         var accessibilityLabel: String {
             switch self {
-            case .move: "Move"
-            case .decrypted: "Drag decrypted"
+            case .move: CompanionL10n.string("chip.handle.move")
+            case .decrypted: CompanionL10n.string("chip.handle.decrypted")
             }
         }
     }
