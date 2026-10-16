@@ -3326,8 +3326,10 @@ public final class PageModel: ObservableObject {
         // stamps and their reserved paragraph spacing are both suppressed.
         // The payload carries the fence regions the styling walk returned
         // so a quiet region's `InkLayoutManager` can paint the same slab
-        // the editor would. `.focusedOnly` and `.never` return plain ink.
-        if previewRendering == .allPages, !id.isFileID {
+        // the editor would. `.focusedOnly` and `.never` return plain ink, and
+        // so does a page whose preview renders the ink itself; the toggle
+        // invalidates this cache either way.
+        if previewRendering == .allPages, !id.isFileID, !markdownPreviewEnabled(for: id) {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).

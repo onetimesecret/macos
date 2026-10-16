@@ -499,6 +499,26 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         }
     }
 
+    /// A page whose preview renders the ink itself skips the quiet styling pass under
+    /// **All pages**: its quiet rendering is plain ink the renderer parses once.
+    func testAPreviewedPageSkipsTheQuietStylingPassAndTheToggleRestoresIt() throws {
+        let model = try makeModel()
+        model.previewRendering = .allPages
+        let page = try page(in: model)
+        let styled = model.quietRendering(for: page)
+        XCTAssertTrue(headingIsStyled(NSTextStorage(attributedString: styled.text)))
+
+        model.toggleMarkdownPreview(for: page)
+        let plain = model.quietRendering(for: page)
+        XCTAssertFalse(plain === styled, "the toggle dropped the cache")
+        XCTAssertFalse(headingIsStyled(NSTextStorage(attributedString: plain.text)))
+        XCTAssertEqual(plain.text.string, "# Heading\nbody")
+        XCTAssertEqual(MarkdownPreviewView.render(plain.text).string, "Heading\nbody\n")
+
+        model.toggleMarkdownPreview(for: page)
+        XCTAssertTrue(headingIsStyled(NSTextStorage(attributedString: model.quietRendering(for: page).text)))
+    }
+
     func testNonselectedHeaderTogglesOnlyItsPreviewWithoutChangingSelectionEditorOrFocus() throws {
         let model = try makeModel()
         model.previewRendering = .allPages

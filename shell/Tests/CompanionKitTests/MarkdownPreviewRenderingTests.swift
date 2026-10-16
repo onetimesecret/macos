@@ -338,6 +338,42 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertLessThan(lastObject.location, try range("after", in: rendered).location)
     }
 
+    /// An object inside a link's destination has no visible leaf; it is emitted where it stood,
+    /// before the object that follows it in the same paragraph, never after.
+    func testAnObjectHiddenInALinkDestinationKeepsItsPlaceBeforeTheNextObject() throws {
+        let source = NSMutableAttributedString(string: "[label](https://example.com/")
+        let hidden = chip(1)
+        let visible = chip(2)
+        source.append(NSAttributedString(attachment: hidden))
+        source.append(NSAttributedString(string: ") then "))
+        source.append(NSAttributedString(attachment: visible))
+        source.append(NSAttributedString(string: " end\n\nnext "))
+        let later = chip(3)
+        source.append(NSAttributedString(attachment: later))
+        let rendered = MarkdownPreviewView.render(source)
+        let found = attachments(in: rendered)
+        XCTAssertEqual(found.count, 3)
+        XCTAssertTrue(found[0] === hidden)
+        XCTAssertTrue(found[1] === visible)
+        XCTAssertTrue(found[2] === later)
+        XCTAssertNil(try link("label", in: rendered))
+        XCTAssertFalse(rendered.string.contains("OTSAttachment"))
+        XCTAssertLessThan(try range("label", in: rendered).location, try range("\u{FFFC}", in: rendered).location)
+        XCTAssertTrue(rendered.string.contains("then \u{FFFC}\u{FFFC} end"), "the hidden object stands beside the next")
+    }
+
+    /// A token's spelling in the ink, prefix and digits with no closing Z or naming no
+    /// object, is literal text; the object's own spelling resolves beside it.
+    func testATokenLikeSpellingWithoutAnObjectStaysLiteral() throws {
+        let source = NSMutableAttributedString(string: "OTSAttachment0Z OTSAttachment99Z ")
+        let only = chip(7)
+        source.append(NSAttributedString(attachment: only))
+        let rendered = MarkdownPreviewView.render(source)
+        XCTAssertEqual(rendered.string, "OTSAttachment0Z OTSAttachment99Z \u{FFFC}\n")
+        XCTAssertEqual(attachments(in: rendered).count, 1)
+        XCTAssertTrue(attachments(in: rendered).first === only)
+    }
+
     func testInlineCodeInAHeadingKeepsTheHeadingSize() throws {
         let rendered = render("# Heading `code`")
         XCTAssertEqual(try font("Heading", in: rendered).pointSize, try font("code", in: rendered).pointSize)

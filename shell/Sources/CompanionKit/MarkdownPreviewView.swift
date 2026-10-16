@@ -261,15 +261,16 @@ private final class MarkdownPreviewRenderer {
     private let output = NSMutableAttributedString(string: "")
     private let markdown: String
     private let tokenPrefix: String
+    /// The attachments in source order, which is also the order of `location`.
     private let tokens: [AttachmentToken]
-    private let tokenPattern: NSRegularExpression
     private var emittedAttachments: Set<Int> = []
+    /// Every token below this index is emitted, so a flush never walks them again.
+    private var nextToken = 0
 
     init(source: NSAttributedString) {
         var prefix = "OTSAttachment" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
         while source.string.contains(prefix) { prefix += "X" }
         tokenPrefix = prefix
-        tokenPattern = try! NSRegularExpression(pattern: prefix + "([0-9]+)Z")
 
         let raw = source.string as NSString
         var replacements: [(NSRange, NSTextAttachment)] = []
@@ -578,32 +579,69 @@ private final class MarkdownPreviewRenderer {
     ) -> NSAttributedString {
         let result = NSMutableAttributedString(string: "")
         let raw = string as NSString
-        let matches = tokenPattern.matches(in: string, range: NSRange(location: 0, length: raw.length))
         var cursor = 0
-        for match in matches {
+        for (range, index) in tokenSpellings(in: raw) {
             result.append(NSAttributedString(string: raw.substring(with: NSRange(
-                location: cursor, length: match.range.location - cursor
+                location: cursor, length: range.location - cursor
             )), attributes: attributes))
-            if let index = Int(raw.substring(with: match.range(at: 1))), tokens.indices.contains(index),
-               emittedAttachments.insert(index).inserted {
-                var attachmentAttributes = baseAttributes
-                attachmentAttributes[.attachment] = tokens[index].attachment
-                result.append(NSAttributedString(string: "\u{FFFC}", attributes: attachmentAttributes))
+            // An object a link destination or a reference hid before this one keeps its place.
+            while nextToken < index {
+                if !emittedAttachments.contains(nextToken) { result.append(object(nextToken)) }
+                nextToken += 1
             }
-            cursor = NSMaxRange(match.range)
+            if !emittedAttachments.contains(index) { result.append(object(index)) }
+            if nextToken == index { nextToken += 1 }
+            cursor = NSMaxRange(range)
         }
         result.append(NSAttributedString(string: raw.substring(from: cursor), attributes: attributes))
         return result
     }
 
+    /// Each token spelled in `raw`, `<prefix><digits>Z`, with the index it names.
+    private func tokenSpellings(in raw: NSString) -> [(NSRange, Int)] {
+        var found: [(NSRange, Int)] = []
+        let digits = CharacterSet.decimalDigits
+        var search = NSRange(location: 0, length: raw.length)
+        while search.length > 0 {
+            let prefix = raw.range(of: tokenPrefix, options: .literal, range: search)
+            guard prefix.location != NSNotFound else { break }
+            var end = NSMaxRange(prefix)
+            while end < raw.length, let scalar = Unicode.Scalar(raw.character(at: end)),
+                  digits.contains(scalar)
+            { end += 1 }
+            let number = raw.substring(with: NSRange(location: NSMaxRange(prefix), length: end - NSMaxRange(prefix)))
+            if end < raw.length, raw.character(at: end) == 0x5A /* Z */, let index = Int(number),
+               tokens.indices.contains(index)
+            {
+                found.append((NSRange(location: prefix.location, length: end + 1 - prefix.location), index))
+                search = NSRange(location: end + 1, length: raw.length - end - 1)
+            } else {
+                search = NSRange(location: NSMaxRange(prefix), length: raw.length - NSMaxRange(prefix))
+            }
+        }
+        return found
+    }
+
+    /// The object at `index`, marked emitted.
+    private func object(_ index: Int) -> NSAttributedString {
+        emittedAttachments.insert(index)
+        var attributes = baseAttributes
+        attributes[.attachment] = tokens[index].attachment
+        return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
+    }
+
+    /// Objects with no visible leaf, in a reference or a link destination, each as a
+    /// paragraph of its own before the block at `location`; every token before `nextToken`
+    /// is emitted, so the walk is linear over a render.
     private func flushAttachments(before location: SourceLocation?, context: Context) {
-        // References and link destinations may contain objects that have no visible AST leaf.
-        for (index, token) in tokens.enumerated() where !emittedAttachments.contains(index) {
-            if let location, !(token.location < location) { continue }
-            emittedAttachments.insert(index)
-            var attributes = baseAttributes
-            attributes[.attachment] = token.attachment
-            paragraph(NSAttributedString(string: "\u{FFFC}", attributes: attributes), context: context)
+        while nextToken < tokens.count {
+            if emittedAttachments.contains(nextToken) {
+                nextToken += 1
+                continue
+            }
+            if let location, !(tokens[nextToken].location < location) { return }
+            paragraph(object(nextToken), context: context)
+            nextToken += 1
         }
     }
 }
