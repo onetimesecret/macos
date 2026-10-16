@@ -22,9 +22,10 @@ use crate::b64;
 /// The one scope the sync client asks for. Sent explicitly on the
 /// authorization request and never on a refresh (test
 /// `the_authorize_url_asks_for_exactly_the_sync_scope`). ADR-0027's
-/// Consequences require the server registration to hold `sync` alone;
-/// that row, not this constant, bounds a leaked token
-/// (docs/spec/feature/sync/server-contract.md, row 2.9).
+/// Consequences: "Server registration must remain portless and
+/// limited to the `sync` scope"; that registration, not this
+/// constant, bounds a leaked token. The pinned server's reading is
+/// docs/spec/feature/sync/server-contract.md row 2.9.
 pub const SYNC_SCOPE: &str = "sync";
 
 /// A refusal from the auth ceremony or the token machinery. Everything
