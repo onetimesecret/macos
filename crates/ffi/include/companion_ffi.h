@@ -1068,9 +1068,9 @@ bool companion_persist_save(CompanionHandle *handle, const char *path);
 /*
  * Rotate both content key halves and reseal the store under the new
  * ones: the write for the moment no tab holds a page (persistence
- * decision background section 6's first rotation trigger, ADR-0017). Returns whether the file at
- * `path` now holds the store under halves nothing else has ever sealed
- * with.
+ * decision background section 6's first rotation trigger, ADR-0017).
+ * Returns whether the file at `path` now contains the store under
+ * halves nothing else has ever sealed with.
  *
  * The rotation is the forgetting and the reseal is what keeps the
  * strip. Erasing the file half makes every ciphertext generation this
@@ -1112,7 +1112,8 @@ bool companion_persist_rotate_and_save(CompanionHandle *handle, const char *path
  * failure to open: a file carrying an envelope this build has REPLACED
  * is dropped and the licence granted, because nothing in it can ever
  * be read again and refusing it forever would present as an install
- * that had permanently stopped saving (persistence decision background section 9).
+ * that had permanently stopped saving (persistence decision background
+ * section 9).
  *
  * Launch is also where stranded *.tmp generations in the state
  * directory are swept; nothing else ever clears that directory.
@@ -1138,9 +1139,10 @@ bool companion_persist_restore(CompanionHandle *handle, const char *path);
  * ciphertext generation that key ever sealed undecryptable, including
  * the ones an atomic rename unlinked and nothing sweeps, and it is the
  * finishing step of a deletion the user already asked for: emptying the
- * pad, or clearing it (persistence decision background section 6). It runs first, so what is
- * unlinked is already undecryptable, and a keychain that refuses the
- * delete is announced without cancelling the drop.
+ * pad, or clearing it (persistence decision background section 6). It
+ * runs first, so what is unlinked is already undecryptable, and a
+ * keychain that refuses the delete is announced without cancelling the
+ * drop.
  *
  * ONLY a content file takes the halves with it. This same call drops
  * the ledger file on a user's Clear, and that gesture asked nothing
@@ -1267,10 +1269,10 @@ char *companion_sync_status_json(CompanionHandle *handle);
 
 /*
  * Where the account gate stands, as one machine token (account-auth
- * decision background section 5): "off", "signed_out", "signing_in", "refused",
- * "unreachable", "ready" or "attached", the status JSON's "gate". It
- * says whether this client may attach and nothing about content
- * (relay decision background section 3).
+ * decision background section 5): "off", "signed_out", "signing_in",
+ * "refused", "unreachable", "ready" or "attached", the status JSON's
+ * "gate". It says whether this client may attach and nothing about
+ * content (relay decision background section 3).
  *
  * Null on a null handle or a poisoned lock: a gate that cannot be read
  * has not been passed, so null means may not attach. A status JSON
@@ -1324,8 +1326,8 @@ bool companion_sync_signin_cancel(CompanionHandle *handle);
  * Sign sync out: drop the held tokens and delete the persisted refresh
  * token, exactly one Keychain account; the conceal token, content and
  * ledger keys, pairing accounts and the pad all stand (relay decision
- * background section 3). A ceremony out on the browser ends with it. True when
- * the delete was accepted.
+ * background section 3). A ceremony out on the browser ends with it.
+ * True when the delete was accepted.
  */
 bool companion_sync_signout(CompanionHandle *handle);
 
@@ -1432,8 +1434,9 @@ char *companion_sync_pairing_poll(CompanionHandle *handle);
 /*
  * The human's verdict on the short authentication string. A match
  * moves the ceremony forward; a mismatch drops it whole with nothing
- * stored on this device (relay decision background section 3). Returns the stage as
- * companion_sync_pairing_poll does. Free with companion_string_free().
+ * stored on this device (relay decision background section 3). Returns
+ * the stage as companion_sync_pairing_poll does. Free with
+ * companion_string_free().
  */
 char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
 

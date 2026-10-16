@@ -103,7 +103,8 @@ final class PersistenceRoundTripTests: XCTestCase {
 
     /// The quit flush, which is the one thing `saveStateForQuit()`'s
     /// existing coverage never asks of it: not what it reports, but
-    /// that it writes. The persistence decision background section 1 names this exactly, a
+    /// that it writes. The persistence decision background section 1
+    /// names this exactly, a
     /// regression that removed the flush would leave every other
     /// persistence test green, because the debounce eventually writes
     /// everything they look at. So the window here is long enough that

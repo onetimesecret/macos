@@ -22,9 +22,10 @@ use crate::b64;
 /// The one scope the sync client asks for. Sent explicitly on the
 /// authorization request and never on a refresh (test
 /// `the_authorize_url_asks_for_exactly_the_sync_scope`). ADR-0027's
-/// Consequences require the server registration to hold `sync` alone;
-/// that row, not this constant, bounds a leaked token
-/// (docs/spec/feature/sync/server-contract.md, row 2.9).
+/// Consequences: "Server registration must remain portless and
+/// limited to the `sync` scope"; that registration, not this
+/// constant, bounds a leaked token. The pinned server's reading is
+/// docs/spec/feature/sync/server-contract.md row 2.9.
 pub const SYNC_SCOPE: &str = "sync";
 
 /// A refusal from the auth ceremony or the token machinery. Everything
@@ -43,7 +44,7 @@ pub enum SyncAuthError {
     /// account identifiers).
     Refused(u16),
     /// The refresh was refused: revoked account-side, rotation reuse
-    /// tripped, or the 90-day idle window ran out. Sync is signed out;
+    /// tripped, or the server's idle window ran out. Sync is signed out;
     /// the pad is unaffected. Re-enabling sync is the browser ceremony
     /// again.
     SignedOut,
@@ -300,10 +301,10 @@ impl<'de> serde::de::Visitor<'de> for TokenField {
 /// A client that insisted on one would refuse every grant such a
 /// server issues, and would refuse them behind a `2xx` it could not
 /// even explain, so sync would be permanently unable to wake up
-/// against a perfectly conformant server (account-auth decision background §2: rotation is
-/// requested, never required). The access token is still mandatory:
-/// a refresh answer without one has told us nothing we can attach
-/// with.
+/// against a perfectly conformant server (account-auth decision
+/// background §2: rotation is requested, never required). The access
+/// token is still mandatory: a refresh answer without one has told us
+/// nothing we can attach with.
 ///
 /// # Errors
 ///
@@ -331,8 +332,8 @@ fn parse_refresh_response(
 /// not the authorization server speaking at all: neither carries an
 /// `error` field, and an HTML body carries nothing this can read. So
 /// the verdict is taken from the body, never off the status, and the
-/// default is to keep the credential (account-auth decision background §2: a server that said
-/// slow down is not a server that said no).
+/// default is to keep the credential (account-auth decision background
+/// §2: a server that said slow down is not a server that said no).
 fn grant_is_dead(response: &HttpResponse) -> bool {
     if !(400..500).contains(&response.status) {
         return false;
@@ -419,10 +420,10 @@ impl TokenKeeper {
     /// refresh token for the caller to persist; `Ok(None)` is a server
     /// that declined to rotate, whose grant stands unchanged and whose
     /// stored token is still the right one, so there is nothing to
-    /// write (account-auth decision background §2). Only the token endpoint naming
-    /// `invalid_grant` signs the keeper out with both tokens dropped,
-    /// for the caller to surface issue #102's sentence: "Sync is
-    /// signed out; the pad is unaffected." Anything else (a `5xx`, a
+    /// write (account-auth decision background §2). Only the token
+    /// endpoint naming `invalid_grant` signs the keeper out with both
+    /// tokens dropped, for the caller to surface issue #102's sentence:
+    /// "Sync is signed out; the pad is unaffected." Anything else (a `5xx`, a
     /// rate limit, a gateway mangling the body, a `400` about the
     /// request rather than the grant) is the endpoint being unwell or
     /// misasked, not the grant being revoked: the refresh token is

@@ -379,9 +379,9 @@ committers share no history and are refused (interpretation).
   Pairing records are read only when sending.
 - Revocation (`revoke_peer`) deletes the local record, starts no
   ceremony and tells the relay nothing; relay-protocol §4 makes attach
-  account-gated ("it proves nothing about device trust ([relay decision background](relay-decision-background.md) §3)")
-  and serves the roster, so a revoked device that attaches gets every
-  peer's package.
+  account-gated ("it proves nothing about device trust (relay decision
+  background §3)") and serves the roster, so a revoked device that
+  attaches gets every peer's package.
 - (interpretation) A revoked device with the current key can propose,
   as its own client does when a transition is due; members accept, and
   it derives the next key from its own entropy and stays in. Forged

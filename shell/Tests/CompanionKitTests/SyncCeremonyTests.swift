@@ -3,7 +3,8 @@ import XCTest
 @testable import CompanionKit
 
 /// The sign-in ceremony as the surface actually walks it, over a live
-/// core rather than over hand-fed state (issue #102, account-auth decision background §5).
+/// core rather than over hand-fed state (issue #102, account-auth
+/// decision background §5).
 ///
 /// `SyncSurfaceTests` holds the sentences as pure functions, which is
 /// what makes them cheap to state; the risk that leaves is a rule that
