@@ -26,10 +26,12 @@ documents below are what this record reads.
 
 What the build does:
 
-- Sync carries each enrolled page's Loro document and nothing else. The
+- Sync moves each enrolled page's Loro document and nothing else. The
   one content envelope is `DeltaEnvelope::Ops` in
   `crates/sync/src/envelope.rs`, whose `ops` field is "The exported
-  update bytes." The chip table is outside the document: the document
+  update bytes."; the enum's other shapes (`Expiry`, `Hold`, `Terminal`,
+  `Control`) are policy and control, not content. The chip table is
+  outside the document: the document
   carries a U+FFFC sentinel per chip, with the chip's identity as a mark
   on it (`CHIP_MARK` in `crates/core/src/document.rs`), and the chip's
   payload, kind, size, name and note live on `SealedChip` in
@@ -291,37 +293,63 @@ What this record does not decide:
 Owed work on issue #257, none of it done at this writing:
 
 - `crates/core/src/document.rs`: `import_update` admits unknown
-  identities and keeps refusing duplicates; `UpdateRefusal::ChipRoster`'s
-  doc comment and arm narrow to the duplicate.
+  identities and keeps refusing duplicates; its return type changes
+  from `Result<(), UpdateRefusal>` to one that returns the identities
+  the batch stands that `owned` lacks, so the store learns what to
+  create and `chips_of` stays private to the module;
+  `UpdateRefusal::ChipRoster`'s doc comment and arm narrow to the
+  duplicate.
 - `crates/core/src/store.rs`: `apply_remote_update` and `adopt_key_frame`
-  create records for objects held on another device; the two tests named in Context
+  create a record in the state held on another device for each identity
+  `import_update` returns, before `settle_document` runs, so the settle
+  never projects a body standing a sentinel with no chip in the roster;
+  the two tests named in Context
   are inverted to pin the object standing on the peer with no value;
   `sync_rejects_foreign_and_duplicate_chips` splits, since a foreign
   identity is now admitted and a duplicate still refused; a test pins
   each menu refusal, the clone placeholder and the burn's travel.
+- `crates/core/src/transfer.rs`: `Placed` gains a counter, beside
+  `expired`, `burned` and `unavailable`, for a reference placed because
+  its value is on another device, and the word `terminal_cause`'s caller
+  chooses gains that cause, so the outcome names it as point 3 requires.
 - `crates/sync/src/envelope.rs`: the table's envelope shape, with a
   round trip test; `crates/ffi/src/sync_driver.rs` `sweep_outbound`
-  queues the table when a page's metadata moved, and the frame carries
-  it (`seal_owed_frame`, `commit_advance`); `sync_session.rs` applies an
-  arriving table by revision.
+  queues the whole table, a snapshot of every chip in the page's roster,
+  whenever any of that page's metadata moved since the last table it
+  queued, and the frame includes it (`seal_owed_frame`,
+  `commit_advance`); `sync_session.rs` applies an arriving table by
+  revision, terminal state first.
 - `crates/core/src/persist.rs` and the
   [core interface](../development/sealed-objects-core-interface.md): the
   record at rest for a chip with no payload, the revisions, and what an
   older build restoring such a record does; the face gains a field that
   says where the value is held, named there.
 - `docs/spec/feature/sync/client-protocol.md`: row 10.31 is replaced by
-  a row that cites the inverted tests; §6 gains the table's row.
+  a row that cites the inverted tests; §6 gains the table's row,
+  unsigned beside Ops, Expiry and Hold.
 - `docs/law/0001-sealed-object.md`: the lifecycle states table gains
-  held on another device; the expiry row and the paste, drag, conceal,
-  burn and decrypted drag rows gain the peer's refusals and faces; the
-  sync move amendment gains a dated successor amendment citing this
-  record.
+  held on another device, with a note that this row is read per device
+  (the value is not on this device) where the table's other rows are
+  facts about the object on every device; the expiry row and the paste,
+  drag, conceal, burn and decrypted drag rows gain the peer's refusals
+  and faces; the sync move amendment gains a dated successor amendment
+  citing this record.
+- ADR-0012: a `Decision history` line recording that a sealed object's
+  name and note egress over sync under this record, with the payload
+  egress inventory unchanged at three.
 - Epic #252: the "Explicitly unchanged" line gains a note.
 - The shell: the face line, the absent items and handle, the page
   conceal's refusal; `ChipInfo` reads the new face field;
-  `SealedCapsuleTests` or its successor pins the menu.
-- ADR-0021: on acceptance, a `Superseded in part by` line and a
-  `Decision history` entry naming this record and the point replaced.
+  `SealedCapsuleTests` or its successor pins the menu. The face line's
+  wording `held on another device` is design copy: the sealed content
+  design record in `docs/spec/design/` blesses or changes it, not this
+  record, and ADR-0055's rule reaches menus and buttons, not a face
+  line.
+- ADR-0021 and this record, in one commit on acceptance: ADR-0021 gains
+  a `Superseded in part by` line and a `Decision history` entry naming
+  this record and the point replaced, and this record gains
+  `Supersedes in part:` naming ADR-0021; `scripts/lint-adrs.py` refuses
+  either line without the other.
 
 ## Alternatives
 
