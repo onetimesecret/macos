@@ -41,5 +41,5 @@ them to a wire is built too (`companion-sync` and
 `crates/ffi/src/sync_session.rs`, PR #119), as are the shell surface
 and its C ABI (`crates/ffi/src/sync_driver.rs` and
 `SyncController.swift`, issue #102); what remains is the server side
-(onetimesecret/onetimesecret#4303) and ADR-0021 Amendment 1's welcome
+(onetimesecret/onetimesecret#4303) and the [relay decision background](relay-decision-background.md) Amendment 1's welcome
 work on both sides of the wire.

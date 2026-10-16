@@ -40,7 +40,7 @@ struct SyncSettingsSection: View {
                     // The way out of a browser trip, drawn only while
                     // there is a trip to end and gone the moment there
                     // is not. That is the ledger clear button's shape, and the
-                    // "way to give up" account-auth decision background §5 owes this state. The
+                    // "way to give up" the account-auth decision background §5 owes this state. The
                     // core ends the wait; this is not a button that
                     // merely stops listening.
                     HStack {

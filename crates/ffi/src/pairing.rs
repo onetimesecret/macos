@@ -27,7 +27,7 @@ const DEVICE_IDENTITY_ACCOUNT: &str = "sync-device-identity";
 /// root of the per GOP transport chain ([`crate::gop`]). Delivered
 /// only by this module's ceremony; `ThisDeviceOnly` like every key in
 /// the key-material store, so it never rides iCloud Keychain
-/// (ADR-0016 section 3, relay decision background section 8).
+/// (persistence decision background section 3, relay decision background section 8).
 const CHANNEL_SECRET_ACCOUNT: &str = "sync-channel-secret";
 
 /// Versioned signing context for transcript signatures (client

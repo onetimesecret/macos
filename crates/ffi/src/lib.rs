@@ -2294,7 +2294,7 @@ fn seal_state_to(state: &Companion, path: &Path) -> bool {
 /// Rotate both content key halves and reseal the store under the new ones,
 /// for when no tab holds a page (ADR-0016). Returns false for a path that is
 /// not the content file, a half that survived erasure, or a failed write.
-/// Erased before the reseal (ADR-0016 section 6).
+/// Erased before the reseal (persistence decision background section 6).
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -7278,7 +7278,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Rotation follows the state, not the transition (ADR-0016 section 6).
+    /// Rotation follows the state, not the transition (persistence decision background section 6).
     #[test]
     fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
         let credentials: Arc<dyn CredentialStore> =

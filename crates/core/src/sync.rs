@@ -189,8 +189,8 @@ impl PageChannel {
         }
     }
 
-    /// The one gate on who may declare a synced page dead (ADR-0021
-    /// section 6): a device whose view is current, while no hold stands.
+    /// The one gate on who may declare a synced page dead (relay
+    /// decision background section 6): a device whose view is current, while no hold stands.
     /// A device that expired the page offline entombs its own copy but
     /// publishes no marker: a hold it never saw may keep the page alive.
     #[must_use]

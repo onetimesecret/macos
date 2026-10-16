@@ -23,7 +23,7 @@ use crate::sync::{ExpiryPolicy, HoldRegister};
 use crate::ttl::{self, Ttl};
 
 /// The first double-click holds a page's clock for one hour. Also the
-/// ceiling a restored first hold is read against (ADR-0016 section 8).
+/// ceiling a restored first hold is read against (persistence decision background section 8).
 pub(crate) const HOLD_FIRST: Duration = Duration::from_secs(60 * 60);
 /// Every further double-click tops the hold up to 24 hours from now,
 /// never cumulative (doc 04).
@@ -460,7 +460,7 @@ impl<C: Clock> SheetStore<C> {
         self.sheets().count()
     }
 
-    /// True when no tab holds a page. ADR-0016 section 6's first key
+    /// True when no tab holds a page. The persistence decision background section 6's first key
     /// rotation trigger, so it lives here rather than above the seam.
     #[must_use]
     pub fn holds_no_page(&self) -> bool {
@@ -1085,8 +1085,8 @@ impl<C: Clock> SheetStore<C> {
         Some(sheet.document.export_snapshot())
     }
 
-    /// The wall-clock expiry pair a device publishes for a page (ADR-0021
-    /// section 6). `None` for an unknown page or one under a live hold.
+    /// The wall-clock expiry pair a device publishes for a page (relay
+    /// decision background section 6). `None` for an unknown page or one under a live hold.
     #[must_use]
     pub fn expiry_policy(&self, id: SheetId) -> Option<ExpiryPolicy> {
         let now = self.clock.now();

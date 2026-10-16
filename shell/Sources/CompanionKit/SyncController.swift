@@ -275,8 +275,8 @@ public final class SyncController: ObservableObject {
         attach()
     }
 
-    /// Give up on a sign-in whose browser trip is still out (ADR-0027
-    /// §5); the core ends the wait and the finish reports `abandoned`.
+    /// Give up on a sign-in whose browser trip is still out (account-auth
+    /// decision background §5); the core ends the wait and the finish reports `abandoned`.
     public func giveUpSignin() {
         signinGivenUp = client.syncSigninCancel()
         refreshState()

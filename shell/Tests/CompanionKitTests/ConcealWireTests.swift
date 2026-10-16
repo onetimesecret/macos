@@ -102,7 +102,7 @@ final class ConcealWireTests: XCTestCase {
             $0?.inFlight == false
         }
         XCTAssertGreaterThan(
-            model.dirtyMarks, marks, "the round trip's return armed no write (ADR-0016 section 2)")
+            model.dirtyMarks, marks, "the round trip's return armed no write (persistence decision background section 2)")
 
         let draft = try XCTUnwrap(model.concealDraft)
         XCTAssertFalse(draft.inFlight, "the round trip came back")

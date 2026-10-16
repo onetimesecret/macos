@@ -158,7 +158,7 @@ now pass the account gate and neither can read the other's pages.
 
 - [ ] **Look at each device list.** Expected: each shows itself, and
       may show the other as **attached, never paired** in ember. That
-      is correct and is the state [relay decision background](../../spec/feature/sync/relay-decision-background.md) section 5 describes: past
+      is correct and is the state the [relay decision background](../../spec/feature/sync/relay-decision-background.md) section 5 describes: past
       the account gate, past no pairing, holding ciphertext it cannot
       open.
 - [ ] **On A press Invite a Device, on B press Join from Here.**
@@ -235,7 +235,7 @@ across to the other machine's records.
   ```
 
 - [ ] **Conceal a page.** Expected: the conceal still works, which is
-      the credential separation of ADR-0027 section 3 seen from the
+      the credential separation of the [account-auth decision background](../../spec/feature/sync/account-auth-decision-background.md) section 3 seen from the
       user's side.
 - [ ] **Turn the switch off.** Expected: the header word goes, the
       page's sync line goes, the device list goes, and check 1's

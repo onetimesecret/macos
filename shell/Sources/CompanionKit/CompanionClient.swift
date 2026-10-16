@@ -441,7 +441,7 @@ public struct StepOutcome: Codable, Hashable, Sendable {
 /// are one question asked twice (ADR-0017) and the shell derives
 /// neither.
 ///
-/// `holdsNoPage` is ADR-0016 section 6's key rotation trigger: the pad
+/// `holdsNoPage` is the persistence decision background section 6's key rotation trigger: the pad
 /// holds no content while the strip stands, which is a security
 /// decision and not a rendering convenience. `hasNoTabs` is the one
 /// condition under which the sealed file is dropped rather than
@@ -1797,7 +1797,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Rotate both content key halves and reseal the store under the
     /// new ones: the write for the moment no tab holds a page, which is
-    /// ADR-0016 section 6's first rotation trigger and the reason
+    /// the persistence decision background section 6's first rotation trigger and the reason
     /// `StoreEmptiness.holdsNoPage` is asked of the core rather than
     /// derived here.
     ///
@@ -1827,8 +1827,8 @@ public class CompanionClient: @unchecked Sendable {
     /// One case answers false and leaves nothing behind: a file sealed
     /// under an envelope the core has since replaced is dropped on the
     /// spot, because nothing in it can ever be decrypted and an install
-    /// that refused it forever would simply stop saving (ADR-0016
-    /// section 9). The caller tells the cases apart by probing the path
+    /// that refused it forever would simply stop saving (persistence
+    /// decision background section 9). The caller tells the cases apart by probing the path
     /// *after* this returns, never before (see
     /// `PageModel.loadStateIfNeeded`), so that disposal reads as "no
     /// file", which is what it now is.

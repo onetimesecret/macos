@@ -291,7 +291,7 @@ Issue #98's answer to open question 21
 (docs/spec/design/2026-0707-open-questions.md) stands: the desktop
 app's requirement of v3 auth is a long idle refresh window and nothing
 else. It does not want a device claim inside the token, which would re
-entangle the two gates [relay decision background](relay-decision-background.md) section 3 separated.
+entangle the two gates the [relay decision background](relay-decision-background.md) section 3 separated.
 
 ### 3. Sync credentials are separate from conceal credentials
 
@@ -306,7 +306,7 @@ to be argued:
 
 - **A conceal is deliberate and foreground; sync is background.** One
   credential serving both would make a background act as powerful as
-  the deliberate one, which is [relay decision background](relay-decision-background.md) section 3's rule and the whole
+  the deliberate one, which is the [relay decision background](relay-decision-background.md) section 3's rule and the whole
   reason a conceal is a gesture rather than a setting.
 - **They fail at different times and want different answers.** A
   refused conceal is one gesture failing in front of the user, who can
@@ -360,8 +360,9 @@ name rather than a blank.
 
 The refresh token rests in `crates/credentials`' key material store,
 under `sync-oauth-refresh`, with the `ThisDeviceOnly` protection class
-every secret in that store carries (ADR-0016 section 3, ADR-0021
-section 8). The access token rests nowhere.
+every secret in that store carries ([persistence decision background](../../../plans/trustworthy-persistence-decision-background.md) section 3,
+[relay decision background](relay-decision-background.md) section 8).
+The access token rests nowhere.
 
 **Not under the rotating content key**, and the reasons are
 independent enough that any one of them decides it:
@@ -454,7 +455,7 @@ device that the account admitted.
 
 Nothing in this ADR gives any device the right to read content. A
 client that passes the account gate and has never paired downloads
-ciphertext it cannot open, which is [relay decision background](relay-decision-background.md) section 5's rule that
+ciphertext it cannot open, which is the [relay decision background](relay-decision-background.md) section 5's rule that
 authorization is cryptographic and never possession. The two gates
 fail independently and both must be passed. The gate state above is
 therefore a report about attachment only, and no key, no key frame and
@@ -545,7 +546,7 @@ ceremony is the duplicate merge the settled cursor exists to prevent.
   same thing from the other side.
 - **The relay stops accepting OTS issued tokens** and wants a
   credential of its own. That would make the relay an identity
-  provider, which contradicts [relay decision background](relay-decision-background.md) section 1's blindness, and the
+  provider, which contradicts the [relay decision background](relay-decision-background.md) section 1's blindness, and the
   right response is to argue the relay back to validation rather than
   to add a second account system.
 - **The relay needs more than the one scope**, because an endpoint
