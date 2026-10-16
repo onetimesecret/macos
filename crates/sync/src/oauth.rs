@@ -19,17 +19,12 @@ use zeroize::Zeroizing;
 
 use crate::b64;
 
-/// The one scope the sync client asks for, and the only scope the
-/// relay's client application is registered with server side
-/// (ADR-0027 §3). The registration is the ceiling: a consent screen
-/// offers the application's registered scopes rather than the
-/// requested ones, so an application holding nothing but this is what
-/// keeps a leaked sync token from concealing, reading account data, or
-/// acting as the account anywhere else. It is sent explicitly on the
-/// authorization request and never on a refresh: narrowing on refresh
-/// is silently ignored and the refresh answer carries no scope back,
-/// so the scope is fixed at authorization and asking again would be
-/// theatre.
+/// The one scope the sync client asks for. Sent explicitly on the
+/// authorization request and never on a refresh (test
+/// `the_authorize_url_asks_for_exactly_the_sync_scope`). ADR-0027's
+/// Consequences require the server registration to hold `sync` alone;
+/// that row, not this constant, bounds a leaked token
+/// (docs/spec/feature/sync/server-contract.md, row 2.9).
 pub const SYNC_SCOPE: &str = "sync";
 
 /// A refusal from the auth ceremony or the token machinery. Everything
@@ -86,10 +81,8 @@ impl AuthCeremony {
     /// the system browser. `port` is the ephemeral loopback port the
     /// listener actually bound ([`crate::loopback::OneShotListener`]),
     /// so the redirect URI matches exactly (RFC 8252 §7.3). The URL
-    /// names [`SYNC_SCOPE`] explicitly: a client that omits scope is
-    /// offered the application's whole registered set, which is a
-    /// width the client should not accept by silence even where the
-    /// registration is narrow.
+    /// names [`SYNC_SCOPE`] explicitly rather than leaving the scope
+    /// set to the server's choice.
     ///
     /// # Errors
     ///
