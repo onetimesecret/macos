@@ -1240,6 +1240,21 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         }
     }
 
+    /// The first V2 write removes the V1 key, which nothing reads any more.
+    func testTheFirstV2WriteRemovesTheLegacyV1Key() throws {
+        let defaults = try makeDefaults()
+        let model = try makeModel(defaults: defaults)
+        let page = try page(in: model)
+        defaults.set(["stale": true], forKey: "pageMarkdownPreviewV1")
+        XCTAssertNil(defaults.object(forKey: "pageMarkdownPreviewV2"))
+
+        model.toggleMarkdownPreview(for: page)
+
+        XCTAssertNil(defaults.object(forKey: "pageMarkdownPreviewV1"))
+        XCTAssertEqual(defaults.dictionary(forKey: "pageMarkdownPreviewV2")?.count, 1)
+        XCTAssertTrue(model.markdownPreviewEnabled(for: page))
+    }
+
     func testReplacementPageInSameTabDoesNotInheritPreviewChoice() throws {
         let defaults = try makeDefaults()
         let model = try makeModel(defaults: defaults)

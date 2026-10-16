@@ -809,8 +809,12 @@ public final class PageModel: ObservableObject {
         objectWillChange.send()
         pagePreviewOverrides[key] = !markdownPreviewEnabled(for: id)
         defaults.set(pagePreviewOverrides, forKey: Self.pagePreviewKey)
+        // The V1 key was keyed by page id, which a relaunch re-mints; it is read nowhere now.
+        defaults.removeObject(forKey: Self.legacyPagePreviewKey)
         invalidateQuietRenderings()
     }
+
+    private static let legacyPagePreviewKey = "pageMarkdownPreviewV1"
 
     /// Posted when a rendering dependency (preview scope, syntax highlighting,
     /// typeface) moves and the quiet cache has been dropped. The roll listens
