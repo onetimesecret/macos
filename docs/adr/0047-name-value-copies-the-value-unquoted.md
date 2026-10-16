@@ -4,8 +4,8 @@ documentation_status: needs-review
 
 # ADR-0047: A copy of `NAME=value` carries the value exactly as sealed, unquoted
 
-- **Status:** proposed
-- **Date:** 2026-10-14
+- **Status:** accepted
+- **Date:** 2026-10-16
 - **Depends on:** [ADR-0042](0042-a-sealed-name-is-a-shell-identifier.md), whose charset makes the name a shell variable name, and [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md), whose Amendment 1 counts three egress points; a copy of `NAME=value` is one of them, not a fourth.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -55,3 +55,4 @@ This proposal does not take a quoted form for any one destination.
 
 - 2026-10-14: Proposed, split from [ADR-0042](0042-a-sealed-name-is-a-shell-identifier.md) the same day so the charset and the value's quoting can be accepted or rejected on their own.
 - 2026-10-14: Consolidated from draft ADR-0042 (sealed names, copy zones and rename seats) point 4 with its argument and eject trigger, written 2026-10-13 and never ratified.
+- 2026-10-16: Accepted.

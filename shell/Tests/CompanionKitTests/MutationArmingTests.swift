@@ -3,7 +3,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The whole of ADR-0016 section 2's first claim, which is broader than
+/// The whole of the persistence decision background section 2's first
+/// statement, which is broader than
 /// the ledger invariant beside it (`LedgerAppendArmingTests`, issue
 /// #52): every mutation site, appending or not, must arm a write. With
 /// sudden termination declared, anything that moved the store and armed
@@ -194,7 +195,7 @@ final class MutationArmingTests: XCTestCase {
                 "\(step.name): the step no longer moves the store, so it guards nothing")
             XCTAssertGreaterThan(
                 model.dirtyMarks, marks,
-                "\(step.name): the store moved and no write was armed (ADR-0016 section 2)")
+                "\(step.name): the store moved and no write was armed (persistence decision background section 2)")
         }
     }
 

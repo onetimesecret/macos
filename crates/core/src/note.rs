@@ -1,4 +1,4 @@
-//! A sealed object's note (ADR-0043 points 2 and 3, proposed): chipless ink
+//! A sealed object's note (ADR-0043 points 2 and 3): chipless ink
 //! beside the chip, with an undo stack of its own and no clock; it goes when
 //! its chip goes.
 

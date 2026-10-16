@@ -81,3 +81,7 @@
 "chip.name.field" = "Name";
 "chip.name.long" = "Use 64 characters or fewer for the name.";
 "chip.name.charset" = "Use the letters A to Z, digits and underscores for the name, and start it with a letter or an underscore.";
+
+/* The two handles on a sealed block's top row, as VoiceOver names them (Law 0001, move drag and decrypted drag rows). */
+"chip.handle.move" = "Move";
+"chip.handle.decrypted" = "Drag decrypted";

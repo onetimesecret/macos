@@ -43,6 +43,15 @@ Make a new ADR rather than extending an existing one when the proposed change:
 A closely coupled format break or architectural boundary may need a long ADR.
 Do not split such a record merely to make it shorter.
 
+Cite an ADR bare, as `ADR-NNNN`, for its decision. ADR-0016, ADR-0021 and
+ADR-0027 moved their numbered sections out of the record, and each says so in
+its Context; ADR-0021's wording is "Numbered sections of this ADR cited
+elsewhere in the tree, such as "ADR-0021 section 3" or "§6", now live in that
+relay decision background rather than in this record." Cite a numbered section
+of those three through its decision background, as "relay decision background
+§6", "account-auth decision background §5" or "persistence decision background
+section 4", never as "ADR-0021 §6".
+
 Keep evolving delivery material in its canonical document and link to it from
 the ADR:
 

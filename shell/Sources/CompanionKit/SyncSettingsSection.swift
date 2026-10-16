@@ -40,7 +40,8 @@ struct SyncSettingsSection: View {
                     // The way out of a browser trip, drawn only while
                     // there is a trip to end and gone the moment there
                     // is not. That is the ledger clear button's shape, and the
-                    // "way to give up" ADR-0027 §5 owes this state. The
+                    // "way to give up" the account-auth decision
+                    // background §5 owes this state. The
                     // core ends the wait; this is not a button that
                     // merely stops listening.
                     HStack {
@@ -197,7 +198,7 @@ private struct SyncDeviceRow: View {
 /// The pairing flow inline: a spinner while messages cross, the six
 /// digits large when both sides settle, and the two verdicts — with
 /// the failing one always offered, because a comparison that cannot
-/// fail verifies nothing (ADR-0021 §3).
+/// fail verifies nothing (relay decision background §3).
 private struct SyncPairingStatus: View {
     let stage: SyncPairingStage
     @ObservedObject var sync: SyncController

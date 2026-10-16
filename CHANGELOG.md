@@ -473,6 +473,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as a quiet page is, and a click on it brings that page under the
   editor.
 
+- **A move handle on the sealed block** (app 0.37.0; Law 0001's move
+  drag row, issue #255). On hover or selection the block's top row shows
+  `⠿` in its quiet ink a gap before the labelled `drag decrypted`
+  handle, so the two read as different things as D-29 asks. A drag from
+  `⠿` is the page's own drag of the selection the block is in, or of the
+  block alone: it includes the copy's fragment and no plaintext, and
+  goes wherever that drag goes. On a narrow
+  block the move handle gives way first, since the decrypted handle is
+  the one labelled declassification seat and the move is still there by
+  dragging the selected object. VoiceOver names the handles *Move* and
+  *Drag decrypted*. D-29's distinctness check joins the sealed fragment
+  procedure, owed.
+
 - **Tab summaries name each page's UUID** (`companion-ffi` 0.41.0).
   `companion_tabs_json` gains `page_uuid`, the page's `Sheet.uuid()` in
   lowercase hyphenated form, or null for a slot with no page; the shell

@@ -180,7 +180,7 @@ impl ContentTarget for NSPasteboardItem {
 }
 
 /// The pasteboard and item `AppKit` hands a drag's data provider, borrowed
-/// for one provide call (ADR-0045 point 5, proposed).
+/// for one provide call (ADR-0045 point 5).
 #[derive(Debug)]
 pub struct SystemDragItem<'a> {
     pasteboard: &'a NSPasteboard,

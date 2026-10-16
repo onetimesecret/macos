@@ -1242,7 +1242,7 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
 }
 
 /// Copy `NAME=<plaintext>` by copy decrypted's route
-/// (Law 0001; ADR-0047 point 2, proposed): the store composes it and this
+/// (Law 0001; ADR-0047 point 2): the store composes it and this
 /// writes it as [`companion_chip_copy_out`] does. False, writing and recording
 /// nothing, for an unknown, unnamed or image chip, or a page past its deadline
 /// (Law 0001, expiry row).
@@ -1286,7 +1286,7 @@ pub unsafe extern "C" fn companion_chip_stands(handle: *mut CompanionHandle, chi
 }
 
 /// Burn a chip, attached or detached, wiping its bytes and its page's undo
-/// stack (ADR-0046 point 2, proposed). Returns whether it existed.
+/// stack (ADR-0046 point 2). Returns whether it existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1301,7 +1301,7 @@ pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chi
     guard.store.delete_chip(ChipId::from_raw(chip))
 }
 
-/// Judge a draft sealed name without a handle (ADR-0042 point 1, proposed):
+/// Judge a draft sealed name without a handle (ADR-0042 point 1):
 /// 0 takes it, an empty draft clearing; 1 is too long; 2 is outside the
 /// charset, as are null and non-UTF-8.
 ///
@@ -1320,7 +1320,7 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
 }
 
 /// Name a sealed object, or clear its name with a blank draft
-/// (ADR-0042 point 1, proposed). False for an unknown chip or a refused draft;
+/// (ADR-0042 point 1). False for an unknown chip or a refused draft;
 /// the name is then unchanged.
 ///
 /// # Safety
@@ -1347,7 +1347,7 @@ pub unsafe extern "C" fn companion_chip_set_name(
         .is_ok()
 }
 
-// ---- A sealed object's note: its own document, keyed by chip (ADR-0043 point 2, proposed) ----
+// ---- A sealed object's note: its own document, keyed by chip (ADR-0043 point 2) ----
 
 /// The note as document runs: `[]` without one, else `[{"ink": text}]`. Null
 /// for an unknown chip or a page past its deadline (Law 0001, expiry row).
@@ -1576,7 +1576,7 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
     outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
-// ---- The sealed fragment: copy, cut, paste, drags (ADR-0045 and ADR-0046, proposed) ----
+// ---- The sealed fragment: copy, cut, paste, drags (ADR-0045 and ADR-0046) ----
 
 /// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`, or
 /// `{"error", "limit"}` past an envelope cap (Law 0001, copy row); null for a
@@ -2330,7 +2330,7 @@ fn seal_state_to(state: &Companion, path: &Path) -> bool {
 /// Rotate both content key halves and reseal the store under the new ones,
 /// for when no tab holds a page (ADR-0016). Returns false for a path that is
 /// not the content file, a half that survived erasure, or a failed write.
-/// Erased before the reseal (ADR-0016 section 6).
+/// Erased before the reseal (persistence decision background section 6).
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -3098,10 +3098,11 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
     into_c_string(sync_driver::status_json(&guard).to_string())
 }
 
-/// Where the account gate stands, as one machine token (ADR-0027 §5):
-/// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
-/// `ready` or `attached`, the status JSON's `gate`. It says whether this
-/// client may attach and nothing about content (ADR-0021 §3).
+/// Where the account gate stands, as one machine token (account-auth
+/// decision background §5): `off`, `signed_out`, `signing_in`,
+/// `refused`, `unreachable`, `ready` or `attached`, the status JSON's
+/// `gate`. It says whether this client may attach and nothing about
+/// content (relay decision background §3).
 ///
 /// Null on a null handle or a poisoned lock: a gate that cannot be read
 /// has not been passed, so null means may not attach. A status JSON
@@ -3198,7 +3199,8 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         staged
     };
     let Some((pending, transport)) = staged else {
-        // Nothing to finish; never spelled as a refusal (ADR-0027 §2).
+        // Nothing to finish; never spelled as a refusal (account-auth
+        // decision background §2).
         return sync_refusal("no_ceremony");
     };
     let abandoned = Arc::clone(&pending.abandoned);
@@ -3261,9 +3263,9 @@ pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHand
 
 /// Sign sync out: drop the held tokens and delete the persisted refresh
 /// token, exactly one Keychain account; the conceal token, content and
-/// ledger keys, pairing accounts and the pad all stand (ADR-0021 §3). A
-/// ceremony out on the browser ends with it. True when the delete was
-/// accepted.
+/// ledger keys, pairing accounts and the pad all stand (relay decision
+/// background §3). A ceremony out on the browser ends with it. True
+/// when the delete was accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -3492,7 +3494,7 @@ pub unsafe extern "C" fn companion_sync_pairing_poll(handle: *mut CompanionHandl
 
 /// The human's verdict on the short authentication string. A match
 /// moves the ceremony forward; a mismatch drops it whole with nothing
-/// stored on this device (ADR-0021 §3). Returns the stage as
+/// stored on this device (relay decision background §3). Returns the stage as
 /// [`companion_sync_pairing_poll`] does. Free with
 /// [`companion_string_free`].
 ///
@@ -5557,7 +5559,7 @@ mod tests {
                 cstring(r#"[{"chip": 424242}]"#).as_ptr()
             ));
 
-            // A snapshot that omits the chip detaches it (ADR-0046 point 1, proposed).
+            // A snapshot that omits the chip detaches it (ADR-0046 point 1).
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
@@ -7314,7 +7316,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Rotation follows the state, not the transition (ADR-0016 section 6).
+    /// Rotation follows the state, not the transition (persistence
+    /// decision background section 6).
     #[test]
     fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
         let credentials: Arc<dyn CredentialStore> =
@@ -8257,7 +8260,7 @@ mod tests {
             // gets. The user closes the tab instead and comes back to
             // the app, and the way out has to be the ceremony ending
             // rather than a button that only looks like one
-            // (ADR-0027 §5, `signing_in`).
+            // (account-auth decision background §5, `signing_in`).
             let address = handle as usize;
             let waiting = std::thread::spawn(move || {
                 let handle = address as *mut CompanionHandle;

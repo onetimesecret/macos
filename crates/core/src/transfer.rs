@@ -1,5 +1,5 @@
 //! Copy, cut, paste and the drags inside a page and between pages (Law 0001;
-//! ADR-0045 and ADR-0046, proposed): the fragment's routes, the one active
+//! ADR-0045 and ADR-0046): the fragment's routes, the one active
 //! cut, and how a reference resolves.
 
 use std::borrow::Cow;
@@ -14,7 +14,7 @@ use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Segment, Sheet, SheetId, judge_name};
 use crate::store::{SheetStore, range_in_body};
 
-/// The store's one active cut (ADR-0046 point 3, proposed).
+/// The store's one active cut (ADR-0046 point 3).
 pub(crate) struct ActiveCut {
     /// The page the cut came from, whose detached store holds its objects.
     pub(crate) page: SheetId,

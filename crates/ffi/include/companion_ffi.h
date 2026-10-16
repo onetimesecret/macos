@@ -391,7 +391,7 @@ bool companion_store_emptiness(CompanionHandle *handle,
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label (a size
  *   class, "tiny" through "huge", never a count), concealed (bool),
- *   name (the typed name, or null; ADR-0043 point 1, proposed),
+ *   name (the typed name, or null; ADR-0043 point 1),
  *   has_note (bool, true while the note holds anything but whitespace).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
@@ -471,7 +471,7 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
  * atomically or not at all. Chip liveness follows the document: a
  * delete that swallows a chip's sentinel detaches the chip, and a chip
  * op naming one of the page's detached chips reattaches it
- * (ADR-0046 point 1, proposed).
+ * (ADR-0046 point 1).
  * An "ins" whose text holds U+FFFC refuses the batch whole: only a chip
  * op stands that character (Law 0001). Returns
  * whether the batch applied; on false, restate the page through
@@ -561,7 +561,7 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  * rejected batch, at the price of that page's provenance. STILL
  * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
  * deleted in the editor and is detached here, and a detached chip it
- * names reattaches (ADR-0046 point 1, proposed). Malformed snapshots
+ * names reattaches (ADR-0046 point 1). Malformed snapshots
  * (bad JSON, foreign chip, duplicate reference, ink holding U+FFFC) are
  * rejected whole. Returns acceptance.
  */
@@ -639,8 +639,8 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
 /*
  * Copy NAME=<plaintext>: the name, "=", then the payload raw and
- * unquoted (ADR-0047 point 1, proposed), by companion_chip_copy_out()'s
- * route (Law 0001; ADR-0047 point 2, proposed). The core composes the
+ * unquoted (ADR-0047 point 1), by companion_chip_copy_out()'s
+ * route (Law 0001; ADR-0047 point 2). The core composes the
  * bytes at their final size and writes them itself, transient and
  * ConcealedType, keeps the receipt for companion_clear_clipboard_if_ours(),
  * and leaves one "sent" record to "clipboard" at the payload's size
@@ -665,13 +665,13 @@ bool companion_chip_stands(CompanionHandle *handle, uint64_t chip);
  * Burn a chip, attached or detached: its bytes are wiped, its page's
  * undo stack goes with it, and one `discarded` is recorded. A removal
  * by backspace is not a burn; it detaches
- * (ADR-0046 points 1 and 2, proposed). Returns whether it existed.
+ * (ADR-0046 points 1 and 2). Returns whether it existed.
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
 
 /*
  * Judge a draft sealed name by the rule companion_chip_set_name()
- * refuses with (ADR-0042 point 1, proposed). The draft is trimmed. 0
+ * refuses with (ADR-0042 point 1). The draft is trimmed. 0
  * takes it, and an empty draft is taken as clearing the name; 1 is
  * longer than 64 characters; 2 is outside [A-Za-z_][A-Za-z0-9_]*,
  * which is judged first. Null and non-UTF-8 answer 2. Stateless and
@@ -691,14 +691,14 @@ bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
                              const char *name);
 
 /* ------------------------------------------------------------------ */
-/* A sealed object's note (ADR-0043 point 2, proposed)                 */
+/* A sealed object's note (ADR-0043 point 2)                           */
 /* ------------------------------------------------------------------ */
 
 /*
  * The note is ink of its own beside the object: a document that holds
  * no chips, with an undo stack of its own and no clock. It goes with
  * its chip: detached with it at a removal, destroyed with it at expiry,
- * discard, close or a burn (ADR-0046 points 1 and 2, proposed), and no
+ * discard, close or a burn (ADR-0046 points 1 and 2), and no
  * ledger record names it. These routes take a CHIP id and mirror the
  * file routes; no page route reaches the note and no note route
  * reaches a page, so the page's undo and the note's never cross.
@@ -1080,10 +1080,10 @@ bool companion_persist_save(CompanionHandle *handle, const char *path);
 
 /*
  * Rotate both content key halves and reseal the store under the new
- * ones: the write for the moment no tab holds a page (ADR-0016 section
- * 6's first rotation trigger, ADR-0017). Returns whether the file at
- * `path` now holds the store under halves nothing else has ever sealed
- * with.
+ * ones: the write for the moment no tab holds a page (persistence
+ * decision background section 6's first rotation trigger, ADR-0017).
+ * Returns whether the file at `path` now contains the store under
+ * halves nothing else has ever sealed with.
  *
  * The rotation is the forgetting and the reseal is what keeps the
  * strip. Erasing the file half makes every ciphertext generation this
@@ -1125,7 +1125,8 @@ bool companion_persist_rotate_and_save(CompanionHandle *handle, const char *path
  * failure to open: a file carrying an envelope this build has REPLACED
  * is dropped and the licence granted, because nothing in it can ever
  * be read again and refusing it forever would present as an install
- * that had permanently stopped saving (ADR-0016 section 9).
+ * that had permanently stopped saving (persistence decision background
+ * section 9).
  *
  * Launch is also where stranded *.tmp generations in the state
  * directory are swept; nothing else ever clears that directory.
@@ -1151,9 +1152,10 @@ bool companion_persist_restore(CompanionHandle *handle, const char *path);
  * ciphertext generation that key ever sealed undecryptable, including
  * the ones an atomic rename unlinked and nothing sweeps, and it is the
  * finishing step of a deletion the user already asked for: emptying the
- * pad, or clearing it (ADR-0016 section 6). It runs first, so what is
- * unlinked is already undecryptable, and a keychain that refuses the
- * delete is announced without cancelling the drop.
+ * pad, or clearing it (persistence decision background section 6). It
+ * runs first, so what is unlinked is already undecryptable, and a
+ * keychain that refuses the delete is announced without cancelling the
+ * drop.
  *
  * ONLY a content file takes the halves with it. This same call drops
  * the ledger file on a user's Clear, and that gesture asked nothing
@@ -1279,11 +1281,11 @@ bool companion_sync_configure(CompanionHandle *handle, const char *json);
 char *companion_sync_status_json(CompanionHandle *handle);
 
 /*
- * Where the account gate stands, as one machine token (ADR-0027
- * section 5): "off", "signed_out", "signing_in", "refused",
- * "unreachable", "ready" or "attached", the status JSON's "gate". It
- * says whether this client may attach and nothing about content
- * (ADR-0021 section 3).
+ * Where the account gate stands, as one machine token (account-auth
+ * decision background section 5): "off", "signed_out", "signing_in",
+ * "refused", "unreachable", "ready" or "attached", the status JSON's
+ * "gate". It says whether this client may attach and nothing about
+ * content (relay decision background section 3).
  *
  * Null on a null handle or a poisoned lock: a gate that cannot be read
  * has not been passed, so null means may not attach. A status JSON
@@ -1336,9 +1338,9 @@ bool companion_sync_signin_cancel(CompanionHandle *handle);
 /*
  * Sign sync out: drop the held tokens and delete the persisted refresh
  * token, exactly one Keychain account; the conceal token, content and
- * ledger keys, pairing accounts and the pad all stand (ADR-0021
- * section 3). A ceremony out on the browser ends with it. True when
- * the delete was accepted.
+ * ledger keys, pairing accounts and the pad all stand (relay decision
+ * background section 3). A ceremony out on the browser ends with it.
+ * True when the delete was accepted.
  */
 bool companion_sync_signout(CompanionHandle *handle);
 
@@ -1445,8 +1447,9 @@ char *companion_sync_pairing_poll(CompanionHandle *handle);
 /*
  * The human's verdict on the short authentication string. A match
  * moves the ceremony forward; a mismatch drops it whole with nothing
- * stored on this device (ADR-0021 section 3). Returns the stage as
- * companion_sync_pairing_poll does. Free with companion_string_free().
+ * stored on this device (relay decision background section 3). Returns
+ * the stage as companion_sync_pairing_poll does. Free with
+ * companion_string_free().
  */
 char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
 

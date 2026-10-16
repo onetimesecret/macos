@@ -52,7 +52,7 @@ pub enum DeltaEnvelope {
         ops: ByteBlob,
     },
     /// The page's expiry policy: the policy, never the deadline
-    /// (ADR-0021 §6, `companion_core::ExpiryPolicy`).
+    /// (relay decision background §6, `companion_core::ExpiryPolicy`).
     Expiry {
         /// The page the policy governs.
         page: String,
@@ -71,8 +71,8 @@ pub enum DeltaEnvelope {
         /// stands.
         hold: Option<(u64, u64, bool)>,
     },
-    /// A signed terminal marker (ADR-0021 §6): the page is dead
-    /// everywhere, and a ceremony proposal follows immediately.
+    /// A signed terminal marker (relay decision background §6): the page
+    /// is dead everywhere, and a ceremony proposal follows immediately.
     Terminal {
         /// The dead page.
         page: String,

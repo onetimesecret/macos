@@ -383,8 +383,8 @@ name the user typed, and the user closes that themselves.
 This is the seam with ADR-0016 and it has to be stated the same way on
 both sides.
 
-ADR-0016 section 6 makes an emptied store the first of the two events
-that rotate both key halves, and ADR-0016 section 8 dates the ciphertext
+The [persistence decision background](trustworthy-persistence-decision-background.md) section 6 makes an emptied store the first of the two events
+that rotate both key halves, and the [persistence decision background](trustworthy-persistence-decision-background.md) section 8 dates the ciphertext
 artifact from the first save until the last tab is closed. Both readings
 depart from the shipped drop-on-empty path, which keys on a single
 predicate today:
@@ -406,8 +406,8 @@ at all.
 Rotating on the no-page transition is what keeps the forgetting claim
 true. Every prior ciphertext generation becomes undecryptable at the
 moment the pad holds no content, including the unlinked ones that
-ADR-0016 section 8 says nothing sweeps. The rotation argument itself is
-ADR-0016 section 6's and is not restated here; what this ADR decides is
+the [persistence decision background](trustworthy-persistence-decision-background.md) section 8 says nothing sweeps. The rotation argument itself is
+the [persistence decision background](trustworthy-persistence-decision-background.md) section 6's and is not restated here; what this ADR decides is
 which predicate fires it.
 
 Rejected: defining "empties" as "no tabs remain". It is the simpler
@@ -430,7 +430,7 @@ except the magic bump in item 1, which issue #54 has already taken.
    (crates/core/src/persist.rs), in the same break as ADR-0016's
    envelope bump. This is the one item already taken: #54 landed the
    bump first and this ADR rides it rather than spending a second
-   version byte (ADR-0016 section 9). The refusal path for an unknown
+   version byte ([persistence decision background](trustworthy-persistence-decision-background.md) section 9). The refusal path for an unknown
    or superseded magic exists and is exercised
    (crates/core/src/persist.rs).
 2. `emit` changes shape (crates/core/src/persist.rs). After
@@ -438,7 +438,7 @@ except the magic bump in item 1, which issue #54 has already taken.
    `uuid[16]`, `created_wall_ms` u64, `name` as an optional (a u8
    present flag plus length-prefixed bytes, mirroring the conceal
    encoding at crates/core/src/persist.rs), rung seconds u64, a
-   u8 page-present flag, then the per-page body as ADR-0016 section 4
+   u8 page-present flag, then the per-page body as the [persistence decision background](trustworthy-persistence-decision-background.md) section 4
    leaves it, with `drained_ms` in place of the running span at
    crates/core/src/persist.rs. Both records are written under
    #54's framing rule from the start (`framed`,
@@ -449,7 +449,8 @@ except the magic bump in item 1, which issue #54 has already taken.
    (crates/core/src/persist.rs).
 
    The home this item promises `drained_ms` is the inner framed page
-   body, not the tab record, and this split lands before ADR-0016
+   body, not the tab record, and this split lands before the
+   [persistence decision background](trustworthy-persistence-decision-background.md)
    section 4 writes it. The split relocates record boundaries and leaves
    the clock encoding alone, so `drained_ms` afterwards is one arm of
    `emit_sheet` (crates/core/src/persist.rs) and its counterpart
@@ -543,7 +544,7 @@ except the magic bump in item 1, which issue #54 has already taken.
    carries both across the seam beside the summaries
    (crates/ffi/src/lib.rs).
 
-   The shell derives neither. `holds_no_page` is ADR-0016 section 6's
+   The shell derives neither. `holds_no_page` is the [persistence decision background](trustworthy-persistence-decision-background.md) section 6's
    key rotation trigger, which makes it a security decision rather than
    a rendering convenience, and a predicate the shell recomputes from
    the summary array is a predicate that can drift from the one the
@@ -554,9 +555,9 @@ except the magic bump in item 1, which issue #54 has already taken.
    will enforce that choice.
 
    - **No tab holds a page.** Every tab's `page` is `None`. This is
-     ADR-0016 section 6's first rotation trigger: rotate both halves and
+     the [persistence decision background](trustworthy-persistence-decision-background.md) section 6's first rotation trigger: rotate both halves and
      reseal the surviving tab metadata under the new ones. See the
-     Emptying subsection above and ADR-0016 section 6 for why rotation
+     Emptying subsection above and the [persistence decision background](trustworthy-persistence-decision-background.md) section 6 for why rotation
      fires here.
    - **No tabs remain.** The tab vector is empty. This is the drop.
      `erasesContentFile`'s `storeEmpty` argument
@@ -582,8 +583,9 @@ except the magic bump in item 1, which issue #54 has already taken.
    (crates/core/src/store.rs). No change to `LedgerRecord`.
    `OTSLEDR1` is a different matter: issue #54 framed the ledger record
    and bumped the payload magic to `OTSLEDR2`
-   (crates/core/src/persist.rs), a break ADR-0016 section
-   9 prices. This item neither causes that break nor changes the
+   (crates/core/src/persist.rs), a break the
+   [persistence decision background](trustworthy-persistence-decision-background.md)
+   section 9 prices. This item neither causes that break nor changes the
    record's shape.
 8. `summary_json` takes the tab rather than the sheet
    (crates/ffi/src/lib.rs) and gains `has_page: bool`
@@ -694,7 +696,7 @@ except the magic bump in item 1, which issue #54 has already taken.
   (crates/core/src/persist.rs); `OTSSNAP4` writes none, and
   recomputes the derived title at restore.
 - Emptying the pad now writes a file instead of removing one. When the
-  last page expires and tabs remain, ADR-0016 section 6's rotation runs
+  last page expires and tabs remain, [persistence decision background](trustworthy-persistence-decision-background.md) section 6's rotation runs
   and the tab names, rungs and order are resealed under the new halves,
   so there is a fresh ciphertext generation on disk holding no page
   content. Only closing every tab removes the file

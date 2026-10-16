@@ -441,7 +441,8 @@ public struct StepOutcome: Codable, Hashable, Sendable {
 /// are one question asked twice (ADR-0017) and the shell derives
 /// neither.
 ///
-/// `holdsNoPage` is ADR-0016 section 6's key rotation trigger: the pad
+/// `holdsNoPage` is the persistence decision background section 6's
+/// key rotation trigger: the pad
 /// holds no content while the strip stands, which is a security
 /// decision and not a rendering convenience. `hasNoTabs` is the one
 /// condition under which the sealed file is dropped rather than
@@ -757,8 +758,8 @@ public struct SyncStatus: Codable, Hashable, Sendable {
     }
 }
 
-/// The account gate's seven states (ADR-0027 §5), as the core names
-/// them; none of them touches the pad.
+/// The account gate's seven states (account-auth decision background
+/// §5), as the core names them; none of them touches the pad.
 public enum SyncGate: String, Codable, Hashable, Sendable {
     case off
     case signedOut = "signed_out"
@@ -1154,7 +1155,7 @@ public class CompanionClient: @unchecked Sendable {
     /// does not reach another device's text and is not meant to: the
     /// library refuses a peer's operations by design, and a device that
     /// joined at a key frame never held the operations an away-device
-    /// undo would have to invert (ADR-0021 section 5).
+    /// undo would have to invert (relay decision background section 5).
     @discardableResult
     public func undo(sheet: UInt64) -> Bool {
         companion_sheet_undo(handle, sheet)
@@ -1821,9 +1822,9 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Rotate both content key halves and reseal the store under the
     /// new ones: the write for the moment no tab holds a page, which is
-    /// ADR-0016 section 6's first rotation trigger and the reason
-    /// `StoreEmptiness.holdsNoPage` is asked of the core rather than
-    /// derived here.
+    /// the persistence decision background section 6's first rotation
+    /// trigger and the reason `StoreEmptiness.holdsNoPage` is asked of
+    /// the core rather than derived here.
     ///
     /// The rotation is the forgetting: every ciphertext generation the
     /// old halves ever sealed, including the ones an atomic rename
@@ -1851,9 +1852,9 @@ public class CompanionClient: @unchecked Sendable {
     /// One case answers false and leaves nothing behind: a file sealed
     /// under an envelope the core has since replaced is dropped on the
     /// spot, because nothing in it can ever be decrypted and an install
-    /// that refused it forever would simply stop saving (ADR-0016
-    /// section 9). The caller tells the cases apart by probing the path
-    /// *after* this returns, never before (see
+    /// that refused it forever would simply stop saving (persistence
+    /// decision background section 9). The caller tells the cases apart
+    /// by probing the path *after* this returns, never before (see
     /// `PageModel.loadStateIfNeeded`), so that disposal reads as "no
     /// file", which is what it now is.
     @discardableResult

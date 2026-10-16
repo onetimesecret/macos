@@ -1,9 +1,10 @@
 # The relay protocol, and what the relay is allowed to hold
 
 **Status:** specified. The server side (onetimesecret/onetimesecret#4303)
-is not built; the client is, except ADR-0021 Amendment 1's welcome work,
-as the [sync README](README.md) records. Where the built client departs
-from this text:
+is not built; the client is, except the
+[relay decision background](relay-decision-background.md) Amendment 1's
+welcome work, as the [sync README](README.md) records. Where the built
+client departs from this text:
 [client protocol §10](client-protocol.md#10-known-divergences-and-gaps).
 This document is issue
 [#99](https://github.com/onetimesecret/macos/issues/99)'s deliverable:
@@ -14,10 +15,11 @@ implements the interface in §9 and is filed in the onetimesecret repo.
 
 Sections are numbered so issues and ADRs can cite "relay protocol §4".
 The constraints this document lives inside are decided elsewhere and
-are not renegotiated here: the storage bound and join rule
-(ADR-0021 §1, §5), structural purge (§2), account-is-not-the-device
-(§3), the metadata admission (§4), the expiry rule (§6), and the
-network boundary of at most two outbound destinations, TLS-only
+are not renegotiated here: the storage bound and join rule (relay
+decision background §1, §5), structural purge (§2),
+account-is-not-the-device (§3), the metadata admission (§4), the
+expiry rule (§6), and the network boundary of at most two outbound
+destinations, TLS-only
 (`docs/spec/design/2026-0707-technical-direction.md`,
 `crates/transport/src/lib.rs`).
 
@@ -32,10 +34,11 @@ key (`crates/ffi/src/gop.rs`), and which page a delta belongs to is
 plaintext structure *inside* that seal.
 
 **Rejected: a channel per page.** It would leak page count, per-page
-edit rhythm and per-page lifetime to the relay — three channels
-ADR-0021 §4 does not admit, and §4 is explicit that a protocol choice
-widening the admission "amends it or does not ship." One channel per
-account keeps "page count" in the structurally-cannot-learn column.
+edit rhythm and per-page lifetime to the relay — three channels the
+relay decision background §4 does not admit, and §4 is explicit that
+a protocol choice widening the admission "amends it or does not
+ship." One channel per account keeps "page count" in the
+structurally-cannot-learn column.
 
 **Rejected: a channel per device pair.** It multiplies stored copies of
 the same ciphertext, and the ceremony would have to purge N buffers
@@ -43,10 +46,11 @@ atomically instead of one.
 
 ## 2. The ceremony is channel-wide
 
-ADR-0021 §1 fixes the relay's holding at one GOP of deltas plus exactly
-one sealed key frame per channel. One frame and one key per channel
-mean one epoch per channel, so: **when a ceremony runs, every enrolled
-page compacts**, not only the page whose rung transition proposed it.
+The relay decision background §1 fixes what the relay stores at one GOP
+of deltas plus exactly one sealed key frame per channel. One frame and
+one key per channel mean one epoch per channel, so: **when a ceremony
+runs, every enrolled page compacts**, not only the page whose rung
+transition proposed it.
 The confirmed ceremony (issue #101, `PageChannel` in
 `crates/core/src/sync.rs`) performs, on every device: compact each
 enrolled page (`SheetStore::perform_ceremony`), rotate the channel's
@@ -70,10 +74,11 @@ Per channel, the relay holds, and is allowed to hold, exactly:
    interprets beyond "a frame at epoch n+1 supersedes everything at
    epoch n".
 2. **One sealed key frame**, the composite of §2, written at each
-   ceremony, superseding its predecessor (ADR-0021 §1, §5) — and
-   beside it the frame's **welcome map** (amended 2026-08-27,
-   ADR-0021 Amendment 1): one sealed entry per enrolled device, keyed
-   by identity fingerprint, superseded with the frame it belongs to.
+   ceremony, superseding its predecessor (relay decision background
+   §1, §5) — and beside it the frame's **welcome map** (amended
+   2026-08-27, relay decision background Amendment 1): one sealed
+   entry per enrolled device, keyed by identity fingerprint,
+   superseded with the frame it belongs to.
    The relay parses neither.
 3. **The sealed deltas published since that frame**, in arrival order
    under a per-channel sequence number: one GOP and never more.
@@ -85,8 +90,8 @@ Per channel, the relay holds, and is allowed to hold, exactly:
 5. **Attachment metadata**: which account, which device fingerprints,
    when each attached, and the key package each device published at
    attach (§6 — public material, served back in the attach answer;
-   amended 2026-08-27) — ADR-0021 §4 item 2 as widened by Amendment 1,
-   not a new channel.
+   amended 2026-08-27) — relay decision background §4 item 2 as
+   widened by Amendment 1, not a new channel.
 
 It holds nothing else, and it never holds a content key, a GOP key, a
 pairing secret, or anything it could merge, compact or read. Bounds and
@@ -107,10 +112,10 @@ lifetimes:
   every device sleeps, an expired page's sealed deltas remain in the
   buffer, ciphertext still, but ciphertext the unrotated GOP key would
   open, until a waking device publishes the terminal marker and its
-  ceremony purges (§5, ADR-0021 §6) or the channel ages out. The
-  derivable per-page bound is the next ceremony, not the page's own
-  TTL (`docs/spec/design/2026-0707-technical-direction.md` states the
-  per-device story this bound approximates).
+  ceremony purges (§5, relay decision background §6) or the channel
+  ages out. The derivable per-page bound is the next ceremony, not the
+  page's own TTL (`docs/spec/design/2026-0707-technical-direction.md`
+  states the per-device story this bound approximates).
 
 ## 4. The message set
 
@@ -133,10 +138,11 @@ bodies are JSON; every sealed blob travels base64.
 Rules the shapes encode:
 
 - **Attach is gated by the account** (issue #98) and grants exactly
-  channel access; it proves nothing about device trust (ADR-0021 §3).
-  `device` is the Ed25519 identity fingerprint; `key_package` is the
-  signed static X25519 key of §6. A device that has passed account auth
-  but not pairing fetches blobs it cannot open (ADR-0021 §5).
+  channel access; it proves nothing about device trust (relay decision
+  background §3). `device` is the Ed25519 identity fingerprint;
+  `key_package` is the signed static X25519 key of §6. A device that
+  has passed account auth but not pairing fetches blobs it cannot open
+  (relay decision background §5).
 - **The attach answer serves the roster** (amended 2026-08-27, the
   first #99 follow-up): every other device the relay knows on the
   channel, with the key package each published at its own attach and
@@ -160,13 +166,13 @@ Rules the shapes encode:
   at; the relay says rejoin, and the device drops its stale copy and
   adopts the current frame (`SheetStore::adopt_key_frame`,
   `PageChannel::rejoin_at_epoch`). It never asks for history, and the
-  relay has none to give (ADR-0021 §1).
-- **`welcome` is amendment-pending on the client** (ADR-0021
-  Amendment 1). Servers implement both frame fields now, but MUST
-  accept a `PUT /channel/frame` without `welcome` and may serve a
-  frame without one: the shipped client sends `{epoch, frame}` only
-  and does not yet read the welcome or walk the rejoin fetch — that
-  half rides the amendment's required work.
+  relay has none to give (relay decision background §1).
+- **`welcome` is amendment-pending on the client** (relay decision
+  background Amendment 1). Servers implement both frame fields now,
+  but MUST accept a `PUT /channel/frame` without `welcome` and may
+  serve a frame without one: the shipped client sends `{epoch, frame}`
+  only and does not yet read the welcome or walk the rejoin fetch —
+  that half rides the amendment's required work.
 - **Everything inside a delta blob is sealed**: the page id, the ops
   (`SheetStore::export_document_updates`), the expiry policy and hold
   register (`crates/core/src/sync.rs`), terminal markers, and the
@@ -210,18 +216,20 @@ its pre-ceremony replicated history is dropped, never merged
 its own unpublished edits are not history and follow the welcome
 paragraph's rule below.
 
-**The frame travels with its welcome** (amended 2026-08-27, ADR-0021
-Amendment 1). Beside the sealed frame — outside the GOP seal, since a
-device that could open the frame would not need it — rides `welcome`,
+**The frame travels with its welcome** (amended 2026-08-27, relay
+decision background Amendment 1). Beside the sealed frame — outside
+the GOP seal, since a device that could open the frame would not need
+it — rides `welcome`,
 a map in `entropy_sealed`'s shape: keyed by identity fingerprint, one
 entry per enrolled device, each entry sealing the incoming epoch's
 GOP key to that device's verified key package (§6) — bound and signed
 inside the seal: the epoch, the frame's hash, the recipient, the
 protocol version, under the issuer's identity key, so a client adopts
 nothing it has not verified against the frame it actually fetched
-(ADR-0021 Amendment 1 owns the entry shape; the relay parses neither
-field). The key and not the entropy: the chain salts each key with
-its predecessor, so entropy cannot catch up a device that is behind.
+(relay decision background Amendment 1 owns the entry shape; the relay
+parses neither field). The key and not the entropy: the chain salts
+each key with its predecessor, so entropy cannot catch up a device
+that is behind.
 Because the welcome travels only inside the frame `PUT`, §4's
 supersession doubles as its activation gate: no candidate's welcome
 is served or honored unless its frame won the epoch, and a proposer
@@ -241,10 +249,11 @@ lands, a device on the rejoin path surfaces "behind" and stays there
 code cannot deliver.
 
 **Terminal markers propose.** After publishing a page's signed terminal
-marker (ADR-0021 §6), the publisher immediately proposes a ceremony, so
-the dead page's ciphertext in the relay buffer stops being decryptable
-at the earliest boundary the channel can reach — key destruction doing
-the work deletion cannot be trusted to do.
+marker (relay decision background §6), the publisher immediately
+proposes a ceremony, so the dead page's ciphertext in the relay
+buffer stops being decryptable at the earliest boundary the channel
+can reach — key destruction doing the work deletion cannot be trusted
+to do.
 
 Proposed 2026-10-12, not accepted, and not part of this section: signed
 propose and accept messages ([client protocol §7.10](client-protocol.md#710-signed-ceremony-messages-proposed-not-accepted)).
@@ -283,8 +292,9 @@ abandonment, or after an hour.
 
 `set_change_merge_interval(0)` keeps every commit its own change
 (`crates/core/src/document.rs`), so publishing on commit boundaries
-would hand the relay typing rhythm at keystroke grade. ADR-0021 §4
-requires batching on a clock, and this document owns the number:
+would hand the relay typing rhythm at keystroke grade. The relay
+decision background §4 requires batching on a clock, and this
+document owns the number:
 
 - **Publish at most every 2 seconds** per channel, coalescing
   everything since the last publish into one request. Within it, each
@@ -306,19 +316,20 @@ requires batching on a clock, and this document owns the number:
   a fetch returning empty re-polls immediately: delivery latency is
   bounded by the publish clock, not the poll.
 
-Checked against ADR-0021 §4 as specified, not as imagined: the relay
-learns account identity (attach), device count, identity fingerprints,
-key packages and attachment times (attach list — §4 item 2 as
-Amendment 1 widened it), delta timing at 2-second grain and per-publish
-blob count (publish clock and the per-envelope sealing above), delta
-sizes in buckets (padding), ceremony times (frame supersessions), and
-the frame's existence and bucketed size. The welcome map (amended
-2026-08-27) shows the enrolled fingerprints and count at each ceremony
-rather than only at attach, and scales the frame's size with device
-count — channels 2 and 6 at a finer grain, per ADR-0021 Amendment 1.
-That is the six-channel admission exactly; nothing here adds a
-seventh, and page count stays structurally unlearnable because §1 put
-every page behind one seal.
+Checked against the relay decision background §4 as specified, not as
+imagined: the relay learns account identity (attach), device count,
+identity fingerprints, key packages and attachment times (attach
+list — §4 item 2 as Amendment 1 widened it), delta timing at 2-second
+grain and per-publish blob count (publish clock and the per-envelope
+sealing above), delta sizes in buckets (padding), ceremony times
+(frame supersessions), and the frame's existence and bucketed size.
+The welcome map (amended 2026-08-27) shows the enrolled fingerprints
+and count at each ceremony rather than only at attach, and scales the
+frame's size with device count — channels 2 and 6 at a finer grain,
+per the relay decision background Amendment 1. That is the
+six-channel admission exactly; nothing here adds a seventh, and page
+count stays structurally unlearnable because §1 put every page behind
+one seal.
 
 ## 9. What the server implements
 
@@ -348,5 +359,6 @@ What it must never do, restated from ADR-0021 so the server issue
 cannot lose it: hold any key, merge or compact anything, read a delta,
 retain data past a supersession or the idle bound, or answer any
 request with another account's bytes. The deletion behaviours are
-hygiene; the security claim stays the key rotation (ADR-0021 §2), and
-no server document may promise otherwise (ADR-0007).
+hygiene; the security argument stays the key rotation (relay decision
+background §2), and no server document may promise otherwise
+(ADR-0007).

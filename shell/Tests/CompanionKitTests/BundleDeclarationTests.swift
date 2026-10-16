@@ -4,7 +4,8 @@ import XCTest
 @testable import CompanionKit
 
 /// The declaration the sudden-termination latch is a gate on
-/// (ADR-0016 section 2, ADR-0012). `NSSupportsSuddenTermination` is
+/// (persistence decision background section 2, ADR-0012).
+/// `NSSupportsSuddenTermination` is
 /// what makes this app killable outright at logout or shutdown, and
 /// `PageModel`'s `SuddenTerminationLatch` is the only thing that then
 /// holds the kill off while a write is pending. Drop the key and every

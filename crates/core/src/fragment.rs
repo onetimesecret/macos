@@ -1,4 +1,4 @@
-//! The sealed fragment (Law 0001; ADR-0045 point 1, proposed): a selection's
+//! The sealed fragment (Law 0001; ADR-0045 point 1): a selection's
 //! ordered ink and object references, composed and read only here, never payload.
 
 use std::borrow::Cow;

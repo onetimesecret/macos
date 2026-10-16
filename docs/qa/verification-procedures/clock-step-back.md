@@ -61,7 +61,7 @@ this procedure moves lives in the sealed file's authenticated header:
 `sealed_wall_ms`, the wall clock reading at the last save. Restore
 computes `away = wall_now.saturating_sub(sealed_wall_ms)` and subtracts
 it, and that is the only place in the lifetime math that reads the
-calendar clock at all (ADR-0016 section 4). Every interval a running
+calendar clock at all ([persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 4). Every interval a running
 process observes is charged on the sleep-inclusive monotonic clock
 instead (`crates/core/src/clock.rs`), which is not settable, which is
 what case 2 below is for.
@@ -119,7 +119,7 @@ appears (`crates/ffi/src/persist.rs`) and no
 licence" line appears (`shell/Sources/CompanionKit/PageModel.swift`).
 
 **Fail:** any page whose remaining time went **up**, which is the
-never-rewind invariant of ADR-0016 section 4 broken and the reason this
+never-rewind invariant of the [persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 4 broken and the reason this
 case exists; a countdown showing a negative or absurd value; a page
 gone; or a refusal.
 

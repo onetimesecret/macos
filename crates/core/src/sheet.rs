@@ -180,7 +180,7 @@ pub struct Conceal {
     pub receipt_id: String,
 }
 
-/// The longest sealed name, in characters (ADR-0042 point 1, proposed).
+/// The longest sealed name, in characters (ADR-0042 point 1).
 pub const NAME_CAP: usize = 64;
 
 /// Why a sealed name was refused. A refusal leaves the name as it was.
@@ -211,7 +211,7 @@ impl std::error::Error for NameRefusal {}
 
 /// Judge a draft name: trimmed, empty clears (`None`), anything else must
 /// be [`NAME_CAP`] characters of `[A-Za-z_][A-Za-z0-9_]*`
-/// (ADR-0042 point 1, proposed).
+/// (ADR-0042 point 1).
 ///
 /// # Errors
 /// [`NameRefusal::OutsideCharset`], judged first, or [`NameRefusal::TooLong`].
@@ -233,7 +233,7 @@ pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
 }
 
 /// A sealed chip: secret bytes, the non-secret face it shows, and the
-/// typed name and note beside it (ADR-0043 point 1, proposed).
+/// typed name and note beside it (ADR-0043 point 1).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
@@ -412,7 +412,7 @@ pub struct Sheet {
     /// Chips whose sentinels stand in the body.
     pub(crate) chips: Vec<SealedChip>,
     /// Chips the body no longer shows, kept on the page's clock
-    /// (ADR-0046 point 1, proposed).
+    /// (ADR-0046 point 1).
     pub(crate) detached: Vec<SealedChip>,
     pub(crate) clock: SheetClock,
     /// Held time from lapsed holds (open question №8).
@@ -441,7 +441,7 @@ impl Sheet {
     }
 
     /// Detach each chip whose sentinel left the body and reattach each
-    /// detached chip whose sentinel stands again (ADR-0046 point 1, proposed).
+    /// detached chip whose sentinel stands again (ADR-0046 point 1).
     pub(crate) fn settle_roster(&mut self) {
         let live = self.document.live_chips();
         let (standing, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.chips)
@@ -543,7 +543,7 @@ impl Sheet {
     }
 
     /// The chips the body no longer shows, kept for undo and for a paste
-    /// that names them (ADR-0046 point 1, proposed).
+    /// that names them (ADR-0046 point 1).
     pub fn detached(&self) -> impl Iterator<Item = &SealedChip> {
         self.detached.iter()
     }

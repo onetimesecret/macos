@@ -6,8 +6,8 @@ dated: 2026-10-12
 governs: A buffer that holds secret-bearing plaintext never grows in place; it is allocated at its final size, or, when that size is unknown until a read ends, each growth moves into a fresh zeroizing allocation.
 decisions: none numbered; the rule serves ADR-0001's zeroization posture
 consumed-by:
-  - docs/adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md (proposed; the name and the note at rest)
-  - docs/adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md (proposed; the envelope and its public text)
+  - docs/adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md (accepted; the name and the note at rest)
+  - docs/adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md (accepted; the envelope and its public text)
   - docs/development/sealed-objects-core-interface.md (the composed `NAME=` buffer, each note's text taken at rest and the decrypted drag's buffer)
 sources:
   - docs/adr/0001-rust-core-thin-shell.md (accepted, Context)
@@ -82,7 +82,7 @@ and not an ADR.
 | A sealed fragment's envelope | two-pass | Capacity equals length | `crates/core/src/fragment.rs` `the_envelope_is_written_at_its_exact_size` |
 | A fragment's public text | known-size copy | Capacity equals length | `crates/core/src/fragment.rs` `the_public_text_puts_a_size_class_placeholder_where_each_object_stood` |
 | Copy decrypted's and the decrypted drag's payload | known-size copy | Capacity is the payload | `crates/core/src/store.rs` `a_copy_out_is_written_at_its_exact_size` |
-| A pasted envelope's parse | unclassified | `serde_json` grows its scratch for an escaped string and frees it unwiped; the bytes came from a pasteboard any app reads ([ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md), proposed) | owed: owner decision on whether pasted ink is in scope |
+| A pasted envelope's parse | unclassified | `serde_json` grows its scratch for an escaped string and frees it unwiped; the bytes came from a pasteboard any app reads ([ADR-0045](../adr/0045-the-core-composes-and-resolves-the-sealed-fragment.md), accepted) | owed: owner decision on whether pasted ink is in scope |
 | Page, note and fragment JSON for the shell | unclassified | `serde_json` builds each string growing; Swift then holds the same ink in values it cannot zeroize | owed: owner decision on whether seam output is in scope |
 
 ## What the rule forbids
@@ -138,3 +138,6 @@ and not an ADR.
   join the table with the tests that pin them. Two readers the build could
   not bring under the rule are recorded unclassified: the parse of a pasted
   envelope, and the JSON the seam hands the shell, page and note included.
+- 2026-10-16: Record amendment. ADR-0043 and ADR-0045 were accepted by the
+  maintainer; `consumed-by` and the pasted envelope's row now cite accepted
+  text. No behaviour changes.
