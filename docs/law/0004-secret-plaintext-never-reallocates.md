@@ -139,4 +139,5 @@ and not an ADR.
   not bring under the rule are recorded unclassified: the parse of a pasted
   envelope, and the JSON the seam hands the shell, page and note included.
 - 2026-10-16: Record amendment. ADR-0043 and ADR-0045 were accepted by the
-  maintainer; `decisions` says so. No behaviour changes.
+  maintainer; `consumed-by` and the pasted envelope's row now cite accepted
+  text. No behaviour changes.
