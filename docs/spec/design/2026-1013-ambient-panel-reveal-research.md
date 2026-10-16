@@ -3,7 +3,7 @@
 - **Date:** 2026-10-13
 - **Status:** research and prototype proposal; not an accepted specification
 - **Scope:** making OnetimePad reachable without interrupting the foreground task, rather than reproducing Apple Notes
-- **Preceding research:** [Quick Note and hot corners](2026-1013-quick-hot-corners.md)
+- **Preceding research:** [Quick Note and hot corners](2026-1013-quick-hot-corners-research-notes.md)
 
 ## Conclusion
 
