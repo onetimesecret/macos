@@ -112,8 +112,8 @@ final class TabDropTarget: NSView {
             guard case .pageDrag(let source, _, let range, _) = cargo else { return false }
             let operation = ownDragOperation(range, on: page, offered: mask)
             guard operation != [], admitsDrop(from: source.textView, onto: page) else { return false }
-            let end = model.bodyLength(of: page)
             let showing = prepareSurface(of: page)
+            let end = model.bodyLength(of: page)
             guard let placed = model.dropRange(
                 range, sheet: page, at: end, cloning: operation == .copy)
             else { return false }
@@ -124,8 +124,8 @@ final class TabDropTarget: NSView {
             guard case .pageDrag(let source, let from, let range, _) = cargo,
                   admitsDrop(from: source.textView, onto: page)
             else { return false }
-            let end = model.bodyLength(of: page)
             let showing = prepareSurface(of: page)
+            let end = model.bodyLength(of: page)
             guard let placed = model.dropRange(range, sheet: from, onto: page, at: end) else {
                 return false
             }
@@ -136,8 +136,8 @@ final class TabDropTarget: NSView {
         case .fragment:
             let source = sender.draggingSource as? InkTextView
             guard admitsDrop(from: source, onto: page) else { return false }
-            let end = model.bodyLength(of: page)
             let showing = prepareSurface(of: page)
+            let end = model.bodyLength(of: page)
             guard case .placed(let placed) = model.pasteFragment(
                 from: sender.draggingPasteboard, sheet: page,
                 ranges: [NSRange(location: end, length: 0)])
@@ -145,11 +145,10 @@ final class TabDropTarget: NSView {
             showing?.settleRewrite(selecting: placed.range)
             return true
         case .seal:
+            let showing = prepareSurface(of: page)
             let end = model.bodyLength(of: page)
-            _ = prepareSurface(of: page)
-            guard model.sealDrag(onto: page, replacing: NSRange(location: end, length: 0)) != nil
-            else { return false }
-            model.settleTabSeal(sheet: page, at: end)
+            guard model.sealDrag(onto: page, at: end) != nil else { return false }
+            showing?.settleRewrite(selecting: NSRange(location: end, length: 1))
             return true
         }
     }

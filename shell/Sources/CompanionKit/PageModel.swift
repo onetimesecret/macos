@@ -5881,23 +5881,36 @@ public final class PageModel: ObservableObject {
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         clearNotice()
-        guard let sheet = sealTarget else { return nil }
-        return sealDrag(onto: sheet, replacing: range)
+        guard let sheet = sealTarget, let chip = sealFromDrag(sheet: sheet, replacing: range) else {
+            return nil
+        }
+        countEdit(.sheet(sheet))
+        markDirty()
+        return chip
     }
 
-    /// Drop-to-seal aimed at a named page, the tab's route (issue 254); the page's own
-    /// route aims at `sealTarget`, and both read the drag board core-side.
+    /// Drop-to-seal at `index` of a named page, the tab's route (issue 254). The page's own
+    /// route places the face itself; this one restates the page as a transfer does.
     @discardableResult
-    public func sealDrag(onto sheet: UInt64, replacing range: NSRange) -> ChipInfo? {
+    func sealDrag(onto sheet: UInt64, at index: Int) -> ChipInfo? {
         clearNotice()
-        guard !sheet.isFileID, let (at, length) = Self.wireRange(range) else { return nil }
-        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
-        if chip == nil {
-            flash("nothing to seal")
-        } else {
-            countEdit(.sheet(sheet))
-            markDirty()
+        guard !sheet.isFileID,
+              let chip = sealFromDrag(sheet: sheet, replacing: NSRange(location: index, length: 0))
+        else { return nil }
+        settleTransfer(sheet)
+        return chip
+    }
+
+    /// The core's read of the drag board into `sheet`. A seal is not among the routes the
+    /// core refuses past the deadline, so a late timer settles first (Law 0001, expiry row).
+    private func sealFromDrag(sheet: UInt64, replacing range: NSRange) -> ChipInfo? {
+        guard !settleIfDue(sheet: sheet) else {
+            flash(Self.pageExpiredLine)
+            return nil
         }
+        guard let (at, length) = Self.wireRange(range) else { return nil }
+        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
+        if chip == nil { flash("nothing to seal") }
         return chip
     }
 
@@ -5916,16 +5929,6 @@ public final class PageModel: ObservableObject {
     /// Whether a storage is cached for `id`; a drop on a tab must build none (issue 254).
     func hasStorage(for id: UInt64) -> Bool { storages[id] != nil }
     #endif
-
-    /// After a tab's drop sealed onto `sheet`: the storage restates to the core's runs, and
-    /// the surface showing it, if one does, selects the new object as its own seal would.
-    func settleTabSeal(sheet: UInt64, at index: Int) {
-        restateStorage(sheet: sheet)
-        invalidateQuietRendering(for: sheet)
-        refresh()
-        surface(showing: sheet)?.coordinator?.settleRewrite(
-            selecting: NSRange(location: index, length: 1))
-    }
 
     /// ⌘↩: seal visible ink the editor already holds. The core deletes
     /// `range` from its body and stands the sentinel there in the same

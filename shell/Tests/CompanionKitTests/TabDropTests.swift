@@ -283,6 +283,29 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef")
     }
 
+    /// Another app's drag on the tab of a page due but not yet swept settles first, so the
+    /// core never reads the board for it, and the expired line says why (Law 0001, expiry row).
+    func testASealOnTheTabOfADuePageSettlesWithTheExpiredLine() throws {
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let client = model.coreClient
+        let (dest, slot) = try unshownPage(on: model, text: "xy")
+        XCTAssertTrue(client.setRung(tab: slot, rung: .oneHour))
+        let target = TabDropTarget(model: model, slot: slot)
+        let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
+        XCTAssertEqual(target.dropRoute(for: foreign), .seal, "the control: a live page takes the seal")
+
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertTrue(model.tabs.contains { $0.pageID == dest }, "the control: the page still shows")
+        XCTAssertEqual(target.draggingEntered(foreign), .copy, "the strip still says the page stands")
+        XCTAssertFalse(target.performDragOperation(foreign), "a due page took the seal")
+        XCTAssertFalse(model.tabs.contains { $0.pageID == dest }, "the due page stayed")
+        XCTAssertEqual(model.notice, PageModel.pageExpiredLine)
+        XCTAssertEqual(standIn.drops, [], "the core read the board for a page past its deadline")
+        XCTAssertNil(target.page, "a swept slot still names a page")
+        XCTAssertEqual(target.draggingEntered(foreign), [])
+    }
+
     // MARK: A fragment and another app's drag
 
     /// A copy fragment carried by anything but a standing page drag pastes at the end of
