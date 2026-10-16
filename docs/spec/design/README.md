@@ -110,6 +110,15 @@ acceptance does not mean every original passage remains unchanged.
 | --- | --- | --- |
 | [2026-0930-file-conflict-locate.md](2026-0930-file-conflict-locate.md) | Locate actions, unavailable-file banners, and held-file wording | Draft; not an accepted amendment to D-17 |
 
+## Agreed feature plans
+
+These plans record agreed scope, not delivered behavior. Technical details
+and open decisions remain subject to review.
+
+| Plan | Scope | Status |
+| --- | --- | --- |
+| [2026-1016-markdown-dialects-and-preview.md](2026-1016-markdown-dialects-and-preview.md) | CommonMark/GFM setting, restricted HTML, and click-to-load remote images | Scope agreed; technical plan draft |
+
 ## Superseded decision history
 
 | Record | Successor |
