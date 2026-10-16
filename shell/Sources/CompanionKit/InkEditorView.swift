@@ -2985,10 +2985,7 @@ public struct InkEditorView: NSViewRepresentable {
             in rect: NSRect, event: NSEvent, at charIndex: Int
         ) {
             guard let textView = view as? InkTextView, textView === self.textView else { return }
-            if !NSLocationInRange(charIndex, textView.selectedRange()) {
-                textView.setSelectedRange(NSRange(location: charIndex, length: 1))
-            }
-            _ = textView.dragSelection(with: event, offset: .zero, slideBack: true)
+            textView.beginMoveDrag(chipAt: charIndex, event: event)
         }
 
         /// The page's own drag, while the page still reads as it did when the drag began.
@@ -5521,10 +5518,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         startDraggingSession([dragging], event: event, source: source, slideBack: true)
     }
 
-    /// The move handle's drag is the selected object's own: the page's drag, by the same
-    /// session, so wherever that lands this lands (Law 0001, move drag row; issue 255).
+    /// A drag from an object's face or its move handle is the page's own drag, by the same
+    /// session, of the selection the object is in, or of the object alone (Law 0001, move drag row).
     func beginMoveDrag(chipAt index: Int, event: NSEvent) {
-        setSelectedRange(NSRange(location: index, length: 1))
+        if !NSLocationInRange(index, selectedRange()) {
+            setSelectedRange(NSRange(location: index, length: 1))
+        }
         _ = dragSelection(with: event, offset: .zero, slideBack: true)
     }
 

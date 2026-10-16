@@ -188,10 +188,12 @@ outlined words in ember.
 - The decrypted drag handle's drag is the decrypted drag. While a name or
   the note holds the keys, its press starts nothing and the page's line
   says why.
-- The move handle's drag is the page's own drag of the selected object,
-  by the same session, carrying the copy's fragment and never plaintext:
-  it lands wherever a drag of the selected object lands, and a
-  destination that takes that drag takes this one with no further work.
+- The move handle's drag is the page's own drag, by the same session, of
+  the selection the object is in, or of the object alone when the
+  selection does not include it, as a drag from the block's face is. It
+  includes the copy's fragment and never plaintext, goes wherever a drag
+  of the selection goes, and a destination that takes that drag takes
+  this one with no further work.
 
 ### Pointer and image
 

@@ -305,6 +305,32 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertEqual(sent(model), [], "a move recorded a declassification")
     }
 
+    /// A block inside a wider selection draws its move handle on hover, and a drag from
+    /// that handle takes the whole selection, as a drag from the block's face does: the
+    /// fragment is the run of ink and the object (Law 0001, move drag row).
+    func testTheMoveHandleDragsTheSelectionTheBlockIsIn() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let textView = page.textView
+        let (move, _, frame) = try handles(page)
+        let run = NSRange(location: 0, length: object + 1)
+        textView.setSelectedRange(run)
+        hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
+        XCTAssertTrue(textView.drawsHandles(at: object), "hovered inside a wider selection")
+        var sessions: [[NSDraggingItem]] = []
+        textView.dragSessionWitness = { items, _ in sessions.append(items) }
+        defer { page.coordinator.endPageDrag() }
+
+        textView.beginMoveDrag(
+            chipAt: object, event: try dragEvent(page, at: NSPoint(x: move.midX, y: move.midY)))
+
+        XCTAssertEqual(textView.selectedRange(), run, "the selection collapsed to the block")
+        XCTAssertEqual(sessions.count, 1)
+        let item = try XCTUnwrap(sessions.first?.first?.item as? NSPasteboardItem)
+        XCTAssertEqual(item.string(forType: .string), "ab \(placeholder)")
+        XCTAssertTrue(page.coordinator.dragsPageSelection)
+    }
+
     /// The move handle's press is gated as the decrypted handle's is: a first plain press
     /// on a drawn handle, and nothing else.
     func testOnlyAFirstPlainPressOnADrawnMoveHandleStartsTheDrag() {

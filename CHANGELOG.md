@@ -451,8 +451,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drag row, issue #255). On hover or selection the block's top row shows
   `⠿` in its quiet ink a gap before the labelled `drag decrypted`
   handle, so the two read as different things as D-29 asks. A drag from
-  `⠿` is the selected object's own drag: it carries the copy's fragment
-  and no plaintext, and lands wherever that drag lands. On a narrow
+  `⠿` is the page's own drag of the selection the block is in, or of the
+  block alone: it includes the copy's fragment and no plaintext, and
+  goes wherever that drag goes. On a narrow
   block the move handle gives way first, since the decrypted handle is
   the one labelled declassification seat and the move is still there by
   dragging the selected object. VoiceOver names the handles *Move* and
