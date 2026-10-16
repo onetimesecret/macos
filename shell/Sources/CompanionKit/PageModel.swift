@@ -5914,7 +5914,7 @@ public final class PageModel: ObservableObject {
         return chip
     }
 
-    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab lands (issue 254),
+    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab is placed (issue 254),
     /// read from the core's runs so a page nobody shows gets no storage built for it.
     func bodyLength(of sheet: UInt64) -> Int {
         runs(of: sheet).reduce(0) { length, run in

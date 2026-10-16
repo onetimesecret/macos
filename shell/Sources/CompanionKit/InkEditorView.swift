@@ -2998,7 +2998,7 @@ public struct InkEditorView: NSViewRepresentable {
             return drag
         }
 
-        /// The standing drag's page and range, for a destination sorting what it carries.
+        /// The standing drag's page and range, for a destination sorting what it brings.
         var standingDragOnPage: (sheet: UInt64, range: NSRange)? {
             guard let drag = standingPageDrag, case .sheet(let sheet) = drag.document else { return nil }
             return (sheet, drag.range)
@@ -6626,13 +6626,13 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         case seal
     }
 
-    /// What a drag carries, read once so the page's surface and the page's tab sort
+    /// What a drag brings, read once so the page's surface and the page's tab sort
     /// one drag the same way (issue 254).
     enum DragCargo {
         /// This app's decrypted drag.
         case decrypted
         /// A page's standing drag from a surface of the same model, with its page and range,
-        /// and whether its board carries the copy's fragment (ink alone carries none).
+        /// and whether its board has the copy's fragment on it (ink alone has none).
         case pageDrag(source: InkEditorView.Coordinator, sheet: UInt64, range: NSRange, fragment: Bool)
         /// The core's copy fragment: a copy, a stale drag or ⌥ over another page's drag.
         case fragment
@@ -6642,7 +6642,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         case otherApp
     }
 
-    /// What `sender` carries into a destination of `model`.
+    /// What `sender` brings into a destination of `model`.
     static func cargo(of sender: NSDraggingInfo, in model: PageModel) -> DragCargo {
         if sender.draggingSource is DecryptedDrag { return .decrypted }
         let fragment = SealedFragment.item(on: sender.draggingPasteboard) != nil
@@ -6660,7 +6660,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         return .otherApp
     }
 
-    /// Where `cargo` lands on `page`, for a destination that takes a fragment, takes
+    /// Where `cargo` goes on `page`, for a destination that takes a fragment, takes
     /// ink or seals as its flags say: the one sorting the surface and the tab share.
     static func dropRoute(
         _ cargo: DragCargo, offered mask: NSDragOperation, ontoPage page: UInt64?,
@@ -6673,7 +6673,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             if pageDropOperation(offered: mask) == .move, let page, from != page {
                 return takesFragment ? .move : .refused
             }
-            // ⌥ pastes the copy's fragment where the board carries one; ink alone is AppKit's drop.
+            // ⌥ pastes the copy's fragment where the board has one; ink alone is AppKit's drop.
             if fragment { return takesFragment ? .fragment : .refused }
             return takesInk ? .ink : .refused
         case .fragment:

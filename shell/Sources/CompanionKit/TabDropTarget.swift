@@ -55,7 +55,7 @@ final class TabDropTarget: NSView {
     /// Nothing: the select, the hold and the reorder handle are the tab's SwiftUI gestures.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// The page the slot holds right now, or nil for an empty slot (ADR-0017).
+    /// The page in the slot right now, or nil for an empty slot (ADR-0017).
     var page: UInt64? {
         model.tabs.first { $0.id == slot }?.pageID
     }
@@ -66,7 +66,7 @@ final class TabDropTarget: NSView {
         !readOnly && model.owner == surface
     }
 
-    /// The route `sender` takes onto this tab, and what it carries.
+    /// The route `sender` takes onto this tab, and what it brings.
     func dropRoute(for sender: NSDraggingInfo) -> InkTextView.DropRoute {
         classify(sender).route
     }
@@ -175,7 +175,7 @@ final class TabDropTarget: NSView {
         }
     }
 
-    /// Whether a drop may land while a field or note holds the keys (Law 0007, keys row),
+    /// Whether a drop may be placed while a field or note has the keys (Law 0007, keys row),
     /// asked of the page's surface when it shows, else the drag's source, else the owner's editor.
     private func admitsDrop(from source: InkTextView?, onto page: UInt64) -> Bool {
         let asked = model.surface(showing: page) ?? source ?? model.activeEditor as? InkTextView

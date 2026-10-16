@@ -3,7 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// A tab as a drop target (issue 254; Law 0001's drag and ⌥ drag rows): the drop lands at
+/// A tab as a drop target (issue 254; Law 0001's drag and ⌥ drag rows): the drop is placed at
 /// the end of the tab's page by the routes a drop on the page takes, driven below the
 /// session AppKit runs, against the live core and on pasteboards of the test's own.
 @MainActor
@@ -41,7 +41,7 @@ final class TabDropTests: XCTestCase {
                 clearClipboardIfOurs: { false }, ambientPasteboard: ambient))
     }
 
-    /// A new page holding `text` with each of `seals` sealed, in a window of its
+    /// A new page reading `text` with each of `seals` sealed, in a window of its
     /// own with the keys; `ab <SECRET> cd <TOKEN> ef` by default, twelve units.
     private func mountPage(
         on model: PageModel, text: String = "ab SECRET cd TOKEN ef",
@@ -79,7 +79,7 @@ final class TabDropTests: XCTestCase {
             sheet: sheet, field: field)
     }
 
-    /// A page nobody shows, holding `text` as ink, and its slot.
+    /// A page nobody shows, reading `text` as ink, and its slot.
     private func unshownPage(on model: PageModel, text: String) throws -> (sheet: UInt64, slot: UInt64) {
         model.newPage()
         let sheet = try XCTUnwrap(model.selectedPageID)
@@ -110,11 +110,11 @@ final class TabDropTests: XCTestCase {
         }.joined()
     }
 
-    /// Begin a drag of `range`, and the item it carries on a board of the test's own.
+    /// Begin a drag of `range`, and its item on a board of the test's own.
     private func beginDrag(_ page: Page, _ range: NSRange) throws -> NSPasteboard {
         page.textView.setSelectedRange(range)
         guard case .fragment(let item) = page.coordinator.beginPageDrag() else {
-            XCTFail("the page's drag carried no fragment")
+            XCTFail("the page's drag wrote no fragment")
             throw CocoaError(.featureUnsupported)
         }
         let board = NSPasteboard.withUniqueName()
@@ -160,7 +160,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(target.draggingEntered(drop), .move)
         XCTAssertEqual(target.draggingUpdated(drop), .move)
         XCTAssertTrue(target.performDragOperation(drop))
-        XCTAssertEqual(shape(model, dest), "xyab #", "the run did not land at the end")
+        XCTAssertEqual(shape(model, dest), "xyab #", "the run was not placed at the end")
         XCTAssertEqual(chips(model, dest).map(\.chipId), [ids[0]], "the move took a new identity")
         XCTAssertEqual(chips(model, dest).first?.name, "API_KEY")
         XCTAssertEqual(shape(model, source.sheet), " cd # ef", "the move left its source run")
@@ -170,13 +170,13 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(model.coreClient.ledger().count, records, "a move recorded something")
         XCTAssertGreaterThan(model.dirtyMarks, marks, "the move armed no write")
         XCTAssertFalse(model.hasStorage(for: dest), "the drop built a storage for a page nobody shows")
-        XCTAssertFalse(model.storage(for: dest).string.contains(placeholder), "the public text landed")
+        XCTAssertFalse(model.storage(for: dest).string.contains(placeholder), "the public text was placed")
 
         source.coordinator.endPageDrag()
         XCTAssertEqual(shape(model, source.sheet), " cd # ef", "the session's end removed a run")
     }
 
-    /// A drop on the tab of a page that shows restates its surface and selects the landed
+    /// A drop on the tab of a page that shows restates its surface and selects the placed
     /// run, as a drop on that page does.
     func testADropOnAShowingPagesTabRestatesItsSurfaceAndSelectsTheRun() throws {
         let model = try makeModel()
@@ -206,7 +206,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(target.dropRoute(for: drop), .fragment)
         XCTAssertEqual(target.draggingEntered(drop), .copy)
         XCTAssertTrue(target.performDragOperation(drop))
-        XCTAssertEqual(shape(model, dest), "xyab #", "the copy did not land at the end")
+        XCTAssertEqual(shape(model, dest), "xyab #", "the copy was not placed at the end")
         XCTAssertEqual(chips(model, dest).count, 1)
         XCTAssertFalse(model.hasStorage(for: dest), "the drop built a storage for a page nobody shows")
         XCTAssertFalse(ids.contains(try XCTUnwrap(chips(model, dest).first?.chipId)), "the clone kept the identity")
@@ -332,7 +332,7 @@ final class TabDropTests: XCTestCase {
                 XCTAssertEqual(target.draggingUpdated(drop), [], state)
                 XCTAssertFalse(target.performDragOperation(drop), state)
             }
-            XCTAssertEqual(shape(model, dest), "xy", "a drop landed \(state)")
+            XCTAssertEqual(shape(model, dest), "xy", "a drop was placed \(state)")
             XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "the source lost its run \(state)")
             XCTAssertEqual(standIn.drops, [], "the core read the board \(state)")
             XCTAssertNil(model.notice, "a refused drop said something \(state)")
@@ -356,7 +356,7 @@ final class TabDropTests: XCTestCase {
 
     // MARK: A fragment and another app's drag
 
-    /// A copy fragment carried by anything but a standing page drag pastes at the end of
+    /// A copy fragment brought by anything but a standing page drag pastes at the end of
     /// the tab's page through the core, cloning its object (Law 0001, paste row).
     func testAFragmentOnTheBoardPastesAtTheEndOfTheTabsPage() throws {
         let model = try makeModel()
@@ -379,7 +379,7 @@ final class TabDropTests: XCTestCase {
     }
 
     /// Another app's drag seals at the end of the tab's page, the core reading the board
-    /// itself; ink from this app lands nowhere on a tab.
+    /// itself; ink from this app is refused on every tab.
     func testAnotherAppsDragSealsAtTheEndOfTheTabsPageAndThisAppsInkIsRefused() throws {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
@@ -407,7 +407,7 @@ final class TabDropTests: XCTestCase {
 
     /// A seal dropped on the tab of a page that shows stands the object's face on its surface
     /// and leaves it selected, as the page's own seal does; while a field in that window
-    /// holds the keys it waits, as the move and the paste do (Law 0007, keys row).
+    /// has the keys it waits, as the move and the paste do (Law 0007, keys row).
     func testASealDroppedOnAShowingPagesTabStandsTheFaceOnItsSurface() throws {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
@@ -418,9 +418,9 @@ final class TabDropTests: XCTestCase {
         XCTAssertTrue(dest.window.makeFirstResponder(dest.field))
         drainMainQueue()
         XCTAssertEqual(target.dropRoute(for: foreign), .seal, "the control: the tab still sorts the drag")
-        XCTAssertFalse(target.performDragOperation(foreign), "the seal landed under the field")
+        XCTAssertFalse(target.performDragOperation(foreign), "the seal was placed under the field")
         XCTAssertEqual(model.notice, PageModel.dropWaitsLine)
-        XCTAssertEqual(standIn.drops, [], "the core read the board while a field held the keys")
+        XCTAssertEqual(standIn.drops, [], "the core read the board while a field had the keys")
         XCTAssertEqual(shape(model, dest.sheet), "xy")
 
         XCTAssertTrue(dest.window.makeFirstResponder(dest.textView))
@@ -432,7 +432,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(dest.textView.selectedRange(), NSRange(location: 2, length: 1))
     }
 
-    /// The decrypted drag lands on no tab, its own page's or another's: every destination
+    /// The decrypted drag is refused on every tab, its own page's or another's: every destination
     /// call refuses it before drop to seal reads the drag pasteboard, and its provider is
     /// never asked (Law 0001, decrypted drag row).
     func testTheDecryptedDragLandsOnNoTab() throws {
@@ -467,8 +467,8 @@ final class TabDropTests: XCTestCase {
         source.end(with: [])
     }
 
-    /// An item carrying another build's fragment is refused on a tab, which has no surface
-    /// to lay its public text on as ink, the page's answer (2026-10-14 every build's copy amendment).
+    /// An item with another build's fragment is refused on a tab, which has no surface to
+    /// lay its public text on as ink, the page's answer (2026-10-14 every build's copy amendment).
     func testAnotherBuildsFragmentOnATabIsRefused() throws {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
@@ -487,7 +487,7 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(target.draggingEntered(drop), [])
         XCTAssertEqual(target.draggingUpdated(drop), [])
         XCTAssertFalse(target.performDragOperation(drop))
-        XCTAssertEqual(shape(model, dest), "xy", "another build's fragment landed on the tab's page")
+        XCTAssertEqual(shape(model, dest), "xy", "another build's fragment was placed on the tab's page")
         XCTAssertEqual(standIn.drops, [], "the core read the board for another build's fragment")
         XCTAssertNil(model.notice, "a refused drop said something")
     }
