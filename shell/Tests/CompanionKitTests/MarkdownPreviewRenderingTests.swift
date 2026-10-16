@@ -302,6 +302,44 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(view.textStorage?.layoutManagers.count, 1)
     }
 
+    /// An object in a cell of a multi column table takes the cell's width, not the
+    /// preview's, at either width of the preview; the editor's own container keeps its
+    /// measure, since its fragments are as wide as the container (`SealedBlockTests`).
+    func testAnObjectInAMultiColumnTableCellFitsTheCell() throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        let source = NSMutableAttributedString(string: "| Object | Note |\n| --- | --- |\n| ")
+        let object = chip(1)
+        source.append(NSAttributedString(attachment: object))
+        source.append(NSAttributedString(string: " | beside |"))
+        view.reseed(with: PageModel.QuietRendering(text: source, fenceRegions: []))
+        let manager = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        let index = (view.string as NSString).range(of: "\u{FFFC}").location
+        XCTAssertNotEqual(index, NSNotFound)
+        for width: CGFloat in [360, 720] {
+            view.setFrameSize(NSSize(width: width, height: 2000))
+            manager.ensureLayout(for: container)
+            let glyph = manager.glyphIndexForCharacter(at: index)
+            let block = manager.attachmentSize(forGlyphAt: glyph)
+            XCTAssertGreaterThan(block.width, 0, "\(width)")
+            XCTAssertLessThanOrEqual(block.width, container.size.width / 2, "\(width): the object overran its cell")
+            XCTAssertGreaterThan(block.width, container.size.width / 4, "\(width): the object took no cell")
+            XCTAssertEqual(block.height, SealedBlockCell.blockHeight)
+            XCTAssertLessThanOrEqual(manager.usedRect(for: container).maxX, container.size.width + 1)
+        }
+
+        let plain = NSTextContainer(size: NSSize(width: 400, height: 400))
+        let cell = NSRect(x: 0, y: 0, width: 200, height: SealedBlockCell.blockHeight)
+        XCTAssertEqual(
+            SealedBlockCell.blockWidth(in: plain, proposedLineFragment: cell),
+            floor(200 - plain.lineFragmentPadding * 2))
+        let editor = InkTextContainer(size: plain.size)
+        XCTAssertEqual(
+            SealedBlockCell.blockWidth(in: editor, proposedLineFragment: cell),
+            floor(400 - editor.lineFragmentPadding * 2), "the editor keeps its measure")
+    }
+
     func testAttachmentsKeepObjectIdentityAcrossInlineCodeTablesAndHTML() throws {
         let source = NSMutableAttributedString(string: "# Before 😀 **")
         let first = chip(1)

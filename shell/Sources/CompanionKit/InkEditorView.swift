@@ -7262,7 +7262,14 @@ final class SealedBlockCell: NSTextAttachmentCell {
         // back like the other two (`SealedBlockTests` pins this
         // against a live layout manager).
         let padding = (textContainer?.lineFragmentPadding ?? 0) * 2
-        let candidates = [textContainer?.size.width, lineFrag.width, capturedMeasure]
+        var candidates = [textContainer?.size.width, lineFrag.width, capturedMeasure]
+        // A table cell in a preview proposes a fragment narrower than its container;
+        // the editor's container (`InkTextContainer`) keeps its own measure.
+        if !(textContainer is InkTextContainer), let container = textContainer?.size.width,
+           lineFrag.width > 0, lineFrag.width < container
+        {
+            candidates[0] = lineFrag.width
+        }
         for case let width? in candidates {
             guard width.isFinite, width > 0,
                 width < effectivelyUnboundedWidth, width <= ceiling
