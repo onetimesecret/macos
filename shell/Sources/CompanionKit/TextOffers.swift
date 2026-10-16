@@ -82,7 +82,7 @@ enum TextOffers {
 
     /// Writing Tools' items, should AppKit add them where the view answers Writing Tools with none.
     static func isWritingTools(_ item: NSMenuItem) -> Bool {
-        item.action == Selector(("showWritingTools:"))
+        item.action.map(NSStringFromSelector) == "showWritingTools:"
     }
 
     /// A link's Open With, whose applications AppKit hands the URL to with no delegate asked.
