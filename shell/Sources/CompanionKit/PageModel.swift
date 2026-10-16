@@ -5881,7 +5881,16 @@ public final class PageModel: ObservableObject {
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         clearNotice()
-        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = sealTarget else { return nil }
+        return sealDrag(onto: sheet, replacing: range)
+    }
+
+    /// Drop-to-seal aimed at a named page, the tab's route (issue 254); the page's own
+    /// route aims at `sealTarget`, and both read the drag board core-side.
+    @discardableResult
+    public func sealDrag(onto sheet: UInt64, replacing range: NSRange) -> ChipInfo? {
+        clearNotice()
+        guard !sheet.isFileID, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
         if chip == nil {
             flash("nothing to seal")
@@ -5890,6 +5899,21 @@ public final class PageModel: ObservableObject {
             markDirty()
         }
         return chip
+    }
+
+    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab lands (issue 254).
+    public func bodyLength(of sheet: UInt64) -> Int {
+        storage(for: sheet).length
+    }
+
+    /// After a tab's drop sealed onto `sheet`: the storage restates to the core's runs, and
+    /// the surface showing it, if one does, selects the new object as its own seal would.
+    func settleTabSeal(sheet: UInt64, at index: Int) {
+        restateStorage(sheet: sheet)
+        invalidateQuietRendering(for: sheet)
+        refresh()
+        surface(showing: sheet)?.coordinator?.settleRewrite(
+            selecting: NSRange(location: index, length: 1))
     }
 
     /// ⌘↩: seal visible ink the editor already holds. The core deletes
@@ -6408,7 +6432,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// The page surface whose layout reads `sheet`'s storage, when one shows the page.
-    private func surface(showing sheet: UInt64) -> InkTextView? {
+    func surface(showing sheet: UInt64) -> InkTextView? {
         storages[sheet]?.layoutManagers.lazy.flatMap(\.textContainers)
             .compactMap { $0.textView as? InkTextView }.first
     }

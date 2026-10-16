@@ -449,6 +449,8 @@ struct SheetTab: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(selected ? Color.cellBackground : .clear)
         )
+        // The tab takes drops at the end of its page (issue 254); its clicks stay SwiftUI's.
+        .background(TabDropOverlay(model: model, slot: sheet.id))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // Select on click; a double-click's second tap cycles the hold
