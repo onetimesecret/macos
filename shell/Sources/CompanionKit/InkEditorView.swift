@@ -211,7 +211,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.currentSheet = sheetID
         coordinator.appliedTypeface = InkStyle.typeface
         coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
-        coordinator.appliedPreviewRendering = model.previewRendering(for: sheetID)
+        coordinator.appliedPreviewRendering = model.previewRendering
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
@@ -489,7 +489,7 @@ public struct InkEditorView: NSViewRepresentable {
         // nothing.
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
-        coordinator.applyPreviewRendering(model.previewRendering(for: sheetID))
+        coordinator.applyPreviewRendering(model.previewRendering)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
         // The stance may have flipped editing on or off above, so the
@@ -1904,11 +1904,8 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Hybrid styling follows the global scope, independently of full preview.
         func applyPreviewRendering(_ scope: PreviewRenderingScope) {
-            let effective = writesNote ? scope : currentSheet.map {
-                model.previewRendering(for: $0)
-            } ?? scope
-            guard appliedPreviewRendering != effective else { return }
-            appliedPreviewRendering = effective
+            guard appliedPreviewRendering != scope else { return }
+            appliedPreviewRendering = scope
             restyle()
         }
 
@@ -3580,9 +3577,7 @@ public struct InkEditorView: NSViewRepresentable {
             // `.never` uses the plain visual profile everywhere. Markdown-capable
             // pages still need the Markdown walk's classifications and fence ranges
             // for editing and paste safety, but neither result is rendered.
-            let previewScope = writesNote ? model.previewRendering : currentSheet.map {
-                model.previewRendering(for: $0)
-            } ?? model.previewRendering
+            let previewScope = model.previewRendering
             appliedPreviewRendering = previewScope
             if previewScope == .never {
                 restylePlainFile(storage, preservingMarkdownStructure: file == nil)

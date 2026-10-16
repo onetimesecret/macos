@@ -485,20 +485,17 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
             model.previewRendering = scope
             XCTAssertFalse(model.markdownPreviewEnabled(for: first), scope.rawValue)
             XCTAssertFalse(model.markdownPreviewEnabled(for: second), scope.rawValue)
-            XCTAssertEqual(model.previewRendering(for: first), scope)
-            XCTAssertEqual(model.previewRendering(for: second), scope)
+            XCTAssertEqual(model.previewRendering, scope)
 
             model.toggleMarkdownPreview(for: first)
 
             XCTAssertTrue(model.markdownPreviewEnabled(for: first))
             XCTAssertFalse(model.markdownPreviewEnabled(for: second))
             XCTAssertEqual(model.previewRendering, scope)
-            XCTAssertEqual(model.previewRendering(for: first), scope)
-            XCTAssertEqual(model.previewRendering(for: second), scope)
 
             model.toggleMarkdownPreview(for: first)
             XCTAssertFalse(model.markdownPreviewEnabled(for: first))
-            XCTAssertEqual(model.previewRendering(for: first), scope)
+            XCTAssertEqual(model.previewRendering, scope)
         }
     }
 
@@ -529,7 +526,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(model.selectedPageID, selected)
         XCTAssertEqual(model.selection, selectedTab)
         XCTAssertEqual(model.previewRendering, .allPages)
-        XCTAssertEqual(model.previewRendering(for: first), .allPages)
+        XCTAssertEqual(model.previewRendering, .allPages)
         XCTAssertTrue(roll.stack.editor === editor)
         XCTAssertTrue(editor.textStorage === storage)
         XCTAssertTrue(try body(for: selected, in: roll) === editor)
@@ -573,7 +570,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         toggle.performClick(nil)
 
         XCTAssertEqual(model.previewRendering, .never)
-        XCTAssertEqual(model.previewRendering(for: first), .never)
+        XCTAssertEqual(model.previewRendering, .never)
         XCTAssertTrue(model.markdownPreviewEnabled(for: first))
         XCTAssertEqual(toggle.state, .on)
         XCTAssertEqual(try preview(for: first, in: roll).string, "Heading\nbody\n")
@@ -936,8 +933,8 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         toggle.performClick(nil)
         XCTAssertFalse(model.markdownPreviewEnabled(for: first))
         XCTAssertTrue(model.markdownPreviewEnabled(for: second))
-        XCTAssertEqual(model.previewRendering(for: first), .allPages)
-        XCTAssertEqual(model.previewRendering(for: second), .allPages)
+        XCTAssertEqual(model.previewRendering, .allPages)
+        XCTAssertEqual(model.previewRendering, .allPages)
     }
 
     func testButtonStartsOffAndRefreshesFromPageBooleanRegardlessOfHybridScope() throws {
@@ -958,7 +955,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
             XCTAssertEqual(toggle.state, .on)
             XCTAssertTrue(model.markdownPreviewEnabled(for: first))
-            XCTAssertEqual(model.previewRendering(for: first), scope)
+            XCTAssertEqual(model.previewRendering, scope)
             XCTAssertNotEqual(toggle.toolTip, disabledTooltip)
             model.toggleMarkdownPreview(for: first)
             header.refresh(summary: try summary(for: first, in: model))
@@ -1013,8 +1010,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
             XCTAssertTrue(model.markdownPreviewEnabled(for: selected))
             XCTAssertFalse(model.markdownPreviewEnabled(for: quietPage))
-            XCTAssertEqual(model.previewRendering(for: selected), scope)
-            XCTAssertEqual(model.previewRendering(for: quietPage), scope)
+            XCTAssertEqual(model.previewRendering, scope)
             XCTAssertEqual(try preview(for: selected, in: roll).string, "Heading\nbody\n")
             XCTAssertEqual(try button(in: header(for: selected, in: roll)).state, .on)
             XCTAssertTrue(roll.stack.editor === editor)
@@ -1185,8 +1181,8 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
             second.previewRendering = scope
             XCTAssertFalse(second.markdownPreviewEnabled(for: restoredDisabled))
             XCTAssertTrue(second.markdownPreviewEnabled(for: restoredEnabled))
-            XCTAssertEqual(second.previewRendering(for: restoredDisabled), scope)
-            XCTAssertEqual(second.previewRendering(for: restoredEnabled), scope)
+            XCTAssertEqual(second.previewRendering, scope)
+            XCTAssertEqual(second.previewRendering, scope)
         }
         second.toggleMarkdownPreview(for: restoredEnabled)
         XCTAssertFalse(second.markdownPreviewEnabled(for: restoredEnabled))
@@ -1220,7 +1216,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         for uuid in [firstUUID, secondUUID] {
             let page = try XCTUnwrap(second.tabs.first { $0.pageUUID == uuid }?.pageID)
             XCTAssertFalse(second.markdownPreviewEnabled(for: page))
-            XCTAssertEqual(second.previewRendering(for: page), .allPages)
+            XCTAssertEqual(second.previewRendering, .allPages)
         }
     }
 
@@ -1241,7 +1237,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertNotEqual(replacementUUID, oldUUID)
         XCTAssertFalse(model.markdownPreviewEnabled(for: replacement))
         XCTAssertFalse(model.markdownPreviewEnabled(for: oldPage))
-        XCTAssertEqual(model.previewRendering(for: replacement), model.previewRendering)
+        XCTAssertEqual(model.previewRendering, model.previewRendering)
         XCTAssertNil(defaults.dictionary(forKey: "pageMarkdownPreviewV2")?[oldUUID])
         model.toggleMarkdownPreview(for: replacement)
         XCTAssertTrue(model.markdownPreviewEnabled(for: replacement))
@@ -1322,14 +1318,14 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         model.applyingProjection { note.storage.mutableString.setString("# Heading\nbody") }
         note.coordinator.restyle()
         XCTAssertTrue(model.markdownPreviewEnabled(for: page))
-        XCTAssertEqual(model.previewRendering(for: page), .never)
+        XCTAssertEqual(model.previewRendering, .never)
         XCTAssertEqual(note.coordinator.appliedPreviewRendering, .never)
         XCTAssertFalse(headingIsStyled(note.storage))
 
         model.previewRendering = .allPages
         note.coordinator.applyPreviewRendering(model.previewRendering)
         XCTAssertTrue(model.markdownPreviewEnabled(for: page))
-        XCTAssertEqual(model.previewRendering(for: page), .allPages)
+        XCTAssertEqual(model.previewRendering, .allPages)
         XCTAssertEqual(note.coordinator.appliedPreviewRendering, .allPages)
         XCTAssertTrue(headingIsStyled(note.storage))
         XCTAssertEqual(note.storage.string, "# Heading\nbody")

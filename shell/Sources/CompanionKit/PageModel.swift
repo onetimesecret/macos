@@ -797,10 +797,8 @@ public final class PageModel: ObservableObject {
         return tabs.first(where: { $0.pageID == id })?.pageUUID
     }
 
-    public func previewRendering(for id: UInt64) -> PreviewRenderingScope {
-        previewRendering
-    }
-
+    /// Whether the page shows its builtin Markdown preview, a choice of its own apart
+    /// from `previewRendering`, which styles the editor and the quiet pages.
     public func markdownPreviewEnabled(for id: UInt64) -> Bool {
         guard let key = pagePreviewIdentity(for: id) else { return false }
         return pagePreviewOverrides[key] ?? false

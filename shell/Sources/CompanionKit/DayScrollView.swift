@@ -541,8 +541,8 @@ final class DayStackView: NSView {
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
-        if let page = selectedPage {
-            coordinator.applyPreviewRendering(model.previewRendering(for: page))
+        if selectedPage != nil {
+            coordinator.applyPreviewRendering(model.previewRendering)
         }
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
