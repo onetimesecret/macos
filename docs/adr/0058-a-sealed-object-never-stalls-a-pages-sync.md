@@ -262,6 +262,20 @@ What this record does not decide:
   ink, and ADR-0012's egress inventory counts payload egresses, so the
   count stays at three. The size class and kind are the ledger's own
   content-free fields.
+- A note converges by whole text last writer wins where the body
+  converges by merge. Two devices that edit one note offline keep one
+  side's text and lose the other's entirely, and point 5's restate is
+  outside the note's undo stack, so nothing recovers it; the body would
+  have merged both edits. The name converges the same way and loses at
+  most an identifier. This is the sharpest loss the design accepts.
+- The note is now the one unbounded free text field that leaves the
+  device inside the seal. ADR-0042 bounds the name to 1 to 64 characters
+  of a shell identifier's charset; nothing bounds the note, so a person
+  who pastes a secret into a note syncs it to every enrolled device,
+  sealed from the relay but present on each. That is a decision of this
+  record, not a side effect: the direction keeps the value home and
+  lets the rest travel. Open question 1 asks whether the table caps the
+  note.
 - A mixed pair of builds stalls as before until both carry this record:
   an earlier build skips the table (client protocol §6) and still refuses
   the batch on `ChipRoster`. No user meets this before the relay ships.
