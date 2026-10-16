@@ -28,7 +28,8 @@ decrypted drag handle.
 fragment, its paste reads it, the slot's button places a cut, two
 presses remove an object with Undo on the line, the page drags its
 selection as the fragment, and the block's handle starts the decrypted
-drag, so every check can run.
+drag, so every check can run. The two handles check, added 2026-10-16
+with the move handle (issue #255), is owed with the rest.
 
 ## Why by hand
 
@@ -474,6 +475,32 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the pointer does not change over the handle or stays an open hand
       off it, a still click starts a drag, or the handle is hard to read
       in either appearance.
+- [ ] **The two handles side by side** (D-29's acceptance; Law 0001,
+      move drag row). On a card at least as wide as the default, point
+      at a sealed object. **Pass:** the top row shows `⠿` in the quiet
+      grey of `SEALED CONTENT`, then a gap, then `drag decrypted` in its
+      ember outline, then `···`; the two handles do not touch, the
+      glyph wears no outline and no words, and nothing else on the
+      block moves when they appear. Over `⠿` the pointer is an open
+      hand, and off it the text cursor again. Press `⠿` and release
+      without moving: the object is selected and nothing is dragged.
+      Press `⠿` and drag: the pointer closes, the image is the block's
+      face with no excerpt, and a drop lower on the same page moves the
+      object there, the page keeping one object; a drop on the other
+      page where two show at once moves it there. Open the ledger
+      afterwards. Switch the Mac to the Dark appearance and point at the
+      object again: the glyph reads as clearly as in Light, and still
+      apart from the ember handle. Narrow the card until the row cannot
+      hold both: `⠿` goes first, `drag decrypted` stays, and narrower
+      still `drag decrypted` goes with `⠿` never coming back into its
+      place. With VoiceOver on, move the cursor over the block: the two
+      handles read as *Move* and *Drag decrypted*. **Fail:** the two
+      handles overlap or read alike, `⠿` is drawn in ember or carries
+      words, the block's contents shift, a still press drags, the
+      dragged image shows the sealed word, a drop from `⠿` lands the
+      word anywhere or the ledger gains a `sent`, `drag decrypted`
+      goes before `⠿` on a narrow card, `⠿` returns once the ember
+      handle is gone, or VoiceOver names neither handle.
 - [ ] **Decrypted drag into a form field.** Drag from the object's
       decrypted handle into a browser's text field; repeat in Safari and
       in one Chromium browser. **Pass:** the drag image shows only the
