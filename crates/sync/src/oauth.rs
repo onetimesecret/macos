@@ -44,7 +44,7 @@ pub enum SyncAuthError {
     /// account identifiers).
     Refused(u16),
     /// The refresh was refused: revoked account-side, rotation reuse
-    /// tripped, or the 90-day idle window ran out. Sync is signed out;
+    /// tripped, or the server's idle window ran out. Sync is signed out;
     /// the pad is unaffected. Re-enabling sync is the browser ceremony
     /// again.
     SignedOut,
