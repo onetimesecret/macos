@@ -221,7 +221,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
     }
 
     func testTableLayoutWrapsToThePreviewWidthAndReflowsOnResize() throws {
-        let view = MarkdownPreviewView()
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
         let words = Array(repeating: "wrapping words", count: 12).joined(separator: " ")
         view.reseed(with: PageModel.QuietRendering(
             text: NSAttributedString(string: "| Name | Description |\n| --- | --- |\n| row | \(words) |"),
@@ -322,7 +323,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
     }
 
     func testReseedingSkipsTheSameIdentityButRendersANewWrapper() throws {
-        let view = MarkdownPreviewView()
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
         let rendering = PageModel.QuietRendering(text: NSAttributedString(string: "**first**"), fenceRegions: [])
         view.reseed(with: rendering)
         XCTAssertEqual(view.string, "first\n")

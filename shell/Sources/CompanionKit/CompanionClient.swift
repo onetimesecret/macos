@@ -1291,6 +1291,30 @@ public class CompanionClient: @unchecked Sendable {
         try? copyFragmentResult(sheet: sheet, range: range).get()
     }
 
+    /// One run the shell shows of a page: rendered text, or an object by chip id.
+    public enum ShownRun: Equatable, Sendable {
+        case ink(String)
+        case chip(UInt64)
+    }
+
+    /// Compose the runs the shell shows of a page, a preview's rendered text between its
+    /// objects and each object by chip id, as `copyFragmentResult` composes a range, or why
+    /// the core refused it (core interface, `companion_sheet_compose_fragment`).
+    public func composeShownFragmentResult(
+        sheet: UInt64, shown: [ShownRun]
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        let runs: [[String: Any]] = shown.map { run in
+            switch run {
+            case .ink(let text): ["ink": text]
+            case .chip(let id): ["chip": NSNumber(value: id)]
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: runs),
+              let json = String(data: data, encoding: .utf8)
+        else { return .failure(.refused) }
+        return json.withCString { fragment(from: companion_sheet_compose_fragment(handle, sheet, $0)) }
+    }
+
     /// Copy a UTF-16 range of a page, or why the core refused it.
     public func copyFragmentResult(
         sheet: UInt64, range: NSRange

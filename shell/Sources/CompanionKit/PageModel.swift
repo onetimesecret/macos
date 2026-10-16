@@ -5183,8 +5183,9 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// The editor to hand the keys to, or nil when the one the model is
-    /// holding has already left the window.
+    /// The editor to hand the keys to, or the selected page's read only
+    /// preview where one stands over the editor, or nil when the one the
+    /// model keeps has already left the window.
     ///
     /// `activeEditor` is weak, which answers the question of whether the
     /// view still exists and not the question the hand-off is actually
@@ -5204,8 +5205,9 @@ public final class PageModel: ObservableObject {
         // Ownership can transfer before SwiftUI replaces the old mount.
         // A focus request for one window must wait for its own editor.
         if let targetWindow, editor.window !== targetWindow { return nil }
+        // Mid switch the hidden editor and the selection can disagree; the editor then stands in.
         if editor.isHidden, let stack = editor.superview as? DayStackView {
-            return stack.selectedPreview
+            return stack.selectedPreview ?? editor
         }
         return editor
     }
@@ -6021,6 +6023,43 @@ public final class PageModel: ObservableObject {
         /// Its envelope would pass a cap the paste keeps (Law 0001, copy row).
         case pastCap(FragmentRefusal)
         case refused
+    }
+
+    /// Compose what a preview shows of its page's selection, each stretch as the rendered
+    /// text between its objects and each object by chip id (Law 0001, the preview's copy
+    /// row); writes nothing, and a refusal settles as the timer would (the expiry row).
+    public func composeShownSelection(
+        _ stretches: [[CompanionClient.ShownRun]], sheet: UInt64
+    ) -> SelectionComposition {
+        guard !sheet.isFileID, !stretches.isEmpty else { return .refused }
+        var fragments: [SealedFragment] = []
+        for shown in stretches {
+            switch client.composeShownFragmentResult(sheet: sheet, shown: shown) {
+            case .success(let fragment):
+                fragments.append(fragment)
+            case .failure(.refused):
+                return settleIfDue(sheet: sheet) ? .pageExpired : .refused
+            case .failure(let cap):
+                return .pastCap(cap)
+            }
+        }
+        guard fragments.count > 1 else { return .composed(fragments[0]) }
+        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+            return .severalStretchesHoldAnObject
+        }
+        return .composed(SealedFragment(joining: fragments))
+    }
+
+    /// Copy what a preview shows of its page's selection to the ordinary pasteboard as
+    /// the core composes it; nothing is written if it is refused.
+    @discardableResult
+    public func copyShownSelection(_ stretches: [[CompanionClient.ShownRun]], sheet: UInt64) -> Bool {
+        let composition = composeShownSelection(stretches, sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .copy) { flash(line) }
+            return false
+        }
+        return fragment.write(to: ambientPasteboard)
     }
 
     /// Compose a page's selected ranges for a copy or a service; writes nothing,

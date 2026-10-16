@@ -680,7 +680,7 @@ final class DayStackView: NSView {
                 // day.
                 let body: NSView
                 if model.markdownPreviewEnabled(for: page) {
-                    body = previewRegion(for: page)
+                    body = previewRegion(for: page, selected: page == selectedPage)
                 } else {
                     body = (page == selectedPage ? editorView(for: page) : nil)
                         ?? quietRegion(for: page)
@@ -814,28 +814,41 @@ final class DayStackView: NSView {
         }
     }
 
-    private func previewRegion(for page: UInt64) -> MarkdownPreviewView {
-        let region = previewRegions[page] ?? MarkdownPreviewView()
-        region.onActivate = { [weak self] in
+    /// The rendered preview of a page, gated as the page's own text is (Law 0001);
+    /// only the selected page's is selectable, and a click on another promotes
+    /// its page as a click on a quiet page does (ADR-0030).
+    private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
+        let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
+        region.onPromote = { [weak self] in
             guard let self, self.model.owner == self.coordinator.surface,
                   let tab = self.model.tabs.first(where: { $0.pageID == page }),
                   self.model.selectedPageID != page else { return }
+            // The rendered index is no source index, so the saved caret stands.
             self.pendingCaret = nil
             self.model.select(tab.id)
             self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
         }
+        region.isSelectedPage = selected
         region.reseed(with: model.quietRendering(for: page))
         previewRegions[page] = region
         return region
     }
 
+    /// Stand the selected page's preview over the editor, or the editor alone, and move
+    /// the keys with the page: from the editor, or from a preview the selection left.
     private func refreshEditorPresentation(heldEditorFocus: Bool = false) {
         guard let editor else { return }
         let preview = coordinator.currentSheet.flatMap { previewRegions[$0] }
-        let transferFocus = heldEditorFocus || window?.firstResponder === editor
+        let responder = window?.firstResponder
+        let keysOnAnotherPreview = (responder as? MarkdownPreviewView).map { keeper in
+            keeper !== preview && previewRegions.values.contains { $0 === keeper }
+        } ?? false
+        let transferFocus = heldEditorFocus || responder === editor || keysOnAnotherPreview
         coordinator.updateEditability(of: editor, to: !readOnly && preview == nil)
         editor.isHidden = preview != nil
-        if let preview, transferFocus { window?.makeFirstResponder(preview) }
+        if transferFocus, let target: NSTextView = preview ?? (editor.isHidden ? nil : editor) {
+            window?.makeFirstResponder(target)
+        }
     }
 
     /// Settle whatever the input method has provisionally placed, when
@@ -2236,7 +2249,8 @@ final class QuietPageView: NSTextView {
         }
     }
 
-    /// One focusable text view in the card, always. The editor is it.
+    /// One focusable text view in the card, always: the editor, or the
+    /// selected page's preview where one stands over it (ADR-0030).
     override var acceptsFirstResponder: Bool { false }
 
     override func becomeFirstResponder() -> Bool { false }

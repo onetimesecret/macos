@@ -1,14 +1,33 @@
 import AppKit
 import Markdown
 
+/// A page's Markdown, rendered. It is the page's text shown another way, so every
+/// AppKit route out of it asks the page first (Law 0001, the preview's rows): copy
+/// composes through the core from what it shows, a link opens by the coordinator's
+/// `openLink`, the text menu keeps no reader, and no drag starts here.
 @MainActor
-final class MarkdownPreviewView: NSTextView {
+final class MarkdownPreviewView: AskingTextView {
+    /// The page this preview shows and asks.
+    let page: UInt64
+    private weak var coordinator: InkEditorView.Coordinator?
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
-    var onActivate: (() -> Void)?
-    private var isActivating = false
+    private let links = PreviewLinks()
 
-    init() {
+    /// A click on a preview of a page the roll has not selected promotes it (ADR-0030).
+    var onPromote: (() -> Void)?
+
+    /// Only the selected page's preview is selectable and may take the keys (ADR-0030).
+    var isSelectedPage = false {
+        didSet { isSelectable = isSelectedPage }
+    }
+
+    /// Drag sessions this view began; the tests pin it at none.
+    private(set) var draggingSessionsBegun = 0
+
+    init(page: UInt64, coordinator: InkEditorView.Coordinator?) {
+        self.page = page
+        self.coordinator = coordinator
         let storage = NSTextStorage()
         previewStorage = storage
         let manager = NSLayoutManager()
@@ -20,7 +39,7 @@ final class MarkdownPreviewView: NSTextView {
         manager.addTextContainer(container)
         super.init(frame: .zero, textContainer: container)
         isEditable = false
-        isSelectable = true
+        isSelectable = false
         isRichText = true
         importsGraphics = false
         drawsBackground = false
@@ -38,6 +57,10 @@ final class MarkdownPreviewView: NSTextView {
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
+        isAutomaticLinkDetectionEnabled = false
+        TextOffers.offerUngatedReaders(false, on: self)
+        links.preview = self
+        delegate = links
     }
 
     @available(*, unavailable)
@@ -45,22 +68,148 @@ final class MarkdownPreviewView: NSTextView {
         fatalError("Markdown previews are not unarchived")
     }
 
+    // MARK: Focus and the click (ADR-0030)
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var needsPanelToBecomeKey: Bool { true }
+    override var acceptsFirstResponder: Bool { isSelectedPage }
 
     override func becomeFirstResponder() -> Bool {
-        guard super.becomeFirstResponder() else { return false }
-        if !isActivating {
-            isActivating = true
-            onActivate?()
-            isActivating = false
-        }
-        return true
+        isSelectedPage && super.becomeFirstResponder()
     }
 
+    /// On the selected page a click selects; on any other it promotes the page.
     override func mouseDown(with event: NSEvent) {
-        onActivate?()
+        guard isSelectedPage else { return promote() }
         super.mouseDown(with: event)
+    }
+
+    /// The click itself, apart from the event, as `QuietPageView.clicked(at:)` is.
+    func promote() {
+        onPromote?()
+    }
+
+    // MARK: AppKit's readers of the text (Law 0001, expiry row and the preview's rows)
+
+    /// The page is asked, as the editor asks it; with no page to ask, nothing leaves.
+    override var mayReadOut: Bool {
+        coordinator?.model.givesOut(sheet: page) ?? false
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let menu = super.menu(for: event) else { return nil }
+        aimLinkItems(in: menu, at: convert(event.locationInWindow, from: nil))
+        return menu
+    }
+
+    /// A ⌘-click and Open Link go to the coordinator's `openLink`, which asks this view first.
+    override func openAimedLink(_ link: Any) {
+        coordinator?.openLink(link, from: self)
+    }
+
+    override var linkBoard: NSPasteboard? { coordinator?.model.ambientPasteboard }
+
+    /// The selection as the core composes it: the rendered text between the objects as
+    /// the ink runs and each object by chip id, in rendered order (Law 0001, copy row).
+    func shownSelection() -> [[CompanionClient.ShownRun]] {
+        selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.map { range in
+            var runs: [CompanionClient.ShownRun] = []
+            let text = previewStorage.string as NSString
+            previewStorage.enumerateAttribute(.attachment, in: range) { value, run, _ in
+                guard let chip = value as? ChipAttachment else {
+                    if value == nil, run.length > 0 { runs.append(.ink(text.substring(with: run))) }
+                    return
+                }
+                for _ in 0..<run.length { runs.append(.chip(chip.info.chipId)) }
+            }
+            return runs
+        }
+    }
+
+    /// Copy composes through the core, which refuses past the deadline (Law 0001, copy row).
+    override func copy(_ sender: Any?) {
+        guard let coordinator else { return }
+        coordinator.model.copyShownSelection(shownSelection(), sheet: page)
+    }
+
+    /// A service takes the public text alone (Law 0001, export row).
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [.string, SealedFragment.legacyStringType]
+    }
+
+    /// No service may write back over a preview.
+    override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        guard returnType == nil else { return nil }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    /// The composition's public text in whichever public type was asked for, never the envelope.
+    override func writeSelection(
+        to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        guard let fragment = composedForRequester(),
+              let item = fragment.pasteboardItem(
+                  offering: types.filter { $0 != SealedFragment.pasteboardType })
+        else { return false }
+        pboard.clearContents()
+        return pboard.writeObjects([item])
+    }
+
+    override func writeSelection(
+        to pboard: NSPasteboard, type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        guard type == .string || type == SealedFragment.legacyStringType,
+              let fragment = composedForRequester()
+        else { return false }
+        return pboard.setString(fragment.plainText, forType: .string)
+    }
+
+    /// The composition for a service, its refusal told as a copy's is.
+    private func composedForRequester() -> SealedFragment? {
+        guard let coordinator else { return nil }
+        let composition = coordinator.model.composeShownSelection(shownSelection(), sheet: page)
+        if let line = PageModel.refusalLine(for: composition, .copy) { coordinator.model.flash(line) }
+        guard case .composed(let fragment) = composition else { return nil }
+        return fragment
+    }
+
+    /// Use Selection for Find hands the text to the finder's board (Law 0001, expiry row).
+    override func performFindPanelAction(_ sender: Any?) {
+        guard !refusesFinderAction(sender) else { return }
+        super.performFindPanelAction(sender)
+    }
+
+    override func performTextFinderAction(_ sender: Any?) {
+        guard !refusesFinderAction(sender) else { return }
+        super.performTextFinderAction(sender)
+    }
+
+    private func refusesFinderAction(_ sender: Any?) -> Bool {
+        let tag = (sender as? NSValidatedUserInterfaceItem)?.tag ?? (sender as? NSControl)?.tag
+        guard tag == NSTextFinder.Action.setSearchString.rawValue else { return false }
+        return !mayReadOut
+    }
+
+    // MARK: No drag starts here (Law 0001, plain drag row)
+
+    override func dragSelection(
+        with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool
+    ) -> Bool {
+        false
+    }
+
+    override func dragImageForSelection(with event: NSEvent, origin: NSPointPointer?) -> NSImage? {
+        nil
+    }
+
+    override func beginDraggingSession(
+        with items: [NSDraggingItem], event: NSEvent, source: any NSDraggingSource
+    ) -> NSDraggingSession {
+        draggingSessionsBegun += 1
+        return super.beginDraggingSession(with: items, event: event, source: source)
     }
 
     func reseed(with rendering: PageModel.QuietRendering) {
@@ -73,6 +222,27 @@ final class MarkdownPreviewView: NSTextView {
     static func render(_ source: NSAttributedString) -> NSAttributedString {
         MarkdownPreviewRenderer(source: source).render()
     }
+}
+
+/// The preview's delegate: a link opens only by `openAimedLink`, and an object's
+/// attachment gives AppKit nothing to drag, open or write (Law 0001, link and attachment rows).
+@MainActor
+private final class PreviewLinks: NSObject, NSTextViewDelegate {
+    weak var preview: MarkdownPreviewView?
+
+    /// A ⌘-click opens through the gate; a plain click selects, as on a page.
+    func textView(_ view: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        if NSApp?.currentEvent?.modifierFlags.contains(.command) == true {
+            preview?.openAimedLink(link)
+        }
+        return true
+    }
+
+    /// A drag that starts on an object starts nothing here.
+    func textView(
+        _ view: NSTextView, draggedCell cell: any NSTextAttachmentCellProtocol,
+        in rect: NSRect, event: NSEvent, at charIndex: Int
+    ) {}
 }
 
 @MainActor

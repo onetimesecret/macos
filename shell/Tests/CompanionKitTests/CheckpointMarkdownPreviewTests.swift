@@ -100,6 +100,383 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         (storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont) != InkStyle.baseFont
     }
 
+    // MARK: The preview as a page's text (Law 0001, the preview's rows)
+
+    /// The links a preview opened, recorded in place of the browser.
+    private final class OpenedLinks {
+        var urls: [URL] = []
+    }
+
+    /// A model whose copies go to a board of the test's own and whose links open here.
+    private struct Gated {
+        let model: PageModel
+        let pasteboard: NSPasteboard
+        let opened: OpenedLinks
+    }
+
+    private func makeGatedModel() throws -> Gated {
+        let defaults = try makeDefaults()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("checkpoint-preview-gated-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let client = CompanionClient.ephemeral(tag: UUID().uuidString)
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let pasteboard = NSPasteboard.withUniqueName()
+        addTeardownBlock { pasteboard.releaseGlobally() }
+        let opened = OpenedLinks()
+        let model = PageModel(
+            formFactor: .backdrop, defaults: defaults,
+            seams: .init(
+                stateDirectory: directory, client: client,
+                clearClipboardIfOurs: { false }, ambientPasteboard: pasteboard,
+                openURL: { opened.urls.append($0) }))
+        model.showsTimeUnits = true
+        return Gated(model: model, pasteboard: pasteboard, opened: opened)
+    }
+
+    private static let secretLink = URL(string: "https://example.com/secret")!
+
+    /// `# Heading\nbody [x](<secretLink>) <SECRET> tail`, the object sealed from `SECRET`,
+    /// with the preview on; the page is the selected one.
+    private static let sealedInk = "# Heading\nbody [x](\(secretLink.absoluteString)) SECRET tail"
+
+    /// Where the object stands in the page's source once `SECRET` is sealed.
+    private static let objectIndex = (sealedInk as NSString).range(of: "SECRET").location
+
+    private func sealedPreviewPage(in model: PageModel) throws -> (page: UInt64, chip: UInt64) {
+        let page = try page(in: model, saying: Self.sealedInk)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
+        let editor = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        let secret = NSRange(location: Self.objectIndex, length: 6)
+        editor.setSelectedRange(secret)
+        coordinator.sealSelectionOrLine()
+        let chip = try XCTUnwrap(coordinator.chipAttachment(at: secret.location)?.info.chipId)
+        coordinator.leavePage(editor, scrollView: nil)
+        model.toggleMarkdownPreview(for: page)
+        return (page, chip)
+    }
+
+    /// The envelope's documented shape (core interface, Envelope, version 1), read only here.
+    private struct Envelope: Decodable {
+        let version: Int
+        let cut: String?
+        let nodes: [Node]
+    }
+
+    private struct Node: Decodable, Equatable {
+        let ink: String?
+        let ref: Ref?
+    }
+
+    private struct Ref: Decodable, Equatable {
+        let uuid: String
+        let name: String?
+        let note: String?
+    }
+
+    private func envelope(on pasteboard: NSPasteboard) throws -> Envelope {
+        let data = try XCTUnwrap(
+            pasteboard.data(forType: SealedFragment.pasteboardType), "no fragment was written")
+        return try JSONDecoder().decode(Envelope.self, from: data)
+    }
+
+    /// Every byte of every type on the board, as text, to search for payload.
+    private func everything(on pasteboard: NSPasteboard) -> String {
+        (pasteboard.types ?? []).compactMap { pasteboard.data(forType: $0) }
+            .map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n")
+    }
+
+    /// The character index of the first link the preview draws.
+    private func linkIndex(in preview: MarkdownPreviewView) throws -> Int {
+        let storage = try XCTUnwrap(preview.textStorage)
+        return try XCTUnwrap(
+            (0..<storage.length).first { storage.attribute(.link, at: $0, effectiveRange: nil) != nil },
+            "no link was rendered")
+    }
+
+    /// A secondary click near the view's top left corner, over ink and no object.
+    private func secondaryClick(in view: NSView) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: view.convert(NSPoint(x: 4, y: 4), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    /// The readers this machine's services may or may not add to a text menu, as items of
+    /// the test's own, with a link's Open With and Edit Link… beside them.
+    private func readerControls() -> [NSMenuItem] {
+        var items = [
+            ("Search With Google", "_searchWithGoogleFromMenu:"),
+            ("Show Writing Tools", "showWritingTools:"),
+            ("Look Up “body”", "_rvMenuItemAction:"),
+            ("Translate “body”", "_rvMenuItemAction:"),
+            ("Edit Link…", "orderFrontLinkPanel:"),
+        ].map { NSMenuItem(title: $0.0, action: Selector(($0.1)), keyEquivalent: "") }
+        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        openWith.identifier = NSUserInterfaceItemIdentifier("__NSTextViewContextSubmenuIdentifierOpenWith")
+        let app = NSMenuItem(title: "Browser.app", action: nil, keyEquivalent: "")
+        app.representedObject = URL(fileURLWithPath: "/Applications/Browser.app")
+        openWith.submenu = NSMenu()
+        openWith.submenu?.addItem(app)
+        items.append(openWith)
+        let speech = NSMenuItem(title: "Speech", action: nil, keyEquivalent: "")
+        speech.submenu = NSMenu()
+        speech.submenu?.addItem(NSMenuItem(
+            title: "Start Speaking", action: #selector(NSTextView.startSpeaking(_:)), keyEquivalent: ""))
+        items.append(speech)
+        return items
+    }
+
+    /// The text menu AppKit builds over `view` on a base seeded with `readerControls()`.
+    private func seededMenu(_ view: NSTextView) throws -> NSMenu {
+        let base = NSMenu()
+        readerControls().forEach(base.addItem)
+        let kept = view.menu
+        view.menu = base
+        defer { view.menu = kept }
+        return try XCTUnwrap(view.menu(for: secondaryClick(in: view)))
+    }
+
+    /// The readers `menu` still offers, by name.
+    private func readers(in menu: NSMenu) -> [String] {
+        var found: [String] = []
+        if menu.items.contains(where: TextOffers.isShare) { found.append("Share") }
+        if menu.items.contains(where: TextOffers.isLookUpOrTranslate) { found.append("Look Up") }
+        if menu.items.contains(where: TextOffers.isSpeech) { found.append("Speech") }
+        if menu.items.contains(where: TextOffers.isSpelling) { found.append("Spelling") }
+        if menu.items.contains(where: TextOffers.isWebSearch) { found.append("Search With") }
+        if menu.items.contains(where: TextOffers.isWritingTools) { found.append("Writing Tools") }
+        if menu.items.contains(where: TextOffers.isOpenWith) { found.append("Open With") }
+        if menu.items.contains(where: TextOffers.isEditLink) { found.append("Edit Link") }
+        return found
+    }
+
+    /// Makes the application's current event a click with `flags`, as a real one would be.
+    private func click(with flags: NSEvent.ModifierFlags) throws {
+        let app = NSApplication.shared
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        app.postEvent(event, atStart: true)
+        let current = app.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true)
+        XCTAssertTrue(app.currentEvent === current, "the click is not the current event")
+    }
+
+    /// A ⌘-click on the preview's link, through the delegate, as AppKit's tracking sends it.
+    private func commandClickLink(in preview: MarkdownPreviewView) throws {
+        let index = try linkIndex(in: preview)
+        let link = try XCTUnwrap(preview.textStorage?.attribute(.link, at: index, effectiveRange: nil))
+        try click(with: .command)
+        defer { try? click(with: []) }
+        XCTAssertTrue(preview.delegate?.textView?(preview, clickedOnLink: link, at: index) == true)
+    }
+
+    /// Puts `page` past its deadline with no sweep: a one hour rung, two hours on.
+    private func age(_ page: UInt64, in model: PageModel) throws {
+        let tab = try XCTUnwrap(model.tabs.first { $0.pageID == page }?.id)
+        XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        XCTAssertTrue(model.coreClient.tabs().contains { $0.pageID == page }, "the page was swept")
+    }
+
+    private func mouseDragged(in view: NSView) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: view.convert(NSPoint(x: 30, y: 12), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    /// The preview's text menu offers no reader of the selection and the view answers
+    /// Writing Tools, typing suggestions, inline predictions and data detectors with none,
+    /// as the page's own editor does (Law 0001, export row): the menu is built on items of
+    /// the test's own so no runner's services decide it.
+    func testAPreviewOffersNoReaderAndAnswersWritingToolsSuggestionsAndDetectorsWithNone() throws {
+        let gated = try makeGatedModel()
+        let (page, _) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        preview.setSelectedRange(NSRange(location: 0, length: 7))
+
+        let menu = try XCTUnwrap(preview.menu(for: secondaryClick(in: preview)))
+        XCTAssertEqual(readers(in: menu), [])
+        XCTAssertEqual(readers(in: try seededMenu(preview)), [])
+        XCTAssertFalse(zip(menu.items, menu.items.dropFirst()).contains {
+            $0.isSeparatorItem && $1.isSeparatorItem
+        }, "a reader left a doubled separator")
+
+        XCTAssertFalse(preview.isAutomaticTextCompletionEnabled)
+        preview.toggleAutomaticTextCompletion(nil)
+        XCTAssertFalse(preview.isAutomaticTextCompletionEnabled, "the toggle")
+        XCTAssertFalse(preview.isAutomaticDataDetectionEnabled)
+        preview.toggleAutomaticDataDetection(nil)
+        XCTAssertFalse(preview.isAutomaticDataDetectionEnabled, "the toggle")
+        XCTAssertFalse(preview.isAutomaticLinkDetectionEnabled)
+        XCTAssertFalse(preview.isEditable)
+        guard #available(macOS 15.0, *) else { return }
+        XCTAssertEqual(preview.writingToolsBehavior, .none)
+        XCTAssertEqual(preview.inlinePredictionType, .no)
+    }
+
+    /// The preview copies what it shows through the core (Law 0001, copy row): one fragment
+    /// whose ink runs are the rendered text between the objects, never the source markdown,
+    /// and whose references are the objects, in rendered order; the public text puts a
+    /// placeholder where each object stood, and a service takes the public text alone.
+    func testAPreviewCopiesWhatItShowsAsOneFragmentWithEachObjectByReference() throws {
+        let gated = try makeGatedModel()
+        let (page, chip) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        XCTAssertEqual(preview.string, "Heading\nbody x \u{FFFC} tail\n")
+        preview.selectAll(nil)
+
+        preview.copy(nil)
+
+        let envelope = try envelope(on: gated.pasteboard)
+        XCTAssertEqual(envelope.version, 1)
+        XCTAssertNil(envelope.cut)
+        XCTAssertEqual(envelope.nodes.map(\.ink), ["Heading\nbody x ", nil, " tail\n"])
+        let reference = try XCTUnwrap(envelope.nodes[1].ref)
+        let own = try XCTUnwrap(gated.model.coreClient.copyFragment(
+            sheet: page, range: NSRange(location: Self.objectIndex, length: 1)))
+        let ownEnvelope = try JSONDecoder().decode(Envelope.self, from: try XCTUnwrap(own.envelope))
+        XCTAssertEqual(ownEnvelope.nodes.first?.ref, reference, "the page's own reference")
+        XCTAssertEqual(
+            gated.pasteboard.string(forType: .string), "Heading\nbody x [sealed content · tiny] tail\n")
+        let written = everything(on: gated.pasteboard)
+        XCTAssertFalse(written.contains("SECRET"), "payload reached the board")
+        XCTAssertFalse(written.contains("# Heading"), "the source markdown reached the board")
+        XCTAssertFalse(written.contains(Self.secretLink.absoluteString), "the link's destination")
+        XCTAssertEqual(
+            Set(gated.pasteboard.pasteboardItems?.first?.types ?? []),
+            [SealedFragment.pasteboardType, .string], "the copy's two types and no other")
+        _ = chip
+
+        preview.setSelectedRange(NSRange(location: 0, length: 7))
+        preview.copy(nil)
+        XCTAssertEqual(gated.pasteboard.string(forType: .string), "Heading")
+        XCTAssertNil(gated.pasteboard.data(forType: SealedFragment.pasteboardType), "ink alone")
+
+        preview.selectAll(nil)
+        let service = NSPasteboard.withUniqueName()
+        defer { service.releaseGlobally() }
+        XCTAssertEqual(
+            Set(preview.writablePasteboardTypes), [.string, SealedFragment.legacyStringType])
+        XCTAssertTrue(preview.writeSelection(
+            to: service, types: [SealedFragment.pasteboardType, .string]))
+        XCTAssertEqual(service.string(forType: .string), "Heading\nbody x [sealed content · tiny] tail\n")
+        XCTAssertNil(service.data(forType: SealedFragment.pasteboardType), "a service takes the public text alone")
+        XCTAssertNil(preview.validRequestor(forSendType: .string, returnType: .string), "nothing writes back")
+    }
+
+    /// No drag starts from the preview, with an object in the selection or not (Law 0001,
+    /// plain drag row): the drag's image would draw the objects' faces where no gate sees.
+    func testAPreviewStartsNoDragFromASelectionHoldingAnObject() throws {
+        let gated = try makeGatedModel()
+        let (page, _) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        preview.selectAll(nil)
+        let board = gated.pasteboard.changeCount
+        let event = try mouseDragged(in: preview)
+
+        XCTAssertFalse(preview.dragSelection(with: event, offset: .zero, slideBack: true))
+        XCTAssertNil(preview.dragImageForSelection(with: event, origin: nil))
+        let objectIndex = (preview.string as NSString).range(of: "\u{FFFC}").location
+        let cell = try XCTUnwrap(
+            (preview.textStorage?.attribute(.attachment, at: objectIndex, effectiveRange: nil)
+                as? NSTextAttachment)?.attachmentCell)
+        preview.delegate?.textView?(
+            preview, draggedCell: cell, in: preview.bounds, event: event, at: objectIndex)
+
+        XCTAssertEqual(preview.draggingSessionsBegun, 0)
+        XCTAssertEqual(gated.pasteboard.changeCount, board)
+        XCTAssertEqual(NSPasteboard(name: .drag).changeCount, NSPasteboard(name: .drag).changeCount)
+        preview.setSelectedRange(NSRange(location: 0, length: 7))
+        XCTAssertFalse(preview.dragSelection(with: event, offset: .zero, slideBack: true), "ink alone")
+        XCTAssertEqual(preview.draggingSessionsBegun, 0)
+    }
+
+    /// A link in the preview opens only by ⌘-click through the coordinator's `openLink`,
+    /// which asks the page first; a plain click opens nothing (Law 0001, link rows).
+    func testAPreviewsLinkOpensOnlyByCommandClickThroughTheGate() throws {
+        let gated = try makeGatedModel()
+        let (page, _) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        let index = try linkIndex(in: preview)
+        let link = try XCTUnwrap(preview.textStorage?.attribute(.link, at: index, effectiveRange: nil))
+
+        try click(with: [])
+        XCTAssertTrue(preview.delegate?.textView?(preview, clickedOnLink: link, at: index) == true)
+        XCTAssertEqual(gated.opened.urls, [], "a plain click opened the link")
+
+        try commandClickLink(in: preview)
+        XCTAssertEqual(gated.opened.urls, [Self.secretLink])
+
+        preview.openAimedLink(link)
+        XCTAssertEqual(gated.opened.urls, [Self.secretLink, Self.secretLink], "Open Link")
+        XCTAssertTrue(gated.model.tabs.contains { $0.pageID == page })
+    }
+
+    /// From its deadline, before any sweep, every way out of a preview refuses, writes
+    /// and opens nothing, and settles at once with its line (Law 0001, expiry row).
+    func testEveryWayOutOfAPreviewPastItsPagesDeadlineRefusesAndTheSettleTakesIt() throws {
+        let ways: [(name: String, run: (MarkdownPreviewView) throws -> Void)] = [
+            ("copy", { $0.copy(nil) }),
+            ("a service's write", { preview in
+                let service = NSPasteboard.withUniqueName()
+                defer { service.releaseGlobally() }
+                XCTAssertFalse(preview.writeSelection(to: service, types: [.string]))
+                XCTAssertNil(service.string(forType: .string))
+            }),
+            ("⌘-click", { try self.commandClickLink(in: $0) }),
+            ("Open Link", { preview in
+                let index = try self.linkIndex(in: preview)
+                let link = try XCTUnwrap(preview.textStorage?.attribute(.link, at: index, effectiveRange: nil))
+                preview.openAimedLink(link)
+            }),
+            ("Copy Link", { preview in
+                let index = try self.linkIndex(in: preview)
+                let link = try XCTUnwrap(preview.textStorage?.attribute(.link, at: index, effectiveRange: nil))
+                let item = NSMenuItem(title: "Copy Link", action: nil, keyEquivalent: "")
+                item.representedObject = AskingTextView.LinkTarget(link: link, index: index)
+                preview.copyLinkFromMenu(item)
+            }),
+            ("the readers", { preview in
+                XCTAssertFalse(preview.mayReadOut)
+            }),
+        ]
+        for way in ways {
+            let gated = try makeGatedModel()
+            let (page, _) = try sealedPreviewPage(in: gated.model)
+            let roll = try mountRoll(gated.model)
+            defer { roll.window.close() }
+            let preview = try preview(for: page, in: roll)
+            XCTAssertTrue(roll.window.makeFirstResponder(preview))
+            preview.selectAll(nil)
+            try age(page, in: gated.model)
+            let board = gated.pasteboard.changeCount
+
+            try way.run(preview)
+
+            XCTAssertEqual(gated.opened.urls, [], "\(way.name) opened the link")
+            XCTAssertEqual(gated.pasteboard.changeCount, board, "\(way.name) wrote the board")
+            XCTAssertEqual(gated.model.notice, PageModel.pageExpiredLine, way.name)
+            XCTAssertFalse(gated.model.tabs.contains { $0.pageID == page }, "\(way.name): no settle")
+            XCTAssertEqual(readers(in: try seededMenu(preview)), [], "\(way.name): the menu")
+        }
+    }
+
     func testPerPagePreviewDefaultsOffAndTogglesIndependentlyOfEveryGlobalScope() throws {
         let model = try makeModel()
         let first = try page(in: model)
@@ -329,9 +706,8 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         let preview = try preview(for: previewPage, in: roll)
         preview.setSelectedRange(NSRange(location: 1, length: 0))
         XCTAssertNotEqual(model.selectedPageID, previewPage)
-        let activate = try XCTUnwrap(preview.onActivate)
 
-        activate()
+        preview.promote()
 
         XCTAssertEqual(model.selectedPageID, previewPage)
         DayScrollView.updateRoll(
@@ -477,7 +853,9 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertTrue(try body(for: first, in: roll) === editor)
     }
 
-    func testKeyboardFocusActivatesNonselectedPreview() throws {
+    /// A preview of a page the roll has not selected is as a quiet page is (ADR-0030):
+    /// not selectable, never the first responder, and a click on it promotes its page.
+    func testAPreviewOfAnUnselectedPageIsNotSelectableAndAClickPromotesIt() throws {
         let model = try makeModel()
         let first = try page(in: model)
         let second = try page(in: model)
@@ -487,12 +865,33 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         defer { roll.window.close() }
         let firstPreview = try preview(for: first, in: roll)
         let secondPreview = try preview(for: second, in: roll)
+        XCTAssertTrue(secondPreview.isSelectedPage)
+        XCTAssertTrue(secondPreview.isSelectable)
+        XCTAssertTrue(secondPreview.acceptsFirstResponder)
+        XCTAssertTrue(roll.window.makeFirstResponder(secondPreview))
+        XCTAssertFalse(firstPreview.isSelectedPage)
+        XCTAssertFalse(firstPreview.isSelectable)
+        XCTAssertFalse(firstPreview.acceptsFirstResponder)
+
+        // A responder that refuses the keys leaves them with the window, as a quiet page does.
+        roll.window.makeFirstResponder(firstPreview)
+        XCTAssertFalse(roll.window.firstResponder === firstPreview, "the keys went to a quiet preview")
+        XCTAssertEqual(model.selectedPageID, second)
+        XCTAssertEqual(roll.coordinator.currentSheet, second)
         XCTAssertTrue(roll.window.makeFirstResponder(secondPreview))
 
-        XCTAssertTrue(roll.window.makeFirstResponder(firstPreview))
+        let click = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: firstPreview.convert(NSPoint(x: 4, y: 4), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: roll.window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        firstPreview.mouseDown(with: click)
 
         XCTAssertEqual(model.selectedPageID, first)
         XCTAssertEqual(roll.coordinator.currentSheet, first)
+        XCTAssertTrue(firstPreview.isSelectedPage)
+        XCTAssertTrue(firstPreview.isSelectable)
+        XCTAssertFalse(secondPreview.isSelectedPage)
+        XCTAssertFalse(secondPreview.isSelectable)
         XCTAssertTrue(roll.window.firstResponder === firstPreview)
         XCTAssertTrue(PageModel.mountedEditor(model.activeEditor) === firstPreview)
     }
