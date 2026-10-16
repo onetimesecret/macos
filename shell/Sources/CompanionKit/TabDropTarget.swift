@@ -74,8 +74,9 @@ final class TabDropTarget: NSView {
     private func classify(
         _ sender: NSDraggingInfo
     ) -> (route: InkTextView.DropRoute, cargo: InkTextView.DragCargo) {
+        // Gated before the board is read: a refused tab touches nothing of the drag.
+        guard takesDrops, let page else { return (.refused, .otherApp) }
         let cargo = InkTextView.cargo(of: sender, in: model)
-        guard takesDrops, let page else { return (.refused, cargo) }
         if case .pageDrag(_, let from, _, _) = cargo, from == page { return (.ownDrag, cargo) }
         // A tab has no surface for AppKit to lay ink on, so ink from this app is refused here.
         let route = InkTextView.dropRoute(
@@ -101,8 +102,8 @@ final class TabDropTarget: NSView {
         case .refused, .ink:
             return []
         case .ownDrag:
-            guard case .pageDrag(_, let sheet, let range, _) = cargo else { return [] }
-            return ownDragOperation(range, on: sheet, offered: mask)
+            guard case .pageDrag(let source, _, let range, _) = cargo else { return [] }
+            return ownDragOperation(range, from: source, offered: mask)
         case .move:
             return .move
         case .fragment:
@@ -113,25 +114,31 @@ final class TabDropTarget: NSView {
     }
 
     /// The page's own drag onto its tab: a move of a range already ending the body is no drop.
+    /// The end is the source surface's own storage, a read with no call into the core per hover.
     private func ownDragOperation(
-        _ range: NSRange, on sheet: UInt64, offered mask: NSDragOperation
+        _ range: NSRange, from source: InkEditorView.Coordinator, offered mask: NSDragOperation
     ) -> NSDragOperation {
         let operation = InkTextView.pageDropOperation(offered: mask)
-        let atEnd = NSMaxRange(range) == model.bodyLength(of: sheet)
-        return operation == .move && atEnd ? [] : operation
+        guard let end = source.textView?.textStorage?.length else { return [] }
+        return operation == .move && NSMaxRange(range) == end ? [] : operation
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard takesDrops, let page else { return false }
+        // A due page settles before any surface is readied or the board read (Law 0001, expiry row).
+        if model.settleIfDue(sheet: page) {
+            model.flash(PageModel.pageExpiredLine)
+            return false
+        }
         // Read before drop to seal touches the drag board, which would ask our provider.
         let (route, cargo) = classify(sender)
-        guard let page else { return false }
         let mask = sender.draggingSourceOperationMask
         switch route {
         case .refused, .ink:
             return false
         case .ownDrag:
             guard case .pageDrag(let source, _, let range, _) = cargo else { return false }
-            let operation = ownDragOperation(range, on: page, offered: mask)
+            let operation = ownDragOperation(range, from: source, offered: mask)
             guard operation != [], admitsDrop(from: source.textView, onto: page) else { return false }
             let showing = prepareSurface(of: page)
             let end = model.bodyLength(of: page)

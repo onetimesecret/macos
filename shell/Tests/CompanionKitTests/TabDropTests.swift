@@ -214,6 +214,27 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(chips(model, source.sheet).map(\.chipId), ids)
     }
 
+    /// The end is counted in UTF-16 units, so a drop on the tab of a page reading a surrogate
+    /// pair stands the object after the pair, where the core and the surface both put it.
+    func testTheEndIsCountedInUTF16UnitsPastASurrogatePair() throws {
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let source = try mountPage(on: model)
+        let (dest, slot) = try unshownPage(on: model, text: "x😀")
+        let target = TabDropTarget(model: model, slot: slot)
+        XCTAssertEqual(model.bodyLength(of: dest), 3, "the pair did not count as two units")
+
+        XCTAssertTrue(target.performDragOperation(drag(from: nil, board: inkBoard("hunter2"), mask: copy)))
+        XCTAssertEqual(standIn.drops, [[dest, 3, 0]], "the seal was not aimed past the pair")
+        XCTAssertEqual(shape(model, dest), "x😀#")
+
+        let board = try beginDrag(source, NSRange(location: 0, length: 4))
+        XCTAssertTrue(target.performDragOperation(drag(from: source.textView, board: board, mask: move)))
+        XCTAssertEqual(shape(model, dest), "x😀#ab #", "the move was not placed after the pair and the object")
+        XCTAssertEqual(model.bodyLength(of: dest), 8)
+        XCTAssertFalse(model.hasStorage(for: dest), "the drops built a storage for a page nobody shows")
+    }
+
     // MARK: The page's own tab
 
     /// The page's own drag dropped on its tab moves the range to the end of its body as one

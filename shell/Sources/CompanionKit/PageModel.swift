@@ -5915,9 +5915,9 @@ public final class PageModel: ObservableObject {
     }
 
     /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab is placed (issue 254),
-    /// read from the core's runs so a page nobody shows gets no storage built for it.
+    /// read from the core's runs as they stand: it edits nothing and builds no storage.
     func bodyLength(of sheet: UInt64) -> Int {
-        runs(of: sheet).reduce(0) { length, run in
+        client.documentRuns(sheet: sheet).reduce(0) { length, run in
             switch run {
             case .ink(let text): length + text.utf16.count
             case .chip: length + 1
