@@ -1043,8 +1043,8 @@ final class FileDocumentTests: XCTestCase {
             "an empty roster leaves no file behind rather than an empty one")
     }
 
-    /// The persistence decision background section 6's rotation, driven by the call `saveState`'s
-    /// rotate leg makes.
+    /// The persistence decision background section 6's rotation, driven
+    /// by the call `saveState`'s rotate leg makes.
     ///
     /// Driven through the client rather than through the leg's own
     /// predicate, because that predicate is "a tab remains and none of

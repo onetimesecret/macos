@@ -3062,10 +3062,11 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
     into_c_string(sync_driver::status_json(&guard).to_string())
 }
 
-/// Where the account gate stands, as one machine token (account-auth decision background §5):
-/// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
-/// `ready` or `attached`, the status JSON's `gate`. It says whether this
-/// client may attach and nothing about content (relay decision background §3).
+/// Where the account gate stands, as one machine token (account-auth
+/// decision background §5): `off`, `signed_out`, `signing_in`,
+/// `refused`, `unreachable`, `ready` or `attached`, the status JSON's
+/// `gate`. It says whether this client may attach and nothing about
+/// content (relay decision background §3).
 ///
 /// Null on a null handle or a poisoned lock: a gate that cannot be read
 /// has not been passed, so null means may not attach. A status JSON
@@ -3162,7 +3163,8 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         staged
     };
     let Some((pending, transport)) = staged else {
-        // Nothing to finish; never spelled as a refusal (account-auth decision background §2).
+        // Nothing to finish; never spelled as a refusal (account-auth
+        // decision background §2).
         return sync_refusal("no_ceremony");
     };
     let abandoned = Arc::clone(&pending.abandoned);
@@ -3225,9 +3227,9 @@ pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHand
 
 /// Sign sync out: drop the held tokens and delete the persisted refresh
 /// token, exactly one Keychain account; the conceal token, content and
-/// ledger keys, pairing accounts and the pad all stand (relay decision background §3). A
-/// ceremony out on the browser ends with it. True when the delete was
-/// accepted.
+/// ledger keys, pairing accounts and the pad all stand (relay decision
+/// background §3). A ceremony out on the browser ends with it. True
+/// when the delete was accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -7278,7 +7280,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Rotation follows the state, not the transition (persistence decision background section 6).
+    /// Rotation follows the state, not the transition (persistence
+    /// decision background section 6).
     #[test]
     fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
         let credentials: Arc<dyn CredentialStore> =

@@ -294,8 +294,8 @@ pub struct CeremonyPeer {
     pub package: KeyPackage,
 }
 
-/// The engine, one per channel (one per account, relay decision background §1), driven
-/// by whoever owns the runloop.
+/// The engine, one per channel (one per account, relay decision
+/// background §1), driven by whoever owns the runloop.
 pub struct SyncSession {
     api: RelayApi,
     keeper: TokenKeeper,

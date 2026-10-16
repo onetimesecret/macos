@@ -72,7 +72,8 @@ final class FormFactorTests: XCTestCase {
     /// shipping entry point ever takes here.
     ///
     /// What they hold up is case 4's shell consequence (persistence
-    /// decision background section 9). A dev copy and an installed release copy are two
+    /// decision background section 9). A dev copy and an installed
+    /// release copy are two
     /// apps to LaunchServices, and they must be two stores: two
     /// processes resolving to one identifier would share a state
     /// directory and a Keychain service, and two debounces would write

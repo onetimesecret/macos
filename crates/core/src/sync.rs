@@ -7,10 +7,10 @@
 use crate::sheet::ItemId;
 
 /// What a device publishes for a page's expiry: the policy, never the
-/// deadline (relay decision background section 6). Both halves are wall-clock values,
-/// read off the live countdown, and each receiver computes its own
-/// deadline from their sum, [`ExpiryPolicy::deadline_wall_ms`] (client
-/// protocol §6).
+/// deadline (relay decision background section 6). Both halves are
+/// wall-clock values, read off the live countdown, and each receiver
+/// computes its own deadline from their sum,
+/// [`ExpiryPolicy::deadline_wall_ms`] (client protocol §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpiryPolicy {
     /// Unix epoch milliseconds at the moment the countdown this policy
@@ -33,8 +33,8 @@ impl ExpiryPolicy {
 
 /// The pause machine's state as it replicates, one register per page:
 /// the state, never the press, applied in stream order, and a live hold
-/// suspends the countdown everywhere (relay decision background section 6; client
-/// protocol §6).
+/// suspends the countdown everywhere (relay decision background
+/// section 6; client protocol §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoldRegister {
     /// No hold stands; the countdown runs.
@@ -56,8 +56,8 @@ pub enum HoldRegister {
 /// gate below admits, and absorbing — after it, every delta for the
 /// page is refused and the page's key is destroyed, which kills the
 /// relay's buffered ciphertext for everyone at once (relay decision
-/// background section 6). The signature is the seam's business, not this crate's; what
-/// travels through here is the claim.
+/// background section 6). The signature is the seam's business, not
+/// this crate's; what travels through here is the signed fact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalMarker {
     /// The dead page.
@@ -190,7 +190,8 @@ impl PageChannel {
     }
 
     /// The one gate on who may declare a synced page dead (relay
-    /// decision background section 6): a device whose view is current, while no hold stands.
+    /// decision background section 6): a device whose view is current,
+    /// while no hold stands.
     /// A device that expired the page offline entombs its own copy but
     /// publishes no marker: a hold it never saw may keep the page alive.
     #[must_use]
@@ -269,8 +270,8 @@ impl PageChannel {
 
     /// Adopt the channel's epoch after rejoining at the current key
     /// frame: the one legal way to cross a ceremony boundary this
-    /// device slept through (relay decision background section 5). The pre-ceremony
-    /// history was dropped by the rejoin
+    /// device slept through (relay decision background section 5). The
+    /// pre-ceremony history was dropped by the rejoin
     /// ([`SheetStore::adopt_key_frame`] only lands on a fresh page),
     /// so adopting the number is honest by the time it happens.
     ///

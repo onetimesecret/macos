@@ -3,7 +3,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The whole of the persistence decision background section 2's first claim, which is broader than
+/// The whole of the persistence decision background section 2's first
+/// statement, which is broader than
 /// the ledger invariant beside it (`LedgerAppendArmingTests`, issue
 /// #52): every mutation site, appending or not, must arm a write. With
 /// sudden termination declared, anything that moved the store and armed
