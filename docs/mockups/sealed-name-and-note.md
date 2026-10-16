@@ -153,6 +153,6 @@ more seats the law reaches:
   minimum.
 
 *Answered by draft ADR-0042, now Law 0001's unnamed row and note rows
-and ADR-0047 point 1, proposed:* an unnamed row has no zones until the
+and ADR-0047 point 1, accepted 2026-10-16:* an unnamed row has no zones until the
 object is named; the value is copied raw; and on a narrow card the note
 takes the card's full content width.

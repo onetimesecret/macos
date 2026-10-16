@@ -306,7 +306,7 @@ struct PageExport {
     meta: Zeroizing<Vec<u8>>,
     /// Each chip's note text, in chip order; an empty note writes none.
     notes: Vec<Option<Zeroizing<String>>>,
-    /// The same for the detached chips (ADR-0046 point 1, proposed).
+    /// The same for the detached chips (ADR-0046 point 1).
     detached_notes: Vec<Option<Zeroizing<String>>>,
 }
 
@@ -464,7 +464,7 @@ fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
         }
     }
     out.bytes(chip.bytes.expose());
-    // Trailing, so a build that predates them skips both (ADR-0043 point 4, proposed).
+    // Trailing, so a build that predates them skips both (ADR-0043 point 4).
     match &chip.name {
         None => out.u8(0),
         Some(name) => {
@@ -776,7 +776,7 @@ fn read_page(
             _ => return Err(Malformed),
         }
     };
-    // And the detached chips (ADR-0046 point 1, proposed), which a file written
+    // And the detached chips (ADR-0046 point 1), which a file written
     // before them lacks.
     let detached = if reader.done() {
         Vec::new()
@@ -885,7 +885,7 @@ fn read_chip(record: &mut Reader<'_>, next_chip_id: &mut u64) -> Result<SealedCh
         _ => return Err(Malformed),
     };
     let bytes = record.bytes().ok_or(Malformed)?;
-    // A record written before the name ends here (ADR-0043 point 4, proposed).
+    // A record written before the name ends here (ADR-0043 point 4).
     let name = if record.done() {
         None
     } else {

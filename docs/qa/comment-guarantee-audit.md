@@ -173,7 +173,7 @@ One observation, not a contradiction: on the save path, `ensure_file_half` treat
 The audit above reads the tree at 7544943 and is left as it was. On
 2026-10-13, under issue #170 and draft ADR-0047, whose detached store is
 now [ADR-0046](../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
-(proposed), a removed chip became detached rather than zeroized, which settles the
+(accepted 2026-10-16), a removed chip became detached rather than zeroized, which settles the
 chip removal contradiction in favour of D-30. Two tests named above
 were rewritten to pin the new behaviour:
 

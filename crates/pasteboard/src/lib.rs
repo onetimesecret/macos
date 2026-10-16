@@ -94,7 +94,7 @@ impl ContentKind {
 }
 
 /// One item of a drag in flight, which a decrypted drag's payload is written
-/// into when a destination asks for it (ADR-0045 point 5, proposed).
+/// into when a destination asks for it (ADR-0045 point 5).
 pub trait DragItem {
     /// Whether the item's pasteboard is the general pasteboard, which a
     /// decrypted drag never writes (ADR-0012 Amendment 1).

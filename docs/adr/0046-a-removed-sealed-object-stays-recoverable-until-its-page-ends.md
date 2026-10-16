@@ -4,8 +4,8 @@ documentation_status: needs-review
 
 # ADR-0046: A sealed object removed from a page stays recoverable until the page ends
 
-- **Status:** proposed
-- **Date:** 2026-10-14
+- **Status:** accepted
+- **Date:** 2026-10-16
 - **Depends on:** [ADR-0013](0013-bounded-document-history-and-block-metadata.md), whose Loro document carries each chip's identity as a mark on its sentinel.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -101,3 +101,4 @@ lifecycle states. The bytes at rest are in the
 
 - 2026-10-14: Proposed.
 - 2026-10-14: Consolidated from draft ADR-0047 (the sealed fragment, the detached store and decrypted drag) points 4 and 5, written 2026-10-13 and never ratified.
+- 2026-10-16: Accepted.
