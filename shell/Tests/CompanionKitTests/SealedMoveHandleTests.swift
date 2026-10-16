@@ -110,6 +110,11 @@ final class SealedMoveHandleTests: XCTestCase {
             clickCount: 1, pressure: 1))
     }
 
+    /// `rect`, drawn in the page's text view, on the screen, the space VoiceOver's frames are in.
+    private func onScreen(_ rect: NSRect, in page: Page) -> NSRect {
+        page.window.convertToScreen(page.textView.convert(rect, to: nil))
+    }
+
     private func sent(_ model: PageModel) -> [String] {
         model.coreClient.ledger().filter { $0.event == "sent" }.map(\.destination)
     }
@@ -360,7 +365,9 @@ final class SealedMoveHandleTests: XCTestCase {
         hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
         let elements = textView.handleAccessibilityElements()
         XCTAssertEqual(elements.map { $0.accessibilityLabel() }, ["Move", "Drag decrypted"])
-        XCTAssertEqual(elements.map { $0.accessibilityFrameInParentSpace() }, [move, decrypted])
+        XCTAssertEqual(
+            elements.map { $0.accessibilityFrame() },
+            [move, decrypted].map { onScreen($0, in: page) })
         for element in elements {
             XCTAssertEqual(element.accessibilityRole(), .handle)
             XCTAssertTrue((element.accessibilityParent() as AnyObject?) === textView)
@@ -381,5 +388,38 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertEqual(
             textView.handleAccessibilityElements().map { $0.accessibilityLabel() },
             ["Move", "Drag decrypted"], "the selected block")
+    }
+
+    /// Each handle's element answers the screen frame of its seat, the one the VoiceOver
+    /// cursor box is drawn around. The text view is flipped, so a parent space frame taken
+    /// as drawn would put the box down the block instead of on the top row.
+    func testTheHandleElementsAnswerTheScreenFrameOfTheirSeats() throws {
+        let page = try mountPage(on: try makeModel())
+        page.window.setFrameOrigin(NSPoint(x: 300, y: 200))
+        let textView = page.textView
+        XCTAssertTrue(textView.isFlipped)
+        XCTAssertEqual(
+            textView.accessibilityFrame(), onScreen(textView.bounds, in: page), "the parent")
+
+        let (move, decrypted, frame) = try handles(page)
+        hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
+        let elements = textView.handleAccessibilityElements()
+        XCTAssertEqual(elements.count, 2)
+        for (element, seat) in zip(elements, [move, decrypted]) {
+            let expected = onScreen(seat, in: page)
+            let answered = element.accessibilityFrame()
+            XCTAssertEqual(answered.minX, expected.minX, accuracy: 0.5, "\(seat)")
+            XCTAssertEqual(answered.minY, expected.minY, accuracy: 0.5, "\(seat)")
+            XCTAssertEqual(answered.width, expected.width, accuracy: 0.5)
+            XCTAssertEqual(answered.height, expected.height, accuracy: 0.5)
+            XCTAssertGreaterThan(
+                answered.midY, onScreen(frame, in: page).midY,
+                "the box is on the bottom half of the block")
+        }
+
+        page.window.setFrameOrigin(NSPoint(x: 120, y: 640))
+        XCTAssertEqual(
+            elements.map { $0.accessibilityFrame() },
+            [move, decrypted].map { onScreen($0, in: page) }, "the window moved")
     }
 }

@@ -5285,13 +5285,22 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                 guard let rect = cell.handleRect(handle, in: frame) else { continue }
                 let key = HandleElementKey(index: index, handle: handle)
                 let element = handleElements[key] ?? makeHandleElement(handle)
-                element.setAccessibilityFrameInParentSpace(rect)
+                element.setAccessibilityFrameInParentSpace(accessibilityParentSpaceRect(rect))
                 kept[key] = element
                 elements.append(element)
             }
         }
         handleElements = kept
         return elements
+    }
+
+    /// `rect`, drawn in this flipped view, in the space a child element's parent space frame
+    /// is read in: the view's bounds with the origin at the lower left.
+    func accessibilityParentSpaceRect(_ rect: NSRect) -> NSRect {
+        guard isFlipped else { return rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY) }
+        return NSRect(
+            x: rect.minX - bounds.minX, y: bounds.maxY - rect.maxY,
+            width: rect.width, height: rect.height)
     }
 
     private func makeHandleElement(_ handle: SealedBlockCell.Handle) -> NSAccessibilityElement {

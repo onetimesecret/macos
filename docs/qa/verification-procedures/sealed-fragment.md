@@ -494,13 +494,18 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       hold both: `⠿` goes first, `drag decrypted` stays, and narrower
       still `drag decrypted` goes with `⠿` never coming back into its
       place. With VoiceOver on, move the cursor over the block: the two
-      handles read as *Move* and *Drag decrypted*. **Fail:** the two
+      handles read as *Move* and *Drag decrypted*, and the VoiceOver
+      cursor box is drawn around each handle's seat on the top row, not
+      lower on the block. In both appearances, `⠿` reads at the weight
+      of the ember handle's words and sits centred on the row beside it.
+      **Fail:** the two
       handles overlap or read alike, `⠿` is drawn in ember or carries
       words, the block's contents shift, a still press drags, the
       dragged image shows the sealed word, a drop from `⠿` lands the
       word anywhere or the ledger gains a `sent`, `drag decrypted`
       goes before `⠿` on a narrow card, `⠿` returns once the ember
-      handle is gone, or VoiceOver names neither handle.
+      handle is gone, VoiceOver names neither handle or draws its box
+      away from a handle's seat, or `⠿` reads faint or off the row.
 - [ ] **Decrypted drag into a form field.** Drag from the object's
       decrypted handle into a browser's text field; repeat in Safari and
       in one Chromium browser. **Pass:** the drag image shows only the
