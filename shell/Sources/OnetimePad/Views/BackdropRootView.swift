@@ -210,7 +210,7 @@ struct BackdropRootView: View {
                     if pages.showsTimeUnits {
                         TimeStripView(model: pages)
                     } else {
-                        TabStripView(model: pages)
+                        TabStripView(model: pages, readOnly: !raised)
                     }
                 }
                 .stanceFaded(raised: raised, animation: stanceFade)

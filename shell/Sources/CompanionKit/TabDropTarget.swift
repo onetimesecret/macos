@@ -6,13 +6,19 @@ import SwiftUI
 struct TabDropOverlay: NSViewRepresentable {
     let model: PageModel
     let slot: UInt64
+    /// The card's stance, as the page content takes it: a resting card's tab takes no drop.
+    let readOnly: Bool
 
     func makeNSView(context: Context) -> TabDropTarget {
-        TabDropTarget(model: model, slot: slot)
+        TabDropTarget(
+            model: model, slot: slot, readOnly: readOnly,
+            surface: context.environment.presentationSurface)
     }
 
     func updateNSView(_ view: TabDropTarget, context: Context) {
         view.slot = slot
+        view.readOnly = readOnly
+        view.surface = context.environment.presentationSurface
     }
 }
 
@@ -23,10 +29,19 @@ final class TabDropTarget: NSView {
     let model: PageModel
     /// The slot, not the page: the page is read live, so a slot whose page went aims nothing.
     var slot: UInt64
+    /// A resting card mounts its page read only, and its tab takes no drop either (ADR-0015).
+    var readOnly: Bool
+    /// The window this tab stands in; only the owner's tab writes into a page (ADR-0033).
+    var surface: PresentationOwner
 
-    init(model: PageModel, slot: UInt64) {
+    init(
+        model: PageModel, slot: UInt64, readOnly: Bool = false,
+        surface: PresentationOwner = .panel
+    ) {
         self.model = model
         self.slot = slot
+        self.readOnly = readOnly
+        self.surface = surface
         super.init(frame: .zero)
         // The fragment, and the two kinds the core reads off another app's drag board.
         registerForDraggedTypes([SealedFragment.pasteboardType, .string, .png])
@@ -45,6 +60,12 @@ final class TabDropTarget: NSView {
         model.tabs.first { $0.id == slot }?.pageID
     }
 
+    /// Whether this tab takes any drop: on a raised card, in the window that owns the page
+    /// content, as the page's surface is gated (`readOnly`, `shouldShowPasteboardOffer`).
+    var takesDrops: Bool {
+        !readOnly && model.owner == surface
+    }
+
     /// The route `sender` takes onto this tab, and what it carries.
     func dropRoute(for sender: NSDraggingInfo) -> InkTextView.DropRoute {
         classify(sender).route
@@ -54,7 +75,7 @@ final class TabDropTarget: NSView {
         _ sender: NSDraggingInfo
     ) -> (route: InkTextView.DropRoute, cargo: InkTextView.DragCargo) {
         let cargo = InkTextView.cargo(of: sender, in: model)
-        guard let page else { return (.refused, cargo) }
+        guard takesDrops, let page else { return (.refused, cargo) }
         if case .pageDrag(_, let from, _, _) = cargo, from == page { return (.ownDrag, cargo) }
         // A tab has no surface for AppKit to lay ink on, so ink from this app is refused here.
         let route = InkTextView.dropRoute(

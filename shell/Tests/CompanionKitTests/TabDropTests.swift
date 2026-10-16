@@ -310,6 +310,50 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(target.draggingEntered(foreign), [])
     }
 
+    // MARK: The card's stance and the window's ownership
+
+    /// A resting card's tab takes no drop, as its read only page takes none (ADR-0015), and
+    /// a tab in the window that does not own the page content takes none (ADR-0033); each
+    /// offers no operation, reads nothing and says nothing.
+    func testATabOnARestingCardOrInTheWindowThatDoesNotOwnTakesNoDrop() throws {
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let source = try mountPage(on: model)
+        let (dest, slot) = try unshownPage(on: model, text: "xy")
+        let board = try beginDrag(source, NSRange(location: 0, length: 4))
+        let moving = drag(from: source.textView, board: board, mask: move)
+        let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
+
+        func refuses(_ target: TabDropTarget, _ state: String) {
+            XCTAssertFalse(target.takesDrops, state)
+            for drop in [moving, foreign] {
+                XCTAssertEqual(target.dropRoute(for: drop), .refused, state)
+                XCTAssertEqual(target.draggingEntered(drop), [], state)
+                XCTAssertEqual(target.draggingUpdated(drop), [], state)
+                XCTAssertFalse(target.performDragOperation(drop), state)
+            }
+            XCTAssertEqual(shape(model, dest), "xy", "a drop landed \(state)")
+            XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "the source lost its run \(state)")
+            XCTAssertEqual(standIn.drops, [], "the core read the board \(state)")
+            XCTAssertNil(model.notice, "a refused drop said something \(state)")
+        }
+
+        let raised = TabDropTarget(model: model, slot: slot, surface: .panel)
+        XCTAssertEqual(raised.dropRoute(for: moving), .move, "the control: the owner's raised tab takes the move")
+        refuses(TabDropTarget(model: model, slot: slot, readOnly: true, surface: .panel), "on a resting card")
+
+        model.transferOwnership(to: .editorWindow)
+        refuses(raised, "in the window that does not own")
+
+        // The hand off ended the standing drag, so the owner's control is the seal.
+        let editor = TabDropTarget(model: model, slot: slot, surface: .editorWindow)
+        XCTAssertTrue(editor.takesDrops)
+        XCTAssertEqual(editor.draggingEntered(foreign), .copy)
+        XCTAssertTrue(editor.performDragOperation(foreign))
+        XCTAssertEqual(shape(model, dest), "xy#", "the owner's tab took no drop")
+        XCTAssertEqual(standIn.drops, [[dest, 2, 0]])
+    }
+
     // MARK: A fragment and another app's drag
 
     /// A copy fragment carried by anything but a standing page drag pastes at the end of
