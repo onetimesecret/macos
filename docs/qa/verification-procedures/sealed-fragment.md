@@ -490,8 +490,8 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       page where two show at once moves it there. Open the ledger
       afterwards. Switch the Mac to the Dark appearance and point at the
       object again: the glyph reads as clearly as in Light, and still
-      apart from the ember handle. Narrow the card until the row cannot
-      hold both: `⠿` goes first, `drag decrypted` stays, and narrower
+      apart from the ember handle. Narrow the card until the row has no
+      room for both: `⠿` goes first, `drag decrypted` stays, and narrower
       still `drag decrypted` goes with `⠿` never coming back into its
       place. With VoiceOver on, move the cursor over the block: the two
       handles read as *Move* and *Drag decrypted*, and the VoiceOver
@@ -499,9 +499,9 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       lower on the block. In both appearances, `⠿` reads at the weight
       of the ember handle's words and sits centred on the row beside it.
       **Fail:** the two
-      handles overlap or read alike, `⠿` is drawn in ember or carries
+      handles overlap or read alike, `⠿` is drawn in ember or wears
       words, the block's contents shift, a still press drags, the
-      dragged image shows the sealed word, a drop from `⠿` lands the
+      dragged image shows the sealed word, a drop from `⠿` puts the
       word anywhere or the ledger gains a `sent`, `drag decrypted`
       goes before `⠿` on a narrow card, `⠿` returns once the ember
       handle is gone, VoiceOver names neither handle or draws its box

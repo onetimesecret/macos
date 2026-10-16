@@ -195,7 +195,7 @@ final class SealedMoveHandleTests: XCTestCase {
         }
         XCTAssertEqual(moveOnly, 0, "a move handle drawn with no decrypted handle beside it")
         XCTAssertGreaterThan(decryptedOnly, 0, "no width lost the move handle alone")
-        XCTAssertGreaterThan(both, 0, "no width held both")
+        XCTAssertGreaterThan(both, 0, "no width fit both")
     }
 
     /// A kind this build cannot drag decrypted has no decrypted handle, so its move handle

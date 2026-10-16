@@ -171,7 +171,7 @@ outlined words in ember.
   glyph and the classification wear. Never ember.
 - Its seat ends 8 before the decrypted drag handle, 16 high on the same
   row, the glyph inset 5 each side.
-- Where the row cannot hold both, the move handle gives way first: once
+- Where the row has no room for both, the move handle gives way first: once
   the decrypted drag handle has gone, the move handle does not return
   to the seat it left. The decrypted drag handle is the one labelled
   declassification seat on the block and D-29 asks that it stay
