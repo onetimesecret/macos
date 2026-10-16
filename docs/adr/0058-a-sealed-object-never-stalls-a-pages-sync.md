@@ -146,7 +146,10 @@ travels.
    or a peer's update standing the sentinel again reattaches it, and it
    dies with its page (ADR-0046 point 1 and Law 0001's expiry row apply
    unchanged). It never enters the active cut as a payload holder; a
-   cut on the peer carries its reference, nothing more.
+   cut on the peer carries its reference, nothing more. A batch from an
+   enrolled peer may create any number of such records; each dies with
+   its page, and this record accepts that within ADR-0021's trust model
+   (enrolled devices, a sealed channel) rather than capping it.
 2. **The face.** On a device that holds the value, nothing changes. On a
    device where the object is held on another device, the face shows the
    kind and size class when known and the line `held on another
@@ -158,8 +161,10 @@ travels.
    value. Removal on that device is structural, as everywhere: the
    sentinel leaves the body and the record detaches; the explicit burn
    is the holding device's act alone. The whole page's conceal from a
-   device where any of its objects is held on another device is refused
-   and says why, since the link would lack that object's value.
+   device whose body stands an object held on another device is refused
+   and says why, since the link would lack that object's value; an
+   object only in the detached store does not refuse it, since the link
+   does not need that object's value.
 3. **Structural edits keep the identity.** On a peer, a cut, a paste of
    that cut, a move between pages and a drag inside the page carry the
    object's identity unchanged, so a later batch from the holding device
@@ -170,36 +175,63 @@ travels.
    unknown reference; the outcome names it. A paste that would stand an
    identity twice in one body is refused, as point 1 keeps.
 4. **The metadata channel.** A page's chip metadata travels as a table
-   beside its ops: one entry per chip the page holds, attached or
-   detached, carrying the identity, the kind (`text` or `image`), the
-   size class, the name, the note's text and, when the object has been
-   burned, that terminal state. The table is its own envelope shape in
-   the same sealed batch as the page's `Ops`, encoded in
+   beside its ops. The table is a snapshot, never a delta: one entry for
+   every chip in the page's roster, attached or detached, with the
+   identity, the kind (`text` or `image`), the size class, the name, the
+   note's text and, when the object has been burned, that terminal
+   state. A device sends the whole table whenever any of that page's
+   metadata moves, so a receiver fills an identity it did not know from
+   the first table that names it, and a table that was skipped or
+   refused is made good by the next one. The table is its own envelope
+   shape in the same sealed batch as the page's `Ops`, encoded in
    `crates/sync/src/envelope.rs`, sealed under the channel's GOP key as
-   the ops are, and padded with them. The key frame carries the table
+   the ops are, and padded with them. The key frame includes the table
    beside the page's rebuild, so a joining device learns the metadata
    with the document. The ops never wait on the table: a batch whose
    table is absent, refused or skipped applies its ops, and the objects
-   it stands show as held on another device with what is known. What
-   does not travel: the value, the excerpt (made from the value), the
+   it stands show as held on another device with what is known until a
+   table arrives. What does not travel: the value, the excerpt (made
+   from the value), the
    exact character and line counts (finer than the size class the
    ledger admits), the conceal receipt, and the note's undo stack
    (ADR-0043 point 1).
-5. **Convergence.** Every field in a table entry carries a revision: a
-   counter the editing device raises on each accepted edit, with the
-   editing device's identity fingerprint as the tiebreak. On arrival the
-   higher revision wins, field by field, on every device, so two
-   devices that edited offline land on the same name and note whichever
-   batch each receives first. Wall clocks take no part; ADR-0021 already
-   accepts skewed clocks only where they can shorten, never decide. A
-   note's text that arrives replaces the local note's text as one
-   restate outside the note's undo stack, as a peer's edit lands in the
-   page's body outside the page's.
+5. **Convergence.** Every field in a table entry has a revision, a
+   Lamport clock per field. A field with no local value has revision 0.
+   On a local accepted edit the field's revision becomes one more than
+   the greater of the local revision and the highest revision received
+   for that field. A received entry with a higher revision replaces the
+   local field and raises the local revision to it; a lower one is
+   ignored; equal revisions break on the editing device's identity
+   fingerprint, the same way on every device. The last writer wins, not
+   the most frequent editor, so two devices that edited offline converge
+   on the same name and note whichever batch each receives first. Wall
+   clocks take no part; ADR-0021 already accepts skewed clocks only
+   where they can shorten, never decide. A note's text that arrives
+   replaces the local note's text as one restate outside the note's
+   undo stack, as a peer's edit reaches the page's body outside the
+   page's.
 6. **Terminal states travel; the hold and the expiry stay the page's.**
    A burn on the holding device travels in the table as that object's
-   terminal state; a device that receives it drops the record and shows
-   `[sealed content · burned]` for any later reference, as a paste of a
-   burned reference does. Expiry and the hold remain page facts under
+   terminal state. The terminal state is absorbing: it wins every
+   revision comparison for that identity; a device that receives it
+   drops its record for the object and shows `[sealed content · burned]`
+   for any later reference, as a paste of a burned reference does; and
+   a later table entry naming that identity is ignored. The device that
+   burned the object keeps the terminal state in every table it resends,
+   so a device that missed the burn learns it from the next table and
+   never rebuilds the object from a stale entry. A received burn acts
+   only on a record with no value; the device with the value ignores a
+   burn it did not make, since the burn is its act alone (point 2). A
+   burn in the table needs no signature where the page's `Terminal`
+   envelope has one. That marker destroys the page's key on every
+   device and the hold rule gates who may publish it, so it must name
+   its sender. A table entry travels inside the same seal as the
+   unsigned `Ops` and `Expiry` beside it, from an enrolled device, and
+   reaches only a metadata record whose life is already bounded by the
+   page's; whoever could forge it could already forge the ops that
+   remove every sentinel, and client protocol §7.9 reads a past deadline
+   `Expiry` as expiring the page on peers without a live hold. Expiry
+   and the hold remain page facts under
    ADR-0021 and Law 0001: the record of an object held on another device
    dies with its page on every device and is recorded in that device's ledger with its
    page's end, as ADR-0046 records every object's end.
