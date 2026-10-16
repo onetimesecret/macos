@@ -269,8 +269,8 @@ impl Sheet {
 
     /// Runs the shell shows of this page, a preview's rendered text between
     /// its objects and each object by chip id, as a fragment and its public
-    /// text; `None` for no ink and no object, or an object this page does not
-    /// hold. The shown text is the ink (Law 0001, the preview's rows).
+    /// text; `None` for no ink and no object, or an object off this page.
+    /// The shown text is the ink (Law 0001, the preview's rows).
     pub(crate) fn compose(&self, shown: &[Segment]) -> Option<(Fragment, Zeroizing<String>)> {
         let mut nodes = Vec::with_capacity(shown.len());
         let mut sizes: Vec<&str> = Vec::new();

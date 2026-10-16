@@ -806,9 +806,9 @@ char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
  * document's shape:
  *   [{"ink": "Heading\n"}, {"chip": 7}, {"ink": " cd"}]
  * as companion_sheet_copy_fragment() composes a range: the shown text is
- * the ink (Law 0001, AppKit text routes). The same answer and the same
- * refusals, and null also for an object the page does not hold or
- * `shown` that does not parse. Free with companion_string_free().
+ * the ink (Law 0001, the preview's rows). The same answer and the same
+ * refusals, and null also for an object off the page or `shown` that
+ * does not parse. Free with companion_string_free().
  */
 char *companion_sheet_compose_fragment(CompanionHandle *handle, uint64_t sheet,
                                        const char *shown);

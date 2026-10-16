@@ -1642,8 +1642,8 @@ pub unsafe extern "C" fn companion_sheet_cut_fragment(
 /// its objects and each object by chip id, as `[{"ink": "…"}, {"chip": 7}, …]`
 /// (the synced document's shape), the way [`companion_sheet_copy_fragment`]
 /// composes a range: the shown text is the ink (Law 0001, the preview's rows).
-/// The same answer and the same refusals, and null also for an object the
-/// page does not hold or `shown` that does not parse.
+/// The same answer and the same refusals, and null also for an object off the
+/// page or `shown` that does not parse.
 /// Free with [`companion_string_free`].
 ///
 /// # Safety

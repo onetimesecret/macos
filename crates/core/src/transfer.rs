@@ -108,10 +108,10 @@ impl<C: Clock> SheetStore<C> {
 
     /// Compose runs the shell shows of a page, a preview's rendered text and
     /// its objects by chip id, as [`SheetStore::copy_fragment`] composes a
-    /// range: its envelope when it holds an object, and its public text.
+    /// range: its envelope when an object is among them, and its public text.
     /// Refused for an unknown page, a page past its deadline (Law 0001,
-    /// expiry row), an object the page does not hold or an envelope past a
-    /// cap (Law 0001, copy row).
+    /// expiry row), an object off the page or an envelope past a cap (Law
+    /// 0001, copy row).
     pub fn compose_fragment(&self, id: SheetId, shown: &[Segment]) -> Result<Copied, CopyRefusal> {
         let (fragment, plain) = self
             .readable_sheet(id)
