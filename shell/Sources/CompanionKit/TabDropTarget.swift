@@ -145,6 +145,7 @@ final class TabDropTarget: NSView {
             showing?.settleRewrite(selecting: placed.range)
             return true
         case .seal:
+            guard admitsDrop(from: nil, onto: page) else { return false }
             let showing = prepareSurface(of: page)
             let end = model.bodyLength(of: page)
             guard model.sealDrag(onto: page, at: end) != nil else { return false }

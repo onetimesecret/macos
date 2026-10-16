@@ -14,6 +14,8 @@ final class TabDropTests: XCTestCase {
         let textView: InkTextView
         let window: NSWindow
         let sheet: UInt64
+        /// A field in the page's window, standing in for a name's (Law 0007, keys row).
+        let field: NSTextField
     }
 
     private let placeholder = "[sealed content · tiny]"
@@ -58,6 +60,8 @@ final class TabDropTests: XCTestCase {
         scroll.frame = NSRect(x: 0, y: 40, width: 520, height: 360)
         InkEditorView.seat(textView, in: scroll)
         content.addSubview(scroll)
+        let field = NSTextField(frame: NSRect(x: 8, y: 8, width: 200, height: 24))
+        content.addSubview(field)
         window.contentView = content
         textView.isEditable = true
         textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -72,7 +76,7 @@ final class TabDropTests: XCTestCase {
         drainMainQueue()
         return Page(
             model: model, coordinator: coordinator, textView: textView, window: window,
-            sheet: sheet)
+            sheet: sheet, field: field)
     }
 
     /// A page nobody shows, holding `text` as ink, and its slot.
@@ -358,14 +362,26 @@ final class TabDropTests: XCTestCase {
     }
 
     /// A seal dropped on the tab of a page that shows stands the object's face on its surface
-    /// and leaves it selected, as the page's own seal does.
+    /// and leaves it selected, as the page's own seal does; while a field in that window
+    /// holds the keys it waits, as the move and the paste do (Law 0007, keys row).
     func testASealDroppedOnAShowingPagesTabStandsTheFaceOnItsSurface() throws {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
         let dest = try mountPage(on: model, text: "xy", seals: [])
         let target = TabDropTarget(model: model, slot: try slot(of: dest.sheet, on: model))
+        let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
 
-        XCTAssertTrue(target.performDragOperation(drag(from: nil, board: inkBoard("hunter2"), mask: copy)))
+        XCTAssertTrue(dest.window.makeFirstResponder(dest.field))
+        drainMainQueue()
+        XCTAssertEqual(target.dropRoute(for: foreign), .seal, "the control: the tab still sorts the drag")
+        XCTAssertFalse(target.performDragOperation(foreign), "the seal landed under the field")
+        XCTAssertEqual(model.notice, PageModel.dropWaitsLine)
+        XCTAssertEqual(standIn.drops, [], "the core read the board while a field held the keys")
+        XCTAssertEqual(shape(model, dest.sheet), "xy")
+
+        XCTAssertTrue(dest.window.makeFirstResponder(dest.textView))
+        model.notice = nil
+        XCTAssertTrue(target.performDragOperation(foreign))
         XCTAssertEqual(shape(model, dest.sheet), "xy#")
         XCTAssertEqual(dest.textView.textStorage?.length, 3, "the surface was not restated")
         XCTAssertNotNil(dest.coordinator.chipAttachment(at: 2), "the face did not stand")
