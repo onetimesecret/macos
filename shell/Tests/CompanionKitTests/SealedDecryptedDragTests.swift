@@ -169,7 +169,7 @@ final class SealedDecryptedDragTests: XCTestCase {
             on: Bool = true, shown: Bool = true, clicks: Int = 1,
             flags: NSEvent.ModifierFlags = []
         ) -> Bool {
-            InkTextView.startsDecryptedDrag(
+            InkTextView.startsHandleDrag(
                 onHandle: on, handleShown: shown, clickCount: clicks, modifierFlags: flags)
         }
         XCTAssertTrue(starts())

@@ -1,11 +1,13 @@
 # Sealed row, note and handles
 
-Status: details as built on `feature/editing-seals`, 2026-10-14. Nothing
-in this file has been ratified.
+Status: details as built on `feature/editing-seals`, 2026-10-14, and the
+move handle of issue #255, 2026-10-16. Nothing in this file has been
+ratified.
 
 Scope: the product and interaction details of a sealed block's named
-bottom row, its note's popover, the clipboard slot and the decrypted drag
-handle: looks, lengths, words, timings and order. The behaviour they
+bottom row, its note's popover, the clipboard slot and the two handles on
+its top row, the move handle and the decrypted drag handle: looks,
+lengths, words, timings and order. The behaviour they
 serve is [Law 0001](../../../law/0001-sealed-object.md)'s, and the name's
 field is [Law 0007](../../../law/0007-edit-in-place.md)'s; a law row says
 what happens, and this file says how it looks. The decisions under them
@@ -140,44 +142,77 @@ faces, never their contents, and stands under the page the cut came from
 alone. Its inline button places the objects at the caret, as a paste of
 the cut's envelope would. No mockup draws it.
 
-## The decrypted drag handle
+## The handles
 
-### Seat and look
+Two handles stand on the block's top row before the actions seat, the
+move handle inner and the decrypted drag handle outer, reading from the
+classification towards `···`. Both are drawn while the block is hovered
+or selected, as the actions glyph is, and keep their seats when they are
+not, so nothing on the block moves when they appear. Hover shows only in
+the window holding the keys, so elsewhere the handles show only on a
+selected block. The 2026-0915 record's block section asks for the pair
+(issue #255 records the maintainer's direction of 2026-10-14), and
+D-29's acceptance that the two be visually distinct is met by look and
+by words: one is a bare glyph in the block's quiet ink, the other
+outlined words in ember.
 
-- The words `drag decrypted` in an ember outline on the block's top row,
-  ending 8 before the actions seat.
-- Drawn while the block is hovered or selected, as the actions glyph is,
-  and keeping its seat when it is not. Hover shows only in the window
-  holding the keys, so elsewhere the handle shows only on a selected
-  block.
+### The decrypted drag handle: seat and look
+
+- The words `drag decrypted` in an ember outline, ending 8 before the
+  actions seat, 16 high, the words inset 5 from the outline each side.
 - Where the row cannot hold it 8 clear of the classification, none is
   drawn, and a press there does what a press on the block does.
 
+### The move handle: seat and look
+
+- The glyph `⠿` (U+283F) alone, in the system face at 11, with no
+  outline and no words, in the block's quiet ink: the secondary colour
+  at rest and the label colour on a selected block, the ink the actions
+  glyph and the classification wear. Never ember.
+- Its seat ends 8 before the decrypted drag handle, 16 high on the same
+  row, the glyph inset 5 each side.
+- Where the row has no room for both, the move handle gives way first: once
+  the decrypted drag handle has gone, the move handle does not return
+  to the seat it left. The decrypted drag handle is the one labelled
+  declassification seat on the block and D-29 asks that it stay
+  recognisable, while the move stays available by dragging the selected
+  object, so losing the move handle loses no capability.
+- On an object whose kind has no decrypted drag handle, the move handle
+  sits where that one would, 8 before the actions seat.
+
 ### Press
 
-- A first plain press on a drawn handle begins the drag once it travels
+- A first plain press on a drawn handle begins its drag once it travels
   3; a press that lifts first selects the object.
 - A modified or repeated press does what a press on the block does.
-- While a name or the note holds the keys, the press starts nothing and
-  the page's line says why.
+- The decrypted drag handle's drag is the decrypted drag. While a name or
+  the note holds the keys, its press starts nothing and the page's line
+  says why.
+- The move handle's drag is the page's own drag, by the same session, of
+  the selection the object is in, or of the object alone when the
+  selection does not include it, as a drag from the block's face is. It
+  includes the copy's fragment and never plaintext, goes wherever a drag
+  of the selection goes, and a destination that takes that drag takes
+  this one with no further work.
 
 ### Pointer and image
 
-- The pointer is an open hand over the visible part of a drawn handle
-  wherever a first plain press would start the drag, and the text view's
-  own cursor everywhere else: over a block too narrow for a handle, and
-  while a name or the note holds the keys.
-- The drag's image is the handle as drawn, never the block's face.
+- The pointer is an open hand over the visible part of either drawn
+  handle wherever a first plain press would start its drag, and the text
+  view's own cursor everywhere else: over a block too narrow for a
+  handle, and while a name or the note holds the keys. During a drag the
+  pointer is AppKit's, a closed hand.
+- The decrypted drag's image is the handle as drawn, never the block's
+  face. The move drag's image is the page drag's own, the block's face
+  without its excerpt.
 
-### What it lacks
+### VoiceOver
 
-- VoiceOver does not reach the handle; *Copy Decrypted Contents* in the
-  object's menu remains its path.
-- No move handle exists, so D-29's "visually distinct" has nothing to be
-  distinct from. Issue #255 records the maintainer's direction of
-  2026-10-14 that there should be a move handle; its scope asks for the
-  handle (⠿) beside this one, visually distinct from it, and leaves open
-  which gives way first on a narrow block.
+- Each drawn handle is one element under the text view, with the role of
+  a handle, at the handle's seat: the move handle is *Move*, the
+  decrypted drag handle is *Drag decrypted*. A block at rest offers
+  none. VoiceOver cannot drag, so *Copy Decrypted Contents* in the
+  object's menu remains the decrypted path, and cut and paste the move.
 
 ## Open
 
