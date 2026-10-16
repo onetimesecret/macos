@@ -198,7 +198,7 @@ argument starts honest:
   [`2026-0901-pause-boundaries.md`](2026-0901-pause-boundaries.md)
   along with the caveat that the library's rule is a ceiling on a
   step's growth rather than the idle-gap detector the literature
-  describes. It groups local operations only; ADR-0021 section 4's
+  describes. It groups local operations only; the [relay decision background](../sync/relay-decision-background.md) section 4's
   clock batching is untouched.
 - **The stack is forgotten wherever a step would be a lie.** Beyond
   the two ceremonies: a wholesale restate, a seal, a chip burned out

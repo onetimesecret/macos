@@ -32,7 +32,7 @@ const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR2";
 
 /// Ledger magics this module once wrote, refused as
 /// [`RestoreError::Superseded`] so the caller can dispose of the file
-/// (ADR-0016 section 9).
+/// (persistence decision background section 9).
 const SUPERSEDED_LEDGER_MAGICS: [&[u8; 8]; 1] = [b"OTSLEDR1"];
 
 /// Ceiling on any span read back, keeping `Instant` arithmetic from
@@ -64,7 +64,8 @@ pub enum RestoreError {
     /// Not a snapshot, or a version this build does not read.
     UnknownFormat,
     /// A version this build once wrote and has replaced; the caller may
-    /// dispose of the file (ADR-0016 section 9). The store is untouched.
+    /// dispose of the file (persistence decision background section 9).
+    /// The store is untouched.
     Superseded,
     /// The layout is damaged. The store is left exactly as it was.
     Malformed,
@@ -712,7 +713,8 @@ fn read_tab(
 }
 
 /// One page record. `ceiling` ([`Ttl::longest_life`]) bounds every life
-/// span it claims, whatever the bytes say (ADR-0016 sections 8, 10).
+/// span it records, whatever the bytes say (persistence decision
+/// background sections 8, 10).
 fn read_page(
     reader: &mut Reader<'_>,
     now: Instant,

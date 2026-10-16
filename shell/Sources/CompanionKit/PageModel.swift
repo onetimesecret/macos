@@ -639,7 +639,7 @@ public final class PageModel: ObservableObject {
     /// licence is withheld and nothing typed this session reaches disk.
     /// Persistent for the whole run, unlike a notice: it ends only
     /// through `clearUnreadableStateFile`, the user's own discard
-    /// (ADR-0016 section 7, issue #49).
+    /// (persistence decision background section 7, issue #49).
     @Published public private(set) var contentRestoreRefused = false
 
     /// The ledger file existed and would not open, so the trail is not
@@ -1699,7 +1699,8 @@ public final class PageModel: ObservableObject {
     /// is not a refusal at all: a ledger payload from a version this app
     /// itself once wrote and has replaced is disposed of by the seam
     /// during the restore, before the probe below runs, so the file is
-    /// gone and the licence is granted fresh (ADR-0016 section 9).
+    /// gone and the licence is granted fresh (persistence decision
+    /// background section 9).
     private var ledgerLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
@@ -1832,9 +1833,10 @@ public final class PageModel: ObservableObject {
     /// was there and would not open", which is the one combination that
     /// withholds the licence: the install would then refuse to write for
     /// every session after the update, which is exactly the permanently
-    /// unwritable install ADR-0016 section 9 exists to prevent. Probed
-    /// afterwards, the dropped file reads as "no file", which is what it
-    /// now is, and the session starts clean with its licence.
+    /// unwritable install the persistence decision background section 9
+    /// exists to prevent. Probed afterwards, the dropped file reads as
+    /// "no file", which is what it now is, and the session starts clean
+    /// with its licence.
     ///
     /// Every other failure leaves the file exactly where it is, and each
     /// one still withholds: a missing key, a failed authentication, a
@@ -1873,9 +1875,9 @@ public final class PageModel: ObservableObject {
     /// pad whose pages have all expired still has a strip to reseal,
     /// and dropping the file there would destroy exactly what the
     /// expiry was supposed to leave standing. The other predicate has
-    /// its own job, ADR-0016 section 6's key rotation, and the core
-    /// answers both in one call so neither can be recomputed into
-    /// disagreement.
+    /// its own job, persistence decision background section 6's key
+    /// rotation, and the core answers both in one call so neither can be
+    /// recomputed into disagreement.
     ///
     /// All three conditions are the write's own preconditions, restated
     /// because deleting a file is the one thing that cannot be taken
@@ -1898,8 +1900,8 @@ public final class PageModel: ObservableObject {
     /// Whether this write should rotate both content key halves and
     /// reseal the strip under the new ones rather than seal over the old
     /// ones: the other predicate's job, and the one that makes an
-    /// emptied pad a forgetting (ADR-0016 section 6's first rotation
-    /// trigger, ADR-0017).
+    /// emptied pad a forgetting (persistence decision background section
+    /// 6's first rotation trigger, ADR-0017).
     ///
     /// **`holdsNoPage` is "no tab holds a page" and never "no tabs
     /// remain".** Taking the second here would leave the install on one
@@ -1925,8 +1927,8 @@ public final class PageModel: ObservableObject {
     /// that remembered whether the last write had already rotated
     /// would be a second source of truth about what is on disk, and it
     /// would be wrong in exactly the case that matters, a write that
-    /// failed after the rotation landed. ADR-0016 section 6 records
-    /// the choice.
+    /// failed after the rotation was written. The persistence decision
+    /// background section 6 records the choice.
     public nonisolated static func rotatesContentKey(
         loaded: Bool, contentLicence: Bool, holdsNoPage: Bool, noTabsRemain: Bool
     ) -> Bool {
@@ -1965,8 +1967,9 @@ public final class PageModel: ObservableObject {
         (content: content, ledger: true)
     }
 
-    /// The mirror rule for the content side (ADR-0016 section 7's
-    /// required work): the pair of licences after the user discards the
+    /// The mirror rule for the content side (persistence decision
+    /// background section 7's required work): the pair of licences after
+    /// the user discards the
     /// unreadable state file. The content licence comes back
     /// unconditionally, on the same reasoning as the ledger's re-grant:
     /// the discard is the user saying the file may go, which is a
@@ -5085,7 +5088,8 @@ public final class PageModel: ObservableObject {
     }
 
     /// Discard the state file this session could not read and start
-    /// saving (the banner's one action; ADR-0016 section 7, issue #49).
+    /// saving (the banner's one action; persistence decision background
+    /// section 7, issue #49).
     /// The ledger clear's shape, ported to the content side, and like
     /// it this is the user's gesture only: nothing auto-clears a
     /// refused restore.
@@ -6589,7 +6593,8 @@ public final class PageModel: ObservableObject {
     /// is bound to the document's own peer and refuses another peer's
     /// operations by design; and a device that joined a page at a key
     /// frame never received the operations an away-device undo would
-    /// have to invert (ADR-0021 section 5). So ⌘Z here is undo that is
+    /// have to invert (relay decision background section 5). So ⌘Z here
+    /// is undo that is
     /// safe beside another device's edits, never undo that reaches
     /// across them, and it should not grow into the latter without the
     /// key-frame law being reopened first.

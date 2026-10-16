@@ -2294,7 +2294,7 @@ fn seal_state_to(state: &Companion, path: &Path) -> bool {
 /// Rotate both content key halves and reseal the store under the new ones,
 /// for when no tab holds a page (ADR-0016). Returns false for a path that is
 /// not the content file, a half that survived erasure, or a failed write.
-/// Erased before the reseal (ADR-0016 section 6).
+/// Erased before the reseal (persistence decision background section 6).
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -3062,10 +3062,11 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
     into_c_string(sync_driver::status_json(&guard).to_string())
 }
 
-/// Where the account gate stands, as one machine token (ADR-0027 §5):
-/// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
-/// `ready` or `attached`, the status JSON's `gate`. It says whether this
-/// client may attach and nothing about content (ADR-0021 §3).
+/// Where the account gate stands, as one machine token (account-auth
+/// decision background §5): `off`, `signed_out`, `signing_in`,
+/// `refused`, `unreachable`, `ready` or `attached`, the status JSON's
+/// `gate`. It says whether this client may attach and nothing about
+/// content (relay decision background §3).
 ///
 /// Null on a null handle or a poisoned lock: a gate that cannot be read
 /// has not been passed, so null means may not attach. A status JSON
@@ -3162,7 +3163,8 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         staged
     };
     let Some((pending, transport)) = staged else {
-        // Nothing to finish; never spelled as a refusal (ADR-0027 §2).
+        // Nothing to finish; never spelled as a refusal (account-auth
+        // decision background §2).
         return sync_refusal("no_ceremony");
     };
     let abandoned = Arc::clone(&pending.abandoned);
@@ -3225,9 +3227,9 @@ pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHand
 
 /// Sign sync out: drop the held tokens and delete the persisted refresh
 /// token, exactly one Keychain account; the conceal token, content and
-/// ledger keys, pairing accounts and the pad all stand (ADR-0021 §3). A
-/// ceremony out on the browser ends with it. True when the delete was
-/// accepted.
+/// ledger keys, pairing accounts and the pad all stand (relay decision
+/// background §3). A ceremony out on the browser ends with it. True
+/// when the delete was accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -3456,7 +3458,7 @@ pub unsafe extern "C" fn companion_sync_pairing_poll(handle: *mut CompanionHandl
 
 /// The human's verdict on the short authentication string. A match
 /// moves the ceremony forward; a mismatch drops it whole with nothing
-/// stored on this device (ADR-0021 §3). Returns the stage as
+/// stored on this device (relay decision background §3). Returns the stage as
 /// [`companion_sync_pairing_poll`] does. Free with
 /// [`companion_string_free`].
 ///
@@ -7278,7 +7280,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Rotation follows the state, not the transition (ADR-0016 section 6).
+    /// Rotation follows the state, not the transition (persistence
+    /// decision background section 6).
     #[test]
     fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
         let credentials: Arc<dyn CredentialStore> =
@@ -8221,7 +8224,7 @@ mod tests {
             // gets. The user closes the tab instead and comes back to
             // the app, and the way out has to be the ceremony ending
             // rather than a button that only looks like one
-            // (ADR-0027 §5, `signing_in`).
+            // (account-auth decision background §5, `signing_in`).
             let address = handle as usize;
             let waiting = std::thread::spawn(move || {
                 let handle = address as *mut CompanionHandle;

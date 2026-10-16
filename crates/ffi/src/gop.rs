@@ -1,9 +1,10 @@
 //! The per GOP transport key: derived at the key frame, rotated at the
 //! ceremony, destroyed on rotation, so ciphertext the relay keeps past
 //! a boundary opens for no one, its writers included (ADR-0007,
-//! ADR-0021 section 2, issue #95). The chain descends from the pairing
-//! ceremony's channel secret, never the content key (ADR-0021 section
-//! 8); each step salts with the outgoing key and mixes in entropy sealed
+//! relay decision background section 2, issue #95). The chain descends
+//! from the pairing ceremony's channel secret, never the content key
+//! (relay decision background section 8); each step salts with the
+//! outgoing key and mixes in entropy sealed
 //! to the named members, which keeps out a device that missed a
 //! rotation or was not named, though not the proposer (client protocol
 //! §7.9, §8). Formula, info string, salt and magic: Appendix A there.

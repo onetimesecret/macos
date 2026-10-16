@@ -326,7 +326,8 @@ final class RestoreFailureTests: XCTestCase {
     /// what is wrong. Here the key is right and the file is wrong, and
     /// the two are worth telling apart, because the restore has a
     /// branch that DROPS a file it cannot use, the superseded envelope
-    /// (ADR-0016 section 9), and that branch hands the licence back. A
+    /// (persistence decision background section 9), and that branch
+    /// hands the licence back. A
     /// file that is merely corrupt must take the other branch: the
     /// damage might be one flipped bit over pages the user still wants,
     /// and dropping it would spend the only copy.
@@ -399,7 +400,8 @@ final class RestoreFailureTests: XCTestCase {
             [.posixPermissions: writable ? 0o700 : 0o500], ofItemAtPath: directory.path)
     }
 
-    /// The window a refused write opens (ADR-0016 section 2), driven
+    /// The window a refused write opens (persistence decision background
+    /// section 2), driven
     /// against a write that genuinely failed rather than against the
     /// arithmetic. Three claims, and the shipping ten seconds is not
     /// one of them: the status goes and stays `failed`, everything
