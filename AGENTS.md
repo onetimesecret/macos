@@ -22,3 +22,9 @@ For normative claims concerning security, privacy, compatibility, persistence, o
 ## Comments
 
 Keep code comments to one or two lines. Do not write a comment that asserts a guarantee; write the test or tighten the type, and cite the ADR or spec row if the reasoning matters. Do not answer a review finding by adding or rewording prose in a comment; change the code, the test, or the ADR.
+
+## Terms and phrases to avoid
+
+Do not use any of the following terms or phrases or sentence structures:
+- holds, claims, lands
+- "A isn't only B, but also C"
