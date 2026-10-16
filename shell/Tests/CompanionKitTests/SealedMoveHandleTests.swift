@@ -102,13 +102,27 @@ final class SealedMoveHandleTests: XCTestCase {
             chipId: 1, kind: kind, excerpt: "n0…3t", sizeLabel: "tiny", concealed: false))
     }
 
-    private func dragEvent(_ page: Page, at point: NSPoint) throws -> NSEvent {
+    private func mouseEvent(
+        _ type: NSEvent.EventType, _ page: Page, at point: NSPoint
+    ) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(
-            with: .leftMouseDragged, location: page.textView.convert(point, to: nil),
+            with: type, location: page.textView.convert(point, to: nil),
             modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: page.window.windowNumber, context: nil, eventNumber: 0,
             clickCount: 1, pressure: 1))
     }
+
+    private func dragEvent(_ page: Page, at point: NSPoint) throws -> NSEvent {
+        try mouseEvent(.leftMouseDragged, page, at: point)
+    }
+
+    /// A press at `point` whose next event is `follow`, a lift or a move, through `mouseDown`.
+    private func press(_ page: Page, at point: NSPoint, then follow: NSEvent) throws {
+        page.window.postEvent(follow, atStart: true)
+        page.textView.mouseDown(with: try mouseEvent(.leftMouseDown, page, at: point))
+    }
+
+    private func mid(_ rect: NSRect) -> NSPoint { NSPoint(x: rect.midX, y: rect.midY) }
 
     /// `rect`, drawn in the page's text view, on the screen, the space VoiceOver's frames are in.
     private func onScreen(_ rect: NSRect, in page: Page) -> NSRect {
@@ -334,6 +348,81 @@ final class SealedMoveHandleTests: XCTestCase {
         let item = try XCTUnwrap(sessions.first?.first?.item as? NSPasteboardItem)
         XCTAssertEqual(item.string(forType: .string), "ab \(placeholder)")
         XCTAssertTrue(page.coordinator.dragsPageSelection)
+    }
+
+    /// Which handle a press is on: the midpoint of each seat is its handle, and the gap
+    /// between them, the lock, the actions seat and the bottom row are on neither.
+    func testAPressIsOnTheHandleWhoseSeatItIsIn() throws {
+        let frame = NSRect(x: 10, y: 10, width: 400, height: SealedBlockCell.blockHeight)
+        let text = cell("text")
+        let move = try XCTUnwrap(text.handleRect(.move, in: frame))
+        let decrypted = try XCTUnwrap(text.handleRect(.decrypted, in: frame))
+        XCTAssertEqual(text.handle(at: mid(move), in: frame), .move)
+        XCTAssertEqual(text.handle(at: mid(decrypted), in: frame), .decrypted)
+        XCTAssertNil(
+            text.handle(at: NSPoint(x: (move.maxX + decrypted.minX) / 2, y: move.midY), in: frame),
+            "the gap between the handles")
+        XCTAssertNil(text.handle(at: mid(SealedBlockCell.actionsRect(in: frame)), in: frame))
+        XCTAssertNil(
+            text.handle(at: mid(SealedBlockCell.contentLayout(in: frame).lockRect), in: frame))
+        XCTAssertNil(
+            text.handle(at: NSPoint(x: move.midX, y: frame.maxY - 4), in: frame), "the bottom row")
+
+        let file = cell("file")
+        XCTAssertEqual(file.handle(at: mid(try XCTUnwrap(file.handleRect(.move, in: frame))), in: frame), .move)
+        XCTAssertNil(file.handle(at: mid(decrypted), in: frame), "a kind with no decrypted handle")
+    }
+
+    /// A press on each handle that moves past the slop starts that handle's drag and no
+    /// other, through `mouseDown`: from ⠿ the page's own session, from `drag decrypted`
+    /// the decrypted drag (Law 0001, move drag and decrypted drag rows).
+    func testAPressOnEachHandleStartsItsOwnDragThroughMouseDown() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let textView = page.textView
+        let (move, decrypted, frame) = try handles(page)
+        var sources: [NSDraggingSource] = []
+        textView.dragSessionWitness = { _, source in sources.append(source) }
+        defer { page.coordinator.endPageDrag() }
+        hover(page, at: mid(frame))
+
+        let onMove = mid(move)
+        try press(page, at: onMove, then: try dragEvent(page, at: NSPoint(x: onMove.x + 12, y: onMove.y)))
+        XCTAssertEqual(sources.count, 1)
+        XCTAssertTrue(sources.last === textView, "the move handle started another drag")
+        XCTAssertNil(page.coordinator.decryptedDrag)
+        XCTAssertTrue(page.coordinator.dragsPageSelection)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: object, length: 1))
+        page.coordinator.endPageDrag()
+
+        let onDecrypted = mid(decrypted)
+        try press(
+            page, at: onDecrypted,
+            then: try dragEvent(page, at: NSPoint(x: onDecrypted.x + 12, y: onDecrypted.y)))
+        XCTAssertEqual(sources.count, 2)
+        XCTAssertTrue(sources.last is DecryptedDrag, "the decrypted handle started another drag")
+        XCTAssertNotNil(page.coordinator.decryptedDrag)
+        XCTAssertFalse(page.coordinator.dragsPageSelection)
+        XCTAssertEqual(sent(model), [], "no destination asked")
+    }
+
+    /// A press on the move handle that lifts before it moves selects the object and
+    /// starts no drag, the page's or the decrypted one (Law 0001, move drag row).
+    func testAPressOnTheMoveHandleThatLiftsFirstSelectsTheObjectAndDragsNothing() throws {
+        let page = try mountPage(on: try makeModel())
+        let textView = page.textView
+        let (move, _, frame) = try handles(page)
+        var sessions = 0
+        textView.dragSessionWitness = { _, _ in sessions += 1 }
+        hover(page, at: mid(frame))
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 0))
+
+        try press(page, at: mid(move), then: try mouseEvent(.leftMouseUp, page, at: mid(move)))
+
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: object, length: 1))
+        XCTAssertEqual(sessions, 0)
+        XCTAssertFalse(page.coordinator.dragsPageSelection)
+        XCTAssertNil(page.coordinator.decryptedDrag)
     }
 
     /// The move handle's press is gated as the decrypted handle's is: a first plain press

@@ -5435,16 +5435,16 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         }
         let frame = chipFrame(at: index)
         let cell = chipCell(at: index)
-        for handle in SealedBlockCell.Handle.allCases {
-            guard let rect = frame.flatMap({ cell?.handleRect(handle, in: $0) }),
-                  Self.startsHandleDrag(
-                      onHandle: rect.contains(point), handleShown: drawsHandles(at: index),
-                      clickCount: event.clickCount, modifierFlags: event.modifierFlags)
-            else { continue }
-            trackHandlePress(from: event, chipAt: index) { [weak self] moved in
+        let pressed = frame.flatMap { cell?.handle(at: point, in: $0) }
+        if Self.startsHandleDrag(
+            onHandle: pressed != nil, handleShown: drawsHandles(at: index),
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags),
+            let handle = pressed, let frame, let rect = cell?.handleRect(handle, in: frame)
+        {
+            trackHandlePress(from: event, chipAt: index) { moved in
                 switch handle {
-                case .decrypted: self?.beginDecryptedDrag(chipAt: index, handle: rect, event: moved)
-                case .move: self?.beginMoveDrag(chipAt: index, event: moved)
+                case .decrypted: beginDecryptedDrag(chipAt: index, handle: rect, event: moved)
+                case .move: beginMoveDrag(chipAt: index, event: moved)
                 }
             }
             return
@@ -7406,6 +7406,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
         case .move: moveHandleRect(in: cellFrame)
         case .decrypted: decryptedDragRect(in: cellFrame)
         }
+    }
+
+    /// The handle whose seat `point` is in, in a block drawn at `cellFrame`; nil off both.
+    @MainActor
+    func handle(at point: NSPoint, in cellFrame: NSRect) -> Handle? {
+        Handle.allCases.first { handleRect($0, in: cellFrame)?.contains(point) == true }
     }
 
     /// The move handle's glyph, with no words: the decrypted handle is the labelled one,
