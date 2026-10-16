@@ -12,7 +12,7 @@ consumed-by:
   - docs/mockups/sealed-name-and-note.md (the drawn states; not authoritative)
 sources:
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
-  - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in proposed ADR-0042 and ADR-0043, and in the development note)
+  - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in the accepted ADR-0042 and ADR-0043, and in the development note)
   - ADR-0042, proposed 2026-10-14 and accepted 2026-10-16 (the sealed name's charset)
   - docs/development/sealed-objects-core-interface.md (`InkTextView.answersChords`, the keys holder's predicate; the name's routes and refusal codes)
   - docs/spec/design/2026-0915-ui-ux-decisions.md, D-14 (no dialogs)
