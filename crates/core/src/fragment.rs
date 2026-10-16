@@ -266,6 +266,34 @@ impl Sheet {
         let plain = public_text(&nodes, &sizes);
         Some((Fragment { cut: None, nodes }, plain))
     }
+
+    /// Runs the shell shows of this page, a preview's rendered text between
+    /// its objects and each object by chip id, as a fragment and its public
+    /// text; `None` for no ink and no object, or an object off this page.
+    /// The shown text is the ink (Law 0001, the preview's rows).
+    pub(crate) fn compose(&self, shown: &[Segment]) -> Option<(Fragment, Zeroizing<String>)> {
+        let mut nodes = Vec::with_capacity(shown.len());
+        let mut sizes: Vec<&str> = Vec::new();
+        for run in shown {
+            match run {
+                Segment::Ink(text) => {
+                    if let Some(ink) = ink_of(Cow::Borrowed(text.as_str())) {
+                        nodes.push(Node::Ink(ink));
+                    }
+                }
+                Segment::Chip(id) => {
+                    let chip = self.chip(*id)?;
+                    nodes.push(Node::Ref(Reference::of(chip)));
+                    sizes.push(&chip.size_label);
+                }
+            }
+        }
+        if nodes.is_empty() {
+            return None;
+        }
+        let plain = public_text(&nodes, &sizes);
+        Some((Fragment { cut: None, nodes }, plain))
+    }
 }
 
 /// The ink, with a size-class placeholder for each reference, at its final
@@ -416,6 +444,59 @@ mod tests {
         assert_eq!(reference(&read.nodes[3]), Some(uuid(&store, id, b)));
         assert_eq!(ink(&read.nodes[4]), Some(" after"));
         assert_eq!(read.cut, None, "a copy names no cut");
+    }
+
+    #[test]
+    fn a_shown_selection_composes_as_the_pages_own_would() {
+        let mut store = store();
+        let (id, a, b) = mixed(&mut store);
+        let sheet = store.sheet(id).unwrap();
+        let (selected, plain) = sheet.select(0, BODY).unwrap();
+        let shown = [
+            Segment::Ink("before ".into()),
+            Segment::Chip(a),
+            Segment::Ink(" between \u{1F511} ".into()),
+            Segment::Chip(b),
+            Segment::Ink(" after".into()),
+        ];
+        let (composed, shown_plain) = sheet.compose(&shown).unwrap();
+        assert_eq!(*composed.envelope().unwrap(), *selected.envelope().unwrap());
+        assert_eq!(shown_plain.as_str(), plain.as_str());
+
+        let rendered = [Segment::Ink("Heading\nbody ".into()), Segment::Chip(a)];
+        let (fragment, plain) = sheet.compose(&rendered).unwrap();
+        assert_eq!(
+            ink(&fragment.nodes[0]),
+            Some("Heading\nbody "),
+            "the shown text is the ink"
+        );
+        assert_eq!(reference(&fragment.nodes[1]), Some(uuid(&store, id, a)));
+        assert_eq!(plain.as_str(), "Heading\nbody [sealed content \u{b7} tiny]");
+        assert_eq!(fragment.cut, None, "a composition names no cut");
+    }
+
+    #[test]
+    fn a_shown_selection_naming_an_object_off_the_page_composes_nothing() {
+        let mut store = store();
+        let (id, a, _) = mixed(&mut store);
+        let other = store.new_tab().1;
+        let shown = [Segment::Ink("x".into()), Segment::Chip(a)];
+        assert!(store.sheet(other).unwrap().compose(&shown).is_none());
+        let sheet = store.sheet(id).unwrap();
+        assert!(sheet.compose(&shown).is_some(), "the control: its own page");
+        assert!(sheet.compose(&[]).is_none(), "nothing shown");
+        assert!(
+            sheet.compose(&[Segment::Ink(String::new())]).is_none(),
+            "empty ink alone"
+        );
+        let (fragment, _) = sheet
+            .compose(&[Segment::Ink("a\u{FFFC}b".into()), Segment::Chip(a)])
+            .unwrap();
+        assert_eq!(
+            ink(&fragment.nodes[0]),
+            Some("ab"),
+            "a stray sentinel leaves the ink"
+        );
     }
 
     #[test]

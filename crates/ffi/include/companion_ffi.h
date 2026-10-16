@@ -801,6 +801,19 @@ char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
                                    uint32_t at_utf16, uint32_t len_utf16);
 
 /*
+ * Compose runs the shell shows of a page, a preview's rendered text
+ * between its objects and each object by chip id, in the synced
+ * document's shape:
+ *   [{"ink": "Heading\n"}, {"chip": 7}, {"ink": " cd"}]
+ * as companion_sheet_copy_fragment() composes a range: the shown text is
+ * the ink (Law 0001, the preview's rows). The same answer and the same
+ * refusals, and null also for an object off the page or `shown` that
+ * does not parse. Free with companion_string_free().
+ */
+char *companion_sheet_compose_fragment(CompanionHandle *handle, uint64_t sheet,
+                                       const char *shown);
+
+/*
  * Paste envelope bytes over a range as one undo step. Each reference
  * resolves in order: the active cut's objects, from its own envelope,
  * reattach; any other live object is cloned with the envelope's name

@@ -1638,6 +1638,42 @@ pub unsafe extern "C" fn companion_sheet_cut_fragment(
     )
 }
 
+/// Compose runs the shell shows of a page, a preview's rendered text between
+/// its objects and each object by chip id, as `[{"ink": "…"}, {"chip": 7}, …]`
+/// (the synced document's shape), the way [`companion_sheet_copy_fragment`]
+/// composes a range: the shown text is the ink (Law 0001, the preview's rows).
+/// The same answer and the same refusals, and null also for an object off the
+/// page or `shown` that does not parse.
+/// Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle. `shown` must be null or a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_compose_fragment(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    shown: *const c_char,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(shown) = (unsafe { cstr(shown) }).and_then(parse_segments) else {
+        return ptr::null_mut();
+    };
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    copy_outcome_json(
+        guard
+            .store
+            .compose_fragment(SheetId::from_raw(sheet), &shown),
+    )
+}
+
 /// Paste envelope bytes over a range as one undo step, `plain` placed for one
 /// the core cannot read. The placed JSON ([`placed_json`]), or null on refusal.
 ///
@@ -8462,6 +8498,56 @@ mod tests {
     }
 
     #[test]
+    fn a_shown_selection_composes_over_the_seam_as_the_pages_own_would() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = page_with_a_chip(handle, "hunter2-secret");
+            let shown = cstring(&format!(
+                r#"[{{"ink":"Heading\n"}},{{"chip":{chip}}},{{"ink":" cd"}}]"#
+            ));
+            let copied = json_of(companion_sheet_compose_fragment(
+                handle,
+                sheet,
+                shown.as_ptr(),
+            ));
+            assert_eq!(copied["plain"], "Heading\n[sealed content \u{b7} tiny] cd");
+            let envelope = copied["envelope"].as_str().unwrap().to_string();
+            assert!(!envelope.contains("hunter2"), "{envelope}");
+            let composed: serde_json::Value = serde_json::from_str(&envelope).unwrap();
+            assert_eq!(
+                composed["nodes"][0]["ink"], "Heading\n",
+                "the shown text is the ink"
+            );
+            let own = json_of(companion_sheet_copy_fragment(handle, sheet, 2, 1));
+            let own: serde_json::Value =
+                serde_json::from_str(own["envelope"].as_str().unwrap()).unwrap();
+            assert_eq!(composed["nodes"][1], own["nodes"][0], "the same reference");
+
+            let ink = cstring(r#"[{"ink":"ab"}]"#);
+            let ink = json_of(companion_sheet_compose_fragment(
+                handle,
+                sheet,
+                ink.as_ptr(),
+            ));
+            assert!(ink["envelope"].is_null(), "ink alone writes no envelope");
+            assert_eq!(ink["plain"], "ab");
+
+            let (_, other) = new_page(handle);
+            let object = cstring(&format!(r#"[{{"chip":{chip}}}]"#));
+            assert!(
+                companion_sheet_compose_fragment(handle, other, object.as_ptr()).is_null(),
+                "an object off the page"
+            );
+            let nonsense = cstring("nonsense");
+            assert!(companion_sheet_compose_fragment(handle, sheet, nonsense.as_ptr()).is_null());
+            assert!(companion_sheet_compose_fragment(handle, sheet, ptr::null()).is_null());
+            let empty = cstring("[]");
+            assert!(companion_sheet_compose_fragment(handle, sheet, empty.as_ptr()).is_null());
+            companion_free(handle);
+        }
+    }
+
+    #[test]
     fn a_copy_or_cut_past_an_envelope_cap_names_the_cap_over_the_seam() {
         let handle = handle();
         unsafe {
@@ -8843,6 +8929,8 @@ mod tests {
             assert!(companion_chip_note_runs_json(handle, chip).is_null());
             assert!(companion_sheet_copy_fragment(handle, sheet, 0, 5).is_null());
             assert!(companion_sheet_cut_fragment(handle, sheet, 0, 5).is_null());
+            let shown = cstring(&format!(r#"[{{"ink":"ab"}},{{"chip":{chip}}}]"#));
+            assert!(companion_sheet_compose_fragment(handle, sheet, shown.as_ptr()).is_null());
             assert!(board_text(handle).is_none(), "nothing written");
             assert!(sent_destinations(handle).is_empty(), "nothing recorded");
             assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");

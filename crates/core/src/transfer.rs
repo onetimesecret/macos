@@ -11,7 +11,7 @@ use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
 use crate::fragment::{Copied, CopyRefusal, Fragment, Node, ink_of, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
 use crate::note::Note;
-use crate::sheet::{ChipId, ItemId, SealedChip, Sheet, SheetId, judge_name};
+use crate::sheet::{ChipId, ItemId, SealedChip, Segment, Sheet, SheetId, judge_name};
 use crate::store::{SheetStore, range_in_body};
 
 /// The store's one active cut (ADR-0046 point 3).
@@ -102,6 +102,21 @@ impl<C: Clock> SheetStore<C> {
         len_u16: u32,
     ) -> Result<Copied, CopyRefusal> {
         let (fragment, plain) = self.selected(id, at_u16, len_u16)?;
+        let envelope = composed(&fragment)?;
+        Ok(Copied { envelope, plain })
+    }
+
+    /// Compose runs the shell shows of a page, a preview's rendered text and
+    /// its objects by chip id, as [`SheetStore::copy_fragment`] composes a
+    /// range: its envelope when an object is among them, and its public text.
+    /// Refused for an unknown page, a page past its deadline (Law 0001,
+    /// expiry row), an object off the page or an envelope past a cap (Law
+    /// 0001, copy row).
+    pub fn compose_fragment(&self, id: SheetId, shown: &[Segment]) -> Result<Copied, CopyRefusal> {
+        let (fragment, plain) = self
+            .readable_sheet(id)
+            .and_then(|sheet| sheet.compose(shown))
+            .ok_or(CopyRefusal::Refused)?;
         let envelope = composed(&fragment)?;
         Ok(Copied { envelope, plain })
     }
@@ -1566,6 +1581,34 @@ mod tests {
             Some(CopyRefusal::Refused)
         );
         assert!(store.copy_fragment(id, 0, 2).is_err(), "ink alone too");
+        assert_eq!(store.ledger().count(), records, "nothing recorded");
+        assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
+    }
+
+    #[test]
+    fn a_shown_selection_past_its_pages_deadline_composes_nothing_before_its_sweep() {
+        let (mut store, clock) = store();
+        let (id, a, _) = mixed(&mut store);
+        let shown = [Segment::Ink("Heading\n".into()), Segment::Chip(a)];
+        let copied = store.compose_fragment(id, &shown).unwrap();
+        assert!(copied.envelope.is_some(), "readable before");
+        assert_eq!(
+            copied.plain.as_str(),
+            "Heading\n[sealed content \u{b7} tiny]"
+        );
+        clock.advance(HOUR);
+        let records = store.ledger().count();
+
+        assert_eq!(
+            store.compose_fragment(id, &shown).err(),
+            Some(CopyRefusal::Refused)
+        );
+        assert!(
+            store
+                .compose_fragment(id, &[Segment::Ink("ab".into())])
+                .is_err(),
+            "ink alone too"
+        );
         assert_eq!(store.ledger().count(), records, "nothing recorded");
         assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
     }

@@ -318,6 +318,7 @@ final class DayStackView: NSView {
         let buckets: [Int]
         let pages: [[UInt64]]
         let selected: UInt64?
+        let previews: [UInt64]
         let clipWidth: CGFloat
         let padExperiment: Bool
     }
@@ -335,6 +336,8 @@ final class DayStackView: NSView {
     /// projection still holds keeps the same view, the same storage and
     /// the same laid-out glyphs.
     private(set) var quietRegions: [UInt64: QuietPageView] = [:]
+    private(set) var previewRegions: [UInt64: MarkdownPreviewView] = [:]
+    private var readOnly = false
 
     /// The headers, pooled and re-used rather than re-made, the way the
     /// page's own block labels are: a header is a frame and three
@@ -405,24 +408,22 @@ final class DayStackView: NSView {
     override var needsPanelToBecomeKey: Bool { editor?.isEditable == true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    private var focusableEditor: InkTextView? {
-        guard model.owner == coordinator.surface,
-              let window, let editor, editor.isEditable,
-              editor.window === window else { return nil }
-        return editor
+    var selectedPreview: MarkdownPreviewView? {
+        model.selectedPageID.flatMap { previewRegions[$0] }
     }
 
     @discardableResult
     func focusEditor(on page: UInt64? = nil) -> Bool {
-        guard let editor = focusableEditor, let window else { return false }
+        guard model.owner == coordinator.surface, !readOnly, let window else { return false }
         if let page, page != coordinator.currentSheet {
             guard let tab = model.tabs.first(where: { $0.pageID == page }) else { return false }
-            // A header has no text insertion point. Let the ordinary editor
-            // handoff restore this page's saved caret instead of inventing one.
             pendingCaret = nil
             model.select(tab.id)
+            update(projection: model.timeUnits, selectedPage: page, readOnly: readOnly)
         }
-        return window.makeFirstResponder(editor) && window.firstResponder === editor
+        guard let target: NSTextView = selectedPreview ?? editor,
+              target.window === window, !target.isHidden else { return false }
+        return window.makeFirstResponder(target) && window.firstResponder === target
     }
 
     // MARK: What the roll is watching
@@ -504,12 +505,7 @@ final class DayStackView: NSView {
     /// Refresh the mounted editor, header controls and quiet regions
     /// after the model invalidates preview renderings.
     @objc private func quietRenderingsInvalidated(_ notification: Notification) {
-        if model.owner == coordinator.surface, let page = coordinator.currentSheet {
-            coordinator.applyPreviewRendering(model.previewRendering(for: page))
-        }
-        refreshGutters()
-        refreshQuietRegions()
-        relayout()
+        update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: readOnly)
     }
 
     // MARK: The pass
@@ -525,10 +521,16 @@ final class DayStackView: NSView {
         // asked. It is asked again here because this is the mount site
         // and the tests drive it directly.
         guard model.owner == coordinator.surface else { return }
+        self.readOnly = readOnly
+        if let selectedPage, model.markdownPreviewEnabled(for: selectedPage),
+           let editor, editor.hasMarkedText() {
+            InkEditorView.discardComposition(in: editor)
+        }
         let signature = Signature(
             buckets: projection.units.map(\.bucket),
             pages: projection.units.map(\.pageIDs),
             selected: selectedPage,
+            previews: projection.units.flatMap(\.pageIDs).filter { model.markdownPreviewEnabled(for: $0) },
             clipWidth: clipWidth,
             padExperiment: model.pads.isEnabled
         )
@@ -539,8 +541,8 @@ final class DayStackView: NSView {
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
-        if let page = selectedPage {
-            coordinator.applyPreviewRendering(model.previewRendering(for: page))
+        if selectedPage != nil {
+            coordinator.applyPreviewRendering(model.previewRendering)
         }
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
@@ -558,16 +560,14 @@ final class DayStackView: NSView {
                 isLayingOut = true
                 settleEditor(on: selectedPage)
                 isLayingOut = false
-            } else if let editor, coordinator.currentSheet != nil {
+            } else if let editor, coordinator.currentSheet != nil, !editor.isHidden {
                 coordinator.announce(editor)
             }
             refreshGutters()
             refreshQuietRegions()
+            refreshEditorPresentation()
             relayout()
             settlePendingPlace()
-            if let editor {
-                coordinator.updateEditability(of: editor, to: !readOnly)
-            }
             model.scheduleEditStepsRefresh()
             return
         }
@@ -578,6 +578,7 @@ final class DayStackView: NSView {
         // one puts characters in the editor and a text view that grows
         // posts a frame change like any other.
         isLayingOut = true
+        let heldEditorFocus = editor != nil && window?.firstResponder === editor
         // The page the editor is leaving has to be finished with before
         // it is drawn. A composition in flight is provisional text the
         // emission gate deliberately keeps out of the core, so a
@@ -596,9 +597,7 @@ final class DayStackView: NSView {
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
         isLayingOut = false
-        if let editor {
-            coordinator.updateEditability(of: editor, to: !readOnly)
-        }
+        refreshEditorPresentation(heldEditorFocus: heldEditorFocus)
         model.scheduleEditStepsRefresh()
         relayout()
         keepStill(anchoredOn: anchor)
@@ -679,8 +678,13 @@ final class DayStackView: NSView {
                 // declined an editor, which `update`'s own guard keeps
                 // from happening: a day with no editor on it is a quiet
                 // day.
-                let body: NSView = (page == selectedPage ? editorView(for: page) : nil)
-                    ?? quietRegion(for: page)
+                let body: NSView
+                if model.markdownPreviewEnabled(for: page) {
+                    body = previewRegion(for: page, selected: page == selectedPage)
+                } else {
+                    body = (page == selectedPage ? editorView(for: page) : nil)
+                        ?? quietRegion(for: page)
+                }
                 built.append(Row(
                     header: header, body: body, bucket: unit.bucket, page: page,
                     fillsViewport: false
@@ -694,8 +698,18 @@ final class DayStackView: NSView {
         // **before** the swap: the editor and a rendering must never be
         // over one page at once, not even for the length of a call.
         for page in Array(quietRegions.keys)
-        where !wantedPages.contains(page) || page == selectedPage {
+        where !wantedPages.contains(page) || page == selectedPage || model.markdownPreviewEnabled(for: page) {
             quietRegions.removeValue(forKey: page)?.removeFromSuperview()
+        }
+        for page in Array(previewRegions.keys)
+        where !wantedPages.contains(page) || !model.markdownPreviewEnabled(for: page) {
+            let outgoing = previewRegions.removeValue(forKey: page)
+            if window?.firstResponder === outgoing {
+                editor?.isHidden = false
+                if let editor { coordinator.updateEditability(of: editor, to: !readOnly) }
+                window?.makeFirstResponder(editor)
+            }
+            outgoing?.removeFromSuperview()
         }
         if todayPlace !== emptyToday {
             todayPlace?.removeFromSuperview()
@@ -794,6 +808,46 @@ final class DayStackView: NSView {
     private func refreshQuietRegions() {
         for (page, region) in quietRegions {
             region.reseed(with: model.quietRendering(for: page))
+        }
+        for (page, region) in previewRegions {
+            region.reseed(with: model.quietRendering(for: page))
+        }
+    }
+
+    /// The rendered preview of a page, gated as the page's own text is (Law 0001);
+    /// only the selected page's is selectable, and a click on another promotes
+    /// its page as a click on a quiet page does (ADR-0030).
+    private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
+        let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
+        region.onPromote = { [weak self] in
+            guard let self, self.model.owner == self.coordinator.surface,
+                  let tab = self.model.tabs.first(where: { $0.pageID == page }),
+                  self.model.selectedPageID != page else { return }
+            // The rendered index is no source index, so the saved caret stands.
+            self.pendingCaret = nil
+            self.model.select(tab.id)
+            self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
+        }
+        region.isSelectedPage = selected
+        region.reseed(with: model.quietRendering(for: page))
+        previewRegions[page] = region
+        return region
+    }
+
+    /// Stand the selected page's preview over the editor, or the editor alone, and move
+    /// the keys with the page: from the editor, or from a preview the selection left.
+    private func refreshEditorPresentation(heldEditorFocus: Bool = false) {
+        guard let editor else { return }
+        let preview = coordinator.currentSheet.flatMap { previewRegions[$0] }
+        let responder = window?.firstResponder
+        let keysOnAnotherPreview = (responder as? MarkdownPreviewView).map { keeper in
+            keeper !== preview && previewRegions.values.contains { $0 === keeper }
+        } ?? false
+        let transferFocus = heldEditorFocus || responder === editor || keysOnAnotherPreview
+        coordinator.updateEditability(of: editor, to: !readOnly && preview == nil)
+        editor.isHidden = preview != nil
+        if transferFocus, let target: NSTextView = preview ?? (editor.isHidden ? nil : editor) {
+            window?.makeFirstResponder(target)
         }
     }
 
@@ -949,7 +1003,8 @@ final class DayStackView: NSView {
         guard !isLayingOut, model.owner == coordinator.surface,
               let scroll = enclosingScrollView else { return }
         isLayingOut = true
-        let expanded = model.isPageExpanded && rows.contains { $0.body === editor }
+        let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
+        let expanded = model.isPageExpanded && expandedBody != nil
         let expansionChanged = expanded != expandedLayout
         if expansionChanged && expanded && model.pageExpansionReturn == nil {
             model.pageExpansionReturn = PageModel.PageExpansionReturn(place: currentPlace)
@@ -979,7 +1034,7 @@ final class DayStackView: NSView {
         let clipHeight = scroll.contentView.bounds.height
         var y: CGFloat = 0
         for row in rows {
-            row.body.isHidden = expanded && row.body !== editor
+            row.body.isHidden = expanded && row.body !== expandedBody
             row.header.isHidden = expanded
             guard !row.body.isHidden else { continue }
             let headerHeight = expanded ? 0 : row.header.preferredHeight
@@ -1007,6 +1062,7 @@ final class DayStackView: NSView {
         // own, and a child with no row occupies nothing.
         if let editor, !rows.contains(where: { $0.body === editor }) {
             editor.frame = .zero
+            editor.isHidden = true
         }
         setFrameSize(NSSize(width: width, height: max(y, clipHeight)))
         scroll.reflectScrolledClipView(scroll.contentView)
@@ -2128,7 +2184,6 @@ final class QuietPageView: NSTextView {
         self.onClick = onClick
         self.seeded = rendering
         let storage = NSTextStorage()
-        storage.setAttributedString(rendering.text)
         self.storage = storage
         // The same layout manager the editor uses, seeded with the
         // payload's fence regions (ADR-0030): fence wash is part of the
@@ -2162,6 +2217,7 @@ final class QuietPageView: NSTextView {
         // here.
         textContainerInset = NSSize(width: 12, height: InkEditorView.Coordinator.topInset)
         font = InkStyle.baseFont
+        storage.setAttributedString(rendering.text)
     }
 
     @available(*, unavailable)
@@ -2193,7 +2249,8 @@ final class QuietPageView: NSTextView {
         }
     }
 
-    /// One focusable text view in the card, always. The editor is it.
+    /// One focusable text view in the card, always: the editor, or the
+    /// selected page's preview where one stands over it (ADR-0030).
     override var acceptsFirstResponder: Bool { false }
 
     override func becomeFirstResponder() -> Bool { false }

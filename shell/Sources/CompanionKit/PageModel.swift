@@ -789,7 +789,7 @@ public final class PageModel: ObservableObject {
         }
     }
     private static let previewRenderingKey = "previewRendering"
-    private static let pagePreviewKey = "pageMarkdownPreviewV1"
+    private static let pagePreviewKey = "pageMarkdownPreviewV2"
     private var pagePreviewOverrides: [String: Bool] = [:]
 
     private func pagePreviewIdentity(for id: UInt64) -> String? {
@@ -797,15 +797,11 @@ public final class PageModel: ObservableObject {
         return tabs.first(where: { $0.pageID == id })?.pageUUID
     }
 
-    public func previewRendering(for id: UInt64) -> PreviewRenderingScope {
-        guard let key = pagePreviewIdentity(for: id), let enabled = pagePreviewOverrides[key]
-        else { return previewRendering }
-        return enabled ? .allPages : .never
-    }
-
-    public func markdownPreviewEnabled(for id: UInt64, quiet: Bool = false) -> Bool {
-        let scope = previewRendering(for: id)
-        return quiet ? scope == .allPages : scope != .never
+    /// Whether the page shows its builtin Markdown preview, a choice of its own apart
+    /// from `previewRendering`, which styles the editor and the quiet pages.
+    public func markdownPreviewEnabled(for id: UInt64) -> Bool {
+        guard let key = pagePreviewIdentity(for: id) else { return false }
+        return pagePreviewOverrides[key] ?? false
     }
 
     public func toggleMarkdownPreview(for id: UInt64) {
@@ -813,8 +809,12 @@ public final class PageModel: ObservableObject {
         objectWillChange.send()
         pagePreviewOverrides[key] = !markdownPreviewEnabled(for: id)
         defaults.set(pagePreviewOverrides, forKey: Self.pagePreviewKey)
+        // The V1 key was keyed by page id, which a relaunch re-mints; it is read nowhere now.
+        defaults.removeObject(forKey: Self.legacyPagePreviewKey)
         invalidateQuietRenderings()
     }
+
+    private static let legacyPagePreviewKey = "pageMarkdownPreviewV1"
 
     /// Posted when a rendering dependency (preview scope, syntax highlighting,
     /// typeface) moves and the quiet cache has been dropped. The roll listens
@@ -3333,8 +3333,10 @@ public final class PageModel: ObservableObject {
         // stamps and their reserved paragraph spacing are both suppressed.
         // The payload carries the fence regions the styling walk returned
         // so a quiet region's `InkLayoutManager` can paint the same slab
-        // the editor would. `.focusedOnly` and `.never` return plain ink.
-        if markdownPreviewEnabled(for: id, quiet: true), !id.isFileID {
+        // the editor would. `.focusedOnly` and `.never` return plain ink, and
+        // so does a page whose preview renders the ink itself; the toggle
+        // invalidates this cache either way.
+        if previewRendering == .allPages, !id.isFileID, !markdownPreviewEnabled(for: id) {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).
@@ -5189,8 +5191,9 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// The editor to hand the keys to, or nil when the one the model is
-    /// holding has already left the window.
+    /// The editor to hand the keys to, or the selected page's read only
+    /// preview where one stands over the editor, or nil when the one the
+    /// model keeps has already left the window.
     ///
     /// `activeEditor` is weak, which answers the question of whether the
     /// view still exists and not the question the hand-off is actually
@@ -5210,6 +5213,10 @@ public final class PageModel: ObservableObject {
         // Ownership can transfer before SwiftUI replaces the old mount.
         // A focus request for one window must wait for its own editor.
         if let targetWindow, editor.window !== targetWindow { return nil }
+        // Mid switch the hidden editor and the selection can disagree; the editor then stands in.
+        if editor.isHidden, let stack = editor.superview as? DayStackView {
+            return stack.selectedPreview ?? editor
+        }
         return editor
     }
 
@@ -6062,6 +6069,43 @@ public final class PageModel: ObservableObject {
         /// Its envelope would pass a cap the paste keeps (Law 0001, copy row).
         case pastCap(FragmentRefusal)
         case refused
+    }
+
+    /// Compose what a preview shows of its page's selection, each stretch as the rendered
+    /// text between its objects and each object by chip id (Law 0001, the preview's copy
+    /// row); writes nothing, and a refusal settles as the timer would (the expiry row).
+    public func composeShownSelection(
+        _ stretches: [[CompanionClient.ShownRun]], sheet: UInt64
+    ) -> SelectionComposition {
+        guard !sheet.isFileID, !stretches.isEmpty else { return .refused }
+        var fragments: [SealedFragment] = []
+        for shown in stretches {
+            switch client.composeShownFragmentResult(sheet: sheet, shown: shown) {
+            case .success(let fragment):
+                fragments.append(fragment)
+            case .failure(.refused):
+                return settleIfDue(sheet: sheet) ? .pageExpired : .refused
+            case .failure(let cap):
+                return .pastCap(cap)
+            }
+        }
+        guard fragments.count > 1 else { return .composed(fragments[0]) }
+        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+            return .severalStretchesHoldAnObject
+        }
+        return .composed(SealedFragment(joining: fragments))
+    }
+
+    /// Copy what a preview shows of its page's selection to the ordinary pasteboard as
+    /// the core composes it; nothing is written if it is refused.
+    @discardableResult
+    public func copyShownSelection(_ stretches: [[CompanionClient.ShownRun]], sheet: UInt64) -> Bool {
+        let composition = composeShownSelection(stretches, sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .copy) { flash(line) }
+            return false
+        }
+        return fragment.write(to: ambientPasteboard)
     }
 
     /// Compose a page's selected ranges for a copy or a service; writes nothing,

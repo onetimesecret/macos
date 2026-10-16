@@ -136,6 +136,80 @@ class AskingTextView: NSTextView {
         return menu
     }
 
+    // MARK: Links in the text menu (ADR-0023, Law 0001)
+
+    /// The link a text menu item acts on, found under the pointer as the menu was built.
+    struct LinkTarget {
+        let link: Any
+        let index: Int
+    }
+
+    /// Where a link aimed from the text menu opens; a bare view opens none.
+    func openAimedLink(_ link: Any) {}
+
+    /// The board Copy Link writes on once this view may read out; nil writes nothing.
+    var linkBoard: NSPasteboard? { nil }
+
+    /// Whether Copy Link goes through the gate any copy asks; a file keeps AppKit's.
+    var aimsLinkItems: Bool { true }
+
+    /// Sends Open Link to `openAimedLink`, and Copy Link through the gate any copy asks
+    /// where `aimsLinkItems`; there, one with no link found under the pointer leaves.
+    func aimLinkItems(in menu: NSMenu, at point: NSPoint) {
+        let target = linkTarget(at: point)
+        let asks = aimsLinkItems
+        for item in menu.items {
+            let ours: Selector
+            switch item.action {
+            case TextOffers.openLinkAction: ours = #selector(openLinkFromMenu(_:))
+            case TextOffers.copyLinkAction where asks: ours = #selector(copyLinkFromMenu(_:))
+            default: continue
+            }
+            guard let target else {
+                if asks { menu.removeItem(item) }
+                continue
+            }
+            item.target = self
+            item.action = ours
+            item.representedObject = target
+        }
+    }
+
+    /// The link drawn under `point`, in this view's coordinates.
+    func linkTarget(at point: NSPoint) -> LinkTarget? {
+        guard let layout = layoutManager, let container = textContainer,
+              let storage = textStorage, storage.length > 0
+        else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = layout.glyphIndex(for: local, in: container)
+        guard layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            .contains(local)
+        else { return nil }
+        let index = layout.characterIndexForGlyph(at: glyph)
+        guard index < storage.length, let link = storage.attribute(.link, at: index, effectiveRange: nil)
+        else { return nil }
+        return LinkTarget(link: link, index: index)
+    }
+
+    /// Open Link, which opens as a ⌘-click does.
+    @objc func openLinkFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? LinkTarget else { return }
+        openAimedLink(target.link)
+    }
+
+    /// Copy Link, which asks first like any copy and writes the URL on `linkBoard`.
+    @objc func copyLinkFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? LinkTarget,
+              let url = (target.link as? URL) ?? (target.link as? String).flatMap(URL.init(string:)),
+              let board = linkBoard, mayReadOut
+        else { return }
+        let item = NSPasteboardItem()
+        item.setString(url.absoluteString, forType: .URL)
+        item.setString(url.absoluteString, forType: .string)
+        board.clearContents()
+        board.writeObjects([item])
+    }
+
     /// Edit > Speech > Start Speaking reads the selection to the system's voice.
     override func startSpeaking(_ sender: Any?) {
         guard mayReadOut else { return }
