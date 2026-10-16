@@ -385,6 +385,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertTrue(roll.window.makeFirstResponder(preview))
         preview.selectAll(nil)
         let board = gated.pasteboard.changeCount
+        let dragBoard = NSPasteboard(name: .drag).changeCount
         let event = try mouseDragged(in: preview)
 
         XCTAssertFalse(preview.dragSelection(with: event, offset: .zero, slideBack: true))
@@ -398,7 +399,7 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
         XCTAssertEqual(preview.draggingSessionsBegun, 0)
         XCTAssertEqual(gated.pasteboard.changeCount, board)
-        XCTAssertEqual(NSPasteboard(name: .drag).changeCount, NSPasteboard(name: .drag).changeCount)
+        XCTAssertEqual(NSPasteboard(name: .drag).changeCount, dragBoard, "the drag board took a write")
         preview.setSelectedRange(NSRange(location: 0, length: 7))
         XCTAssertFalse(preview.dragSelection(with: event, offset: .zero, slideBack: true), "ink alone")
         XCTAssertEqual(preview.draggingSessionsBegun, 0)
@@ -406,6 +407,83 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
     /// A link in the preview opens only by ⌘-click through the coordinator's `openLink`,
     /// which asks the page first; a plain click opens nothing (Law 0001, link rows).
+    /// One coordinator serves every preview in the roll, so a link's gate is the asking
+    /// view's own page, never the coordinator's sheet: with a file as the coordinator's
+    /// sheet, Open Link on a preview of a page past its deadline opens nothing and settles.
+    func testAPreviewsLinkAsksItsOwnPageWhileTheCoordinatorShowsAFile() throws {
+        let gated = try makeGatedModel()
+        let (page, _) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        let index = try linkIndex(in: preview)
+        let link = try XCTUnwrap(preview.textStorage?.attribute(.link, at: index, effectiveRange: nil))
+        let item = NSMenuItem(title: "Open Link", action: nil, keyEquivalent: "")
+        item.representedObject = AskingTextView.LinkTarget(link: link, index: index)
+        roll.coordinator.currentSheet = CompanionClient.fileIDTag | 9_001
+        XCTAssertTrue(roll.coordinator.writesFile, "the control: the coordinator's sheet is a file")
+
+        preview.openLinkFromMenu(item)
+        XCTAssertEqual(gated.opened.urls, [Self.secretLink], "the control: the standing page opens")
+
+        try age(page, in: gated.model)
+        preview.openLinkFromMenu(item)
+
+        XCTAssertEqual(gated.opened.urls, [Self.secretLink], "Open Link opened past the deadline")
+        XCTAssertEqual(gated.model.notice, PageModel.pageExpiredLine)
+        XCTAssertFalse(gated.model.tabs.contains { $0.pageID == page }, "no settle")
+    }
+
+    /// A table selection is several ranges, one per cell: ink alone copies as the cells'
+    /// text in order, by line; a cell with an object in it refuses, since one envelope is
+    /// one range (Law 0001, copy row); one range across cells and a link composes in order.
+    func testASelectionAcrossTableCellsCopiesInkByCellAndRefusesAnObjectInSeveral() throws {
+        let gated = try makeGatedModel()
+        let ink = "| left | right |\n| --- | --- |\n| [x](\(Self.secretLink.absoluteString)) SECRET | two |"
+        let page = try page(in: gated.model, saying: ink)
+        let coordinator = InkEditorView.Coordinator(model: gated.model)
+        coordinator.surface = gated.model.owner
+        let editor = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: gated.model, sheetID: page, coordinator: coordinator))
+        editor.setSelectedRange((ink as NSString).range(of: "SECRET"))
+        coordinator.sealSelectionOrLine()
+        coordinator.leavePage(editor, scrollView: nil)
+        gated.model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        let shown = preview.string as NSString
+        XCTAssertEqual(preview.string, "left\nright\nx \u{FFFC}\ntwo\n\n")
+        func cell(_ text: String) -> NSValue {
+            NSValue(range: shown.range(of: text))
+        }
+
+        preview.selectedRanges = [cell("left"), cell("right"), cell("two")]
+        preview.copy(nil)
+        XCTAssertEqual(gated.pasteboard.string(forType: .string), "left\nright\ntwo")
+        XCTAssertNil(gated.pasteboard.data(forType: SealedFragment.pasteboardType))
+        XCTAssertEqual(preview.shownSelection(), [[.ink("left")], [.ink("right")], [.ink("two")]])
+
+        let board = gated.pasteboard.changeCount
+        preview.selectedRanges = [cell("left"), cell("x \u{FFFC}"), cell("two")]
+        preview.copy(nil)
+        XCTAssertEqual(gated.pasteboard.changeCount, board, "several stretches with an object wrote")
+        XCTAssertEqual(gated.model.notice, PageModel.severalStretchesLine)
+        XCTAssertEqual(
+            gated.model.composeShownSelection(preview.shownSelection(), sheet: page),
+            .severalStretchesHoldAnObject)
+
+        let across = NSRange(location: shown.range(of: "right").location, length: shown.range(of: "two").location - shown.range(of: "right").location + 3)
+        preview.setSelectedRange(across)
+        preview.copy(nil)
+        let envelope = try envelope(on: gated.pasteboard)
+        XCTAssertEqual(envelope.nodes.map(\.ink), ["right\nx ", nil, "\ntwo"])
+        XCTAssertNotNil(envelope.nodes[1].ref)
+        XCTAssertEqual(gated.pasteboard.string(forType: .string), "right\nx [sealed content · tiny]\ntwo")
+        XCTAssertFalse(everything(on: gated.pasteboard).contains(Self.secretLink.absoluteString))
+    }
+
     func testAPreviewsLinkOpensOnlyByCommandClickThroughTheGate() throws {
         let gated = try makeGatedModel()
         let (page, _) = try sealedPreviewPage(in: gated.model)
@@ -454,6 +532,13 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
             }),
             ("the readers", { preview in
                 XCTAssertFalse(preview.mayReadOut)
+                let font = NSPasteboard(name: .font).changeCount
+                preview.startSpeaking(nil)
+                preview.quickLook(with: try self.mouseDragged(in: preview))
+                preview.showDefinition(for: NSAttributedString(string: "body"), at: .zero)
+                preview.copyFont(nil)
+                XCTAssertFalse(NSSpeechSynthesizer.isAnyApplicationSpeaking, "Speech read the preview")
+                XCTAssertEqual(NSPasteboard(name: .font).changeCount, font, "Copy Style wrote the font board")
             }),
         ]
         for way in ways {

@@ -340,6 +340,31 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
             floor(400 - editor.lineFragmentPadding * 2), "the editor keeps its measure")
     }
 
+    /// What the preview shows of a selection, in rendered order: a link's text is ink like
+    /// the text around it, each object is its chip id, and the destination never appears.
+    func testTheShownSelectionKeepsRenderedOrderAcrossALinkAndItsObjects() throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        let source = NSMutableAttributedString(string: "see [a link](https://example.com/secret) ")
+        source.append(NSAttributedString(attachment: chip(5)))
+        source.append(NSAttributedString(string: " then "))
+        source.append(NSAttributedString(attachment: chip(6)))
+        source.append(NSAttributedString(string: " end"))
+        view.reseed(with: PageModel.QuietRendering(text: source, fenceRegions: []))
+        XCTAssertEqual(view.string, "see a link \u{FFFC} then \u{FFFC} end\n")
+
+        view.selectAll(nil)
+        XCTAssertEqual(view.shownSelection(), [[
+            .ink("see a link "), .chip(5), .ink(" then "), .chip(6), .ink(" end\n"),
+        ]])
+
+        let shown = view.string as NSString
+        view.setSelectedRange(NSRange(location: shown.range(of: "link").location, length: 13))
+        XCTAssertEqual(view.shownSelection(), [[.ink("link "), .chip(5), .ink(" then "), .chip(6)]])
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertEqual(view.shownSelection(), [])
+    }
+
     func testAttachmentsKeepObjectIdentityAcrossInlineCodeTablesAndHTML() throws {
         let source = NSMutableAttributedString(string: "# Before 😀 **")
         let first = chip(1)
