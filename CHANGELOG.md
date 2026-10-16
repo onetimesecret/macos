@@ -447,6 +447,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A page's Markdown, rendered in place** (app 0.38.0; `companion-core`
+  0.33.0, `companion-ffi` 0.42.0; Law 0001's AppKit text routes table,
+  the 2026-10-16 Markdown preview amendment; ADR-0030). A toggle in a
+  page's header on the roll shows the page rendered by a builtin
+  renderer on swift-markdown 0.9: headings, emphasis, lists, quotes,
+  code, tables with their column and row spans, links to http, https and
+  mailto destinations (a mailto keeps its address alone) and the page's
+  sealed objects in place. The choice is the page's own, kept by its UUID
+  across launches, apart from the **All pages** styling setting.
+
+  The preview is the page's text shown another way, so every AppKit way
+  out of it asks the page first: its text menu keeps no Share…, Look Up,
+  Translate, Speech, Spelling and Grammar, Search With Google, Open With
+  or Edit Link…, Writing Tools, suggestions, predictions and data
+  detectors are off, a link opens only by ⌘-click through the same gate
+  the editor's links use, no drag starts from it, and past the page's
+  deadline each refuses and the page settles. Copy writes the sealed
+  fragment the core composes from what the preview shows, through the
+  new `companion_sheet_compose_fragment` route: the rendered text between
+  the objects as the ink, never the source markdown, each object by
+  reference in rendered order, and the public text with a placeholder
+  where each object stood; a service takes the public text alone. Only
+  the selected page's preview is selectable; a preview of another page is
+  as a quiet page is, and a click on it brings that page under the
+  editor.
+
 - **Tab summaries name each page's UUID** (`companion-ffi` 0.41.0).
   `companion_tabs_json` gains `page_uuid`, the page's `Sheet.uuid()` in
   lowercase hyphenated form, or null for a slot with no page; the shell
