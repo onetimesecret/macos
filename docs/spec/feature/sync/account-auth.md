@@ -38,7 +38,7 @@ and `scope=sync` asked for explicitly. The app opens the browser,
 listens once on an ephemeral loopback port, exchanges the code, and
 closes the listener. The redirect URI is **registered portless**
 server side (`http://127.0.0.1/callback`), which is what lets any
-ephemeral port match; ADR-0027 §1 says why that registration is a hard
+ephemeral port match; the [decision background](account-auth-decision-background.md) §1 says why that registration is a hard
 requirement rather than a detail.
 
 The issue asks where the browser step lands for an app that "is not a
@@ -77,7 +77,7 @@ lifetimes are chosen for that shape:
   is the intended path, not an error path. Rotation is requested and
   never required: RFC 6749 §6 makes the new token optional, so a
   refresh answer carrying an access token and no refresh token is a
-  success and the resting token stands (ADR-0027 §2). Requiring one
+  success and the resting token stands ([decision background](account-auth-decision-background.md) §2). Requiring one
   would refuse every grant a non-rotating server issues, behind a
   `2xx` the client could not explain.
 - **Expiry mid-session:** the relay answers an expired access token
@@ -156,12 +156,12 @@ attach or publish actually needs the network.
 | No network at refresh time | Sync degraded with its sentence ("sync could not reach the server"); retry follows the publish clock, not a hot loop. |
 | Token or grant revoked account-side | Indistinguishable from refresh refused, handled identically. |
 
-Every one of these lands on one of ADR-0027 §5's seven gate states,
+Every one of these lands on one of the [decision background](account-auth-decision-background.md) §5's seven gate states,
 which the core reports as a machine token in the sync status (`gate`)
 and through `companion_sync_gate`. Closing the gate dissolves the
 engine, and the dissolve rewinds each enrolled page to what the relay
 acknowledged, so an account failure costs the peers a delay and never
-an edit (ADR-0027 §7).
+an edit ([decision background](account-auth-decision-background.md) §7).
 
 Every one of these ends in a state issue #102 owes a sentence, and none
 of them may be silent — an expired token disabling sync without a word
@@ -169,5 +169,5 @@ would break the promise pass 1 wrote down: no unaccounted behaviour
 change, in either direction. Those words are now written down and
 built: [surface.md](surface.md) §5 carries the sentence each of these
 rows lands on, §4 the header word the gate chooses, and §2 the way out
-of a browser trip that is still open, which is what ADR-0027 §5's
+of a browser trip that is still open, which is what the [decision background](account-auth-decision-background.md) §5's
 `signing_in` row asks the surface for.

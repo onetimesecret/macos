@@ -99,7 +99,7 @@ because the flag went with the ceremony it ended and there is nothing
 honest left to read. `no_ceremony` therefore covers both a caller out
 of order and a give up the finish never met, and it has a sentence of
 its own: no path here reaches the sentence about a server refusing,
-because in none of them was a server asked anything (ADR-0027 §2,
+because in none of them was a server asked anything ([decision background](account-auth-decision-background.md) §2,
 where silence is never a no). A trip the user ended and a trip that
 never returned are one fact to the core, so the shell keeps the
 difference for the length of one settling and says which it was, and

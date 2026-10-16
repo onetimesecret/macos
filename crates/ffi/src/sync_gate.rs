@@ -1,4 +1,4 @@
-//! The account gate as one value (ADR-0027 §5). ADR-0021 §3 gave the
+//! The account gate as one value (account-auth decision background §5). ADR-0021 §3 gave the
 //! account exactly one job, to say whether this client may attach to
 //! the channel, and this module says where that answer stands.
 //!
@@ -18,7 +18,7 @@
 /// What the last attempt to use the account credential met. Held in
 /// memory only: nothing durable records *why* a token is gone, and a
 /// durable "you were refused" note would be a claim about the past
-/// that a restored backup could falsify (ADR-0027 §5).
+/// that a restored backup could falsify (account-auth decision background §5).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum GateFault {
     /// The account server said no: the grant is dead, the resting
@@ -101,7 +101,7 @@ pub(crate) struct GateInputs {
 /// which cannot outlive it. And a network that did not answer is
 /// reported as itself, never as a refusal: a server that said nothing
 /// is not a server that said no, and only the second one deletes
-/// anything (ADR-0027 §2).
+/// anything (account-auth decision background §2).
 pub(crate) fn gate(inputs: GateInputs) -> SyncGate {
     if !inputs.configured {
         return SyncGate::Off;

@@ -757,7 +757,7 @@ public struct SyncStatus: Codable, Hashable, Sendable {
     }
 }
 
-/// The account gate's seven states (ADR-0027 §5), as the core names
+/// The account gate's seven states (account-auth decision background §5), as the core names
 /// them; none of them touches the pad.
 public enum SyncGate: String, Codable, Hashable, Sendable {
     case off

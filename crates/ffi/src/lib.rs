@@ -3062,7 +3062,7 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
     into_c_string(sync_driver::status_json(&guard).to_string())
 }
 
-/// Where the account gate stands, as one machine token (ADR-0027 §5):
+/// Where the account gate stands, as one machine token (account-auth decision background §5):
 /// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
 /// `ready` or `attached`, the status JSON's `gate`. It says whether this
 /// client may attach and nothing about content (ADR-0021 §3).
@@ -3162,7 +3162,7 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         staged
     };
     let Some((pending, transport)) = staged else {
-        // Nothing to finish; never spelled as a refusal (ADR-0027 §2).
+        // Nothing to finish; never spelled as a refusal (account-auth decision background §2).
         return sync_refusal("no_ceremony");
     };
     let abandoned = Arc::clone(&pending.abandoned);
@@ -8221,7 +8221,7 @@ mod tests {
             // gets. The user closes the tab instead and comes back to
             // the app, and the way out has to be the ceremony ending
             // rather than a button that only looks like one
-            // (ADR-0027 §5, `signing_in`).
+            // (account-auth decision background §5, `signing_in`).
             let address = handle as usize;
             let waiting = std::thread::spawn(move || {
                 let handle = address as *mut CompanionHandle;

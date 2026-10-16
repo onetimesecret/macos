@@ -307,7 +307,7 @@ impl<'de> serde::de::Visitor<'de> for TokenField {
 /// A client that insisted on one would refuse every grant such a
 /// server issues, and would refuse them behind a `2xx` it could not
 /// even explain, so sync would be permanently unable to wake up
-/// against a perfectly conformant server (ADR-0027 §2: rotation is
+/// against a perfectly conformant server (account-auth decision background §2: rotation is
 /// requested, never required). The access token is still mandatory:
 /// a refresh answer without one has told us nothing we can attach
 /// with.
@@ -338,7 +338,7 @@ fn parse_refresh_response(
 /// not the authorization server speaking at all: neither carries an
 /// `error` field, and an HTML body carries nothing this can read. So
 /// the verdict is taken from the body, never off the status, and the
-/// default is to keep the credential (ADR-0027 §2: a server that said
+/// default is to keep the credential (account-auth decision background §2: a server that said
 /// slow down is not a server that said no).
 fn grant_is_dead(response: &HttpResponse) -> bool {
     if !(400..500).contains(&response.status) {
@@ -426,7 +426,7 @@ impl TokenKeeper {
     /// refresh token for the caller to persist; `Ok(None)` is a server
     /// that declined to rotate, whose grant stands unchanged and whose
     /// stored token is still the right one, so there is nothing to
-    /// write (ADR-0027 §2). Only the token endpoint naming
+    /// write (account-auth decision background §2). Only the token endpoint naming
     /// `invalid_grant` signs the keeper out with both tokens dropped,
     /// for the caller to surface issue #102's sentence: "Sync is
     /// signed out; the pad is unaffected." Anything else (a `5xx`, a
