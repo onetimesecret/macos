@@ -26,5 +26,5 @@ Keep code comments to one or two lines. Do not write a comment that asserts a gu
 ## Terms and phrases to avoid
 
 Do not use any of the following terms or phrases or sentence structures:
-- holds, claims, lands
+- holds, claims, lands, carries
 - "A isn't only B, but also C"
