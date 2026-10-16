@@ -9,7 +9,8 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v13)], // MenuBarExtra needs macOS 13+
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.9.0"),
+        // Patch releases only: a minor of a parser under a security product is reviewed, not floated into.
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", .upToNextMinor(from: "0.9.0")),
     ],
     targets: [
         // Produced by scripts/build-core.sh. Exposes the C ABI in
