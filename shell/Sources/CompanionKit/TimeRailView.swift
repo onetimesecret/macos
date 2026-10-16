@@ -250,7 +250,7 @@ public struct TimeRailView: View {
 
     private func sortMenu<Heading: View>(
         direction: PadSortDirection, subject: String,
-        select: @escaping (PadSortDirection) -> Void,
+        select: @escaping @MainActor @Sendable (PadSortDirection) -> Void,
         @ViewBuilder heading: () -> Heading
     ) -> some View {
         let copy = PadSortCopy(direction: direction, subject: subject)
