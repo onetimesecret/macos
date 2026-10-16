@@ -63,8 +63,8 @@ enum SealedBlockLayout {
         let pillOverhang: CGFloat
         /// What the `=` zone takes from the runs beside it, each side.
         let equalsSlop: CGFloat
-        /// The decrypted drag's handle (sealed row spec, Seat and look): its clearance from the
-        /// actions seat and from the classification, and its words' inset from its outline.
+        /// The two handles on the top row (sealed row spec, The handles): each one's clearance
+        /// from its neighbour and from the classification, and its glyph's inset from its edge.
         let handleGap: CGFloat
         let handleInset: CGFloat
     }
