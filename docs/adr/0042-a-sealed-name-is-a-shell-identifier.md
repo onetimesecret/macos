@@ -4,8 +4,8 @@ documentation_status: needs-review
 
 # ADR-0042: A sealed name is a POSIX shell identifier
 
-- **Status:** proposed
-- **Date:** 2026-10-14
+- **Status:** accepted
+- **Date:** 2026-10-16
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -60,3 +60,4 @@ Unicode charset.
 - 2026-10-14: Proposed.
 - 2026-10-14: Consolidated from draft ADR-0042 (sealed names, copy zones and rename seats) point 1 with its argument and eject trigger, written 2026-10-13 and never ratified; its point 4 is [ADR-0047](0047-name-value-copies-the-value-unquoted.md), and its other points stand in Law 0001's and Law 0007's rows and the [sealed row spec](../spec/feature/sealed-content/sealed-row-note-and-handles.md).
 - 2026-10-14: The value's quoting, first proposed here as points 2 and 3, moved to ADR-0047 so each can be accepted or rejected on its own.
+- 2026-10-16: Accepted.

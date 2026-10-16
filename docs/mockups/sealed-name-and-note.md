@@ -12,7 +12,8 @@
 > [sealed row spec](../spec/feature/sealed-content/sealed-row-note-and-handles.md),
 > and the answers in Law 0001's and Law 0007's rows and in
 > [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md) and
-> [ADR-0047](../adr/0047-name-value-copies-the-value-unquoted.md), both proposed.
+> [ADR-0047](../adr/0047-name-value-copies-the-value-unquoted.md), both
+> accepted.
 
 # Sealed object: a name and a note
 
@@ -56,8 +57,9 @@ it does.
   ledger, which has no content field to receive it. Proposed shape: up to
   64 characters, letters, digits, underscore, dot and dash, so that
   `name=value` pastes as an environment line. Case is kept as typed.
-  *Proposed by ADR-0042 point 1:* 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`,
-  refused core-side, since a dot or a dash does not assign in a shell.
+  *Settled by ADR-0042 point 1 (accepted):* 1 to 64 characters of
+  `[A-Za-z_][A-Za-z0-9_]*`, refused core-side, since a dot or a dash does
+  not assign in a shell.
 
 ## The three copy zones
 
@@ -153,6 +155,6 @@ more seats the law reaches:
   minimum.
 
 *Answered by draft ADR-0042, now Law 0001's unnamed row and note rows
-and ADR-0047 point 1, proposed:* an unnamed row has no zones until the
+and ADR-0047 point 1 (accepted):* an unnamed row has no zones until the
 object is named; the value is copied raw; and on a narrow card the note
 takes the card's full content width.

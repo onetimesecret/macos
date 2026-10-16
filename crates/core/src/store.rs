@@ -194,7 +194,7 @@ pub struct SheetStore<C: Clock> {
     pub(crate) next_tab_id: u64,
     pub(crate) next_sheet_id: u64,
     pub(crate) next_chip_id: u64,
-    /// The last cut that held an object, until it ends (ADR-0046 point 3, proposed).
+    /// The last cut that held an object, until it ends (ADR-0046 point 3).
     pub(crate) active_cut: Option<crate::transfer::ActiveCut>,
 }
 
@@ -668,7 +668,7 @@ impl<C: Clock> SheetStore<C> {
     /// Apply a batch of edits to a page's body (ADR-0013). The batch is
     /// validated whole against a simulated body first, so one bad op
     /// mutates nothing; an applied batch commits as one change, and chips
-    /// whose sentinels are gone are detached (ADR-0046 point 1, proposed).
+    /// whose sentinels are gone are detached (ADR-0046 point 1).
     /// Returns whether it applied.
     pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
         self.apply_batch(id, ops, inferred_intent(ops), None)
@@ -960,7 +960,7 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
-    /// Settle the chip roster (ADR-0046 point 1, proposed), then rebuild the
+    /// Settle the chip roster (ADR-0046 point 1), then rebuild the
     /// projection and derived title.
     pub(crate) fn settle_document(&mut self, id: SheetId) {
         let Some(sheet) = self.sheet_mut(id) else {
@@ -1009,7 +1009,7 @@ impl<C: Clock> SheetStore<C> {
         let Some(sheet) = self.sheet_mut(id) else {
             return Err(RemoteRefusal::UnknownSheet);
         };
-        // A detached chip is still the page's own (ADR-0046 point 1, proposed).
+        // A detached chip is still the page's own (ADR-0046 point 1).
         let owned = sheet.owned_uuids();
         sheet
             .document
@@ -1407,7 +1407,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The name, `=` and a text chip's payload, raw, in one buffer at its
-    /// final size (ADR-0047 point 1, proposed; core interface, `NAME=value`).
+    /// final size (ADR-0047 point 1; core interface, `NAME=value`).
     /// `None` for an unknown, unnamed or image chip, or a page past its
     /// deadline (Law 0001, expiry row).
     /// Consumes nothing and records nothing.
@@ -1428,7 +1428,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Burn a chip, attached or detached: its bytes wiped and its page's undo
-    /// stack with it (ADR-0046 point 2, proposed). False for an unknown chip.
+    /// stack with it (ADR-0046 point 2). False for an unknown chip.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let mut removed: Option<(ItemId, usize, String, u64)> = None;

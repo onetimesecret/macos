@@ -936,5 +936,5 @@ moved a decision.
 - 2026-10-14, D-30's *Owed* clause: met under issue 170. A chip the
   page stops showing is detached, not zeroized
   ([ADR-0046](../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
-  point 1, proposed), so ⌘Z stands the same object again; Law 0001's two
-  backspace rows cite the tests. The clause stays as written.
+  point 1, accepted), so ⌘Z stands the same object again; Law 0001's
+  two backspace rows cite the tests. The clause stays as written.

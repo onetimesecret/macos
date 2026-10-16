@@ -4,8 +4,8 @@ documentation_status: needs-review
 
 # ADR-0043: A sealed object's name and note are fields of its chip, outside the page's document and the ledger
 
-- **Status:** proposed
-- **Date:** 2026-10-14
+- **Status:** accepted
+- **Date:** 2026-10-16
 - **Depends on:** [ADR-0042](0042-a-sealed-name-is-a-shell-identifier.md), which fixes the name's charset, and [ADR-0028](0028-file-backed-documents-are-a-peer-content-class.md), whose open file is already a second document with its own undo.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -117,3 +117,4 @@ rest are in the
 
 - 2026-10-14: Proposed.
 - 2026-10-14: Consolidated from draft ADR-0043 (a sealed object's name and note live on its chip) points 1, 3 and 5 and point 6's compatibility consequence, written 2026-10-13 and never ratified; its sync sentence is left open above, and its routes, codes, JSON fields and framing are in the [core interface](../development/sealed-objects-core-interface.md).
+- 2026-10-16: Accepted.

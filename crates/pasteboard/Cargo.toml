@@ -28,7 +28,7 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSPasteboard",
   # A decrypted drag's payload is written into the drag's item
-  # (ADR-0045 point 5, proposed).
+  # (ADR-0045 point 5).
   "NSPasteboardItem",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [

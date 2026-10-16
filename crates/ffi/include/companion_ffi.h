@@ -391,7 +391,7 @@ bool companion_store_emptiness(CompanionHandle *handle,
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label (a size
  *   class, "tiny" through "huge", never a count), concealed (bool),
- *   name (the typed name, or null; ADR-0043 point 1, proposed),
+ *   name (the typed name, or null; ADR-0043 point 1),
  *   has_note (bool, true while the note holds anything but whitespace).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
@@ -471,7 +471,7 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
  * atomically or not at all. Chip liveness follows the document: a
  * delete that swallows a chip's sentinel detaches the chip, and a chip
  * op naming one of the page's detached chips reattaches it
- * (ADR-0046 point 1, proposed).
+ * (ADR-0046 point 1).
  * An "ins" whose text holds U+FFFC refuses the batch whole: only a chip
  * op stands that character (Law 0001). Returns
  * whether the batch applied; on false, restate the page through
@@ -561,7 +561,7 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  * rejected batch, at the price of that page's provenance. STILL
  * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
  * deleted in the editor and is detached here, and a detached chip it
- * names reattaches (ADR-0046 point 1, proposed). Malformed snapshots
+ * names reattaches (ADR-0046 point 1). Malformed snapshots
  * (bad JSON, foreign chip, duplicate reference, ink holding U+FFFC) are
  * rejected whole. Returns acceptance.
  */
@@ -639,8 +639,8 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
 /*
  * Copy NAME=<plaintext>: the name, "=", then the payload raw and
- * unquoted (ADR-0047 point 1, proposed), by companion_chip_copy_out()'s
- * route (Law 0001; ADR-0047 point 2, proposed). The core composes the
+ * unquoted (ADR-0047 point 1), by companion_chip_copy_out()'s
+ * route (Law 0001; ADR-0047 point 2). The core composes the
  * bytes at their final size and writes them itself, transient and
  * ConcealedType, keeps the receipt for companion_clear_clipboard_if_ours(),
  * and leaves one "sent" record to "clipboard" at the payload's size
@@ -665,13 +665,13 @@ bool companion_chip_stands(CompanionHandle *handle, uint64_t chip);
  * Burn a chip, attached or detached: its bytes are wiped, its page's
  * undo stack goes with it, and one `discarded` is recorded. A removal
  * by backspace is not a burn; it detaches
- * (ADR-0046 points 1 and 2, proposed). Returns whether it existed.
+ * (ADR-0046 points 1 and 2). Returns whether it existed.
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
 
 /*
  * Judge a draft sealed name by the rule companion_chip_set_name()
- * refuses with (ADR-0042 point 1, proposed). The draft is trimmed. 0
+ * refuses with (ADR-0042 point 1). The draft is trimmed. 0
  * takes it, and an empty draft is taken as clearing the name; 1 is
  * longer than 64 characters; 2 is outside [A-Za-z_][A-Za-z0-9_]*,
  * which is judged first. Null and non-UTF-8 answer 2. Stateless and
@@ -691,14 +691,14 @@ bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
                              const char *name);
 
 /* ------------------------------------------------------------------ */
-/* A sealed object's note (ADR-0043 point 2, proposed)                 */
+/* A sealed object's note (ADR-0043 point 2)                           */
 /* ------------------------------------------------------------------ */
 
 /*
  * The note is ink of its own beside the object: a document that holds
  * no chips, with an undo stack of its own and no clock. It goes with
  * its chip: detached with it at a removal, destroyed with it at expiry,
- * discard, close or a burn (ADR-0046 points 1 and 2, proposed), and no
+ * discard, close or a burn (ADR-0046 points 1 and 2), and no
  * ledger record names it. These routes take a CHIP id and mirror the
  * file routes; no page route reaches the note and no note route
  * reaches a page, so the page's undo and the note's never cross.

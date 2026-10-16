@@ -1242,7 +1242,7 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
 }
 
 /// Copy `NAME=<plaintext>` by copy decrypted's route
-/// (Law 0001; ADR-0047 point 2, proposed): the store composes it and this
+/// (Law 0001; ADR-0047 point 2): the store composes it and this
 /// writes it as [`companion_chip_copy_out`] does. False, writing and recording
 /// nothing, for an unknown, unnamed or image chip, or a page past its deadline
 /// (Law 0001, expiry row).
@@ -1286,7 +1286,7 @@ pub unsafe extern "C" fn companion_chip_stands(handle: *mut CompanionHandle, chi
 }
 
 /// Burn a chip, attached or detached, wiping its bytes and its page's undo
-/// stack (ADR-0046 point 2, proposed). Returns whether it existed.
+/// stack (ADR-0046 point 2). Returns whether it existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1301,7 +1301,7 @@ pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chi
     guard.store.delete_chip(ChipId::from_raw(chip))
 }
 
-/// Judge a draft sealed name without a handle (ADR-0042 point 1, proposed):
+/// Judge a draft sealed name without a handle (ADR-0042 point 1):
 /// 0 takes it, an empty draft clearing; 1 is too long; 2 is outside the
 /// charset, as are null and non-UTF-8.
 ///
@@ -1320,7 +1320,7 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
 }
 
 /// Name a sealed object, or clear its name with a blank draft
-/// (ADR-0042 point 1, proposed). False for an unknown chip or a refused draft;
+/// (ADR-0042 point 1). False for an unknown chip or a refused draft;
 /// the name is then unchanged.
 ///
 /// # Safety
@@ -1347,7 +1347,7 @@ pub unsafe extern "C" fn companion_chip_set_name(
         .is_ok()
 }
 
-// ---- A sealed object's note: its own document, keyed by chip (ADR-0043 point 2, proposed) ----
+// ---- A sealed object's note: its own document, keyed by chip (ADR-0043 point 2) ----
 
 /// The note as document runs: `[]` without one, else `[{"ink": text}]`. Null
 /// for an unknown chip or a page past its deadline (Law 0001, expiry row).
@@ -1576,7 +1576,7 @@ unsafe fn note_step(handle: *mut CompanionHandle, chip: u64, back: bool) -> *mut
     outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
-// ---- The sealed fragment: copy, cut, paste, drags (ADR-0045 and ADR-0046, proposed) ----
+// ---- The sealed fragment: copy, cut, paste, drags (ADR-0045 and ADR-0046) ----
 
 /// Copy a UTF-16 range as `{"envelope": string|null, "plain": string}`, or
 /// `{"error", "limit"}` past an envelope cap (Law 0001, copy row); null for a
@@ -5523,7 +5523,7 @@ mod tests {
                 cstring(r#"[{"chip": 424242}]"#).as_ptr()
             ));
 
-            // A snapshot that omits the chip detaches it (ADR-0046 point 1, proposed).
+            // A snapshot that omits the chip detaches it (ADR-0046 point 1).
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
