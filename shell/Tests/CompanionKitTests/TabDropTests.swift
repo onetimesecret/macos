@@ -379,7 +379,7 @@ final class TabDropTests: XCTestCase {
     }
 
     /// Another app's drag seals at the end of the tab's page, the core reading the board
-    /// itself; ink from this app, and a decrypted drag, land nowhere on a tab.
+    /// itself; ink from this app lands nowhere on a tab.
     func testAnotherAppsDragSealsAtTheEndOfTheTabsPageAndThisAppsInkIsRefused() throws {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
@@ -430,6 +430,66 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(dest.textView.textStorage?.length, 3, "the surface was not restated")
         XCTAssertNotNil(dest.coordinator.chipAttachment(at: 2), "the face did not stand")
         XCTAssertEqual(dest.textView.selectedRange(), NSRange(location: 2, length: 1))
+    }
+
+    /// The decrypted drag lands on no tab, its own page's or another's: every destination
+    /// call refuses it before drop to seal reads the drag pasteboard, and its provider is
+    /// never asked (Law 0001, decrypted drag row).
+    func testTheDecryptedDragLandsOnNoTab() throws {
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let page = try mountPage(on: model)
+        let (dest, slot) = try unshownPage(on: model, text: "xy")
+        let (source, item) = try XCTUnwrap(
+            page.coordinator.beginDecryptedDrag(at: 3), "the handle started no drag")
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        board.clearContents()
+        XCTAssertTrue(board.writeObjects([item]))
+        let records = model.coreClient.ledger().count
+        let drop = drag(from: source, board: board, mask: copy)
+
+        for (target, name) in [
+            (TabDropTarget(model: model, slot: slot), "another page's tab"),
+            (TabDropTarget(model: model, slot: try self.slot(of: page.sheet, on: model)), "its own tab"),
+        ] {
+            XCTAssertEqual(target.dropRoute(for: drop), .refused, name)
+            XCTAssertEqual(target.draggingEntered(drop), [], name)
+            XCTAssertEqual(target.draggingUpdated(drop), [], name)
+            XCTAssertFalse(target.performDragOperation(drop), name)
+        }
+        XCTAssertEqual(standIn.drops, [], "a tab of this app ran drop to seal")
+        XCTAssertEqual(source.asks, 0, "a tab of this app asked the provider")
+        XCTAssertEqual(shape(model, dest), "xy", "the drop stood an object on the tab's page")
+        XCTAssertEqual(shape(model, page.sheet), "ab # cd # ef")
+        XCTAssertEqual(model.coreClient.ledger().count, records, "a refused drop recorded something")
+        XCTAssertNil(model.notice, "a refused drop said something")
+        source.end(with: [])
+    }
+
+    /// An item carrying another build's fragment is refused on a tab, which has no surface
+    /// to lay its public text on as ink, the page's answer (2026-10-14 every build's copy amendment).
+    func testAnotherBuildsFragmentOnATabIsRefused() throws {
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let (dest, slot) = try unshownPage(on: model, text: "xy")
+        let target = TabDropTarget(model: model, slot: slot)
+        let item = NSPasteboardItem()
+        XCTAssertTrue(item.setData(Data([1, 2, 3]), forType: SealedFragmentEditorTests.otherBuildsType))
+        XCTAssertTrue(item.setString(placeholder, forType: .string))
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        board.clearContents()
+        XCTAssertTrue(board.writeObjects([item]))
+        let drop = drag(from: nil, board: board, mask: copy)
+
+        XCTAssertEqual(target.dropRoute(for: drop), .refused, "another build's fragment was sorted as another app's drag")
+        XCTAssertEqual(target.draggingEntered(drop), [])
+        XCTAssertEqual(target.draggingUpdated(drop), [])
+        XCTAssertFalse(target.performDragOperation(drop))
+        XCTAssertEqual(shape(model, dest), "xy", "another build's fragment landed on the tab's page")
+        XCTAssertEqual(standIn.drops, [], "the core read the board for another build's fragment")
+        XCTAssertNil(model.notice, "a refused drop said something")
     }
 
     // MARK: The tab's own gestures
