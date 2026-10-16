@@ -413,29 +413,45 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       as a new object, the first page keeps its run after a plain drop,
       or ⌘Z on the first page stands the object again.
 - [ ] **A drop on a tab** (Law 0001, drag and ⌥ drag rows; issue 254).
-      With two pages in the strip, select a run holding a named object
-      with a note on the first page and drag it onto the second page's
+      First, whether a drag reaches a tab at all: the tab's drop target
+      (`TabDropTarget`) answers nil from `hitTest`, so the tab's clicks
+      stay SwiftUI's, and every test drives its destination calls
+      directly; only a real drag can show that AppKit delivers one to a
+      view whose `hitTest` returns nil. With two pages in the strip on
+      the raised card, select a run of plain ink on the first page and
+      drag it over the second page's tab, watching for the cursor to
+      change, then release. Then select a run with a named object and
+      its note on the first page and drag it onto the second page's
       tab. Then drag a run onto the first page's own tab, and with ⌥
-      held onto the second's. Last, drag a word from TextEdit onto the
+      down onto the second's. Last, drag a word from TextEdit onto the
       second page's tab. **Pass:** over a tab the cursor shows a move
-      (⌥: a copy), the run lands at the end of the second page with the
-      object's name and note and leaves the first, the own tab's drop
-      moves the run to the end of its page, ⌥ leaves the first page's
-      run and the ledger gains one `sealed`, the TextEdit word stands
-      at the end of the second page as a new sealed object, and the
-      tab still selects on a click, holds on a double click and
-      reorders from its handle. **Fail:** the cursor shows nothing
-      over a tab, the run lands anywhere but the end, the object
-      returns without its name or note, the first page keeps its run
-      after a plain drop, the TextEdit word lands as ink, or a tab
-      stops answering its clicks or its handle.
+      (⌥: a copy) and the released run is placed, the run stands at the
+      end of the second page with the object's name and note and leaves
+      the first, the own tab's drop moves the run to the end of its
+      page, ⌥ leaves the first page's run and the ledger gains one
+      `sealed`, the TextEdit word stands at the end of the second page
+      as a new sealed object, and the tab still selects on a click,
+      pauses its clock on a double click and reorders from its handle.
+      **Fail:** the cursor never changes over a tab or the released run
+      returns to the first page (AppKit delivered no drag to the
+      target; the feature rests on this), the run stands anywhere but
+      the end, the object returns without its name or note, the first
+      page keeps its run after a plain drop, the TextEdit word is
+      placed as ink, or a tab stops answering its clicks or its handle.
+- [ ] **A drop on a resting card's tab** (Law 0001, drag row; ADR-0015;
+      issue 254). Pin the card and let it rest, so its window takes the
+      mouse, then drag a word from TextEdit over one of its tabs and
+      release. **Pass:** the cursor shows no operation over the resting
+      card's tab, nothing is placed and no line shows; after a raise
+      the same drag seals at the end of the tab's page. **Fail:**
+      anything is placed on the resting card's page, or a line shows.
 - [ ] **A drop on an empty tab** (Law 0001, expiry row; issue 254).
       Let a page expire at its one hour rung so its slot stands empty,
       then drag a selection from another page onto that slot, and a
       word from TextEdit onto it. **Pass:** the cursor shows no
-      operation over the slot, nothing lands, no line shows, and the
-      source keeps its run. **Fail:** a page is minted, anything lands,
-      or the source loses its run.
+      operation over the slot, nothing is placed, no line shows, and
+      the source keeps its run. **Fail:** a page is minted, anything is
+      placed, or the source loses its run.
 - [ ] **Ink between pages and from the note.** With both windows
       showing pages, drag a word of plain ink from one page to the
       other, then open an object's note, type a word, select it and
