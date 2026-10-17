@@ -142,9 +142,9 @@ For a new interaction:
 
 ## Tests for the implemented portion of issue #256
 
-Source baseline: `7384bff1`, `9a2d14e4`, `09901309` and inspected uncommitted
-Swift helper/tests. These are implementation tests, not normative authority
-or a statement that the entire issue is complete.
+Source baseline: `7384bff1`, `9a2d14e4`, `09901309` and `fe03c8cb`.
+These are implementation tests, not normative authority or a statement that
+the entire issue is complete.
 
 - Core at `09901309`: `document.rs::projected_ink_coalesces_marked_pieces_at_exact_capacity`,
   `sheet.rs::segment_ink_and_its_clone_have_independent_wiping_owners`,
@@ -185,12 +185,11 @@ or a statement that the entire issue is complete.
   exactly-once release, synchronous pointer alias, long escaped Unicode and real
   FFI release. Parent reports **7 passed within 221 focused Swift tests**.
 
-Validation timing: parent reports workspace normal/test-util tests, clippy and
-`build-core.sh --test-util` passed before `09901309`; the core agent reports
-core/FFI all-features suites **576/340 passed after** it. The guide records the
-Swift filters and directly executed subset. The full final gate remains pending;
-these reports do not establish final-gate completion or Foundation-internal
-no-copy behavior.
+The full local gate passed at `fe03c8cb`: formatting, workspace clippy, workspace
+tests with and without `test-util`, the universal test-util core build, Swift
+build and the full Swift suite. The [handling guide](../development/content-buffer-handling.md#tests-and-validation-limits)
+records commands, counts, the ignored credential test and limits. These results
+do not establish Foundation-internal no-copy behavior or process-wide erasure.
 
 ## Why this remains draft
 

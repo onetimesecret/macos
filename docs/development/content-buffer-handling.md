@@ -46,10 +46,10 @@ there is no longer an unresolved decision about whether outgoing JSON is in
 scope. That task direction does not ratify either proposed document.
 
 Inspection baseline: foundation `7384bff1`, Rust FFI `9a2d14e4`, core
-`09901309`, and the uncommitted Swift helper/tests on `fix/256-content-buffers`,
+`09901309`, and Swift boundary `fe03c8cb` on `fix/256-content-buffers`,
 October 16, 2026. Source inspection and test results are implementation evidence
-only; parent-reported results are labeled below. The full final gate remains
-pending.
+only. The final gate below ran against `fe03c8cb`; later documentation-only
+edits do not change that tested code.
 
 ## Disposition vocabulary
 
@@ -132,7 +132,7 @@ explicit rather than silently exempting an existing content copy.
 | C02 | `DocRun::Ink` from `runs_of` | **W**, exact-size coalescing | **Implemented** at `09901309`: inserts enter `Zeroizing<String>` and adjacent ink is coalesced at its exact byte size (`core/src/document.rs`). Upstream Loro `to_delta` construction remains C01. |
 | C03 | `Sheet.segments`, `Segment::Ink` | **W** segment owner | **Implemented** at `09901309`: Segment implements Zeroize/Drop; rebuilding/restoring transfers the DocRun string allocation with `mem::take`, without copying content (`core/src/sheet.rs`, `persist.rs`). Clones have independent wiping owners; inbound parser copies remain C08. |
 | C04 | `ink::text_of` result | **W**, exact-size result owner | **Implemented** at `09901309`: returns `Zeroizing<String>` constructed at the summed run size, including sentinel bytes (`core/src/ink.rs`). Loro source construction remains C01. |
-| C05 | `OpenFile::text`, `FileStore::text` | **W** projection | **Implemented** at `09901309`: return `Zeroizing<String>` / `Option<Zeroizing<String>>` directly from `text_of` (`core/src/files.rs`); F22 borrows that owner. |
+| C05 | `OpenFile::text`, `FileStore::text` | **W** projection | **Implemented** at `09901309`: return `Zeroizing<String>` / `Option<Zeroizing<String>>` directly from `text_of` (`core/src/files.rs`); F22 borrows that owner. Adjacent public `OpenFile::bytes_to_write` still returns a plain vector; its in-tree callers are tests, and its API needs follow-up. |
 | C06 | File reading and CRLF normalization | **W**, wiping reader and exact normalization | **Partial**: `09901309` adds exact-size `normalize_newlines` into `Zeroizing<String>` (`core/src/files.rs`). **Planned**: `ffi/src/files.rs::read_regular` still uses a plain vector and `read_to_end`; stat size is a hint, and earlier reader growth/error cleanup is not covered. |
 | C07 | `sim_units` UTF-16 content | **W**, pre-sized zeroizable storage | **Implemented** at `09901309`: SimUnit zeroizes code units; a zeroizing vector reserves exact room for the body plus every insert before copying content. Insert simulation checks capacity and shifts in place; overflow/allocation failure refuses (`core/src/store.rs`). |
 | C08 | `EditOp::Insert.text`, `parse_ops`, `parse_segments` | **W** direct typed parse plus wiping scratch | **Blocked/Planned**: ordinary `String` and content `Value` copies remain in `core/src/store.rs` / `ffi/src/lib.rs`; serde_json escaped-string scratch is non-wiping. A zeroizing visitor alone does not fix scratch. |
@@ -307,11 +307,26 @@ Swift tests passed** with filters `ContentJSONDecodingTests`,
 `PersistenceRoundTripTests`. Pointer alias at the injected decoder does not
 prove JSONDecoder internals avoid copies or decoded Strings are erased.
 
-**Other reported validation:** parent reports workspace tests normal + test-util,
-clippy, and `build-core.sh --test-util` passed **before** `09901309`; the core
-agent reports core/FFI all-features suites **576/340 passed after** it. These
-results are not a completed final gate. The full final gate will rerun; this
-update did not run it, hardware checks, or allocator-wide wipe instrumentation.
+**Final gate at `fe03c8cb`:** all commands below passed after the Rust and Swift
+changes were committed:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --quiet
+cargo test --workspace --features test-util --quiet
+scripts/build-core.sh --test-util
+swift build --package-path shell
+swift test --package-path shell
+```
+
+The test-util run included 576 core, 340 FFI and 51 sync tests. The Swift
+CompanionKit suite ran 1,631 tests with zero failures; the OnetimePad suite also
+passed. Both Rust configurations left the existing credential test
+`data_protection_items_are_invisible_to_the_login_keychain` ignored. Tests use
+in-memory credential/pasteboard and relay seams where specified; they do not
+validate a deployed relay, installed-app entitlements, real-pointer alternate
+placements, system-storage erasure, or allocator-wide wipe instrumentation.
 
 ## Remaining blockers for #256 and Law 0004
 
@@ -321,12 +336,14 @@ and C06 normalization are implemented; C06's FFI reader remains unresolved.
 
 1. **B1 — remaining core ownership:** implement and test C08–C10, C13–C17,
    C19–C21 and C27/C31: parser/refusal cleanup, resident excerpt/name/title/origin
-   copies, fragment wire names and restored owners.
+   copies, fragment wire names and restored owners. Also restrict or return a
+   wiping owner from `OpenFile::bytes_to_write`; current in-tree callers are tests.
 2. **B2 — dependency storage and parsing:** resolve C01/C29 and escaped-string
    scratch in C08/C21/C34/C41. Review Loro shared/static/inline storage and its
    whole import/export allocation graph. Wrapping returned allocations is not
    sufficient; these are software/source questions, not hardware checks.
-3. **B3 — input, refusal and bridge owners:** fix C06's FFI reader, C45/C47, lossy fallback
+3. **B3 — input, refusal and bridge owners:** fix C06's FFI reader, C45/C47,
+   lossy fallback
    construction in F08/C46, and review AppKit/Swift residence S01/S03–S09.
    A narrower payload may remove individual copies; no accepted exception for
    the remaining copies is created here. Ceremony SAS intermediates F20 also
