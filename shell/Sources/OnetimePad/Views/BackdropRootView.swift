@@ -193,7 +193,7 @@ struct BackdropRootView: View {
                         if pages.showsTimeUnits {
                             TimeRailView(model: pages)
                         } else {
-                            SlotRailView(model: pages)
+                            SlotRailView(model: pages, readOnly: !raised)
                         }
                     }
                     .stanceFaded(raised: raised, animation: stanceFade)
@@ -208,7 +208,7 @@ struct BackdropRootView: View {
                 Divider()
                 Group {
                     if pages.showsTimeUnits {
-                        TimeStripView(model: pages)
+                        TimeStripView(model: pages, readOnly: !raised)
                     } else {
                         TabStripView(model: pages, readOnly: !raised)
                     }
