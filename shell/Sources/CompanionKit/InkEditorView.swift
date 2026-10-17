@@ -2146,7 +2146,7 @@ public struct InkEditorView: NSViewRepresentable {
             )
             textView.setSelectedRange(selection)
             // Projection writes bypass text-change notifications; size the roll before revealing the step.
-            (textView.superview as? DayStackView)?.relayout()
+            (textView.superview as? EditorSizingHost)?.relayout()
             // Rewriting the whole storage resets the scroller, so a
             // step taken over an edit that was off screen would put the
             // caret somewhere the writer cannot see. Follow it.
@@ -5016,6 +5016,15 @@ final class InkTextContainer: NSTextContainer {
         editorMeasure.withLock { $0 }
     }
 }
+
+/// A superview that sizes the editor by frame, re-measured on demand after a
+/// projection write that posted no text change notification.
+@MainActor
+protocol EditorSizingHost: AnyObject {
+    func relayout()
+}
+
+extension DayStackView: EditorSizingHost {}
 
 /// Keep an ordinary page's typing surface at least as tall as its viewport.
 /// Roll editors get their minimum height from DayStackView instead. This
