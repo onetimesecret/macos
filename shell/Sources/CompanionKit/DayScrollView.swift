@@ -790,7 +790,7 @@ final class DayStackView: NSView {
     private func quietRegion(for page: UInt64) -> QuietPageView {
         let rendering = model.quietRendering(for: page)
         if let existing = quietRegions[page] {
-            existing.reseed(with: rendering)
+            follow(page, in: existing, replacing: existing.reseed(with: rendering))
             return existing
         }
         let region = QuietPageView(
@@ -824,11 +824,18 @@ final class DayStackView: NSView {
     /// no page named here has left the projection since.
     private func refreshQuietRegions() {
         for (page, region) in quietRegions {
-            region.reseed(with: model.quietRendering(for: page))
+            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         }
         for (page, region) in previewRegions {
-            region.reseed(with: model.quietRendering(for: page))
+            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         }
+    }
+
+    /// Keep the reader on the same text when the region they are reading is reseeded.
+    private func follow(_ page: UInt64, in region: NSTextView, replacing previous: String?) {
+        guard let previous, let place = readingPlace, place.page == page,
+              place.reading == Self.reading(of: region) else { return }
+        readingPlace = place.rebased(from: previous, to: region.string)
     }
 
     /// The rendered preview of a page, gated as the page's own text is (Law 0001);
@@ -846,7 +853,7 @@ final class DayStackView: NSView {
             self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
         }
         region.isSelectedPage = selected
-        region.reseed(with: model.quietRendering(for: page))
+        follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         previewRegions[page] = region
         return region
     }
@@ -1092,12 +1099,13 @@ final class DayStackView: NSView {
             editor.isHidden = true
         }
         setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
-        if !expansionChanged, pendingPlace == nil, let reflowPlace {
-            restore(place: reflowPlace)
+        var restoredPlace: RollPlace?
+        if !expansionChanged, pendingPlace == nil, let reflowPlace, restore(place: reflowPlace) {
+            restoredPlace = reflowPlace
         }
         constrainScrollOffset()
         positionViewportChrome()
-        readingPlace = currentPlace
+        readingPlace = restoredPlace ?? currentPlace
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
@@ -1320,7 +1328,13 @@ final class DayStackView: NSView {
                   clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
               )
         else { return nil }
-        return RollPlace(page: page, anchor: anchor)
+        return RollPlace(
+            page: page, anchor: anchor, reading: Self.reading(of: text),
+            length: text.textStorage?.length ?? 0)
+    }
+
+    private static func reading(of text: NSTextView) -> RollPlace.Reading {
+        text is MarkdownPreviewView ? .preview : .source
     }
 
     /// The place the other window's roll left, waiting for rows to find
@@ -1352,11 +1366,15 @@ final class DayStackView: NSView {
         restore(place: place)
     }
 
-    private func restore(place: RollPlace) {
+    /// True when the place's page stood on the roll and the clip was moved to it.
+    @discardableResult
+    private func restore(place: RollPlace) -> Bool {
         guard let scroll = enclosingScrollView,
               let row = rows.first(where: { $0.page == place.page && !$0.body.isHidden }),
               let text = row.body as? NSTextView,
-              let within = place.anchor.offset(in: text) else { return }
+              let within = place.mappedAnchor(
+                  into: Self.reading(of: text), length: text.textStorage?.length ?? 0
+              ).offset(in: text) else { return false }
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(
@@ -1365,6 +1383,7 @@ final class DayStackView: NSView {
         )
         clip.scroll(to: target)
         scroll.reflectScrolledClipView(clip)
+        return true
     }
 
     /// The topmost page on the roll and where its ink stands, taken
@@ -2290,14 +2309,19 @@ final class QuietPageView: NSTextView {
     /// rebuilt under the roll would take its layout, its measured height
     /// and its place in the stack down with it, for a day whose only
     /// news is a word.
-    func reseed(with rendering: PageModel.QuietRendering) {
-        guard rendering !== seeded else { return }
+    ///
+    /// The text it replaced, or nil when the rendering was the one already seeded.
+    @discardableResult
+    func reseed(with rendering: PageModel.QuietRendering) -> String? {
+        guard rendering !== seeded else { return nil }
+        let previous = storage.string
         seeded = rendering
         storage.setAttributedString(rendering.text)
         if let manager = layoutManager as? InkLayoutManager {
             manager.fenceRegions = rendering.fenceRegions
             needsDisplay = true
         }
+        return previous
     }
 
     /// One focusable text view in the card, always: the editor, or the

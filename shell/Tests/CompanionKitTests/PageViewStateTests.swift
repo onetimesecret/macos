@@ -770,6 +770,42 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertNil(states.rollPlace, "a roll left at Day 0 replaces the place before it")
     }
 
+    func testARollPlaceFollowsItsTextAcrossAReplacement() {
+        let text = "line 1\nline 2\nline 3"
+        let end = text.utf16.count
+        XCTAssertEqual(RollPlace.rebased(7, from: text, to: "new\n" + text), 11)
+        XCTAssertEqual(RollPlace.rebased(7, from: text, to: "line 1\nline 0\nline 2\nline 3"), 14,
+                       "a line arriving at the anchor goes above it")
+        XCTAssertEqual(RollPlace.rebased(7, from: text, to: text + "\nline 4"), 7)
+        XCTAssertEqual(RollPlace.rebased(14, from: text, to: "line 1\nline 3"), 7)
+        XCTAssertEqual(RollPlace.rebased(10, from: text, to: "line 1\nline 3"), 6,
+                       "an anchor inside removed text goes to where the removal was")
+        XCTAssertEqual(RollPlace.rebased(1, from: text, to: "xyz"), 0)
+        XCTAssertEqual(RollPlace.rebased(end, from: text, to: "x" + text), end + 1)
+        XCTAssertEqual(RollPlace.rebased(4, from: text, to: text), 4)
+        XCTAssertEqual(RollPlace.rebased(3, from: "", to: text), 0)
+        let place = RollPlace(
+            page: 1, anchor: ScrollAnchor(characterIndex: 7, lineFraction: 0.25, x: 3), length: end)
+        let moved = place.rebased(from: text, to: "new\n" + text)
+        XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: 11, lineFraction: 0.25, x: 3))
+        XCTAssertEqual(moved.length, end + 4)
+        XCTAssertEqual(moved.page, 1)
+    }
+
+    func testARollPlaceCrossesBetweenSourceAndPreviewByProportion() {
+        let anchor = ScrollAnchor(characterIndex: 300, lineFraction: 0.5, x: 4)
+        let place = RollPlace(page: 1, anchor: anchor, reading: .source, length: 1_000)
+        XCTAssertEqual(place.mappedAnchor(into: .source, length: 400), anchor)
+        XCTAssertEqual(place.mappedAnchor(into: .preview, length: 400),
+                       ScrollAnchor(characterIndex: 120, lineFraction: 0.5, x: 4))
+        let preview = RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 120), reading: .preview, length: 400)
+        XCTAssertEqual(preview.mappedAnchor(into: .source, length: 1_000).characterIndex, 300)
+        XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 1_000), length: 1_000)
+            .mappedAnchor(into: .preview, length: 400).characterIndex, 400)
+        XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 9), reading: .preview)
+            .mappedAnchor(into: .source, length: 50).characterIndex, 0)
+    }
+
     /// One window's roll, mounted as the representable mounts it: made,
     /// sized, and given its first pass.
     private struct Roll {

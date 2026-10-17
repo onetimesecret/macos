@@ -121,8 +121,57 @@ struct ScrollAnchor: Equatable {
 /// The document origin needs no saved place. A horizontal offset at
 /// vertical offset zero is still represented by the first page's anchor.
 struct RollPlace: Equatable {
+    /// The text of the page the anchor counts characters in.
+    enum Reading: Equatable { case source, preview }
+
     var page: UInt64
     var anchor: ScrollAnchor
+    var reading: Reading = .source
+    /// The length of the text the anchor was read from.
+    var length: Int = 0
+
+    /// The anchor for `reading`'s text of `length` characters. No position map joins
+    /// the source to its preview, so the other reading is mapped by proportion.
+    func mappedAnchor(into reading: Reading, length: Int) -> ScrollAnchor {
+        guard reading != self.reading else { return anchor }
+        var mapped = anchor
+        let scaled = self.length > 0
+            ? (Double(anchor.characterIndex) * Double(length) / Double(self.length)).rounded() : 0
+        mapped.characterIndex = min(max(Int(scaled), 0), length)
+        return mapped
+    }
+
+    /// The same place after the text it was read from changed from `old` to `new`.
+    func rebased(from old: String, to new: String) -> RollPlace {
+        var place = self
+        place.anchor.characterIndex = Self.rebased(anchor.characterIndex, from: old, to: new)
+        place.length = new.utf16.count
+        return place
+    }
+
+    /// A UTF-16 index moved across a replacement: shifted in the common suffix, kept in
+    /// the common prefix, and sent to the replacement's start inside it.
+    static func rebased(_ index: Int, from old: String, to new: String) -> Int {
+        let oldCount = old.utf16.count
+        let newCount = new.utf16.count
+        guard oldCount > 0 else { return 0 }
+        let index = min(max(index, 0), oldCount)
+        // The suffix is matched first, so text arriving at the anchor goes above it.
+        let suffix = matched(old.utf16.reversed(), new.utf16.reversed())
+        let prefix = min(matched(old.utf16, new.utf16), min(oldCount, newCount) - suffix)
+        if index >= oldCount - suffix { return index - oldCount + newCount }
+        return min(index, prefix)
+    }
+
+    private static func matched<Units: Sequence>(_ a: Units, _ b: Units) -> Int
+    where Units.Element: Equatable {
+        var count = 0
+        for (x, y) in zip(a, b) {
+            guard x == y else { break }
+            count += 1
+        }
+        return count
+    }
 }
 
 /// Where the person was on each page: the caret, and how far the page
