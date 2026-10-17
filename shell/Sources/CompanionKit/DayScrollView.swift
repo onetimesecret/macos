@@ -1051,9 +1051,8 @@ final class DayStackView: NSView {
             text.minSize = .zero
             InkEditorView.configureWrapping(model.wrapsLines, textView: text, viewportWidth: width)
             let height = Self.measuredHeight(of: text, width: width)
-            let measuredWidth = Self.measuredSourceWidth(of: text)
-            if !model.wrapsLines, measuredWidth.isFinite {
-                documentWidth = max(documentWidth, measuredWidth)
+            if !model.wrapsLines {
+                documentWidth = max(documentWidth, InkEditorView.measuredSourceWidth(of: text))
             }
             sourceHeights[ObjectIdentifier(text)] = height
         }
@@ -1272,17 +1271,6 @@ final class DayStackView: NSView {
         let used = layoutManager.usedRect(for: container).height
             + text.textContainerInset.height * 2
         return max(used, minimumRegionHeight)
-    }
-
-    static func measuredSourceWidth(of text: NSTextView) -> CGFloat {
-        guard let manager = text.layoutManager, let container = text.textContainer else { return 0 }
-        var right: CGFloat = 0
-        // The aggregate used rect can include an unbounded fragment's sentinel width.
-        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) {
-            _, used, _, _, _ in
-            if used.maxX.isFinite { right = max(right, used.maxX) }
-        }
-        return ceil(right + text.textContainerInset.width * 2 + container.lineFragmentPadding)
     }
 
     // MARK: Anchoring

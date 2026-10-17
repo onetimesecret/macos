@@ -219,7 +219,7 @@ final class WrappingGeometryTests: XCTestCase {
         layout.ensureLayout(for: container)
         // Sized as the roll sizes a row: to the longest line, not the
         // aggregate used rect, which reports the unbounded sentinel.
-        let sourceWidth = DayStackView.measuredSourceWidth(of: text)
+        let sourceWidth = InkEditorView.measuredSourceWidth(of: text)
         XCTAssertGreaterThan(sourceWidth, 1000, "the case needs a line far wider than the viewport")
         XCTAssertLessThan(sourceWidth, 10000)
         text.setFrameSize(NSSize(

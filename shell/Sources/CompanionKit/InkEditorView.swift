@@ -461,6 +461,18 @@ public struct InkEditorView: NSViewRepresentable {
         textView.minSize = NSSize(width: clip.width, height: clip.height)
     }
 
+    /// The longest laid-out line plus insets: the width unwrapped source needs.
+    static func measuredSourceWidth(of text: NSTextView) -> CGFloat {
+        guard let manager = text.layoutManager, let container = text.textContainer else { return 0 }
+        var right: CGFloat = 0
+        // The aggregate used rect can include an unbounded fragment's sentinel width.
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) {
+            _, used, _, _, _ in
+            if used.maxX.isFinite { right = max(right, used.maxX) }
+        }
+        return ceil(right + text.textContainerInset.width * 2 + container.lineFragmentPadding)
+    }
+
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
         Self.updatePage(
             scroll, model: model, sheetID: sheetID, readOnly: readOnly,
@@ -1848,14 +1860,8 @@ public struct InkEditorView: NSViewRepresentable {
             guard let layoutManager = textView.layoutManager,
                   let container = textView.textContainer else { return nil }
             layoutManager.ensureLayout(for: container)
-            var right: CGFloat = 0
-            // Per-line used rects exclude the unbounded fragment's aggregate width.
-            layoutManager.enumerateLineFragments(forGlyphRange: layoutManager.glyphRange(for: container)) {
-                _, used, _, _, _ in
-                if used.maxX.isFinite { right = max(right, used.maxX) }
-            }
             return NSSize(
-                width: ceil(right + textView.textContainerInset.width * 2 + container.lineFragmentPadding),
+                width: InkEditorView.measuredSourceWidth(of: textView),
                 height: layoutManager.usedRect(for: container).height + textView.textContainerInset.height * 2
             )
         }
@@ -4789,6 +4795,13 @@ final class InkLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         if let container = textContainers.first, let storage = textStorage {
             let whole = NSRange(location: 0, length: storage.length)
+            // Unwrapped, the text view is as wide as its longest line
+            // (or the roll's stack); that width is the slab's reach.
+            nonisolated(unsafe) let view = container.textView
+            let extent = MainActor.assumeIsolated { () -> CGFloat? in
+                guard let view else { return nil }
+                return view.bounds.width - view.textContainerInset.width * 2
+            }
             for region in fenceRegions {
                 // Clamped, because an edit can land between the restyle
                 // that computed these ranges and the draw that reads
@@ -4807,13 +4820,6 @@ final class InkLayoutManager: NSLayoutManager {
                     forGlyphAt: glyphs.location, effectiveRange: nil
                 ).minY
                 let bottom = boundingRect(forGlyphRange: glyphs, in: container).maxY
-                // Unwrapped, the text view is as wide as its longest line
-                // (or the roll's stack); that width is the slab's reach.
-                nonisolated(unsafe) let view = container.textView
-                let extent = MainActor.assumeIsolated { () -> CGFloat? in
-                    guard let view else { return nil }
-                    return view.bounds.width - view.textContainerInset.width * 2
-                }
                 guard let slab = Self.slabRect(
                     firstLineTop: top, regionBottom: bottom,
                     containerWidth: container.size.width, origin: origin,
