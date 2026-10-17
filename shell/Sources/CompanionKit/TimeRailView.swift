@@ -255,6 +255,7 @@ public struct TimeRailView: View {
     ) -> some View {
         let copy = PadSortCopy(direction: direction, subject: subject)
         return Menu {
+            // A closure literal: `set: select` crashed Xcode 26.6's IRGen (CI run 38868076794).
             Picker(copy.label, selection: Binding(get: { direction }, set: { select($0) })) {
                 ForEach(PadSortCopy.orders, id: \.self) { order in
                     Text(PadSortCopy(direction: order, subject: subject).currentOrder).tag(order)
