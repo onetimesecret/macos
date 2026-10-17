@@ -62,7 +62,9 @@ These are existing authoritative records, not evidence created by this review:
 
 [Law 0001](../law/0001-sealed-object.md), accepted, supplies the existing
 placement/fragment behavior; it is not edited here. Its exact relevant wording
-is quoted in the plan. Placement wording is worktree A's responsibility.
+is quoted in the plan. Worktree A (#267) covers placement overlays only and
+coordinates shared Law 0001 textual edits. Cross-device object ownership/clock
+and ADR-0057 design are not A's scope; they require maintainer decisions.
 [Law 0004](../law/0004-secret-plaintext-never-reallocates.md) is **draft**, not
 an accepted authority; #256 owns its resolution. The
 [client protocol](../spec/feature/sync/client-protocol.md) calls itself
@@ -117,9 +119,10 @@ existing remote whole-batch duplicate refusal needs a separate decision:
 concurrent valid edits can also stand a UUID twice. Recommended resolution is
 to import the dependency graph and deterministically project one active
 occurrence, with an inert diagnostic for extras, not clone payload or silently
-choose by arrival order. Its stable occurrence key and interaction with A's
-placement work must be agreed before changing `document.rs`. Continuing to
-reject valid concurrent duplicates would retain a chip-induced sync stall.
+choose by arrival order. Its stable occurrence key and cross-device ownership
+semantics require a #257 maintainer design decision before changing
+`document.rs`. Continuing to reject valid concurrent duplicates would retain a
+chip-induced sync stall.
 Corrupt encoding and genuine missing history remain distinct errors.
 
 ### 2. Optional metadata has a bounded, independent delivery lane
@@ -216,7 +219,7 @@ convergence from a frame that omitted evidence. If that delay is unacceptable,
 Q3 requires a complete bounded checkpoint design before shipping remote burns.
 Page expiry is still a page fact; it is not evidence that an object moved to
 another live page was explicitly burned. Retention, page-end cleanup and ledger
-presentation require the maintainer/A coordination recorded in Q3 and Q5.
+presentation require the #257 maintainer decisions recorded in Q3 and Q5.
 
 ### 6. Persistence and transfer are explicit boundaries
 
@@ -243,9 +246,9 @@ save window, not a new stronger crash guarantee.
 
 Cross-page updates can arrive in either order, including a move performed on a
 peer while the payload remains on the original device. UUID preservation alone
-does not migrate page ownership or its clock. Placement reconciliation and
-concurrent move policy are an explicit integration gate with A; no metadata
-patch may copy payload or decide ownership by arrival order.
+does not migrate page ownership or its clock. Cross-device ownership/clock
+reconciliation and concurrent move policy are a #257 maintainer design gate;
+no metadata patch may copy payload or decide ownership by arrival order.
 
 ## Consequences
 
@@ -305,10 +308,12 @@ These require maintainer acceptance; the plan gives concrete choices and tests.
 4. **Q4 — At rest and mixed versions:** accept nondestructive format migration,
    older-reader refusal and a negotiated minimum sync capability? Confirm the
    scoped relationship to ADR-0043 on acceptance.
-5. **Q5 — Placement and duplicates:** agree with A on cross-page reconciliation,
-   concurrent moves and stable-occurrence duplicate projection before imports
-   change. Is refusing malformed duplicate input an intended exception to the
-   direction, distinct from duplicates produced by valid concurrent edits?
+5. **Q5 — Cross-device ownership/clock and duplicates:** obtain a #257
+   maintainer decision on cross-page reconciliation, concurrent moves and
+   stable-occurrence duplicate projection before imports change. A's #267
+   placement overlays do not decide these. Is refusing malformed duplicate
+   input an intended exception to the direction, distinct from duplicates
+   produced by valid concurrent edits?
 6. **Q6 — Authority:** who accepts this ADR and any related law/spec amendments,
    and which exact accepted clauses, if any, does it supersede? This review
    makes no acceptance or supersession edit.
@@ -331,3 +336,7 @@ These require maintainer acceptance; the plan gives concrete choices and tests.
   optional metadata, typed peer persistence, terminal evidence, field versions
   and explicit note-policy acceptance. No architectural acceptance; no Rust,
   Swift, accepted-record or law changes. Implementation remains gated on #256.
+- 2026-10-16: Scope clarification: A's #267 work is placement overlays only;
+  cross-device ownership/clock remains a #257 maintainer design gate. The plan
+  records B's local #256 implementation at `fe03c8cb`; upstream integration and
+  acceptance remain pending. No rebase, implementation or acceptance change.

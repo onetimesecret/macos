@@ -5,7 +5,7 @@ documentation_status: needs-review
 # Issue #257: sealed-object sync review and implementation boundary
 
 **Status: design proposal; not an accepted spec or ADR.**
-Review baseline: `origin/main` / `bc1bc4e4238d6e61a17938e1ad9bbf7447ffaff5`.
+Historical review baseline: `origin/main` / `bc1bc4e4238d6e61a17938e1ad9bbf7447ffaff5`.
 Worktree C: `tmp/worktrees/issue-257`, branch `design/257-sealed-object-sync`.
 Reviewed 2026-10-16. [ADR-0058](../adr/0058-a-sealed-object-never-stalls-a-pages-sync.md)
 remains proposed. No Rust/Swift implementation is authorized by this plan.
@@ -30,7 +30,7 @@ new normative authority.
 | [ADR-0016, Decision](../adr/0016-content-persists-across-restart.md#decision), accepted | “A failed restore withholds the save licence and leaves the prior file untouched.” | Older-reader refusal must preserve the new file. |
 | ADR-0016, Consequences, accepted | “Crash and force termination can still lose mutations inside the accepted two-second write window; refused writes can extend that window and must remain visible to the user.” | Tests must not assert a new zero-loss crash window. |
 | [ADR-0012, Amendment 1](../adr/0012-framing-threat-boundary-and-persistence-model.md#amendment-1-three-egress-points-and-one-clear-interval), accepted amendment | “All three complete-payload writes are core-side. The Swift shell asks the core to write to a named destination and never receives the sealed payload.” | No new Swift-visible payload or sync payload export. |
-| [Law 0001, The rule](../law/0001-sealed-object.md#the-rule), accepted | “A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.” | Placement decisions need coordination with A, not a C-side law edit. |
+| [Law 0001, The rule](../law/0001-sealed-object.md#the-rule), accepted | “A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.” | Cross-device ownership/clock requires a #257 maintainer decision; A coordinates shared Law 0001 textual edits only. |
 | [Law 0001, Sealed-fragment representation](../law/0001-sealed-object.md#sealed-fragment-representation), accepted | “The envelope never contains a sealed payload or ciphertext.” | Peer transfers remain references, not value transfer. |
 | Law 0001, Sealed-fragment representation, accepted | “Multi-object detach, reattach and clone are core transactions: an unexpected failure commits none of the structural or payload-state changes.” | Preserve whole-transaction transfer behavior. |
 
@@ -55,7 +55,9 @@ Additional source classifications:
   not this task.
 - [ADR-0057](../adr/0057-moved-content-lives-as-long-as-the-page-it-lands-on.md)
   is proposed. Do not treat its moved-content lifetime recommendation as
-  accepted by repetition. A owns placement wording and related integration.
+  accepted by repetition. Its design is not A's responsibility. A's #267 scope
+  is placement overlays only; A coordinates shared Law 0001 textual edits,
+  not cross-device object ownership/clock.
 
 No accepted source located in this review specifies peer-only persistence,
 metadata wire budgets, note LWW, sealer-signed object burns or mixed-version
@@ -75,9 +77,11 @@ acceptance gate; it does not mean the implementation exists or is approved.
 | C2 | Empty-byte peer encoding can restore as a local payload in older readers. | Addressed in ADR Decision 1/6 and plan §3: tagged format, nondestructive legacy reader, older-reader refusal; Q4 awaits acceptance. | Compared `emit_chip`/`read_chip`, core magic and FFI restore refusal; older-reader/save-gate tests in §6 remain owed. |
 | C3 | Absorbing burn plus a payload-device exception cannot converge; ordinary ledger evidence lacks remote provenance. | Addressed in ADR Decision 5 and plan §4: signed origin/evidence, uniform transition, durable tombstones and explicit incomplete-join limit; Q3 awaits acceptance. | Compared `delete_chip`, `terminal_cause` and page-terminal verification; replay/order/restart tests in §6. |
 | C4 | Per-field Lamport ties require the winning writer, clear semantics and restart rules. | Addressed in ADR Decision 3 and plan §3 field merge rules. | Total-order examples, forwarded versions and invalid equal-tuple scenario enumerated in §6. |
-| C5 | UUID-preserving transfer alone does not settle duplicate validation, page ownership or durable cut consumption. | Addressed in ADR Decision 1/6 and plan §5: separate validation domains and explicit A/maintainer placement gate Q5. | Compared transfer resolver, restore invariants and both-order regression fixture; no unaccepted owner/clock rule selected. |
+| C5 | UUID-preserving transfer alone does not settle duplicate validation, page ownership or durable cut consumption. | Addressed in ADR Decision 1/6 and plan §5: separate validation domains and explicit #257 maintainer ownership/clock gate Q5. | Compared transfer resolver, restore invariants and both-order regression fixture; no unaccepted owner/clock rule selected. |
 | C6 | Note LWW would lose text without accepted product approval. | Addressed in ADR Decision 4 and Q2: recommend no note sync initially; retain CRDT/conflict-preserving/LWW alternatives and explicit loss question. | Compared accepted ADR-0043 text-only restore and local `Note`; no loss acceptance attributed to issue direction. |
 | C7 | Authority, acceptance and #256 edit boundary must remain explicit. | Addressed in §1, §7–§9 and ADR status/history; no law or accepted ADR edited. | Local links, exact quotations, ADR linter and changed-path checks in the design handoff. |
+| C8 | A's #267 overlay scope was conflated with cross-device ownership/clock design. | Addressed in §1, §3, §5, Q5 and §8: #257 maintainer gate; A coordinates shared Law 0001 textual edits only. | Checked every A reference in both documents against the user's scope clarification. |
+| C9 | #256's local implementation needs a concrete integration reference without implying upstream merge or policy acceptance. | Addressed in §8: local `fe03c8cb` API note, user-reported testing, pending merge/acceptance and unchanged historical baseline. | Read-only Git inspection of the commit/API and ancestry; no C-side rebase or runtime tests. |
 
 ### Implementation observations
 
@@ -143,9 +147,10 @@ BurnEvidence = { uuid, origin_digest, event_id, reason, at_wall_ms,
   burn evidence and active cut in the same content snapshot as the body. After
   restart re-advertise current state; in-memory acknowledgments are insufficient.
   Use #256's integrated serializer and classification for every content buffer.
-- Page-owned object placement/clock remains separate from availability. A UUID
-  index is not an ownership rule. A must agree the transfer/placement schema
-  before vectors, catalog layout or clock reconciliation change.
+- Object ownership/clock remains separate from availability. A UUID index is
+  not an ownership rule. The transfer/ownership schema requires a #257
+  maintainer design decision before vectors, catalog layout or clock
+  reconciliation change; A's #267 overlays do not define it.
 
 ### Optional wire lane and frames
 
@@ -290,9 +295,9 @@ For a move performed on a metadata-only device, the payload device can receive
 the destination insertion before the source deletion. Keeping a destination
 peer record while the source payload remains detached can assign two clocks to
 one identity and destroy the value when the wrong page ends. Neither arrival
-order nor UUID preservation resolves this. **Integration gate with A:** agree a
-stable transfer/placement identity, owner transition and concurrent-move rule,
-then move/rebind the one local payload record only under that rule. Include
+order nor UUID preservation resolves this. **#257 maintainer design gate:**
+agree a stable transfer/ownership identity, owner transition and concurrent-move
+rule, then move/rebind the one local payload record only under that rule. Include
 source-expiry/destination-live in review; do not copy bytes to manufacture another
 object. This plan intentionally does not select an unaccepted lifetime rule.
 
@@ -307,8 +312,9 @@ Duplicate validation has three different domains:
    projection by a stable Loro occurrence identity, preserving graph history,
    never cloning value. Prove that the chosen occurrence key survives export,
    restore and compaction, or choose a different reviewed normalization. Do not
-   use receiver-local `ChipId`, discovery order or arrival order. Agreement with
-   A and a maintainer decision are required before remote duplicate code changes.
+   use receiver-local `ChipId`, discovery order or arrival order. A #257
+   maintainer decision is required before remote duplicate code changes;
+   this is not part of A's #267 overlay scope.
 
 ## 6. Test matrix to implement after the gates
 
@@ -327,7 +333,7 @@ availability, metadata, cut state and disk behavior rather than only a label.
 | Versions | Same counter/different fingerprints in both delivery orders; independent field edits; stale/duplicate and forwarded winners; explicit clear versus absent; local edit after remote high counter; persisted writer/counter and next increment after restart; overflow affects metadata only; equal tuple/different value diagnostic, no ops failure. |
 | Notes | Recommended v1: no note-text field in deltas/frames, no incoming patch replaces local note/undo, local editing remains unbounded. If another policy is accepted, add offline conflict, empty-clear, oversize omission, undo/redo, restart and compaction tests before enabling it. |
 | Payload boundary | Unique text/image payload markers absent from metadata/frame extras and every peer FFI result; no excerpt/exact sizes/receipt leakage; peer copy/name=value/decrypted drag/chip conceal refuse in core with no write/event. Whole-page conceal with a standing peer-only object refuses with a reason; detached-only peer object does not affect included content. |
-| Transfer | Mixed ink/local/peer references; cut/first paste and move preserve UUID/versions; later cut paste/copy/option-drag cannot clone peer payload; a failed multi-object stand rolls back all placements, cut and ledger. Source/destination and metadata reordered; payload device sees peer move; concurrent moves; source expiry before/after destination import under A's accepted placement rule. |
+| Transfer | Mixed ink/local/peer references; cut/first paste and move preserve UUID/versions; later cut paste/copy/option-drag cannot clone peer payload; a failed multi-object stand rolls back all placements, cut and ledger. Source/destination and metadata reordered; payload device sees peer move; concurrent moves; source expiry before/after destination import under the maintainer-accepted #257 ownership/clock rule. |
 | Restart | Persisted attached/detached peer, real empty local payload, name-clear version, pending metadata, origin/tombstone, active cut. Re-minted handles still resolve stable UUIDs; post-cut restart reattaches once; post-paste restart cannot consume twice. Before-save crash remains within the existing write window. |
 | Burn provenance | Wrong signer, wrong UUID/origin digest/domain, unsigned boolean, unknown origin, burn before origin, sealer echo, stale metadata after burn, copied stale local payload, replay after restart/ceremony. Only accepted evidence becomes terminal; every device then agrees, no resurrection or fabricated local discard. |
 | Burn/placement | Burn and move race; burn and note/name edits race; source-page expiry is not global explicit burn; page-end cleanup/evidence lifetime follows accepted placement rules. Replayed old sentinels import history and render terminal. |
@@ -343,27 +349,53 @@ availability, metadata, cut state and disk behavior rather than only a label.
 | Q2 | Local-only notes initially, conflict-preserving sync, CRDT, or explicitly lossy whole-text LWW? | Local-only first; require separate acceptance for note sync, especially whole-text loss and undo treatment. |
 | Q3 | Who can burn; what evidence; does a verified burn affect a stale local payload; acceptable join delay; legacy/revoked origin behavior; retention and remote ledger presentation? | Sealer-signed evidence, same terminal rule on every device, no synthetic local discard. Defer remote burn code if evidence/checkpoint policy is not accepted. |
 | Q4 | New snapshot version with nondestructive legacy reader, older-reader refusal, and minimum sync capability? Which ADR-0043 clause does the format change replace? | Explicit tagged format; never encode peer state as empty local bytes; preserve old state on refusal. Do not add a new destructive migration implicitly. |
-| Q5 | Placement/ownership after peer moves, concurrent moves and duplicates; exception for malformed input versus valid concurrent duplicate graph? | A defines placement with maintainer approval; import valid graphs, deterministic single active occurrence, no payload clone. |
+| Q5 | Cross-device object ownership/clock after peer moves, concurrent moves and duplicates; exception for malformed input versus valid concurrent duplicate graph? | #257 maintainer design gate, not A's #267 overlays; recommend importing valid graphs, deterministic single active occurrence, no payload clone. |
 | Q6 | Who accepts ADR-0058 and any scoped successor/law/spec revisions? | Maintainer only. Leave ADR-0021 and ADR-0043/0046 unchanged until actual acceptance and exact replacement scope are recorded. |
 
 ## 8. Safe sequence after #256
 
+### Local foundation integration note
+
+B's local #256 branch `fix/256-content-buffers` is implemented at
+`fe03c8cb652df11b34f4c155eb9b2b6fe6becf9a`. The user reports it fully tested;
+C has inspected APIs, not rerun that suite. At that commit:
+
+- `ByteBlob` has private zeroizing storage, `From` constructors and `as_slice()`;
+  `DeltaEnvelope::encode()` returns `Zeroizing<Vec<u8>>` through the exact writer
+  `companion_sync::secret_json::to_zeroizing_vec`.
+- FFI `content_json::to_c_json(&T)` serializes borrowed projections such as
+  `ChipFace<'_>` into a wiping `Box<[u8]>` C-string owner;
+  `companion_string_free` delegates to `content_json::free`.
+- Swift `decodeOwnedJSON` decodes synchronously over no-copy `Data` before
+  releasing the Rust owner. Core `DocRun::Ink` and file text use zeroizing
+  strings, `Segment` wipes on drop, and `sim_units` returns
+  `Option<Zeroizing<Vec<SimUnit>>>`; do not copy their historical baseline types.
+
+This is implementation/integration evidence, not normative policy or acceptance
+of note/burn proposals. The commit is **not merged upstream** or integrated into
+C; `origin/main` remains the historical `bc1bc4e4` baseline here. Upstream merge,
+applicable policy acceptance and #257 decisions remain pending. Do not rebase C
+or implement now; inspect the final integrated APIs before later implementation.
+
 1. **Stop boundary now:** documentation only. Do not edit Rust, Swift, laws,
    accepted ADR bodies or shared interface documents before #256 integration.
    Do not infer readiness from an issue inventory or a draft law status.
-2. **Verify foundations:** parent confirms #256 integrated; record its actual
-   commit and inspect the resulting sync byte owner, encoder/decoder, FFI output
-   ownership/free path, Swift consumption and withdrawal tests. Read the final
+2. **Verify foundations:** after the pending #256 merge, parent confirms the
+   integrated commit relative to local `fe03c8cb` and inspects the sync byte
+   owner, encoder/decoder, FFI output ownership/free path, Swift consumption
+   and withdrawal tests. Read the final
    accepted security classification rather than this baseline's plain `ByteBlob`.
    Recheck snapshot/frame versions and changed symbols. Do not overwrite #256.
-3. **Resolve acceptance/ownership:** obtain answers to Q1–Q6 and A's placement
-   contract. Narrow the first implementation explicitly if notes/burns/placement
-   need more design. Keep independent proposed choices visibly unresolved;
-   a doc-review pass does not accept the architecture.
+3. **Resolve acceptance/ownership:** obtain maintainer answers to Q1–Q6,
+   including #257's cross-device ownership/clock contract. Narrow the first
+   implementation explicitly if notes/burns/ownership need more design. Keep
+   independent proposed choices visibly unresolved; a doc-review pass does not
+   accept the architecture.
 4. **Core types and format first:** typed availability, core capability refusals,
    transactional peer/terminal roster, UUID lookup, legacy reader/new writer and
-   restart/old-reader tests. Agree data layout with A before touching overlapping
-   `sheet.rs`, `document.rs`, `store.rs`, `persist.rs` and `transfer.rs`.
+   restart/old-reader tests. Resolve the #257 maintainer data-layout gate before
+   editing `sheet.rs`, `document.rs`, `store.rs`, `persist.rs` and `transfer.rs`;
+   do not treat A's overlay work as ownership-schema approval.
 5. **Admission and structural transfer:** common delta/frame import path; invert
    regressions; implement the agreed duplicate and move reconciliation; prove
    cut/undo/rollback/restart behavior before adding optional metadata traffic.
@@ -379,9 +411,10 @@ availability, metadata, cut state and disk behavior rather than only a label.
 8. **Validate and document built behavior:** targeted core/persistence/transfer,
    sync-envelope/session/driver and seam/UI tests first; broader workspace and
    shell suites next. Update the core interface, relay shapes and descriptive
-   client protocol 10.31 only for implemented behavior. A updates Law 0001's
-   placement wording; law/ADR acceptance remains the maintainer's action. Relay
-   recovery and hardware-only checks are reported separately if unavailable.
+   client protocol 10.31 only for implemented behavior. Coordinate shared
+   Law 0001 textual edits with A; law/ADR acceptance remains the maintainer's
+   action. Relay recovery and hardware-only checks are reported separately if
+   unavailable.
 
 Shared paths after #256 include `crates/sync/src/envelope.rs`,
 `crates/ffi/src/lib.rs`, `crates/ffi/src/sync_driver.rs`,
@@ -393,10 +426,10 @@ and every other law remain outside C's edit boundary.
 
 ## 9. Validation scope for this design-only task
 
-Design review coverage: C1–C7 addressed as proposal documentation; none rejected
+Design review coverage: C1–C9 addressed as proposal documentation; none rejected
 or omitted. Q1–Q6 remain architecture/implementation gates, not accepted answers.
 
-Validation performed on 2026-10-16:
+Initial design validation performed on 2026-10-16:
 
 - `python3 scripts/lint-adrs.py docs/adr`: `51 ADRs OK`.
 - `git diff --check`: passed. A separate Python whitespace check covered the
@@ -415,6 +448,11 @@ Validation performed on 2026-10-16:
 - Diff/path review found only ADR-0058 and this plan changed; no Rust, Swift,
   law, accepted ADR or other worktree edits. ADR-0058 remains `proposed` and its
   original proposal date is unchanged.
+
+Scope-clarification follow-up: C8/C9 addressed; ADR lint, all local links/anchors
+and whitespace checks rerun for the two-document diff. Read-only Git inspection
+confirmed local `fe03c8cb` is not an ancestor of this worktree's `origin/main`.
+No rebase, upstream change or policy acceptance was performed.
 
 Limits: no Rust/Swift tests, runtime injection, old-binary restore, relay
 exchange, allocation instrumentation or rendered UI/hardware check was run.
