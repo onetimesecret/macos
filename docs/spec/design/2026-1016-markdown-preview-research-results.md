@@ -28,6 +28,7 @@ unchanged by this documentation update.
 | Experiment | Recorded result | What remains open |
 | --- | --- | --- |
 | Placeholder abstract syntax trees (ASTs) | 270/270 assertions; three pinned C parser candidates | Opaque-object representation, exact GFM contract, composer/native integration |
+| Offline parser-contract supplement | 560/560 fixture rows across 14 configurations; 34/34 harness regressions | Swift/native conversion, exact GFM contract, reviewed span disposition |
 | Current-plist Foundation transport | 13 cases completed; 10/10 harness assertions | Shipping sandbox, macOS 13 runtime, full request policy |
 | TextKit 1 attachment accessibility | 127/127 local automated checks | External accessibility blocked; manual VoiceOver not performed |
 
@@ -138,10 +139,76 @@ Evidence: [AST observations](../../../tools/markdown-preview-lab/parser/results/
 [build/source provenance](../../../tools/markdown-preview-lab/parser/results/provenance.json),
 and [parser report](../../../tools/markdown-preview-lab/parser/README.md).
 
-Remaining R1 work includes the atom contract, Apple inline attributes, custom
-table-span disposition, dedicated tilde and `textarea` probes, dependency/license
-review, and integration. The HTML composer was not prototyped here; P07 supplies
-inputs for R3, not an R3 result.
+The offline supplement below adds the dedicated attribute, span, tilde, and
+`textarea` probes. Remaining R1 work includes the atom contract, reviewed
+table-span disposition, exact GFM configuration/structural differences,
+dependency/license review, and integration. The HTML composer was not prototyped
+here; P07 supplies inputs for R3, not an R3 result.
+
+### Offline continuation: parser contract and wrapper configuration
+
+After commit `41266668`, a separate C-only supplement tested **40 templates ×
+14 configurations** using the same pinned source revisions. It rebuilt local
+C executables and used already saved official examples. No network, GUI,
+accessibility, permission, or settings operation was performed. Original lab
+observations remain separate and unchanged.
+
+The current preview calls `Document(parsing:options:)` with
+`[.disableSmartOpts]`. Source inspection maps that to the C mask **1048578**
+(`TABLE_SPANS | SOURCEPOS`) and exactly `table`, `strikethrough`, `tasklist`.
+It does not attach `autolink` or `tagfilter`. The supplement compares this full
+configuration with one-option changes, extension-free cores, and five-extension
+GFM modes. Extension-free fork core is not labelled CommonMark 0.31.2.
+
+| ID | Executed observation | Consequence for further research |
+| --- | --- | --- |
+| C01 | GFM modes and the current-wrapper configuration accept single/double strikethrough tildes; triple inline runs remain literal. `DOUBLE_TILDE` rejects single runs; triple-tilde fences remain code blocks. | Review exact published GFM behavior rather than assuming double-only syntax. |
+| C02 | The pinned fork parses `^[note](key)` as an attribute node even with zero extensions; the other candidates parse a literal caret and ordinary link. Attribute payloads are absent from the fork's diagnostic HTML/XML. | Disabling GFM extensions does not remove Apple core syntax; inspect the API tree. |
+| C03 | Current-wrapper options enable numeric column/row spans and filler cells; spans-off modes retain separate cells and literal carets. | A span decision needs explicit parser configuration and updated native expectations. |
+| C04 | Thirty fixture rows produce malformed upstream span XML. Header-span XML can be valid while omitting metadata. | Separate serializer defects from grammar results; use API span values rather than XML alone. |
+| C05 | Modern CommonMark and pinned-fork core keep blank lines inside a `textarea` HTML block through its closing tag. Historical GFM boundaries differ; tagfilter changes output separately. | Block recovery and tag filtering need separate fixtures. |
+| C06 | CommonMark example 354 leaves currency-symbol emphasis literal; both GFM source versions emphasize the Unicode currency symbols. | The base punctuation difference persists without extensions. |
+| C07 | SMART changes paragraph text differently from a full wrapper configuration in which the table extension consumes divider syntax. | An isolated flag is not a substitute for the complete wrapper invocation. |
+
+Reviewed results: **560/560 API-AST checks, 560/560 HTML checks, and 560/560
+XML projections**; **14/14** mode checks, **120/120** toggle comparisons, and
+**240/240** byte-identical comparisons with the original baseline executables.
+Expected ASTs are authored separately from actual output; expected HTML is
+generated from those ASTs, not an independent structural oracle.
+
+Of **70 selected official-example comparisons**, **45 match exactly** and
+**25 differ as explicitly expected**: 12 currency-punctuation comparisons,
+six `textarea` comparisons, and seven single-tilde comparisons across modes.
+These are cross-mode/cross-dialect controls, not additional failures in the
+earlier full-corpus totals.
+
+Review tightened two harness checks. All **441 saved source-manifest entries**
+are validated before parser execution, with compiler-emitted dependencies for
+90 translation units. Known malformed span attributes are removed only from a
+diagnostic XML copy, which must parse and match the expected projection; the
+raw XML is retained. **34/34 isolated regressions** reject changed inputs and
+unrelated XML corruption, including eight formerly omitted-input mutations
+that execute no parser subprocess.
+
+Evidence: [supplement report and complete mode table](../../../tools/markdown-preview-lab/parser/contract/README.md),
+[reviewed counts](../../../tools/markdown-preview-lab/parser/contract/results/review/summary.json),
+[raw and diagnostic fixture output](../../../tools/markdown-preview-lab/parser/contract/results/review/fixtures.jsonl),
+[review regression evidence](../../../tools/markdown-preview-lab/parser/contract/results/review/regression-tests.json),
+and [source/build provenance](../../../tools/markdown-preview-lab/parser/contract/results/review/provenance.json).
+
+Executed offline from the repository root, with the existing source checkouts
+and generated headers; these commands compile/run bounded C CLIs, not apps:
+
+```sh
+python3 -B tools/markdown-preview-lab/parser/contract/build.py
+python3 -B tools/markdown-preview-lab/parser/contract/test_review.py
+python3 -B tools/markdown-preview-lab/parser/contract/run.py
+```
+
+Builds target macOS 13.0; execution was on macOS 27.2, not macOS 13.
+Swift conversion, native object identity, resource loading, and exhaustive
+malformed span/attribute forms remain untested. No parser architecture is
+selected by this supplement.
 
 ## 2. Transport using the current Info.plist
 
@@ -256,7 +323,10 @@ lifecycle, multiselection/copy, geometry/scroll and stale-result tests.
 ## Reproduction and follow-up
 
 Commands below were executed during the original experiments, from the
-repository root. They were **not rerun** for this documentation update.
+repository root. Bootstrap, original fixture execution, transport, and attachment
+runs were **not repeated** for the continuation. The eight original parser lab
+unit tests passed again before commit `41266668`; the separate offline supplement
+commands and results are recorded above.
 
 Parser bootstrap downloads pinned upstream sources and official examples;
 subsequent fixture/unit runs are offline. Build output stays in the lab:
@@ -289,6 +359,7 @@ python3 tools/markdown-preview-lab/attachment/repro.py
 | Area | Disposition | Next evidence needed |
 | --- | --- | --- |
 | P01–P07 | Recorded; design deferred | Per-dialect object representation and integrated identity/order fixtures |
+| C01–C07 | Recorded in offline supplement; adoption deferred | Swift/native integration and reviewed attribute/span/dialect choices |
 | Official corpus deviations | Recorded; unresolved | Review each structural/configuration difference before selecting GFM contract |
 | Transport distinction and activation | Recorded for harness only | Actual sandbox/runtime and approved destination/consent policy tests |
 | AX-01–AX-03 | Recorded; adoption deferred | Approved external AX and operator-observed VoiceOver session; duplicate-node resolution |
