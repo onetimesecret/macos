@@ -886,10 +886,12 @@ final class WheelRelayView: NSView {
 /// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
 public struct SlotRailView: View {
     @ObservedObject var model: PageModel
+    let readOnly: Bool
     @State private var rowFrames: [UInt64: CGRect] = [:]
 
-    public init(model: PageModel) {
+    public init(model: PageModel, readOnly: Bool = false) {
         self.model = model
+        self.readOnly = readOnly
     }
 
     public var body: some View {
@@ -922,6 +924,7 @@ public struct SlotRailView: View {
                             },
                             endReorder: { model.draggingTab = nil }
                         )
+                        .background(TabDropOverlay(model: model, slot: sheet.id, readOnly: readOnly))
                         .id(sheet.id)
                         .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
                         .background(GeometryReader { geometry in

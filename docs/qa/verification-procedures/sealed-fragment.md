@@ -582,3 +582,43 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the object stays and the ledger gains one `sent` to `drag`. Note
       whether Finder wrote a clipping file, which would hold the sealed
       word on disk until deleted. **Fail:** the object leaves.
+
+## Placement-specific tab drops (issue #267)
+
+**Status, 2026-10-16:** not run on hardware. Mounted-view tests in
+`TabDropTests` exercise the actual targets through destination calls;
+they do not run an AppKit drag session or pointer gestures.
+
+At the issue's base revision, `bc1bc4e4`, the normal layout selects
+Tabs along the bottom and Timeline down the side. It does not expose
+Tabs down the side (`SlotRailView`) or Timeline along the bottom
+(`TimeStripView`). A hardware run for these two placements needs a
+separate placement harness or a maintainer-approved way to mount them
+in the card. This change does not restore placement controls. Record
+that setup and revision with the results; do not substitute a run on
+the normal bottom Tabs strip or the side Timeline navigator.
+
+For **each** alternate placement:
+
+- Repeat **A drop on a tab**, including a plain move, a run with a
+  named object and note, an own-page move, an Option copy and a
+  TextEdit drop. Check actual delivery to the target whose `hitTest`
+  returns nil, the cursor and the end-of-page destination.
+- In the side Tabs rail, check selection, double-click pause and the
+  reorder handle before and after a drop. In the bottom Timeline,
+  check its existing day selection and Today plus button; that view
+  has no double-click pause or reorder handle. When a day contains
+  several pages, its drop destination is the first slot its click
+  selects, not the currently selected page elsewhere in that day.
+- Repeat **A drop on a resting card's tab** with the card pinned.
+  Repeat after raising it. With the editor window owning the content,
+  try the non-owning card row, then the owner's row in a harness with
+  the corresponding `presentationSurface` environment.
+- Repeat **A drop on an empty tab** in the side rail. For an empty
+  Today in the bottom Timeline, check that releasing a drag creates
+  no page; its plus button remains the explicit new-page action.
+
+| Placement | AppKit drag delivery and cursor | Move, Option copy, TextEdit drop | Existing pointer actions | Resting and non-owning gates | Empty slot / Today |
+|---|---|---|---|---|---|
+| Tabs down the side (`SlotRailView`) | Not run | Not run | Not run | Not run | Not run |
+| Timeline along the bottom (`TimeStripView`) | Not run | Not run | Not run | Not run | Not run |
