@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-Review round on PR #271 (2026-10-16, uncommitted at write time), `DayStackView` in
+Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
 `shell/Sources/CompanionKit/DayScrollView.swift`.
 
 - `readingPlace` is kept as the restored place when `relayout()` restored it; only a
