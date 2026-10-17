@@ -404,14 +404,18 @@ public struct InkEditorView: NSViewRepresentable {
         _ wraps: Bool, textView: NSTextView, viewportWidth: CGFloat
     ) {
         guard let container = textView.textContainer else { return }
-        let measure = viewportWidth.isFinite
-            ? max(0, viewportWidth - textView.textContainerInset.width * 2) : 0
-        let measureChanged = (container as? InkTextContainer)?.setEditorMeasure(measure) ?? false
+        let ink = container as? InkTextContainer
+        let measure = InkTextContainer.usableMeasure(
+            viewportWidth - textView.textContainerInset.width * 2
+        )
+        let measureChanged = measure.flatMap { ink?.setEditorMeasure($0) } ?? false
         if container.widthTracksTextView != wraps {
             container.widthTracksTextView = wraps
         }
+        // A viewport with no usable measure keeps the captured measure, or the current width.
+        let wrappedWidth = measure ?? ink?.capturedEditorMeasure ?? container.size.width
         let size = NSSize(
-            width: wraps ? measure : .greatestFiniteMagnitude,
+            width: wraps ? wrappedWidth : .greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
         if container.size != size {
@@ -4975,9 +4979,15 @@ public enum SealSelectionMenu {
 final class InkTextContainer: NSTextContainer {
     private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
-    nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
+    /// The measure itself, or nil for zero, negative, NaN and unbounded widths.
+    nonisolated static func usableMeasure(_ measure: CGFloat) -> CGFloat? {
         guard measure.isFinite, measure > 0,
-              measure < SealedBlockCell.effectivelyUnboundedWidth else { return false }
+              measure < SealedBlockCell.effectivelyUnboundedWidth else { return nil }
+        return measure
+    }
+
+    nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
+        guard let measure = Self.usableMeasure(measure) else { return false }
         return editorMeasure.withLock { current in
             guard current != measure else { return false }
             current = measure

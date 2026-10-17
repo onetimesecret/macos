@@ -378,4 +378,30 @@ final class WrappingGeometryTests: XCTestCase {
             XCTAssertEqual(container.capturedEditorMeasure, 396)
         }
     }
+
+    func testAnUnusableViewportWrapsAtTheCapturedMeasure() {
+        let (text, storage, _, container) = makeTextView()
+        // Narrower than the text view, so tracking its frame would read 396.
+        InkEditorView.configureWrapping(true, textView: text, viewportWidth: 300)
+        XCTAssertEqual(container.size.width, 276)
+        for viewport in [CGFloat(0), 24, -1, .nan, .infinity, 1_000_024, .greatestFiniteMagnitude] {
+            InkEditorView.configureWrapping(true, textView: text, viewportWidth: viewport)
+            XCTAssertEqual(container.size.width, 276, "viewport \(viewport)")
+            XCTAssertEqual(container.capturedEditorMeasure, 276)
+            XCTAssertTrue(container.widthTracksTextView)
+
+            InkEditorView.configureWrapping(false, textView: text, viewportWidth: viewport)
+            XCTAssertEqual(container.size.width, .greatestFiniteMagnitude)
+            XCTAssertEqual(container.capturedEditorMeasure, 276)
+        }
+        withExtendedLifetime(storage) {}
+    }
+
+    func testAnUnusableViewportBeforeAnyCaptureLeavesTheWrappedWidthAlone() {
+        let (text, storage, _, container) = makeTextView()
+        InkEditorView.configureWrapping(true, textView: text, viewportWidth: 0)
+        XCTAssertNil(container.capturedEditorMeasure)
+        XCTAssertEqual(container.size.width, 396)
+        withExtendedLifetime(storage) {}
+    }
 }
