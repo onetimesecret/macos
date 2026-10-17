@@ -200,6 +200,123 @@ final class WrappingGeometryTests: XCTestCase {
         withExtendedLifetime(storage) {}
     }
 
+    func testHorizontalDayScrollRepositionsBlockMetadataWithPointerOutsideEditor() throws {
+        try assertHorizontalDayScrollRepositionsBlockMetadata(hovering: false)
+    }
+
+    func testHorizontalDayScrollRepositionsBlockMetadataWhileHoveringTheSameBlock() throws {
+        try assertHorizontalDayScrollRepositionsBlockMetadata(hovering: true)
+    }
+
+    private func assertHorizontalDayScrollRepositionsBlockMetadata(hovering: Bool) throws {
+        let suite = "wrapping-metadata-scroll-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.showsTimeUnits = true
+        model.wrapsLines = false
+        let tab = model.coreClient.newTab()
+        let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
+        let source = "alpha\n\n" + String(repeating: "ordinary words across a long day ", count: 80)
+        let json = try JSONSerialization.data(withJSONObject: [["ink": source]])
+        XCTAssertTrue(model.coreClient.syncDocument(
+            sheet: page, json: try XCTUnwrap(String(data: json, encoding: .utf8))
+        ))
+        model.refresh()
+        model.select(tab)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
+        let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "")
+        scroll.scrollerStyle = .legacy
+        let card = NSRect(x: 0, y: 0, width: 720, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        defer { DayScrollView.dismantleNSView(scroll, coordinator: coordinator) }
+        window.contentView?.addSubview(scroll)
+        scroll.frame = card
+        scroll.layoutSubtreeIfNeeded()
+        DayScrollView.updateRoll(scroll, model: model, readOnly: false, coordinator: coordinator)
+        scroll.layoutSubtreeIfNeeded()
+        let stack = try XCTUnwrap(scroll.documentView as? DayStackView)
+        let editor = try XCTUnwrap(stack.editor)
+        XCTAssertTrue(coordinator.textView === editor)
+        editor.setSelectedRange(NSRange(location: (source as NSString).length, length: 0))
+        coordinator.layOutBlockLabels(forMetas: [
+            BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1),
+            BlockInfo(id: "blank", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+            BlockInfo(id: "long", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+        ])
+        scroll.layoutSubtreeIfNeeded()
+        let field = try XCTUnwrap(editor.subviews.compactMap { $0 as? BlockMetadataField }.first)
+        let compact = field.stringValue
+        let pointer = hovering
+            ? NSPoint(x: editor.visibleRect.maxX - 10, y: field.frame.midY)
+            : NSPoint(x: -10_000, y: -10_000)
+        XCTAssertEqual(editor.visibleRect.contains(pointer), hovering)
+        editor.hoverRefreshInput = (
+            window.convertPoint(toScreen: editor.convert(pointer, to: nil)), true, true
+        )
+        editor.refreshHover()
+        XCTAssertEqual(field.stringValue != compact, hovering)
+        let reading = field.stringValue
+        let labelSize = field.frame.size
+        let labelY = field.frame.minY
+        let shapeCount = coordinator.blockLabelShapeCount
+        let fitCount = coordinator.blockLabelFitCount
+        let tooltipRect = try XCTUnwrap(coordinator.blockToolTipRects[0])
+        let measurements = stack.measurements
+        let rebuilds = stack.rebuilds
+        let geometry = stack.measuredGeometry
+        let editorFrame = editor.frame
+        let containerSize = try XCTUnwrap(editor.textContainer).size
+        let clip = scroll.contentView
+        let originalY = clip.bounds.minY
+        XCTAssertGreaterThan(stack.frame.width - clip.bounds.width, 240)
+        XCTAssertEqual(coordinator.blockToolTipTags.count, 1)
+
+        for x: CGFloat in [120, 240, 60, 0] {
+            let oldTag = try XCTUnwrap(coordinator.blockToolTipTags.first)
+            let tooltip = coordinator.view(editor, stringForToolTip: oldTag, point: .zero, userData: nil)
+            clip.scroll(to: NSPoint(x: x, y: originalY))
+            scroll.reflectScrolledClipView(clip)
+            scroll.layoutSubtreeIfNeeded()
+
+            XCTAssertEqual(clip.bounds.minX, x, accuracy: 0.5)
+            XCTAssertEqual(clip.bounds.minY, originalY, accuracy: 0.5)
+            XCTAssertEqual(
+                field.frame.maxX + InkEditorView.Coordinator.blockLabelTrailingInset,
+                editor.visibleRect.maxX, accuracy: 0.5,
+                "the metadata label kept its pre-scroll horizontal position"
+            )
+            XCTAssertEqual(field.stringValue, reading, "scrolling changed the same block's hover")
+            XCTAssertEqual(field.frame.size, labelSize)
+            XCTAssertEqual(field.frame.minY, labelY)
+            XCTAssertEqual(coordinator.blockToolTipTags.count, 1)
+            let newTag = try XCTUnwrap(coordinator.blockToolTipTags.first)
+            let newRect = try XCTUnwrap(coordinator.blockToolTipRects[0])
+            XCTAssertEqual(newRect.maxX, editor.visibleRect.maxX, accuracy: 0.5)
+            XCTAssertEqual(newRect.origin, tooltipRect.origin)
+            XCTAssertEqual(newRect.height, tooltipRect.height)
+            if newTag != oldTag {
+                XCTAssertEqual(coordinator.view(
+                    editor, stringForToolTip: oldTag, point: .zero, userData: nil
+                ), "")
+            }
+            XCTAssertEqual(coordinator.view(
+                editor, stringForToolTip: newTag, point: .zero, userData: nil
+            ), tooltip)
+            XCTAssertEqual(coordinator.blockLabelShapeCount, shapeCount)
+            XCTAssertEqual(coordinator.blockLabelFitCount, fitCount)
+            XCTAssertEqual(stack.measurements, measurements)
+            XCTAssertEqual(stack.rebuilds, rebuilds)
+            XCTAssertEqual(stack.measuredGeometry, geometry)
+            XCTAssertEqual(editor.frame, editorFrame)
+            XCTAssertEqual(editor.textContainer?.size, containerSize)
+        }
+        withExtendedLifetime(window) {}
+    }
+
     /// Drawn through the real layout manager: with wrapping off and the
     /// text view sized to its longest line, the wash is under the code
     /// well past the first viewport, and absent under the prose there.

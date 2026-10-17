@@ -2016,6 +2016,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// mount) land here too and re-resolve hover deliberately, the
         /// way tracking-area hover behaves on AppKit controls.
         @objc private func clipBoundsChanged(_ notification: Notification) {
+            repositionBlockLabels()
             textView?.refreshHover()
         }
 
@@ -4320,7 +4321,9 @@ public struct InkEditorView: NSViewRepresentable {
             /// read the tooltip table through the same door AppKit does.
             /// A seam, so it is not built into a shipped binary.
             var blockToolTipTags: [NSView.ToolTipTag] { blockToolTips.keys.sorted() }
+            var blockToolTipRects: [Int: NSRect] { blockToolTipRegistrations.mapValues(\.rect) }
             private(set) var blockLabelShapeCount = 0
+            private(set) var blockLabelFitCount = 0
 
             /// What the last restyle laid out, in document order: one entry
             /// per edited block, the range being the line its affordance
@@ -4537,6 +4540,9 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func expandedLabelFits(_ text: String, for display: BlockDisplay) -> Bool {
+            #if DEBUG
+                blockLabelFitCount += 1
+            #endif
             guard let line = firstLineUsedRect(for: display) else { return true }
             return Self.blockAffordanceFits(
                 lineMaxX: line.maxX, containerWidth: blockAffordanceMeasure,

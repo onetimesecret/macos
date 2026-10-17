@@ -149,18 +149,147 @@ struct RollPlace: Equatable {
         return place
     }
 
-    /// A UTF-16 index moved across a replacement: shifted in the common suffix, kept in
-    /// the common prefix, and sent to the replacement's start inside it.
+    /// Rebase a UTF-16 index through unchanged text, or to its replacement's start.
     static func rebased(_ index: Int, from old: String, to new: String) -> Int {
         let oldCount = old.utf16.count
         let newCount = new.utf16.count
         guard oldCount > 0 else { return 0 }
         let index = min(max(index, 0), oldCount)
+        let a = Array(old.unicodeScalars)
+        let b = Array(new.unicodeScalars)
         // The suffix is matched first, so text arriving at the anchor goes above it.
-        let suffix = matched(old.utf16.reversed(), new.utf16.reversed())
-        let prefix = min(matched(old.utf16, new.utf16), min(oldCount, newCount) - suffix)
-        if index >= oldCount - suffix { return index - oldCount + newCount }
-        return min(index, prefix)
+        let suffix = matched(a.reversed(), b.reversed())
+        let prefix = min(matched(a, b), min(a.count, b.count) - suffix)
+        let prefixLength = utf16Length(a.prefix(prefix))
+        let suffixLength = utf16Length(a.suffix(suffix))
+        if index >= oldCount - suffixLength { return index - oldCount + newCount }
+        // A shared prefix can also be an insertion into repeated text; use it only on fallback.
+        return rebasedInterior(
+            index, from: a[..<(a.count - suffix)], to: b[..<(b.count - suffix)])
+            ?? min(index, prefixLength)
+    }
+
+    private static func utf16Length(_ scalars: ArraySlice<Unicode.Scalar>) -> Int {
+        scalars.reduce(0) { $0 + $1.utf16.count }
+    }
+
+    private static func rebasedInterior(
+        _ index: Int, from old: ArraySlice<Unicode.Scalar>, to new: ArraySlice<Unicode.Scalar>
+    ) -> Int? {
+        guard !old.isEmpty, !new.isEmpty else { return nil }
+        var target = 0
+        var offset = 0
+        while target < old.count {
+            let width = old[old.startIndex + target].utf16.count
+            if offset + width > index { break }
+            offset += width
+            target += 1
+        }
+        let withinScalar = index - offset
+        func position(_ scalar: Int, surviving: Bool) -> Int {
+            utf16Length(new.prefix(scalar)) + (surviving ? withinScalar : 0)
+        }
+
+        // Reverse matching gives insertions at a surviving anchor the same affinity as the suffix.
+        var x = old.count
+        var y = new.count
+        var insertionMatch: Int?
+        while x > 0, y > 0 {
+            y -= 1
+            if old[old.startIndex + x - 1] == new[new.startIndex + y] {
+                x -= 1
+                if x == target { insertionMatch = y }
+            }
+        }
+        if x == 0, let insertionMatch { return position(insertionMatch, surviving: true) }
+
+        // For deletions only, unmatched old scalars map to the boundary before the matched right side.
+        x = old.count
+        y = new.count
+        var deletionMatch: Int?
+        var targetSurvives = false
+        while x > 0, y > 0 {
+            x -= 1
+            if old[old.startIndex + x] == new[new.startIndex + y - 1] {
+                y -= 1
+                if x == target {
+                    deletionMatch = y
+                    targetSurvives = true
+                }
+            } else if x == target {
+                deletionMatch = y
+            }
+        }
+        if y == 0 { return position(deletionMatch ?? 0, surviving: targetSurvives) }
+
+        // Reverse Myers uses the same matching direction as the insertion-only path.
+        struct Step {
+            var x = -1
+            var mapped = 0
+            var surviving = false
+            var pendingDeletion = false
+        }
+        let reverseTarget = old.count - target - 1
+        // Bound mixed-edit work even for a single long line; exhaustion uses the outer replacement.
+        var budget = max(65_536, 8 * (old.count + new.count))
+        let limit = min(1_024, old.count + new.count)
+        let origin = limit + 1
+        var frontier = Array(repeating: Step(), count: 2 * limit + 3)
+        frontier[origin + 1] = Step(x: 0)
+        var previousLower = 1
+        var previousUpper = 1
+        for edits in 0...limit {
+            // Exclude paths requiring more insertions or deletions than either text permits.
+            let lower = max(-edits, edits - 2 * new.count)
+            let upper = min(edits, 2 * old.count - edits)
+            for diagonal in stride(from: lower, through: upper, by: 2) {
+                budget -= 1
+                guard budget >= 0 else { return nil }
+                let slot = origin + diagonal
+                let left = (previousLower...previousUpper).contains(diagonal - 1)
+                    ? frontier[slot - 1] : Step()
+                let right = (previousLower...previousUpper).contains(diagonal + 1)
+                    ? frontier[slot + 1] : Step()
+                let canInsert = right.x >= 0
+                    && (edits == 0 || right.x - diagonal - 1 < new.count)
+                let canDelete = left.x >= 0 && left.x < old.count
+                guard canInsert || canDelete else {
+                    frontier[slot] = Step()
+                    continue
+                }
+                let inserting = canInsert && (!canDelete || left.x < right.x)
+                var step = inserting ? right : left
+                if !inserting {
+                    if step.x == reverseTarget {
+                        step.pendingDeletion = true
+                        step.surviving = false
+                    }
+                    step.x += 1
+                }
+                var y = step.x - diagonal
+                // A deleted anchor's replacement start is known at the next match to its left.
+                if step.pendingDeletion { step.mapped = new.count - y }
+                while step.x < old.count, y < new.count {
+                    budget -= 1
+                    guard budget >= 0 else { return nil }
+                    guard old[old.endIndex - step.x - 1] == new[new.endIndex - y - 1] else { break }
+                    step.pendingDeletion = false
+                    if step.x == reverseTarget {
+                        step.mapped = new.count - y - 1
+                        step.surviving = true
+                    }
+                    step.x += 1
+                    y += 1
+                }
+                if step.x == old.count, y == new.count {
+                    return position(step.mapped, surviving: step.surviving)
+                }
+                frontier[slot] = step
+            }
+            previousLower = lower
+            previousUpper = upper
+        }
+        return nil
     }
 
     private static func matched<Units: Sequence>(_ a: Units, _ b: Units) -> Int

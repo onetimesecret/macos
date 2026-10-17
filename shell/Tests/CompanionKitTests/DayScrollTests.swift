@@ -612,10 +612,12 @@ final class DayScrollTests: XCTestCase {
             let synced = { (count: Int) in (0..<count).map { "synced \($0) from elsewhere\n" }.joined() }
             let lines = longPage(lines: 80).components(separatedBy: "\n")
             for ink in [
+                synced(10) + longPage(lines: 80) + "\n" + synced(10),
                 synced(10) + longPage(lines: 80),
                 synced(30) + longPage(lines: 80),
                 lines.dropFirst(25).joined(separator: "\n"),
                 lines.dropFirst(25).joined(separator: "\n") + "\n" + synced(20),
+                lines.dropFirst(30).dropLast(10).joined(separator: "\n"),
             ] {
                 let escaped = ink.replacingOccurrences(of: "\n", with: "\\n")
                 XCTAssertTrue(model.coreClient.syncDocument(sheet: reading, json: "[{\"ink\":\"\(escaped)\"}]"))

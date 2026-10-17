@@ -855,6 +855,225 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(moved.page, 1)
     }
 
+    func testARollPlaceSurvivesInsertionsOnBothSidesInOneRefresh() {
+        let old = "before\nTARGET\nafter"
+        let new = "inserted above\n" + old + "\ninserted below"
+        let start = (old as NSString).range(of: "TARGET").location
+        let expected = (new as NSString).range(of: "TARGET").location
+        let place = RollPlace(
+            page: 7, anchor: ScrollAnchor(characterIndex: start, lineFraction: 0.25, x: 9),
+            reading: .preview, length: old.utf16.count)
+
+        let moved = place.rebased(from: old, to: new)
+
+        XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 9))
+        XCTAssertEqual(moved.page, place.page)
+        XCTAssertEqual(moved.reading, place.reading)
+        XCTAssertEqual(moved.length, new.utf16.count)
+        for offset in 0..<"TARGET".utf16.count {
+            XCTAssertEqual(RollPlace.rebased(start + offset, from: old, to: new), expected + offset)
+        }
+    }
+
+    func testARollPlaceFollowsInteriorTextAcrossSeveralEdits() {
+        let old = "first\nremove this\nTARGET\nlast"
+        let new = "new first\nTARGET\nnew last\n"
+        let start = (old as NSString).range(of: "TARGET").location
+        let expected = (new as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), expected)
+        XCTAssertEqual(RollPlace.rebased(start + 3, from: old, to: new), expected + 3)
+    }
+
+    func testARollPlaceRebasesInteriorUnicodeInUTF16Units() {
+        let target = "🧪e\u{301}👩‍💻TARGET"
+        let old = "前\n" + target + "\n後"
+        let new = "😀above\n" + old + "\nbelow🚀"
+        let start = (old as NSString).range(of: target).location
+        let expected = (new as NSString).range(of: target).location
+
+        for offset in 0..<target.utf16.count {
+            XCTAssertEqual(RollPlace.rebased(start + offset, from: old, to: new), expected + offset)
+        }
+    }
+
+    func testARollPlaceKeepsReplacementAndInsertionBoundaries() {
+        let old = "abcTARGETxyz"
+        let new = "!abcTARGETxyz?"
+        XCTAssertEqual(RollPlace.rebased(0, from: old, to: new), 1)
+        XCTAssertEqual(RollPlace.rebased(old.utf16.count, from: old, to: new), new.utf16.count)
+        XCTAssertEqual(RollPlace.rebased(-10, from: old, to: new), 1)
+        XCTAssertEqual(RollPlace.rebased(100, from: old, to: new), new.utf16.count)
+        XCTAssertEqual(RollPlace.rebased(5, from: "abc123xyz", to: "abcXYZxyz"), 3)
+        XCTAssertEqual(RollPlace.rebased(5, from: "abc123xyz", to: "abcxyz"), 3)
+        XCTAssertEqual(RollPlace.rebased(3, from: "abcTARGETxyz", to: "abc+TARGETxyz"), 4)
+        XCTAssertEqual(RollPlace.rebased(4, from: old, to: ""), 0)
+    }
+
+    func testARollPlaceSurvivesEditsAroundAnInteriorPointOfAVeryLongLine() {
+        let old = String(repeating: "a", count: 100_000) + "🧪TARGET"
+            + String(repeating: "z", count: 100_000)
+        let new = "+" + old + "-"
+        let start = (old as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), start + 1)
+    }
+
+    func testARollPlaceRebasesMixedEditsOnAVeryLongLine() {
+        let middle = String(repeating: "a", count: 100_000) + "🧪TARGET"
+            + String(repeating: "z", count: 100_000)
+        let old = "<" + middle + ">"
+        let new = "🐈[" + middle + "]"
+        let start = (old as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), start + 2)
+    }
+
+    func testARollPlaceSurvivesLargeInsertionsWithoutAnEditDistanceLimit() {
+        let old = "before\nTARGET\nafter"
+        let new = String(repeating: "+", count: 10_000) + old
+            + String(repeating: "-", count: 10_000)
+        let start = (old as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), start + 10_000)
+    }
+
+    func testARollPlaceSurvivesParagraphDeletionsAboveAndBelowTheReader() {
+        let lines = (0..<80).map { "line \($0) of a day that goes on" }
+        let synced = (0..<20).map { "synced \($0) from elsewhere\n" }.joined()
+        let old = lines.dropFirst(25).joined(separator: "\n") + "\n" + synced
+        let new = lines.dropFirst(30).dropLast(10).joined(separator: "\n")
+        let start = (old as NSString).range(of: "line 40 ").location
+        let expected = (new as NSString).range(of: "line 40 ").location
+        let place = RollPlace(
+            page: 7, anchor: ScrollAnchor(characterIndex: start, lineFraction: 0.25, x: 9),
+            length: old.utf16.count)
+
+        let moved = place.rebased(from: old, to: new)
+
+        XCTAssertEqual(expected, 300)
+        XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 9))
+        XCTAssertEqual(moved.length, new.utf16.count)
+        XCTAssertEqual(moved.page, place.page)
+    }
+
+    func testARollPlaceSurvivesLargeUnicodeDeletionsOnBothSidesOnOneLine() {
+        let target = "🧪e\u{301}👩‍💻TARGET"
+        let removed = String(repeating: "x", count: 100_000)
+        let old = removed + target + removed
+
+        for offset in 0..<target.utf16.count {
+            XCTAssertEqual(RollPlace.rebased(removed.utf16.count + offset, from: old, to: target), offset)
+        }
+        XCTAssertEqual(RollPlace.rebased(50_000, from: old, to: target), 0)
+        XCTAssertEqual(RollPlace.rebased(old.utf16.count - 50_000, from: old, to: target),
+                       target.utf16.count)
+    }
+
+    func testARollPlaceMapsLargeDeletedRunsToTheirLocalStarts() {
+        let first = String(repeating: "🧪", count: 2_000)
+        let second = String(repeating: "🧫", count: 2_000)
+        let old = "A" + first + "B" + second + "C" + first
+        let b = 1 + first.utf16.count
+        let c = b + 1 + second.utf16.count
+
+        XCTAssertEqual(RollPlace.rebased(2, from: old, to: "ABC"), 1)
+        XCTAssertEqual(RollPlace.rebased(b, from: old, to: "ABC"), 1)
+        XCTAssertEqual(RollPlace.rebased(b + 2, from: old, to: "ABC"), 2)
+        XCTAssertEqual(RollPlace.rebased(c, from: old, to: "ABC"), 2)
+        XCTAssertEqual(RollPlace.rebased(c + 2, from: old, to: "ABC"), 3)
+    }
+
+    func testARollPlaceMapsRemovedInteriorTextToItsLocalReplacementStart() {
+        let old = "abc123MIDDLE456xyz"
+        let new = "!abcMIDDLExyz?"
+
+        XCTAssertEqual(RollPlace.rebased(4, from: old, to: new), 4)
+        XCTAssertEqual(RollPlace.rebased(6, from: old, to: new), 4)
+        XCTAssertEqual(RollPlace.rebased(13, from: old, to: new), 10)
+        XCTAssertEqual(RollPlace.rebased(15, from: old, to: new), 10)
+    }
+
+    func testARollPlaceDoesNotMatchHalfOfAReplacedSurrogatePair() {
+        let old = "abc😁TARGETend"
+        let new = "abc🚀TARGETend"
+
+        XCTAssertEqual(RollPlace.rebased(3, from: old, to: new), 3)
+        XCTAssertEqual(RollPlace.rebased(4, from: old, to: new), 3)
+        XCTAssertEqual(RollPlace.rebased(5, from: old, to: new), 5)
+    }
+
+    func testARollPlaceUsesSuffixAffinityForRepeatedInteriorText() {
+        XCTAssertEqual(RollPlace.rebased(0, from: "aaaa", to: "!aaaaa?"), 2)
+        XCTAssertEqual(RollPlace.rebased(2, from: "aaaa", to: "!aaaaa?"), 4)
+    }
+
+    func testARollPlaceKeepsRepeatedTextAffinityWhenOtherTextIsReplaced() {
+        let old = "aaaaX"
+        for prefix in ["", "!"] {
+            for ending in ["X?", "Y?"] {
+                let new = prefix + "aaaaa" + ending
+                XCTAssertEqual(RollPlace.rebased(0, from: old, to: new), prefix.utf16.count + 1, new)
+                XCTAssertEqual(RollPlace.rebased(2, from: old, to: new), prefix.utf16.count + 3, new)
+            }
+        }
+    }
+
+    func testARollPlaceKeepsRepeatedLineAffinityWhenTheEndingChanges() {
+        let old = "ROW\nROW\nend"
+        for prefix in ["", "prefix\n"] {
+            for ending in ["end", "END"] {
+                let new = prefix + "ROW\nROW\nROW\n" + ending
+                XCTAssertEqual(RollPlace.rebased(0, from: old, to: new), prefix.utf16.count + 4, new)
+                XCTAssertEqual(RollPlace.rebased(4, from: old, to: new), prefix.utf16.count + 8, new)
+            }
+        }
+    }
+
+    func testARollPlaceSurvivesAModeratelyLargePasteWithOtherReplacements() {
+        for middle in ["before\nTARGET\nafter", "before TARGET after"] {
+            let old = "<" + middle + ">"
+            let start = (old as NSString).range(of: "TARGET").location
+            for count in [340, 1_000] {
+                for unit in ["+", "🧪"] {
+                    let paste = String(repeating: unit, count: count)
+                    let new = paste + "[" + middle + "]"
+                    XCTAssertEqual(RollPlace.rebased(start, from: old, to: new),
+                                   paste.utf16.count + start)
+                }
+            }
+        }
+    }
+
+    func testARollPlaceSurvivesAModeratelyLargeRemovalWithOtherReplacements() {
+        let removed = String(repeating: "+", count: 340)
+        let old = removed + "<before\nTARGET\nafter>"
+        let new = "[before\nTARGET\nafter]"
+
+        XCTAssertEqual(RollPlace.rebased(348, from: old, to: new), 8)
+        XCTAssertEqual(RollPlace.rebased(100, from: old, to: new), 0)
+    }
+
+    func testARollPlaceKeepsUTF16OffsetsInMixedRepeatedText() {
+        let old = "🧪🧪X"
+        for prefix in ["", "!"] {
+            let new = prefix + "🧪🧪🧪Y?"
+            for index in 0..<4 {
+                XCTAssertEqual(RollPlace.rebased(index, from: old, to: new),
+                               prefix.utf16.count + 2 + index)
+            }
+        }
+    }
+
+    func testARollPlaceFallsBackForExtensiveMixedReplacements() {
+        let old = String(repeating: "a", count: 100_000) + "TARGET"
+            + String(repeating: "z", count: 100_000)
+        let new = String(repeating: "b", count: 100_000) + "TARGET"
+            + String(repeating: "c", count: 100_000)
+
+        XCTAssertEqual(RollPlace.rebased(100_000, from: old, to: new), 0)
+    }
+
     func testARollPlaceCrossesBetweenSourceAndPreviewByProportion() {
         let anchor = ScrollAnchor(characterIndex: 300, lineFraction: 0.5, x: 4)
         let place = RollPlace(page: 1, anchor: anchor, reading: .source, length: 1_000)
