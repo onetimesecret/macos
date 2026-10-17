@@ -275,7 +275,25 @@ relaunch, because access to it could not be kept."
 case 1.
 
 **Fail:** the file refused with "could not be read", or the save
-refused. A drop is the one way in that does not go through a panel.
+refused. A drop and a Finder open (case 2a) are the ways in that do not
+go through a panel.
+
+## Case 2a: Open With from the Finder
+
+1. Quit the pad. In Finder, Control-click `b.txt` and choose
+   Open With > OnetimePad.
+2. Edit it and press cmd-s.
+3. With the pad running and another app frontmost, choose
+   Open With > OnetimePad on `a.txt`.
+
+**Pass:** OnetimePad is listed and enabled under Open With, and the
+file's default app is unchanged. After each open the file's tab is
+selected in the editor window, and each save reaches the file as in
+case 1.
+
+**Fail:** the entry is greyed out; the pad becomes the default app for
+`.txt`; the pad comes forward with no tab for the file, or with today's
+page selected over it; or the save refused.
 
 ## Case 3: Save As, to a new name and over an existing file
 
@@ -944,6 +962,7 @@ holds `THEIRS`; a conflict banner returning in step 4; the save in step
 | | | | 0 | not yet run | |
 | | | | 1 | not yet run | |
 | | | | 2 | not yet run | |
+| | | | 2a | not yet run | |
 | | | | 3 | not yet run | |
 | | | | 4 | not yet run | |
 | | | | 5 | not yet run | |
