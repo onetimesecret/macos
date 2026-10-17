@@ -295,14 +295,9 @@ final class WrappingGeometryTests: XCTestCase {
             XCTAssertEqual(coordinator.blockToolTipTags.count, 1)
             let newTag = try XCTUnwrap(coordinator.blockToolTipTags.first)
             let newRect = try XCTUnwrap(coordinator.blockToolTipRects[0])
-            XCTAssertEqual(newRect.maxX, editor.visibleRect.maxX, accuracy: 0.5)
-            XCTAssertEqual(newRect.origin, tooltipRect.origin)
-            XCTAssertEqual(newRect.height, tooltipRect.height)
-            if newTag != oldTag {
-                XCTAssertEqual(coordinator.view(
-                    editor, stringForToolTip: oldTag, point: .zero, userData: nil
-                ), "")
-            }
+            XCTAssertEqual(newTag, oldTag, "a sideways scroll re-registered the row's tooltip")
+            XCTAssertEqual(newRect, tooltipRect)
+            XCTAssertGreaterThanOrEqual(newRect.maxX, editor.visibleRect.maxX)
             XCTAssertEqual(coordinator.view(
                 editor, stringForToolTip: newTag, point: .zero, userData: nil
             ), tooltip)
@@ -314,6 +309,99 @@ final class WrappingGeometryTests: XCTestCase {
             XCTAssertEqual(editor.frame, editorFrame)
             XCTAssertEqual(editor.textContainer?.size, containerSize)
         }
+        withExtendedLifetime(window) {}
+    }
+
+    func testAWrappedRowsTooltipIsTheRowAndAnUnwrappedOneRunsToTheViewsEdge() {
+        let row = NSRect(x: 12, y: 40, width: 396, height: 18)
+        XCTAssertEqual(InkEditorView.Coordinator.blockToolTipRect(
+            row: row, containerWidth: 396, viewMaxX: 2_000
+        ), row)
+        for unbounded in [CGFloat.greatestFiniteMagnitude, .infinity, 1_000_000] {
+            XCTAssertEqual(InkEditorView.Coordinator.blockToolTipRect(
+                row: row, containerWidth: unbounded, viewMaxX: 2_000
+            ), NSRect(x: 12, y: 40, width: 1_988, height: 18))
+        }
+    }
+
+    func testASidewaysScrollKeepsAnUnwrappedTabsTooltipsUntilItsContentChanges() throws {
+        let suite = "wrapping-tooltip-scroll-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.wrapsLines = false
+        let tab = model.coreClient.newTab()
+        let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
+        let source = "alpha " + String(repeating: "ordinary words across a long line ", count: 80)
+        let json = try JSONSerialization.data(withJSONObject: [["ink": source]])
+        XCTAssertTrue(model.coreClient.syncDocument(
+            sheet: page, json: try XCTUnwrap(String(data: json, encoding: .utf8))
+        ))
+        model.refresh()
+        model.select(tab)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
+        let scroll = InkEditorView.makePage(
+            model: model, sheetID: page, readOnly: false, coordinator: coordinator
+        )
+        scroll.scrollerStyle = .legacy
+        let card = NSRect(x: 0, y: 0, width: 720, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        defer { InkEditorView.dismantleNSView(scroll, coordinator: coordinator) }
+        window.contentView?.addSubview(scroll)
+        scroll.frame = card
+        scroll.layoutSubtreeIfNeeded()
+        let editor = try XCTUnwrap(scroll.documentView as? InkTextView)
+        let stamps = BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
+        coordinator.layOutBlockLabels(forMetas: [stamps])
+        scroll.layoutSubtreeIfNeeded()
+        let clip = scroll.contentView
+        XCTAssertGreaterThan(editor.frame.width - clip.bounds.width, 240)
+        let tags = coordinator.blockToolTipTags
+        XCTAssertEqual(tags.count, 1)
+        let rect = try XCTUnwrap(coordinator.blockToolTipRects[0])
+        let field = try XCTUnwrap(editor.subviews.compactMap { $0 as? BlockMetadataField }.first)
+
+        for x: CGFloat in [120, 240, 60, 0] {
+            clip.scroll(to: NSPoint(x: x, y: clip.bounds.minY))
+            scroll.reflectScrolledClipView(clip)
+            scroll.layoutSubtreeIfNeeded()
+            XCTAssertEqual(clip.bounds.minX, x, accuracy: 0.5)
+            XCTAssertEqual(
+                field.frame.maxX + InkEditorView.Coordinator.blockLabelTrailingInset,
+                editor.visibleRect.maxX, accuracy: 0.5
+            )
+            XCTAssertEqual(coordinator.blockToolTipTags, tags, "a sideways scroll re-registered")
+            XCTAssertEqual(coordinator.blockToolTipRects[0], rect)
+            XCTAssertGreaterThanOrEqual(rect.maxX, editor.visibleRect.maxX)
+        }
+
+        // New stamps are new tooltip text, and the row registers again.
+        coordinator.layOutBlockLabels(forMetas: [BlockInfo(
+            id: "alpha", createdS: 1_000, modifiedS: 400_000, paragraphs: 1
+        )])
+        let restamped = coordinator.blockToolTipTags
+        XCTAssertEqual(restamped.count, 1)
+        XCTAssertNotEqual(restamped, tags)
+        XCTAssertEqual(coordinator.view(
+            editor, stringForToolTip: tags[0], point: .zero, userData: nil
+        ), "")
+
+        // A longer line widens the page, and the row registers over the new width.
+        let width = editor.frame.width
+        editor.setSelectedRange(NSRange(location: (source as NSString).length, length: 0))
+        editor.insertText(
+            String(repeating: "more words ", count: 40),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        coordinator.layOutBlockLabels(forMetas: [stamps])
+        scroll.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(editor.frame.width, width)
+        let widened = try XCTUnwrap(coordinator.blockToolTipRects[0])
+        XCTAssertEqual(widened.maxX, editor.bounds.maxX, accuracy: 0.5)
+        XCTAssertFalse(coordinator.blockToolTipTags.contains(restamped[0]))
         withExtendedLifetime(window) {}
     }
 

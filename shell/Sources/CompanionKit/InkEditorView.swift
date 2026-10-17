@@ -4578,10 +4578,22 @@ public struct InkEditorView: NSViewRepresentable {
         nonisolated static func blockAffordanceMeasure(
             containerWidth: CGFloat, visibleRect: NSRect, containerOriginX: CGFloat
         ) -> CGFloat {
-            guard containerWidth.isFinite,
-                  containerWidth < SealedBlockCell.effectivelyUnboundedWidth
+            guard !containerIsUnbounded(containerWidth)
             else { return visibleRect.maxX - containerOriginX }
             return min(containerWidth, visibleRect.maxX - containerOriginX)
+        }
+
+        nonisolated static func containerIsUnbounded(_ width: CGFloat) -> Bool {
+            !width.isFinite || width >= SealedBlockCell.effectivelyUnboundedWidth
+        }
+
+        /// Unwrapped, a row's tooltip runs to the text view's trailing edge rather
+        /// than the viewport's, which moves with every sideways scroll.
+        nonisolated static func blockToolTipRect(
+            row: NSRect, containerWidth: CGFloat, viewMaxX: CGFloat
+        ) -> NSRect {
+            guard containerIsUnbounded(containerWidth) else { return row }
+            return NSRect(x: row.minX, y: row.minY, width: viewMaxX - row.minX, height: row.height)
         }
 
         /// The used rect of the line a block's affordance rides, in
@@ -4623,6 +4635,7 @@ public struct InkEditorView: NSViewRepresentable {
             blockFirstLineDisplayRects.removeAll()
             guard let textView else { return }
             let measure = blockAffordanceMeasure
+            let containerWidth = textView.textContainer?.size.width ?? .infinity
             let origin = textView.textContainerOrigin
             var requestedToolTips: [Int: (rect: NSRect, text: String)] = [:]
             for (field, display) in zip(blockLabelViews, blockDisplays) {
@@ -4644,7 +4657,11 @@ public struct InkEditorView: NSViewRepresentable {
                 )
                 blockFirstLineDisplayRects[display.range.location] = displayRect
                 requestedToolTips[display.range.location] = (
-                    rect: displayRect, text: display.accessibilityText
+                    rect: Self.blockToolTipRect(
+                        row: displayRect, containerWidth: containerWidth,
+                        viewMaxX: textView.bounds.maxX
+                    ),
+                    text: display.accessibilityText
                 )
             }
             reconcileBlockToolTips(requestedToolTips, in: textView)
