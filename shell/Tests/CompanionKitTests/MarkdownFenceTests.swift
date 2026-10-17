@@ -323,6 +323,35 @@ final class CodeSlabTests: XCTestCase {
         XCTAssertEqual(slab, NSRect(x: 20, y: 32, width: 200, height: 17))
     }
 
+    func testAnUnwrappedSlabUsesTheCapturedViewportMeasure() {
+        for width in [CGFloat.greatestFiniteMagnitude, .infinity] {
+            let slab = InkLayoutManager.slabRect(
+                firstLineTop: 40, regionBottom: 100, containerWidth: width,
+                origin: NSPoint(x: 12, y: 12), editorMeasure: 396
+            )
+            XCTAssertEqual(slab, NSRect(x: 12, y: 52, width: 396, height: 60))
+        }
+    }
+
+    func testTheViewportMeasureDoesNotWidenAWrappedSlab() {
+        XCTAssertEqual(InkLayoutManager.slabRect(
+            firstLineTop: 0, regionBottom: 20, containerWidth: 300,
+            origin: .zero, editorMeasure: 396
+        )?.width, 300)
+        XCTAssertEqual(InkLayoutManager.slabRect(
+            firstLineTop: 0, regionBottom: 20, containerWidth: 500,
+            origin: .zero, editorMeasure: 396
+        )?.width, 396)
+    }
+
+    func testAnUnmeasuredUnboundedContainerPaintsNothing() {
+        for width in [CGFloat.greatestFiniteMagnitude, .infinity, .nan] {
+            XCTAssertNil(InkLayoutManager.slabRect(
+                firstLineTop: 0, regionBottom: 20, containerWidth: width, origin: .zero
+            ))
+        }
+    }
+
     func testDegenerateMetricsPaintNothing() {
         XCTAssertNil(InkLayoutManager.slabRect(
             firstLineTop: 50, regionBottom: 50, containerWidth: 380, origin: .zero

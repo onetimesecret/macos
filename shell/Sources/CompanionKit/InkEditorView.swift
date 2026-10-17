@@ -4799,7 +4799,8 @@ final class InkLayoutManager: NSLayoutManager {
                 let bottom = boundingRect(forGlyphRange: glyphs, in: container).maxY
                 guard let slab = Self.slabRect(
                     firstLineTop: top, regionBottom: bottom,
-                    containerWidth: container.size.width, origin: origin
+                    containerWidth: container.size.width, origin: origin,
+                    editorMeasure: (container as? InkTextContainer)?.capturedEditorMeasure
                 ) else { continue }
                 // TextKit draws on the main thread; the assumption is
                 // stated rather than inherited because the SDK does not
@@ -4813,21 +4814,20 @@ final class InkLayoutManager: NSLayoutManager {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
 
-    /// The rectangle a fence region's wash covers, in the view's
-    /// coordinates: from the top of the region's first used line to the
-    /// bottom of its last fragment, at the full width of the text
-    /// container, offset by the container's origin. Nil when the metrics
-    /// describe nothing worth painting. Pure, so the geometry is
-    /// testable without a layout pass.
+    /// Fence wash uses the captured viewport measure when the container is unbounded.
+    /// Without a usable finite width, there is no slab to paint.
     nonisolated static func slabRect(
         firstLineTop: CGFloat, regionBottom: CGFloat,
-        containerWidth: CGFloat, origin: NSPoint
+        containerWidth: CGFloat, origin: NSPoint, editorMeasure: CGFloat? = nil
     ) -> NSRect? {
-        guard regionBottom > firstLineTop, containerWidth > 0 else { return nil }
+        let width = min(containerWidth, editorMeasure ?? containerWidth)
+        guard firstLineTop.isFinite, regionBottom.isFinite, regionBottom > firstLineTop,
+              width.isFinite, width > 0, width < SealedBlockCell.effectivelyUnboundedWidth
+        else { return nil }
         return NSRect(
             x: origin.x,
             y: origin.y + firstLineTop,
-            width: containerWidth,
+            width: width,
             height: regionBottom - firstLineTop
         )
     }
