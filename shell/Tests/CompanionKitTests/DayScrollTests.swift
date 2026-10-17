@@ -634,6 +634,36 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// The pump's own report is the only invalidation here, as it is when a peer writes.
+    func testAPeersEditReachesAQuietDayAndThePageTheEditorLeft() throws {
+        let model = try makeModel()
+        let left = try page(in: model, saying: "before the peer")
+        let selected = try page(in: model, saying: longPage(lines: 10))
+        try select(left, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: left, readOnly: false)
+        try select(selected, in: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[left])
+        XCTAssertEqual(quiet.string, "before the peer")
+        XCTAssertTrue(model.storage(for: left).layoutManagers.isEmpty, "the editor must have left the page")
+
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: left, json: "[{\"ink\":\"after the peer\"}]"))
+        model.sync.enabled = true
+        let marks = model.dirtyMarks
+        model.sync.settlePump(
+            SyncPumpOutcome(ok: true, reason: nil, events: [
+                SyncPumpEvent(kind: "applied", page: "peer-page", pageID: left),
+            ], state: nil),
+            session: model.sync.session)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+        XCTAssertTrue(roll.stack.quietRegions[left] === quiet)
+        XCTAssertEqual(quiet.string, "after the peer")
+        XCTAssertEqual(model.storage(for: left).string, "after the peer", "the editor would come back to old text")
+        XCTAssertEqual(model.dirtyMarks, marks + 1, "the peer's edit must arm a write")
+    }
+
     /// The preview drops each link's address, so its text is a fraction of the source's.
     func testTogglingAPreviewUnderTheReaderKeepsThemOnThePageByProportion() throws {
         for readingIsSelected in [false, true] {

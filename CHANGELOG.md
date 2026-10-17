@@ -956,6 +956,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A peer's edit shows on the days the editor is not on** (app
+  0.39.0). With sync on, another device's edit reached the core but
+  not the roll: a day the editor was not on kept its old text until
+  something else redrew it, and a page left earlier reopened in the
+  editor with the old text. Each applied event now redraws its page's
+  day and rereads that page's text. The page under the editor does
+  not take a peer's edit yet.
+
 - **A refusal over an object that no longer stood never says a page
   expired** (app 0.36.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001's expiry row, issue #170). Copy decrypted, Copy

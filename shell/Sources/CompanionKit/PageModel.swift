@@ -1572,13 +1572,7 @@ public final class PageModel: ObservableObject {
         connection = self.client.connectionInfo()
         sync = SyncController(client: client, defaults: defaults)
         sync.serverUrlProvider = { [weak self] in self?.connection?.serverUrl ?? "" }
-        // A peer's edit both shows and persists: the refresh redraws
-        // what the core now holds, and the dirty mark schedules the
-        // sealed write exactly as a local keystroke would.
-        sync.onRemoteChange = { [weak self] in
-            self?.markDirty()
-            self?.refresh()
-        }
+        sync.onRemoteChange = { [weak self] pages in self?.settleRemoteEdits(on: pages) }
         sync.onEnrolRefused = { [weak self] page in self?.settleRefusal(sheet: page, told: true) }
         lastPadID = pads.activeID
         lastPadsEnabled = pads.isEnabled
@@ -6808,6 +6802,20 @@ public final class PageModel: ObservableObject {
         applyingProjection {
             storage.setAttributedString(rebuilt)
         }
+    }
+
+    /// A pump's applied edits: the pages they moved are read again from the core, and the
+    /// dirty mark schedules the sealed write as a local keystroke would.
+    func settleRemoteEdits(on pages: Set<UInt64>) {
+        for page in pages {
+            invalidateQuietRendering(for: page)
+            // A storage an editor lays out is left alone; no merge into live text exists yet.
+            if let storage = storages[page], storage.layoutManagers.isEmpty {
+                restateStorage(sheet: page)
+            }
+        }
+        markDirty()
+        refresh()
     }
 
     /// Mirror the page's document to the core wholesale: the recovery
