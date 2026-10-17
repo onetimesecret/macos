@@ -4848,7 +4848,7 @@ final class InkLayoutManager: NSLayoutManager {
             let whole = NSRange(location: 0, length: storage.length)
             // Unwrapped, the text view is as wide as its longest line
             // (or the roll's stack); that width is the slab's reach.
-            nonisolated(unsafe) let view = container.textView
+            let view = container.textView
             let extent = MainActor.assumeIsolated { () -> CGFloat? in
                 guard let view else { return nil }
                 return view.bounds.width - view.textContainerInset.width * 2
