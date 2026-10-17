@@ -37,6 +37,136 @@ accepted 2026-09-01), and
 (the agreed proposal that the tab cap must not prevent writing Today's note;
 implemented 2026-09-06 by removing the cap, recorded in ADR-0017's history).
 
+## Amendment: user-directed wrapping and horizontal scrolling (2026-10-16)
+
+### Direction and status
+
+This amendment records the user's recommendation/proposal being implemented,
+not formal approval. The earlier amendment incorrectly presented a delegated
+summary as the user's verbatim wording. The actual user wording is:
+
+> Restore wrapping as a user-controlled editor preference, independent of whether pages appear as tabs or days.
+
+> retain the app’s existing default and persisted `wrapsLines` preference. Remove the day-mode exception. Do not introduce per-day preferences or additional wrapping modes as part of this correction.
+
+For the shared horizontal offset, the user's recommendation/proposal is:
+
+> use one horizontal scroll position for the entire day document, matching its existing single scroll view. Keep day headings and their controls horizontally aligned with the viewport, like editor gutter chrome. Avoid nested per-day scrollers.
+
+The implementation contract below expresses that recommendation/proposal and
+the requested acceptance conditions. It does not establish formal human approval.
+Formal approval status is not independently recorded; neither agent prose nor
+tests constitute approval. The feature specification remains **draft**.
+[ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md) remains
+**proposed** and distinct: its day projection and single-editor architecture
+are not expanded or accepted by this amendment. No new behavior law is added.
+
+### Preserved history
+
+Commit `1e8e78ee79f291d58dd66889e4f005afe63f0225`, dated 2026-08-24
+(UTC), introduced the agent-authored draft specification. It specified forced
+wrapping and an inert ⌥Z in days mode, with the stored `wrapsLines` value
+remaining unchanged and taking effect again outside that mode. This is a
+paraphrase of the historical restriction, not user wording.
+
+Commit `0b5d26198a68e02e2707571022dd278270619feb`, dated 2026-08-25
+(UTC), introduced the agent-authored `DayScrollView.swift` implementation,
+including `coordinator.applyWrap(true)`. Both commits identify Claude as
+author and committer. These are verified repository-history facts, not evidence
+of human approval. No human approval of forced wrapping was identified in the
+inspected history or related specification, decision background, ADR, and QA
+procedure. Later human-authored edits do not independently establish approval.
+This amendment supersedes the forced-wrap restriction rather than silently
+removing that history.
+
+### Implementation contract
+
+- **One user preference in both modes.** Settings and the wrap command (⌥Z
+  in the bundled keymap) control the existing `wrapsLines` value in tabs and
+  days. Days mode does not force wrapping or refuse the command. Switching
+  modes does not reset or replace the preference. No per-day preferences or
+  additional wrapping modes are introduced.
+- **Existing default and persistence.** The user direction above preserves
+  the existing default and storage behavior without a new key, migration,
+  or mode-specific value. As an implementation observation, at baseline
+  `2d0132f1278d`, `PageModel.swift` initializes an unset `wrapsLines` to
+  `true` and writes changes to the injected `UserDefaults` key `wrapsLines`.
+  That code observation is not an approval record.
+- **Source parity.** Active and inactive source pages use the same wrap
+  preference: on wraps source to the viewport width; off leaves source lines
+  unwrapped and makes overflowing text reachable horizontally. Inactive
+  source pages do not silently keep a different wrap policy.
+- **One horizontal document offset in days mode.** Horizontal scrolling moves
+  the source regions together through one shared document offset, not an
+  independent horizontal offset for each page. Day/page headings and their
+  controls remain aligned to the viewport while source text moves underneath.
+  Nested per-day scrollers are excluded. This is an app-specific user
+  recommendation/proposal being implemented, not an external UI convention.
+- **Text, selection, and undo are unchanged.** Wrapping, layout, and scroll
+  changes do not edit document text, move the logical selection or caret, or
+  add, remove, or reorder undo history. Existing editing and per-page undo
+  behavior remain unchanged.
+- **Reveal targets remain reachable.** Caret movement, find results, selection,
+  replacement, and undo reveal their target through the existing scroll owner
+  in both axes as needed. In days mode they use the shared document offset,
+  not a nested per-day scroller; viewport-aligned headings do not obscure the
+  target.
+- **Growth and shrink clamp the offset.** Document width reflects the widest
+  unwrapped source region, active or inactive. Content growth makes new line
+  ends reachable. Content shrink, page removal, resize, and wrap changes clamp
+  the shared offset to the valid range without stale blank space or clipped
+  text. With wrapping on, no stale horizontal displacement remains.
+- **Logical reading anchors survive reflow.** Wrap changes, resize, and content
+  relayout preserve the logical source position being read rather than merely
+  reusing a pixel offset. Clamping may adjust its viewport position; explicit
+  reveal requests and the existing summon anchor take precedence. Turning
+  wrapping off brings the line that contains that position to the top at
+  horizontal offset zero; the column within the line is not restored. This
+  adds no per-day scroll memory or persisted anchor state.
+- **Horizontal scrolling does not repeat text measurement.** A horizontal
+  bounds change alone does not remeasure source text or every day, rebuild
+  renderings, or trigger document-wide layout. Measurement is refreshed when
+  content or layout inputs change, not on each horizontal scroll event.
+- **Unchanged surfaces.** Markdown preview layout and sealed-note behavior
+  are outside this correction. The source wrap preference does not introduce
+  a new preview layout policy or alter sealed-note presentation or actions.
+
+### Acceptance criteria and verification status
+
+1. Settings and the wrap command update source layout in both tabs and days
+   for both preference values. An unset preference uses the existing default;
+   a saved value is restored after relaunch in either mode.
+2. Changing the selected day or switching modes does not overwrite the value.
+   Active and inactive source pages agree before and after selection changes.
+3. With wrapping off, wide source lines on multiple days remain reachable
+   through one horizontal document offset. Headings and controls stay aligned
+   to the viewport at nonzero offsets, including after resize or selection.
+4. Turning wrapping on reflows source pages to the viewport width without
+   leaving a stale horizontal displacement. Preview and sealed-note behavior
+   remain unchanged in both modes.
+5. Wrap changes and geometry-only updates leave document text, logical
+   selection/caret, and undo history unchanged. Ordinary edits and per-page
+   undo retain their existing behavior.
+6. Caret, find, selection, replacement, and undo targets become visible through
+   the existing scroll owner, including at nonzero horizontal offsets. Days
+   mode uses the shared document offset and no nested per-day scroller.
+7. Growing or shrinking the widest active or inactive source region, removing
+   that page, resizing, or changing wrapping updates the reachable width and
+   clamps offsets to valid bounds. No line end is clipped and no stale blank
+   area remains beyond the document edge.
+8. Wrap changes, resize, and relayout preserve the logical reading anchor,
+   subject to valid bounds and explicit reveal or summon requests. They do not
+   substitute an unrelated source position at the old pixel offset.
+9. Horizontal scrolling alone performs no repeated source-text measurement or
+   document-wide layout. Content and layout-input changes still update width,
+   height, and valid scroll bounds.
+
+These are required outcomes, not observed results. Hardware checks are
+**pending**, not passed; use [QA case 12](../../../qa/verification-procedures/vertical-time-tabs.md#case-12-user-controlled-wrapping-and-shared-horizontal-scrolling).
+Automated tests and agent prose are not human approval or hardware evidence.
+The sections below retain the prototype narrative except where this amendment
+explicitly replaces its forced-wrap restriction.
+
 ## The shape #79 asks for
 
 Turn the strip on its side and let each tab be a unit of time rather
@@ -819,14 +949,14 @@ decision that is Rust, the more of it is validated before a PR exists.
   syntax color without its block labels. **Focused page only** keeps quiet
   days in base ink, and **Never** makes mounted and quiet pages plain. Chips
   retain their non-secret faces in every scope (ADR-0030).
-- **No unwrapped lines in the mode.** Wrap is forced on and ⌥Z changes
-  nothing while the mode is on: the dispatch refuses it and says so
-  (`PageModel.wrapIsFixedNotice`) rather than leaving a dead key. The
-  stored `wrapsLines` preference is untouched and resumes when the mode
-  is off, which is why the refusal is the whole of the behaviour. A
-  preference written blind under a surface that ignores it would hand
-  horizontal mode back unwrapped.
-- **No per-page scroll memory in the mode.** The roll owns one offset.
+- **Forced wrapping is superseded.** The original prototype forced wrapping
+  and refused ⌥Z in days mode. The [user-directed amendment](#amendment-user-directed-wrapping-and-horizontal-scrolling-2026-10-16)
+  replaces that restriction with the existing `wrapsLines` preference in both
+  modes, including inactive source pages. Preview and sealed-note behavior
+  remain outside this correction.
+- **No per-page scroll memory in the mode.** The roll uses one shared document
+  offset on each axis; the amendment specifies the horizontal behavior and
+  viewport-aligned headings.
 - **No animation, and therefore no `prefers-reduced-motion` branch.**
 - **No new `CommandID`, no keymap row, no `BundledKeymapTests` churn**;
   `KeymapContext.tabStrip.isConsulted` stays false.

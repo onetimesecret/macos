@@ -603,33 +603,42 @@ final class TimeUnitModeTests: XCTestCase {
             "leaving the mode fell a selection the strip draws perfectly well")
     }
 
-    // MARK: The chord the mode takes away
+    // MARK: Wrap command and preference
 
-    /// ⌥Z with pages organized by day. The roll wraps every day whatever
-    /// the preference says, so the chord cannot do what it is for, and
-    /// what it must not do instead is rewrite the stored preference
-    /// under a surface that will not honour it, which would leave the
-    /// flash claiming one thing while every line went on wrapping and
-    /// hand horizontal mode back unwrapped later. It says so instead,
-    /// and the same press with the mode off still does exactly what it
-    /// always did.
-    func testTheWrapChordIsRefusedInTheModeAndLeavesThePreferenceAlone() throws {
+    func testTheWrapCommandTogglesAndReportsItsStateInDayMode() throws {
         let (model, defaults) = try makeModel()
         model.loadStateIfNeeded()
-        let wrapped = model.wrapsLines
         model.showsTimeUnits = true
+        XCTAssertTrue(model.wrapsLines)
 
-        model.perform(.editorToggleWrap)
+        XCTAssertTrue(model.perform(.editorToggleWrap))
+        XCTAssertFalse(model.wrapsLines)
+        XCTAssertEqual(model.notice, "long lines run on")
+        XCTAssertEqual(model.noticeTone, .plain)
+        XCTAssertFalse(isolatedModel(defaults: defaults).wrapsLines)
 
-        XCTAssertEqual(model.wrapsLines, wrapped, "⌥Z rewrote a preference the roll does not read")
-        XCTAssertEqual(
-            isolatedModel(defaults: defaults).wrapsLines, wrapped,
-            "the stored preference moved under a surface that ignores it")
-        XCTAssertEqual(model.notice, PageModel.wrapIsFixedNotice, "the keystroke went out dead")
+        XCTAssertTrue(model.perform(.editorToggleWrap))
+        XCTAssertTrue(model.wrapsLines)
+        XCTAssertEqual(model.notice, "long lines wrap")
+        XCTAssertEqual(model.noticeTone, .plain)
+        XCTAssertTrue(isolatedModel(defaults: defaults).wrapsLines)
+    }
 
-        model.showsTimeUnits = false
-        model.perform(.editorToggleWrap)
-        XCTAssertNotEqual(model.wrapsLines, wrapped, "the chord stayed refused with the mode off")
+    func testTheWrapPreferenceSurvivesLayoutSwitchesAndModelRecreation() throws {
+        let (model, defaults) = try makeModel()
+        model.loadStateIfNeeded()
+
+        for wrapped in [false, true] {
+            model.wrapsLines = wrapped
+            for dayMode in [true, false] {
+                model.showsTimeUnits = dayMode
+                XCTAssertEqual(model.wrapsLines, wrapped)
+
+                let restored = isolatedModel(defaults: defaults)
+                XCTAssertEqual(restored.showsTimeUnits, dayMode)
+                XCTAssertEqual(restored.wrapsLines, wrapped)
+            }
+        }
     }
 
     func testLayoutCaptionExplainsBothChoices() {

@@ -22,10 +22,15 @@ import XCTest
 /// is computed.
 @MainActor
 final class DayScrollTests: XCTestCase {
-    private func makeModel() throws -> PageModel {
-        let suiteName = "companion-day-scroll-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    private func makeModel(defaults supplied: UserDefaults? = nil) throws -> PageModel {
+        let defaults: UserDefaults
+        if let supplied {
+            defaults = supplied
+        } else {
+            let suiteName = "companion-day-scroll-\(UUID().uuidString)"
+            defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        }
         let model = isolatedModel(defaults: defaults)
         model.showsTimeUnits = true
         return model
@@ -103,14 +108,14 @@ final class DayScrollTests: XCTestCase {
 
     /// The roll in a card-sized window, built exactly as the surface
     /// builds it.
-    private func mountRoll(model: PageModel, height: CGFloat = 320) throws -> Roll {
+    private func mountRoll(model: PageModel, width: CGFloat = 420, height: CGFloat = 320) throws -> Roll {
         let coordinator = InkEditorView.Coordinator(model: model)
         coordinator.surface = model.owner
         let scroll = DayScrollView.makeRoll(
             model: model, coordinator: coordinator,
             emptyHint: "click, ⌃⌥Space, or ↩ to start one"
         )
-        let card = NSRect(x: 0, y: 0, width: 420, height: height)
+        let card = NSRect(x: 0, y: 0, width: width, height: height)
         let window = NSWindow(
             contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
         )
@@ -130,6 +135,1176 @@ final class DayScrollTests: XCTestCase {
 
     private func longPage(lines: Int) -> String {
         (0..<lines).map { "line \($0) of a day that goes on" }.joined(separator: "\n")
+    }
+
+    private func select(_ page: UInt64, in model: PageModel) throws {
+        model.select(try XCTUnwrap(model.tabs.first { $0.pageID == page }?.id))
+    }
+
+    private func longLine(repetitions: Int = 100) -> String {
+        String(repeating: "ordinary words across a long day ", count: repetitions)
+    }
+
+    private func textMetrics(_ text: NSTextView) throws -> (used: NSRect, lines: Int) {
+        let manager = try XCTUnwrap(text.layoutManager)
+        let container = try XCTUnwrap(text.textContainer)
+        manager.ensureLayout(for: container)
+        var lines = 0
+        var used = NSRect.zero
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) {
+            _, line, _, _, _ in
+            used = lines == 0 ? line : used.union(line)
+            lines += 1
+        }
+        return (used, lines)
+    }
+
+    private func glyphRect(in text: NSTextView, at character: Int) throws -> NSRect {
+        let manager = try XCTUnwrap(text.layoutManager)
+        let container = try XCTUnwrap(text.textContainer)
+        manager.ensureLayout(for: container)
+        let glyph = manager.glyphIndexForCharacter(at: character)
+        return manager.boundingRect(
+            forGlyphRange: NSRange(location: glyph, length: 1), in: container
+        ).offsetBy(dx: text.textContainerOrigin.x, dy: text.textContainerOrigin.y)
+    }
+
+    private func scroll(_ roll: Roll, to point: NSPoint) {
+        roll.scroll.contentView.scroll(to: point)
+        roll.scroll.reflectScrolledClipView(roll.scroll.contentView)
+    }
+
+    private func assertGlyphVisible(
+        at character: Int, in text: NSTextView, on roll: Roll,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let glyph = text.convert(try glyphRect(in: text, at: character), to: roll.stack)
+        let visible = roll.scroll.contentView.bounds
+        XCTAssertGreaterThan(glyph.width, 0, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(glyph.minX, visible.minX - 0.5, file: file, line: line)
+        XCTAssertLessThanOrEqual(glyph.maxX, visible.maxX + 0.5, file: file, line: line)
+        XCTAssertLessThanOrEqual(glyph.maxX, roll.stack.bounds.maxX, file: file, line: line)
+        XCTAssertTrue(visible.intersects(glyph), "glyph \(glyph), viewport \(visible)", file: file, line: line)
+    }
+
+    private func assertCaretVisible(
+        in editor: InkTextView, on roll: Roll,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let screen = editor.firstRect(forCharacterRange: editor.selectedRange(), actualRange: nil)
+        let caret = roll.stack.convert(roll.window.convertFromScreen(screen), from: nil)
+        let visible = roll.scroll.contentView.bounds
+        XCTAssertGreaterThan(caret.height, 0, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(caret.minX, visible.minX - 0.5, file: file, line: line)
+        XCTAssertLessThanOrEqual(caret.maxX, visible.maxX + 0.5, file: file, line: line)
+        XCTAssertGreaterThan(caret.maxY, visible.minY, file: file, line: line)
+        XCTAssertLessThan(caret.minY, visible.maxY, file: file, line: line)
+    }
+
+    private func finderAction(_ action: NSTextFinder.Action, in editor: InkTextView) {
+        let item = NSMenuItem(title: "", action: #selector(NSTextView.performTextFinderAction(_:)), keyEquivalent: "")
+        item.tag = action.rawValue
+        editor.performTextFinderAction(item)
+    }
+
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    private func copyFindPasteboardItems() -> [NSPasteboardItem] {
+        (NSPasteboard(name: .find).pasteboardItems ?? []).map { original in
+            let copy = NSPasteboardItem()
+            for type in original.types {
+                if let data = original.data(forType: type) { copy.setData(data, forType: type) }
+            }
+            return copy
+        }
+    }
+
+    // MARK: User-selected wrapping
+
+    func testBothWrapChoicesMeasureTheLongestActiveAndInactiveDay() throws {
+        for wraps in [true, false] {
+            for longestIsActive in [true, false] {
+                let model = try makeModel()
+                model.wrapsLines = wraps
+                let longest = try page(in: model, saying: longLine())
+                let short = try page(in: model, saying: "short")
+                let selected = longestIsActive ? longest : short
+                try select(selected, in: model)
+                let roll = try mountRoll(model: model)
+                roll.stack.update(projection: spreadOverDays(model, selecting: selected),
+                                  selectedPage: selected, readOnly: false)
+                let text = try XCTUnwrap(roll.stack.laidOut.first {
+                    $0.header.pageIdentity == longest
+                }?.body as? NSTextView)
+                XCTAssertEqual(text === roll.stack.editor, longestIsActive)
+                let metrics = try textMetrics(text)
+                let viewport = roll.scroll.contentView.bounds.width
+                XCTAssertEqual(roll.scroll.hasHorizontalScroller, !wraps)
+                for part in roll.stack.laidOut {
+                    let body = try XCTUnwrap(part.body as? NSTextView)
+                    XCTAssertEqual(body.textContainer?.widthTracksTextView, wraps)
+                    XCTAssertEqual(body.frame.width, roll.stack.frame.width, accuracy: 0.5)
+                }
+                if wraps {
+                    XCTAssertEqual(roll.stack.frame.width, viewport, accuracy: 0.5)
+                    XCTAssertLessThanOrEqual(metrics.used.maxX, viewport)
+                    XCTAssertGreaterThan(metrics.lines, 1)
+                } else {
+                    XCTAssertEqual(metrics.lines, 1)
+                    XCTAssertGreaterThan(metrics.used.width, viewport)
+                    XCTAssertGreaterThanOrEqual(roll.stack.frame.width,
+                                                metrics.used.maxX + text.textContainerInset.width * 2)
+                    scroll(roll, to: NSPoint(x: roll.stack.frame.width - viewport, y: 0))
+                    XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+                    XCTAssertEqual(roll.scroll.contentView.bounds.maxX,
+                                   roll.stack.frame.maxX, accuracy: 0.5)
+                }
+            }
+        }
+    }
+
+    func testMountedSettingsWrapChangeReflowsTheSameProjectionWithoutReplacingText() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: longLine(repetitions: 60))
+        let inactive = try page(in: model, saying: longLine())
+        try select(selected, in: model)
+        model.wrapsLines = true
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[inactive])
+        editor.insertText("edit ", replacementRange: NSRange(location: 0, length: 0))
+        editor.breakUndoCoalescing()
+        let selection = NSRange(location: 8, length: 4)
+        editor.setSelectedRange(selection)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let storage = editor.textStorage
+        let quietStorage = quiet.textStorage
+        let manager = editor.layoutManager
+        let undo = editor.undoManager
+        let text = editor.string
+        let quietText = quiet.string
+        let coreText = {
+            model.coreClient.documentRuns(sheet: selected).reduce(into: "") {
+                if case .ink(let ink) = $1 { $0 += ink }
+            }
+        }
+        let coreTextBefore = coreText()
+        let canUndo = model.canUndoEdit(sheet: selected)
+        let canRedo = model.canRedoEdit(sheet: selected)
+        let undoName = model.undoActionName(sheet: selected)
+        let rebuilds = roll.stack.rebuilds
+        XCTAssertTrue(canUndo)
+        var wrappedHeights: [CGFloat] = []
+        for wraps in [true, false, true] {
+            model.wrapsLines = wraps
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(roll.stack.quietRegions[inactive] === quiet)
+            XCTAssertTrue(editor.textStorage === storage)
+            XCTAssertTrue(quiet.textStorage === quietStorage)
+            XCTAssertTrue(editor.layoutManager === manager)
+            XCTAssertTrue(editor.undoManager === undo)
+            XCTAssertTrue(roll.window.firstResponder === editor)
+            XCTAssertEqual(editor.string, text)
+            XCTAssertEqual(quiet.string, quietText)
+            XCTAssertEqual(editor.selectedRange(), selection)
+            XCTAssertEqual(coreText(), coreTextBefore)
+            XCTAssertEqual(model.canUndoEdit(sheet: selected), canUndo)
+            XCTAssertEqual(model.canRedoEdit(sheet: selected), canRedo)
+            XCTAssertEqual(model.undoActionName(sheet: selected), undoName)
+            XCTAssertEqual(roll.stack.rebuilds, rebuilds)
+            let metrics = try textMetrics(editor)
+            XCTAssertEqual(metrics.lines == 1, !wraps)
+            if wraps {
+                wrappedHeights.append(roll.stack.frame.height)
+                XCTAssertEqual(roll.stack.frame.width, roll.scroll.contentView.bounds.width, accuracy: 0.5)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+            } else {
+                XCTAssertGreaterThan(roll.stack.frame.width, roll.scroll.contentView.bounds.width)
+                scroll(roll, to: NSPoint(x: roll.scroll.contentView.bounds.width / 2, y: 0))
+                XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+            }
+        }
+        XCTAssertEqual(wrappedHeights.first, wrappedHeights.last)
+        roll.coordinator.step(back: true)
+        XCTAssertEqual(editor.string, String(text.dropFirst("edit ".count)))
+        roll.coordinator.step(back: false)
+        XCTAssertEqual(editor.string, text)
+    }
+
+    func testRealDeletionShrinksDayExtentsAndUndoRestoresThemForBothWrapChoices() throws {
+        for wraps in [true, false] {
+            let model = try makeModel()
+            model.wrapsLines = wraps
+            let original = longLine() + "\n" + longPage(lines: 40)
+            let selected = try page(in: model, saying: original)
+            try page(in: model, saying: "short inactive day")
+            try select(selected, in: model)
+            let roll = try mountRoll(model: model)
+            let projection = spreadOverDays(model, selecting: selected)
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            XCTAssertTrue(roll.window.makeFirstResponder(editor))
+            let storage = editor.textStorage
+            let before = roll.stack.measuredGeometry
+            let width = roll.stack.frame.width
+            editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count - 4))
+            editor.deleteBackward(nil)
+            editor.breakUndoCoalescing()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            let deleted = roll.stack.measuredGeometry
+
+            XCTAssertEqual(editor.string, String(original.suffix(4)))
+            XCTAssertLessThan(deleted.extents[0].height, before.extents[0].height)
+            XCTAssertLessThan(deleted.extents[1].top, before.extents[1].top)
+            XCTAssertLessThan(deleted.documentHeight, before.documentHeight)
+            XCTAssertEqual(roll.stack.frame.width, roll.scroll.contentView.bounds.width, accuracy: 0.5)
+            XCTAssertTrue(model.canUndoEdit(sheet: selected))
+            roll.coordinator.step(back: true)
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertEqual(editor.string, original)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+            XCTAssertEqual(roll.stack.frame.width, width, accuracy: 0.5)
+            XCTAssertEqual(roll.stack.measuredGeometry.extents, before.extents)
+            XCTAssertEqual(roll.stack.measuredGeometry.documentHeight, before.documentHeight, accuracy: 0.5)
+        }
+    }
+
+    func testScrollRangeToVisibleRevealsTheFarRightGlyphOfAnUnwrappedDay() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: longLine())
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: selected),
+                          selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let last = NSRange(location: editor.string.utf16.count - 2, length: 1)
+        let glyph = editor.convert(try glyphRect(in: editor, at: last.location), to: roll.stack)
+        XCTAssertGreaterThan(glyph.minX, roll.scroll.contentView.bounds.maxX)
+        editor.scrollRangeToVisible(last)
+        let visible = roll.scroll.contentView.bounds
+        XCTAssertGreaterThan(visible.minX, 0)
+        XCTAssertGreaterThanOrEqual(glyph.minX, visible.minX - 0.5)
+        XCTAssertLessThanOrEqual(glyph.maxX, visible.maxX + 0.5)
+        XCTAssertTrue(visible.intersects(glyph))
+    }
+
+    func testInactiveDayClickUsesWindowCoordinatesAfterHorizontalScroll() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: longLine())
+        let inactive = try page(in: model, saying: longLine())
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: selected),
+                          selectedPage: selected, readOnly: false)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[inactive])
+        XCTAssertTrue(roll.window.makeFirstResponder(try XCTUnwrap(roll.stack.editor)))
+        let glyph = try glyphRect(in: quiet, at: quiet.string.utf16.count / 2)
+        let local = NSPoint(x: glyph.midX, y: glyph.midY)
+        let document = quiet.convert(local, to: roll.stack)
+        scroll(roll, to: NSPoint(x: document.x - roll.scroll.contentView.bounds.width / 2,
+                                y: max(0, document.y - roll.scroll.contentView.bounds.height / 2)))
+        XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+        XCTAssertTrue(roll.scroll.contentView.bounds.contains(document))
+        let expected = quiet.characterIndexForInsertion(at: local)
+        XCTAssertGreaterThan(expected, 0)
+        let windowPoint = quiet.convert(local, to: nil)
+        XCTAssertEqual(quiet.convert(windowPoint, from: nil).x, local.x, accuracy: 0.5)
+        quiet.mouseDown(with: try leftClick(in: roll.window, at: windowPoint))
+        XCTAssertEqual(model.selectedPageID, inactive)
+        roll.stack.update(projection: spreadOverDays(model, selecting: inactive),
+                          selectedPage: inactive, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertEqual(roll.coordinator.currentSheet, inactive)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: expected, length: 0))
+        XCTAssertTrue(roll.window.firstResponder === editor)
+        XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+    }
+
+    func testHeadersAndEmptyTodayControlsStayViewportPinnedDuringHorizontalScroll() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: longLine())
+        let preview = try page(in: model, saying: "# Preview\nread this day")
+        model.toggleMarkdownPreview(for: preview)
+        try select(selected, in: model)
+        let projection = TimeUnitProjection.project(
+            tabs: filed(model, under: [-1, -2]), selectedPageID: selected, unit: .day)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let headers = roll.stack.laidOut.map(\.header)
+        let fields = headers.flatMap { $0.subviews.compactMap { $0 as? NSTextField } }
+            .filter { !$0.isHidden }
+        let buttons = headers.flatMap { $0.subviews.compactMap { $0 as? NSButton } }
+            .filter { !$0.isHidden }
+        XCTAssertFalse(fields.isEmpty)
+        XCTAssertFalse(buttons.isEmpty)
+        let empty = try XCTUnwrap(roll.stack.laidOut.first { $0.body is EmptyTodayView }?.body as? EmptyTodayView)
+        let renderedPreview = try XCTUnwrap(roll.stack.previewRegions[preview])
+        let pinned: [NSView] = headers + fields + buttons + [empty, renderedPreview] + empty.subviews
+        let before = pinned.map { $0.convert($0.bounds, to: roll.scroll.contentView) }
+        let y = roll.scroll.contentView.bounds.minY
+        scroll(roll, to: NSPoint(x: roll.scroll.contentView.bounds.width / 2, y: y))
+        XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+        for (view, old) in zip(pinned, before) {
+            let now = view.convert(view.bounds, to: roll.scroll.contentView)
+            XCTAssertEqual(now.minX - roll.scroll.contentView.bounds.minX, old.minX, accuracy: 0.5)
+            XCTAssertEqual(now.width, old.width, accuracy: 0.5)
+            XCTAssertEqual(now.minY, old.minY, accuracy: 0.5)
+        }
+        for header in headers {
+            XCTAssertEqual(header.frame.width, roll.scroll.contentView.bounds.width, accuracy: 0.5)
+        }
+    }
+
+    func testPreviewsKeepTheViewportMeasureWhenSourceWidensTheRoll() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: longLine())
+        let preview = try page(in: model, saying: "# Preview\n" + longLine(repetitions: 20))
+        model.toggleMarkdownPreview(for: preview)
+        try select(selected, in: model)
+        let projection = TimeUnitProjection.project(
+            tabs: filed(model, under: [-1, -2]), selectedPageID: selected, unit: .day)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let rendered = try XCTUnwrap(roll.stack.previewRegions[preview])
+        let wrapped = (frame: rendered.frame, lines: try textMetrics(rendered).lines)
+
+        model.wrapsLines = false
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+
+        let clip = roll.scroll.contentView.bounds
+        XCTAssertGreaterThan(roll.stack.frame.width, clip.width, "the case needs source wider than the viewport")
+        XCTAssertEqual(rendered.frame.width, clip.width, accuracy: 0.5)
+        XCTAssertEqual(rendered.frame.height, wrapped.frame.height, accuracy: 0.5)
+        XCTAssertEqual(try textMetrics(rendered).lines, wrapped.lines)
+    }
+
+    func testWrapAndResizeKeepTheLogicalReadingAnchorInAnOlderDay() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: longLine(repetitions: 30))
+        let paragraph = longLine(repetitions: 12)
+        let older = try page(in: model, saying: Array(repeating: paragraph, count: 40).joined(separator: "\n"))
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[older])
+        let index = (paragraph.utf16.count + 1) * 8
+        let glyph = try glyphRect(in: quiet, at: index)
+        scroll(roll, to: NSPoint(x: roll.scroll.contentView.bounds.width / 2,
+                                y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, older)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let selection = editor.selectedRange()
+        for (wraps, width) in [(true, CGFloat(420)), (true, 580), (false, 580), (false, 340), (true, 340)] {
+            model.wrapsLines = wraps
+            roll.scroll.frame.size.width = width
+            roll.scroll.layoutSubtreeIfNeeded()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            let offset = try XCTUnwrap(place.anchor.offset(in: quiet))
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, quiet.frame.minY + offset.y, accuracy: 1)
+            XCTAssertEqual(roll.stack.currentPlace?.page, older)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(roll.stack.quietRegions[older] === quiet)
+            XCTAssertEqual(editor.selectedRange(), selection)
+            XCTAssertEqual(model.selectedPageID, selected)
+            if wraps { XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0, accuracy: 0.5) }
+        }
+    }
+
+    func testInactiveContentChangesAboveTheReaderKeepTheLogicalPlace() throws {
+        for wraps in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = wraps
+            let above = try page(in: model, saying: longPage(lines: 60))
+            let selected = try page(in: model, saying: longPage(lines: 80))
+            let roll = try mountRoll(model: model)
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let storage = editor.textStorage
+            let index = (editor.string as NSString).range(of: "line 20 ").location
+            let glyph = try glyphRect(in: editor, at: index)
+            scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(place.page, selected)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+            let selection = editor.selectedRange()
+            for lines in [10, 90, 5] {
+                let replacement = longPage(lines: lines).replacingOccurrences(of: "\n", with: "\\n")
+                XCTAssertTrue(model.coreClient.syncDocument(sheet: above, json: "[{\"ink\":\"\(replacement)\"}]"))
+                model.invalidateQuietRendering(for: above)
+                model.refresh()
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                let offset = try XCTUnwrap(place.anchor.offset(in: editor))
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+                XCTAssertEqual(editor.selectedRange(), selection)
+                XCTAssertTrue(roll.stack.editor === editor)
+                XCTAssertTrue(editor.textStorage === storage)
+            }
+        }
+    }
+
+    func testWrapAndWidthRoundTripsReturnAMidParagraphReaderToTheSameLine() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let selected = try page(in: model, saying: longLine(repetitions: 30))
+        let paragraph = longLine(repetitions: 12)
+        let older = try page(in: model, saying: Array(repeating: paragraph, count: 40).joined(separator: "\n"))
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        func reflow(wraps: Bool, width: CGFloat) {
+            model.wrapsLines = wraps
+            roll.scroll.frame.size.width = width
+            roll.scroll.layoutSubtreeIfNeeded()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        }
+        reflow(wraps: true, width: 420)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[older])
+        let paragraphStart = (paragraph.utf16.count + 1) * 8
+        let glyph = try glyphRect(in: quiet, at: paragraphStart + paragraph.utf16.count / 2)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let start = try XCTUnwrap(roll.stack.currentPlace)
+        let top = roll.scroll.contentView.bounds.minY
+        XCTAssertEqual(start.page, older)
+        XCTAssertGreaterThan(start.anchor.characterIndex, paragraphStart, "the case needs a continuation line")
+        XCTAssertLessThan(start.anchor.characterIndex, paragraphStart + paragraph.utf16.count)
+        for away in [(wraps: false, width: CGFloat(420)), (wraps: true, width: 580)] {
+            for _ in 0..<2 {
+                reflow(wraps: away.wraps, width: away.width)
+                XCTAssertEqual(roll.stack.currentPlace?.page, older)
+                reflow(wraps: true, width: 420)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, top, accuracy: 0.5)
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, start.anchor.characterIndex)
+                XCTAssertTrue(roll.stack.quietRegions[older] === quiet)
+            }
+        }
+    }
+
+    func testSyncedTextAroundTheReaderInTheirOwnQuietPageKeepsTheSameLineAtTheTop() throws {
+        for wraps in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = wraps
+            let selected = try page(in: model, saying: longPage(lines: 10))
+            let reading = try page(in: model, saying: longPage(lines: 80))
+            try select(selected, in: model)
+            let roll = try mountRoll(model: model)
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let quiet = try XCTUnwrap(roll.stack.quietRegions[reading])
+            let target = "line 40 "
+            let index = (quiet.string as NSString).range(of: target).location
+            let glyph = try glyphRect(in: quiet, at: index)
+            scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(place.page, reading)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+            let synced = { (count: Int) in (0..<count).map { "synced \($0) from elsewhere\n" }.joined() }
+            let lines = longPage(lines: 80).components(separatedBy: "\n")
+            for ink in [
+                synced(10) + longPage(lines: 80) + "\n" + synced(10),
+                synced(10) + longPage(lines: 80),
+                synced(30) + longPage(lines: 80),
+                lines.dropFirst(25).joined(separator: "\n"),
+                lines.dropFirst(25).joined(separator: "\n") + "\n" + synced(20),
+                lines.dropFirst(30).dropLast(10).joined(separator: "\n"),
+            ] {
+                let escaped = ink.replacingOccurrences(of: "\n", with: "\\n")
+                XCTAssertTrue(model.coreClient.syncDocument(sheet: reading, json: "[{\"ink\":\"\(escaped)\"}]"))
+                model.invalidateQuietRendering(for: reading)
+                model.refresh()
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                XCTAssertTrue(roll.stack.quietRegions[reading] === quiet)
+                XCTAssertEqual(quiet.string, ink)
+                let moved = (ink as NSString).range(of: target).location
+                var expected = place.anchor
+                expected.characterIndex = moved
+                let offset = try XCTUnwrap(expected.offset(in: quiet))
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, quiet.frame.minY + offset.y, accuracy: 0.5)
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
+            }
+        }
+    }
+
+    /// The pump's own report is the only invalidation here, as it is when a peer writes.
+    func testAPeersEditReachesAQuietDayAndThePageTheEditorLeft() throws {
+        let model = try makeModel()
+        let left = try page(in: model, saying: "before the peer")
+        let selected = try page(in: model, saying: longPage(lines: 10))
+        try select(left, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: left, readOnly: false)
+        try select(selected, in: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[left])
+        XCTAssertEqual(quiet.string, "before the peer")
+        XCTAssertTrue(model.storage(for: left).layoutManagers.isEmpty, "the editor must have left the page")
+
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: left, json: "[{\"ink\":\"after the peer\"}]"))
+        model.sync.enabled = true
+        let marks = model.dirtyMarks
+        model.sync.settlePump(
+            SyncPumpOutcome(ok: true, reason: nil, events: [
+                SyncPumpEvent(kind: "applied", page: "peer-page", pageID: left),
+            ], state: nil),
+            session: model.sync.session)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+        XCTAssertTrue(roll.stack.quietRegions[left] === quiet)
+        XCTAssertEqual(quiet.string, "after the peer")
+        XCTAssertEqual(model.storage(for: left).string, "after the peer", "the editor would come back to old text")
+        XCTAssertEqual(model.dirtyMarks, marks + 1, "the peer's edit must arm a write")
+    }
+
+    /// The preview drops each link's address, so its text is a fraction of the source's.
+    func testTogglingAPreviewUnderTheReaderKeepsThemOnThePageByProportion() throws {
+        for readingIsSelected in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = true
+            let other = try page(in: model, saying: longPage(lines: 10))
+            let address = "https://example.com/" + String(repeating: "a/long/path/", count: 4)
+            let source = (0..<120).map { "line \($0) [a link](\(address)\($0))" }.joined(separator: "\n\n")
+            let reading = try page(in: model, saying: source)
+            let selected = readingIsSelected ? reading : other
+            try select(selected, in: model)
+            let roll = try mountRoll(model: model)
+            let clip = roll.scroll.contentView
+            func toggle() throws -> NSTextView {
+                model.toggleMarkdownPreview(for: reading)
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                return try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == reading }?.body
+                    as? NSTextView)
+            }
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let text = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == reading }?.body
+                as? NSTextView)
+            XCTAssertEqual(text === roll.stack.editor, readingIsSelected)
+            let sourceLength = (text.string as NSString).length
+            let glyph = try glyphRect(in: text, at: (text.string as NSString).range(of: "line 60 ").location)
+            scroll(roll, to: NSPoint(x: 0, y: text.frame.minY + glyph.minY + glyph.height / 4))
+            let start = try XCTUnwrap(roll.stack.currentPlace)
+            let startTop = clip.bounds.minY
+            XCTAssertEqual(start.page, reading)
+
+            // The restore puts the line with the proportional character at the top edge,
+            // so the tolerance is that one line, read back off the layout.
+            func assertTopLine(
+                of text: NSTextView, contains index: Int, file: StaticString = #filePath, line: UInt = #line
+            ) throws {
+                let manager = try XCTUnwrap(text.layoutManager)
+                let container = try XCTUnwrap(text.textContainer)
+                let y = clip.bounds.minY - text.frame.minY - text.textContainerOrigin.y
+                var glyphs = NSRange(location: 0, length: 0)
+                manager.lineFragmentRect(
+                    forGlyphAt: manager.glyphIndex(for: NSPoint(x: 0, y: y), in: container),
+                    effectiveRange: &glyphs)
+                let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+                XCTAssertTrue(NSLocationInRange(index, characters), "\(index) is not in \(characters)",
+                              file: file, line: line)
+                XCTAssertEqual(roll.stack.currentPlace?.page, reading, file: file, line: line)
+                XCTAssertLessThan(clip.bounds.minY, roll.stack.frame.height - clip.bounds.height - 1,
+                                  "the reader was sent to the bottom", file: file, line: line)
+            }
+            func proportional(_ index: Int, from length: Int, to target: Int) -> Int {
+                Int((Double(index) * Double(target) / Double(length)).rounded())
+            }
+
+            var preview = try toggle()
+            XCTAssertTrue(preview is MarkdownPreviewView)
+            var previewLength = (preview.string as NSString).length
+            XCTAssertLessThan(previewLength * 2, sourceLength, "the case needs a preview much shorter than its source")
+            try assertTopLine(of: preview, contains: proportional(
+                start.anchor.characterIndex, from: sourceLength, to: previewLength))
+
+            let back = try toggle()
+            XCTAssertEqual(back === roll.stack.editor, readingIsSelected)
+            XCTAssertEqual(back.string, text.string)
+            XCTAssertEqual(clip.bounds.minY, startTop, accuracy: 0.5, "an untouched round trip comes back exactly")
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, start.anchor.characterIndex)
+
+            preview = try toggle()
+            previewLength = (preview.string as NSString).length
+            scroll(roll, to: NSPoint(x: 0, y: clip.bounds.minY + 150))
+            let read = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(read.page, reading)
+            let restored = try toggle()
+            XCTAssertEqual(restored === roll.stack.editor, readingIsSelected)
+            try assertTopLine(of: restored, contains: proportional(
+                read.anchor.characterIndex, from: previewLength, to: sourceLength))
+        }
+    }
+
+    /// A paste or a programmatic insert that scrolls nothing, through the storage alone
+    /// and through the view's own change protocol, which lays the roll out at once.
+    func testAParagraphInsertedAboveTheReaderInTheMountedDayKeepsTheSameLineAtTheTop() throws {
+        for throughTheView in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = true
+            _ = try page(in: model, saying: longPage(lines: 10))
+            let selected = try page(in: model, saying: longPage(lines: 80))
+            let roll = try mountRoll(model: model)
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let storage = try XCTUnwrap(editor.textStorage)
+            let target = "line 40 "
+            let index = (editor.string as NSString).range(of: target).location
+            let glyph = try glyphRect(in: editor, at: index)
+            scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(place.page, selected)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+
+            let paragraph = "a paragraph pasted 🧪 above the reader, long enough to wrap at this width\n"
+            let above = NSRange(location: (editor.string as NSString).range(of: "line 10 ").location, length: 0)
+            if throughTheView {
+                XCTAssertTrue(editor.shouldChangeText(in: above, replacementString: paragraph))
+                storage.replaceCharacters(in: above, with: paragraph)
+                editor.didChangeText()
+            } else {
+                storage.replaceCharacters(in: above, with: paragraph)
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            }
+
+            let moved = (editor.string as NSString).range(of: target).location
+            XCTAssertEqual(moved, index + (paragraph as NSString).length)
+            var expected = place.anchor
+            expected.characterIndex = moved
+            let offset = try XCTUnwrap(expected.offset(in: editor))
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5,
+                           "through the view: \(throughTheView)")
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+        }
+    }
+
+    /// Return, or a paste of several lines, with the caret on the first character of the line
+    /// at the clip's top edge: the caret stays in view, so no reveal moves the clip afterwards.
+    func testTextEnteredAtTheTopLinesFirstCharacterStandsAtTheTop() throws {
+        for wraps in [true, false] {
+            for pasted in [nil, "pasted one\npasted two\npasted three\n"] {
+                let model = try makeModel()
+                model.wrapsLines = wraps
+                _ = try page(in: model, saying: longPage(lines: 10))
+                let selected = try page(in: model, saying: longPage(lines: 80))
+                let roll = try mountRoll(model: model)
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                let editor = try XCTUnwrap(roll.stack.editor)
+                XCTAssertTrue(roll.window.makeFirstResponder(editor))
+                func lineTop(at character: Int) throws -> CGFloat {
+                    let manager = try XCTUnwrap(editor.layoutManager)
+                    manager.ensureLayout(for: try XCTUnwrap(editor.textContainer))
+                    let line = manager.lineFragmentRect(
+                        forGlyphAt: manager.glyphIndexForCharacter(at: character), effectiveRange: nil)
+                    return editor.frame.minY + editor.textContainerOrigin.y + line.minY
+                }
+                let index = (editor.string as NSString).range(of: "line 40 ").location
+                scroll(roll, to: NSPoint(x: 0, y: try lineTop(at: index)))
+                let top = roll.scroll.contentView.bounds.minY
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+
+                editor.setSelectedRange(NSRange(location: index, length: 0))
+                if let pasted {
+                    editor.insertText(pasted, replacementRange: NSRange(location: NSNotFound, length: 0))
+                } else {
+                    editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+                }
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+                let entered = pasted ?? "\n"
+                let label = "wraps \(wraps), \(pasted == nil ? "Return" : "a paste")"
+                XCTAssertTrue((editor.string as NSString).substring(from: index).hasPrefix(entered + "line 40 "), label)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, top, accuracy: 0.5, label)
+                XCTAssertEqual(try lineTop(at: index), top, accuracy: 0.5, "the entered text is at the top: \(label)")
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index, label)
+            }
+        }
+    }
+
+    /// The mounted day's edits rebase a place on that day only.
+    func testAnEditAboveInTheMountedDayLeavesAQuietDaysReaderOnTheirLine() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let mounted = try page(in: model, saying: longPage(lines: 30))
+        let reading = try page(in: model, saying: longPage(lines: 80))
+        try select(mounted, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[reading])
+        XCTAssertLessThan(editor.frame.minY, quiet.frame.minY, "the case needs the mounted day above the reader")
+        let index = (quiet.string as NSString).range(of: "line 40 ").location
+        let glyph = try glyphRect(in: quiet, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, reading)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+
+        let typed = String(repeating: "new words typed above the reader\n", count: 20)
+        let start = NSRange(location: 0, length: 0)
+        XCTAssertTrue(editor.shouldChangeText(in: start, replacementString: typed))
+        try XCTUnwrap(editor.textStorage).replaceCharacters(in: start, with: typed)
+        editor.didChangeText()
+        roll.stack.update(projection: model.timeUnits, selectedPage: mounted, readOnly: false)
+
+        XCTAssertTrue(roll.stack.quietRegions[reading] === quiet)
+        XCTAssertEqual(quiet.string, longPage(lines: 80))
+        let offset = try XCTUnwrap(place.anchor.offset(in: quiet))
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, quiet.frame.minY + offset.y, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+    }
+
+    func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
+        for belowTop in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let selected = try page(in: model, saying: longLine() + "\n" + longPage(lines: 80))
+            try page(in: model, saying: "older day")
+            try select(selected, in: model)
+            let roll = try mountRoll(model: model)
+            let projection = spreadOverDays(model, selecting: selected)
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let storage = editor.textStorage
+            let selection = NSRange(location: 5, length: 2)
+            editor.setSelectedRange(selection)
+            let target = NSPoint(x: roll.scroll.contentView.bounds.width / 2,
+                                 y: belowTop ? roll.scroll.contentView.bounds.height / 2 : 0)
+            scroll(roll, to: target)
+            XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+            let place = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(place.page, selected)
+            model.togglePageExpansion()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertTrue(model.isPageExpanded)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+            XCTAssertEqual(editor.selectedRange(), selection)
+            XCTAssertEqual(editor.frame.minY, 0)
+            XCTAssertGreaterThan(roll.stack.frame.width, roll.scroll.contentView.bounds.width)
+            scroll(roll, to: NSPoint(x: target.x / 2, y: target.y / 2))
+            model.escape()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertFalse(model.isPageExpanded)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, target.x, accuracy: 0.5)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, target.y, accuracy: 0.5)
+            XCTAssertEqual(editor.selectedRange(), selection)
+        }
+    }
+
+    func testExpandedOwnershipTransferRestoresBothHorizontalPlacesAtTopAndBelowTop() throws {
+        for belowTop in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let selected = try page(in: model, saying: longLine() + "\n" + longPage(lines: 80))
+            let source = try mountRoll(model: model)
+            DayScrollView.updateRoll(source.scroll, model: model, readOnly: false, coordinator: source.coordinator)
+            let editor = try XCTUnwrap(source.stack.editor)
+            let selection = NSRange(location: 5, length: 2)
+            editor.setSelectedRange(selection)
+            let original = NSPoint(x: source.scroll.contentView.bounds.width / 2,
+                                   y: belowTop ? source.scroll.contentView.bounds.height / 2 : 0)
+            scroll(source, to: original)
+            XCTAssertNotNil(source.stack.currentPlace)
+            model.togglePageExpansion()
+            DayScrollView.updateRoll(source.scroll, model: model, readOnly: false, coordinator: source.coordinator)
+            let expanded = NSPoint(x: original.x / 2, y: belowTop ? original.y * 2 : 0)
+            scroll(source, to: expanded)
+            XCTAssertGreaterThan(source.scroll.contentView.bounds.minX, 0)
+            model.transferOwnership(to: .editorWindow)
+            DayScrollView.dismantleNSView(source.scroll, coordinator: source.coordinator)
+            let destination = try mountRoll(model: model, width: 560)
+            DayScrollView.updateRoll(destination.scroll, model: model, readOnly: false,
+                                     coordinator: destination.coordinator)
+            XCTAssertTrue(model.isPageExpanded)
+            XCTAssertEqual(destination.coordinator.currentSheet, selected)
+            XCTAssertEqual(destination.stack.editor?.selectedRange(), selection)
+            XCTAssertEqual(destination.scroll.contentView.bounds.minX, expanded.x, accuracy: 0.5)
+            XCTAssertEqual(destination.scroll.contentView.bounds.minY, expanded.y, accuracy: 0.5)
+            model.escape()
+            DayScrollView.updateRoll(destination.scroll, model: model, readOnly: false,
+                                     coordinator: destination.coordinator)
+            XCTAssertFalse(model.isPageExpanded)
+            XCTAssertEqual(destination.scroll.contentView.bounds.minX, original.x, accuracy: 0.5)
+            XCTAssertEqual(destination.scroll.contentView.bounds.minY, original.y, accuracy: 0.5)
+        }
+    }
+
+    func testNavigatorWidthsStayFiniteAndHorizontalScrollDoesNotMeasure() async throws {
+        for wraps in [true, false] {
+            let model = try makeModel()
+            model.wrapsLines = wraps
+            let selected = try page(in: model, saying: longLine() + "\nshort")
+            try page(in: model, saying: longLine(repetitions: 60))
+            try select(selected, in: model)
+            let roll = try mountRoll(model: model)
+            let projection = spreadOverDays(model, selecting: selected)
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            await settle()
+            let measured = roll.stack.measuredGeometry
+            let lines = measured.extents.flatMap(\.lines)
+            XCTAssertFalse(lines.isEmpty)
+            for line in lines {
+                XCTAssertTrue(line.width.isFinite)
+                XCTAssertGreaterThan(line.width, 0)
+                XCTAssertLessThanOrEqual(line.width, 1)
+            }
+            let nodes = StreamNavigator.nodes(projection: projection, tabs: model.tabs, selection: model.selection)
+            let layout = StreamNavigator.layout(nodes: nodes, geometry: measured, height: 600, width: 140)
+            XCTAssertFalse(layout.slivers.isEmpty)
+            for sliver in layout.slivers {
+                XCTAssertTrue(sliver.width.isFinite)
+                XCTAssertGreaterThan(sliver.width, 0)
+            }
+            if !wraps {
+                let measurements = roll.stack.measurements
+                let rebuilds = roll.stack.rebuilds
+                for fraction: CGFloat in [0.25, 0.75, 0] {
+                    let range = roll.stack.frame.width - roll.scroll.contentView.bounds.width
+                    scroll(roll, to: NSPoint(x: range * fraction, y: 0))
+                    await settle()
+                    XCTAssertEqual(roll.scroll.contentView.bounds.minX, range * fraction, accuracy: 0.5)
+                    XCTAssertEqual(roll.stack.measurements, measurements)
+                    XCTAssertEqual(roll.stack.rebuilds, rebuilds)
+                    XCTAssertEqual(roll.stack.measuredGeometry, measured)
+                }
+            }
+        }
+    }
+
+    func testTypingAtTheFarRightRevealsTheCaretAndUndoRedoRevealTheirTargets() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let original = longLine(repetitions: 40)
+        let selected = try page(in: model, saying: original)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: original.utf16.count, length: 0))
+        editor.scrollRangeToVisible(editor.selectedRange())
+        try assertGlyphVisible(at: original.utf16.count - 2, in: editor, on: roll)
+        let initialWidth = roll.stack.frame.width
+        let addition = longLine(repetitions: 8) + "typed"
+        editor.breakUndoCoalescing()
+        editor.insertText(addition, replacementRange: NSRange(location: NSNotFound, length: 0))
+        editor.breakUndoCoalescing()
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        XCTAssertEqual(editor.string, original + addition)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: (original + addition).utf16.count, length: 0))
+        XCTAssertGreaterThan(roll.stack.frame.width, initialWidth)
+        try assertGlyphVisible(at: editor.string.utf16.count - 1, in: editor, on: roll)
+        assertCaretVisible(in: editor, on: roll)
+        scroll(roll, to: .zero)
+        editor.undo(nil)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        XCTAssertEqual(editor.string, original)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: original.utf16.count, length: 0))
+        try assertGlyphVisible(at: original.utf16.count - 2, in: editor, on: roll)
+        assertCaretVisible(in: editor, on: roll)
+        scroll(roll, to: .zero)
+        editor.redo(nil)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        XCTAssertEqual(editor.string, original + addition)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: (original + addition).utf16.count, length: 0))
+        try assertGlyphVisible(at: editor.string.utf16.count - 1, in: editor, on: roll)
+        assertCaretVisible(in: editor, on: roll)
+        XCTAssertTrue(roll.stack.editor === editor)
+        XCTAssertTrue(editor.textStorage === storage)
+    }
+
+    func testNativeFindNextRevealsTheFarRightMatch() throws {
+        let saved = copyFindPasteboardItems()
+        defer {
+            let board = NSPasteboard(name: .find)
+            board.clearContents()
+            board.writeObjects(saved)
+        }
+        let model = try makeModel()
+        model.wrapsLines = false
+        let needle = "dayneedle"
+        let original = longLine(repetitions: 60) + needle
+        let selected = try page(in: model, saying: original)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let target = (original as NSString).range(of: needle)
+        editor.setSelectedRange(target)
+        finderAction(.setSearchString, in: editor)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        scroll(roll, to: .zero)
+        XCTAssertGreaterThan(try glyphRect(in: editor, at: target.location).minX,
+                             roll.scroll.contentView.bounds.maxX)
+        finderAction(.nextMatch, in: editor)
+        XCTAssertEqual(editor.selectedRange(), target)
+        try assertGlyphVisible(at: target.location, in: editor, on: roll)
+        try assertGlyphVisible(at: NSMaxRange(target) - 1, in: editor, on: roll)
+        XCTAssertEqual(editor.string, original)
+    }
+
+    func testNativeReplaceAndFindRevealsTheNextFarRightMatch() throws {
+        let saved = copyFindPasteboardItems()
+        defer {
+            let board = NSPasteboard(name: .find)
+            board.clearContents()
+            board.writeObjects(saved)
+        }
+        let model = try makeModel()
+        model.wrapsLines = false
+        let needle = "dayreplace"
+        let replacement = "changed"
+        let prefix = longLine(repetitions: 40)
+        let between = longLine(repetitions: 20)
+        let original = prefix + needle + between + needle
+        let selected = try page(in: model, saying: original)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let first = (original as NSString).range(of: needle)
+        editor.setSelectedRange(first)
+        finderAction(.setSearchString, in: editor)
+        finderAction(.showReplaceInterface, in: editor)
+        let bar = try XCTUnwrap(roll.scroll.findBarView, "the native replace action did not install its bar")
+        let fields = descendants(of: bar).compactMap { $0 as? NSTextField }.filter(\.isEditable)
+        let search = try XCTUnwrap(fields.first { $0.stringValue == needle },
+                                   "native search fields: \(fields.map(\.stringValue))")
+        let replace = try XCTUnwrap(fields.first { $0 !== search }, "the native replacement field is absent")
+        replace.selectText(nil)
+        let input = try XCTUnwrap(replace.currentEditor() as? NSTextView)
+        input.selectAll(nil)
+        input.insertText(replacement, replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        finderAction(.nextMatch, in: editor)
+        XCTAssertEqual(editor.selectedRange(), first)
+        scroll(roll, to: .zero)
+        finderAction(.replaceAndFind, in: editor)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let expected = prefix + replacement + between + needle
+        XCTAssertEqual(editor.string, expected)
+        let target = (expected as NSString).range(of: needle, options: .backwards)
+        XCTAssertEqual(editor.selectedRange(), target)
+        try assertGlyphVisible(at: target.location, in: editor, on: roll)
+        try assertGlyphVisible(at: NSMaxRange(target) - 1, in: editor, on: roll)
+        XCTAssertTrue(model.canUndoEdit(sheet: selected))
+    }
+
+    func testRemovingTheWidestInactiveDayShrinksAndClampsToReachableActiveInk() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: longLine(repetitions: 15))
+        let inactive = try page(in: model, saying: longLine())
+        let closing = try XCTUnwrap(model.tabs.first { $0.pageID == inactive }?.id)
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: selected),
+                          selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        let selection = NSRange(location: 5, length: 2)
+        editor.setSelectedRange(selection)
+        let width = roll.stack.frame.width
+        scroll(roll, to: NSPoint(x: width - roll.scroll.contentView.bounds.width, y: 0))
+        XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, editor.textContainerOrigin.x
+                             + (try textMetrics(editor)).used.maxX)
+        model.close(closing)
+        roll.stack.update(projection: spreadOverDays(model, selecting: selected),
+                          selectedPage: selected, readOnly: false)
+        XCTAssertNil(roll.stack.quietRegions[inactive])
+        XCTAssertFalse(roll.stack.laidOut.contains { $0.header.pageIdentity == inactive })
+        XCTAssertLessThan(roll.stack.frame.width, width)
+        XCTAssertEqual(roll.scroll.contentView.bounds.maxX, roll.stack.frame.maxX, accuracy: 0.5)
+        try assertGlyphVisible(at: editor.string.utf16.count - 2, in: editor, on: roll)
+        XCTAssertTrue(editor.textStorage === storage)
+        XCTAssertEqual(editor.selectedRange(), selection)
+        XCTAssertEqual(model.selectedPageID, selected)
+    }
+
+    func testReseedingTheWidestInactiveDayShrinksAndClampsWithoutReplacingItsView() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: "active")
+        let inactive = try page(in: model, saying: longLine())
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[inactive])
+        let storage = quiet.textStorage
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let selection = NSRange(location: 2, length: 0)
+        editor.setSelectedRange(selection)
+        for replacement in [longLine(repetitions: 25), "tiny"] {
+            let width = roll.stack.frame.width
+            scroll(roll, to: NSPoint(x: width - roll.scroll.contentView.bounds.width, y: 0))
+            XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+            XCTAssertTrue(model.coreClient.syncDocument(sheet: inactive, json: "[{\"ink\":\"\(replacement)\"}]"))
+            model.invalidateQuietRendering(for: inactive)
+            model.refresh()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertEqual(quiet.string, replacement)
+            XCTAssertTrue(roll.stack.quietRegions[inactive] === quiet)
+            XCTAssertTrue(quiet.textStorage === storage)
+            XCTAssertLessThan(roll.stack.frame.width, width)
+            XCTAssertEqual(roll.scroll.contentView.bounds.maxX, roll.stack.frame.maxX, accuracy: 0.5)
+            try assertGlyphVisible(at: replacement.utf16.count - 2, in: quiet, on: roll)
+            XCTAssertEqual(editor.selectedRange(), selection)
+            XCTAssertEqual(model.selectedPageID, selected)
+        }
+        XCTAssertEqual(roll.stack.frame.width, roll.scroll.contentView.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+    }
+
+    func testUnwrappedFontAndViewportChangesKeepTheInactiveRightEdgeReachable() throws {
+        let previousTypeface = InkStyle.typeface
+        defer { InkStyle.typeface = previousTypeface }
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: "active")
+        let inactive = try page(in: model, saying: longLine(repetitions: 40))
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[inactive])
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = quiet.textStorage
+        let selection = NSRange(location: 2, length: 0)
+        editor.setSelectedRange(selection)
+        let baseSize = model.fontSize
+        let baseViewport = roll.scroll.contentView.bounds.width
+        let initial = try textMetrics(quiet).used.width
+        for (fontScale, viewportScale) in [(2.0, CGFloat(1.5)), (1.0, 0.75), (0.75, 1.25)] {
+            scroll(roll, to: NSPoint(x: roll.stack.frame.width - roll.scroll.contentView.bounds.width, y: 0))
+            model.fontSize = baseSize * fontScale
+            roll.scroll.frame.size.width = baseViewport * viewportScale
+            roll.scroll.layoutSubtreeIfNeeded()
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let metrics = try textMetrics(quiet)
+            XCTAssertEqual(metrics.lines, 1)
+            XCTAssertEqual(metrics.used.width / initial, CGFloat(fontScale), accuracy: 0.05)
+            let expectedWidth = ceil(metrics.used.maxX + quiet.textContainerInset.width * 2)
+            XCTAssertEqual(roll.stack.frame.width, expectedWidth, accuracy: 0.5)
+            XCTAssertLessThanOrEqual(roll.scroll.contentView.bounds.maxX, roll.stack.frame.maxX + 0.5)
+            scroll(roll, to: NSPoint(x: roll.stack.frame.width - roll.scroll.contentView.bounds.width, y: 0))
+            try assertGlyphVisible(at: quiet.string.utf16.count - 2, in: quiet, on: roll)
+            XCTAssertTrue(roll.stack.quietRegions[inactive] === quiet)
+            XCTAssertTrue(quiet.textStorage === storage)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertEqual(editor.selectedRange(), selection)
+        }
+    }
+
+    func testOptionZOnTheMountedDayUpdatesTheOrdinaryWrapPreferenceAndReachability() throws {
+        let suite = "day-scroll-option-z-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = try makeModel(defaults: defaults)
+        model.wrapsLines = true
+        let selected = try page(in: model, saying: longLine(repetitions: 40))
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        let text = editor.string
+        let selection = NSRange(location: 5, length: 2)
+        editor.setSelectedRange(selection)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let rebuilds = roll.stack.rebuilds
+        for wraps in [false, true] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.option],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: roll.window.windowNumber,
+                context: nil, characters: "Ω", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+            editor.keyDown(with: event)
+            XCTAssertEqual(model.wrapsLines, wraps)
+            XCTAssertEqual(try makeModel(defaults: defaults).wrapsLines, wraps)
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertEqual(editor.textContainer?.widthTracksTextView, wraps)
+            XCTAssertEqual(roll.stack.rebuilds, rebuilds)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+            XCTAssertEqual(editor.string, text)
+            XCTAssertEqual(editor.selectedRange(), selection)
+            if wraps {
+                XCTAssertEqual(roll.stack.frame.width, roll.scroll.contentView.bounds.width, accuracy: 0.5)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+                try assertGlyphVisible(at: selection.location, in: editor, on: roll)
+            } else {
+                let target = NSRange(location: editor.string.utf16.count - 2, length: 1)
+                editor.scrollRangeToVisible(target)
+                try assertGlyphVisible(at: target.location, in: editor, on: roll)
+                XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+            }
+        }
+    }
+
+    func testNativeSelectionDragNearTheUnwrappedRightEdgeSelectsReachableInk() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let selected = try page(in: model, saying: longLine(repetitions: 40) + "finish")
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let text = editor.string
+        let length = text.utf16.count
+        editor.scrollRangeToVisible(NSRange(location: length - 1, length: 1))
+        XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+        let first = try glyphRect(in: editor, at: length - 24)
+        let last = try glyphRect(in: editor, at: length - 3)
+        let start = NSPoint(x: first.minX + first.width / 4, y: first.midY)
+        let end = NSPoint(x: last.minX + last.width / 4, y: last.midY)
+        let from = editor.characterIndexForInsertion(at: start)
+        let to = editor.characterIndexForInsertion(at: end)
+        XCTAssertGreaterThan(to, from)
+        try assertGlyphVisible(at: from, in: editor, on: roll)
+        try assertGlyphVisible(at: to, in: editor, on: roll)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        func mouse(_ type: NSEvent.EventType, at point: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(
+                with: type, location: editor.convert(point, to: nil), modifierFlags: [],
+                timestamp: timestamp + (type == .leftMouseDown ? 0 : 0.1),
+                windowNumber: roll.window.windowNumber, context: nil, eventNumber: 1,
+                clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+        }
+        let down = try mouse(.leftMouseDown, at: start)
+        nonisolated(unsafe) let moves = try [
+            mouse(.leftMouseDragged, at: NSPoint(x: (start.x + end.x) / 2, y: start.y)),
+            mouse(.leftMouseDragged, at: end),
+            mouse(.leftMouseUp, at: end),
+        ]
+        let release = Timer(timeInterval: 0.05, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                for event in moves { NSApplication.shared.postEvent(event, atStart: false) }
+            }
+        }
+        RunLoop.main.add(release, forMode: .common)
+        RunLoop.main.add(release, forMode: .eventTracking)
+        defer { release.invalidate() }
+        editor.mouseDown(with: down)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: from, length: to - from))
+        try assertGlyphVisible(at: NSMaxRange(editor.selectedRange()) - 1, in: editor, on: roll)
+        XCTAssertEqual(editor.string, text)
+        XCTAssertEqual(model.selectedPageID, selected)
     }
 
     // MARK: The shape of the stack
@@ -153,6 +1328,40 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, checkpoint.header.frame.minY, accuracy: 1)
         XCTAssertEqual(roll.stack.laidOut.first?.header.mark, .hairline)
         roll.window.close()
+    }
+
+    /// A summon asked before today's row stood on the roll is taken by the pass that
+    /// assembles it, and the pass after that finds the reader on today.
+    func testASummonThatWaitedForTodayIsWhereTheNextPassFindsTheReader() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let today = try page(in: model, saying: longPage(lines: 80))
+        let older = try page(in: model, saying: longPage(lines: 80))
+        let projected = spreadOverDays(model, selecting: older)
+        let chronological = TimeUnitProjection(
+            units: Array(projected.units.reversed()), hiddenBlankPages: projected.hiddenBlankPages)
+        let withoutToday = TimeUnitProjection(
+            units: chronological.units.filter { $0.bucket != 0 },
+            hiddenBlankPages: projected.hiddenBlankPages)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: withoutToday, selectedPage: older, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let glyph = try glyphRect(in: editor, at: (editor.string as NSString).range(of: "line 40 ").location)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let read = roll.scroll.contentView.bounds.minY
+        XCTAssertEqual(roll.stack.currentPlace?.page, older)
+
+        roll.stack.scrollToDayZero()
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, read, "with no today on the roll the summon waits")
+        roll.stack.update(projection: chronological, selectedPage: older, readOnly: false)
+        let checkpoint = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == today })
+        XCTAssertGreaterThan(checkpoint.header.frame.minY, 0)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, checkpoint.header.frame.minY, accuracy: 1)
+
+        roll.stack.update(projection: chronological, selectedPage: older, readOnly: false)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, checkpoint.header.frame.minY, accuracy: 1,
+                       "the next pass returned the reader to the place the summon left")
+        XCTAssertEqual(roll.stack.currentPlace?.page, today)
     }
 
     func testBlankRollAndCheckpointClicksFocusWithoutMovingTheCaret() async throws {
@@ -427,9 +1636,9 @@ final class DayScrollTests: XCTestCase {
         XCTAssertFalse(model.isPageExpanded)
     }
 
-    private func leftClick(in window: NSWindow) throws -> NSEvent {
+    private func leftClick(in window: NSWindow, at point: NSPoint = .zero) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(
-            with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
             windowNumber: window.windowNumber, context: nil, eventNumber: 1,
             clickCount: 1, pressure: 1
         ))
@@ -929,6 +2138,34 @@ final class DayScrollTests: XCTestCase {
             onScreenAfter, onScreenBefore, accuracy: 1,
             "the calendar pulled the page the reader was reading out from under them"
         )
+    }
+
+    func testPrependingAndReorderingAtHorizontalOnlyOffsetsKeepTheVerticalOrigin() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let first = try page(in: model, saying: longLine(repetitions: 40))
+        try page(in: model, saying: longPage(lines: 40))
+        try select(first, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: first),
+                          selectedPage: first, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        let offset = NSPoint(x: 200, y: 0)
+        scroll(roll, to: offset)
+        XCTAssertNotNil(roll.stack.currentPlace)
+        try page(in: model, saying: longPage(lines: 30))
+        try select(first, in: model)
+        for days in [[-1, -2, 0], [-2, 0, -1], [0, -1, -2]] {
+            roll.stack.update(
+                projection: TimeUnitProjection.project(
+                    tabs: filed(model, under: days), selectedPageID: first, unit: .day),
+                selectedPage: first, readOnly: false)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0, accuracy: 0.5)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, offset.x, accuracy: 0.5)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+        }
     }
 
     /// The pure half of that rule, and the one place it deliberately

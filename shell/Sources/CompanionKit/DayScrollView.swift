@@ -201,6 +201,7 @@ public struct DayScrollView: NSViewRepresentable {
     ) {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let stack = scroll.documentView as? DayStackView else { return }
+        NotificationCenter.default.removeObserver(stack)
         // Whatever became of the editor, this roll's measurement
         // describes a surface that is going away, and the rail must not
         // keep drawing the shape of it behind a ledger (issue #131).
@@ -354,6 +355,8 @@ final class DayStackView: NSView {
     private var rows: [Row] = []
     private var rendered: Signature?
     private var expandedLayout = false
+    private var readingPlace: RollPlace?
+    private(set) var measurements = 0
 
     /// Extents and line marks change only during layout. Scroll
     /// notifications reuse this captured document half and publish a new
@@ -481,12 +484,33 @@ final class DayStackView: NSView {
             name: NSText.didChangeNotification,
             object: editor
         )
+        // Any storage, because the editor's storage is swapped per page; the handler filters.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mountedStorageEdited),
+            name: NSTextStorage.didProcessEditingNotification,
+            object: nil
+        )
     }
 
-    /// A measurement changed. Only frames move from here, nothing
-    /// touches the model, because a layout pass is the one place a
-    /// synchronous change to observed state would re-enter SwiftUI
-    /// mid-render.
+    /// Rebase a reading place on the mounted page through an edit to its storage. Only the
+    /// place moves here, inside `processEditing`; the next pass returns the clip to it.
+    @objc nonisolated private func mountedStorageEdited(_ notification: Notification) {
+        guard Thread.isMainThread, let storage = notification.object as? NSTextStorage,
+              storage.editedMask.contains(.editedCharacters) else { return }
+        let edited = storage.editedRange
+        let delta = storage.changeInLength
+        let posted = ObjectIdentifier(storage)
+        MainActor.assumeIsolated {
+            guard let mounted = editor?.textStorage, ObjectIdentifier(mounted) == posted,
+                  let place = readingPlace, place.page == coordinator.currentSheet,
+                  place.reading == .source else { return }
+            readingPlace = place.rebased(throughEdit: edited, changeInLength: delta)
+        }
+    }
+
+    /// A measurement changed: the pass places every region and returns the clip to the reading
+    /// place, then a place a hand off left waiting is opened.
     @objc private func surroundingsChanged(_ notification: Notification) {
         relayout()
         // A roll mounted before SwiftUI sized its clip finds the place
@@ -499,7 +523,19 @@ final class DayStackView: NSView {
     /// of the document the clip has open, which is half of what the
     /// minimap says.
     @objc private func rollScrolled(_ notification: Notification) {
+        positionViewportChrome()
+        if !isLayingOut { readingPlace = currentPlace }
         publishGeometry()
+    }
+
+    private func positionViewportChrome() {
+        guard let clip = enclosingScrollView?.contentView else { return }
+        for row in rows where !row.body.isHidden {
+            row.header.setFrameOrigin(NSPoint(x: clip.bounds.minX, y: row.header.frame.minY))
+            if row.body is MarkdownPreviewView || row.body is EmptyTodayView {
+                row.body.setFrameOrigin(NSPoint(x: clip.bounds.minX, y: row.body.frame.minY))
+            }
+        }
     }
 
     /// Refresh the mounted editor, header controls and quiet regions
@@ -593,6 +629,7 @@ final class DayStackView: NSView {
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
         let anchor = expandedLayout == model.isPageExpanded ? topmostPageAnchor() : nil
+        let place = readingPlace
         rendered = signature
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
@@ -600,7 +637,8 @@ final class DayStackView: NSView {
         refreshEditorPresentation(heldEditorFocus: heldEditorFocus)
         model.scheduleEditStepsRefresh()
         relayout()
-        keepStill(anchoredOn: anchor)
+        let restoredReadingPage = place.map { place in rows.contains { $0.page == place.page } } ?? false
+        if !restoredReadingPage { keepStill(anchoredOn: anchor) }
         settlePendingPlace()
     }
 
@@ -773,7 +811,7 @@ final class DayStackView: NSView {
     private func quietRegion(for page: UInt64) -> QuietPageView {
         let rendering = model.quietRendering(for: page)
         if let existing = quietRegions[page] {
-            existing.reseed(with: rendering)
+            follow(page, in: existing, replacing: existing.reseed(with: rendering))
             return existing
         }
         let region = QuietPageView(
@@ -807,11 +845,18 @@ final class DayStackView: NSView {
     /// no page named here has left the projection since.
     private func refreshQuietRegions() {
         for (page, region) in quietRegions {
-            region.reseed(with: model.quietRendering(for: page))
+            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         }
         for (page, region) in previewRegions {
-            region.reseed(with: model.quietRendering(for: page))
+            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         }
+    }
+
+    /// Keep the reader on the same text when the region they are reading is reseeded.
+    private func follow(_ page: UInt64, in region: NSTextView, replacing previous: String?) {
+        guard let previous, let place = readingPlace, place.page == page,
+              place.reading == Self.reading(of: region) else { return }
+        readingPlace = place.rebased(from: previous, to: region.string)
     }
 
     /// The rendered preview of a page, gated as the page's own text is (Law 0001);
@@ -829,7 +874,7 @@ final class DayStackView: NSView {
             self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
         }
         region.isSelectedPage = selected
-        region.reseed(with: model.quietRendering(for: page))
+        follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         previewRegions[page] = region
         return region
     }
@@ -930,17 +975,7 @@ final class DayStackView: NSView {
         built.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude
         )
-        // Wrap is forced on while the days are showing, and the stored
-        // `wrapsLines` preference is left exactly where the user left
-        // it: a line that ran off the side of one day would run off the
-        // side of the roll, and a roll that scrolled in two directions
-        // would have no honest anchor. This passes `true` rather than
-        // the preference, so the setting takes effect again the moment
-        // the mode goes off, and ⌥Z changes nothing here, because the
-        // dispatch refuses it in this mode and says so rather than
-        // writing a value this surface would not honour
-        // (`PageModel.wrapIsFixedNotice`).
-        coordinator.applyWrap(true)
+        built.autoresizingMask = []
         return built
     }
 
@@ -993,16 +1028,14 @@ final class DayStackView: NSView {
 
     // MARK: Measuring and placing
 
-    /// Re-measure every region and place it. Frames only, with one
-    /// deliberate exception at the end: the measurement handed to the
-    /// rail's minimap, which is published on a hop rather than written
-    /// here (issue #131). Nothing observable moves synchronously from
-    /// this pass, which is what lets the AppKit notifications call it
-    /// without re-entering a SwiftUI render.
+    /// Re-measure and place every region, then return the clip to the reading place, or to
+    /// today for a waiting summon; the rail's measurement is published on a hop (issue #131).
     func relayout() {
         guard !isLayingOut, model.owner == coordinator.surface,
               let scroll = enclosingScrollView else { return }
         isLayingOut = true
+        measurements += 1
+        let reflowPlace = scroll.contentView.bounds.minY > 0 ? readingPlace : nil
         let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
         let expanded = model.isPageExpanded && expandedBody != nil
         let expansionChanged = expanded != expandedLayout
@@ -1030,8 +1063,24 @@ final class DayStackView: NSView {
                 }
             }
         }
+        scroll.hasHorizontalScroller = !model.wrapsLines
         let width = max(scroll.contentView.bounds.width, 0)
         let clipHeight = scroll.contentView.bounds.height
+        var documentWidth = width
+        var sourceHeights: [ObjectIdentifier: CGFloat] = [:]
+        for row in rows where !expanded || row.body === expandedBody {
+            guard let text = row.body as? NSTextView, !(text is MarkdownPreviewView) else { continue }
+            text.autoresizingMask = []
+            text.isHorizontallyResizable = false
+            text.minSize = .zero
+            InkEditorView.configureWrapping(model.wrapsLines, textView: text, viewportWidth: width)
+            let height = Self.measuredHeight(of: text, width: width)
+            if !model.wrapsLines {
+                documentWidth = max(documentWidth, InkEditorView.measuredSourceWidth(of: text))
+            }
+            sourceHeights[ObjectIdentifier(text)] = height
+        }
+
         var y: CGFloat = 0
         for row in rows {
             row.body.isHidden = expanded && row.body !== expandedBody
@@ -1048,13 +1097,15 @@ final class DayStackView: NSView {
                 // earlier page must not insert a window of space into the roll.
                 let minimum = expanded || row.body === rows.last?.body ? max(0, clipHeight - y) : 0
                 text.minSize = NSSize(width: width, height: minimum)
-                height = max(minimum, Self.measuredHeight(of: text, width: width))
+                height = max(minimum, sourceHeights[ObjectIdentifier(text)]
+                    ?? Self.measuredHeight(of: text, width: width))
             } else if row.fillsViewport {
                 height = max(clipHeight - y, Self.minimumRegionHeight)
             } else {
                 height = Self.minimumRegionHeight
             }
-            row.body.frame = NSRect(x: 0, y: y, width: width, height: height)
+            let bodyWidth = sourceHeights[ObjectIdentifier(row.body)] != nil ? documentWidth : width
+            row.body.frame = NSRect(x: 0, y: y, width: bodyWidth, height: height)
             (row.body as? EmptyTodayView)?.place()
             y += height
         }
@@ -1064,11 +1115,31 @@ final class DayStackView: NSView {
             editor.frame = .zero
             editor.isHidden = true
         }
-        setFrameSize(NSSize(width: width, height: max(y, clipHeight)))
+        setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
+        var restoredPlace: RollPlace?
+        if !expansionChanged, pendingPlace == nil, let reflowPlace, restore(place: reflowPlace) {
+            restoredPlace = reflowPlace
+        }
+        constrainScrollOffset()
+        if pendingTodayAnchor {
+            scrollToDayZero()
+            // The summon scrolled when it cleared its flag, and it outranks the restored place.
+            if !pendingTodayAnchor { restoredPlace = nil }
+        }
+        positionViewportChrome()
+        readingPlace = restoredPlace ?? currentPlace
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
-        if pendingTodayAnchor { scrollToDayZero() }
+    }
+
+    private func constrainScrollOffset() {
+        guard let clip = enclosingScrollView?.contentView else { return }
+        let origin = clip.bounds.origin
+        let target = NSPoint(
+            x: min(max(origin.x, 0), max(frame.width - clip.bounds.width, 0)),
+            y: min(max(origin.y, 0), max(frame.height - clip.bounds.height, 0)))
+        if origin != target { clip.scroll(to: target) }
     }
 
     // MARK: What the rail draws behind the days
@@ -1133,7 +1204,9 @@ final class DayStackView: NSView {
     static func lineMarks(of text: NSTextView?) -> [RollGeometry.LineMark] {
         guard let text, let layoutManager = text.layoutManager,
               let container = text.textContainer else { return [] }
-        let wrap = max(container.size.width - container.lineFragmentPadding * 2, 1)
+        let measure = (container as? InkTextContainer)?.capturedEditorMeasure
+            ?? (text.bounds.width - text.textContainerInset.width * 2)
+        let wrap = max(measure - container.lineFragmentPadding * 2, 1)
         let origin = text.frame.minY + text.textContainerInset.height
         var marks: [RollGeometry.LineMark] = []
         let glyphs = layoutManager.glyphRange(for: container)
@@ -1246,10 +1319,11 @@ final class DayStackView: NSView {
             }
             pendingTodayAnchor = false
             let floor = max(frame.height - scroll.contentView.bounds.height, 0)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(today.header.frame.minY, floor)))
+            scroll.contentView.scroll(to: NSPoint(
+                x: scroll.contentView.bounds.minX, y: min(today.header.frame.minY, floor)))
         } else {
             pendingTodayAnchor = false
-            scroll.contentView.scroll(to: .zero)
+            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: 0))
         }
         scroll.reflectScrolledClipView(scroll.contentView)
     }
@@ -1267,7 +1341,7 @@ final class DayStackView: NSView {
     var currentPlace: RollPlace? {
         guard window != nil, let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
-        guard origin.y > 0,
+        guard origin.y > 0 || origin.x > 0,
               let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
               let page = row.page, let text = row.body as? NSTextView,
               let anchor = ScrollAnchor(
@@ -1275,7 +1349,13 @@ final class DayStackView: NSView {
                   clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
               )
         else { return nil }
-        return RollPlace(page: page, anchor: anchor)
+        return RollPlace(
+            page: page, anchor: anchor, reading: Self.reading(of: text),
+            length: text.textStorage?.length ?? 0)
+    }
+
+    private static func reading(of text: NSTextView) -> RollPlace.Reading {
+        text is MarkdownPreviewView ? .preview : .source
     }
 
     /// The place the other window's roll left, waiting for rows to find
@@ -1304,16 +1384,27 @@ final class DayStackView: NSView {
               let scroll = enclosingScrollView, !scroll.contentView.bounds.isEmpty
         else { return }
         pendingPlace = nil
-        guard let row = rows.first(where: { $0.page == place.page }),
+        restore(place: place)
+    }
+
+    /// True when the place's page stood on the roll and the clip was moved to it.
+    @discardableResult
+    private func restore(place: RollPlace) -> Bool {
+        guard let scroll = enclosingScrollView,
+              let row = rows.first(where: { $0.page == place.page && !$0.body.isHidden }),
               let text = row.body as? NSTextView,
-              let within = place.anchor.offset(in: text) else { return }
+              let within = place.mappedAnchor(
+                  into: Self.reading(of: text), length: text.textStorage?.length ?? 0
+              ).offset(in: text) else { return false }
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(
-            x: within.x, y: min(max(text.frame.minY + within.y, 0), floor)
+            x: min(max(within.x, 0), max(frame.width - clip.bounds.width, 0)),
+            y: min(max(text.frame.minY + within.y, 0), floor)
         )
         clip.scroll(to: target)
         scroll.reflectScrolledClipView(clip)
+        return true
     }
 
     /// The topmost page on the roll and where its ink stands, taken
@@ -2193,7 +2284,7 @@ final class QuietPageView: NSTextView {
         let layoutManager = InkLayoutManager()
         layoutManager.fenceRegions = rendering.fenceRegions
         storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(size: NSSize(
+        let container = InkTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
         ))
         container.widthTracksTextView = true
@@ -2204,7 +2295,7 @@ final class QuietPageView: NSTextView {
         drawsBackground = false
         isVerticallyResizable = true
         isHorizontallyResizable = false
-        autoresizingMask = [.width]
+        autoresizingMask = []
         minSize = .zero
         maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude
@@ -2239,14 +2330,19 @@ final class QuietPageView: NSTextView {
     /// rebuilt under the roll would take its layout, its measured height
     /// and its place in the stack down with it, for a day whose only
     /// news is a word.
-    func reseed(with rendering: PageModel.QuietRendering) {
-        guard rendering !== seeded else { return }
+    ///
+    /// The text it replaced, or nil when the rendering was the one already seeded.
+    @discardableResult
+    func reseed(with rendering: PageModel.QuietRendering) -> String? {
+        guard rendering !== seeded else { return nil }
+        let previous = storage.string
         seeded = rendering
         storage.setAttributedString(rendering.text)
         if let manager = layoutManager as? InkLayoutManager {
             manager.fenceRegions = rendering.fenceRegions
             needsDisplay = true
         }
+        return previous
     }
 
     /// One focusable text view in the card, always: the editor, or the

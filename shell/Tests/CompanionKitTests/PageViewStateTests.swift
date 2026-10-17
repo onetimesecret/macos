@@ -382,6 +382,275 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(offset.y, 0, accuracy: 0.5, "the top of an empty page is its top")
     }
 
+    private func anchorTextStack(ink: String, wraps: Bool, width: CGFloat = 420) -> (
+        storage: NSTextStorage, manager: NSLayoutManager, container: NSTextContainer, text: NSTextView
+    ) {
+        let storage = NSTextStorage(string: ink, attributes: [.font: NSFont.systemFont(ofSize: 13)])
+        let manager = NSLayoutManager()
+        storage.addLayoutManager(manager)
+        let container = NSTextContainer(size: NSSize(
+            width: wraps ? width - 24 : .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        container.widthTracksTextView = wraps
+        manager.addTextContainer(container)
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 80), textContainer: container)
+        text.textContainerInset = NSSize(width: 12, height: 8)
+        manager.ensureLayout(for: container)
+        return (storage, manager, container, text)
+    }
+
+    func testEOFExtraLineCaptureAfterTextInvalidationNeedsNoCallerLayout() throws {
+        let paragraph = String(repeating: "ordinary words across a long page ", count: 20) + "\n"
+        for wraps in [false, true] {
+            for ink in [paragraph, ""] {
+                for fraction: CGFloat in [0, 0.25] {
+                    let reference = anchorTextStack(ink: ink, wraps: wraps)
+                    let extra = reference.manager.extraLineFragmentRect
+                    XCTAssertGreaterThan(extra.height, 0)
+                    let stack = anchorTextStack(ink: String(repeating: "old line\n", count: 80), wraps: wraps)
+                    stack.storage.setAttributedString(NSAttributedString(
+                        string: ink, attributes: [.font: NSFont.systemFont(ofSize: 13)]))
+                    stack.manager.invalidateLayout(
+                        forCharacterRange: NSRange(location: 0, length: stack.storage.length), actualCharacterRange: nil)
+                    XCTAssertEqual(stack.manager.extraLineFragmentRect.height, 0)
+
+                    let anchor = try XCTUnwrap(ScrollAnchor(
+                        topOf: stack.text, clipOrigin: NSPoint(x: 120,
+                            y: stack.text.textContainerOrigin.y + extra.minY + fraction * extra.height)))
+
+                    XCTAssertEqual(anchor.characterIndex, ink.utf16.count)
+                    XCTAssertEqual(anchor.lineFraction, fraction, accuracy: 0.001)
+                    XCTAssertEqual(anchor.x, 120)
+                    XCTAssertGreaterThan(stack.manager.extraLineFragmentRect.height, 0)
+                }
+            }
+        }
+    }
+
+    func testEOFExtraLineRestorationAfterWidthInvalidationNeedsNoCallerLayout() throws {
+        let paragraph = String(repeating: "ordinary words across a long page ", count: 20) + "\n"
+        for ink in [paragraph, ""] {
+            for fraction: CGFloat in [0, 0.25] {
+                let stack = anchorTextStack(ink: ink, wraps: true)
+                let anchor = ScrollAnchor(characterIndex: ink.utf16.count, lineFraction: fraction, x: 120)
+                let reference = anchorTextStack(ink: ink, wraps: true, width: 240)
+                let extra = reference.manager.extraLineFragmentRect
+                XCTAssertGreaterThan(extra.height, 0)
+                stack.text.setFrameSize(NSSize(width: 240, height: 80))
+                stack.manager.invalidateLayout(
+                    forCharacterRange: NSRange(location: 0, length: stack.storage.length), actualCharacterRange: nil)
+                XCTAssertEqual(stack.manager.extraLineFragmentRect.height, 0)
+
+                let offset = try XCTUnwrap(anchor.offset(in: stack.text))
+
+                XCTAssertEqual(offset.x, 120)
+                XCTAssertEqual(offset.y, stack.text.textContainerOrigin.y
+                    + extra.minY + fraction * extra.height, accuracy: 0.5)
+                XCTAssertGreaterThan(stack.manager.extraLineFragmentRect.height, 0)
+            }
+        }
+    }
+
+    func testEOFExtraLineAnchorSurvivesWrapAndWidthChanges() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let page = try mintPage(in: model)
+        let editor = try mount(page, of: model, width: 420)
+        let text = String(repeating: "ordinary words across a long page ", count: 20) + "\n"
+        editor.textView.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+        try settleLayout(of: editor)
+        let manager = try XCTUnwrap(editor.textView.layoutManager)
+        let extra = manager.extraLineFragmentRect
+        XCTAssertGreaterThan(extra.height, 0)
+
+        for fraction: CGFloat in [0, 0.25] {
+            model.wrapsLines = false
+            editor.coordinator.applyWrap(false)
+            size(editor, width: 420)
+            try settleLayout(of: editor)
+            let original = manager.extraLineFragmentRect
+            let anchor = try XCTUnwrap(ScrollAnchor(
+                topOf: editor.textView,
+                clipOrigin: NSPoint(x: 120, y: editor.textView.textContainerOrigin.y
+                    + original.minY + fraction * original.height)
+            ))
+            XCTAssertEqual(anchor.characterIndex, text.utf16.count)
+            XCTAssertEqual(anchor.lineFraction, fraction, accuracy: 0.001)
+
+            for (wraps, width) in [(true, CGFloat(320)), (true, 640), (false, 640)] {
+                model.wrapsLines = wraps
+                editor.coordinator.applyWrap(wraps)
+                size(editor, width: width)
+                try settleLayout(of: editor)
+                let current = manager.extraLineFragmentRect
+                let offset = try XCTUnwrap(anchor.offset(in: editor.textView))
+                XCTAssertGreaterThan(current.height, 0)
+                if wraps { XCTAssertGreaterThan(current.minY, original.minY) }
+                XCTAssertEqual(offset.x, 120)
+                XCTAssertEqual(offset.y, editor.textView.textContainerOrigin.y
+                    + current.minY + fraction * current.height, accuracy: 0.5)
+            }
+        }
+    }
+
+    func testEOFExtraLineAnchorFallsBackWhenTheTrailingNewlineIsRemoved() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let editor = try mount(page, of: model, width: 420)
+        editor.textView.insertText("one\ntwo\n", replacementRange: NSRange(location: 0, length: 0))
+        try settleLayout(of: editor)
+        let manager = try XCTUnwrap(editor.textView.layoutManager)
+        let extra = manager.extraLineFragmentRect
+        let anchor = try XCTUnwrap(ScrollAnchor(
+            topOf: editor.textView,
+            clipOrigin: NSPoint(x: 0, y: editor.textView.textContainerOrigin.y + extra.midY)
+        ))
+        XCTAssertEqual(anchor.characterIndex, editor.textView.string.utf16.count)
+        editor.textView.insertText("", replacementRange: NSRange(
+            location: editor.textView.string.utf16.count - 1, length: 1))
+        try settleLayout(of: editor)
+
+        let last = manager.lineFragmentRect(forGlyphAt: manager.numberOfGlyphs - 1, effectiveRange: nil)
+        let offset = try XCTUnwrap(anchor.offset(in: editor.textView))
+        XCTAssertEqual(offset.y, editor.textView.textContainerOrigin.y + last.midY, accuracy: 0.5)
+    }
+
+    func testReturningToATabAfterEnablingWrapResetsSavedHorizontalOffset() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let first = try mintPage(in: model)
+        let firstTab = try XCTUnwrap(model.selection)
+        let editor = try mount(first, of: model, width: 420)
+        editor.textView.insertText(String(repeating: "wide source line ", count: 100),
+                                   replacementRange: NSRange(location: 0, length: 0))
+        try settleLayout(of: editor)
+        let storage = editor.textView.textStorage
+        let caret = NSRange(location: 20, length: 3)
+        editor.textView.setSelectedRange(caret)
+        editor.scroll.contentView.scroll(to: NSPoint(x: 200, y: 0))
+        editor.scroll.reflectScrolledClipView(editor.scroll.contentView)
+        XCTAssertEqual(editor.scroll.contentView.bounds.minX, 200)
+
+        let second = try mintPage(in: model)
+        InkEditorView.updatePage(editor.scroll, model: model, sheetID: second,
+                                 readOnly: false, coordinator: editor.coordinator)
+        pump()
+        XCTAssertEqual(model.viewStates.scrolls[first]?.x, 200)
+        model.wrapsLines = true
+        InkEditorView.updatePage(editor.scroll, model: model, sheetID: second,
+                                 readOnly: false, coordinator: editor.coordinator)
+        model.select(firstTab)
+        InkEditorView.updatePage(editor.scroll, model: model, sheetID: first,
+                                 readOnly: false, coordinator: editor.coordinator)
+        pump()
+        try settleLayout(of: editor)
+
+        XCTAssertTrue(editor.scroll.documentView === editor.textView)
+        XCTAssertTrue(editor.textView.textStorage === storage)
+        XCTAssertEqual(editor.textView.selectedRange(), caret)
+        XCTAssertEqual(editor.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+        XCTAssertEqual(editor.textView.frame.width, editor.scroll.contentView.bounds.width, accuracy: 0.5)
+    }
+
+    func testUnwrappedTabRestorationClampsXToCurrentSourceExtent() throws {
+        for repetitions in [100, 10, 1] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let page = try mintPage(in: model)
+            let first = try mount(page, of: model, width: 420)
+            first.textView.insertText(String(repeating: "wide source line ", count: 100),
+                                      replacementRange: NSRange(location: 0, length: 0))
+            try settleLayout(of: first)
+            let savedX: CGFloat = 1_500
+            first.scroll.contentView.scroll(to: NSPoint(x: savedX, y: 0))
+            first.scroll.reflectScrolledClipView(first.scroll.contentView)
+            dismantle(first)
+            XCTAssertEqual(model.viewStates.scrolls[page]?.x, savedX)
+
+            let replacement = String(repeating: "wide source line ", count: repetitions)
+            XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: "[{\"ink\":\"\(replacement)\"}]"))
+            model.storage(for: page).setAttributedString(NSAttributedString(
+                string: replacement, attributes: [.font: InkStyle.baseFont]))
+            let restored = try mount(page, of: model, width: 640)
+            let manager = try XCTUnwrap(restored.textView.layoutManager)
+            let container = try XCTUnwrap(restored.textView.textContainer)
+            manager.ensureLayout(for: container)
+            let used = manager.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil)
+            let width = ceil(used.maxX + restored.textView.textContainerInset.width * 2)
+            let maxX = max(width - restored.scroll.contentView.bounds.width, 0)
+            let expected = min(savedX, maxX)
+            XCTAssertEqual(restored.scroll.contentView.bounds.minX, expected, accuracy: 0.5)
+            if repetitions == 100 { XCTAssertEqual(expected, savedX) }
+            if repetitions == 10 {
+                XCTAssertGreaterThan(expected, 0)
+                XCTAssertLessThan(expected, savedX)
+            }
+            if repetitions == 1 { XCTAssertEqual(expected, 0) }
+        }
+    }
+
+    // MARK: A wrap change under the reader
+
+    /// Mid paragraph and a quarter line in, so a restore to the paragraph or the line's top fails.
+    func testTogglingWrapInATabKeepsTheReadersLineThroughRoundTrips() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let page = try mintPage(in: model)
+        let reader = try mount(page, of: model, width: 320)
+        let text = wrappingText()
+        reader.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        try settleLayout(of: reader)
+        let target = midParagraph(of: text)
+        let lineTop = try scroll(reader, toLineOf: target)
+        let manager = try XCTUnwrap(reader.textView.layoutManager)
+        let line = manager.lineFragmentRect(forGlyphAt: manager.glyphIndexForCharacter(at: target), effectiveRange: nil)
+        let start = lineTop + line.height / 4
+        reader.scroll.contentView.scroll(to: NSPoint(x: 0, y: start))
+        reader.scroll.reflectScrolledClipView(reader.scroll.contentView)
+        let paragraph = (text as NSString).paragraphRange(for: NSRange(location: target, length: 0))
+        XCTAssertGreaterThan(try topLine(of: reader).characters.location, paragraph.location,
+            "the case needs a continuation line")
+
+        for wraps in [false, true, false, true] {
+            model.wrapsLines = wraps
+            InkEditorView.updatePage(reader.scroll, model: model, sheetID: page,
+                                     readOnly: false, coordinator: reader.coordinator)
+            pump()
+            try settleLayout(of: reader)
+            XCTAssertTrue(NSLocationInRange(target, try topLine(of: reader).characters),
+                "wraps \(wraps): the flip opened the page on another line")
+            XCTAssertEqual(reader.scroll.contentView.bounds.minX, 0)
+            if wraps { XCTAssertEqual(reader.scroll.contentView.bounds.minY, start, accuracy: 0.5) }
+        }
+    }
+
+    /// The kept place is the flip's own; a reader who scrolls between flips is followed instead.
+    func testAWrapFlipAfterTheReaderMovesKeepsTheirNewLine() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let page = try mintPage(in: model)
+        let reader = try mount(page, of: model, width: 320)
+        let text = wrappingText()
+        reader.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        try settleLayout(of: reader)
+        _ = try scroll(reader, toLineOf: midParagraph(of: text))
+        func flip(_ wraps: Bool) throws {
+            model.wrapsLines = wraps
+            InkEditorView.updatePage(reader.scroll, model: model, sheetID: page,
+                                     readOnly: false, coordinator: reader.coordinator)
+            pump()
+            try settleLayout(of: reader)
+        }
+
+        try flip(false)
+        let later = (text as NSString).range(of: "paragraph 30 ").location
+        _ = try scroll(reader, toLineOf: later)
+        try flip(true)
+
+        let landed = try topLine(of: reader)
+        XCTAssertEqual(landed.characters.location, later)
+        XCTAssertEqual(reader.scroll.contentView.bounds.minY, landed.minY, accuracy: 0.5)
+    }
+
     // MARK: What a mount and a dismantle owe the place
 
     /// A long page read to its middle and then left, for the tests that
@@ -561,6 +830,369 @@ final class PageViewStateTests: XCTestCase {
         states.leaveRollPlace(place)
         states.leaveRollPlace(nil)
         XCTAssertNil(states.rollPlace, "a roll left at Day 0 replaces the place before it")
+    }
+
+    func testARollPlaceFollowsItsTextAcrossAReplacement() {
+        let text = "line 1\nline 2\nline 3"
+        let end = text.utf16.count
+        XCTAssertEqual(RollPlace.rebased(7, from: text, to: "new\n" + text), 11)
+        XCTAssertEqual(RollPlace.rebased(7, from: text, to: "line 1\nline 0\nline 2\nline 3"), 14,
+                       "a line arriving at the anchor goes above it")
+        XCTAssertEqual(RollPlace.rebased(7, from: text, to: text + "\nline 4"), 7)
+        XCTAssertEqual(RollPlace.rebased(14, from: text, to: "line 1\nline 3"), 7)
+        XCTAssertEqual(RollPlace.rebased(10, from: text, to: "line 1\nline 3"), 6,
+                       "an anchor inside removed text goes to where the removal was")
+        XCTAssertEqual(RollPlace.rebased(1, from: text, to: "xyz"), 0)
+        XCTAssertEqual(RollPlace.rebased(end, from: text, to: "x" + text), end + 1)
+        XCTAssertEqual(RollPlace.rebased(4, from: text, to: text), 4)
+        XCTAssertEqual(RollPlace.rebased(3, from: "", to: text), 0)
+        let place = RollPlace(
+            page: 1, anchor: ScrollAnchor(characterIndex: 7, lineFraction: 0.25, x: 3), length: end)
+        let moved = place.rebased(from: text, to: "new\n" + text)
+        XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: 11, lineFraction: 0.25, x: 3))
+        XCTAssertEqual(moved.length, end + 4)
+        XCTAssertEqual(moved.page, 1)
+    }
+
+    func testARollPlaceSurvivesInsertionsOnBothSidesInOneRefresh() {
+        let old = "before\nTARGET\nafter"
+        let new = "inserted above\n" + old + "\ninserted below"
+        let start = (old as NSString).range(of: "TARGET").location
+        let expected = (new as NSString).range(of: "TARGET").location
+        let place = RollPlace(
+            page: 7, anchor: ScrollAnchor(characterIndex: start, lineFraction: 0.25, x: 9),
+            reading: .preview, length: old.utf16.count)
+
+        let moved = place.rebased(from: old, to: new)
+
+        XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 9))
+        XCTAssertEqual(moved.page, place.page)
+        XCTAssertEqual(moved.reading, place.reading)
+        XCTAssertEqual(moved.length, new.utf16.count)
+        for offset in 0..<"TARGET".utf16.count {
+            XCTAssertEqual(RollPlace.rebased(start + offset, from: old, to: new), expected + offset)
+        }
+    }
+
+    func testARollPlaceFollowsInteriorTextAcrossSeveralEdits() {
+        let old = "first\nremove this\nTARGET\nlast"
+        let new = "new first\nTARGET\nnew last\n"
+        let start = (old as NSString).range(of: "TARGET").location
+        let expected = (new as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), expected)
+        XCTAssertEqual(RollPlace.rebased(start + 3, from: old, to: new), expected + 3)
+    }
+
+    func testARollPlaceRebasesInteriorUnicodeInUTF16Units() {
+        let target = "🧪e\u{301}👩‍💻TARGET"
+        let old = "前\n" + target + "\n後"
+        let new = "😀above\n" + old + "\nbelow🚀"
+        let start = (old as NSString).range(of: target).location
+        let expected = (new as NSString).range(of: target).location
+
+        for offset in 0..<target.utf16.count {
+            XCTAssertEqual(RollPlace.rebased(start + offset, from: old, to: new), expected + offset)
+        }
+    }
+
+    func testARollPlaceKeepsReplacementAndInsertionBoundaries() {
+        let old = "abcTARGETxyz"
+        let new = "!abcTARGETxyz?"
+        XCTAssertEqual(RollPlace.rebased(0, from: old, to: new), 1)
+        XCTAssertEqual(RollPlace.rebased(old.utf16.count, from: old, to: new), new.utf16.count)
+        XCTAssertEqual(RollPlace.rebased(-10, from: old, to: new), 1)
+        XCTAssertEqual(RollPlace.rebased(100, from: old, to: new), new.utf16.count)
+        XCTAssertEqual(RollPlace.rebased(5, from: "abc123xyz", to: "abcXYZxyz"), 3)
+        XCTAssertEqual(RollPlace.rebased(5, from: "abc123xyz", to: "abcxyz"), 3)
+        XCTAssertEqual(RollPlace.rebased(3, from: "abcTARGETxyz", to: "abc+TARGETxyz"), 4)
+        XCTAssertEqual(RollPlace.rebased(4, from: old, to: ""), 0)
+    }
+
+    func testARollPlaceSurvivesEditsAroundAnInteriorPointOfAVeryLongLine() {
+        let old = String(repeating: "a", count: 100_000) + "🧪TARGET"
+            + String(repeating: "z", count: 100_000)
+        let new = "+" + old + "-"
+        let start = (old as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), start + 1)
+    }
+
+    func testARollPlaceRebasesMixedEditsOnAVeryLongLine() {
+        let middle = String(repeating: "a", count: 100_000) + "🧪TARGET"
+            + String(repeating: "z", count: 100_000)
+        let old = "<" + middle + ">"
+        let new = "🐈[" + middle + "]"
+        let start = (old as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), start + 2)
+    }
+
+    func testARollPlaceSurvivesLargeInsertionsWithoutAnEditDistanceLimit() {
+        let old = "before\nTARGET\nafter"
+        let new = String(repeating: "+", count: 10_000) + old
+            + String(repeating: "-", count: 10_000)
+        let start = (old as NSString).range(of: "TARGET").location
+
+        XCTAssertEqual(RollPlace.rebased(start, from: old, to: new), start + 10_000)
+    }
+
+    func testARollPlaceSurvivesParagraphDeletionsAboveAndBelowTheReader() {
+        let lines = (0..<80).map { "line \($0) of a day that goes on" }
+        let synced = (0..<20).map { "synced \($0) from elsewhere\n" }.joined()
+        let old = lines.dropFirst(25).joined(separator: "\n") + "\n" + synced
+        let new = lines.dropFirst(30).dropLast(10).joined(separator: "\n")
+        let start = (old as NSString).range(of: "line 40 ").location
+        let expected = (new as NSString).range(of: "line 40 ").location
+        let place = RollPlace(
+            page: 7, anchor: ScrollAnchor(characterIndex: start, lineFraction: 0.25, x: 9),
+            length: old.utf16.count)
+
+        let moved = place.rebased(from: old, to: new)
+
+        XCTAssertEqual(expected, 300)
+        XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 9))
+        XCTAssertEqual(moved.length, new.utf16.count)
+        XCTAssertEqual(moved.page, place.page)
+    }
+
+    func testARollPlaceSurvivesLargeUnicodeDeletionsOnBothSidesOnOneLine() {
+        let target = "🧪e\u{301}👩‍💻TARGET"
+        let removed = String(repeating: "x", count: 100_000)
+        let old = removed + target + removed
+
+        for offset in 0..<target.utf16.count {
+            XCTAssertEqual(RollPlace.rebased(removed.utf16.count + offset, from: old, to: target), offset)
+        }
+        XCTAssertEqual(RollPlace.rebased(50_000, from: old, to: target), 0)
+        XCTAssertEqual(RollPlace.rebased(old.utf16.count - 50_000, from: old, to: target),
+                       target.utf16.count)
+    }
+
+    func testARollPlaceMapsLargeDeletedRunsToTheirLocalStarts() {
+        let first = String(repeating: "🧪", count: 2_000)
+        let second = String(repeating: "🧫", count: 2_000)
+        let old = "A" + first + "B" + second + "C" + first
+        let b = 1 + first.utf16.count
+        let c = b + 1 + second.utf16.count
+
+        XCTAssertEqual(RollPlace.rebased(2, from: old, to: "ABC"), 1)
+        XCTAssertEqual(RollPlace.rebased(b, from: old, to: "ABC"), 1)
+        XCTAssertEqual(RollPlace.rebased(b + 2, from: old, to: "ABC"), 2)
+        XCTAssertEqual(RollPlace.rebased(c, from: old, to: "ABC"), 2)
+        XCTAssertEqual(RollPlace.rebased(c + 2, from: old, to: "ABC"), 3)
+    }
+
+    func testARollPlaceMapsRemovedInteriorTextToItsLocalReplacementStart() {
+        let old = "abc123MIDDLE456xyz"
+        let new = "!abcMIDDLExyz?"
+
+        XCTAssertEqual(RollPlace.rebased(4, from: old, to: new), 4)
+        XCTAssertEqual(RollPlace.rebased(6, from: old, to: new), 4)
+        XCTAssertEqual(RollPlace.rebased(13, from: old, to: new), 10)
+        XCTAssertEqual(RollPlace.rebased(15, from: old, to: new), 10)
+    }
+
+    func testARollPlaceDoesNotMatchHalfOfAReplacedSurrogatePair() {
+        let old = "abc😁TARGETend"
+        let new = "abc🚀TARGETend"
+
+        XCTAssertEqual(RollPlace.rebased(3, from: old, to: new), 3)
+        XCTAssertEqual(RollPlace.rebased(4, from: old, to: new), 3)
+        XCTAssertEqual(RollPlace.rebased(5, from: old, to: new), 5)
+    }
+
+    func testARollPlaceUsesSuffixAffinityForRepeatedInteriorText() {
+        XCTAssertEqual(RollPlace.rebased(0, from: "aaaa", to: "!aaaaa?"), 2)
+        XCTAssertEqual(RollPlace.rebased(2, from: "aaaa", to: "!aaaaa?"), 4)
+    }
+
+    func testARollPlaceKeepsRepeatedTextAffinityWhenOtherTextIsReplaced() {
+        let old = "aaaaX"
+        for prefix in ["", "!"] {
+            for ending in ["X?", "Y?"] {
+                let new = prefix + "aaaaa" + ending
+                XCTAssertEqual(RollPlace.rebased(0, from: old, to: new), prefix.utf16.count + 1, new)
+                XCTAssertEqual(RollPlace.rebased(2, from: old, to: new), prefix.utf16.count + 3, new)
+            }
+        }
+    }
+
+    func testARollPlaceKeepsRepeatedLineAffinityWhenTheEndingChanges() {
+        let old = "ROW\nROW\nend"
+        for prefix in ["", "prefix\n"] {
+            for ending in ["end", "END"] {
+                let new = prefix + "ROW\nROW\nROW\n" + ending
+                XCTAssertEqual(RollPlace.rebased(0, from: old, to: new), prefix.utf16.count + 4, new)
+                XCTAssertEqual(RollPlace.rebased(4, from: old, to: new), prefix.utf16.count + 8, new)
+            }
+        }
+    }
+
+    func testARollPlaceSurvivesAModeratelyLargePasteWithOtherReplacements() {
+        for middle in ["before\nTARGET\nafter", "before TARGET after"] {
+            let old = "<" + middle + ">"
+            let start = (old as NSString).range(of: "TARGET").location
+            for count in [340, 1_000] {
+                for unit in ["+", "🧪"] {
+                    let paste = String(repeating: unit, count: count)
+                    let new = paste + "[" + middle + "]"
+                    XCTAssertEqual(RollPlace.rebased(start, from: old, to: new),
+                                   paste.utf16.count + start)
+                }
+            }
+        }
+    }
+
+    func testARollPlaceSurvivesAModeratelyLargeRemovalWithOtherReplacements() {
+        let removed = String(repeating: "+", count: 340)
+        let old = removed + "<before\nTARGET\nafter>"
+        let new = "[before\nTARGET\nafter]"
+
+        XCTAssertEqual(RollPlace.rebased(348, from: old, to: new), 8)
+        XCTAssertEqual(RollPlace.rebased(100, from: old, to: new), 0)
+    }
+
+    func testARollPlaceKeepsUTF16OffsetsInMixedRepeatedText() {
+        let old = "🧪🧪X"
+        for prefix in ["", "!"] {
+            let new = prefix + "🧪🧪🧪Y?"
+            for index in 0..<4 {
+                XCTAssertEqual(RollPlace.rebased(index, from: old, to: new),
+                               prefix.utf16.count + 2 + index)
+            }
+        }
+    }
+
+    func testARollPlaceFallsBackForExtensiveMixedReplacements() {
+        let old = String(repeating: "a", count: 100_000) + "TARGET"
+            + String(repeating: "z", count: 100_000)
+        let new = String(repeating: "b", count: 100_000) + "TARGET"
+            + String(repeating: "c", count: 100_000)
+
+        XCTAssertEqual(RollPlace.rebased(100_000, from: old, to: new), 0)
+    }
+
+    func testARollPlaceCrossesBetweenSourceAndPreviewByProportion() {
+        let anchor = ScrollAnchor(characterIndex: 300, lineFraction: 0.5, x: 4)
+        let place = RollPlace(page: 1, anchor: anchor, reading: .source, length: 1_000)
+        XCTAssertEqual(place.mappedAnchor(into: .source, length: 400), anchor)
+        XCTAssertEqual(place.mappedAnchor(into: .preview, length: 400),
+                       ScrollAnchor(characterIndex: 120, lineFraction: 0.5, x: 4))
+        let preview = RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 120), reading: .preview, length: 400)
+        XCTAssertEqual(preview.mappedAnchor(into: .source, length: 1_000).characterIndex, 300)
+        XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 1_000), length: 1_000)
+            .mappedAnchor(into: .preview, length: 400).characterIndex, 400)
+        XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 9), reading: .preview)
+            .mappedAnchor(into: .source, length: 50).characterIndex, 0)
+    }
+
+    /// Edit a storage holding `text`, and answer what the storage reports of the edit.
+    private func storageEdit(
+        of text: String, _ edit: (NSTextStorage) -> Void
+    ) -> (text: String, edited: NSRange, delta: Int) {
+        let storage = NSTextStorage(string: text)
+        storage.beginEditing()
+        edit(storage)
+        let edited = storage.editedRange
+        let delta = storage.changeInLength
+        storage.endEditing()
+        return (storage.string, edited, delta)
+    }
+
+    private func inserting(_ inserted: String, at location: Int, into text: String) -> (
+        text: String, edited: NSRange, delta: Int
+    ) {
+        storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: location, length: 0), with: inserted) }
+    }
+
+    func testARollPlaceFollowsAStorageEditBeforeAtAndAfterItsAnchor() {
+        let text = "line 1\nline 2\nline 3"
+        let place = RollPlace(
+            page: 4, anchor: ScrollAnchor(characterIndex: 7, lineFraction: 0.25, x: 3),
+            length: text.utf16.count)
+        // A reseed sends text arriving at the anchor above it; an edit at the anchor stays in view.
+        for (location, inserted, expected, reseeded) in [
+            (0, "new\n", 11, 11), (7, "line 0\n", 7, 14), (10, "X", 7, 7),
+        ] {
+            let edit = inserting(inserted, at: location, into: text)
+            let moved = place.rebased(throughEdit: edit.edited, changeInLength: edit.delta)
+            XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 3), inserted)
+            XCTAssertEqual(moved.length, edit.text.utf16.count)
+            XCTAssertEqual(moved.page, place.page)
+            XCTAssertEqual(moved.reading, place.reading)
+            XCTAssertEqual(RollPlace.rebased(7, from: text, to: edit.text), reseeded, inserted)
+        }
+        let empty = inserting("first words", at: 0, into: "")
+        XCTAssertEqual(RollPlace.rebased(0, throughEdit: empty.edited, changeInLength: empty.delta), 0)
+        let replaced = storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 7, length: 4), with: "LINE") }
+        XCTAssertEqual(RollPlace.rebased(7, throughEdit: replaced.edited, changeInLength: replaced.delta), 7,
+                       "a replacement starting at the anchor keeps it")
+    }
+
+    func testARollPlaceInsideAStorageDeletionGoesToWhereTheDeletionWas() {
+        let text = "first\nsecond\nthird\nfourth"
+        let edit = storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 6, length: 13), with: "") }
+        XCTAssertEqual(edit.text, "first\nfourth")
+        for (index, expected) in [(2, 2), (6, 6), (13, 6), (18, 6), (19, 6), (21, 8), (25, 12)] {
+            XCTAssertEqual(
+                RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta), expected,
+                "index \(index)")
+        }
+    }
+
+    func testARollPlaceInsideAStorageReplacementStaysWithinTheReplacement() {
+        let text = "first\nsecond\nthird\nfourth"
+        let replaced = NSRange(location: 6, length: 12)
+        for replacement in ["2nd", "the second and the third, both rewritten"] {
+            let edit = storageEdit(of: text) { $0.replaceCharacters(in: replaced, with: replacement) }
+            let end = 6 + replacement.utf16.count
+            XCTAssertEqual(edit.edited, NSRange(location: 6, length: replacement.utf16.count))
+            for index in replaced.location..<NSMaxRange(replaced) {
+                let moved = RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta)
+                XCTAssertEqual(moved, min(index, end), "index \(index) in \(replacement)")
+            }
+            XCTAssertEqual(RollPlace.rebased(18, throughEdit: edit.edited, changeInLength: edit.delta), end)
+            XCTAssertEqual(RollPlace.rebased(19, throughEdit: edit.edited, changeInLength: edit.delta), end + 1)
+            XCTAssertEqual(RollPlace.rebased(2, throughEdit: edit.edited, changeInLength: edit.delta), 2)
+        }
+    }
+
+    /// An undo step or a recovery restates the whole storage, so no old text survives to match.
+    func testAWholeStorageRewriteKeepsAnInteriorIndexAndMovesTheEnd() {
+        let text = "first\nsecond\nthird\nfourth"
+        let end = text.utf16.count
+        for rewritten in ["first\nfourth", "zero\nfirst\nsecond\nthird\nfourth"] {
+            let edit = storageEdit(of: text) { $0.setAttributedString(NSAttributedString(string: rewritten)) }
+            let length = rewritten.utf16.count
+            XCTAssertEqual(edit.edited, NSRange(location: 0, length: length), "the storage reports the whole text")
+            XCTAssertEqual(edit.delta, length - end)
+            for (index, expected) in [(0, 0), (13, min(13, length)), (end, length)] {
+                XCTAssertEqual(
+                    RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta), expected,
+                    "index \(index) in \(rewritten)")
+            }
+        }
+    }
+
+    func testARollPlaceFollowsStorageEditsInUTF16Units() {
+        let target = "👩‍💻 TARGET e\u{301}"
+        let text = "🧪 first\n" + target + "\n🚀 last"
+        let start = (text as NSString).range(of: target).location
+        let place = RollPlace(page: 2, anchor: ScrollAnchor(characterIndex: start), length: text.utf16.count)
+        let edits = [
+            inserting("😀 above, 🐈\n", at: 0, into: text),
+            storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 0, length: start), with: "") },
+            storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 0, length: 2), with: "🐈🐈") },
+            inserting("🚀", at: start + ("👩‍💻 " as NSString).length, into: text),
+            inserting("\n🐈 below", at: text.utf16.count, into: text),
+        ]
+        for edit in edits {
+            let moved = place.rebased(throughEdit: edit.edited, changeInLength: edit.delta)
+            let index = moved.anchor.characterIndex
+            XCTAssertEqual(index, (edit.text as NSString).range(of: "👩‍💻").location, edit.text)
+            XCTAssertEqual(moved.length, (edit.text as NSString).length)
+        }
     }
 
     /// One window's roll, mounted as the representable mounts it: made,

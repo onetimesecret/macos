@@ -1002,27 +1002,10 @@ public final class PageModel: ObservableObject {
 
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
-    ///
-    /// Not reachable while pages are organized by day; see
-    /// `wrapIsFixedNotice` and the `.editorToggleWrap` arm of `perform`.
     public func toggleWrap() {
         wrapsLines.toggle()
         flash(wrapsLines ? "long lines wrap" : "long lines run on")
     }
-
-    /// What ⌥Z says instead, while pages are organized by day (issue
-    /// #79).
-    ///
-    /// The roll wraps every day whatever the preference says: a line
-    /// that ran off the side of one day would run off the side of the
-    /// roll, and a roll scrolling in two directions would have no honest
-    /// anchor. So the chord cannot do the one thing it is for, and both
-    /// of the alternatives to saying so are worse than a sentence, a
-    /// dead key, or the stored preference rewritten under a surface that
-    /// will not honour it, which hands horizontal mode back unwrapped
-    /// for a keystroke whose effect the user was never shown.
-    public static let wrapIsFixedNotice =
-        "long lines always wrap while the days are showing"
 
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug
@@ -1514,8 +1497,7 @@ public final class PageModel: ObservableObject {
         keymap.report(subsystem: formFactor.loggerSubsystem)
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
-        // Unset → wrap, which is how every plain-text editor opens and
-        // the only sane default for a card this narrow.
+        // Unset → wrap.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
         // Unset → off. Technical build details stay in About until explicitly
         // requested in the menu-bar menu.
@@ -1590,13 +1572,7 @@ public final class PageModel: ObservableObject {
         connection = self.client.connectionInfo()
         sync = SyncController(client: client, defaults: defaults)
         sync.serverUrlProvider = { [weak self] in self?.connection?.serverUrl ?? "" }
-        // A peer's edit both shows and persists: the refresh redraws
-        // what the core now holds, and the dirty mark schedules the
-        // sealed write exactly as a local keystroke would.
-        sync.onRemoteChange = { [weak self] in
-            self?.markDirty()
-            self?.refresh()
-        }
+        sync.onRemoteChange = { [weak self] pages in self?.settleRemoteEdits(on: pages) }
         sync.onEnrolRefused = { [weak self] page in self?.settleRefusal(sheet: page, told: true) }
         lastPadID = pads.activeID
         lastPadsEnabled = pads.isEnabled
@@ -6826,6 +6802,20 @@ public final class PageModel: ObservableObject {
         applyingProjection {
             storage.setAttributedString(rebuilt)
         }
+    }
+
+    /// A pump's applied edits: the pages they moved are read again from the core, and the
+    /// dirty mark schedules the sealed write as a local keystroke would.
+    func settleRemoteEdits(on pages: Set<UInt64>) {
+        for page in pages {
+            invalidateQuietRendering(for: page)
+            // A storage an editor lays out is left alone; no merge into live text exists yet.
+            if let storage = storages[page], storage.layoutManagers.isEmpty {
+                restateStorage(sheet: page)
+            }
+        }
+        markDirty()
+        refresh()
     }
 
     /// Mirror the page's document to the core wholesale: the recovery

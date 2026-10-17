@@ -36,9 +36,7 @@ import XCTest
 ///   - `settleCoreEvent` reached from a wake: `TabLifetimeTests`; from a
 ///     refused route: `SealedFragmentEditorTests` and
 ///     `LedgerAppendArmingTests`.
-///
-/// The sync controller's `onRemoteChange` mark is not counted anywhere:
-/// it fires only from a relay session's pump, which no suite stands up.
+///   - `settleRemoteEdits`, behind a pump's applied event: `DayScrollTests`.
 @MainActor
 final class MutationArmingTests: XCTestCase {
     func testEveryMutationSiteArmsAWrite() throws {
