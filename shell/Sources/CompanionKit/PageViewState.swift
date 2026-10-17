@@ -40,12 +40,9 @@ struct ScrollAnchor: Equatable {
         guard let layoutManager = textView.layoutManager,
               let container = textView.textContainer else { return nil }
         let top = clipOrigin.y - textView.textContainerOrigin.y
-        let line: NSRect
+        var line: NSRect
         if layoutManager.numberOfGlyphs > 0 {
-            // The nearest glyph to a point is always on the line the
-            // point's height falls in, so x is left at the margin. A
-            // top edge inside the inset is asked about as the first
-            // line and told apart from it by the fraction below.
+            // Use the leading margin to identify the line, independently of horizontal scroll.
             let glyph = layoutManager.glyphIndex(
                 for: NSPoint(x: 0, y: max(top, 0)), in: container
             )
@@ -53,10 +50,20 @@ struct ScrollAnchor: Equatable {
             line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
             characterIndex = layoutManager.characterIndexForGlyph(at: glyphs.location)
         } else {
-            // An empty page has one line all the same, the one the
-            // caret waits on.
+            // Empty text may need a geometry refresh after zero-length invalidation.
+            if layoutManager.extraLineFragmentRect.height == 0 {
+                layoutManager.textContainerChangedGeometry(container)
+                layoutManager.ensureLayout(for: container)
+            }
             line = layoutManager.extraLineFragmentRect
             characterIndex = 0
+        }
+        // Glyph lookup can refresh an extra line invalidated by an edit.
+        let extraLine = layoutManager.extraLineFragmentRect
+        if layoutManager.extraLineFragmentTextContainer === container,
+           extraLine.height > 0, top >= extraLine.minY {
+            line = extraLine
+            characterIndex = textView.textStorage?.length ?? 0
         }
         lineFraction = line.height > 0 ? (top - line.minY) / line.height : 0
         x = clipOrigin.x
@@ -70,19 +77,30 @@ struct ScrollAnchor: Equatable {
     /// layout manager that raises on an index it does not have.
     @MainActor
     func offset(in textView: NSTextView) -> NSPoint? {
-        guard let layoutManager = textView.layoutManager else { return nil }
+        guard let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else { return nil }
         let origin = textView.textContainerOrigin
-        let line: NSRect
+        let length = textView.textStorage?.length ?? 0
+        let character = min(max(characterIndex, 0), length)
+        var line: NSRect
         if layoutManager.numberOfGlyphs > 0 {
-            let length = textView.textStorage?.length ?? 0
-            let character = min(max(characterIndex, 0), max(length - 1, 0))
+            let character = min(character, max(length - 1, 0))
             let glyph = min(
                 layoutManager.glyphIndexForCharacter(at: character),
                 layoutManager.numberOfGlyphs - 1
             )
             line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         } else {
+            if layoutManager.extraLineFragmentRect.height == 0 {
+                layoutManager.textContainerChangedGeometry(container)
+                layoutManager.ensureLayout(for: container)
+            }
             line = layoutManager.extraLineFragmentRect
+        }
+        let extraLine = layoutManager.extraLineFragmentRect
+        if character == length, layoutManager.extraLineFragmentTextContainer === container,
+           extraLine.height > 0 {
+            line = extraLine
         }
         return NSPoint(x: x, y: origin.y + line.minY + lineFraction * line.height)
     }

@@ -382,6 +382,138 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(offset.y, 0, accuracy: 0.5, "the top of an empty page is its top")
     }
 
+    private func anchorTextStack(ink: String, wraps: Bool, width: CGFloat = 420) -> (
+        storage: NSTextStorage, manager: NSLayoutManager, container: NSTextContainer, text: NSTextView
+    ) {
+        let storage = NSTextStorage(string: ink, attributes: [.font: NSFont.systemFont(ofSize: 13)])
+        let manager = NSLayoutManager()
+        storage.addLayoutManager(manager)
+        let container = NSTextContainer(size: NSSize(
+            width: wraps ? width - 24 : .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        container.widthTracksTextView = wraps
+        manager.addTextContainer(container)
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 80), textContainer: container)
+        text.textContainerInset = NSSize(width: 12, height: 8)
+        manager.ensureLayout(for: container)
+        return (storage, manager, container, text)
+    }
+
+    func testEOFExtraLineCaptureAfterTextInvalidationNeedsNoCallerLayout() throws {
+        let paragraph = String(repeating: "ordinary words across a long page ", count: 20) + "\n"
+        for wraps in [false, true] {
+            for ink in [paragraph, ""] {
+                for fraction: CGFloat in [0, 0.25] {
+                    let reference = anchorTextStack(ink: ink, wraps: wraps)
+                    let extra = reference.manager.extraLineFragmentRect
+                    XCTAssertGreaterThan(extra.height, 0)
+                    let stack = anchorTextStack(ink: String(repeating: "old line\n", count: 80), wraps: wraps)
+                    stack.storage.setAttributedString(NSAttributedString(
+                        string: ink, attributes: [.font: NSFont.systemFont(ofSize: 13)]))
+                    stack.manager.invalidateLayout(
+                        forCharacterRange: NSRange(location: 0, length: stack.storage.length), actualCharacterRange: nil)
+                    XCTAssertEqual(stack.manager.extraLineFragmentRect.height, 0)
+
+                    let anchor = try XCTUnwrap(ScrollAnchor(
+                        topOf: stack.text, clipOrigin: NSPoint(x: 120,
+                            y: stack.text.textContainerOrigin.y + extra.minY + fraction * extra.height)))
+
+                    XCTAssertEqual(anchor.characterIndex, ink.utf16.count)
+                    XCTAssertEqual(anchor.lineFraction, fraction, accuracy: 0.001)
+                    XCTAssertEqual(anchor.x, 120)
+                    XCTAssertGreaterThan(stack.manager.extraLineFragmentRect.height, 0)
+                }
+            }
+        }
+    }
+
+    func testEOFExtraLineRestorationAfterWidthInvalidationNeedsNoCallerLayout() throws {
+        let paragraph = String(repeating: "ordinary words across a long page ", count: 20) + "\n"
+        for ink in [paragraph, ""] {
+            for fraction: CGFloat in [0, 0.25] {
+                let stack = anchorTextStack(ink: ink, wraps: true)
+                let anchor = ScrollAnchor(characterIndex: ink.utf16.count, lineFraction: fraction, x: 120)
+                let reference = anchorTextStack(ink: ink, wraps: true, width: 240)
+                let extra = reference.manager.extraLineFragmentRect
+                XCTAssertGreaterThan(extra.height, 0)
+                stack.text.setFrameSize(NSSize(width: 240, height: 80))
+                stack.manager.invalidateLayout(
+                    forCharacterRange: NSRange(location: 0, length: stack.storage.length), actualCharacterRange: nil)
+                XCTAssertEqual(stack.manager.extraLineFragmentRect.height, 0)
+
+                let offset = try XCTUnwrap(anchor.offset(in: stack.text))
+
+                XCTAssertEqual(offset.x, 120)
+                XCTAssertEqual(offset.y, stack.text.textContainerOrigin.y
+                    + extra.minY + fraction * extra.height, accuracy: 0.5)
+                XCTAssertGreaterThan(stack.manager.extraLineFragmentRect.height, 0)
+            }
+        }
+    }
+
+    func testEOFExtraLineAnchorSurvivesWrapAndWidthChanges() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let page = try mintPage(in: model)
+        let editor = try mount(page, of: model, width: 420)
+        let text = String(repeating: "ordinary words across a long page ", count: 20) + "\n"
+        editor.textView.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+        try settleLayout(of: editor)
+        let manager = try XCTUnwrap(editor.textView.layoutManager)
+        let extra = manager.extraLineFragmentRect
+        XCTAssertGreaterThan(extra.height, 0)
+
+        for fraction: CGFloat in [0, 0.25] {
+            model.wrapsLines = false
+            editor.coordinator.applyWrap(false)
+            size(editor, width: 420)
+            try settleLayout(of: editor)
+            let original = manager.extraLineFragmentRect
+            let anchor = try XCTUnwrap(ScrollAnchor(
+                topOf: editor.textView,
+                clipOrigin: NSPoint(x: 120, y: editor.textView.textContainerOrigin.y
+                    + original.minY + fraction * original.height)
+            ))
+            XCTAssertEqual(anchor.characterIndex, text.utf16.count)
+            XCTAssertEqual(anchor.lineFraction, fraction, accuracy: 0.001)
+
+            for (wraps, width) in [(true, CGFloat(320)), (true, 640), (false, 640)] {
+                model.wrapsLines = wraps
+                editor.coordinator.applyWrap(wraps)
+                size(editor, width: width)
+                try settleLayout(of: editor)
+                let current = manager.extraLineFragmentRect
+                let offset = try XCTUnwrap(anchor.offset(in: editor.textView))
+                XCTAssertGreaterThan(current.height, 0)
+                if wraps { XCTAssertGreaterThan(current.minY, original.minY) }
+                XCTAssertEqual(offset.x, 120)
+                XCTAssertEqual(offset.y, editor.textView.textContainerOrigin.y
+                    + current.minY + fraction * current.height, accuracy: 0.5)
+            }
+        }
+    }
+
+    func testEOFExtraLineAnchorFallsBackWhenTheTrailingNewlineIsRemoved() throws {
+        let model = try makeModel()
+        let page = try mintPage(in: model)
+        let editor = try mount(page, of: model, width: 420)
+        editor.textView.insertText("one\ntwo\n", replacementRange: NSRange(location: 0, length: 0))
+        try settleLayout(of: editor)
+        let manager = try XCTUnwrap(editor.textView.layoutManager)
+        let extra = manager.extraLineFragmentRect
+        let anchor = try XCTUnwrap(ScrollAnchor(
+            topOf: editor.textView,
+            clipOrigin: NSPoint(x: 0, y: editor.textView.textContainerOrigin.y + extra.midY)
+        ))
+        XCTAssertEqual(anchor.characterIndex, editor.textView.string.utf16.count)
+        editor.textView.insertText("", replacementRange: NSRange(
+            location: editor.textView.string.utf16.count - 1, length: 1))
+        try settleLayout(of: editor)
+
+        let last = manager.lineFragmentRect(forGlyphAt: manager.numberOfGlyphs - 1, effectiveRange: nil)
+        let offset = try XCTUnwrap(anchor.offset(in: editor.textView))
+        XCTAssertEqual(offset.y, editor.textView.textContainerOrigin.y + last.midY, accuracy: 0.5)
+    }
+
     // MARK: What a mount and a dismantle owe the place
 
     /// A long page read to its middle and then left, for the tests that
