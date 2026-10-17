@@ -1828,43 +1828,36 @@ public struct InkEditorView: NSViewRepresentable {
                     self.deferredScrollRestore = (sheet, anchor)
                     return
                 }
-                // Measure against layout that has been forced current,
-                // not the `frame` height a relayout still in flight can
-                // report as zero. The text view is the document view;
-                // when its TextKit stack is somehow gone, fall back to
-                // the frame the clamp used to trust.
-                let documentHeight = textView.flatMap { self.documentHeight(of: $0) }
-                    ?? scrollView.documentView?.frame.height ?? 0
-                // After the height, so the anchor's line is looked up
-                // in the layout that was just made certain. A page with
-                // nothing saved opens at the top.
+                // Resolve the anchor against current text layout, not an earlier view frame.
+                let documentSize = textView.flatMap { self.documentSize(of: $0) }
+                    ?? scrollView.documentView?.frame.size ?? .zero
                 let offset = textView.flatMap { anchor?.offset(in: $0) } ?? .zero
                 let clamped = Self.clampedScrollOffset(
                     offset,
-                    documentHeight: documentHeight,
-                    clipHeight: scrollView.contentView.bounds.height
+                    documentSize: documentSize,
+                    clipSize: scrollView.contentView.bounds.size,
+                    wraps: self.model.wrapsLines
                 )
                 scrollView.contentView.scroll(to: clamped)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
             }
         }
 
-        /// The document's true height, forced current. One main-queue
-        /// hop gives the layout manager room to re-lay the swapped
-        /// storage, but room is not the same as done, so the height is
-        /// made certain rather than assumed: ensure layout for the text
-        /// container, then measure its used rect plus the top and bottom
-        /// text inset. A height read straight off `frame` can still be
-        /// zero here, and a zero height collapses the clamp's ceiling to
-        /// the top of the page, discarding a perfectly valid saved
-        /// offset. Returns nil only when the TextKit stack is missing,
-        /// leaving the caller to fall back to the frame.
-        private func documentHeight(of textView: InkTextView) -> CGFloat? {
+        /// Measure current source extents after a storage swap or an unsized mount.
+        private func documentSize(of textView: InkTextView) -> NSSize? {
             guard let layoutManager = textView.layoutManager,
                   let container = textView.textContainer else { return nil }
             layoutManager.ensureLayout(for: container)
-            return layoutManager.usedRect(for: container).height
-                + textView.textContainerInset.height * 2
+            var right: CGFloat = 0
+            // Per-line used rects exclude the unbounded fragment's aggregate width.
+            layoutManager.enumerateLineFragments(forGlyphRange: layoutManager.glyphRange(for: container)) {
+                _, used, _, _, _ in
+                if used.maxX.isFinite { right = max(right, used.maxX) }
+            }
+            return NSSize(
+                width: ceil(right + textView.textContainerInset.width * 2 + container.lineFragmentPadding),
+                height: layoutManager.usedRect(for: container).height + textView.textContainerInset.height * 2
+            )
         }
 
         // MARK: Wrapping (⌥Z, Settings)
@@ -2046,17 +2039,13 @@ public struct InkEditorView: NSViewRepresentable {
             return NSRange(location: location, length: span)
         }
 
-        /// A scroll offset saved against yesterday's geometry may
-        /// overhang today's. `NSClipView.scroll(to:)` does not clamp,
-        /// so a page that shrank in the background would come back
-        /// showing blank space below its document. Clamp y to what the
-        /// document can actually scroll; x stays as saved, since the
-        /// page never scrolls horizontally.
+        /// Clamp restored offsets to current geometry; wrapped source starts at the left edge.
         nonisolated static func clampedScrollOffset(
-            _ offset: NSPoint, documentHeight: CGFloat, clipHeight: CGFloat
+            _ offset: NSPoint, documentSize: NSSize, clipSize: NSSize, wraps: Bool
         ) -> NSPoint {
-            let maxY = max(0, documentHeight - clipHeight)
-            return NSPoint(x: offset.x, y: min(max(offset.y, 0), maxY))
+            let maxX = wraps ? 0 : max(0, documentSize.width - clipSize.width)
+            let maxY = max(0, documentSize.height - clipSize.height)
+            return NSPoint(x: min(max(offset.x, 0), maxX), y: min(max(offset.y, 0), maxY))
         }
 
         /// ⌘Z and ⇧⌘Z, taken off AppKit's stack and handed to the

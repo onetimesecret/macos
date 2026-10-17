@@ -514,6 +514,81 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(offset.y, editor.textView.textContainerOrigin.y + last.midY, accuracy: 0.5)
     }
 
+    func testReturningToATabAfterEnablingWrapResetsSavedHorizontalOffset() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let first = try mintPage(in: model)
+        let firstTab = try XCTUnwrap(model.selection)
+        let editor = try mount(first, of: model, width: 420)
+        editor.textView.insertText(String(repeating: "wide source line ", count: 100),
+                                   replacementRange: NSRange(location: 0, length: 0))
+        try settleLayout(of: editor)
+        let storage = editor.textView.textStorage
+        let caret = NSRange(location: 20, length: 3)
+        editor.textView.setSelectedRange(caret)
+        editor.scroll.contentView.scroll(to: NSPoint(x: 200, y: 0))
+        editor.scroll.reflectScrolledClipView(editor.scroll.contentView)
+        XCTAssertEqual(editor.scroll.contentView.bounds.minX, 200)
+
+        let second = try mintPage(in: model)
+        InkEditorView.updatePage(editor.scroll, model: model, sheetID: second,
+                                 readOnly: false, coordinator: editor.coordinator)
+        pump()
+        XCTAssertEqual(model.viewStates.scrolls[first]?.x, 200)
+        model.wrapsLines = true
+        InkEditorView.updatePage(editor.scroll, model: model, sheetID: second,
+                                 readOnly: false, coordinator: editor.coordinator)
+        model.select(firstTab)
+        InkEditorView.updatePage(editor.scroll, model: model, sheetID: first,
+                                 readOnly: false, coordinator: editor.coordinator)
+        pump()
+        try settleLayout(of: editor)
+
+        XCTAssertTrue(editor.scroll.documentView === editor.textView)
+        XCTAssertTrue(editor.textView.textStorage === storage)
+        XCTAssertEqual(editor.textView.selectedRange(), caret)
+        XCTAssertEqual(editor.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+        XCTAssertEqual(editor.textView.frame.width, editor.scroll.contentView.bounds.width, accuracy: 0.5)
+    }
+
+    func testUnwrappedTabRestorationClampsXToCurrentSourceExtent() throws {
+        for repetitions in [100, 10, 1] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let page = try mintPage(in: model)
+            let first = try mount(page, of: model, width: 420)
+            first.textView.insertText(String(repeating: "wide source line ", count: 100),
+                                      replacementRange: NSRange(location: 0, length: 0))
+            try settleLayout(of: first)
+            let savedX: CGFloat = 1_500
+            first.scroll.contentView.scroll(to: NSPoint(x: savedX, y: 0))
+            first.scroll.reflectScrolledClipView(first.scroll.contentView)
+            dismantle(first)
+            XCTAssertEqual(model.viewStates.scrolls[page]?.x, savedX)
+
+            let replacement = String(repeating: "wide source line ", count: repetitions)
+            XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: "[{\"ink\":\"\(replacement)\"}]"))
+            model.storage(for: page).setAttributedString(NSAttributedString(
+                string: replacement, attributes: [.font: InkStyle.baseFont]))
+            let restored = try mount(page, of: model, width: 640)
+            let manager = try XCTUnwrap(restored.textView.layoutManager)
+            let container = try XCTUnwrap(restored.textView.textContainer)
+            manager.ensureLayout(for: container)
+            let used = manager.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil)
+            let width = ceil(used.maxX + restored.textView.textContainerInset.width * 2
+                + container.lineFragmentPadding)
+            let maxX = max(width - restored.scroll.contentView.bounds.width, 0)
+            let expected = min(savedX, maxX)
+            XCTAssertEqual(restored.scroll.contentView.bounds.minX, expected, accuracy: 0.5)
+            if repetitions == 100 { XCTAssertEqual(expected, savedX) }
+            if repetitions == 10 {
+                XCTAssertGreaterThan(expected, 0)
+                XCTAssertLessThan(expected, savedX)
+            }
+            if repetitions == 1 { XCTAssertEqual(expected, 0) }
+        }
+    }
+
     // MARK: What a mount and a dismantle owe the place
 
     /// A long page read to its middle and then left, for the tests that
