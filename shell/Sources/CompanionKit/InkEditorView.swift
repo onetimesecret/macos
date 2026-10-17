@@ -446,17 +446,17 @@ public struct InkEditorView: NSViewRepresentable {
     /// it back, so the width is handed to the clip explicitly.
     static func setWrap(_ wraps: Bool, textView: InkTextView, scroll: NSScrollView) {
         guard textView.textContainer != nil else { return }
+        // A legacy horizontal scroller takes its height out of the clip, so it goes first.
+        scroll.hasHorizontalScroller = !wraps
         let clip = scroll.contentSize
         configureWrapping(wraps, textView: textView, viewportWidth: clip.width)
         if wraps {
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
             textView.setFrameSize(NSSize(width: clip.width, height: textView.frame.height))
-            scroll.hasHorizontalScroller = false
         } else {
             textView.isHorizontallyResizable = true
             textView.autoresizingMask = []
-            scroll.hasHorizontalScroller = true
         }
         textView.minSize = NSSize(width: clip.width, height: clip.height)
     }

@@ -150,6 +150,8 @@ final class WrappingGeometryTests: XCTestCase {
         let (text, storage, _, container) = makeTextView()
         let ink = try XCTUnwrap(text as? InkTextView)
         let scroll = InkEditorView.bareScroller()
+        // CI runners show legacy scrollers, which take space from the clip.
+        scroll.scrollerStyle = .legacy
         scroll.frame.size = NSSize(width: 640, height: 480)
         let stack = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 1_000))
         scroll.documentView = stack
