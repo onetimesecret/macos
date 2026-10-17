@@ -1030,12 +1030,8 @@ final class DayStackView: NSView {
 
     // MARK: Measuring and placing
 
-    /// Re-measure every region and place it. Frames only, with one
-    /// deliberate exception at the end: the measurement handed to the
-    /// rail's minimap, which is published on a hop rather than written
-    /// here (issue #131). Nothing observable moves synchronously from
-    /// this pass, which is what lets the AppKit notifications call it
-    /// without re-entering a SwiftUI render.
+    /// Re-measure and place every region, then return the clip to the reading place, or to
+    /// today for a waiting summon; the rail's measurement is published on a hop (issue #131).
     func relayout() {
         guard !isLayingOut, model.owner == coordinator.surface,
               let scroll = enclosingScrollView else { return }
