@@ -463,6 +463,29 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    func testPreviewsKeepTheViewportMeasureWhenSourceWidensTheRoll() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: longLine())
+        let preview = try page(in: model, saying: "# Preview\n" + longLine(repetitions: 20))
+        model.toggleMarkdownPreview(for: preview)
+        try select(selected, in: model)
+        let projection = TimeUnitProjection.project(
+            tabs: filed(model, under: [-1, -2]), selectedPageID: selected, unit: .day)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let rendered = try XCTUnwrap(roll.stack.previewRegions[preview])
+        let wrapped = (frame: rendered.frame, lines: try textMetrics(rendered).lines)
+
+        model.wrapsLines = false
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+
+        let clip = roll.scroll.contentView.bounds
+        XCTAssertGreaterThan(roll.stack.frame.width, clip.width, "the case needs source wider than the viewport")
+        XCTAssertEqual(rendered.frame.width, clip.width, accuracy: 0.5)
+        XCTAssertEqual(rendered.frame.height, wrapped.frame.height, accuracy: 0.5)
+        XCTAssertEqual(try textMetrics(rendered).lines, wrapped.lines)
+    }
+
     func testWrapAndResizeKeepTheLogicalReadingAnchorInAnOlderDay() throws {
         let model = try makeModel()
         model.wrapsLines = false
