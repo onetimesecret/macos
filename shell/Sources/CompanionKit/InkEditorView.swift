@@ -1882,12 +1882,36 @@ public struct InkEditorView: NSViewRepresentable {
         /// first apply.
         private var appliedWrap: Bool?
 
-        /// Rebuild the page's geometry for `wraps`, if it has moved.
+        /// The line the last wrap change put back, with the clip origin and edit count it left.
+        /// Reused while both stand, since recapturing after a reflow names the paragraph's start.
+        private var wrapPlace: (sheet: UInt64, anchor: ScrollAnchor, origin: NSPoint, generation: Int)?
+
+        /// Rebuild the page's geometry for `wraps`, if it has moved, keeping the reader's line.
         func applyWrap(_ wraps: Bool) {
             guard let textView, let scroll = scrollView,
                   scroll.documentView === textView, appliedWrap != wraps else { return }
+            // The first apply is the mount's, whose restore puts the saved place back.
+            let place = appliedWrap == nil ? nil : wrapReadingPlace(textView: textView, clip: scroll.contentView)
             appliedWrap = wraps
             InkEditorView.setWrap(wraps, textView: textView, scroll: scroll)
+            guard let place, let sheet = currentSheet, let size = documentSize(of: textView) else { return }
+            let clip = scroll.contentView
+            let offset = Self.clampedScrollOffset(
+                place.offset(in: textView) ?? .zero,
+                documentSize: size, clipSize: clip.bounds.size, wraps: wraps
+            )
+            clip.scroll(to: offset)
+            scroll.reflectScrolledClipView(clip)
+            wrapPlace = (sheet, place, clip.bounds.origin, generation)
+        }
+
+        private func wrapReadingPlace(textView: InkTextView, clip: NSClipView) -> ScrollAnchor? {
+            guard !clip.bounds.isEmpty else { return nil }
+            if let kept = wrapPlace, kept.sheet == currentSheet, kept.origin == clip.bounds.origin,
+               kept.generation == generation {
+                return kept.anchor
+            }
+            return ScrollAnchor(topOf: textView, clipOrigin: clip.bounds.origin)
         }
 
         /// The typeface the mounted page was last styled in, so the

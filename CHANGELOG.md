@@ -964,6 +964,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   day and rereads that page's text. The page under the editor does
   not take a peer's edit yet.
 
+- **Turning wrapping on or off in a tab keeps the reader's line** (app
+  0.39.0). ⌥Z or the Settings switch rebuilt a tab's layout without
+  putting the reading position back, so the page showed another line,
+  and turning wrapping back went to the start of the paragraph. The
+  line at the top of the window now stays at the top, and a round
+  trip returns to the same point inside the paragraph.
+
 - **A refusal over an object that no longer stood never says a page
   expired** (app 0.36.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001's expiry row, issue #170). Copy decrypted, Copy

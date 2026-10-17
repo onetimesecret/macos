@@ -589,6 +589,69 @@ final class PageViewStateTests: XCTestCase {
         }
     }
 
+    // MARK: A wrap change under the reader
+
+    /// Mid paragraph and a quarter line in, so a restore to the paragraph or the line's top fails.
+    func testTogglingWrapInATabKeepsTheReadersLineThroughRoundTrips() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let page = try mintPage(in: model)
+        let reader = try mount(page, of: model, width: 320)
+        let text = wrappingText()
+        reader.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        try settleLayout(of: reader)
+        let target = midParagraph(of: text)
+        let lineTop = try scroll(reader, toLineOf: target)
+        let manager = try XCTUnwrap(reader.textView.layoutManager)
+        let line = manager.lineFragmentRect(forGlyphAt: manager.glyphIndexForCharacter(at: target), effectiveRange: nil)
+        let start = lineTop + line.height / 4
+        reader.scroll.contentView.scroll(to: NSPoint(x: 0, y: start))
+        reader.scroll.reflectScrolledClipView(reader.scroll.contentView)
+        let paragraph = (text as NSString).paragraphRange(for: NSRange(location: target, length: 0))
+        XCTAssertGreaterThan(try topLine(of: reader).characters.location, paragraph.location,
+            "the case needs a continuation line")
+
+        for wraps in [false, true, false, true] {
+            model.wrapsLines = wraps
+            InkEditorView.updatePage(reader.scroll, model: model, sheetID: page,
+                                     readOnly: false, coordinator: reader.coordinator)
+            pump()
+            try settleLayout(of: reader)
+            XCTAssertTrue(NSLocationInRange(target, try topLine(of: reader).characters),
+                "wraps \(wraps): the flip opened the page on another line")
+            XCTAssertEqual(reader.scroll.contentView.bounds.minX, 0)
+            if wraps { XCTAssertEqual(reader.scroll.contentView.bounds.minY, start, accuracy: 0.5) }
+        }
+    }
+
+    /// The kept place is the flip's own; a reader who scrolls between flips is followed instead.
+    func testAWrapFlipAfterTheReaderMovesKeepsTheirNewLine() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let page = try mintPage(in: model)
+        let reader = try mount(page, of: model, width: 320)
+        let text = wrappingText()
+        reader.textView.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        try settleLayout(of: reader)
+        _ = try scroll(reader, toLineOf: midParagraph(of: text))
+        func flip(_ wraps: Bool) throws {
+            model.wrapsLines = wraps
+            InkEditorView.updatePage(reader.scroll, model: model, sheetID: page,
+                                     readOnly: false, coordinator: reader.coordinator)
+            pump()
+            try settleLayout(of: reader)
+        }
+
+        try flip(false)
+        let later = (text as NSString).range(of: "paragraph 30 ").location
+        _ = try scroll(reader, toLineOf: later)
+        try flip(true)
+
+        let landed = try topLine(of: reader)
+        XCTAssertEqual(landed.characters.location, later)
+        XCTAssertEqual(reader.scroll.contentView.bounds.minY, landed.minY, accuracy: 0.5)
+    }
+
     // MARK: What a mount and a dismantle owe the place
 
     /// A long page read to its middle and then left, for the tests that
