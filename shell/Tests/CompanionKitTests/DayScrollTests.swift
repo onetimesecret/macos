@@ -1122,8 +1122,7 @@ final class DayScrollTests: XCTestCase {
             let metrics = try textMetrics(quiet)
             XCTAssertEqual(metrics.lines, 1)
             XCTAssertEqual(metrics.used.width / initial, CGFloat(fontScale), accuracy: 0.05)
-            let expectedWidth = ceil(metrics.used.maxX + quiet.textContainerInset.width * 2
-                                     + (quiet.textContainer?.lineFragmentPadding ?? 0))
+            let expectedWidth = ceil(metrics.used.maxX + quiet.textContainerInset.width * 2)
             XCTAssertEqual(roll.stack.frame.width, expectedWidth, accuracy: 0.5)
             XCTAssertLessThanOrEqual(roll.scroll.contentView.bounds.maxX, roll.stack.frame.maxX + 0.5)
             scroll(roll, to: NSPoint(x: roll.stack.frame.width - roll.scroll.contentView.bounds.width, y: 0))

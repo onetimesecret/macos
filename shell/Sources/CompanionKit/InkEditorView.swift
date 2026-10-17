@@ -470,7 +470,7 @@ public struct InkEditorView: NSViewRepresentable {
         guard let manager = text.layoutManager, let container = text.textContainer else { return 0 }
         let right = (manager as? InkLayoutManager)?.widestUsedMaxX(in: container)
             ?? InkLayoutManager.walkWidestUsedMaxX(of: manager, in: container)
-        return ceil(right + text.textContainerInset.width * 2 + container.lineFragmentPadding)
+        return ceil(right + text.textContainerInset.width * 2)
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {

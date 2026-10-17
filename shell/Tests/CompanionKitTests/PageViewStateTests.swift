@@ -575,8 +575,7 @@ final class PageViewStateTests: XCTestCase {
             let container = try XCTUnwrap(restored.textView.textContainer)
             manager.ensureLayout(for: container)
             let used = manager.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil)
-            let width = ceil(used.maxX + restored.textView.textContainerInset.width * 2
-                + container.lineFragmentPadding)
+            let width = ceil(used.maxX + restored.textView.textContainerInset.width * 2)
             let maxX = max(width - restored.scroll.contentView.bounds.width, 0)
             let expected = min(savedX, maxX)
             XCTAssertEqual(restored.scroll.contentView.bounds.minX, expected, accuracy: 0.5)
