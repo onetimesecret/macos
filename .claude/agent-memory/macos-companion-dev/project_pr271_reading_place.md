@@ -1,6 +1,6 @@
 ---
 name: pr271-reading-place
-description: PR 271 (fix/editor-preference) roll reading place rules; readingPlace survives restoring passes, RollPlace knows source vs preview, dismantle removeObserver is load bearing, remote sync writes no storage
+description: PR 271 (fix/editor-preference) roll reading place rules; readingPlace survives restoring passes, RollPlace knows source vs preview, dismantle removeObserver is load bearing, remote sync restates all but the mounted storage
 metadata:
   type: project
 ---
@@ -20,9 +20,13 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
 - `NotificationCenter.default.removeObserver(stack)` in `DayScrollView.dismantleNSView`
   is required: without it `testTheRollAnswersAJumpFromTheRailUntilItIsDismantled` fails
   (the dismantled roll's clip moves from 120 to 32).
-- Remote sync (`SyncController.onRemoteChange` calls `markDirty()` and `refresh()`) writes
-  no live page storage and invalidates no quiet rendering, so a peer's edit reaches the
-  roll only after some invalidation. Not fixed here; flagged to the parent.
+- Remote sync: `onRemoteChange` now hands over the applied pages, and
+  `PageModel.settleRemoteEdits` drops their quiet renderings and restates any storage with
+  no layout manager (`testAPeersEditReachesAQuietDayAndThePageTheEditorLeft`). The
+  mounted page's storage is still not merged; a peer's edit there diverges from the core.
+- Tabs: `Coordinator.applyWrap` captures a `ScrollAnchor` before `setWrap` and scrolls
+  back to it; `wrapPlace` reuses the last restored anchor while the clip origin and
+  `generation` are unchanged, the tab form of the `readingPlace` rule above.
 
 **Why:** reviewers (Copilot, Greptile, Claude) flagged each; all verified by failing tests.
 
