@@ -22,10 +22,15 @@ import XCTest
 /// is computed.
 @MainActor
 final class DayScrollTests: XCTestCase {
-    private func makeModel() throws -> PageModel {
-        let suiteName = "companion-day-scroll-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    private func makeModel(defaults supplied: UserDefaults? = nil) throws -> PageModel {
+        let defaults: UserDefaults
+        if let supplied {
+            defaults = supplied
+        } else {
+            let suiteName = "companion-day-scroll-\(UUID().uuidString)"
+            defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        }
         let model = isolatedModel(defaults: defaults)
         model.showsTimeUnits = true
         return model
@@ -838,6 +843,51 @@ final class DayScrollTests: XCTestCase {
             XCTAssertTrue(quiet.textStorage === storage)
             XCTAssertTrue(roll.stack.editor === editor)
             XCTAssertEqual(editor.selectedRange(), selection)
+        }
+    }
+
+    func testOptionZOnTheMountedDayUpdatesTheOrdinaryWrapPreferenceAndReachability() throws {
+        let suite = "day-scroll-option-z-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = try makeModel(defaults: defaults)
+        model.wrapsLines = true
+        let selected = try page(in: model, saying: longLine(repetitions: 40))
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        let text = editor.string
+        let selection = NSRange(location: 5, length: 2)
+        editor.setSelectedRange(selection)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let rebuilds = roll.stack.rebuilds
+        for wraps in [false, true] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.option],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: roll.window.windowNumber,
+                context: nil, characters: "Ω", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+            editor.keyDown(with: event)
+            XCTAssertEqual(model.wrapsLines, wraps)
+            XCTAssertEqual(try makeModel(defaults: defaults).wrapsLines, wraps)
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+            XCTAssertEqual(editor.textContainer?.widthTracksTextView, wraps)
+            XCTAssertEqual(roll.stack.rebuilds, rebuilds)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+            XCTAssertEqual(editor.string, text)
+            XCTAssertEqual(editor.selectedRange(), selection)
+            if wraps {
+                XCTAssertEqual(roll.stack.frame.width, roll.scroll.contentView.bounds.width, accuracy: 0.5)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0, accuracy: 0.5)
+                try assertGlyphVisible(at: selection.location, in: editor, on: roll)
+            } else {
+                let target = NSRange(location: editor.string.utf16.count - 2, length: 1)
+                editor.scrollRangeToVisible(target)
+                try assertGlyphVisible(at: target.location, in: editor, on: roll)
+                XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, 0)
+            }
         }
     }
 

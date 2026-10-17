@@ -1002,27 +1002,10 @@ public final class PageModel: ObservableObject {
 
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
-    ///
-    /// Not reachable while pages are organized by day; see
-    /// `wrapIsFixedNotice` and the `.editorToggleWrap` arm of `perform`.
     public func toggleWrap() {
         wrapsLines.toggle()
         flash(wrapsLines ? "long lines wrap" : "long lines run on")
     }
-
-    /// What ⌥Z says instead, while pages are organized by day (issue
-    /// #79).
-    ///
-    /// The roll wraps every day whatever the preference says: a line
-    /// that ran off the side of one day would run off the side of the
-    /// roll, and a roll scrolling in two directions would have no honest
-    /// anchor. So the chord cannot do the one thing it is for, and both
-    /// of the alternatives to saying so are worse than a sentence, a
-    /// dead key, or the stored preference rewritten under a surface that
-    /// will not honour it, which hands horizontal mode back unwrapped
-    /// for a keystroke whose effect the user was never shown.
-    public static let wrapIsFixedNotice =
-        "long lines always wrap while the days are showing"
 
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug
@@ -1514,8 +1497,7 @@ public final class PageModel: ObservableObject {
         keymap.report(subsystem: formFactor.loggerSubsystem)
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
-        // Unset → wrap, which is how every plain-text editor opens and
-        // the only sane default for a card this narrow.
+        // Unset → wrap.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
         // Unset → off. Technical build details stay in About until explicitly
         // requested in the menu-bar menu.
