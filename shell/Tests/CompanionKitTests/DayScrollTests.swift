@@ -1255,6 +1255,40 @@ final class DayScrollTests: XCTestCase {
         roll.window.close()
     }
 
+    /// A summon asked before today's row stood on the roll is taken by the pass that
+    /// assembles it, and the pass after that finds the reader on today.
+    func testASummonThatWaitedForTodayIsWhereTheNextPassFindsTheReader() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let today = try page(in: model, saying: longPage(lines: 80))
+        let older = try page(in: model, saying: longPage(lines: 80))
+        let projected = spreadOverDays(model, selecting: older)
+        let chronological = TimeUnitProjection(
+            units: Array(projected.units.reversed()), hiddenBlankPages: projected.hiddenBlankPages)
+        let withoutToday = TimeUnitProjection(
+            units: chronological.units.filter { $0.bucket != 0 },
+            hiddenBlankPages: projected.hiddenBlankPages)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: withoutToday, selectedPage: older, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let glyph = try glyphRect(in: editor, at: (editor.string as NSString).range(of: "line 40 ").location)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let read = roll.scroll.contentView.bounds.minY
+        XCTAssertEqual(roll.stack.currentPlace?.page, older)
+
+        roll.stack.scrollToDayZero()
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, read, "with no today on the roll the summon waits")
+        roll.stack.update(projection: chronological, selectedPage: older, readOnly: false)
+        let checkpoint = try XCTUnwrap(roll.stack.laidOut.first { $0.header.pageIdentity == today })
+        XCTAssertGreaterThan(checkpoint.header.frame.minY, 0)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, checkpoint.header.frame.minY, accuracy: 1)
+
+        roll.stack.update(projection: chronological, selectedPage: older, readOnly: false)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, checkpoint.header.frame.minY, accuracy: 1,
+                       "the next pass returned the reader to the place the summon left")
+        XCTAssertEqual(roll.stack.currentPlace?.page, today)
+    }
+
     func testBlankRollAndCheckpointClicksFocusWithoutMovingTheCaret() async throws {
         let model = try makeModel()
         let selected = try page(in: model, saying: "first line\nsecond line")

@@ -1123,12 +1123,16 @@ final class DayStackView: NSView {
             restoredPlace = reflowPlace
         }
         constrainScrollOffset()
+        if pendingTodayAnchor {
+            scrollToDayZero()
+            // The summon scrolled when it cleared its flag, and it outranks the restored place.
+            if !pendingTodayAnchor { restoredPlace = nil }
+        }
         positionViewportChrome()
         readingPlace = restoredPlace ?? currentPlace
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
-        if pendingTodayAnchor { scrollToDayZero() }
     }
 
     private func constrainScrollOffset() {
