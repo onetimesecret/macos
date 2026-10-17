@@ -4793,7 +4793,7 @@ final class InkLayoutManager: NSLayoutManager {
     var fenceRegions: [NSRange] = []
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        if let container = textContainers.first, let storage = textStorage {
+        if !fenceRegions.isEmpty, let container = textContainers.first, let storage = textStorage {
             let whole = NSRange(location: 0, length: storage.length)
             // Unwrapped, the text view is as wide as its longest line
             // (or the roll's stack); that width is the slab's reach.
