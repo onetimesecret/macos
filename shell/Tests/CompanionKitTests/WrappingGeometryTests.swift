@@ -458,6 +458,140 @@ final class WrappingGeometryTests: XCTestCase {
         withExtendedLifetime(storage) {}
     }
 
+    // MARK: The source width cache
+
+    private let sourceFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    private let longestLine = "the longest line of the page"
+
+    private func unwrappedSource() -> (NSTextView, NSTextStorage, InkLayoutManager, InkTextContainer) {
+        let (text, storage, layout, container) = makeTextView()
+        storage.setAttributedString(NSAttributedString(
+            string: "short\n\(longestLine)\nmiddling line", attributes: [.font: sourceFont]
+        ))
+        InkEditorView.configureWrapping(false, textView: text, viewportWidth: 420)
+        return (text, storage, layout, container)
+    }
+
+    /// One measurement that walked, read a new width, and agrees with an uncached walk.
+    private func assertRemeasured(
+        _ text: NSTextView, from before: CGFloat, _ change: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let layout = try XCTUnwrap(text.layoutManager as? InkLayoutManager)
+        let container = try XCTUnwrap(text.textContainer)
+        let walks = layout.widestLineWalks
+        let measured = InkEditorView.measuredSourceWidth(of: text)
+        XCTAssertEqual(layout.widestLineWalks, walks + 1, "\(change) reused the cached width",
+                       file: file, line: line)
+        XCTAssertNotEqual(measured, before, "\(change) moved nothing to measure", file: file, line: line)
+        XCTAssertEqual(
+            layout.widestUsedMaxX(in: container),
+            InkLayoutManager.walkWidestUsedMaxX(of: layout, in: container),
+            change, file: file, line: line
+        )
+        XCTAssertEqual(layout.widestLineWalks, walks + 1, file: file, line: line)
+    }
+
+    func testASecondSourceMeasurementWithNothingChangedDoesNotWalk() throws {
+        let (text, storage, layout, container) = unwrappedSource()
+        let first = InkEditorView.measuredSourceWidth(of: text)
+        let walks = layout.widestLineWalks
+        XCTAssertEqual(walks, 1)
+        XCTAssertEqual(InkEditorView.measuredSourceWidth(of: text), first)
+        XCTAssertEqual(layout.widestLineWalks, walks)
+
+        // The roll's own pass over an unchanged row: the same wrap, a frame, a layout.
+        InkEditorView.configureWrapping(false, textView: text, viewportWidth: 420)
+        text.setFrameSize(NSSize(width: 900, height: 80))
+        layout.ensureLayout(for: container)
+        XCTAssertEqual(InkEditorView.measuredSourceWidth(of: text), first)
+        XCTAssertEqual(layout.widestLineWalks, walks)
+
+        // The insets are arithmetic outside the walk.
+        text.textContainerInset = NSSize(width: 20, height: 8)
+        XCTAssertEqual(InkEditorView.measuredSourceWidth(of: text), first + 16)
+        XCTAssertEqual(layout.widestLineWalks, walks)
+        withExtendedLifetime(storage) {}
+    }
+
+    func testEveryChangeToTheLinesRemeasuresTheSource() throws {
+        var kept: [NSTextStorage] = []
+        let longest = longestLine
+        let font = sourceFont
+        let cases: [(String, @MainActor (NSTextView, NSTextStorage, InkTextContainer) -> Void)] = [
+            ("typing a longer line", { text, _, _ in
+                text.setSelectedRange(NSRange(location: 5, length: 0))
+                text.insertText(
+                    " grows past every other line here",
+                    replacementRange: NSRange(location: NSNotFound, length: 0)
+                )
+            }),
+            ("deleting the longest line", { text, storage, _ in
+                let range = (storage.string as NSString).range(of: longest + "\n")
+                text.insertText("", replacementRange: range)
+            }),
+            ("a larger font across the storage", { _, storage, _ in
+                storage.addAttribute(
+                    .font, value: NSFont.monospacedSystemFont(ofSize: 20, weight: .regular),
+                    range: NSRange(location: 0, length: storage.length)
+                )
+            }),
+            ("another typeface across the storage", { _, storage, _ in
+                storage.addAttribute(
+                    .font, value: NSFont(name: "Times New Roman", size: 13) ?? NSFont.systemFont(ofSize: 13),
+                    range: NSRange(location: 0, length: storage.length)
+                )
+            }),
+            ("a wider line fragment padding", { _, _, container in
+                container.lineFragmentPadding = 20
+            }),
+            ("a wrapped container", { text, _, _ in
+                InkEditorView.configureWrapping(true, textView: text, viewportWidth: 160)
+            }),
+            ("another page under the layout manager", { text, _, _ in
+                let page = NSTextStorage(
+                    string: "another page entirely, wider than the first one ever was",
+                    attributes: [.font: font]
+                )
+                kept.append(page)
+                text.layoutManager?.replaceTextStorage(page)
+            }),
+        ]
+        for (change, apply) in cases {
+            let (text, storage, _, container) = unwrappedSource()
+            let before = InkEditorView.measuredSourceWidth(of: text)
+            apply(text, storage, container)
+            try assertRemeasured(text, from: before, change)
+            withExtendedLifetime(storage) {}
+        }
+        withExtendedLifetime(kept) {}
+    }
+
+    func testAQuietPagesReseedRemeasuresItsSource() throws {
+        let font = sourceFont
+        func rendering(_ string: String) -> PageModel.QuietRendering {
+            PageModel.QuietRendering(
+                text: NSAttributedString(string: string, attributes: [.font: font]),
+                fenceRegions: []
+            )
+        }
+        let quiet = QuietPageView(
+            page: 1, rendering: rendering("short\nthe longest line of the day"), onClick: { _, _ in }
+        )
+        quiet.setFrameSize(NSSize(width: 420, height: 80))
+        InkEditorView.configureWrapping(false, textView: quiet, viewportWidth: 420)
+        let layout = try XCTUnwrap(quiet.layoutManager as? InkLayoutManager)
+        let before = InkEditorView.measuredSourceWidth(of: quiet)
+        let walks = layout.widestLineWalks
+        XCTAssertEqual(InkEditorView.measuredSourceWidth(of: quiet), before)
+        XCTAssertEqual(layout.widestLineWalks, walks)
+
+        XCTAssertNotNil(quiet.reseed(with: rendering(
+            "short\n" + String(repeating: "a far longer line than before ", count: 4)
+        )))
+        try assertRemeasured(quiet, from: before, "a quiet page's reseed")
+    }
+
     func testInvalidEditorMeasuresDoNotReplaceAnExistingCapture() {
         let container = InkTextContainer(size: .zero)
         XCTAssertTrue(container.setEditorMeasure(396))

@@ -468,12 +468,8 @@ public struct InkEditorView: NSViewRepresentable {
     /// The longest laid-out line plus insets: the width unwrapped source needs.
     static func measuredSourceWidth(of text: NSTextView) -> CGFloat {
         guard let manager = text.layoutManager, let container = text.textContainer else { return 0 }
-        var right: CGFloat = 0
-        // The aggregate used rect can include an unbounded fragment's sentinel width.
-        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) {
-            _, used, _, _, _ in
-            if used.maxX.isFinite { right = max(right, used.maxX) }
-        }
+        let right = (manager as? InkLayoutManager)?.widestUsedMaxX(in: container)
+            ?? InkLayoutManager.walkWidestUsedMaxX(of: manager, in: container)
         return ceil(right + text.textContainerInset.width * 2 + container.lineFragmentPadding)
     }
 
@@ -4842,6 +4838,150 @@ final class InkLayoutManager: NSLayoutManager {
     /// The fence regions of the current page, as character ranges, in
     /// document order. `restyle` owns these; drawing only reads them.
     var fenceRegions: [NSRange] = []
+
+    // MARK: Layout generation
+
+    /// Moved by each route below that can move a line fragment; a cached
+    /// measurement is reused only at the count it was taken at.
+    private(set) var layoutGeneration = 0
+    private var widestLine: (generation: Int, container: ObjectIdentifier, maxX: CGFloat)?
+    #if DEBUG
+        /// The walks `widestUsedMaxX(in:)` actually made, for the tests.
+        private(set) var widestLineWalks = 0
+    #endif
+
+    private func layoutMoved() {
+        layoutGeneration &+= 1
+    }
+
+    /// `walkWidestUsedMaxX(of:in:)`, walked again only after the layout generation moves.
+    func widestUsedMaxX(in container: NSTextContainer) -> CGFloat {
+        let id = ObjectIdentifier(container)
+        if let cached = widestLine, cached.generation == layoutGeneration, cached.container == id {
+            return cached.maxX
+        }
+        // Read before the walk, so a count moved by the layout it forces is not stamped.
+        let generation = layoutGeneration
+        #if DEBUG
+            widestLineWalks += 1
+        #endif
+        let maxX = Self.walkWidestUsedMaxX(of: self, in: container)
+        widestLine = (generation, id, maxX)
+        return maxX
+    }
+
+    /// The widest finite used rect's maxX among `container`'s line fragments.
+    nonisolated static func walkWidestUsedMaxX(
+        of manager: NSLayoutManager, in container: NSTextContainer
+    ) -> CGFloat {
+        var right: CGFloat = 0
+        // The aggregate used rect can include an unbounded fragment's sentinel width.
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) {
+            _, used, _, _, _ in
+            if used.maxX.isFinite { right = max(right, used.maxX) }
+        }
+        return right
+    }
+
+    override func processEditing(
+        for textStorage: NSTextStorage, edited editMask: NSTextStorageEditActions,
+        range newCharRange: NSRange, changeInLength delta: Int,
+        invalidatedRange invalidatedCharRange: NSRange
+    ) {
+        super.processEditing(
+            for: textStorage, edited: editMask, range: newCharRange,
+            changeInLength: delta, invalidatedRange: invalidatedCharRange
+        )
+        layoutMoved()
+    }
+
+    override func invalidateGlyphs(
+        forCharacterRange charRange: NSRange, changeInLength delta: Int,
+        actualCharacterRange actualCharRange: NSRangePointer?
+    ) {
+        super.invalidateGlyphs(
+            forCharacterRange: charRange, changeInLength: delta,
+            actualCharacterRange: actualCharRange
+        )
+        layoutMoved()
+    }
+
+    override func invalidateLayout(
+        forCharacterRange charRange: NSRange, actualCharacterRange actualCharRange: NSRangePointer?
+    ) {
+        super.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: actualCharRange)
+        layoutMoved()
+    }
+
+    @available(macOS, deprecated: 10.11)
+    override func invalidateLayout(
+        forCharacterRange charRange: NSRange, isSoft flag: Bool,
+        actualCharacterRange actualCharRange: NSRangePointer?
+    ) {
+        super.invalidateLayout(
+            forCharacterRange: charRange, isSoft: flag, actualCharacterRange: actualCharRange
+        )
+        layoutMoved()
+    }
+
+    override func textContainerChangedGeometry(_ container: NSTextContainer) {
+        super.textContainerChangedGeometry(container)
+        layoutMoved()
+    }
+
+    override func textContainerChangedTextView(_ container: NSTextContainer) {
+        super.textContainerChangedTextView(container)
+        layoutMoved()
+    }
+
+    override func replaceTextStorage(_ newTextStorage: NSTextStorage) {
+        super.replaceTextStorage(newTextStorage)
+        layoutMoved()
+    }
+
+    override var textStorage: NSTextStorage? {
+        didSet { layoutMoved() }
+    }
+
+    override func addTextContainer(_ container: NSTextContainer) {
+        super.addTextContainer(container)
+        layoutMoved()
+    }
+
+    override func insertTextContainer(_ container: NSTextContainer, at index: Int) {
+        super.insertTextContainer(container, at: index)
+        layoutMoved()
+    }
+
+    override func removeTextContainer(at index: Int) {
+        super.removeTextContainer(at: index)
+        layoutMoved()
+    }
+
+    // Setters that call none of the overrides above when they change.
+    override var typesetter: NSTypesetter {
+        didSet { layoutMoved() }
+    }
+
+    override var glyphGenerator: NSGlyphGenerator {
+        didSet { layoutMoved() }
+    }
+
+    override var typesetterBehavior: NSLayoutManager.TypesetterBehavior {
+        didSet { layoutMoved() }
+    }
+
+    override var usesFontLeading: Bool {
+        didSet { layoutMoved() }
+    }
+
+    override var allowsNonContiguousLayout: Bool {
+        didSet { layoutMoved() }
+    }
+
+    override var limitsLayoutForSuspiciousContents: Bool {
+        didSet { layoutMoved() }
+    }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         if !fenceRegions.isEmpty, let container = textContainers.first, let storage = textStorage {
