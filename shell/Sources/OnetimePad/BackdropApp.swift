@@ -419,6 +419,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
 
+    /// Files the Finder asked to open before the launch restored the roster.
+    private var launchDocuments: [URL] = []
+
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
     private var modalEndObserver: NSObjectProtocol?
@@ -571,6 +574,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             activationDuringStartup = false
             launchedAt = Date()
             applicationDidBecomeActive(notification)
+        }
+        if !launchDocuments.isEmpty {
+            let documents = launchDocuments
+            launchDocuments = []
+            openDocuments(documents)
+            // The launch activation may still be on its way; keep it off today's page.
+            if NSApp.isActive { pendingEditorSummon = .openEditorWindow(.activation) }
         }
     }
 
@@ -754,6 +764,23 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // instead loses activation, no summon should survive that turn
         // away and take precedence over a later return.
         pendingEditorSummon = nil
+    }
+
+    /// The Finder's Open and Open With, and files dropped on the Dock icon.
+    /// A launch delivers them before `applicationDidFinishLaunching`, so they wait for startup.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard startupComplete else {
+            launchDocuments += urls
+            return
+        }
+        openDocuments(urls)
+    }
+
+    /// Opens each file as a drop would, then selects the editor window without moving the roll.
+    private func openDocuments(_ urls: [URL]) {
+        guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
+        else { return }
+        applySummon(.openEditorPresentation)
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.
