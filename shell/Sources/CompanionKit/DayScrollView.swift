@@ -201,6 +201,7 @@ public struct DayScrollView: NSViewRepresentable {
     ) {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let stack = scroll.documentView as? DayStackView else { return }
+        NotificationCenter.default.removeObserver(stack)
         // Whatever became of the editor, this roll's measurement
         // describes a surface that is going away, and the rail must not
         // keep drawing the shape of it behind a ledger (issue #131).
@@ -354,9 +355,6 @@ final class DayStackView: NSView {
     private var rows: [Row] = []
     private var rendered: Signature?
     private var expandedLayout = false
-    private var layoutWrap: Bool?
-    private var layoutViewportWidth: CGFloat?
-    private var layoutTypeface: InkStyle.Typeface?
     private var readingPlace: RollPlace?
     private(set) var measurements = 0
 
@@ -610,6 +608,7 @@ final class DayStackView: NSView {
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
         let anchor = expandedLayout == model.isPageExpanded ? topmostPageAnchor() : nil
+        let place = readingPlace
         rendered = signature
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
@@ -617,7 +616,8 @@ final class DayStackView: NSView {
         refreshEditorPresentation(heldEditorFocus: heldEditorFocus)
         model.scheduleEditStepsRefresh()
         relayout()
-        keepStill(anchoredOn: anchor)
+        let restoredReadingPage = place.map { place in rows.contains { $0.page == place.page } } ?? false
+        if !restoredReadingPage { keepStill(anchoredOn: anchor) }
         settlePendingPlace()
     }
 
@@ -1011,9 +1011,7 @@ final class DayStackView: NSView {
               let scroll = enclosingScrollView else { return }
         isLayingOut = true
         measurements += 1
-        let reflow = layoutWrap != model.wrapsLines || layoutViewportWidth != clipWidth
-            || layoutTypeface != model.typeface
-        let reflowPlace = reflow ? readingPlace : nil
+        let reflowPlace = scroll.contentView.bounds.minY > 0 ? readingPlace : nil
         let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
         let expanded = model.isPageExpanded && expandedBody != nil
         let expansionChanged = expanded != expandedLayout
@@ -1059,9 +1057,7 @@ final class DayStackView: NSView {
             }
             sourceHeights[ObjectIdentifier(text)] = height
         }
-        layoutWrap = model.wrapsLines
-        layoutViewportWidth = width
-        layoutTypeface = model.typeface
+
         var y: CGFloat = 0
         for row in rows {
             row.body.isHidden = expanded && row.body !== expandedBody

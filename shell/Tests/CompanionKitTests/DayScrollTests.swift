@@ -499,6 +499,39 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    func testInactiveContentChangesAboveTheReaderKeepTheLogicalPlace() throws {
+        for wraps in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = wraps
+            let above = try page(in: model, saying: longPage(lines: 60))
+            let selected = try page(in: model, saying: longPage(lines: 80))
+            let roll = try mountRoll(model: model)
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let storage = editor.textStorage
+            let index = (editor.string as NSString).range(of: "line 20 ").location
+            let glyph = try glyphRect(in: editor, at: index)
+            scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(place.page, selected)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+            let selection = editor.selectedRange()
+            for lines in [10, 90, 5] {
+                let replacement = longPage(lines: lines).replacingOccurrences(of: "\n", with: "\\n")
+                XCTAssertTrue(model.coreClient.syncDocument(sheet: above, json: "[{\"ink\":\"\(replacement)\"}]"))
+                model.invalidateQuietRendering(for: above)
+                model.refresh()
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                let offset = try XCTUnwrap(place.anchor.offset(in: editor))
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+                XCTAssertEqual(editor.selectedRange(), selection)
+                XCTAssertTrue(roll.stack.editor === editor)
+                XCTAssertTrue(editor.textStorage === storage)
+            }
+        }
+    }
+
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()
@@ -1740,6 +1773,34 @@ final class DayScrollTests: XCTestCase {
             onScreenAfter, onScreenBefore, accuracy: 1,
             "the calendar pulled the page the reader was reading out from under them"
         )
+    }
+
+    func testPrependingAndReorderingAtHorizontalOnlyOffsetsKeepTheVerticalOrigin() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let first = try page(in: model, saying: longLine(repetitions: 40))
+        try page(in: model, saying: longPage(lines: 40))
+        try select(first, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: first),
+                          selectedPage: first, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = editor.textStorage
+        let offset = NSPoint(x: 200, y: 0)
+        scroll(roll, to: offset)
+        XCTAssertNotNil(roll.stack.currentPlace)
+        try page(in: model, saying: longPage(lines: 30))
+        try select(first, in: model)
+        for days in [[-1, -2, 0], [-2, 0, -1], [0, -1, -2]] {
+            roll.stack.update(
+                projection: TimeUnitProjection.project(
+                    tabs: filed(model, under: days), selectedPageID: first, unit: .day),
+                selectedPage: first, readOnly: false)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0, accuracy: 0.5)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, offset.x, accuracy: 0.5)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+        }
     }
 
     /// The pure half of that rule, and the one place it deliberately
