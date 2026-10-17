@@ -507,4 +507,103 @@ final class PreviewComposerTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Markdown links and breaks (plan R1)
+
+    private func link(_ result: PreviewComposition, text: String) -> PreviewAddress?? {
+        for run in result.runs {
+            if case .text(let value, let style) = run, value == text { return .some(style.link) }
+        }
+        return nil
+    }
+
+    func testBreaksComposeAsASpaceAndALineSeparator() throws {
+        let result = try compose([.text("a"), .softBreak, .text("b"), .hardBreak, .text("c")])
+        XCTAssertEqual(ink(result), "a b\u{2028}c")
+    }
+
+    func testMarkdownLinkStylesItsTextAndOverridesHTMLLinksInsideAndAround() throws {
+        let result = try compose([
+            html("<a href='https://example.invalid/html'>"), .text("before"),
+            .enterLink(destination: [.text("https://example.invalid/md")], title: []),
+            .text("inside"), html("<a href='https://example.invalid/inner'>"), .text("nested"), html("</a>"),
+            .leaveLink, .text("after"), html("</a>"),
+        ])
+        XCTAssertEqual(link(result, text: "before"), .some(.unreviewed("https://example.invalid/html")))
+        XCTAssertEqual(link(result, text: "inside"), .some(.unreviewed("https://example.invalid/md")))
+        XCTAssertEqual(link(result, text: "nested"), .some(.unreviewed("https://example.invalid/md")))
+        XCTAssertEqual(link(result, text: "after"), .some(.unreviewed("https://example.invalid/html")))
+    }
+
+    func testRefusedMarkdownLinkStillShadowsAnHTMLLink() throws {
+        let result = try compose([
+            .enterLink(destination: [.text("https://example.invalid/"), .object("d")], title: []),
+            html("<a href='https://example.invalid/html'>"), .text("label"), html("</a>"), .leaveLink,
+        ])
+        XCTAssertEqual(link(result, text: "label"), .some(.refused(.sealedObject)))
+    }
+
+    func testLinkDestinationAndTitleObjectsAreEmittedWhereTheLinkOpensWithoutItsLink() throws {
+        let result = try compose([
+            .text("a "),
+            .enterLink(destination: [.text("/x"), .object("destination")], title: [.text("t"), .object("title")]),
+            .text("label"), .leaveLink,
+        ])
+        XCTAssertEqual(ink(result), "a [destination][title]label")
+        XCTAssertEqual(result.objectOrder, ["destination", "title"])
+        for run in result.runs {
+            if case .object(_, let style) = run { XCTAssertNil(style.link) }
+        }
+        XCTAssertEqual(link(result, text: "label"), .some(.refused(.sealedObject)))
+    }
+
+    func testTitleObjectsAloneDoNotRefuseALinkAddress() throws {
+        let result = try compose([
+            .enterLink(destination: [.text("https://example.invalid/")], title: [.object("t")]),
+            .text("label"), .leaveLink,
+        ])
+        XCTAssertEqual(link(result, text: "label"), .some(.unreviewed("https://example.invalid/")))
+    }
+
+    func testEmptyOrStandInLinkDestinationsAreRefused() throws {
+        let missing = try compose([.enterLink(destination: [], title: []), .text("m"), .leaveLink])
+        XCTAssertEqual(link(missing, text: "m"), .some(.refused(.missing)))
+        let copied = try compose([
+            .enterLink(destination: [.text("https://example.invalid/\u{FFFC}")], title: []), .text("c"), .leaveLink,
+        ])
+        XCTAssertEqual(link(copied, text: "c"), .some(.refused(.sealedObject)))
+        XCTAssertEqual(copied.objectOrder, [])
+    }
+
+    func testImageTitleObjectsFollowDestinationObjectsInTheFallback() throws {
+        let result = try compose([.markdownImage(
+            alt: [.text("alt")], destination: [.text("/i"), .object("d")], title: [.object("t")]
+        )])
+        XCTAssertEqual(ink(result), "alt[d][t]")
+        XCTAssertEqual(images(result).first?.destination, .refused(.sealedObject))
+    }
+
+    func testUnbalancedOrRawTextLinkEventsFail() {
+        XCTAssertThrowsError(try compose([.leaveLink])) {
+            XCTAssertEqual($0 as? CompositionError, .unbalancedMarkdown)
+        }
+        XCTAssertThrowsError(try compose([.enterLink(destination: [.text("/x")], title: [])])) {
+            XCTAssertEqual($0 as? CompositionError, .unbalancedMarkdown)
+        }
+        for event: PreviewEvent in [.enterLink(destination: [.text("/x")], title: []), .leaveLink] {
+            XCTAssertThrowsError(try compose([html("<script>"), event], dialect: .commonMark)) {
+                XCTAssertEqual($0 as? CompositionError, .structuredEventInRawText)
+            }
+        }
+    }
+
+    func testMarkdownLinksCountTowardTheDepthLimit() {
+        var composer = PreviewComposer(dialect: .gfm)
+        composer.limits.maximumDepth = 2
+        let link = PreviewEvent.enterLink(destination: [.text("/x")], title: [])
+        XCTAssertNoThrow(try composer.compose([link, .enterMarkdown(.strong), .leaveMarkdown(.strong), .leaveLink]))
+        XCTAssertThrowsError(try composer.compose([link, html("<em><strong>x</strong></em>"), .leaveLink])) {
+            XCTAssertEqual($0 as? CompositionError, .depthLimit)
+        }
+    }
 }

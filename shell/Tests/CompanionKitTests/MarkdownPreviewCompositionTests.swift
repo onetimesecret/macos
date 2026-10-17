@@ -295,7 +295,7 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
     }
 
     /// The dialect reaches composition: GFM escapes a `script` tag and formats inside it;
-    /// CommonMark keeps the raw-text body literal (plan R3). The parser is the same for both.
+    /// CommonMark keeps the raw-text body literal (plan R3). Both parsers read the line as one HTML block.
     func testTheDialectSelectsHowRawTextElementsCompose() throws {
         let gfm = render("<script><em>x</em></script>", dialect: .gfm)
         XCTAssertEqual(gfm.string, "<script>x</script>\n")

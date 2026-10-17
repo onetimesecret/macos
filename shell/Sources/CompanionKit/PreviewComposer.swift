@@ -26,8 +26,13 @@ enum PreviewEvent: Equatable {
     case enterMarkdown(PreviewTrait)
     case leaveMarkdown(PreviewTrait)
     case blockBoundary
+    case softBreak
+    case hardBreak
     case rawHTML([HTMLPart])
-    case markdownImage(alt: [HTMLPart], destination: [HTMLPart]?)
+    case markdownImage(alt: [HTMLPart], destination: [HTMLPart]?, title: [HTMLPart] = [])
+    /// A Markdown link; its destination's and title's objects are emitted where it opens.
+    case enterLink(destination: [HTMLPart]?, title: [HTMLPart])
+    case leaveLink
 }
 
 struct PreviewStyle: Equatable {
@@ -113,6 +118,7 @@ struct PreviewCompositionStream {
     let reservedPlaceholders: [String]
     private(set) var diagnostics: [CompositionDiagnostic] = []
     private var markdown: [PreviewTrait] = []
+    private var markdownLinks: [PreviewAddress] = []
     private var html: [Frame] = []
     private var eventCount = 0
     private var remainingInput: Int
@@ -145,10 +151,11 @@ struct PreviewCompositionStream {
         let link: PreviewAddress?
     }
 
+    /// Inside a Markdown link, accepted or refused, no HTML link applies.
     var style: PreviewStyle {
         PreviewStyle(
             traits: Set(markdown).union(html.compactMap(\.trait)),
-            link: html.last(where: { $0.link != nil })?.link
+            link: markdownLinks.last ?? html.last(where: { $0.link != nil })?.link
         )
     }
 
@@ -174,7 +181,7 @@ struct PreviewCompositionStream {
 
     /// Unclosed HTML ends here; unbalanced Markdown is an error.
     func finish() throws {
-        guard markdown.isEmpty else { throw CompositionError.unbalancedMarkdown }
+        guard markdown.isEmpty, markdownLinks.isEmpty else { throw CompositionError.unbalancedMarkdown }
     }
 
     /// Spends the input budget on `event` and returns its object identities in order.
@@ -184,10 +191,14 @@ struct PreviewCompositionStream {
         case .text(let text): try spend(text)
         case .object(let identity): try spend([.object(identity)], into: &objects)
         case .rawHTML(let raw): try spend(raw, into: &objects)
-        case .markdownImage(let alt, let destination):
+        case .markdownImage(let alt, let destination, let title):
             try spend(alt, into: &objects)
             try spend(destination ?? [], into: &objects)
-        case .enterMarkdown, .leaveMarkdown, .blockBoundary: break
+            try spend(title, into: &objects)
+        case .enterLink(let destination, let title):
+            try spend(destination ?? [], into: &objects)
+            try spend(title, into: &objects)
+        case .enterMarkdown, .leaveMarkdown, .blockBoundary, .softBreak, .hardBreak, .leaveLink: break
         }
         return objects
     }
@@ -230,10 +241,22 @@ struct PreviewCompositionStream {
             guard markdown.last == trait else { throw CompositionError.unbalancedMarkdown }
             markdown.removeLast()
         case .blockBoundary: try boundary()
-        case .markdownImage(let alt, let destination):
+        case .softBreak: try emit(.text(" ", style))
+        case .hardBreak: try emit(.text("\u{2028}", style))
+        case .markdownImage(let alt, let destination, let title):
             guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
-            let fallback = alt + (destination ?? []).objectIdentities.map(HTMLPart.object)
+            let fallback = alt + ((destination ?? []) + title).objectIdentities.map(HTMLPart.object)
             try emit(.image(PreviewImage(destination: address(destination, decode: false), fallback: fallback), style))
+        case .enterLink(let destination, let title):
+            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
+            try checkDepth()
+            // Emitted before the link applies: an object never takes a link.
+            try recoverObjects((destination ?? []) + title)
+            markdownLinks.append(address(destination, decode: false))
+        case .leaveLink:
+            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
+            guard !markdownLinks.isEmpty else { throw CompositionError.unbalancedMarkdown }
+            markdownLinks.removeLast()
         case .rawHTML(let parts):
             let tokenizer = HTMLTokenizer(
                 maximumInputScalars: limits.maximumInputScalars,
@@ -387,7 +410,9 @@ struct PreviewCompositionStream {
     }
 
     private func checkDepth() throws {
-        guard html.count + markdown.count < limits.maximumDepth else { throw CompositionError.depthLimit }
+        guard html.count + markdown.count + markdownLinks.count < limits.maximumDepth else {
+            throw CompositionError.depthLimit
+        }
     }
 
     private mutating func boundary() throws {
