@@ -1,8 +1,10 @@
 ---
 id: 2026-1016-markdown-dialects-and-preview
 title: Markdown dialects and restricted preview
-status: draft
+status: accepted
+documentation_status: reviewed
 dated: 2026-10-16
+reviewed: 2026-10-16
 surfaces: OnetimePad Markdown preview and Settings
 ---
 
@@ -18,17 +20,19 @@ content; remote images load only after an explicit click. The approval was:
 “Yes agreed. Please capture the plan at docs/spec/design”. The maintainer
 reconfirmed on 2026-10-16 that the work is operator-initiated.
 
-The maintainer reconfirmed that the concept is wholly approved and its
-implementation details are not finalized. The draft status applies to the
-technical details, research gates and open decisions, not to whether the
-feature is wanted. Target requirements below are not a description of shipped
-behavior or evidence of validated guarantees. The maintainer subsequently
-instructed enactment of the recommended document amendments. The accepted
-[UI/UX successor](2026-1016-ui-ux-decisions.md),
+The maintainer accepted this implementation plan on 2026-10-16 with the
+instruction: “Please update the plan to reviewed and accepted and to remove
+any remaining draft suggestions”. This record is reviewed and accepted for
+production implementation. Its architecture, scope and delivery requirements
+are operative; implementation specifications and verification are work to
+complete, not prerequisites for permission to begin application changes.
+
+The accepted [UI/UX successor](2026-1016-ui-ux-decisions.md),
 [ADR-0059](../../adr/0059-preview-images-use-an-explicit-resource-request-route.md)
 and [Law 0001 amendment](../../law/0001-sealed-object.md#amendments) enact R0's
-policy reconciliation. This plan remains draft for R1–R6 technical work; it
-does not independently amend those accepted records or report runtime validation.
+policy reconciliation. This plan implements those records without changing
+their scope. Acceptance does not report shipped behavior, completed tests or
+runtime validation. R1–R6 below identify delivery work and its required evidence.
 
 The enacted reconciliation updates the older decisions for the approved scope;
 it does not reopen dialect selection, restricted HTML or explicitly activated
@@ -42,22 +46,21 @@ The target Markdown preview supports CommonMark and GitHub Flavored Markdown
 parsing semantics, not merely visual styling. Both dialects use a restricted
 preview with supported HTML formatting and click-to-load remote images.
 
-## Implementation-readiness assessment
+## Implementation authorization and completion boundary
 
-**Ready for bounded experiments, not full implementation.** A settings picker
-is straightforward; parser semantics, HTML composition, and image state are
-architectural prerequisites. An allowlist and a click handler alone do not
-resolve them. R0's policy reconciliation is accepted; complete gates R1–R5
-below before selecting the full design, and R6 before delivery. No experiment
-results are recorded here.
+**Proceed with production implementation.** Build the parser, composer, native
+output, preference and image-state paths in the application codebase, with
+focused tests alongside each integration step. Research tools support specific
+technical checks; an isolated prototype is not the implementation deliverable.
+R1–R5 are implementation workstreams, not research-only approval gates. R6 is
+the integrated release check.
 
-The principal corrections are to separate parser conformance from restricted
-native output, specify how sealed-object placeholders participate in parsing,
-design HTML composition before rendering individual HTML leaves, and separate
-image authorization/request state from render caches. The accepted successor
-replaces D-09's former app-wide network-action count, and ADR-0059 supplies the
-separate resource-route authority. This closes the policy contradiction, not
-the parser, request-policy or interaction work.
+Separate parser conformance from restricted native output, represent sealed
+objects explicitly through parsing and composition, and keep image authorization
+and request state independent of render caches. Implement the parser contract,
+HTML policy, preference matrix and image lifecycle with their tests. Specify
+and test the request policy before connecting a real image loader. Acceptance
+authorizes this work; it does not mark any of those checks complete.
 
 ## Goals and non-goals
 
@@ -98,14 +101,16 @@ the default.
 | Raw HTML | Restricted formatting policy below | Restricted formatting policy below, including GFM disallowed-HTML handling |
 
 CommonMark's angle-bracket autolinks remain distinct from GFM's extended
-autolinks. The exact specification versions and conformance corpus are open
-items; a label alone does not establish conformance.
+autolinks. The conformance targets are CommonMark 0.31.2 and the published
+GFM 0.29-gfm specification, with independently pinned official corpora.
+A label alone does not establish conformance.
 
 A setting change reparses and refreshes open rendered page previews. The
 page-header preview toggle remains separate from the dialect choice, as
-does the existing **Preview rendering** scope control. R2 must specify their
-interaction; the markup-preserving editor styling and the syntax-removing
-rendered preview are different paths, not one shared renderer.
+does the existing **Preview rendering** scope control. R2 implements and tests
+their precedence matrix. Dialect selection applies only to rendered page
+previews, not markup-preserving editor styling, note editors or file editors.
+These are different rendering paths, not one shared renderer.
 
 ### Restricted HTML
 
@@ -115,11 +120,11 @@ rendering or a promise of browser-equivalent output. The supported element
 and attribute set, and the treatment of unsupported markup, require a
 reviewed allowlist before implementation is complete.
 
-The proposed resource policy applies to Markdown images and HTML images
-through the same loader. HTML conversion, CSS, `srcset`, SVG, and other
-resource-bearing constructs also need explicit treatment; restricting only
-`img.src` is insufficient. The proposed native pipeline below has no
-resource-loading operation during parsing or formatting.
+The accepted resource policy applies to Markdown images and supported HTML
+images through the same loader. The HTML policy must explicitly handle CSS,
+`srcset`, SVG and other resource-bearing constructs; restricting only `img.src`
+is insufficient. The native pipeline has no resource-loading operation during
+parsing or formatting.
 
 ### Images
 
@@ -128,10 +133,11 @@ changing dialect, or scrolling to an image does not authorize its fetch.
 The pre-load presentation includes the image's alt text and an explicit
 load action.
 
-Request policy, consent scope, caching, supported formats, size limits,
-local-image behavior, and failure presentation remain open decisions.
-Click-to-load does not by itself settle those details or establish a
-privacy guarantee about an authorized request.
+R4 and R5 deliver the request policy, consent lifecycle, cache behavior,
+supported formats, numeric limits, deterministic local-image fallback and
+failure/retry presentation as implementation specifications and tests.
+Click-to-load does not by itself establish a privacy result for an authorized
+request.
 
 ## Existing authoritative constraints
 
@@ -290,8 +296,8 @@ states of the base:
 ADR-0059 expressly excludes image fetches from lifecycle-ledger `sent` events
 and their URL/alt/response metadata. Any request audit requires its own accepted
 event, field and retention decision. Operational transport logging and caching
-remain R4 questions. The accepted amendment does not make ADR-0012's whole
-proposed base accepted.
+are specified and tested in R4. The accepted amendment does not make
+ADR-0012's whole proposed base accepted.
 
 ### Gesture and surface contracts
 
@@ -306,7 +312,7 @@ an obligatory ⌘ modifier from link opening.
 
 **Markup-preserving editor styling** names ADR-0030's mounted/quiet source
 presentation. **Rendered page preview** names the separate syntax-removing
-surface in Law 0001. R2 still specifies the header-toggle/scope/dialect matrix.
+surface in Law 0001. R2 implements the header-toggle/scope/dialect matrix below.
 Rendering, restyling and cache refresh do not authorize a request. Image-size
 changes still require geometry publication after any separately authorized load.
 
@@ -326,8 +332,8 @@ changes still require geometry publication after any separately authorized load.
   resource-request amendment, updated decision references and an image-action
   row with explicit test debt. Its governing sealed-object rule is unchanged.
 
-These jointly close R0. R1–R6 remain open in this plan; no runtime request,
-parser or AppKit result is supplied by enactment.
+These jointly close R0. R1–R6 are the delivery workstreams below; no runtime
+request, parser or AppKit result is supplied by enactment.
 
 ## Implementation baseline
 
@@ -352,7 +358,8 @@ These are code observations, not additional product requirements:
 - [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift)
   currently expects `||` column spans and `^` row spans. Those expectations
   differ from the published GFM table grammar; they are not a conformance
-  oracle. Resolve them explicitly when choosing the dialect contract.
+  oracle. R1 replaces those expectations with fixtures for the selected
+  published dialect grammar and records the removal of nonstandard spans.
 - `InlineHTML` and `HTMLBlock` contain opaque HTML strings. The current
   visitor has no HTML element stack. `swift-cmark/extensions/tagfilter.c`
   registers an HTML-output filter callback, not an AST transformation;
@@ -388,11 +395,39 @@ These are code observations, not additional product requirements:
   places the existing preview and syntax-highlighting controls in
   `CodeSettingsView`.
 
-## Proposed architecture corrections
+## Implementation architecture
+
+### Surface and preference contract
+
+Store the typed dialect selection app-wide in the existing application settings
+defaults domain. Unset, unknown or incorrectly typed values select GFM. Restore
+a recognized selection on restart. Do not add per-page overrides, page-content
+fields or synchronization for this preference.
+
+The page-header toggle chooses the existing rendered page-preview surface.
+The **Preview rendering** scope controls markup-preserving source styling; it
+does not disable an explicitly enabled page preview. Apply dialect only after
+selecting the rendered surface. Keep the existing Tabs, note and file surfaces;
+this feature does not add rendered previews to them.
+
+| Surface | Header preview | All pages | Focused page only | Never | Dialect effect |
+| --- | --- | --- | --- | --- | --- |
+| Selected Timeline page | Off | Styled source | Styled source | Plain source | None |
+| Nonselected Timeline page | Off | Styled source | Plain source | Plain source | None |
+| Selected Timeline page | On | Rendered preview | Rendered preview | Rendered preview | Reparse |
+| Nonselected Timeline page | On | Rendered preview | Rendered preview | Rendered preview | Reparse |
+| Tabs page or note editor | Not applicable | Existing source styling | Existing source styling | Plain source | None |
+| File editor | Not applicable | Existing file mode | Existing file mode | Existing plain presentation | None |
+
+Preserve syntax-highlighting preference semantics within source styling. A
+dialect change invalidates all rendered page previews, including nonselected
+ones, and reseeding compares both source identity and dialect. Remeasure and
+publish geometry, including above-viewport size changes; test scroll anchoring
+rather than inferring it from a cache notification.
 
 ### Separate syntax, HTML composition, and native output
 
-Evaluate this pipeline before choosing dependencies:
+Implement this pipeline in the application's rendered-preview path:
 
 1. Dialect-configured Markdown parsing, with sealed objects represented by
    opaque identities and source positions.
@@ -406,11 +441,12 @@ Evaluate this pipeline before choosing dependencies:
 4. A separately authorized loader supplies bounded decoded image data to
    current image occurrences; the UI then updates layout and roll geometry.
 
-This is a proposal, not a settled intermediate representation. A configurable
-fork/upstream parser change and an alternate parser with a native adapter
-are candidates. Direct access to the current C parser still needs evaluation
-of its Apple-specific grammar. Neither regex replacement of parsed output
-nor hiding GFM styling restores CommonMark syntax.
+Use a pinned, dialect-configured parser adapter and a typed composition
+representation. R1 supplies the dependency selection, source revisions,
+license/notice review and corpus tests as part of integration. The current
+Swift wrapper cannot implement the named modes by disabling its extensions:
+its Apple-specific core grammar also differs. Neither regex replacement of
+parsed output nor hiding GFM styling restores CommonMark syntax.
 
 HTML leaves cannot be rendered independently: `A <em>one **two**</em>` spans
 HTML and Markdown nodes, while `<del>\n*x*\n</del>` and
@@ -418,8 +454,9 @@ HTML and Markdown nodes, while `<del>\n*x*\n</del>` and
 across blocks, malformed-nesting recovery, whitespace, and whether unsupported
 elements are escaped, unwrapped, or removed with their contents. Never feed
 ordinary entity-decoded text such as `&lt;em&gt;literal&lt;/em&gt;` back into
-HTML recognition. Prototype a bounded tokenizer/composer or a non-fetching
-HTML parser; do not assume an allowlist supplies parsing or tree recovery.
+HTML recognition. Implement a bounded tokenizer/composer with explicit
+text provenance, object identities and recovery rules. Integrate it with the
+parser and native renderer; an allowlist alone does not supply tree recovery.
 
 The published [GFM §6.11](https://github.github.com/gfm/#disallowed-raw-html-extension-)
 states:
@@ -428,7 +465,7 @@ states:
 
 > All other HTML tags are left untouched.
 
-Interpretation: `tagfilter` is not the proposed restrictive allowlist.
+Interpretation: `tagfilter` is distinct from the restrictive native allowlist.
 Specify and test its native equivalent separately; dropping a tag/subtree
 is not the same output as escaping it. Record any intentional deviation.
 
@@ -443,17 +480,16 @@ The same header states:
 > In Mac OS X 10.4 and later, WebKit is always used for HTML documents
 
 These are platform documentation statements, not runtime probe results.
-Proposal: use explicit HTML-to-native mapping instead of AppKit HTML import.
-An `NSTextView` destination does not establish that its importer avoids
-WebKit or resource requests; deleting attachments after import is too late
-to prevent import-time requests. If import remains a candidate, R3 must
-first investigate it in an isolated instrumented harness.
+Use explicit HTML-to-native mapping. Do not use AppKit HTML import or an
+embedded browser for this feature. An `NSTextView` destination does not
+establish importer behavior; deleting attachments after import is too late
+to prevent import-time requests.
 
 ### Sealed-object placeholders are grammar input
 
-Pipeline step 1 assumes a parser that accepts opaque object identities.
-Neither candidate grammar defines one; the current renderer substitutes
-text, and the substitute's character class changes parsing.
+Pipeline step 1 implements an application grammar extension for opaque object
+identities. Neither published dialect defines this extension; the current
+renderer substitutes text, and the substitute's character class changes parsing.
 
 The pinned swift-cmark `test/spec.txt` (GFM 0.29) states:
 
@@ -478,13 +514,13 @@ The ASCII token is alphanumeric under both. Interpretations, not executed:
 - Tokens inside raw HTML tags, attribute values and comments reach the
   composer as attribute text, not objects (see R3).
 
-Proposal: define sealed-object syntax as an explicit application extension to
-each pinned dialect. Law 0001's one-position rule does not prescribe a Markdown
-punctuation class. Specify the placeholder's grammar class per dialect, or
-evaluate a parser-level atom in R1, and fixture-test both dialects. Report
-ordinary-text conformance separately from object-containing fixtures and
-native-output restrictions. A replacement token alone does not establish
-correct delimiter or autolink boundaries.
+Implement sealed-object syntax as an explicit application extension to each
+pinned dialect, using typed atoms and source positions through the parser
+adapter and composer. R1 specifies and tests their delimiter, autolink, table
+and resource-metadata behavior. Law 0001's one-position rule does not prescribe
+a Markdown punctuation class. Do not rely on alphanumeric substitution alone.
+Report ordinary-text conformance separately from object-containing fixtures
+and native-output restrictions.
 
 Under ADR-0059's accepted resource policy, a destination containing an object
 or its placeholder (Markdown image, HTML `src`/`srcset`, CSS `url()`) is refused,
@@ -495,8 +531,8 @@ image state, including after loading.
 
 ### Separate image state from rendering state
 
-The accepted route boundary is recorded above. Remaining design constraints
-for R4/R5 review include:
+Implement the accepted route boundary with the following image-state
+requirements. R4/R5 supply the detailed specifications and tests:
 
 - Identify an image occurrence by its originating page, source revision and
   occurrence, plus destination. A URL alone or rendered character index is
@@ -524,31 +560,36 @@ for R4/R5 review include:
   cell, not a TextKit 2 view provider. Validate VoiceOver exposure of a
   cell's load action rather than assuming it.
 
-Detailed request, consent, cache and copy-state choices still need review;
-the accepted route requirements do not establish runtime privacy or persistence
-results. Unsupported local, relative and non-network destinations still need
-deterministic fallback;
-their syntax can parse even when the application declines to load them.
+Record request, consent, cache and copy-state behavior with the corresponding
+production implementation and tests. The route requirements do not establish
+runtime privacy or persistence results. Unsupported local, relative and
+non-network destinations use deterministic fallback; parsing their syntax
+does not authorize loading them.
 
-## Research gates
+<a id="research-gates"></a>
 
-R0 is closed by the maintainer-directed accepted amendments above. It is an
-authority-reconciliation result, not a transport experiment or production-readiness
-result. R1–R6 remain open in this plan. R1–R5 close with reviewed contracts and
-relevant executable evidence; R6 records integrated release validation. A
-library label or screenshot is not a substitute for evidence. R1–R5 may be
-investigated in parallel, but the parser/composer/attachment prototype must be
-integrated before its architecture is selected. R4 uses the accepted R0 route
-boundary rather than reopen whether the feature is wanted.
+## Delivery workstreams and verification
 
-| Gate | Unvalidated assumption and research | Required output |
+R0 is closed by the maintainer-directed accepted amendments above. R1–R5 are
+accepted production implementation workstreams and may proceed in parallel
+where their code dependencies permit. Complete their specifications and tests
+alongside application integration, not as a separate research-only project or
+another approval of the feature. R6 records integrated release validation.
+
+Acceptance does not mark any outstanding work complete. A library label,
+prototype test count or screenshot is not a substitute for the specified
+application evidence. The loader depends on the R4 request contract and R5
+authorization/lifecycle checks; those checks remain prerequisites for enabling
+production requests, not for implementing the parser, renderer or preferences.
+
+| Workstream | Required implementation | Completion evidence |
 | --- | --- | --- |
 | **R0 — Authority reconciliation (closed 2026-10-16)** | Enacted at the maintainer's instruction: D-09 scope, separate resource-destination authorization, bounded route inventory, ledger exclusion and source/preview clarification. | Accepted [UI/UX successor](2026-1016-ui-ux-decisions.md), [ADR-0059](../../adr/0059-preview-images-use-an-explicit-resource-request-route.md) and [Law 0001 amendment](../../law/0001-sealed-object.md#amendments), plus principles amendment E and reciprocal ADR histories. Detailed request policy and transport experiments remain R4 work; no runtime result follows from R0. |
-| **R1 — Parser contract (blocking)** | Evaluate a configurable fork/upstream change and an alternate parser. Candidate targets are CommonMark 0.31.2 and published GFM 0.29-gfm, not an assumed common base version. Compare official examples independently of the dependency's edited corpus. Exercise single/double/triple tildes, extended autolink punctuation/email/protocol cases, Apple inline attributes, table spans, HTML comments, `textarea` block boundaries, and the P-versus-P/S punctuation definition (CommonMark 0.31.2 example 354). Fixture sealed objects adjacent to emphasis delimiters, extended autolinks, table pipes and link/image brackets in both dialects. | Pinned versions, source revisions and official corpus provenance/checksums; AST or test-only canonical HTML comparison with enumerated mismatches; reviewed decision on existing span tests; specified sealed-object extension and placeholder grammar class per dialect; dependency/license/notice review. Ordinary-text conformance, object-containing fixtures and native restrictions are reported separately. |
-| **R2 — Surface and preference contract (blocking)** | Trace rendered page previews versus markup-preserving mounted/quiet editor styling, notes, and files. Test the interaction of the header toggle with All pages / Focused page only / Never. Confirm whether dialect is intentionally preview-only. | Surface/precedence matrix and picker wording, chosen storage scope, unset/unknown-value and restart behavior, and invalidation tests for selected and nonselected previews. No unapproved editor/file scope expansion. |
-| **R3 — HTML composition (blocking)** | Prototype mixed HTML/Markdown, cross-block scope, escaped text, malformed nesting, quoted `>`, comments, and unsupported-element fallback. Exercise sealed tokens in attributes, removed elements, destinations, and comments. Investigate importer resource behavior if still considered. | Reviewed composition algorithm, element/attribute/native-style mapping and URL policy, explicit GFM-filter behavior, depth/work limits and fixtures proving object identity/order and text provenance. Instrument parsing/conversion itself for requests. |
-| **R4 — Request policy (blocking)** | Investigate request-session defaults rather than assuming ephemeral configuration removes all metadata. Observe App Transport Security's effect on `http` images with the current Info.plist, and do not add a global ATS exception without review. Refuse destinations containing sealed placeholders. Verify decoder format support and decoded-size bounding on the macOS 13.0 deployment target, not only the build SDK; untrusted image data is decoded in-process. Decide schemes, URL credentials, cookies/authentication, referrer and other headers, proxies, redirects including cross-origin/downgrade, loopback/private-network destinations, relative/base URLs, cache/storage/logging, timeout/concurrency, streamed byte bounds, MIME validation, raster/vector/animated formats and decoded size. | Reviewed request and consent policy with numeric limits, format list and lifecycle table, consistent with R0's accepted route authority. Instrumented transport tests for pre-activation inactivity and each allowed/denied redirect and destination; document residual exposure from authorized requests. |
-| **R5 — Native interactions and lifecycle (blocking)** | Prototype TextKit 1 image attachment cells beside sealed objects, in links/tables and multiselections, including objects inside alt text. Implement and validate ADR-0059's distinct destination-labelled Load Image control with the unchanged link and promotion rules; ordinary text/link/image-body clicks do not load. Exact gestures/accessibility mechanics remain open. Exercise expiry between click/dispatch/redirect/completion, page close/switch, source replacement, and preference changes during loading. | Exact text and pasteboard expectations for all image states and Services overloads; rendered order of alt-text objects in each state; keyboard/VoiceOver and nonselected-page activation behavior; stale-result rejection, request identity, and layout/scroll/minimap observations. Review against the accepted law and ADR-0023. |
+| **R1 — Parser integration** | Integrate pinned parsers targeting CommonMark 0.31.2 and published GFM 0.29-gfm, not an assumed common base version. Compare official examples independently of the dependency's edited corpus. Test single/double/triple tildes, extended autolink punctuation/email/protocol cases, Apple inline attributes, standard table cells without nonstandard spans, HTML comments, `textarea` block boundaries, and the P-versus-P/S punctuation definition (CommonMark 0.31.2 example 354). Fixture sealed atoms adjacent to emphasis delimiters, extended autolinks, table pipes and link/image brackets in both dialects. | Pinned versions, source revisions and official corpus provenance/checksums; AST or test-only canonical HTML comparison with enumerated mismatches; replacement of nonstandard span expectations; sealed-object grammar extension; dependency/license/notice review. Report ordinary-text conformance, object-containing fixtures and native restrictions separately. |
+| **R2 — Preferences and invalidation** | Implement the preview-only dialect preference and the surface/precedence matrix above. Test the header toggle with All pages / Focused page only / Never. Preserve editor, note and file semantics. | Typed Settings picker, app-wide defaults storage, GFM fallback for unset/unknown values, restart coverage, and invalidation tests for selected and nonselected previews. |
+| **R3 — Native HTML composition** | Integrate the bounded composer with Markdown parsing and native output. Cover mixed HTML/Markdown, cross-block scope, escaped text, malformed nesting, quoted `>`, comments, raw-text bodies and unsupported-element fallback. Exercise sealed atoms in attributes, omitted markup, destinations and comments. Use explicit native mapping, not AppKit HTML import. | Documented element/attribute/native-style mapping and URL policy, GFM-filter behavior, numeric depth/work limits, and application fixtures for object identity/order and text provenance. Instrument parsing/conversion itself for requests. |
+| **R4 — Request contract and loader** | Specify and implement session/header behavior, schemes and ATS, URL credentials, cookies/authentication, referrer, proxies/intermediaries, redirects including cross-origin/downgrade, loopback/private-network destinations, relative/base URLs, cache/storage/logging, timeout/concurrency, streamed byte bounds, MIME validation, supported formats and decoded size. Refuse destinations containing sealed atoms or stand-ins. Keep the existing ATS configuration; a global exception needs a separate decision. Verify format support and decoded-size bounds on macOS 13.0, not only the build SDK; untrusted image data is decoded in-process. | Concrete request/consent policy, numeric limits, format list and lifecycle table recorded with the loader. Instrumented tests for pre-activation inactivity and every allowed/denied redirect and destination; document metadata exposure and other residual risks of authorized requests. Ephemeral session configuration alone is not request-isolation evidence. |
+| **R5 — Native interactions and lifecycle** | Implement TextKit 1 image attachment cells beside sealed objects, in links/tables and multiselections, including alt-text objects. Implement ADR-0059's distinct destination-labelled Load Image control with unchanged link and promotion rules; ordinary text/link/image-body clicks do not load. Specify and test pointer/keyboard/VoiceOver mechanics. Exercise expiry between click/dispatch/redirect/completion, page close/switch, source replacement and preference changes during loading. | Exact text and pasteboard expectations for all image states and Services overloads; rendered order of alt-text objects in each state; keyboard/VoiceOver and nonselected-page activation behavior; stale-result rejection, request identity, and layout/scroll/minimap observations against the accepted law and ADR-0023. |
 | **R6 — Integrated release validation** | Run pinned syntax fixtures, native policy tests, and AppKit interaction checks together; benchmark representative large/nested pages and large decoded images. Verify request counts across opening, scrolling, reparsing, resizing and retries. | Recorded commands/results, mismatch/restriction matrix, geometry and performance results, and manual interaction evidence. No inferred conformance or request-isolation result from screenshots alone. |
 
 Primary standards consulted on 2026-10-16:
@@ -559,24 +600,28 @@ not automatically implement the older published GFM grammar. Their examples
 use HTML as a structural oracle; a test-only serializer/comparator is needed
 for native parsing tests, not browser-equivalent AppKit screenshots.
 
-## Proposed implementation sequence
+## Implementation sequence
 
-1. **Close R1–R5 under the accepted R0 boundary.** Record the parser and
-   placeholder grammar, surface matrix, HTML composition and allowlist,
-   detailed request policy, and native image-state contract. Complete the
-   integrated prototype and technical review before production wiring.
-2. **Integrate dialect parsing and native output.** Pass dialect explicitly,
-   implement the selected grammar, and distinguish conformance tests from
-   intentional presentation restrictions. Integrate sealed-object restoration
-   with HTML filtering rather than bolting a sanitizer onto emitted text.
-3. **Wire preference and invalidation.** Add the typed picker under Code
-   using existing defaults patterns after R2 resolves storage. Proposed fallback
-   is GFM for unset/unknown values. Invalidate both model caches and preview
-   reseeding; remeasure selected/nonselected previews without relaunch.
-4. **Integrate reviewed HTML and image actions.** Emit inert descriptors,
-   implement the reviewed state machine and loader, preserve composed-copy
-   semantics, and publish geometry after asynchronous image updates.
-5. **Complete R6.** Extend
+1. **Integrate parsing and composition in the application.** Introduce the
+   explicit dialect/parser adapter and typed composer in the production preview
+   path. Reuse useful lab code and fixtures, but test the actual renderer.
+   Complete R1/R3 specifications, corpus comparisons and object-order coverage
+   alongside this work. Do not substitute another isolated prototype for this
+   integration.
+2. **Wire preference and invalidation.** Add the typed picker under Code using
+   the R2 storage and precedence contract. Use GFM for unset/unknown values.
+   Pass dialect explicitly through rendering and reseeding, invalidate both
+   model caches and views, and remeasure selected/nonselected previews without
+   relaunch. Keep source editor, note and file behavior unchanged.
+3. **Integrate restricted HTML and inert images.** Render the defined native
+   subset, preserve text provenance and composed-copy semantics, and retain
+   sealed-object positions. Finish native unloaded-state controls and tests
+   while R4/R5 request and lifecycle work proceeds.
+4. **Connect explicit image actions.** Implement the R4/R5 contract, numeric
+   limits, bounded decoding, lifecycle checks and transport tests before
+   enabling real requests. Publish geometry after image updates and reject
+   obsolete dispatch/results. No loader action is authorized by display refresh.
+5. **Complete R6 before release.** Extend
    [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift)
    and
    [`CheckpointMarkdownPreviewTests.swift`](../../../shell/Tests/CompanionKitTests/CheckpointMarkdownPreviewTests.swift),
@@ -585,8 +630,9 @@ for native parsing tests, not browser-equivalent AppKit screenshots.
 
 ## Acceptance criteria
 
-These delivery checks follow the accepted policy boundary and remaining
-technical reviews above; they are not evidence of implemented behavior.
+These delivery checks follow the accepted policy boundary and implementation
+contracts above. They remain to be demonstrated; acceptance is not evidence
+of implemented behavior.
 
 - R0's accepted records identify the replaced and unchanged earlier decisions,
   distinguish image-load authorization from destination enrollment, and state
@@ -635,28 +681,33 @@ technical reviews above; they are not evidence of implemented behavior.
 These criteria describe delivery requirements; no implementation or test
 result is recorded by this document.
 
-## Open decisions
+## Required implementation specifications
 
-R0's authority reconciliation is accepted and closed; the following technical
-and release decisions remain open.
+Record concrete implementation details with production code and tests in the
+corresponding workstream. These are delivery obligations under this accepted
+plan, not draft feature suggestions or a further approval round. A change to
+the accepted scope or governing law/ADR still requires its own recorded decision.
 
-1. **Conformance target (R1):** exact versions, parser choice and unsupported
-   extensions; resolve existing table-span expectations and the placeholder
-   grammar class. An extension switch alone is not sufficient evidence.
-2. **Preference scope (R2):** app-wide versus page-owned state, restart
-   behavior, surface coverage, and precedence with preview scope. The agreed
-   baseline is the rendered page preview; editor/file changes are not assumed.
-3. **HTML policy and composition (R3):** parsing/recovery model, supported
-   native mappings, GFM filtering order, URL treatment and unsupported-markup
-   fallback. An allowlist alone does not close this decision.
-4. **Image authorization and requests (R4):** consent scope/revocation,
-   session behavior, redirects/destinations, caching, formats and numeric
-   resource limits within ADR-0059's accepted route. Route acceptance alone
-   does not close this technical decision.
-5. **Image representation and lifecycle (R5):** copy/Services, identity,
-   selection/activation, accessible actions, stale work, and geometry.
-6. **Release evidence (R6):** conformance results, native policy and interaction
-   coverage, request instrumentation, and performance measurements.
+1. **Parser (R1):** dependency versions and source pins, official corpus
+   provenance, mismatch disposition, removal of nonstandard table spans, and
+   per-dialect sealed-atom grammar. An extension switch alone is not evidence.
+2. **Preferences (R2):** typed storage, GFM fallback, restart behavior,
+   header/scope precedence, live invalidation and geometry tests for the surface
+   matrix above. Preserve source-editor, note and file semantics.
+3. **Composition (R3):** element/attribute/native mappings, text provenance,
+   raw-text handling, recovery rules, GFM filter order, URL treatment,
+   unsupported-markup fallback and numeric work limits.
+4. **Requests (R4):** explicit session and destination policy, consent
+   revocation, redirect checks, cache/storage/logging behavior, format list,
+   numeric transport/decoder limits and instrumented boundary tests before
+   enabling the loader. Acceptance does not supply unmeasured numeric limits
+   or decoder/runtime evidence.
+5. **Native lifecycle (R5):** image states and occurrence identity, alt/object
+   placement, exact copy/Services output, pointer/keyboard/VoiceOver activation,
+   stale-work rejection, fitting, layout and scroll anchoring.
+6. **Release evidence (R6):** integrated conformance, native interactions,
+   transport counts, performance and deployment-runtime results. Report actual
+   commands and unperformed checks separately.
 
 ## Review evidence and limits
 
@@ -675,6 +726,13 @@ Law 0001's preview rows, ADR-0021, ADR-0023, ADR-0030, ADR-0012's separately
 accepted amendment, the design index/principles and amendment conventions.
 The maintainer then instructed enactment of the recommended document amendments.
 The successor record, ADR-0059, law amendment and principles amendment now enact
-that policy and close R0. They do not supply runtime evidence. R1–R6 remain open
-in this plan; no parser, allowlist, detailed transport policy or implementation
-readiness is established by these documentation changes.
+that policy and close R0. They do not supply runtime evidence.
+
+The maintainer's subsequent instruction accepts this plan for production
+implementation and removes its research-only starting restriction. The
+[research results](2026-1016-markdown-preview-research-results.md) remain evidence
+only for their recorded experiments. This acceptance update changes
+documentation, not application behavior; R1–R6
+completion evidence must come from the implementation and validation work.
+No application, transport, macOS 13 runtime or accessibility test was performed
+to accept this document.

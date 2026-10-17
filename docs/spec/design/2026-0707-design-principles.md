@@ -209,7 +209,7 @@ authority gaps are not resolved by this exception.
 
 Image requests do not create lifecycle-ledger `sent` events; any request audit
 requires its own accepted decision. This is a policy amendment, not runtime
-validation. The [technical plan's R1–R6](2026-1016-markdown-dialects-and-preview.md#research-gates)
+validation. The [technical plan's R1–R6](2026-1016-markdown-dialects-and-preview.md#delivery-workstreams-and-verification)
 remain implementation and release work, including request isolation, numeric
 limits, decoder compatibility and accessible interaction checks.
 
