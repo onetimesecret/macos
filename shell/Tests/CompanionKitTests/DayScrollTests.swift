@@ -832,6 +832,38 @@ final class DayScrollTests: XCTestCase {
     }
 
     /// The mounted day's edits rebase a place on that day only.
+    func testAnEditAboveInTheMountedDayLeavesAQuietDaysReaderOnTheirLine() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let mounted = try page(in: model, saying: longPage(lines: 30))
+        let reading = try page(in: model, saying: longPage(lines: 80))
+        try select(mounted, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[reading])
+        XCTAssertLessThan(editor.frame.minY, quiet.frame.minY, "the case needs the mounted day above the reader")
+        let index = (quiet.string as NSString).range(of: "line 40 ").location
+        let glyph = try glyphRect(in: quiet, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, reading)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+
+        let typed = String(repeating: "new words typed above the reader\n", count: 20)
+        let start = NSRange(location: 0, length: 0)
+        XCTAssertTrue(editor.shouldChangeText(in: start, replacementString: typed))
+        try XCTUnwrap(editor.textStorage).replaceCharacters(in: start, with: typed)
+        editor.didChangeText()
+        roll.stack.update(projection: model.timeUnits, selectedPage: mounted, readOnly: false)
+
+        XCTAssertTrue(roll.stack.quietRegions[reading] === quiet)
+        XCTAssertEqual(quiet.string, longPage(lines: 80))
+        let offset = try XCTUnwrap(place.anchor.offset(in: quiet))
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, quiet.frame.minY + offset.y, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+    }
+
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()
