@@ -484,6 +484,29 @@ final class DayStackView: NSView {
             name: NSText.didChangeNotification,
             object: editor
         )
+        // Any storage, because the editor's storage is swapped per page; the handler filters.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mountedStorageEdited),
+            name: NSTextStorage.didProcessEditingNotification,
+            object: nil
+        )
+    }
+
+    /// Rebase a reading place on the mounted page through an edit to its storage. Only the
+    /// place moves here, inside `processEditing`; the next pass returns the clip to it.
+    @objc nonisolated private func mountedStorageEdited(_ notification: Notification) {
+        guard Thread.isMainThread, let storage = notification.object as? NSTextStorage,
+              storage.editedMask.contains(.editedCharacters) else { return }
+        let edited = storage.editedRange
+        let delta = storage.changeInLength
+        let posted = ObjectIdentifier(storage)
+        MainActor.assumeIsolated {
+            guard let mounted = editor?.textStorage, ObjectIdentifier(mounted) == posted,
+                  let place = readingPlace, place.page == coordinator.currentSheet,
+                  place.reading == .source else { return }
+            readingPlace = place.rebased(throughEdit: edited, changeInLength: delta)
+        }
     }
 
     /// A measurement changed. Only frames move from here, nothing

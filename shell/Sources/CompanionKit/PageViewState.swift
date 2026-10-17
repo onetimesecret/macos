@@ -149,6 +149,23 @@ struct RollPlace: Equatable {
         return place
     }
 
+    /// The same place after one storage edit, said as the storage says it: the edited
+    /// range in the new text and the change in length.
+    func rebased(throughEdit edited: NSRange, changeInLength delta: Int) -> RollPlace {
+        var place = self
+        place.anchor.characterIndex = Self.rebased(
+            anchor.characterIndex, throughEdit: edited, changeInLength: delta)
+        place.length = max(length + delta, 0)
+        return place
+    }
+
+    /// Past the replaced text an index moves by `delta`; inside it, it stays within the replacement.
+    static func rebased(_ index: Int, throughEdit edited: NSRange, changeInLength delta: Int) -> Int {
+        // The end itself moves too, so text arriving at the anchor goes above it.
+        if index >= NSMaxRange(edited) - delta { return index + delta }
+        return min(max(index, 0), NSMaxRange(edited))
+    }
+
     /// Rebase a UTF-16 index through unchanged text, or to its replacement's start.
     static func rebased(_ index: Int, from old: String, to new: String) -> Int {
         let oldCount = old.utf16.count

@@ -1088,6 +1088,107 @@ final class PageViewStateTests: XCTestCase {
             .mappedAnchor(into: .source, length: 50).characterIndex, 0)
     }
 
+    /// Edit a storage holding `text`, and answer what the storage reports of the edit.
+    private func storageEdit(
+        of text: String, _ edit: (NSTextStorage) -> Void
+    ) -> (text: String, edited: NSRange, delta: Int) {
+        let storage = NSTextStorage(string: text)
+        storage.beginEditing()
+        edit(storage)
+        let edited = storage.editedRange
+        let delta = storage.changeInLength
+        storage.endEditing()
+        return (storage.string, edited, delta)
+    }
+
+    private func inserting(_ inserted: String, at location: Int, into text: String) -> (
+        text: String, edited: NSRange, delta: Int
+    ) {
+        storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: location, length: 0), with: inserted) }
+    }
+
+    func testARollPlaceFollowsAStorageEditBeforeAtAndAfterItsAnchor() {
+        let text = "line 1\nline 2\nline 3"
+        let place = RollPlace(
+            page: 4, anchor: ScrollAnchor(characterIndex: 7, lineFraction: 0.25, x: 3),
+            length: text.utf16.count)
+        for (location, inserted, expected) in [(0, "new\n", 11), (7, "line 0\n", 14), (10, "X", 7)] {
+            let edit = inserting(inserted, at: location, into: text)
+            let moved = place.rebased(throughEdit: edit.edited, changeInLength: edit.delta)
+            XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 3), inserted)
+            XCTAssertEqual(moved.length, edit.text.utf16.count)
+            XCTAssertEqual(moved.page, place.page)
+            XCTAssertEqual(moved.reading, place.reading)
+            XCTAssertEqual(expected, RollPlace.rebased(7, from: text, to: edit.text),
+                           "a storage edit and a reseed agree where both can see the edit")
+        }
+    }
+
+    func testARollPlaceInsideAStorageDeletionGoesToWhereTheDeletionWas() {
+        let text = "first\nsecond\nthird\nfourth"
+        let edit = storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 6, length: 13), with: "") }
+        XCTAssertEqual(edit.text, "first\nfourth")
+        for (index, expected) in [(2, 2), (6, 6), (13, 6), (18, 6), (19, 6), (21, 8), (25, 12)] {
+            XCTAssertEqual(
+                RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta), expected,
+                "index \(index)")
+        }
+    }
+
+    func testARollPlaceInsideAStorageReplacementStaysWithinTheReplacement() {
+        let text = "first\nsecond\nthird\nfourth"
+        let replaced = NSRange(location: 6, length: 12)
+        for replacement in ["2nd", "the second and the third, both rewritten"] {
+            let edit = storageEdit(of: text) { $0.replaceCharacters(in: replaced, with: replacement) }
+            let end = 6 + replacement.utf16.count
+            XCTAssertEqual(edit.edited, NSRange(location: 6, length: replacement.utf16.count))
+            for index in replaced.location..<NSMaxRange(replaced) {
+                let moved = RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta)
+                XCTAssertEqual(moved, min(index, end), "index \(index) in \(replacement)")
+            }
+            XCTAssertEqual(RollPlace.rebased(18, throughEdit: edit.edited, changeInLength: edit.delta), end)
+            XCTAssertEqual(RollPlace.rebased(19, throughEdit: edit.edited, changeInLength: edit.delta), end + 1)
+            XCTAssertEqual(RollPlace.rebased(2, throughEdit: edit.edited, changeInLength: edit.delta), 2)
+        }
+    }
+
+    /// An undo step or a recovery restates the whole storage, so no old text survives to match.
+    func testAWholeStorageRewriteKeepsAnInteriorIndexAndMovesTheEnd() {
+        let text = "first\nsecond\nthird\nfourth"
+        let end = text.utf16.count
+        for rewritten in ["first\nfourth", "zero\nfirst\nsecond\nthird\nfourth"] {
+            let edit = storageEdit(of: text) { $0.setAttributedString(NSAttributedString(string: rewritten)) }
+            let length = rewritten.utf16.count
+            XCTAssertEqual(edit.edited, NSRange(location: 0, length: length), "the storage reports the whole text")
+            XCTAssertEqual(edit.delta, length - end)
+            for (index, expected) in [(0, 0), (13, min(13, length)), (end, length)] {
+                XCTAssertEqual(
+                    RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta), expected,
+                    "index \(index) in \(rewritten)")
+            }
+        }
+    }
+
+    func testARollPlaceFollowsStorageEditsInUTF16Units() {
+        let target = "👩‍💻 TARGET e\u{301}"
+        let text = "🧪 first\n" + target + "\n🚀 last"
+        let start = (text as NSString).range(of: target).location
+        let place = RollPlace(page: 2, anchor: ScrollAnchor(characterIndex: start), length: text.utf16.count)
+        let edits = [
+            inserting("😀 above, 🐈\n", at: 0, into: text),
+            storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 0, length: start), with: "") },
+            storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 0, length: 2), with: "🐈🐈") },
+            inserting("🚀", at: start + ("👩‍💻 " as NSString).length, into: text),
+            inserting("\n🐈 below", at: text.utf16.count, into: text),
+        ]
+        for edit in edits {
+            let moved = place.rebased(throughEdit: edit.edited, changeInLength: edit.delta)
+            let index = moved.anchor.characterIndex
+            XCTAssertEqual(index, (edit.text as NSString).range(of: "👩‍💻").location, edit.text)
+            XCTAssertEqual(moved.length, (edit.text as NSString).length)
+        }
+    }
+
     /// One window's roll, mounted as the representable mounts it: made,
     /// sized, and given its first pass.
     private struct Roll {

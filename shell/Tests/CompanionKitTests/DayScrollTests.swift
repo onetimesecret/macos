@@ -744,6 +744,50 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// A paste or a programmatic insert that scrolls nothing, through the storage alone
+    /// and through the view's own change protocol, which lays the roll out at once.
+    func testAParagraphInsertedAboveTheReaderInTheMountedDayKeepsTheSameLineAtTheTop() throws {
+        for throughTheView in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = true
+            _ = try page(in: model, saying: longPage(lines: 10))
+            let selected = try page(in: model, saying: longPage(lines: 80))
+            let roll = try mountRoll(model: model)
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let editor = try XCTUnwrap(roll.stack.editor)
+            let storage = try XCTUnwrap(editor.textStorage)
+            let target = "line 40 "
+            let index = (editor.string as NSString).range(of: target).location
+            let glyph = try glyphRect(in: editor, at: index)
+            scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.currentPlace)
+            XCTAssertEqual(place.page, selected)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+
+            let paragraph = "a paragraph pasted 🧪 above the reader, long enough to wrap at this width\n"
+            let above = NSRange(location: (editor.string as NSString).range(of: "line 10 ").location, length: 0)
+            if throughTheView {
+                XCTAssertTrue(editor.shouldChangeText(in: above, replacementString: paragraph))
+                storage.replaceCharacters(in: above, with: paragraph)
+                editor.didChangeText()
+            } else {
+                storage.replaceCharacters(in: above, with: paragraph)
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            }
+
+            let moved = (editor.string as NSString).range(of: target).location
+            XCTAssertEqual(moved, index + (paragraph as NSString).length)
+            var expected = place.anchor
+            expected.characterIndex = moved
+            let offset = try XCTUnwrap(expected.offset(in: editor))
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5,
+                           "through the view: \(throughTheView)")
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
+            XCTAssertTrue(roll.stack.editor === editor)
+            XCTAssertTrue(editor.textStorage === storage)
+        }
+    }
+
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()
