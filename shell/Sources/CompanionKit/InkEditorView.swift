@@ -398,6 +398,30 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = true
     }
 
+    /// Configure TextKit geometry; the caller owns the view's frame and sizing policy.
+    /// `viewportWidth` includes the text view's horizontal container insets.
+    static func configureWrapping(
+        _ wraps: Bool, textView: NSTextView, viewportWidth: CGFloat
+    ) {
+        guard let container = textView.textContainer else { return }
+        let measure = viewportWidth.isFinite
+            ? max(0, viewportWidth - textView.textContainerInset.width * 2) : 0
+        let measureChanged = (container as? InkTextContainer)?.setEditorMeasure(measure) ?? false
+        if container.widthTracksTextView != wraps {
+            container.widthTracksTextView = wraps
+        }
+        let size = NSSize(
+            width: wraps ? measure : .greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        if container.size != size {
+            container.size = size
+        }
+        if measureChanged {
+            textView.layoutManager?.textContainerChangedGeometry(container)
+        }
+    }
+
     /// Wrap, or let the lines run (⌥Z, and the setting behind it).
     ///
     /// Wrapped, the container takes its width from the text view and the
@@ -421,21 +445,15 @@ public struct InkEditorView: NSViewRepresentable {
     /// text view that ran wide keeps that frame, and nothing else takes
     /// it back, so the width is handed to the clip explicitly.
     static func setWrap(_ wraps: Bool, textView: InkTextView, scroll: NSScrollView) {
-        guard let container = textView.textContainer else { return }
+        guard textView.textContainer != nil else { return }
         let clip = scroll.contentSize
+        configureWrapping(wraps, textView: textView, viewportWidth: clip.width)
         if wraps {
-            container.widthTracksTextView = true
-            container.size = NSSize(width: clip.width, height: .greatestFiniteMagnitude)
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
             textView.setFrameSize(NSSize(width: clip.width, height: textView.frame.height))
             scroll.hasHorizontalScroller = false
         } else {
-            container.widthTracksTextView = false
-            container.size = NSSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
-            )
             textView.isHorizontallyResizable = true
             textView.autoresizingMask = []
             scroll.hasHorizontalScroller = true
