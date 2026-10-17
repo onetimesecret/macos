@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+# Vendor cmark and cmark-gfm into the shell's CMarkCommonMark and CMarkGFM targets (plan R1).
+# No argument: fetch the pinned commits and rewrite upstream/, prefix.h and UPSTREAM.md.
+# --check: offline; fail if upstream/, the patches or prefix.h differ from what UPSTREAM.md records.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "vendor-cmark.sh must run on macOS (prefix.h is read from Mach-O nm output)." >&2
+  exit 1
+fi
+
+CHECK=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) CHECK=1 ;;
+    *)
+      echo "unknown argument: $arg (the only flag is --check)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# A first-launch Xcode leaves xcrun without a resolved SDK and clang hangs on it
+# (see build-core.sh); a caller that exported either value keeps its own.
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+if [[ -z "${SDKROOT:-}" ]]; then
+  SDKROOT="$DEVELOPER_DIR/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+  [[ -d "$SDKROOT" ]] || SDKROOT="$DEVELOPER_DIR/SDKs/MacOSX.sdk"
+fi
+export SDKROOT
+
+CM_URL=https://github.com/commonmark/cmark
+CM_TAG=0.31.2
+CM_COMMIT=eec0eeba6d31189fd828314576494566d539b1e3
+CM_DIR=shell/Sources/CMarkCommonMark
+CM_PREFIX=otscm_
+
+GFM_URL=https://github.com/github/cmark-gfm
+GFM_TAG=0.29.0.gfm.13
+GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
+GFM_DIR=shell/Sources/CMarkGFM
+GFM_PREFIX=otsgfm_
+# patches/0001 is this master commit, exported with git format-patch.
+GFM_FIX_COMMIT=46829933c318b4c3108581e82469fe4474f744a9
+
+# Upstream paths to keep; each target's UPSTREAM.md says why. cmark's src/ files go flat into upstream/.
+CM_FILES=(
+  COPYING
+  src/blocks.c src/buffer.c src/cmark.c src/cmark_ctype.c
+  src/houdini_href_e.c src/houdini_html_e.c src/houdini_html_u.c
+  src/html.c src/inlines.c src/iterator.c src/node.c src/references.c
+  src/scanners.c src/utf8.c
+  src/buffer.h src/case_fold.inc src/chunk.h src/cmark.h src/cmark_ctype.h
+  src/entities.inc src/houdini.h src/inlines.h src/iterator.h src/node.h
+  src/parser.h src/references.h src/scanners.h src/utf8.h
+)
+GFM_FILES=(
+  COPYING
+  src/arena.c src/blocks.c src/buffer.c src/cmark.c src/cmark_ctype.c
+  src/footnotes.c src/houdini_href_e.c src/houdini_html_e.c
+  src/houdini_html_u.c src/html.c src/inlines.c src/iterator.c
+  src/linked_list.c src/map.c src/node.c src/plugin.c src/references.c
+  src/registry.c src/scanners.c src/syntax_extension.c src/utf8.c
+  src/buffer.h src/case_fold_switch.inc src/chunk.h
+  src/cmark-gfm-extension_api.h src/cmark-gfm.h src/cmark_ctype.h
+  src/entities.inc src/footnotes.h src/houdini.h src/html.h src/inlines.h
+  src/iterator.h src/map.h src/node.h src/parser.h src/plugin.h
+  src/references.h src/registry.h src/render.h src/scanners.h
+  src/syntax_extension.h src/utf8.h
+  extensions/autolink.c extensions/core-extensions.c
+  extensions/ext_scanners.c extensions/strikethrough.c extensions/table.c
+  extensions/tagfilter.c extensions/tasklist.c
+  extensions/autolink.h extensions/cmark-gfm-core-extensions.h
+  extensions/ext_scanners.h extensions/strikethrough.h extensions/table.h
+  extensions/tagfilter.h extensions/tasklist.h
+)
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/vendor-cmark.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+
+FAILED=0
+fail() {
+  echo "vendor-cmark.sh: $*" >&2
+  FAILED=1
+}
+
+# Where an upstream path goes inside the target directory.
+cm_dest() { if [[ "$1" == src/* ]]; then echo "upstream/${1#src/}"; else echo "upstream/$1"; fi; }
+gfm_dest() { echo "upstream/$1"; }
+
+# One `<sha256>  <path>` line per file under the target's upstream/.
+manifest() { # <target dir>
+  (cd "$1" && find upstream -type f ! -name .DS_Store | LC_ALL=C sort | while read -r path; do
+    shasum -a 256 "$path"
+  done)
+}
+
+# External symbols of a throwaway build of upstream/, minus Mach-O's leading underscore.
+# Given a prefix header, the shim is built too and the names come out as they link.
+symbols() { # <target dir> <prefix header or ""> <include dirs...>
+  local dir="$1" prefix="$2" out source include
+  shift 2
+  local flags=(-c -std=c99 -w -I"$dir/include" -I"$dir/generated")
+  for include in "$@"; do flags+=(-I"$dir/$include"); done
+  local sources=()
+  while read -r source; do sources+=("$source"); done < <(find "$dir/upstream" -name '*.c' | LC_ALL=C sort)
+  if [[ -n "$prefix" ]]; then
+    flags+=(-include "$prefix")
+    while read -r source; do sources+=("$source"); done < <(find "$dir/shim" -name '*.c' | LC_ALL=C sort)
+  fi
+  out="$(mktemp -d "$WORK/objects.XXXXXX")"
+  for source in "${sources[@]}"; do
+    clang "${flags[@]}" "$source" -o "$out/$(echo "${source#"$dir/"}" | tr / _).o"
+  done
+  nm -gU "$out"/*.o | awk 'NF == 3 { print $3 }' | sed 's/^_//' | LC_ALL=C sort -u
+}
+
+render_prefix() { # <prefix> <library name>, symbols on stdin
+  local guard
+  guard="$(echo "${1}PREFIX_H" | tr '[:lower:]' '[:upper:]')"
+  echo "// Generated by scripts/vendor-cmark.sh from nm -gU of upstream/; do not edit."
+  echo "// Renames every external $2 symbol so this copy links beside swift-cmark."
+  echo "#ifndef $guard"
+  echo "#define $guard"
+  while read -r symbol; do echo "#define $symbol $1$symbol"; done
+  echo "#endif"
+}
+
+# What UPSTREAM.md records, as `<sha256>  <path>` lines. Backticks in these patterns are Markdown.
+recorded_manifest() { grep -E '^[0-9a-f]{64}  upstream/' "$1/UPSTREAM.md" || true; }
+recorded_originals() {
+  # shellcheck disable=SC2016
+  sed -nE 's/^\| `(upstream\/[^`]+)` \| ([0-9a-f]{64}) \|$/\2  \1/p' "$1/UPSTREAM.md"
+}
+recorded_patches() {
+  # shellcheck disable=SC2016
+  sed -nE 's/^  - `(patches\/[^`]+)` \(SHA-256 ([0-9a-f]{64})\)$/\2  \1/p' "$1/UPSTREAM.md"
+}
+
+check_target() { # <target dir> <prefix> <library name> <dest fn> <include dirs...>
+  local dir="$1" prefix="$2" name="$3" dest="$4" file
+  shift 4
+  local files=()
+  if [[ "$dir" == "$CM_DIR" ]]; then files=("${CM_FILES[@]}"); else files=("${GFM_FILES[@]}"); fi
+
+  echo "==> Checking $dir"
+  if [[ ! -f "$dir/UPSTREAM.md" ]]; then
+    fail "$dir/UPSTREAM.md is missing"
+    return
+  fi
+
+  if ! diff -u <(for file in "${files[@]}"; do "$dest" "$file"; done | LC_ALL=C sort) \
+    <(recorded_manifest "$dir" | awk '{ print $2 }') >"$WORK/files.diff"; then
+    cat "$WORK/files.diff" >&2
+    fail "$dir: the kept files in this script and in UPSTREAM.md differ"
+  fi
+  if ! diff -u <(recorded_manifest "$dir") <(manifest "$dir") >"$WORK/manifest.diff"; then
+    cat "$WORK/manifest.diff" >&2
+    fail "$dir/upstream does not match the SHA-256 recorded in UPSTREAM.md"
+  fi
+
+  if [[ -d "$dir/patches" ]]; then
+    if ! diff -u <(recorded_patches "$dir") \
+      <(cd "$dir" && find patches -name '*.patch' | LC_ALL=C sort | while read -r file; do shasum -a 256 "$file"; done) \
+      >"$WORK/patches.diff"; then
+      cat "$WORK/patches.diff" >&2
+      fail "$dir/patches does not match the SHA-256 recorded in UPSTREAM.md"
+    fi
+    # Reversing every patch out of a copy of upstream/ must give back the pristine files.
+    local reversed="$WORK/reversed-${dir##*/}" patch
+    cp -R "$dir/upstream" "$reversed"
+    git -C "$reversed" init -q
+    while read -r patch; do
+      git -C "$reversed" apply -R "$PWD/$patch" || fail "$patch does not reverse cleanly out of $dir/upstream"
+    done < <(find "$dir/patches" -name '*.patch' | LC_ALL=C sort -r)
+    if ! diff -u <(recorded_originals "$dir") <(recorded_originals "$dir" | while read -r _ file; do
+      echo "$(cd "$reversed" && shasum -a 256 "${file#upstream/}" | awk '{ print $1 }')  $file"
+    done) >"$WORK/original.diff"; then
+      cat "$WORK/original.diff" >&2
+      fail "$dir: reversing the patches does not give the pre-patch SHA-256 in UPSTREAM.md"
+    fi
+  fi
+
+  if ! diff -u "$dir/prefix.h" <(symbols "$dir" "" "$@" | render_prefix "$prefix" "$name") >"$WORK/prefix.diff"; then
+    cat "$WORK/prefix.diff" >&2
+    fail "$dir/prefix.h does not match nm -gU of a build of upstream/"
+  fi
+  local strays
+  strays="$(symbols "$dir" "$PWD/$dir/prefix.h" "$@" | grep -v "^$prefix" || true)"
+  if [[ -n "$strays" ]]; then
+    fail "$dir: symbols without the $prefix prefix: $(echo "$strays" | tr '\n' ' ')"
+  fi
+}
+
+if [[ "$CHECK" == 1 ]]; then
+  check_target "$CM_DIR" "$CM_PREFIX" cmark cm_dest upstream
+  check_target "$GFM_DIR" "$GFM_PREFIX" cmark-gfm gfm_dest upstream/src upstream/extensions
+  if [[ "$FAILED" == 1 ]]; then
+    echo "vendor-cmark.sh --check failed; run scripts/vendor-cmark.sh to vendor afresh." >&2
+    exit 1
+  fi
+  echo "Vendored parsers match UPSTREAM.md and prefix.h"
+  exit 0
+fi
+
+# Fetches a pinned commit, plus any extra commits, each with its parent, and
+# confirms the tag still names the pinned commit.
+fetch() { # <url> <tag> <commit> <dir> [extra commits...]
+  local url="$1" tag="$2" commit="$3" dir="$4"
+  shift 4
+  echo "==> Fetching $url $tag ($commit)"
+  git init -q "$dir"
+  git -C "$dir" fetch -q --depth 2 "$url" "refs/tags/$tag:refs/tags/$tag" "$commit" "$@"
+  if [[ "$(git -C "$dir" rev-parse "refs/tags/$tag^{commit}")" != "$commit" ]]; then
+    echo "tag $tag of $url no longer names $commit" >&2
+    exit 1
+  fi
+  git -C "$dir" -c advice.detachedHead=false checkout -q "$commit"
+  if [[ "$(git -C "$dir" rev-parse HEAD)" != "$commit" ]]; then
+    echo "checkout of $url is not at $commit" >&2
+    exit 1
+  fi
+}
+
+fetch "$CM_URL" "$CM_TAG" "$CM_COMMIT" "$WORK/cmark"
+fetch "$GFM_URL" "$GFM_TAG" "$GFM_COMMIT" "$WORK/cmark-gfm" "$GFM_FIX_COMMIT"
+
+PATCHES=()
+while read -r patch; do PATCHES+=("$patch"); done < <(find "$GFM_DIR/patches" -name '*.patch' | LC_ALL=C sort)
+FIX_PATCH="${PATCHES[0]}"
+echo "==> Verifying $FIX_PATCH is upstream $GFM_FIX_COMMIT"
+if [[ "$(git -C "$WORK/cmark-gfm" show "$GFM_FIX_COMMIT" | git patch-id --stable | awk '{ print $1 }')" \
+  != "$(git patch-id --stable <"$FIX_PATCH" | awk '{ print $1 }')" ]]; then
+  echo "$FIX_PATCH is not the diff of upstream commit $GFM_FIX_COMMIT" >&2
+  exit 1
+fi
+
+# Pristine SHA-256 of every file a patch touches, taken before any patch applies.
+ORIGINALS=""
+while read -r path; do
+  ORIGINALS+="| \`$(gfm_dest "$path")\` | $(shasum -a 256 "$WORK/cmark-gfm/$path" | awk '{ print $1 }') |"$'\n'
+done < <(for patch in "${PATCHES[@]}"; do
+  git -C "$WORK/cmark-gfm" apply --numstat "$PWD/$patch" | awk '{ print $3 }'
+done | LC_ALL=C sort -u)
+for patch in "${PATCHES[@]}"; do
+  echo "==> Applying $patch"
+  git -C "$WORK/cmark-gfm" apply --whitespace=nowarn "$PWD/$patch"
+done
+
+copy_files() { # <clone> <target dir> <dest fn> <files...>
+  local clone="$1" dir="$2" dest="$3" file target
+  shift 3
+  echo "==> Copying $# files into $dir/upstream"
+  rm -rf "$dir/upstream"
+  for file in "$@"; do
+    target="$dir/$("$dest" "$file")"
+    mkdir -p "$(dirname "$target")"
+    cp "$clone/$file" "$target"
+  done
+}
+copy_files "$WORK/cmark" "$CM_DIR" cm_dest "${CM_FILES[@]}"
+copy_files "$WORK/cmark-gfm" "$GFM_DIR" gfm_dest "${GFM_FILES[@]}"
+
+echo "==> Writing prefix.h from nm -gU"
+symbols "$CM_DIR" "" upstream | render_prefix "$CM_PREFIX" cmark >"$CM_DIR/prefix.h"
+symbols "$GFM_DIR" "" upstream/src upstream/extensions | render_prefix "$GFM_PREFIX" cmark-gfm >"$GFM_DIR/prefix.h"
+echo "    cmark: $(grep -c '^#define [^ ]* ' "$CM_DIR/prefix.h") symbols, cmark-gfm: $(grep -c '^#define [^ ]* ' "$GFM_DIR/prefix.h") symbols"
+
+echo "==> Writing UPSTREAM.md"
+cat >"$CM_DIR/UPSTREAM.md" <<EOF
+# cmark $CM_TAG, vendored
+
+Written by \`scripts/vendor-cmark.sh\`; \`scripts/vendor-cmark.sh --check\` verifies
+this file, \`upstream/\` and \`prefix.h\` offline. Do not edit by hand.
+
+- Repository: $CM_URL
+- Tag: $CM_TAG
+- Commit: $CM_COMMIT
+- Patches: none
+
+## Kept files
+
+\`upstream/\` has \`COPYING\` and the files from upstream \`src/\` that the SHA-256
+list below names, copied byte-identical.
+
+The shim parses and walks the tree, which needs the block and inline parsers,
+the node, buffer, UTF-8, entity and reference code and the pregenerated
+\`scanners.c\` (re2c is not needed). \`cmark.c\` defines the default allocator
+and also \`cmark_markdown_to_html\`, which calls \`cmark_render_html\`, so
+\`html.c\` and the two escapers it calls (\`houdini_html_e.c\`,
+\`houdini_href_e.c\`) stay and the target links with no undefined symbol.
+Left out: \`main.c\` (the command line tool) and the other renderers
+(\`commonmark.c\`, \`latex.c\`, \`man.c\`, \`xml.c\`, \`render.c\`), which no kept
+file calls.
+
+\`generated/\` stands in for what CMake writes (\`cmark_export.h\`,
+\`cmark_version.h\`). \`prefix.h\` defines every external symbol of a build of
+\`upstream/\` to \`$CM_PREFIX<name>\`, and the target force-includes it into
+every C file.
+
+## SHA-256
+
+\`\`\`
+$(manifest "$CM_DIR")
+\`\`\`
+EOF
+# shellcheck disable=SC2016 # the patch list's backticks are Markdown
+cat >"$GFM_DIR/UPSTREAM.md" <<EOF
+# cmark-gfm $GFM_TAG, vendored
+
+Written by \`scripts/vendor-cmark.sh\`; \`scripts/vendor-cmark.sh --check\` verifies
+this file, \`upstream/\`, \`patches/\` and \`prefix.h\` offline. Do not edit by hand.
+
+- Repository: $GFM_URL
+- Tag: $GFM_TAG
+- Commit: $GFM_COMMIT
+- Patches, applied in order with \`git apply\` to the files of that commit:
+$(for patch in "${PATCHES[@]}"; do printf '  - `%s` (SHA-256 %s)\n' "${patch#"$GFM_DIR/"}" "$(shasum -a 256 "$patch" | awk '{ print $1 }')"; done)
+
+\`0001\` is upstream master commit $GFM_FIX_COMMIT, exported with
+\`git format-patch\`: the fix for the unsigned pointer wrap in
+\`validate_protocol\` (\`extensions/autolink.c\`). The script compares its patch
+id with that commit's. \`0002\` is Onetime Pad's own: a scalar in
+U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a www or
+http extended autolink.
+
+## Kept files
+
+\`upstream/\` has \`COPYING\` and the files from upstream \`src/\` and
+\`extensions/\` that the SHA-256 list below names, under their upstream paths.
+
+The shim parses with the five core extensions and walks the tree, which needs
+the block and inline parsers, the node, buffer, UTF-8, entity, map and
+reference code, the extension registry and plugin code, \`footnotes.c\` (the
+block parser calls it with footnotes off too), the pregenerated \`scanners.c\`
+and \`extensions/ext_scanners.c\` (re2c is not needed), and
+\`extensions/core-extensions.c\` with the table, strikethrough, autolink,
+tagfilter and tasklist extensions. \`arena.c\` stays because \`table.c\` calls
+\`cmark_arena_pop\`. \`cmark.c\` defines the default allocator and also
+\`cmark_markdown_to_html\`, which calls \`cmark_render_html\`, so \`html.c\` and
+the two escapers it calls stay and the target links with no undefined symbol.
+Left out: \`main.c\` (the command line tool) and the other renderers
+(\`commonmark.c\`, \`latex.c\`, \`man.c\`, \`plaintext.c\`, \`xml.c\`, \`render.c\`),
+which no kept file calls.
+
+\`generated/\` stands in for what CMake writes (\`cmark-gfm_export.h\`,
+\`cmark-gfm_version.h\`, \`config.h\`); no kept file includes the extensions'
+export header, so it has no stand-in. \`prefix.h\` defines every external
+symbol of a build of \`upstream/\` to \`$GFM_PREFIX<name>\`, and the target
+force-includes it into every C file.
+
+## SHA-256 before patching
+
+| File | SHA-256 |
+| --- | --- |
+${ORIGINALS%$'\n'}
+
+## SHA-256 after patching
+
+\`\`\`
+$(manifest "$GFM_DIR")
+\`\`\`
+EOF
+
+echo "Vendored cmark $CM_TAG and cmark-gfm $GFM_TAG; scripts/vendor-cmark.sh --check verifies them"

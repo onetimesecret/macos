@@ -4,6 +4,9 @@
 // scripts/build-core.sh — no Swift code holds a secret.
 import PackageDescription
 
+// The vendored parsers force-include their prefix.h, which takes an absolute path.
+let shellDirectory = String(#filePath.dropLast("/Package.swift".count))
+
 let package = Package(
     name: "OnetimePad",
     defaultLocalization: "en",
@@ -19,6 +22,34 @@ let package = Package(
             name: "CompanionCore",
             path: "../bindings/CompanionCore.xcframework"
         ),
+        // The preview's Markdown parsers (plan R1), vendored by scripts/vendor-cmark.sh;
+        // prefix.h renames every symbol so both link beside swift-cmark.
+        .target(
+            name: "CMarkCommonMark",
+            path: "Sources/CMarkCommonMark",
+            exclude: ["UPSTREAM.md", "upstream/COPYING", "upstream/case_fold.inc", "upstream/entities.inc"],
+            sources: ["upstream", "shim"],
+            cSettings: [
+                .headerSearchPath("upstream"),
+                .headerSearchPath("generated"),
+                .unsafeFlags(["-include", "\(shellDirectory)/Sources/CMarkCommonMark/prefix.h"]),
+            ]
+        ),
+        .target(
+            name: "CMarkGFM",
+            path: "Sources/CMarkGFM",
+            exclude: [
+                "UPSTREAM.md", "patches", "upstream/COPYING",
+                "upstream/src/case_fold_switch.inc", "upstream/src/entities.inc",
+            ],
+            sources: ["upstream", "shim"],
+            cSettings: [
+                .headerSearchPath("upstream/src"),
+                .headerSearchPath("upstream/extensions"),
+                .headerSearchPath("generated"),
+                .unsafeFlags(["-include", "\(shellDirectory)/Sources/CMarkGFM/prefix.h"]),
+            ]
+        ),
         // Everything the app is above its window: the seam wrapper, the
         // page model, and the views that render pages, chips, the ledger
         // and the exit ramp. Extracted when the backdrop graduated
@@ -31,7 +62,10 @@ let package = Package(
         // same mark scripts/render-icon.swift bakes into the app icon.
         .target(
             name: "CompanionKit",
-            dependencies: ["CompanionCore", .product(name: "Markdown", package: "swift-markdown")],
+            dependencies: [
+                "CompanionCore", "CMarkCommonMark", "CMarkGFM",
+                .product(name: "Markdown", package: "swift-markdown"),
+            ],
             path: "Sources/CompanionKit",
             resources: [.process("Resources")]
         ),
