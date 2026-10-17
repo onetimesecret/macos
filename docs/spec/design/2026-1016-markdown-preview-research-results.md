@@ -25,6 +25,14 @@ All prototypes are isolated under
 They are not integrated into the shipping preview. The dialects document is
 unchanged by this documentation update.
 
+Later addition, 2026-10-16: a fourth prototype, the R3
+[composition lab](../../../tools/markdown-preview-lab/composition/README.md)
+(commit `62510ea9`), is not one of the experiments reported here. Its code
+now runs in the shipping preview with recorded changes; the plan's
+[delivery record](2026-1016-markdown-dialects-and-preview.md#delivery-record)
+describes that integration and its tests. The three experiments below remain
+unintegrated.
+
 | Experiment | Recorded result | What remains open |
 | --- | --- | --- |
 | Placeholder abstract syntax trees (ASTs) | 270/270 assertions; three pinned C parser candidates | Opaque-object representation, exact GFM contract, composer/native integration |

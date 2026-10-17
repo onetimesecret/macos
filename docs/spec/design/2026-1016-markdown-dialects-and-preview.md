@@ -337,12 +337,16 @@ request, parser or AppKit result is supplied by enactment.
 
 ## Implementation baseline
 
-These are code observations, not additional product requirements:
+These are code observations, not additional product requirements. Bullets
+naming the composer describe the code after the R3 slice in the
+[delivery record](#delivery-record):
 
 - [`MarkdownPreviewView.swift`](../../../shell/Sources/CompanionKit/MarkdownPreviewView.swift)
   parses with `Document(parsing:options:)` and converts the resulting tree
-  into native AppKit attributed text. Images emit alt text and HTML emits
-  literal markup.
+  into native AppKit attributed text. Every text leaf, code span, break,
+  Markdown trait, raw HTML leaf and image passes through one
+  `PreviewCompositionStream` per rendering
+  ([`PreviewComposer.swift`](../../../shell/Sources/CompanionKit/PreviewComposer.swift)).
 - [`Package.swift`](../../../shell/Package.swift) selects `swift-markdown`
   from the 0.9 patch-release range. In the inspected dependency checkout,
   `CommonMarkConverter.parseString` unconditionally attaches `table`,
@@ -360,19 +364,27 @@ These are code observations, not additional product requirements:
   differ from the published GFM table grammar; they are not a conformance
   oracle. R1 replaces those expectations with fixtures for the selected
   published dialect grammar and records the removal of nonstandard spans.
-- `InlineHTML` and `HTMLBlock` contain opaque HTML strings. The current
-  visitor has no HTML element stack. `swift-cmark/extensions/tagfilter.c`
-  registers an HTML-output filter callback, not an AST transformation;
-  attaching it would not implement filtering in the native visitor.
+- `InlineHTML` and `HTMLBlock` contain opaque HTML strings. The renderer
+  tokenizes each with
+  [`HTMLTokenizer`](../../../shell/Sources/CompanionKit/HTMLTokenizer.swift)
+  and composes it in the document's one element stack.
+  `swift-cmark/extensions/tagfilter.c` registers an HTML-output filter
+  callback, not an AST transformation; the composer applies the GFM filter
+  to native output instead.
 - `MarkdownPreviewRenderer.init` replaces each sealed object's `U+FFFC`
   with an ASCII token (`OTSAttachment`, a per-render hex suffix, an index,
-  and `Z`) before parsing; `literal(_:attributes:)` restores objects from
-  tokens in emitted text. `safeURL` refuses a link destination containing
-  the token, and objects with no visible leaf are flushed as separate
-  paragraphs. The parser therefore sees each object as letters and digits.
-- `Markdown.Image` renders its child inlines in secondary color, so an
-  object inside alt text is emitted inside the image's text. No image
-  destination is read.
+  and `Z`) before parsing; `parts(_:addressOf:)` turns each token spelling
+  in a leaf into a typed object part, each token once, and an image address
+  assigns only tokens inside the image's own source, keeping any other
+  spelling as text so the composer refuses the address. `safeURL`
+  refuses a link destination containing the token, and objects with no
+  visible leaf are flushed as separate paragraphs. The parser therefore
+  sees each object as letters and digits; R1's typed atom does not exist yet.
+- A `Markdown.Image` composes as its alt text, the plain text of its inlines
+  as CommonMark's HTML writer gives it, in secondary color, followed by any
+  objects in its destination. Its destination is read only into a
+  `PreviewImageDescriptor` under `NSAttributedString.Key.previewImage`; no
+  code reads that attribute yet.
 - The preview builds an explicit `NSLayoutManager` (TextKit 1) and uses
   `NSTextTable`/`NSTextBlock`; sealed objects draw through
   `SealedBlockCell`, an `NSTextAttachmentCell`.
@@ -627,6 +639,113 @@ for native parsing tests, not browser-equivalent AppKit screenshots.
    [`CheckpointMarkdownPreviewTests.swift`](../../../shell/Tests/CompanionKitTests/CheckpointMarkdownPreviewTests.swift),
    add syntax-corpus, settings, transport and lifecycle tests, and perform
    the AppKit interaction pass.
+
+## Delivery record
+
+Each entry records what the application code does after a slice and which
+tests exercise it. An entry is evidence for its slice only: it closes no
+workstream, satisfies no acceptance criterion by itself and changes no
+accepted scope. Documents edited in the same slice are not evidence for it.
+
+### 2026-10-16: R3 composition in the rendered page preview
+
+**Integrated.** The composition prototype in
+[`tools/markdown-preview-lab/composition/`](../../../tools/markdown-preview-lab/composition/)
+(commit `62510ea9`) now runs in the application as
+[`HTMLTokenizer.swift`](../../../shell/Sources/CompanionKit/HTMLTokenizer.swift),
+[`HTMLEntities.swift`](../../../shell/Sources/CompanionKit/HTMLEntities.swift)
+and [`PreviewComposer.swift`](../../../shell/Sources/CompanionKit/PreviewComposer.swift).
+`MarkdownPreviewRenderer` in
+[`MarkdownPreviewView.swift`](../../../shell/Sources/CompanionKit/MarkdownPreviewView.swift)
+feeds one `PreviewCompositionStream` per rendering with every Markdown text
+leaf, code span and code block, soft and hard break, Markdown trait
+(emphasis, strong, strikethrough, inline code), raw HTML leaf, image and
+flushed object, then maps the runs to native attributes. The lab package is
+now a frozen research record; the application copy is the one maintained.
+
+**Not integrated.** R1's parser adapter: the parser is still swift-markdown
+0.9, with its Apple core grammar, table spans and attached GFM extensions,
+and sealed objects are still ASCII tokens. R2's preference: the view always
+composes as GFM, and `MarkdownPreviewView.render(_:dialect:limits:)` takes
+CommonMark only from tests. R4 requests and R5 image controls, lifecycle and
+accessibility: there is no Load Image control and no image attachment.
+
+#### Composition contract as implemented
+
+| Area | Implemented behavior |
+| --- | --- |
+| Formatting elements | `em` and `i` italic, `strong` and `b` bold, `del`, `s` and `strike` strikethrough, `code` code font with background; `span` scopes with no style. Markdown traits and HTML elements combine on the same text. |
+| Block elements | `p` and `div` open and close with a line break where the output is not already at one, and open no scope: an omitted `</p>` costs no depth, and `</p>` or `</div>` ends no formatting. `br` emits U+2028, a line break inside its paragraph. |
+| Scope | One element stack for the whole document, across Markdown blocks. A closing tag closes the nearest matching element and every element opened after it; an unmatched closing tag is literal text; an unclosed element lasts to the end of the page. |
+| Links | `a` takes its first `href`, entity decoded once, refused if any `href` contains an object or placeholder; the renderer then applies the Markdown link policy (`safeURL`: http and https with a host, or mailto with its address alone). Inside a Markdown link, accepted or refused, no HTML link applies. Image text never takes a link. |
+| Images | Markdown images and `img` become a `PreviewImageDescriptor` (rendering ordinal and address, `unreviewed`, `refused(missing)` or `refused(sealedObject)`) under `NSAttributedString.Key.previewImage`, over the fallback text in secondary color. Markdown alt text is the plain text of its inlines. For `img`, the first `alt` supplies text and every other attribute supplies only its objects, in attribute order. `srcset`, `style`, `poster`, `data` and every other attribute produce no output beyond their objects. Empty alt text leaves no visible text and no descriptor range. |
+| Unsupported markup | Any other element is escaped as its literal tag text, without entity decoding, and its children compose. Malformed tags, declarations and processing instructions are literal. |
+| GFM filter | Under GFM, `title`, `textarea`, `style`, `xmp`, `iframe`, `noembed`, `noframes`, `script` and `plaintext` tags are escaped before the element policy: the tag's own spelling becomes text, entity decoded once and never tokenized again, and opens no raw-text scope. |
+| CommonMark raw text | Under CommonMark composition, `script`, `style`, `xmp`, `iframe`, `noembed` and `noframes` bodies are raw text, `title` and `textarea` bodies decode entities, and `plaintext` runs to the end. The scope spans raw HTML leaves; Markdown structure inside an open raw-text body fails the composition. |
+| Comments | A valid comment leaves no text; each object inside it is emitted in place. |
+| Whitespace | HTML text decodes entities once, then collapses each run of ASCII whitespace to one space, with none at a line start or after a space. Markdown text, literal tag text and raw-text bodies keep their spaces. The renderer trims an HTML block's leading and trailing whitespace and emits no paragraph for an HTML block left empty. |
+| Entities | `amp`, `lt`, `gt`, `quot`, `apos`, `nbsp` and terminated decimal or hexadecimal references; a zero, surrogate or out of range scalar becomes U+FFFD; anything else stays as written. This is not the HTML5 table. |
+| Objects | Each object reaches the composer once, as an opaque identity. Each event's output gives exactly its input objects in the same order, or the composition fails. Objects in attributes, comments and refused addresses are emitted at their element; an object never takes a link. A Markdown image's address takes only objects inside the image's own source: an object in a reference definition stays at the definition, and the image's address is refused because the token spelling stays in it. A token spelled twice outside an address fails the composition. |
+| Limits | Per rendering: 1,000,000 input scalars, 4,000,000 events, 1,000,000 raw HTML tokens, combined Markdown and HTML depth 64, 2,000,000 output runs. Input is the working bound; Markdown traits cost events but no input, so the event budget is four times the input budget. |
+| Failure | Any composition error, a limit included, renders the page's source text in one plain paragraph style with each object as its attachment, in source order. |
+
+Changes from the prototype: HTML text whitespace collapses and `br` emits
+U+2028 (the lab preserved raw whitespace and emitted a newline); `p` and
+`div` open no scope (the lab pushed elements for them); composition is
+streamed, with each event's output objects checked against its input
+objects, instead of one preflight over a complete event array; the event,
+token and run budgets are larger; the failure presentation above is new.
+
+#### Tests
+
+| File | Coverage |
+| --- | --- |
+| [`HTMLTokenizerTests.swift`](../../../shell/Tests/CompanionKitTests/HTMLTokenizerTests.swift) | The lab's tokenizer and entity suite, unchanged: quoted attributes, comments, raw-text scanning, typed objects, limits and 512 randomized source reconstructions. |
+| [`PreviewComposerTests.swift`](../../../shell/Tests/CompanionKitTests/PreviewComposerTests.swift) | The lab's composer suite with the changed whitespace, `br` and block-element expectations, plus the stream API. |
+| [`MarkdownPreviewCompositionTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewCompositionTests.swift) | Application fixtures through `MarkdownPreviewView`: exact text and style for the subset, mixed HTML and Markdown, cross-block scope, escaped text, unsupported and disallowed tags, comments, HTML links, image descriptors, objects in addresses and their copy order, reference images, Markdown links inside HTML links, HTML block layout, the dialect difference, the limit fallback, a long ordinary page, and a URL-load probe. |
+| [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift) | Existing renderer fixtures; the HTML expectation now matches the composed output. |
+
+The URL-load probe registers a `URLProtocol` with the shared URL loading
+system, renders, lays out and draws a page of resource-bearing Markdown and
+HTML, and records no request; a control request through `URLSession.shared`
+is recorded by the same probe. It does not observe sessions with their own
+configuration, out-of-process loading or raw sockets.
+
+An adversarial review of the slice, before this record, executed inputs
+against the renderer and found: a reference image whose definition followed
+later text assigned that text's objects to itself, which removed them from
+later raw HTML, so an `a` or `img` address with an object became
+`unreviewed` and a tag broken by an object became formatting; an event
+budget of 100,000 that sent ordinary pages over about 10,000 formatted lines
+to the plain fallback; and an HTML link applying over a refused Markdown
+link. Each is fixed above and has a fixture in
+`MarkdownPreviewCompositionTests`. The review found no image attachment, no
+token text in output, no crash on its malformed inputs and no quadratic path.
+
+Run from `shell/` on 2026-10-16, macOS 27.2 on arm64, Apple Swift 6.4:
+`swift test --filter "HTMLTokenizerTests|PreviewComposerTests|MarkdownPreviewCompositionTests|MarkdownPreviewRenderingTests|CheckpointMarkdownPreviewTests|DayScrollPreviewRenderingTests|PageModelPreviewRenderingTests"`,
+196 tests, 0 failures. Not run: the full shell suite (left to CI), a macOS
+13 runtime, a manual interaction pass and VoiceOver. An offscreen render of
+a sample page was inspected by eye; it is not evidence beyond that page.
+
+#### Open R3 items
+
+- Review this contract against the acceptance criteria, in particular the
+  whitespace, block-element, unclosed-element and failure choices.
+- Under CommonMark composition an inline raw-text tag, as in
+  `Use <script> and *this*`, fails the whole page into the plain fallback.
+  Decide the raw-text scope of inline tags before R2 exposes CommonMark.
+- Objects in Markdown link destinations, in link and image titles and in
+  reference definitions still reach the output through the renderer's flush
+  and catch-up path, so they appear at the next object or block end rather
+  than at their element. R1's typed atom replaces this path.
+- A force click on a link, Markdown or now HTML, goes through
+  `quickLook(with:)`, which asks only `mayReadOut`, not the ⌘-click route.
+  Whether AppKit's link preview there fetches the page is unverified; check
+  it on hardware against Law 0001's link row and ADR-0023.
+- The HTML5 named-reference table, numeric control remapping and an
+  explicit empty-alt fallback and descriptor carrier (R5) are not
+  implemented.
 
 ## Acceptance criteria
 
