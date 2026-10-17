@@ -1,5 +1,13 @@
 # Preview composition lab
 
+**Frozen.** On 2026-10-16 this code moved into the application as
+`shell/Sources/CompanionKit/{HTMLTokenizer,HTMLEntities,PreviewComposer}.swift`,
+with its tests in `shell/Tests/CompanionKitTests/`. The application copy
+changed whitespace, `br`, block-element and streaming behavior; the plan's
+[delivery record](../../../docs/spec/design/2026-1016-markdown-dialects-and-preview.md#delivery-record)
+lists the differences. This package is kept as the research record and is not
+updated with the application.
+
 Experimental Swift implementation of the R3 composition boundary in the
 [Markdown preview plan](../../../docs/spec/design/2026-1016-markdown-dialects-and-preview.md#research-gates).
 It converts typed Markdown/HTML events into text runs, formatting traits,
