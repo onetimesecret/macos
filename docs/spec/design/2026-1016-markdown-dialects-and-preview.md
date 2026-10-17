@@ -18,11 +18,18 @@ content; remote images load only after an explicit click. The approval was:
 “Yes agreed. Please capture the plan at docs/spec/design”. The maintainer
 reconfirmed on 2026-10-16 that the work is operator-initiated.
 
-The draft status applies to the technical details, research gates and open
-decisions, not to whether the feature is wanted. Target requirements below are not a description of shipped behavior or
-evidence of validated guarantees. Technical recommendations and research
-gates remain proposals. This document does not amend an accepted behavior
-law or ADR; acceptance of a new network route requires its own review.
+The maintainer reconfirmed that the concept is wholly approved and its
+implementation details are not finalized. The draft status applies to the
+technical details, research gates and open decisions, not to whether the
+feature is wanted. Target requirements below are not a description of shipped
+behavior or evidence of validated guarantees. Technical recommendations and
+research gates remain proposals. This document does not amend an accepted
+behavior law or ADR; acceptance of a new network route requires its own review.
+
+Reconciliation updates the older decisions to accommodate the approved scope;
+it does not reopen dialect selection, restricted HTML or explicitly activated
+remote images. Removing images would require a new maintainer scope decision,
+not merely an unresolved reconciliation gate.
 
 ## Summary
 
@@ -172,12 +179,18 @@ state:
 > no new content crosses a process or network
 > boundary.
 
+The same accepted [Decision](../../adr/0030-visible-pages-share-preview-rendering.md#decision)
+states:
+
+> Preview rendering remains markup-preserving.
+
 Interpretation for this plan: dialect is an additional rendering input, and
-asynchronous image-size changes need geometry publication too. ADR-0030
-establishes display-only restyling, not authorization for image requests.
-Review and record the new network route in an accepted decision before
-shipping it. This is not evidence that dialect invalidation or image
-loading is already implemented.
+asynchronous image-size changes need geometry publication too. ADR-0030's
+markup-preserving presentation and Law 0001's rendered-copy preview are distinct
+surfaces despite the shared word preview. ADR-0030 establishes display-only
+restyling, not authorization for image requests. Review and record the new
+network route in an accepted decision before shipping it. This is not evidence
+that dialect invalidation or image loading is already implemented.
 
 The accepted [2026-0915 UI/UX record](2026-0915-ui-ux-decisions.md), whose
 D-09 is listed in Law 0001's `decisions` front matter, states at D-09:
@@ -190,22 +203,135 @@ Its review correction states:
 
 > D-09's one outbound action means one network action and does not contradict D-32's three egresses
 
-Interpretation: on its face, a remote-image request is a second network
-outbound action. The shell already contains another request path
-(`FeedbackClient.swift`), and accepted ADR-0021 decides sync over a relay;
-this review does not settle how D-09's count applies to either. R0 must resolve it by
-amendment or explicit scoping before an image route is accepted; this
-document does not reinterpret D-09.
+The accepted [ADR-0021, Consequences](../../adr/0021-multi-device-sync-over-a-blind-relay.md#consequences)
+state:
+
+> The relay is a second allowed TLS destination.
+
+Interpretation: D-09 counts actions and ADR-0021 counts destinations, but the
+accepted relay route already requires reconciliation with an app-wide reading
+of D-09. A remote-image request adds another action and potentially a
+document-selected destination. The shell also contains a `FeedbackClient.swift`
+request path; its existence is not evidence of an accepted exception. R0 must
+resolve the scope explicitly rather than infer authority from code.
+
+The [design index](README.md#foundational-design-reading-order) identifies the
+design principles as binding, as amended by rev C.
+[Design principles §6](2026-0707-design-principles.md#6-escalate-deliberately)
+states:
+
+> Every destination is one the user enrolled and can see.
+
+Interpretation: authorization to load a document-provided image must be defined
+separately from enrollment of a sync destination; a click is not implicitly
+device enrollment. The technical survey's destination count is not an
+alternative source of route authority: the
+[design index](README.md) explicitly states:
+
+> It is not a verified inventory of current network traffic.
 
 The accepted [ADR-0023, Consequences](../../adr/0023-hybrid-link-affordance-cmd-click-opens.md#consequences)
 state:
 
 > Opening is deliberate and therefore auditable as a gesture: nothing leaves the app because a click landed a pixel too far left.
 
-ADR-0023 decides link clicks on the page's editable ink. Code observation:
-the preview's `PreviewLinks` delegate applies the same ⌘-click rule.
-Interpretation: a plain click that dispatches an image request departs from
-that gesture model; R5 must define the load gesture against it.
+ADR-0023 decides link clicks on the page's editable ink. The accepted
+[Law 0001 preview-link row](../../law/0001-sealed-object.md#appkits-text-routes)
+also states:
+
+> a plain click opens nothing
+
+Interpretation: the preview's link rule is an accepted requirement, not only
+an observation of `PreviewLinks`. R5 must distinguish a labelled image-load
+control from ordinary link/text/image-body clicks, or obtain an explicit
+exception for a different gesture.
+
+## Reconciliation path (proposed)
+
+The following recommendations define the authority work for R0 and the
+contracts to investigate in R1–R5. They are not accepted replacements for the
+sources above, and recording them does not close a gate.
+
+### Network and ledger authority
+
+Scope D-09's exclusivity to promotion of sealed content to a one-time link,
+rather than the app's entire network behavior. Preserve its explicit confirming
+action and named destination. Record image loading as a separate authorized
+resource-request route, with the recipient and the information disclosed before
+activation. Distinguish document-provided destinations authorized for a load
+from enrolled sync destinations; do not silently redefine enrollment.
+
+Create a route inventory for conceal, sync/authentication, feedback, release
+checks and images. For each, distinguish the action, destination, information
+sent, activation/authorization and authoritative source. Mark missing authority
+as unresolved rather than approve every implemented path by association. The
+inventory is documentation work, not proof of runtime request behavior.
+
+Keep resource requests separate from the three complete-payload egresses.
+[ADR-0012 Amendment 1](../../adr/0012-framing-threat-boundary-and-persistence-model.md#amendment-1-three-egress-points-and-one-clear-interval),
+which is accepted, states:
+
+> The ledger's `sent` record keeps its shape.
+
+That amendment enumerates copy decrypted, decrypted drag and promotion to a
+one-time link. ADR-0012's [Decision history](../../adr/0012-framing-threat-boundary-and-persistence-model.md#decision-history)
+states of the base:
+
+> This remains the proposed base record.
+
+Recommendation: exclude image fetches from the existing lifecycle ledger unless
+a separate request-audit decision is accepted. Request auditing would need its
+own event meaning, attempt/success timing, identity, fields and retention.
+Do not persist image URLs, alt text or response details by treating them as
+existing `sent` metadata, and do not attribute acceptance to ADR-0012's entire
+base from its accepted amendment.
+
+### Gesture and surface contracts
+
+Recommended R5 prototype: a distinct **Load image** control names its destination
+before activation. Ordinary clicks on preview text, links and image bodies do
+not dispatch requests. A first activation on a nonselected page only promotes
+that page; loading requires a separate activation. Keyboard and VoiceOver use
+the same originating-page/deadline checks. A linked image has separate load and
+open targets. Preserve ⌘-click for links; evaluate the image control's precise
+pointer/keyboard gesture without assuming that every explicit control requires
+⌘. If the design instead makes the image body a plain-click network target,
+record the exception explicitly against ADR-0023 and the law's preview rows.
+
+Use **markup-preserving editor styling** for the mounted/quiet presentation
+covered by ADR-0030, and **rendered page preview** for the syntax-removing
+surface covered by Law 0001's preview amendment. R2's matrix specifies how the
+header toggle, preview scope and dialect preference interact. Rendering,
+restyling and cache refresh do not confer image-load authorization in the
+proposed design; request dispatch is a separate action.
+
+### Records and acceptance order
+
+Follow the different amendment mechanisms rather than rewrite historical
+accepted text:
+
+1. Prepare a new dated UI/UX successor. The
+   [2026-0915 record, Pipeline and status](2026-0915-ui-ux-decisions.md#0--pipeline-and-status)
+   requires: “A decision that changes gets a **new** dated document.”
+   [Law conventions](../../law/README.md#behaviour-law-conventions) describe a dated record as
+   “superseded whole when any of them changes.” Preserve unchanged decisions
+   explicitly in the successor, including intervening accepted amendments;
+   change the predecessor's status and successor link only when accepted.
+2. Prepare a focused resource-request authority ADR. Name affected clauses of
+   earlier ADRs and identify which remain unchanged. Record any changed scope
+   of the design principles explicitly. The
+   [ADR conventions](../../adr/README.md#lifecycle) state:
+   “A changed decision, changed trade-off, or new scope requires a successor ADR.”
+   Keep unresolved transport and gesture details visible; do not present a
+   proposed route as accepted or production-ready.
+3. On acceptance, amend Law 0001 in place with a dated entry, updated decision
+   references and an image-action route. Its
+   [conventions](../../law/README.md#pipeline) state: “A law is amended in place.”
+   Each new row identifies its test or explicit test debt. The governing
+   sealed-object rule is unchanged by this proposal.
+4. Keep this plan draft for technical design. Link the accepted reconciliation
+   records when available. R0 closes on their acceptance; R4/R5 still require
+   the detailed policy and executable evidence before production wiring.
 
 ## Implementation baseline
 
@@ -356,12 +482,20 @@ The ASCII token is alphanumeric under both. Interpretations, not executed:
 - Tokens inside raw HTML tags, attribute values and comments reach the
   composer as attribute text, not objects (see R3).
 
-Proposal: specify the placeholder's grammar class per dialect, or evaluate a
-parser-level atom in R1, and fixture-test both dialects. A resource
-destination containing a placeholder (Markdown image, HTML `src`/`srcset`,
-CSS `url()`) is never loadable, mirroring `safeURL`'s link refusal. An
-object inside alt text remains part of rendered order; R5 specifies where it
-appears once the image replaces the alt text.
+Proposal: define sealed-object syntax as an explicit application extension to
+each pinned dialect. Law 0001's one-position rule does not prescribe a Markdown
+punctuation class. Specify the placeholder's grammar class per dialect, or
+evaluate a parser-level atom in R1, and fixture-test both dialects. Report
+ordinary-text conformance separately from object-containing fixtures and
+native-output restrictions. A replacement token alone does not establish
+correct delimiter or autolink boundaries.
+
+Under the proposed resource policy, a destination containing an object or its
+placeholder (Markdown image, HTML `src`/`srcset`, CSS `url()`) is never loadable,
+mirroring `safeURL`'s link refusal. R1/R3 also specify object treatment inside
+attributes, comments and unsupported HTML. An object inside alt text remains
+part of rendered order; R5 specifies its visible and copied position in every
+image state, including after loading.
 
 ### Separate image state from rendering state
 
@@ -399,19 +533,23 @@ their syntax can parse even when the application declines to load them.
 
 ## Research gates
 
-All gates are open. Each closes with a reviewed artifact and executable
-observations, not a library label or screenshot. R0–R5 may be investigated
-in parallel, but the parser/composer/attachment prototype must be integrated
-before its architecture is selected. R4 cannot close before R0.
+All gates are open. R0 is an authority-reconciliation gate: it closes with
+maintainer-accepted records, not an experiment or a new vote on the approved
+concept. R1–R5 close with reviewed contracts and relevant executable evidence;
+R6 records integrated release validation. A library label or screenshot is not
+a substitute for evidence. R0–R5 may be investigated in parallel, but the
+parser/composer/attachment prototype must be integrated before its architecture
+is selected. R4 cannot close before R0; R0 does not require R4's completed
+transport experiments.
 
 | Gate | Unvalidated assumption and research | Required output |
 | --- | --- | --- |
-| **R0 — Network authority (blocking)** | Determine how D-09's one-network-action wording applies to existing request paths and to an image request, and whether ADR-0012's ledger records image requests. Do not infer the answer from existing code paths. | Maintainer-accepted amendment or scoping of D-09/Law 0001 and an accepted route decision naming who receives an image request and what the user is told before the click. The approved click-to-load direction is the input; R0 reconciles it with D-09 rather than reopening it. |
-| **R1 — Parser contract (blocking)** | Evaluate a configurable fork/upstream change and an alternate parser. Candidate targets are CommonMark 0.31.2 and published GFM 0.29-gfm, not an assumed common base version. Compare official examples independently of the dependency's edited corpus. Exercise single/double/triple tildes, extended autolink punctuation/email/protocol cases, Apple inline attributes, table spans, HTML comments, `textarea` block boundaries, and the P-versus-P/S punctuation definition (CommonMark 0.31.2 example 354). Fixture sealed objects adjacent to emphasis delimiters, extended autolinks, table pipes and link/image brackets in both dialects. | Pinned versions, source revisions and official corpus provenance/checksums; AST or test-only canonical HTML comparison with enumerated mismatches; reviewed decision on existing span tests; specified placeholder grammar class per dialect; dependency/license/notice review. Native restrictions are reported separately from parser failures. |
+| **R0 — Authority reconciliation (blocking)** | Follow the proposed reconciliation path: scope D-09's action count, reconcile enrolled versus document-provided destinations, inventory existing routes and missing authority, and decide ledger exclusion or separate request auditing. Do not infer authority from existing code. | Maintainer-accepted dated UI/UX successor, focused resource-request authority ADR and Law 0001 amendment, naming the image-request recipient and pre-activation disclosure. Record affected and unchanged earlier clauses. Removing images requires a new scope decision; unresolved reconciliation does not remove approved scope. Detailed request-policy experiments remain R4 work. |
+| **R1 — Parser contract (blocking)** | Evaluate a configurable fork/upstream change and an alternate parser. Candidate targets are CommonMark 0.31.2 and published GFM 0.29-gfm, not an assumed common base version. Compare official examples independently of the dependency's edited corpus. Exercise single/double/triple tildes, extended autolink punctuation/email/protocol cases, Apple inline attributes, table spans, HTML comments, `textarea` block boundaries, and the P-versus-P/S punctuation definition (CommonMark 0.31.2 example 354). Fixture sealed objects adjacent to emphasis delimiters, extended autolinks, table pipes and link/image brackets in both dialects. | Pinned versions, source revisions and official corpus provenance/checksums; AST or test-only canonical HTML comparison with enumerated mismatches; reviewed decision on existing span tests; specified sealed-object extension and placeholder grammar class per dialect; dependency/license/notice review. Ordinary-text conformance, object-containing fixtures and native restrictions are reported separately. |
 | **R2 — Surface and preference contract (blocking)** | Trace rendered page previews versus markup-preserving mounted/quiet editor styling, notes, and files. Test the interaction of the header toggle with All pages / Focused page only / Never. Confirm whether dialect is intentionally preview-only. | Surface/precedence matrix and picker wording, chosen storage scope, unset/unknown-value and restart behavior, and invalidation tests for selected and nonselected previews. No unapproved editor/file scope expansion. |
 | **R3 — HTML composition (blocking)** | Prototype mixed HTML/Markdown, cross-block scope, escaped text, malformed nesting, quoted `>`, comments, and unsupported-element fallback. Exercise sealed tokens in attributes, removed elements, destinations, and comments. Investigate importer resource behavior if still considered. | Reviewed composition algorithm, element/attribute/native-style mapping and URL policy, explicit GFM-filter behavior, depth/work limits and fixtures proving object identity/order and text provenance. Instrument parsing/conversion itself for requests. |
-| **R4 — Request policy (blocking)** | Investigate request-session defaults rather than assuming ephemeral configuration removes all metadata. Observe App Transport Security's effect on `http` images with the current Info.plist, and do not add a global ATS exception without review. Refuse destinations containing sealed placeholders. Verify decoder format support and decoded-size bounding on the macOS 13.0 deployment target, not only the build SDK; untrusted image data is decoded in-process. Decide schemes, URL credentials, cookies/authentication, referrer and other headers, proxies, redirects including cross-origin/downgrade, loopback/private-network destinations, relative/base URLs, cache/storage/logging, timeout/concurrency, streamed byte bounds, MIME validation, raster/vector/animated formats and decoded size. | Reviewed request and consent policy with numeric limits, format list, lifecycle table, and accepted route decision. Instrumented transport tests for pre-activation inactivity and each allowed/denied redirect and destination; document residual exposure from authorized requests. |
-| **R5 — Native interactions and lifecycle (blocking)** | Prototype TextKit 1 image attachment cells beside sealed objects, in links/tables and multiselections, including objects inside alt text. Define the load gesture against ADR-0023 and the preview's plain-click selection. Exercise expiry between click/dispatch/redirect/completion, page close/switch, source replacement, and preference changes during loading. | Exact text and pasteboard expectations for all image states and Services overloads; rendered order of alt-text objects in each state; keyboard/VoiceOver and nonselected-page activation behavior; stale-result rejection, request identity, and layout/scroll/minimap observations. Review against the accepted law and ADR-0023. |
+| **R4 — Request policy (blocking)** | Investigate request-session defaults rather than assuming ephemeral configuration removes all metadata. Observe App Transport Security's effect on `http` images with the current Info.plist, and do not add a global ATS exception without review. Refuse destinations containing sealed placeholders. Verify decoder format support and decoded-size bounding on the macOS 13.0 deployment target, not only the build SDK; untrusted image data is decoded in-process. Decide schemes, URL credentials, cookies/authentication, referrer and other headers, proxies, redirects including cross-origin/downgrade, loopback/private-network destinations, relative/base URLs, cache/storage/logging, timeout/concurrency, streamed byte bounds, MIME validation, raster/vector/animated formats and decoded size. | Reviewed request and consent policy with numeric limits, format list and lifecycle table, consistent with R0's accepted route authority. Instrumented transport tests for pre-activation inactivity and each allowed/denied redirect and destination; document residual exposure from authorized requests. |
+| **R5 — Native interactions and lifecycle (blocking)** | Prototype TextKit 1 image attachment cells beside sealed objects, in links/tables and multiselections, including objects inside alt text. Evaluate a distinct destination-labelled load control against ADR-0023 and Law 0001's preview-link and promotion rows; ordinary text/link/image-body clicks remain non-loading in the recommended design. Exercise expiry between click/dispatch/redirect/completion, page close/switch, source replacement, and preference changes during loading. | Exact text and pasteboard expectations for all image states and Services overloads; rendered order of alt-text objects in each state; keyboard/VoiceOver and nonselected-page activation behavior; stale-result rejection, request identity, and layout/scroll/minimap observations. Review against the accepted law and ADR-0023. |
 | **R6 — Integrated release validation** | Run pinned syntax fixtures, native policy tests, and AppKit interaction checks together; benchmark representative large/nested pages and large decoded images. Verify request counts across opening, scrolling, reparsing, resizing and retries. | Recorded commands/results, mismatch/restriction matrix, geometry and performance results, and manual interaction evidence. No inferred conformance or request-isolation result from screenshots alone. |
 
 Primary standards consulted on 2026-10-16:
@@ -451,6 +589,10 @@ for native parsing tests, not browser-equivalent AppKit screenshots.
 These are proposed delivery checks, subject to the research and authority
 reviews above, not evidence of existing guarantees.
 
+- R0's accepted records identify the replaced and unchanged earlier decisions,
+  distinguish image-load authorization from destination enrollment, and state
+  the image-request ledger disposition. No gate treats approved feature scope
+  as an unanswered product question.
 - Both named dialects are selectable; an unset selection uses GFM. R2's
   unknown-value and restart behavior is tested.
 - CommonMark does not interpret GFM-only tables, task markers,
@@ -471,6 +613,9 @@ reviews above, not evidence of existing guarantees.
   whether its source syntax is Markdown or HTML. Instrumented transport
   checks include parsing/conversion, opening, scrolling, dialect changes,
   resizing, and resource-bearing markup beyond `img.src`.
+- Ordinary clicks on text and links do not load images. R5's chosen load
+  gesture has an explicit outcome against ADR-0023 and the preview-link row;
+  the recommended separate control or any accepted exception is tested.
 - Initial dispatch, retry, redirects and completion obey R4/R5's reviewed
   authorization and lifecycle table. Tests replace/remove an image while
   its page remains live and expire/close/switch pages during queued work.
@@ -493,8 +638,10 @@ result is recorded by this document.
 
 ## Open decisions
 
-0. **Network authority (R0):** D-09 amendment or scoping, ledger treatment,
-   and the accepted image route for the approved click-to-load behavior.
+0. **Authority reconciliation (R0):** accepted UI/UX successor, resource-request
+   ADR and Law 0001 amendment following the proposed reconciliation path;
+   explicit route inventory, destination-authorization scope and ledger decision.
+   The feature concept is approved; these records resolve older contradictions.
 1. **Conformance target (R1):** exact versions, parser choice and unsupported
    extensions; resolve existing table-span expectations and the placeholder
    grammar class. An extension switch alone is not sufficient evidence.
@@ -523,6 +670,11 @@ function and `test/spec.txt`, the Info.plist, entitlements and
 `FeedbackClient` session, the 2026-0915 D-09 wording, and ADR-0023.
 Neither pass ran parser conformance fixtures, image-loading experiments,
 application tests, or an AppKit interaction session; the placeholder
-examples above are derived from the specification text, not executed. The research gates remain open; this
-review does not select a parser, approve an allowlist or network policy, or
-establish implementation readiness.
+examples above are derived from the specification text, not executed.
+
+The reconciliation pass compared the accepted UI/UX record, Law 0001's preview
+rows, ADR-0021, ADR-0023, ADR-0030, ADR-0012's separately accepted amendment,
+the design index/principles and the record-amendment conventions. It adds a
+proposed resolution path, not accepted successor records or runtime evidence.
+The research gates remain open; this review does not select a parser, approve
+an allowlist or network policy, or establish implementation readiness.
