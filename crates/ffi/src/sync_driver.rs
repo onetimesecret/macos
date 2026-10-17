@@ -3096,7 +3096,7 @@ mod tests {
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(opened_envelopes(chain, &request).iter().any(|e| matches!(
             e,
-            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(&ops.0, b"no peer has")
+            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(ops.as_slice(), b"no peer has")
         )));
     }
 
@@ -3712,7 +3712,7 @@ mod tests {
         let paired_fp = pairing::identity_fingerprint(b"peer identity");
         // The roster reports the paired peer attached, plus a stranger
         // that attached with a token but never paired.
-        let package = serde_json::to_value(companion_sync::ByteBlob(vec![1; 96])).unwrap();
+        let package = serde_json::to_value(companion_sync::ByteBlob::from(vec![1; 96])).unwrap();
         let body = serde_json::json!({
             "epoch": 0, "frame_present": false, "next_seq": 0,
             "peers": [

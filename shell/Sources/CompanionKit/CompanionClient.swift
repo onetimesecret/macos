@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import CompanionCore
 
 
@@ -2276,12 +2277,20 @@ public class CompanionClient: @unchecked Sendable {
         return String(cString: ptr)
     }
 
-    /// Decode an owned JSON C string from the seam, freeing it either way.
     private func decodeJSON<T: Decodable>(_ type: T.Type, from ptr: UnsafeMutablePointer<CChar>?) -> T? {
-        guard let ptr else { return nil }
-        defer { companion_string_free(ptr) }
-        let json = String(cString: ptr)
-        guard let data = json.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        decodeOwnedJSON(type, from: ptr)
     }
+}
+
+// The Rust allocation stays live through decoding; decoded Swift values have their own lifetime.
+func decodeOwnedJSON<T: Decodable>(
+    _ type: T.Type,
+    from pointer: UnsafeMutablePointer<CChar>?,
+    release: (UnsafeMutablePointer<CChar>) -> Void = { companion_string_free($0) },
+    decode: (T.Type, Data) throws -> T = { try JSONDecoder().decode($0, from: $1) }
+) -> T? {
+    guard let pointer else { return nil }
+    defer { release(pointer) }
+    let data = Data(bytesNoCopy: UnsafeMutableRawPointer(pointer), count: strlen(pointer), deallocator: .none)
+    return try? decode(type, data)
 }

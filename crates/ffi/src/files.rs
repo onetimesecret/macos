@@ -412,15 +412,7 @@ pub unsafe extern "C" fn companion_file_runs_json(
     let Some(text) = guard.files.text(FileId(file)) else {
         return ptr::null_mut();
     };
-    let runs: Vec<serde_json::Value> = if text.is_empty() {
-        Vec::new()
-    } else {
-        vec![serde_json::json!({ "ink": text })]
-    };
-    match serde_json::to_string(&runs) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    crate::content_json::to_c_json(&crate::content_json::InkRuns(&text))
 }
 
 /// Apply an ordered edit batch to the file's body. False means the
@@ -1496,6 +1488,37 @@ mod tests {
             let _ = unsafe { companion_file_hydrate(handle, id, ptr::null()) };
         }
         true
+    }
+
+    #[test]
+    fn file_runs_match_previous_json_bytes_for_empty_escaped_and_large_text() {
+        let (handle, dir) = scratch("content-json");
+        for (index, text) in [
+            String::new(),
+            "café 🦀\n\t\"\\".to_string(),
+            "café 🦀\n\t\"\\".repeat(16_384),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let file = dir.join(format!("{index}.txt"));
+            std::fs::write(&file, text.as_bytes()).unwrap();
+            unsafe {
+                let id = open(handle, &file);
+                assert!(FileId::is_tagged(id));
+                let expected = if text.is_empty() {
+                    serde_json::json!([])
+                } else {
+                    serde_json::json!([{"ink": text}])
+                };
+                assert_eq!(
+                    take_json(companion_file_runs_json(handle, id)),
+                    expected.to_string()
+                );
+                assert!(companion_file_close(handle, id));
+            }
+        }
+        cleanup(handle, &dir);
     }
 
     #[test]

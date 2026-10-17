@@ -466,7 +466,7 @@ impl OpenFile {
 
     /// The buffer as text: newlines only, no BOM.
     #[must_use]
-    pub fn text(&self) -> String {
+    pub fn text(&self) -> Zeroizing<String> {
         text_of(&self.document)
     }
 
@@ -478,7 +478,7 @@ impl OpenFile {
 
     /// The save bytes, zeroized after use.
     fn bytes_to_write_zeroizing(&self) -> Zeroizing<Vec<u8>> {
-        let text = Zeroizing::new(text_of(&self.document));
+        let text = text_of(&self.document);
         let extra_crs = usize::from(self.line_ending == LineEnding::Crlf)
             * text.bytes().filter(|byte| *byte == b'\n').count();
         let mut bytes = Zeroizing::new(Vec::with_capacity(
@@ -711,7 +711,7 @@ impl FileStore {
 
     /// The file's body as text; a file holds no chips.
     #[must_use]
-    pub fn text(&self, id: FileId) -> Option<String> {
+    pub fn text(&self, id: FileId) -> Option<Zeroizing<String>> {
         self.file(id).map(OpenFile::text)
     }
 
@@ -1443,13 +1443,26 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
         return Err(OpenRefusal::Binary);
     }
     let line_ending = LineEnding::detect(text);
-    let text = Zeroizing::new(text.replace("\r\n", "\n"));
+    let text = normalize_newlines(text);
     Ok(Some(ReadFile {
         text,
         witness: after,
         line_ending,
         has_bom,
     }))
+}
+
+fn normalize_newlines(text: &str) -> Zeroizing<String> {
+    let len = text.len() - text.match_indices("\r\n").count();
+    let mut out = Zeroizing::new(String::with_capacity(len));
+    let mut start = 0;
+    for (at, _) in text.match_indices("\r\n") {
+        out.push_str(&text[start..at]);
+        out.push('\n');
+        start = at + 2;
+    }
+    out.push_str(&text[start..]);
+    out
 }
 
 /// Any NUL, or two or more disallowed controls over ten percent of scalars.
@@ -1511,7 +1524,7 @@ fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
     for run in document.runs() {
         match run {
             DocRun::Ink(ink) => {
-                let Some(after) = remaining.strip_prefix(&ink) else {
+                let Some(after) = remaining.strip_prefix(ink.as_str()) else {
                     return false;
                 };
                 remaining = after;
@@ -1541,7 +1554,7 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
         }
     };
     file.witness = Some(witness);
-    file.saved_text = Some(Zeroizing::new(text_of(&file.document)));
+    file.saved_text = Some(text_of(&file.document));
     file.dirty = false;
     file.conflict = FileConflict::None;
     file.access_refused = false;
@@ -1840,12 +1853,56 @@ mod tests {
     }
 
     #[test]
+    fn normalization_and_file_projections_are_exact_zeroizing_text() {
+        use zeroize::{Zeroize, ZeroizeOnDrop};
+
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
+        for input in [
+            "",
+            "\r",
+            "\r\r\n",
+            "🙂\r\n尾\r\n",
+            "a\nb\r\nc\rd",
+            "a\r\r\nb\n",
+        ] {
+            let mut text = normalize_newlines(input);
+            wiping_owner(&text);
+            assert_eq!(text.as_str(), input.replace("\r\n", "\n"));
+            assert_eq!(text.capacity(), text.len());
+            let pointer = text.as_ptr();
+            text.as_mut_str().zeroize();
+            assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+            assert_eq!(text.as_ptr(), pointer);
+        }
+        let body = "🙂\r\n尾\n終\r";
+        let original = format!("\u{FEFF}{body}");
+        let io = MemoryIo::with("/unicode.txt", original.as_bytes());
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/unicode.txt")).unwrap();
+        let file = store.file(id).unwrap();
+        assert!(file.has_bom());
+        let from_file: Zeroizing<String> = file.text();
+        let mut from_store: Zeroizing<String> = store.text(id).unwrap();
+        for text in [&from_file, &from_store] {
+            wiping_owner(text);
+            assert_eq!(text.as_str(), body.replace("\r\n", "\n"));
+            assert_eq!(text.capacity(), text.len());
+        }
+        assert_ne!(from_file.as_ptr(), from_store.as_ptr());
+        from_store.as_mut_str().zeroize();
+        assert!(from_store.as_bytes().iter().all(|byte| *byte == 0));
+        assert_eq!(from_file.as_str(), "🙂\n尾\n終\r");
+        assert!(store.text(FileId(u64::MAX)).is_none());
+    }
+
+    #[test]
     fn a_file_keeps_the_chip_sentinel_as_its_own_text() {
         let io = MemoryIo::with("/note.txt", "a\u{FFFC}b".as_bytes());
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/note.txt")).unwrap();
         assert!(store.apply_ops(id, &[ins(1, "\u{FFFC}")], 1));
-        assert_eq!(store.text(id).as_deref(), Some("a\u{FFFC}\u{FFFC}b"));
+        assert_eq!(store.text(id).unwrap().as_str(), "a\u{FFFC}\u{FFFC}b");
     }
 
     #[test]
@@ -2038,7 +2095,7 @@ mod tests {
         let file = store.file(id).unwrap();
         assert!(file.has_bom());
         assert_eq!(file.line_ending(), LineEnding::Crlf);
-        assert_eq!(file.text(), "alpha\nbeta\n");
+        assert_eq!(file.text().as_str(), "alpha\nbeta\n");
         store.save(&io, id).unwrap();
         assert_eq!(io.bytes("/w.txt"), original);
     }
@@ -2230,7 +2287,7 @@ mod tests {
         assert!(store.is_dirty(id));
         let outcome = store.undo(id).unwrap();
         assert!(outcome.applied);
-        assert_eq!(store.text(id).unwrap(), "hello");
+        assert_eq!(store.text(id).unwrap().as_str(), "hello");
         assert!(!store.is_dirty(id), "back at the saved text is clean");
     }
 
@@ -2271,13 +2328,13 @@ mod tests {
 
         assert_eq!(store.undo_action_name(id), Some("Typing"));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "ab");
+        assert_eq!(store.text(id).unwrap().as_str(), "ab");
         assert_eq!(store.undo_action_name(id), Some("Paste"));
         assert_eq!(store.redo_action_name(id), Some("Typing"));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "a");
+        assert_eq!(store.text(id).unwrap().as_str(), "a");
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
     }
 
     #[test]
@@ -2356,7 +2413,11 @@ mod tests {
             },
         ];
         assert!(!store.apply_ops(id, &ops, 1));
-        assert_eq!(store.text(id).unwrap(), "abc", "the batch moved nothing");
+        assert_eq!(
+            store.text(id).unwrap().as_str(),
+            "abc",
+            "the batch moved nothing"
+        );
     }
 
     #[test]
@@ -2404,7 +2465,7 @@ mod tests {
         io.put("/r.txt", b"theirs");
         assert!(store.is_dirty(id));
         store.reload(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
         assert!(!store.can_undo(id), "an automatic reload is not an edit");
@@ -2452,7 +2513,7 @@ mod tests {
 
         store.take_theirs(&io, id).unwrap();
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "theirs\n");
+        assert_eq!(file.text().as_str(), "theirs\n");
         assert!(!file.is_dirty());
         assert_eq!(file.conflict(), FileConflict::None);
         assert_eq!(file.line_ending(), LineEnding::Crlf);
@@ -2463,7 +2524,11 @@ mod tests {
 
         assert!(store.undo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "one mine\n", "Undo restores the draft");
+        assert_eq!(
+            file.text().as_str(),
+            "one mine\n",
+            "Undo restores the draft"
+        );
         assert!(file.is_dirty(), "the draft differs from the disk baseline");
         assert_eq!(file.conflict(), FileConflict::None);
         assert_eq!(file.line_ending(), LineEnding::Crlf);
@@ -2477,7 +2542,7 @@ mod tests {
 
         assert!(store.redo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "theirs\n");
+        assert_eq!(file.text().as_str(), "theirs\n");
         assert!(!file.is_dirty());
         assert_eq!(file.conflict(), FileConflict::None);
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
@@ -2493,12 +2558,12 @@ mod tests {
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
 
         store.take_theirs(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "theirs\nsecond\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\nsecond\n");
         assert!(!store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
         assert!(store.is_dirty(id));
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs\nsecond\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\nsecond\n");
         assert!(
             !store.is_dirty(id),
             "Redo returns to the adopted disk generation even when its endings were mixed"
@@ -2511,14 +2576,14 @@ mod tests {
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/equal.txt")).unwrap();
         assert!(store.apply_ops(id, &[del(0, 3), ins(0, "same")], 4_000));
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(store.is_dirty(id));
 
         io.put("/equal.txt", &[UTF8_BOM, b"same\r\n"].concat());
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         store.take_theirs(&io, id).unwrap();
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "same\n");
+        assert_eq!(file.text().as_str(), "same\n");
         assert!(!file.is_dirty());
         assert_eq!(file.line_ending(), LineEnding::Crlf);
         assert!(file.has_bom());
@@ -2526,7 +2591,7 @@ mod tests {
 
         assert!(store.undo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "same\n");
+        assert_eq!(file.text().as_str(), "same\n");
         assert!(
             file.is_dirty(),
             "Undo restores the former draft generation even when text is equal"
@@ -2537,12 +2602,12 @@ mod tests {
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
 
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(
             store.is_dirty(id),
             "the structural marker survives a Redo/Undo cycle"
@@ -2550,21 +2615,21 @@ mod tests {
 
         // Typing after the undo retires the Take theirs marker.
         assert!(store.apply_ops(id, &[ins(4, "!")], 5_000));
-        assert_eq!(store.text(id).unwrap(), "same!\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same!\n");
         assert!(store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(
             !store.is_dirty(id),
             "an unreachable generation marker stops pinning the file dirty"
         );
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same!\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same!\n");
         assert!(store.is_dirty(id));
         assert!(!store.can_redo(id));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(!store.is_dirty(id));
 
         store.save(&io, id).unwrap();
@@ -2622,7 +2687,7 @@ mod tests {
 
         store.take_theirs(&io, id).unwrap();
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine\n");
         assert!(store.is_dirty(id));
         assert!(store.can_redo(id));
 
@@ -2631,7 +2696,7 @@ mod tests {
         assert!(store.is_dirty(id), "the typing itself is a real edit");
 
         assert!(store.apply_ops_as_new_step(id, &[del(0, 5), ins(0, "theirs")], 3));
-        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\n");
         assert!(
             !store.is_dirty(id),
             "an orphaned generation marker cannot pin the file dirty"
@@ -2647,11 +2712,11 @@ mod tests {
         let io = MemoryIo::with("/empty.txt", b"");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/empty.txt")).unwrap();
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(!store.can_undo(id));
 
         store.take_theirs(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
         assert!(
@@ -2666,13 +2731,13 @@ mod tests {
         );
 
         assert!(!store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(!store.is_dirty(id));
 
         io.put("/empty.txt", b"theirs\n");
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         store.take_theirs(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\n");
         assert!(store.can_undo(id));
         assert!(
             store
@@ -2683,10 +2748,10 @@ mod tests {
             "an undo item exists, so its generation is armed"
         );
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(store.is_dirty(id));
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\n");
         assert!(!store.is_dirty(id));
     }
 
@@ -2699,7 +2764,7 @@ mod tests {
         io.put("/saved.txt", b"theirs");
         store.take_theirs(&io, id).unwrap();
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine");
         assert!(store.is_dirty(id));
 
         store.save(&io, id).unwrap();
@@ -2707,13 +2772,13 @@ mod tests {
         assert_eq!(io.bytes("/saved.txt"), b"mine");
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(
             store.is_dirty(id),
             "the historical disk text differs from the newer saved baseline"
         );
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine");
         assert!(
             !store.is_dirty(id),
             "the stale marker cannot reactivate generation dirtiness"
@@ -2735,10 +2800,10 @@ mod tests {
         assert!(!store.is_dirty(id));
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine");
         assert!(!store.is_dirty(id));
     }
 
@@ -2753,11 +2818,11 @@ mod tests {
         store.take_theirs(&io, id).unwrap();
 
         assert!(store.apply_ops(id, &[ins(6, "!")], 2_000));
-        assert_eq!(store.text(id).unwrap(), "theirs!");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs!");
         assert!(store.is_dirty(id));
 
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(!store.is_dirty(id));
         assert!(
             store.can_undo(id),
@@ -2765,14 +2830,14 @@ mod tests {
         );
 
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "one mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "one mine");
         assert!(store.is_dirty(id));
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(!store.is_dirty(id));
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs!");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs!");
         assert!(store.is_dirty(id));
     }
 
@@ -2789,7 +2854,7 @@ mod tests {
             store.take_theirs(&io, id),
             Err(OpenRefusal::Io(io::ErrorKind::NotFound))
         );
-        assert_eq!(store.text(id).unwrap(), "one mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "one mine");
         assert!(store.is_dirty(id));
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
         assert!(store.can_undo(id));
@@ -2925,7 +2990,7 @@ mod tests {
 
         assert!(store.undo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "one");
+        assert_eq!(file.text().as_str(), "one");
         assert!(file.is_dirty(), "the disk holds the other copy");
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Unchanged);
         assert!(store.file(id).unwrap().is_dirty());
@@ -2935,7 +3000,7 @@ mod tests {
         // Typed back rather than undone.
         assert!(store.redo(id).unwrap().applied);
         assert!(store.apply_ops(id, &[del(3, 5)], 2));
-        assert_eq!(store.file(id).unwrap().text(), "one");
+        assert_eq!(store.file(id).unwrap().text().as_str(), "one");
         assert!(store.file(id).unwrap().is_dirty());
     }
 
@@ -3003,7 +3068,7 @@ mod tests {
         assert!(store.resolve_keep_mine(&io, id));
         assert!(store.redo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "theirs");
+        assert_eq!(file.text().as_str(), "theirs");
         assert!(file.is_dirty(), "the disk holds a third copy");
 
         store.save(&io, id).unwrap();
@@ -3135,7 +3200,7 @@ mod tests {
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/s.txt")).unwrap();
         assert_eq!(
-            store.text(id).unwrap(),
+            store.text(id).unwrap().as_str(),
             "settled",
             "the buffer holds the generation its witness describes"
         );
@@ -3204,7 +3269,7 @@ mod tests {
         assert!(store.close(id));
         let again = store.open(&io, Path::new("/c3.txt")).unwrap();
         let file = store.file(again).unwrap();
-        assert_eq!(file.text(), "body");
+        assert_eq!(file.text().as_str(), "body");
         assert!(!file.is_dirty());
         assert_eq!(io.bytes("/c3.txt"), b"body");
     }
@@ -3220,7 +3285,7 @@ mod tests {
         io.remove("/r3.txt");
         assert!(store.reload(&io, id).is_err());
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "draft body");
+        assert_eq!(file.text().as_str(), "draft body");
         assert!(file.is_dirty());
     }
 

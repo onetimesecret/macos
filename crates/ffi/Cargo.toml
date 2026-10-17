@@ -30,6 +30,7 @@ companion-transport = { path = "../transport" }
 ots-client = { path = "../ots-client" }
 # State-file encryption (src/persist.rs).
 ring = "0.17"
+serde = { workspace = true }
 serde_json = { workspace = true }
 zeroize = { workspace = true }
 

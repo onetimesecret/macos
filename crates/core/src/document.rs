@@ -125,7 +125,7 @@ impl EditIntent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DocRun {
     /// Visible, editable text.
-    Ink(String),
+    Ink(Zeroizing<String>),
     /// A sealed chip, present in the body as one sentinel character.
     Chip(ItemId),
 }
@@ -962,21 +962,32 @@ impl SheetDocument {
 
 /// A body split into ink and chips; free-standing so a fork can be read.
 fn runs_of(body: &LoroText) -> Vec<DocRun> {
-    let mut runs: Vec<DocRun> = Vec::new();
-    for piece in body.to_delta() {
-        let TextDelta::Insert { insert, attributes } = piece else {
-            continue;
-        };
-        let chip = attributes
-            .as_ref()
-            .and_then(|attrs| attrs.get(CHIP_MARK))
-            .and_then(parse_mark_value);
-        match chip {
-            Some(id) => runs.push(DocRun::Chip(id)),
-            None => match runs.last_mut() {
-                Some(DocRun::Ink(text)) => text.push_str(&insert),
-                _ => runs.push(DocRun::Ink(insert)),
-            },
+    let pieces: Vec<_> = body
+        .to_delta()
+        .into_iter()
+        .filter_map(|piece| {
+            let TextDelta::Insert { insert, attributes } = piece else {
+                return None;
+            };
+            let insert = Zeroizing::new(insert);
+            let chip = attributes
+                .as_ref()
+                .and_then(|attrs| attrs.get(CHIP_MARK))
+                .and_then(parse_mark_value);
+            Some((insert, chip))
+        })
+        .collect();
+    let mut runs = Vec::new();
+    for group in pieces.chunk_by(|a, b| a.1.is_none() && b.1.is_none()) {
+        if let Some(id) = group[0].1 {
+            runs.push(DocRun::Chip(id));
+        } else {
+            let len = group.iter().map(|(insert, _)| insert.len()).sum();
+            let mut text = Zeroizing::new(String::with_capacity(len));
+            for (insert, _) in group {
+                text.push_str(insert);
+            }
+            runs.push(DocRun::Ink(text));
         }
     }
     runs
@@ -1176,12 +1187,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn projected_ink_coalesces_marked_pieces_at_exact_capacity() {
+        use zeroize::Zeroize;
+
+        let doc = SheetDocument::new();
+        let expected = "a🙂β\r\nz";
+        doc.insert(0, expected).unwrap();
+        doc.body.mark_utf16(1..3, CHIP_MARK, "unreadable").unwrap();
+        let chip = ItemId::random();
+        doc.insert_chip(doc.utf16_len(), chip).unwrap();
+        doc.insert(doc.utf16_len(), "尾").unwrap();
+        let mut runs = doc.runs();
+        assert_eq!(runs.len(), 3);
+        assert_eq!(runs[1], DocRun::Chip(chip));
+        let ink = runs.iter_mut().filter_map(|run| match run {
+            DocRun::Ink(text) => Some(text),
+            DocRun::Chip(_) => None,
+        });
+        for (text, expected) in ink.zip([expected, "尾"]) {
+            assert_eq!(text.as_str(), expected);
+            assert_eq!(text.capacity(), text.len());
+            let pointer = text.as_ptr();
+            text.as_mut_str().zeroize();
+            assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+            assert_eq!(text.as_ptr(), pointer);
+        }
+        assert!(SheetDocument::new().runs().is_empty());
+    }
+
+    #[test]
     fn utf16_offsets_round_trip_through_astral_characters() {
         let doc = SheetDocument::new();
         doc.insert(0, "a\u{1F600}b").unwrap();
         assert_eq!(doc.utf16_len(), 4);
         doc.delete(1, 2).unwrap();
-        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string().into())]);
         assert_eq!(doc.utf16_len(), 2);
     }
 
@@ -1197,9 +1237,9 @@ mod tests {
         assert_eq!(
             doc.runs(),
             vec![
-                DocRun::Ink("before".to_string()),
+                DocRun::Ink("before".to_string().into()),
                 DocRun::Chip(id),
-                DocRun::Ink("after".to_string()),
+                DocRun::Ink("after".to_string().into()),
             ]
         );
     }
@@ -1213,7 +1253,7 @@ mod tests {
         assert_eq!(doc.live_chips(), vec![id]);
         doc.delete(1, 1).unwrap();
         assert!(doc.live_chips().is_empty());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string().into())]);
     }
 
     #[test]
@@ -1226,9 +1266,9 @@ mod tests {
         assert_eq!(
             doc.runs(),
             vec![
-                DocRun::Ink("x\u{1F600}".to_string()),
+                DocRun::Ink("x\u{1F600}".to_string().into()),
                 DocRun::Chip(id),
-                DocRun::Ink("y".to_string()),
+                DocRun::Ink("y".to_string().into()),
             ]
         );
     }
@@ -1396,7 +1436,7 @@ mod tests {
             doc.import_update(b"not an update batch", &[]),
             Err(UpdateRefusal::Malformed)
         );
-        assert_eq!(doc.runs(), vec![DocRun::Ink("standing".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("standing".to_string().into())]);
     }
 
     #[test]
@@ -1477,10 +1517,13 @@ mod tests {
         assert!(doc.can_undo());
         assert!(!doc.can_redo());
         assert!(doc.undo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("first".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("first".to_string().into())]);
         assert!(doc.can_redo());
         assert!(doc.redo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("first second".to_string())]);
+        assert_eq!(
+            doc.runs(),
+            vec![DocRun::Ink("first second".to_string().into())]
+        );
     }
 
     #[test]
@@ -1576,7 +1619,10 @@ mod tests {
         ungrouped.insert(3, " two").unwrap();
         ungrouped.commit(None);
         assert!(ungrouped.undo());
-        assert_eq!(ungrouped.runs(), vec![DocRun::Ink("one".to_string())]);
+        assert_eq!(
+            ungrouped.runs(),
+            vec![DocRun::Ink("one".to_string().into())]
+        );
         assert!(ungrouped.can_undo());
     }
 
@@ -1590,7 +1636,7 @@ mod tests {
         doc.commit(None);
 
         assert!(doc.undo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("- milk".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("- milk".to_string().into())]);
         assert!(doc.can_undo());
     }
 
@@ -1630,7 +1676,7 @@ mod tests {
 
         assert_eq!(
             restored.runs(),
-            vec![DocRun::Ink("written before the quit".to_string())]
+            vec![DocRun::Ink("written before the quit".to_string().into())]
         );
         assert!(!restored.can_undo());
         assert!(!restored.can_redo());
@@ -1648,7 +1694,7 @@ mod tests {
         assert!(!doc.can_undo());
         assert!(!doc.can_redo());
         assert!(!doc.undo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("kept".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("kept".to_string().into())]);
     }
 
     #[test]
@@ -1666,15 +1712,8 @@ mod tests {
         assert_eq!(merged, 12);
 
         assert!(mirror.undo());
-        let left: String = mirror
-            .runs()
-            .into_iter()
-            .map(|run| match run {
-                DocRun::Ink(text) => text,
-                DocRun::Chip(_) => String::new(),
-            })
-            .collect();
-        assert_eq!(left, "theirs.");
+        let left = crate::ink::text_of(&mirror);
+        assert_eq!(left.as_str(), "theirs.");
         assert!(!mirror.can_undo(), "the peer's ops were never candidates");
     }
 
@@ -1687,7 +1726,7 @@ mod tests {
         assert_eq!(doc.insert(3, ""), Err(InvalidRange));
         assert_eq!(doc.delete(3, 0), Err(InvalidRange));
         assert_eq!(doc.insert(3, "x"), Err(InvalidRange));
-        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string().into())]);
     }
 
     #[test]
@@ -1695,7 +1734,10 @@ mod tests {
         let doc = SheetDocument::new();
         doc.body.insert_utf16(0, CHIP_SENTINEL).unwrap();
         doc.body.mark_utf16(0..1, CHIP_MARK, "not-an-id").unwrap();
-        assert_eq!(doc.runs(), vec![DocRun::Ink(CHIP_SENTINEL.to_string())]);
+        assert_eq!(
+            doc.runs(),
+            vec![DocRun::Ink(CHIP_SENTINEL.to_string().into())]
+        );
         assert!(doc.live_chips().is_empty());
     }
 

@@ -23,7 +23,7 @@ impl Note {
 
     /// The note's text at its final size.
     pub(crate) fn text(&self) -> Zeroizing<String> {
-        Zeroizing::new(ink::text_of(&self.document))
+        ink::text_of(&self.document)
     }
 
     /// Whether anything but whitespace is written: the block's doorway.

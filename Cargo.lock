@@ -181,6 +181,7 @@ dependencies = [
  "libc",
  "ots-client",
  "ring",
+ "serde",
  "serde_json",
  "zeroize",
 ]

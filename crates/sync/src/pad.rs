@@ -7,6 +7,8 @@
 //! fixed overhead rides on top, which shifts every bucket by the same
 //! constant and fingerprints nothing.
 
+use zeroize::Zeroizing;
+
 /// The smallest bucket, bytes.
 pub const FLOOR: usize = 256;
 /// Above this, buckets stop doubling and grow linearly — a 65 KiB and a
@@ -32,13 +34,12 @@ pub fn bucket(len: usize) -> usize {
 
 /// Frame and pad `content` to its bucket.
 #[must_use]
-pub fn pad(content: &[u8]) -> Vec<u8> {
+pub fn pad(content: &[u8]) -> Zeroizing<Vec<u8>> {
     let size = bucket(content.len());
-    let mut out = Vec::with_capacity(size);
+    let mut out = Zeroizing::new(vec![0; size]);
     #[allow(clippy::cast_possible_truncation)]
-    out.extend_from_slice(&(content.len() as u32).to_be_bytes());
-    out.extend_from_slice(content);
-    out.resize(size, 0);
+    out[..PREFIX].copy_from_slice(&(content.len() as u32).to_be_bytes());
+    out[PREFIX..PREFIX + content.len()].copy_from_slice(content);
     out
 }
 
@@ -71,6 +72,13 @@ mod tests {
         let content = vec![7u8; 1000];
         let framed = pad(&content);
         assert_eq!(framed.len(), 1024);
+        assert_eq!(framed.capacity(), framed.len());
+        assert_eq!(&framed[..PREFIX], &1000u32.to_be_bytes());
+        assert!(
+            framed[PREFIX + content.len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
         assert_eq!(unpad(&framed).unwrap(), content.as_slice());
     }
 

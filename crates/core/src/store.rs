@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
@@ -608,7 +608,7 @@ impl<C: Clock> SheetStore<C> {
         let Some(sheet) = self.sheet(id) else {
             return Err(Refusal::UnknownSheet);
         };
-        let units = sim_units(&sheet.segments);
+        let units = sim_units(&sheet.segments, 0).ok_or(Refusal::InvalidRange)?;
         let at = at_u16 as usize;
         let Some(end) = at.checked_add(len_u16 as usize) else {
             return Err(Refusal::InvalidRange);
@@ -715,7 +715,18 @@ impl<C: Clock> SheetStore<C> {
             return false;
         }
         // Phase one: validate the whole batch in exact code units.
-        let mut sim = sim_units(&sheet.segments);
+        let Some(room) = ops.iter().try_fold(0usize, |room, op| {
+            room.checked_add(match op {
+                EditOp::Insert { text, .. } => text.encode_utf16().count(),
+                EditOp::InsertChip { .. } => 1,
+                EditOp::Delete { .. } => 0,
+            })
+        }) else {
+            return false;
+        };
+        let Some(mut sim) = sim_units(&sheet.segments, room) else {
+            return false;
+        };
         for op in ops {
             if !sim_admit(&mut sim, sheet, op) {
                 return false;
@@ -1849,21 +1860,38 @@ enum SimUnit {
     Chip(ChipId),
 }
 
-/// The simulated body a batch starts from.
-fn sim_units(segments: &[Segment]) -> Vec<SimUnit> {
-    let mut units = Vec::new();
+impl Zeroize for SimUnit {
+    fn zeroize(&mut self) {
+        if let Self::Code(code) = self {
+            code.zeroize();
+        }
+    }
+}
+
+/// The simulated body, reserving room for every insert before copying ink.
+fn sim_units(segments: &[Segment], extra: usize) -> Option<Zeroizing<Vec<SimUnit>>> {
+    let room = segments.iter().try_fold(extra, |room, segment| {
+        room.checked_add(match segment {
+            Segment::Ink(text) => text.encode_utf16().count(),
+            Segment::Chip(_) => 1,
+        })
+    })?;
+    let mut units = Zeroizing::new(Vec::new());
+    units.try_reserve_exact(room).ok()?;
     for segment in segments {
         match segment {
             Segment::Ink(text) => units.extend(text.encode_utf16().map(SimUnit::Code)),
             Segment::Chip(id) => units.push(SimUnit::Chip(*id)),
         }
     }
-    units
+    Some(units)
 }
 
 /// Whether `at..at + len` lies in the body and splits no surrogate pair.
 pub(crate) fn range_in_body(segments: &[Segment], at_u16: u32, len_u16: u32) -> bool {
-    let units = sim_units(segments);
+    let Some(units) = sim_units(segments, 0) else {
+        return false;
+    };
     let at = at_u16 as usize;
     let Some(end) = at.checked_add(len_u16 as usize) else {
         return false;
@@ -1892,7 +1920,16 @@ fn sim_admit(units: &mut Vec<SimUnit>, sheet: &Sheet, op: &EditOp) -> bool {
             if pos > units.len() || splits_surrogate_pair(units, pos) {
                 return false;
             }
-            units.splice(pos..pos, text.encode_utf16().map(SimUnit::Code));
+            let count = text.encode_utf16().count();
+            if count > units.capacity() - units.len() {
+                return false;
+            }
+            let old_len = units.len();
+            units.resize(old_len + count, SimUnit::Code(0));
+            units.copy_within(pos..old_len, pos + count);
+            for (slot, code) in units[pos..pos + count].iter_mut().zip(text.encode_utf16()) {
+                *slot = SimUnit::Code(code);
+            }
             true
         }
         EditOp::Delete { pos_u16, len_u16 } => {
@@ -1919,6 +1956,9 @@ fn sim_admit(units: &mut Vec<SimUnit>, sheet: &Sheet, op: &EditOp) -> bool {
             }
             if units.contains(&SimUnit::Chip(*chip)) {
                 return false; // duplicate: the sentinel already stands
+            }
+            if units.len() == units.capacity() {
+                return false;
             }
             units.insert(pos, SimUnit::Chip(*chip));
             true
@@ -1948,6 +1988,83 @@ mod tests {
     use crate::ledger::LEDGER_RETENTION_MS;
     use crate::sheet::NAME_CAP;
     use crate::sync::PageChannel;
+
+    #[test]
+    fn simulated_ink_uses_one_reserved_wiping_allocation() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "secret");
+        let segments = [Segment::Ink("a🙂b".into())];
+        let mut units = sim_units(&segments, 4).unwrap();
+        wiping_owner(&units);
+        assert_eq!(units.capacity(), 8);
+        let pointer = units.as_ptr();
+        let sheet = store.sheet(id).unwrap();
+        assert!(sim_admit(
+            &mut units,
+            sheet,
+            &EditOp::Insert {
+                pos_u16: 1,
+                text: "尾🙂".into(),
+            }
+        ));
+        assert!(sim_admit(
+            &mut units,
+            sheet,
+            &EditOp::InsertChip { pos_u16: 4, chip }
+        ));
+        assert_eq!(units.as_ptr(), pointer);
+        assert_eq!(units.len(), units.capacity());
+        assert!(!sim_admit(
+            &mut units,
+            sheet,
+            &EditOp::Insert {
+                pos_u16: 0,
+                text: "no room".into(),
+            }
+        ));
+        assert_eq!(units.as_ptr(), pointer);
+        assert_eq!(units.capacity(), 8);
+        for unit in &mut *units {
+            unit.zeroize();
+        }
+        assert!(
+            units
+                .iter()
+                .all(|unit| matches!(unit, SimUnit::Code(0) | SimUnit::Chip(_)))
+        );
+        units.zeroize();
+        assert!(units.is_empty());
+        assert_eq!(units.as_ptr(), pointer);
+        assert_eq!(units.capacity(), 8);
+        assert!(sim_units(&segments, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn a_late_surrogate_refusal_leaves_the_document_unchanged() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.sync_document(id, vec![Segment::Ink("🙂".into())]));
+        let ops = [
+            EditOp::Insert {
+                pos_u16: 0,
+                text: "α".repeat(1024),
+            },
+            EditOp::Delete {
+                pos_u16: 1025,
+                len_u16: 1,
+            },
+        ];
+        assert!(!store.apply_ops(id, &ops));
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[Segment::Ink("🙂".into())]
+        );
+        assert!(!range_in_body(store.sheet(id).unwrap().segments(), 1, 1));
+        assert!(range_in_body(store.sheet(id).unwrap().segments(), 0, 2));
+    }
 
     fn eight_hours() -> Ttl {
         Ttl::from_secs(8 * 60 * 60).unwrap()
