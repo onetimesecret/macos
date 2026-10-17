@@ -148,6 +148,108 @@ final class TabDropTests: XCTestCase {
         try checkMountedPlacement(sideRail: false)
     }
 
+    func testTheMountedTimeStripRoutesSyntheticDaysAndRetargetsTheExistingRowAfterReorder() throws {
+        let client = DayProjectionClockClient(tag: UUID().uuidString)
+        let model = try makeModel(client: client)
+
+        func seed(_ text: String) throws -> String {
+            let page = try unshownPage(on: model, text: text)
+            return try XCTUnwrap(model.tabs.first { $0.id == page.slot }?.uuid)
+        }
+
+        let oldestUUID = try seed("oldest:")
+        XCTAssertTrue(client.advanceDay())
+        model.refresh()
+        let yesterdayFirstUUID = try seed("yesterday-first:")
+        let yesterdayNextUUID = try seed("yesterday-next:")
+        XCTAssertTrue(client.advanceDay())
+        model.refresh()
+        let today = try unshownPage(on: model, text: "today:")
+        let source = try mountPage(
+            on: model, text: "A B C D SECRET", seals: [NSRange(location: 8, length: 6)])
+        let chip = try XCTUnwrap(chips(model, source.sheet).first?.chipId)
+
+        func page(_ uuid: String) throws -> (sheet: UInt64, slot: UInt64) {
+            let tab = try XCTUnwrap(model.tabs.first { $0.uuid == uuid })
+            return (try XCTUnwrap(tab.pageID), tab.id)
+        }
+
+        let oldest = try page(oldestUUID)
+        let yesterdayFirst = try page(yesterdayFirstUUID)
+        let yesterdayNext = try page(yesterdayNextUUID)
+        let sourceSlot = try slot(of: source.sheet, on: model)
+        XCTAssertEqual(model.timeUnits.units.map(\.bucket), [0, -1, -2])
+        XCTAssertEqual(model.timeUnits.units.map(\.tabIDs), [
+            [today.slot, sourceSlot], [yesterdayFirst.slot, yesterdayNext.slot], [oldest.slot],
+        ])
+        XCTAssertEqual(model.timeUnits.units.map(\.pageIDs), [
+            [today.sheet, source.sheet], [yesterdayFirst.sheet, yesterdayNext.sheet], [oldest.sheet],
+        ])
+
+        let host = NSHostingView(rootView: TimeStripView(model: model))
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+
+        func targets() -> [TabDropTarget] {
+            host.layoutSubtreeIfNeeded()
+            drainMainQueue()
+            host.layoutSubtreeIfNeeded()
+            return mountedTargets(in: host).sorted {
+                host.convert($0.bounds, from: $0).minX < host.convert($1.bounds, from: $1).minX
+            }
+        }
+
+        func moveRun(onto target: TabDropTarget, length: Int = 2) throws {
+            let board = try beginDrag(source, NSRange(location: 0, length: length))
+            let moving = drag(from: source.textView, board: board, mask: move)
+            XCTAssertEqual(target.draggingEntered(moving), .move)
+            XCTAssertTrue(target.performDragOperation(moving))
+        }
+
+        let mounted = targets()
+        XCTAssertEqual(mounted.map(\.slot), [today.slot, yesterdayFirst.slot, oldest.slot])
+        XCTAssertEqual(mounted.compactMap(\.page), [today.sheet, yesterdayFirst.sheet, oldest.sheet])
+        let todayTarget = try XCTUnwrap(mounted.first { $0.slot == today.slot })
+        let yesterdayTarget = try XCTUnwrap(mounted.first { $0.slot == yesterdayFirst.slot })
+        let oldestTarget = try XCTUnwrap(mounted.first { $0.slot == oldest.slot })
+
+        try moveRun(onto: todayTarget)
+        XCTAssertEqual(shape(model, today.sheet), "today:A ")
+        XCTAssertEqual(shape(model, source.sheet), "B C D #")
+        try moveRun(onto: yesterdayTarget)
+        XCTAssertEqual(shape(model, yesterdayFirst.sheet), "yesterday-first:B ")
+        XCTAssertEqual(shape(model, source.sheet), "C D #")
+        try moveRun(onto: oldestTarget)
+        XCTAssertEqual(shape(model, oldest.sheet), "oldest:C ")
+        XCTAssertEqual(shape(model, source.sheet), "D #")
+
+        let firstIndex = try XCTUnwrap(model.navigationTabs.firstIndex { $0.id == yesterdayFirst.slot })
+        model.move(yesterdayNext.slot, to: firstIndex)
+        XCTAssertEqual(model.timeUnits.units.map(\.bucket), [0, -1, -2])
+        XCTAssertEqual(model.timeUnits.units.map(\.tabIDs), [
+            [today.slot, sourceSlot], [yesterdayNext.slot, yesterdayFirst.slot], [oldest.slot],
+        ])
+        let updated = targets()
+        XCTAssertEqual(updated.map(\.slot), [today.slot, yesterdayNext.slot, oldest.slot])
+        XCTAssertTrue(try XCTUnwrap(updated.first { $0.slot == today.slot }) === todayTarget)
+        XCTAssertTrue(try XCTUnwrap(updated.first { $0.slot == yesterdayNext.slot }) === yesterdayTarget)
+        XCTAssertTrue(try XCTUnwrap(updated.first { $0.slot == oldest.slot }) === oldestTarget)
+        XCTAssertEqual(yesterdayTarget.slot, yesterdayNext.slot)
+        XCTAssertEqual(yesterdayTarget.page, yesterdayNext.sheet)
+
+        try moveRun(onto: yesterdayTarget, length: 3)
+        XCTAssertEqual(shape(model, yesterdayNext.sheet), "yesterday-next:D #")
+        XCTAssertEqual(chips(model, yesterdayNext.sheet).map(\.chipId), [chip])
+        XCTAssertEqual(shape(model, yesterdayFirst.sheet), "yesterday-first:B ")
+        XCTAssertEqual(shape(model, today.sheet), "today:A ")
+        XCTAssertEqual(shape(model, oldest.sheet), "oldest:C ")
+        XCTAssertEqual(shape(model, source.sheet), "")
+    }
+
     private func checkMountedPlacement(sideRail: Bool) throws {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
@@ -660,6 +762,41 @@ final class TabDropTests: XCTestCase {
         model.move(slot, to: 1)
         XCTAssertEqual(model.tabs.compactMap(\.pageID), [second, first])
         XCTAssertEqual(target.page, first, "the target lost its slot's page across the reorder")
+    }
+
+    private final class DayProjectionClockClient: CompanionClient, @unchecked Sendable {
+        private static let dayMs: UInt64 = 24 * 60 * 60 * 1_000
+        private var day = 0
+        private var birthDays: [String: Int] = [:]
+
+        init(tag: String) {
+            super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+        }
+
+        func advanceDay() -> Bool {
+            guard ageForTests(byMs: Self.dayMs) else { return false }
+            day += 1
+            return true
+        }
+
+        override func tabs() -> [TabSummary] {
+            super.tabs().map { tab in
+                guard tab.hasPage, let uuid = tab.pageUUID else { return tab }
+                let born = birthDays[uuid, default: day]
+                birthDays[uuid] = born
+                return TabSummary(
+                    id: tab.id, uuid: tab.uuid, pageUUID: tab.pageUUID,
+                    hasPage: tab.hasPage, pageID: tab.pageID,
+                    title: tab.title, titleSource: tab.titleSource,
+                    rungCode: tab.rungCode, rungLabel: tab.rungLabel,
+                    remainingMs: tab.remainingMs, remainingLabel: tab.remainingLabel,
+                    spokenRemaining: tab.spokenRemaining, fractionRemaining: tab.fractionRemaining,
+                    paused: tab.paused, holdToppedUp: tab.holdToppedUp, holdRemainingMs: tab.holdRemainingMs,
+                    chipCount: tab.chipCount, lastHour: tab.lastHour, pageHasContent: tab.pageHasContent,
+                    pageDayOffset: born - day,
+                    pageCreatedMs: 1_700_000_000_000 + UInt64(born) * Self.dayMs)
+            }
+        }
     }
 
     /// A client whose drop to seal stands its object from the test's own text, recording
