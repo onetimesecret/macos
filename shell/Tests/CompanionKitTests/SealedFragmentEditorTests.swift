@@ -505,17 +505,22 @@ final class SealedFragmentEditorTests: XCTestCase {
     }
 
     /// Writing Tools, should AppKit nest it under a parent item with no action as it does
-    /// Speech, goes with its parent; the item beside it stays.
+    /// Speech, goes with its parent; the item and the other parent beside it stay.
     func testWritingToolsUnderAParentItemGoesWithItsParent() {
         let parent = NSMenuItem(title: "Writing Tools", action: nil, keyEquivalent: "")
         parent.submenu = NSMenu()
         parent.submenu?.addItem(NSMenuItem(
             title: "Show Writing Tools", action: NSSelectorFromString("showWritingTools:"), keyEquivalent: ""))
+        let transformations = NSMenuItem(title: "Transformations", action: nil, keyEquivalent: "")
+        transformations.submenu = NSMenu()
+        transformations.submenu?.addItem(NSMenuItem(
+            title: "Make Upper Case", action: #selector(NSResponder.uppercaseWord(_:)), keyEquivalent: ""))
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: ""))
         menu.addItem(parent)
+        menu.addItem(transformations)
         TextOffers.removeSelectionReaders(from: menu)
-        XCTAssertEqual(menu.items.map(\.title), ["Copy"])
+        XCTAssertEqual(menu.items.map(\.title), ["Copy", "Transformations"])
     }
 
     /// Look Up and Translate are built titled with the selection they hold, Speech reads it
