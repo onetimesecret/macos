@@ -4904,7 +4904,9 @@ final class InkTextContainer: NSTextContainer {
     private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
     nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
-        editorMeasure.withLock { current in
+        guard measure.isFinite, measure > 0,
+              measure < SealedBlockCell.effectivelyUnboundedWidth else { return false }
+        return editorMeasure.withLock { current in
             guard current != measure else { return false }
             current = measure
             return true
