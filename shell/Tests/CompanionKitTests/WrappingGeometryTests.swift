@@ -125,6 +125,62 @@ final class WrappingGeometryTests: XCTestCase {
         withExtendedLifetime(storage) {}
     }
 
+    func testNestedEditorLayoutKeepsTheStackSuppliedViewportMeasure() {
+        let (text, storage, _, container) = makeTextView()
+        let scroll = InkEditorView.bareScroller()
+        scroll.frame.size = NSSize(width: 640, height: 480)
+        let stack = NSView(frame: NSRect(x: 0, y: 0, width: 2_000, height: 1_000))
+        scroll.documentView = stack
+        stack.addSubview(text)
+        text.setFrameSize(NSSize(width: 2_000, height: 80))
+        InkEditorView.configureWrapping(false, textView: text, viewportWidth: 420)
+
+        text.layout()
+
+        XCTAssertEqual(container.capturedEditorMeasure, 396)
+        XCTAssertEqual(container.size.width, .greatestFiniteMagnitude)
+        withExtendedLifetime(storage) {}
+    }
+
+    func testCoordinatorSkipsStackOwnedEditorWithoutCachingTheSkippedWrap() throws {
+        let suite = "wrapping-geometry-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let coordinator = InkEditorView.Coordinator(model: isolatedModel(defaults: defaults))
+        let (text, storage, _, container) = makeTextView()
+        let ink = try XCTUnwrap(text as? InkTextView)
+        let scroll = InkEditorView.bareScroller()
+        scroll.frame.size = NSSize(width: 640, height: 480)
+        let stack = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 1_000))
+        scroll.documentView = stack
+        stack.addSubview(ink)
+        coordinator.textView = ink
+        coordinator.observeClip(of: scroll)
+        InkEditorView.configureWrapping(true, textView: ink, viewportWidth: 420)
+        let frame = ink.frame
+        let minimum = ink.minSize
+        let horizontalScroller = scroll.hasHorizontalScroller
+
+        coordinator.applyWrap(false)
+
+        XCTAssertTrue(container.widthTracksTextView)
+        XCTAssertEqual(ink.frame, frame)
+        XCTAssertEqual(ink.minSize, minimum)
+        XCTAssertFalse(ink.isHorizontallyResizable)
+        XCTAssertEqual(ink.autoresizingMask, [])
+        XCTAssertEqual(scroll.hasHorizontalScroller, horizontalScroller)
+
+        ink.removeFromSuperview()
+        InkEditorView.seat(ink, in: scroll)
+        coordinator.applyWrap(false)
+
+        XCTAssertFalse(container.widthTracksTextView)
+        XCTAssertTrue(ink.isHorizontallyResizable)
+        XCTAssertTrue(scroll.hasHorizontalScroller)
+        XCTAssertEqual(ink.minSize, scroll.contentSize)
+        withExtendedLifetime(storage) {}
+    }
+
     func testBlockLabelsUseTheVisibleViewportWithAnUnwrappedContainer() {
         let (text, storage, _, container) = makeTextView()
         InkEditorView.configureWrapping(false, textView: text, viewportWidth: 420)

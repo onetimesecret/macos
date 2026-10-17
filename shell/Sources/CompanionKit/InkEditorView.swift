@@ -1885,7 +1885,8 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Rebuild the page's geometry for `wraps`, if it has moved.
         func applyWrap(_ wraps: Bool) {
-            guard let textView, let scroll = scrollView, appliedWrap != wraps else { return }
+            guard let textView, let scroll = scrollView,
+                  scroll.documentView === textView, appliedWrap != wraps else { return }
             appliedWrap = wraps
             InkEditorView.setWrap(wraps, textView: textView, scroll: scroll)
         }
@@ -2120,6 +2121,8 @@ public struct InkEditorView: NSViewRepresentable {
                 to: length
             )
             textView.setSelectedRange(selection)
+            // Projection writes bypass text-change notifications; size the roll before revealing the step.
+            (textView.superview as? DayStackView)?.relayout()
             // Rewriting the whole storage resets the scroller, so a
             // step taken over an edit that was off screen would put the
             // caret somewhere the writer cannot see. Follow it.
@@ -5795,21 +5798,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         coordinator?.followNote()
     }
 
-    /// TextKit's attachment sizing callback is explicitly nonisolated,
-    /// while an editor's bounds are main-actor state. Capture the scalar
-    /// measure here, before layout, into each cell's lock-protected sizing
-    /// state so the callback never reaches across actor isolation.
+    /// Capture the standalone viewport before TextKit's nonisolated sizing callbacks.
+    /// Nested editors are measured by their stack's layout pass instead.
     private func updateChipEditorMeasure() {
         guard let container = textContainer as? InkTextContainer, let layoutManager else { return }
-        // In unwrapped mode the text view can grow to its longest line;
-        // the scroll viewport remains the page measure the chip should
-        // occupy. A mount without a scroller uses its editor bounds.
-        // Either way the container inset comes off both edges, as it
-        // does for the ink, so a block is never wider than the page it
-        // sits on. A viewport not yet sized measures nothing, and a
-        // zero captured as the ceiling would refuse every candidate and
-        // drop every block to the floor, so an earlier capture is left
-        // in place until a real measure arrives.
+        // A stack-owned editor gets its viewport measure from configureWrapping.
+        if let scroll = enclosingScrollView, scroll.documentView !== self { return }
         let viewport = enclosingScrollView?.contentSize.width ?? bounds.width
         let measure = viewport - textContainerInset.width * 2
         guard measure > 0 else { return }

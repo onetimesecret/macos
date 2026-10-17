@@ -100,9 +100,8 @@ struct ScrollAnchor: Equatable {
 /// above a page's ink is a negative fraction of that page's first line,
 /// the same way the top inset is.
 ///
-/// There is no value for the top of the roll. A roll at Day 0 leaves no
-/// place at all, and a roll handed no place opens at Day 0, which is
-/// where every roll opens (issue #79).
+/// The document origin needs no saved place. A horizontal offset at
+/// vertical offset zero is still represented by the first page's anchor.
 struct RollPlace: Equatable {
     var page: UInt64
     var anchor: ScrollAnchor
