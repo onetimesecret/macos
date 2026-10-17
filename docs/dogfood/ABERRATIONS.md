@@ -14,13 +14,11 @@ ADR if it is a decision, DOGFOOD.md if it is operational guidance other
 people need, an issue if it should be fixed.
 
 
-
-
 ---
 
 2026-10-16:
 
-Large mixed rewrites can still use a bounded-search fallback that resets the reading anchor; insertion-only and deletion-only updates avoid that limit.. It means there is still a case where **the view can jump away from the sentence you were reading**.
+Large mixed rewrites can still use a bounded-search fallback that resets the reading anchor; insertion-only and deletion-only updates avoid that limit. It means there is still a case where **the view can jump away from the sentence you were reading**.
 
 For example:
 1. You are reading an older day.
