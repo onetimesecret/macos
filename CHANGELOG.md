@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The rendered preview formats a restricted set of HTML** (app 0.39.0;
+  ADR-0059; the 2026-10-16 Markdown dialects plan, R3). Raw HTML in a
+  page's rendered preview is composed rather than shown as markup: `em`,
+  `i`, `strong`, `b`, `del`, `s`, `strike`, `code` and `span` format the
+  text, also across Markdown blocks; `p`, `div` and `br` break lines; an
+  `a` with an http, https or mailto address is a link that opens by
+  ⌘-click as a Markdown link does; comments leave no text. Every other
+  tag, and GFM's disallowed tags (`script`, `iframe`, `style` and the
+  rest), stays visible as text, so nothing runs or embeds. An image,
+  Markdown or `img`, shows its alt text as plain text and loads nothing;
+  an image or link address with a sealed object in it is refused, and the
+  object keeps its place in rendered order and in copy. A page past the
+  composition limits shows its plain text with its objects in place. The
+  Settings dialect choice and the Load Image control are not part of this
+  change.
+
 - **A drag between pages moves its objects** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag
   row, issue #170). A selection dragged from one page onto another leaves
