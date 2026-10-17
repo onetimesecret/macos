@@ -509,10 +509,8 @@ final class DayStackView: NSView {
         }
     }
 
-    /// A measurement changed. Only frames move from here, nothing
-    /// touches the model, because a layout pass is the one place a
-    /// synchronous change to observed state would re-enter SwiftUI
-    /// mid-render.
+    /// A measurement changed: the pass places every region and returns the clip to the reading
+    /// place, then a place a hand off left waiting is opened.
     @objc private func surroundingsChanged(_ notification: Notification) {
         relayout()
         // A roll mounted before SwiftUI sized its clip finds the place
