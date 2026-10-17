@@ -1,0 +1,32 @@
+{
+  "deniedPressError" : -25211,
+  "inspectionOnly" : true,
+  "nodes" : [
+    {
+      "actions" : [
+
+      ],
+      "actionsError" : -25211,
+      "attributes" : [
+
+      ],
+      "childrenError" : -25211,
+      "identifier" : "",
+      "label" : "",
+      "parameterizedAttributes" : [
+
+      ],
+      "path" : "app",
+      "position" : "",
+      "role" : "",
+      "size" : ""
+    }
+  ],
+  "presses" : [
+
+  ],
+  "targetPID" : 8775,
+  "truncated" : false,
+  "trustedWithoutPrompt" : false,
+  "windowsError" : -25211
+}

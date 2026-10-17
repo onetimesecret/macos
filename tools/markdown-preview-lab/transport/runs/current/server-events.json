@@ -1,0 +1,97 @@
+[
+  {
+    "kind": "tcp_accept",
+    "listener": "ipv4-loopback",
+    "seconds": 7.739390166010708
+  },
+  {
+    "kind": "http_request",
+    "listener": "ipv4-loopback",
+    "method": "GET",
+    "path": "/ok?case=ipv4",
+    "seconds": 7.744198166008573
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "ipv4-loopback",
+    "seconds": 7.749155208002776
+  },
+  {
+    "kind": "http_request",
+    "listener": "ipv4-loopback",
+    "method": "GET",
+    "path": "/ok?case=localhost",
+    "seconds": 7.749412124976516
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "ipv6-loopback",
+    "seconds": 7.750491000013426
+  },
+  {
+    "kind": "http_request",
+    "listener": "ipv6-loopback",
+    "method": "GET",
+    "path": "/ok?case=ipv6",
+    "seconds": 7.750684499973431
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "private-interface-self",
+    "seconds": 14.464521957968827
+  },
+  {
+    "kind": "http_request",
+    "listener": "private-interface-self",
+    "method": "GET",
+    "path": "/ok?case=private",
+    "seconds": 14.464794708008412
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "self-signed-tls",
+    "seconds": 14.467957083019428
+  },
+  {
+    "kind": "tls_failure",
+    "listener": "self-signed-tls",
+    "reason": "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)",
+    "seconds": 14.51081579097081
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "ipv4-loopback",
+    "seconds": 14.513738416018896
+  },
+  {
+    "kind": "http_request",
+    "listener": "ipv4-loopback",
+    "method": "GET",
+    "path": "/redirect?to=http%3A%2F%2F127.0.0.1%3A64161%2Fredirect-target%3Fcase%3Dlocal-reject",
+    "seconds": 14.514097416016739
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "ipv4-loopback",
+    "seconds": 14.515631375019439
+  },
+  {
+    "kind": "http_request",
+    "listener": "ipv4-loopback",
+    "method": "GET",
+    "path": "/redirect?to=http%3A%2F%2F127.0.0.1%3A64161%2Fredirect-target%3Fcase%3Dlocal-follow",
+    "seconds": 14.515807082992978
+  },
+  {
+    "kind": "tcp_accept",
+    "listener": "ipv4-loopback",
+    "seconds": 14.516704833018593
+  },
+  {
+    "kind": "http_request",
+    "listener": "ipv4-loopback",
+    "method": "GET",
+    "path": "/redirect-target?case=local-follow",
+    "seconds": 14.51690329099074
+  }
+]

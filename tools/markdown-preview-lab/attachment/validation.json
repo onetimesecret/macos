@@ -1,0 +1,34 @@
+{
+  "sourceSHA256": {
+    "Lab.swift": "d104c72f8402767336357031972f855ed439c619cc83e275bb9c82f52a4f6503",
+    "AXClient.swift": "ad9a4ee81fbddf227d312e9019e6bd8ed3c371123a204c2cef20baae3e332c57",
+    "repro.py": "b9c29e2d2df78ac8e3fd945f8b1ab6ce309a259119d6d8467bb533aa5ed5c7c5",
+    "README.md": "8e62d4badf17bdec9e89da88c737abc9e386360688aa97b0df8fcf6260ee8609",
+    "RESULTS.md": "d8af7322df5f4f97c4377aa08a35cc7b32ccdffbf050e5ba7fddefcd350bff53",
+    ".gitignore": "03824949a66ab6db1429bd078d10d1bc2d75706aa1b756c547f9a7ff541c77cb"
+  },
+  "binarySHA256": {
+    ".build/AttachmentLab.app/Contents/MacOS/AttachmentLab": "63fef9f025b8d1ab68f76f97383cb3289d73e3947f4ed9107f06f764ffd4bcab",
+    ".build/AXClient": "4e98b141b9d3789831f940f5d468e2421de54ff2dced40837e01e36a0d54ae28"
+  },
+  "automatedRun": "runs/20261017T032134Z",
+  "guiRun": "runs/20261017T032150Z",
+  "automatedChecksPassed": 127,
+  "automatedChecksTotal": 127,
+  "externalWindowsError": -25211,
+  "externalDeniedPressError": -25211,
+  "voiceOverEnabled": [
+    false,
+    false
+  ],
+  "manualVoiceOver": "NOT PERFORMED",
+  "finalTrackedDiffPaths": [],
+  "textAndLinksErrors": [],
+  "validationCommands": [
+    "python3 tools/markdown-preview-lab/attachment/repro.py",
+    "python3 tools/markdown-preview-lab/attachment/repro.py --no-build --gui --duration 15",
+    "python3 -m py_compile tools/markdown-preview-lab/attachment/repro.py",
+    "git --no-pager diff --check"
+  ],
+  "headAtValidation": "103eef0270843173c3acbf9f3013bd421f602dd6"
+}

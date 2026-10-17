@@ -1,0 +1,256 @@
+{
+  "command": "python3 tools/markdown-preview-lab/parser/run.py",
+  "initial_ast_passed": 176,
+  "initial_ast_total": 180,
+  "failures": [
+    {
+      "id": "link-label-destination-gap",
+      "dialect": "gfm",
+      "token_kind": "ascii",
+      "token": "OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z",
+      "markdown": "[label]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(https://example.com/r)",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "[label]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(https://example.com/r)"
+              }
+            ]
+          }
+        ]
+      },
+      "reason": "Inserting either spelling between label and destination prevents the inline link.",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "[label]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z("
+              },
+              {
+                "type": "link",
+                "attributes": {
+                  "destination": "https://example.com/r",
+                  "title": ""
+                },
+                "children": [
+                  {
+                    "type": "text",
+                    "literal": "https://example.com/r"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "literal": ")"
+              }
+            ]
+          }
+        ]
+      },
+      "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-1:77\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-1:77\">\n    <text sourcepos=\"1:1-1:60\" xml:space=\"preserve\">[label]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(</text>\n    <link sourcepos=\"1:55-1:76\" destination=\"https://example.com/r\" title=\"\">\n      <text sourcepos=\"1:55-1:76\" xml:space=\"preserve\">https://example.com/r</text>\n    </link>\n    <text sourcepos=\"1:77-1:77\" xml:space=\"preserve\">)</text>\n  </paragraph>\n</document>\n",
+      "html": "<p>[label]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(<a href=\"https://example.com/r\">https://example.com/r</a>)</p>\n",
+      "token_locations": [
+        {
+          "path": "document/0:paragraph/0:text.literal",
+          "count": 1
+        }
+      ],
+      "passed": false
+    },
+    {
+      "id": "image-label-destination-gap",
+      "dialect": "gfm",
+      "token_kind": "ascii",
+      "token": "OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z",
+      "markdown": "![alt]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(https://example.com/r)",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "![alt]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(https://example.com/r)"
+              }
+            ]
+          }
+        ]
+      },
+      "reason": "Inserting either spelling between alt and destination prevents the inline image.",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "![alt]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z("
+              },
+              {
+                "type": "link",
+                "attributes": {
+                  "destination": "https://example.com/r",
+                  "title": ""
+                },
+                "children": [
+                  {
+                    "type": "text",
+                    "literal": "https://example.com/r"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "literal": ")"
+              }
+            ]
+          }
+        ]
+      },
+      "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-1:76\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-1:76\">\n    <text sourcepos=\"1:1-1:59\" xml:space=\"preserve\">![alt]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(</text>\n    <link sourcepos=\"1:54-1:75\" destination=\"https://example.com/r\" title=\"\">\n      <text sourcepos=\"1:54-1:75\" xml:space=\"preserve\">https://example.com/r</text>\n    </link>\n    <text sourcepos=\"1:76-1:76\" xml:space=\"preserve\">)</text>\n  </paragraph>\n</document>\n",
+      "html": "<p>![alt]OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z(<a href=\"https://example.com/r\">https://example.com/r</a>)</p>\n",
+      "token_locations": [
+        {
+          "path": "document/0:paragraph/0:text.literal",
+          "count": 1
+        }
+      ],
+      "passed": false
+    },
+    {
+      "id": "link-label-destination-gap",
+      "dialect": "gfm",
+      "token_kind": "so",
+      "token": "￼",
+      "markdown": "[label]￼(https://example.com/r)",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "[label]￼(https://example.com/r)"
+              }
+            ]
+          }
+        ]
+      },
+      "reason": "Inserting either spelling between label and destination prevents the inline link.",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "[label]￼("
+              },
+              {
+                "type": "link",
+                "attributes": {
+                  "destination": "https://example.com/r",
+                  "title": ""
+                },
+                "children": [
+                  {
+                    "type": "text",
+                    "literal": "https://example.com/r"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "literal": ")"
+              }
+            ]
+          }
+        ]
+      },
+      "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-1:33\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-1:33\">\n    <text sourcepos=\"1:1-1:16\" xml:space=\"preserve\">[label]￼(</text>\n    <link sourcepos=\"1:11-1:32\" destination=\"https://example.com/r\" title=\"\">\n      <text sourcepos=\"1:11-1:32\" xml:space=\"preserve\">https://example.com/r</text>\n    </link>\n    <text sourcepos=\"1:33-1:33\" xml:space=\"preserve\">)</text>\n  </paragraph>\n</document>\n",
+      "html": "<p>[label]￼(<a href=\"https://example.com/r\">https://example.com/r</a>)</p>\n",
+      "token_locations": [
+        {
+          "path": "document/0:paragraph/0:text.literal",
+          "count": 1
+        }
+      ],
+      "passed": false
+    },
+    {
+      "id": "image-label-destination-gap",
+      "dialect": "gfm",
+      "token_kind": "so",
+      "token": "￼",
+      "markdown": "![alt]￼(https://example.com/r)",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "![alt]￼(https://example.com/r)"
+              }
+            ]
+          }
+        ]
+      },
+      "reason": "Inserting either spelling between alt and destination prevents the inline image.",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "![alt]￼("
+              },
+              {
+                "type": "link",
+                "attributes": {
+                  "destination": "https://example.com/r",
+                  "title": ""
+                },
+                "children": [
+                  {
+                    "type": "text",
+                    "literal": "https://example.com/r"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "literal": ")"
+              }
+            ]
+          }
+        ]
+      },
+      "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-1:32\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-1:32\">\n    <text sourcepos=\"1:1-1:15\" xml:space=\"preserve\">![alt]￼(</text>\n    <link sourcepos=\"1:10-1:31\" destination=\"https://example.com/r\" title=\"\">\n      <text sourcepos=\"1:10-1:31\" xml:space=\"preserve\">https://example.com/r</text>\n    </link>\n    <text sourcepos=\"1:32-1:32\" xml:space=\"preserve\">)</text>\n  </paragraph>\n</document>\n",
+      "html": "<p>![alt]￼(<a href=\"https://example.com/r\">https://example.com/r</a>)</p>\n",
+      "token_locations": [
+        {
+          "path": "document/0:paragraph/0:text.literal",
+          "count": 1
+        }
+      ],
+      "passed": false
+    }
+  ],
+  "extraction_error": "GFM official site has 677 examples, not the initially assumed 652."
+}

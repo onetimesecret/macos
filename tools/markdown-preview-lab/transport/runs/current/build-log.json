@@ -1,0 +1,49 @@
+[
+  {
+    "argv": [
+      "xcrun",
+      "swiftc",
+      "-swift-version",
+      "6",
+      "-parse-as-library",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+      "-module-cache-path",
+      "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/module-cache",
+      "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/TransportProbe.swift",
+      "-o",
+      "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/TransportResearch.app/Contents/MacOS/OnetimePad"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": ""
+  },
+  {
+    "argv": [
+      "codesign",
+      "--force",
+      "--sign",
+      "-",
+      "--identifier",
+      "transport-research",
+      "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/TransportResearch.app"
+    ],
+    "returncode": 0,
+    "stderr": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/TransportResearch.app: replacing existing signature\n",
+    "stdout": ""
+  },
+  {
+    "argv": [
+      "codesign",
+      "--verify",
+      "--strict",
+      "--verbose=2",
+      "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/TransportResearch.app"
+    ],
+    "returncode": 0,
+    "stderr": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/TransportResearch.app: valid on disk\n/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/current/TransportResearch.app: satisfies its Designated Requirement\n",
+    "stdout": ""
+  }
+]
