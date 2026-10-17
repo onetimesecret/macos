@@ -1274,7 +1274,7 @@ final class DayStackView: NSView {
         return max(used, minimumRegionHeight)
     }
 
-    private static func measuredSourceWidth(of text: NSTextView) -> CGFloat {
+    static func measuredSourceWidth(of text: NSTextView) -> CGFloat {
         guard let manager = text.layoutManager, let container = text.textContainer else { return 0 }
         var right: CGFloat = 0
         // The aggregate used rect can include an unbounded fragment's sentinel width.

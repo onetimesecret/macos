@@ -4807,10 +4807,18 @@ final class InkLayoutManager: NSLayoutManager {
                     forGlyphAt: glyphs.location, effectiveRange: nil
                 ).minY
                 let bottom = boundingRect(forGlyphRange: glyphs, in: container).maxY
+                // Unwrapped, the text view is as wide as its longest line
+                // (or the roll's stack); that width is the slab's reach.
+                nonisolated(unsafe) let view = container.textView
+                let extent = MainActor.assumeIsolated { () -> CGFloat? in
+                    guard let view else { return nil }
+                    return view.bounds.width - view.textContainerInset.width * 2
+                }
                 guard let slab = Self.slabRect(
                     firstLineTop: top, regionBottom: bottom,
                     containerWidth: container.size.width, origin: origin,
-                    editorMeasure: (container as? InkTextContainer)?.capturedEditorMeasure
+                    editorMeasure: (container as? InkTextContainer)?.capturedEditorMeasure,
+                    documentExtent: extent
                 ) else { continue }
                 // TextKit draws on the main thread; the assumption is
                 // stated rather than inherited because the SDK does not
@@ -4824,15 +4832,18 @@ final class InkLayoutManager: NSLayoutManager {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
 
-    /// Fence wash uses the captured viewport measure when the container is unbounded.
-    /// Without a usable finite width, there is no slab to paint.
+    /// Wrapped, the slab is the container's width. Unwrapped, it runs the
+    /// document's extent and never less than the viewport measure.
     nonisolated static func slabRect(
         firstLineTop: CGFloat, regionBottom: CGFloat,
-        containerWidth: CGFloat, origin: NSPoint, editorMeasure: CGFloat? = nil
+        containerWidth: CGFloat, origin: NSPoint,
+        editorMeasure: CGFloat? = nil, documentExtent: CGFloat? = nil
     ) -> NSRect? {
-        let width = min(containerWidth, editorMeasure ?? containerWidth)
         guard firstLineTop.isFinite, regionBottom.isFinite, regionBottom > firstLineTop,
-              width.isFinite, width > 0, width < SealedBlockCell.effectivelyUnboundedWidth
+              let width = slabWidth(
+                containerWidth: containerWidth, editorMeasure: editorMeasure,
+                documentExtent: documentExtent
+              )
         else { return nil }
         return NSRect(
             x: origin.x,
@@ -4840,6 +4851,21 @@ final class InkLayoutManager: NSLayoutManager {
             width: width,
             height: regionBottom - firstLineTop
         )
+    }
+
+    /// Nil when no finite, bounded width is known, so nothing is painted.
+    nonisolated static func slabWidth(
+        containerWidth: CGFloat, editorMeasure: CGFloat?, documentExtent: CGFloat?
+    ) -> CGFloat? {
+        func usable(_ value: CGFloat?) -> CGFloat? {
+            guard let value, value.isFinite, value > 0,
+                  value < SealedBlockCell.effectivelyUnboundedWidth else { return nil }
+            return value
+        }
+        if let bounded = usable(containerWidth) {
+            return min(bounded, usable(editorMeasure) ?? bounded)
+        }
+        return [usable(editorMeasure), usable(documentExtent)].compactMap { $0 }.max()
     }
 }
 

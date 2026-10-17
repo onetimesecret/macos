@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every day on the roll, the selected one and the rest. With wrapping
   off, long lines run on, the days scroll sideways together, and their
   headings stay at the left edge of the window. ⌥Z no longer answers
-  `long lines always wrap while the days are showing`.
+  `long lines always wrap while the days are showing`. With wrapping
+  off, fenced code keeps its wash for the whole width of the page,
+  where before it had none; the wash reaches as far as the longest
+  line, in a tab and on the roll alike.
 
 - **A drag between pages moves its objects** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag

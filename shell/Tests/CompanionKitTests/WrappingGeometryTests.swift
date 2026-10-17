@@ -198,6 +198,59 @@ final class WrappingGeometryTests: XCTestCase {
         withExtendedLifetime(storage) {}
     }
 
+    /// Drawn through the real layout manager: with wrapping off and the
+    /// text view sized to its longest line, the wash is under the code
+    /// well past the first viewport, and absent under the prose there.
+    func testAnUnwrappedFenceWashReachesPastTheViewport() throws {
+        let (text, storage, layout, container) = makeTextView()
+        text.drawsBackground = false
+        text.appearance = NSAppearance(named: .aqua)
+        let code = String(repeating: "a", count: 240)
+        storage.setAttributedString(NSAttributedString(
+            string: "prose\n```\nx\n\(code)\n```\n",
+            attributes: [.font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)]
+        ))
+        let fence = (storage.string as NSString).range(of: "```\nx\n\(code)\n```")
+        layout.fenceRegions = [fence]
+
+        InkEditorView.configureWrapping(false, textView: text, viewportWidth: 420)
+        layout.ensureLayout(for: container)
+        // Sized as the roll sizes a row: to the longest line, not the
+        // aggregate used rect, which reports the unbounded sentinel.
+        let sourceWidth = DayStackView.measuredSourceWidth(of: text)
+        XCTAssertGreaterThan(sourceWidth, 1000, "the case needs a line far wider than the viewport")
+        XCTAssertLessThan(sourceWidth, 10000)
+        text.setFrameSize(NSSize(
+            width: sourceWidth,
+            height: ceil(layout.usedRect(for: container).height) + text.textContainerInset.height * 2
+        ))
+        layout.ensureLayout(for: container)
+
+        let rep = try XCTUnwrap(text.bitmapImageRepForCachingDisplay(in: text.bounds))
+        text.cacheDisplay(in: text.bounds, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / text.bounds.width
+        func alpha(x: CGFloat, line: Int) -> CGFloat {
+            let glyph = layout.glyphIndexForCharacter(at: lineStart(line))
+            let row = layout.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil).midY
+                + text.textContainerOrigin.y
+            return rep.colorAt(x: Int(x * scale), y: Int(row * scale))?.alphaComponent ?? -1
+        }
+        func lineStart(_ line: Int) -> Int {
+            var location = 0
+            for _ in 0..<line {
+                location = NSMaxRange((storage.string as NSString)
+                    .paragraphRange(for: NSRange(location: location, length: 0)))
+            }
+            return location
+        }
+        // Line 2 is the short `x` line inside the fence: no glyph at x=1000.
+        XCTAssertGreaterThan(alpha(x: 1000, line: 2), 0, "no wash under the code past the viewport")
+        XCTAssertGreaterThan(alpha(x: 100, line: 2), 0, "no wash under the code inside the viewport")
+        XCTAssertEqual(alpha(x: 1000, line: 0), 0, "the prose line is washed")
+        XCTAssertEqual(alpha(x: sourceWidth - 2, line: 2), 0, "the wash runs past the text view's edge")
+        withExtendedLifetime(storage) {}
+    }
+
     func testInvalidEditorMeasuresDoNotReplaceAnExistingCapture() {
         let container = InkTextContainer(size: .zero)
         XCTAssertTrue(container.setEditorMeasure(396))
