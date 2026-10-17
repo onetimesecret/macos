@@ -45,10 +45,11 @@ The issue's October 14 direction makes boundary content part of this work;
 there is no longer an unresolved decision about whether outgoing JSON is in
 scope. That task direction does not ratify either proposed document.
 
-Inspection baseline: foundation `7384bff1` and Rust FFI `9a2d14e4` on
-`fix/256-content-buffers`, October 16, 2026. Code and test observations are
-implementation evidence only. Concurrent Swift work is described separately
-and remains pending until its final source and results are reviewed.
+Inspection baseline: foundation `7384bff1`, Rust FFI `9a2d14e4`, core
+`09901309`, and the uncommitted Swift helper/tests on `fix/256-content-buffers`,
+October 16, 2026. Source inspection and test results are implementation evidence
+only; parent-reported results are labeled below. The full final gate remains
+pending.
 
 ## Disposition vocabulary
 
@@ -99,7 +100,7 @@ This changes the final allocation; it does not retroactively wipe earlier
 | F10 | `active_cut_json` | Object excerpts and names, plus page id; **Z + W**, borrowed faces | Implemented output; core and Swift active-cut storage are not fixed by this. |
 | F11 | `tabs_json` | Typed/derived titles and tab metadata; **Z + W** | Implemented output and zeroizing temporary label; upstream title/name construction remains C13–C15. |
 | F12 | `ledger_json` | Titles and event metadata; **Z + W**, borrowed title | Implemented output; resident and restored title owners remain C16 / C31. |
-| F13 | `sheet_document_json` | All ink, object excerpts/names; **Z + W**, borrowed `DocumentRuns` | Implemented output without content `Value` copies; cached segments and Loro remain C01–C03. |
+| F13 | `sheet_document_json` | All ink, object excerpts/names; **Z + W**, borrowed `DocumentRuns` | Implemented output without content `Value` copies; projection owners C02/C03 now wipe, while upstream Loro allocations remain C01. |
 | F14 | `sheet_meta_json`, `sheet_blocks_json` | Stamps, block ids and counts; **N + W** | Implemented content-free shape as inspected; not permission to add block text to these serializers. |
 | F15 | `connection_json`, `connection_test` | Connection state and result/error metadata; **N + W** | Implemented; no page text in the inspected output. |
 | F16 | `chip_conceal`, `sheet_conceal` | Receipt id or refusal/error; **N + W** output | Implemented output; concealed link is written separately to pasteboard under a zeroizing Rust owner, with the AppKit limits in C46. |
@@ -108,7 +109,7 @@ This changes the final allocation; it does not retroactively wipe earlier
 | F19 | `sync_attach`, `sync_pump`, `sync_devices_json` | Epochs, event kinds, UUIDs, fingerprints, device labels; **N + W** | Implemented page-content-free output; labels are not reclassified as secret page ink. |
 | F20 | `sync_invite_begin`, `sync_join_begin`, `sync_pairing_poll`, `sync_pairing_confirm` | Ceremony stage and SAS; **N** for page content, **W** for ceremony secret | Partial: final Rust return wipes. SAS and metadata `Value`/`String` intermediates and decoded Swift SAS are not covered by the content serializer; dedicated secret-owner work is planned. |
 | F21 | `file_open_error_json`, `file_save_error_json` | Error metadata; **N + W** | Implemented; inline Swift reading still copies the error text. |
-| F22 | `file_runs_json` | Whole file body; **Z + W** with zeroizing projection and `InkRuns` | Implemented boundary output; file reader/normalization and earlier text projections remain C04–C06. |
+| F22 | `file_runs_json` | Whole file body; **Z + W** with zeroizing projection and `InkRuns` | Implemented boundary output using the core's zeroizing projection directly, without a redundant FFI wrapper; normalization/projection owners are implemented, while the FFI file reader remains C06. |
 | F23 | `file_check`, `file_roster_json`, `drafts_notices_json` | State, names, paths, flags; **N** for file body, **W** final return | Implemented body-free output. Paths/names remain identifying data in ordinary core and Swift owners; proposed **W** follow-up, not a secure-erasure exception. |
 | F24 | `file_bookmark_b64` | Bookmark encoding a path; **N** for body, **W** final return | Partial: base64 and Swift copies remain ordinary metadata owners. Planned **W** handling if path erasure is required; no page body is serialized. |
 | F25 | `sheet_compose_fragment` (additional current route) | Same envelope/public-text shape as copy; **Z + W** | Implemented via `copy_outcome_json`; same limitations as F08. |
@@ -128,12 +129,12 @@ explicit rather than silently exempting an existing content copy.
 | ID | Buffer / data | Selected treatment | Status and inspected evidence |
 | --- | --- | --- | --- |
 | C01 | `SheetDocument` page body and Note's `LoroDoc`, including history/deleted text | **W**, dependency-level owner or alternative representation | **Blocked**: Loro arena growth/deallocation is non-wiping; selected internal string types can use shared/static storage. See dependency evidence below. A wrapper around the final document cannot erase these allocations. |
-| C02 | `DocRun::Ink` from `runs_of` | **W**, exact-size coalescing or wiping growth | **Planned**: `core/src/document.rs::runs_of` uses ordinary `String` and `push_str`; `text_of` wipes runs only on its own path. |
-| C03 | `Sheet.segments`, `Segment::Ink` | **W**, or **N** borrowed projection | **Planned**: ordinary strings move from DocRun into the cache; replacing the cache does not wipe them (`core/src/sheet.rs::rebuild_segments`). |
-| C04 | `ink::text_of` result | **W**, exact-size result owner | **Partial**: exact-capacity construction and per-run wipe exist; return type is plain `String`. Note/edit/save callers wrap some results, not every use (`core/src/ink.rs`). |
-| C05 | `OpenFile::text`, `FileStore::text` | **W** projection | **Partial**: F22 now immediately wraps its result, but these APIs still return ordinary `String` (`core/src/files.rs`). |
-| C06 | File reading and CRLF normalization | **W**, wiping reader and exact normalization | **Planned**: `ffi/src/files.rs::read_regular` uses a plain vector and `read_to_end`; stat size is a hint. `core/src/files.rs` wraps `text.replace("\r\n", "\n")` only after construction. Earlier growth is not covered. |
-| C07 | `sim_units` UTF-16 content | **W**, pre-sized zeroizable storage, or **N** range traversal | **Planned**: `core/src/store.rs::sim_units` grows `Vec<SimUnit>` with content code units. SimUnit is not currently a zeroizing owner; wiping requires a representation/type change, not an unchecked cast. |
+| C02 | `DocRun::Ink` from `runs_of` | **W**, exact-size coalescing | **Implemented** at `09901309`: inserts enter `Zeroizing<String>` and adjacent ink is coalesced at its exact byte size (`core/src/document.rs`). Upstream Loro `to_delta` construction remains C01. |
+| C03 | `Sheet.segments`, `Segment::Ink` | **W** segment owner | **Implemented** at `09901309`: Segment implements Zeroize/Drop; rebuilding/restoring transfers the DocRun string allocation with `mem::take`, without copying content (`core/src/sheet.rs`, `persist.rs`). Clones have independent wiping owners; inbound parser copies remain C08. |
+| C04 | `ink::text_of` result | **W**, exact-size result owner | **Implemented** at `09901309`: returns `Zeroizing<String>` constructed at the summed run size, including sentinel bytes (`core/src/ink.rs`). Loro source construction remains C01. |
+| C05 | `OpenFile::text`, `FileStore::text` | **W** projection | **Implemented** at `09901309`: return `Zeroizing<String>` / `Option<Zeroizing<String>>` directly from `text_of` (`core/src/files.rs`); F22 borrows that owner. |
+| C06 | File reading and CRLF normalization | **W**, wiping reader and exact normalization | **Partial**: `09901309` adds exact-size `normalize_newlines` into `Zeroizing<String>` (`core/src/files.rs`). **Planned**: `ffi/src/files.rs::read_regular` still uses a plain vector and `read_to_end`; stat size is a hint, and earlier reader growth/error cleanup is not covered. |
+| C07 | `sim_units` UTF-16 content | **W**, pre-sized zeroizable storage | **Implemented** at `09901309`: SimUnit zeroizes code units; a zeroizing vector reserves exact room for the body plus every insert before copying content. Insert simulation checks capacity and shifts in place; overflow/allocation failure refuses (`core/src/store.rs`). |
 | C08 | `EditOp::Insert.text`, `parse_ops`, `parse_segments` | **W** direct typed parse plus wiping scratch | **Blocked/Planned**: ordinary `String` and content `Value` copies remain in `core/src/store.rs` / `ffi/src/lib.rs`; serde_json escaped-string scratch is non-wiping. A zeroizing visitor alone does not fix scratch. |
 | C09 | `SealedChip.excerpt`, `text_face` head/tail | **W**, exact projection, or **N** omit excerpt | **Planned**: ordinary `String`, `collect` and `format!` remain (`core/src/sheet.rs`). Borrowing it in F04/F10/F13 removes a serializer copy, not its residence. |
 | C10 | `SealedChip.name` | **W** resident/name-update owner | **Planned**: ordinary `Option<String>` remains, including transfer and restore assignments (`core/src/sheet.rs`, `store.rs`, `transfer.rs`, `persist.rs`). |
@@ -151,7 +152,7 @@ explicit rather than silently exempting an existing content copy.
 | C22 | `Copied.envelope`, `Copied.plain` | **Z + W** | **Implemented** exact/two-pass output (`core/src/fragment.rs`); wire-name clone remains C19. F08's lossy fallback construction also needs review for wiping growth. |
 | C23 | `ActiveCut.envelope` | **W** | **Implemented** final zeroizing vector (`core/src/transfer.rs`); upstream fragment construction remains C19–C21. |
 | C24 | `copy_out_chip`, `copy_out_name_value` (`NAME=`) | **W** exact result | **Implemented** final zeroizing vectors (`core/src/store.rs`); resident source/name is separate. |
-| C25 | `sheet_payload`, chip conceal payload | **W** exact result | **Implemented** final zeroizing strings (`core/src/store.rs`, `ffi/src/lib.rs`); upstream segments remain C03. |
+| C25 | `sheet_payload`, chip conceal payload | **W** exact result | **Implemented** final zeroizing strings (`core/src/store.rs`, `ffi/src/lib.rs`); segment owners now wipe (C03), while Loro remains C01. |
 | C26 | Conceal request body | **Z + W** | **Implemented** two-pass request owner (`ots-client/src/api.rs`, `types.rs`); does not cover transport/library internals. |
 | C27 | `StubWire::summarize` (test-util) | **N** redacted direct visitor, **W** scratch | **Planned**: it currently parses the whole secret body into `Value` before redacting (`ffi/src/conceal.rs`). Output redaction alone does not wipe test-process content. |
 | C28 | Core snapshot and materialized block section | **Z + W** | **Implemented** application output (`core/src/persist.rs`); Loro exports captured before serialization retain C29's construction limit. |
@@ -182,12 +183,13 @@ Source: [`CompanionClient.swift`](../../shell/Sources/CompanionKit/CompanionClie
 [`PageModel.swift`](../../shell/Sources/CompanionKit/PageModel.swift),
 [`InkEditorView.swift`](../../shell/Sources/CompanionKit/InkEditorView.swift), and
 [`SealedFragmentPasteboard.swift`](../../shell/Sources/CompanionKit/SealedFragmentPasteboard.swift).
-The following selected treatments are proposals unless explicitly marked pending.
+The following selected treatments remain proposals except the implemented
+boundary borrow in S02.
 
 | ID | Inventory entry | Selected treatment and status |
 | --- | --- | --- |
 | S01 | `ChipInfo.excerpt/name`, `RestoredRun.ink`, `TabSummary.title`, `LedgerEntry.title`, `FileSummary.name/path`, `ActiveCut.objects`, `SealedFragment.envelope/plainText` | **N** identifiers/borrowed or on-demand views where possible; **W** owned bytes where content must persist. **Blocked/Planned**: ordinary decoded String/Data models remain. Envelope conversion `Data($0.utf8)` is another copy. A synchronous JSON borrow does not erase decoded fields. |
-| S02 | `decodeJSON`, `ownedString`, inline C-string readers | **W** borrowed Rust owner for content JSON; **N** content-free uses of ownedString/inline readers. **Pending parent work**: `decodeOwnedJSON` uses `Data(bytesNoCopy:count:deallocator: .none)`, synchronous JSONDecoder, and `defer companion_string_free`. It removes the explicit intermediate JSON String and UTF-8 Data copy. This does not establish Foundation-internal no-copy behavior or decoded-string erasure. At this baseline the old decoder is still visible; final parent source/results must be reviewed. |
+| S02 | `decodeJSON`, `ownedString`, inline C-string readers | **W** borrowed Rust owner for content JSON; **N** content-free uses of ownedString/inline readers. **Implemented, source-inspected (uncommitted)**: `decodeJSON` delegates to `decodeOwnedJSON`, which uses `Data(bytesNoCopy:count:deallocator: .none)`, synchronous decoding, and deferred release defaulting to `companion_string_free`. Explicit intermediate JSON String/Data copies are removed. Parent reports seven helper tests passing; Foundation-internal no-copy behavior and decoded-string erasure are not established. |
 | S03 | `sealText` editor input / `withCString`, `pasteFragment` input, `detectSourceLanguage(in: Data)` | **W** explicit bounded input bytes or **N** borrowed input APIs. **Planned**: Swift editor/input values and encoding temporaries are not erased by changing outgoing JSON. |
 | S04 | PageModel `tabs`, `openFiles`, `ledgerEntries`, `activeCut` | **N** reduced cached fields, **W** unavoidable content owners. **Planned**: current retained models remain after decoding. |
 | S05 | PageModel `storages: [UInt64: NSTextStorage]`, `quietRenderings` | **N** smaller/shorter-lived projections; **W** only where ownership permits. **Blocked** on AppKit/editor architecture for erasure; ordinary text/attributed-string rendering storage remains. Removing cache entries is not byte wiping. |
@@ -270,11 +272,14 @@ these allocation questions.
 
 ## Tests and validation limits
 
-The following tests exist in the inspected Rust baseline. They check the named
+The following tests exist in the inspected source. They check the named
 behavior, not every allocation in the process.
 
 | Source | Tests / observation |
 | --- | --- |
+| `core/src/document.rs`, `sheet.rs` | `projected_ink_coalesces_marked_pieces_at_exact_capacity`, `segment_ink_and_its_clone_have_independent_wiping_owners`: exact coalescing, clone independence and live-allocation wipe. |
+| `core/src/ink.rs`, `files.rs` | `text_projection_is_exact_and_zeroizing_including_sentinels`, `normalization_and_file_projections_are_exact_zeroizing_text`: zeroizing result types, exact capacity, Unicode/sentinels and mixed newlines. |
+| `core/src/store.rs` | `simulated_ink_uses_one_reserved_wiping_allocation`, `a_late_surrogate_refusal_leaves_the_document_unchanged`: stable allocation through inserts, overflow/capacity refusal, code-unit wipe and atomic late refusal. |
 | `ffi/src/content_json.rs` | `exact_nul_encoding_matches_serde_and_wipes_the_live_allocation`: empty/escaped/Unicode/large output, terminal NUL, explicit live-allocation wipe; not post-free memory inspection. |
 | `ffi/src/content_json.rs` | `chip_and_cut_fields_match_the_previous_sorted_json_bytes`, `copied_envelope_stays_a_string_with_the_same_lossy_utf8_semantics`: projection shape and fallback behavior. |
 | `ffi/src/content_json.rs` | `raw_transfer_and_reconstruction_use_the_same_pointer_and_full_slice_length`, `ordinary_strings_share_the_exact_box_layout_and_free_path`: ownership layout, null and ordinary-string path. |
@@ -286,45 +291,51 @@ behavior, not every allocation in the process.
 | `sync/src/b64.rs`, `pad.rs` | `zeroizing_buffers_match_public_encoding_across_chunk_boundaries`, `round_trips_and_pads_to_the_bucket`. |
 | `ffi/src/sync_session.rs` | `withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued`, `withdrawal_after_a_partial_seal_failure_publishes_only_the_surviving_ops`, `a_refused_seal_keeps_the_queue_for_the_next_tick`, `sealed_blobs_reach_the_wire_in_power_of_two_buckets`. |
 
-Executed during this documentation pass: `cargo test -p companion-sync --lib`
-(**51 passed**); `cargo test -p companion-ffi --lib content_json` (**6 passed**);
-focused FFI filters for `content_routes_preserve`, `projection_matches`,
-`file_runs_match_previous`, `sync_session::tests::withdraw`,
-`sync_session::tests::a_refused_seal`, and `sync_session::tests::sealed_blobs`
-(**7 distinct tests passed**). These are not a workspace, release, or hardware
-validation run. No allocator instrumentation proving all drop paths was run.
+**Executed here:** the initial documentation pass ran 51 sync library tests and
+13 distinct focused FFI tests before `09901309`. This update ran each of the
+six core tests above with `cargo test -p companion-core --all-features --lib`
+and its test-name filter; all six passed after `09901309`.
 
-**Pending parent validation:** `ContentJSONDecodingTests.swift` is intended to
-check nil/success/error paths, exactly-once release, pointer alias during an
-injected synchronous decode, and long escaped Unicode payloads. These are
-planned test expectations supplied with the parent task, not observed passing
-results here. Even a passing pointer-alias test would not prove JSONDecoder
-internals avoid copies. No test result for that concurrent Swift work is
-asserted by this document.
+**Swift source-inspected; results parent-reported:**
+[ContentJSONDecodingTests.swift](../../shell/Tests/CompanionKitTests/ContentJSONDecodingTests.swift)
+has seven tests covering nil, success, malformed/type-mismatched input, invalid
+UTF-8, injected failure, long escaped Unicode with pointer alias during decode,
+and real FFI release. Parent reports **7 passed**, included in **221 focused
+Swift tests passed** with filters `ContentJSONDecodingTests`,
+`CompanionClientTests`, `SealedObjectSeamTests`, `SealedFragmentSeamTests`,
+`SealedNoteTests`, `FileDocumentTests`, `FileAccessTests`, and
+`PersistenceRoundTripTests`. Pointer alias at the injected decoder does not
+prove JSONDecoder internals avoid copies or decoded Strings are erased.
+
+**Other reported validation:** parent reports workspace tests normal + test-util,
+clippy, and `build-core.sh --test-util` passed **before** `09901309`; the core
+agent reports core/FFI all-features suites **576/340 passed after** it. These
+results are not a completed final gate. The full final gate will rerun; this
+update did not run it, hardware checks, or allocator-wide wipe instrumentation.
 
 ## Remaining blockers for #256 and Law 0004
 
-1. **B1 — core ownership:** implement and test C02–C10, C13–C17, C19–C21,
-   C27/C31, including refusal cleanup and origin/title/name copies. FFI output
-   tests do not cover those resident owners or upstream growth.
+B4's explicit Swift boundary validation is resolved by source inspection and
+the parent-reported focused results; it is no longer a blocker. C02–C05, C07
+and C06 normalization are implemented; C06's FFI reader remains unresolved.
+
+1. **B1 — remaining core ownership:** implement and test C08–C10, C13–C17,
+   C19–C21 and C27/C31: parser/refusal cleanup, resident excerpt/name/title/origin
+   copies, fragment wire names and restored owners.
 2. **B2 — dependency storage and parsing:** resolve C01/C29 and escaped-string
    scratch in C08/C21/C34/C41. Review Loro shared/static/inline storage and its
    whole import/export allocation graph. Wrapping returned allocations is not
    sufficient; these are software/source questions, not hardware checks.
-3. **B3 — input, refusal and bridge owners:** fix C06/C45/C47, lossy fallback
+3. **B3 — input, refusal and bridge owners:** fix C06's FFI reader, C45/C47, lossy fallback
    construction in F08/C46, and review AppKit/Swift residence S01/S03–S09.
    A narrower payload may remove individual copies; no accepted exception for
    the remaining copies is created here. Ceremony SAS intermediates F20 also
    need dedicated secret handling.
-4. **B4 — Swift boundary validation:** inspect the parent's final
-   `decodeOwnedJSON` and tests, run its actual test target, and record the
-   result. Borrowing the Rust buffer addresses explicit boundary copies only;
-   decoded values and Foundation internals remain separate limits.
-5. **B5 — outstanding law evidence:** transport growth/drop wipe instrumentation,
+4. **B5 — outstanding law evidence:** transport growth/drop wipe instrumentation,
    key-file read growth/error handling, and regression tests for every planned
    owner remain outstanding. Existing byte/capacity tests are not allocator
    erasure tests. See the law's contract rows.
-6. **B6 — machine checks:** actual pasteboard/drag delivery, refusal/clear races,
+5. **B6 — machine checks:** actual pasteboard/drag delivery, refusal/clear races,
    and deployed macOS behavior still need observation. Such checks can reveal
    behavior but cannot establish erasure of all Foundation/system copies.
 
@@ -337,9 +348,9 @@ Paths are relative to `crates/`.
 | --- | --- | --- |
 | I01 | Custom `SecretBuffer` Drop (`core/src/secret.rs`) | **W — implemented** for its fixed allocation; spare capacity included. C12 describes page-lock limits. |
 | I02 | Two-pass Sizer/Writer/Counter/ByteCounter (`core/src/persist.rs`, `fragment.rs`, `file_persist.rs`; `ots-client/src/api.rs`) | **Z + W — implemented** final output. Source/intermediate owners still need independent review. |
-| I03 | Known-size `NAME=`, sheet payload, fragment public text, seal work, ink projection (`core/src/store.rs`, `fragment.rs`, `ink.rs`, `files.rs`; `ffi/src/persist.rs`) | **W — partial** overall: exact output construction exists, but not every plain text result has a wiping owner (C04/C05). |
+| I03 | Known-size `NAME=`, sheet payload, fragment public text, seal work, ink projection (`core/src/store.rs`, `fragment.rs`, `ink.rs`, `files.rs`; `ffi/src/persist.rs`) | **W — implemented** named output/projection owners, including C04/C05 after `09901309`. Upstream dependency construction remains separate. |
 | I04 | `read_wiping` (`transport/src/lib.rs`) | **W — implemented** growth strategy; allocator-level wipe instrumentation remains B5. |
-| I05 | Explicit temporary `.zeroize()` (`ffi/src/lib.rs`, `sync_driver.rs`; `core/src/ink.rs`; `ots-client/src/api.rs`) | **W — partial** path-local cleanup. It does not erase an earlier released allocation or a clone. |
+| I05 | Explicit temporary `.zeroize()` (`ffi/src/lib.rs`, `sync_driver.rs`; `ots-client/src/api.rs`) | **W — partial** path-local cleanup. It does not erase an earlier released allocation or a clone. |
 | I06 | Deserialize into `Zeroizing<String>` (`sync/src/oauth.rs`) | **W — partial**: final field owner, not serde_json scratch. |
 | I07 | Exact form encoder (`sync/src/oauth.rs`) | **W — implemented** zeroizing form output. |
 | I08 | In-place decrypt and truncate (`ffi/src/persist.rs`) | **W — implemented** plaintext result owner; downstream restored objects remain C31. |
@@ -364,4 +375,4 @@ under the actual limits. This pass did not perform those checks. UI success,
 clipboard clearing, and a clean memory snapshot do not prove absence of earlier
 copies, swap/compression artifacts, screenshots, window-server storage, or
 other-process retention. Those OS details remain unverified rather than being
-used to waive B1–B5.
+used to waive the remaining software blockers.

@@ -98,21 +98,22 @@ checks do not prove that every dependency allocation was wiped.
 | Materialized block section | Two-pass zeroizing application output | `crates/core/src/persist.rs::the_block_section_is_written_at_its_exact_size`; empty section behavior included. |
 | Drafts file | Two-pass zeroizing application output; exports captured once | `crates/core/src/file_persist.rs::the_drafts_buffer_is_written_at_its_exact_size`; upstream export scratch is not covered. |
 | Seal/decrypt work buffer | Known-size zeroizing owner | `crates/ffi/src/persist.rs::the_seal_work_buffer_is_exact_and_self_wiping`; not proof about earlier source allocations. |
-| Page conceal payload | Known-size zeroizing result | `crates/core/src/store.rs::the_conceal_payload_is_written_at_its_exact_size` (UTF-8 chips); upstream segments remain ordinary strings. |
+| Page conceal payload | Known-size zeroizing result | `crates/core/src/store.rs::the_conceal_payload_is_written_at_its_exact_size` (UTF-8 chips); segment owners now wipe at `09901309`, while upstream Loro allocations remain separate. |
 | Conceal request body | Two-pass zeroizing output, no content Value intermediate | `crates/ots-client/src/api.rs::the_conceal_body_is_written_at_its_exact_size` checks capacity; borrowed-field construction is source-inspected. |
 | HTTP response body | Wiping-growth implementation | `crates/transport/src/lib.rs::a_body_read_past_its_reservation_arrives_whole_and_in_order`, `a_read_that_fails_partway_returns_the_error` check bytes/error. Allocator-level growth/drop wipe instrumentation remains owed; no dedicated issue yet. |
 | Key file half | Known-size intent; reader still needs review | Owed: growth/error-path test and wiping-reader decision; stat sizing alone does not handle a file changing during read. No dedicated issue yet. |
-| Opened file read and normalization | Planned wiped owner / wiping growth | `crates/ffi/src/files.rs::read_regular` returns a plain vector and uses `read_to_end`; `core/src/files.rs` wraps `replace` only after construction. Issue #256: implementation and refusal/error tests remain, not an outgoing-boundary scope decision. |
+| Opened file read and normalization | Exact zeroizing normalization implemented; wiping reader planned | `09901309`: `core/src/files.rs::normalize_newlines` counts before writing; `normalization_and_file_projections_are_exact_zeroizing_text` checks it. `crates/ffi/src/files.rs::read_regular` still returns a plain vector and uses `read_to_end`; reader growth/error cleanup remains unresolved. |
 | Fragment envelope | Two-pass zeroizing output | `crates/core/src/fragment.rs::the_envelope_is_written_at_its_exact_size`; WireRef name clone remains unwiped. |
 | Fragment public text | Known-size zeroizing result | `crates/core/src/fragment.rs::the_public_text_puts_a_size_class_placeholder_where_each_object_stood`. |
 | Copy decrypted / decrypted drag / `NAME=` result | Known-size zeroizing result | `crates/core/src/store.rs::a_copy_out_is_written_at_its_exact_size`; AppKit bridge storage is not this owner. |
 | Pasted fragment and edit-batch parsing | Planned wiped typed owners and parser scratch | Issue #256: serde_json 1.0.150 has growing, non-wiping escaped-string scratch; names, Value intermediates and refusal cleanup remain. Source-inspected software blocker, not a machine-only check. |
-| Page, note, fragment, chip, active-cut, tab, ledger and file JSON for Swift | Implemented two-pass output and borrowed/zeroizing projections | `crates/ffi/src/content_json.rs` tests below; final allocation is boxed JSON bytes plus NUL, wiped by `companion_string_free`. Resident core sources, lossy fallback construction and decoded Swift values are not resolved. Scope is established by the #256 task direction; implementation is partial. |
+| Page, note, fragment, chip, active-cut, tab, ledger and file JSON for Swift | Implemented two-pass output and borrowed/zeroizing projections | `crates/ffi/src/content_json.rs` tests below; final allocation is boxed JSON bytes plus NUL, wiped by `companion_string_free`. Resident excerpt/name/title/origin owners, Loro sources, lossy fallback construction and decoded Swift values remain unresolved. Scope is established by the #256 task direction; implementation is partial. |
 | Other owned C-string returns | Implemented exact boxed final owner and wiping free | `ordinary_strings_share_the_exact_box_layout_and_free_path`; earlier metadata/ceremony String/Value construction is not retroactively wiped. Static versions and diagnostic callback are borrowed. |
 | Sync ByteBlob, base64, envelope encode and pad | Implemented zeroizing owners and fixed-size output | `crates/sync/src/envelope.rs`, `b64.rs`, `secret_json.rs`, `pad.rs` tests below; inbound escaped-string scratch remains. |
 | Queue, withdraw, publish and inbound dispatch | Implemented per-Ops owner; publish encode/pad temporaries wipe | `crates/ffi/src/sync_session.rs` tests below; queue removal is tested, not freed-memory inspection. Loro import and parser scratch remain separate. |
-| Swift JSON boundary borrow | Pending parent implementation/validation | Intended `decodeOwnedJSON`: synchronous `Data(bytesNoCopy:count:deallocator: .none)` borrow, `defer companion_string_free`. Explicit JSON String/Data copies are removed by that change, not decoded Strings or Foundation internal copies. Parent test results are pending. |
-| Core projections, excerpts, names, notes, titles, origins and simulated UTF-16 | Planned wiped owners or narrower projections | Issue #256: ordinary DocRun/Segment/EditOp/String/SimUnit storage remains. Full per-entry disposition is in the guide. |
+| Swift JSON boundary borrow | Implemented, source-inspected in uncommitted parent changes | `decodeJSON` delegates to `decodeOwnedJSON`: synchronous `Data(bytesNoCopy:count:deallocator: .none)` borrow and deferred release defaulting to `companion_string_free`. Parent reports seven helper tests passing within 221 focused Swift tests. Explicit intermediate JSON String/Data copies are removed; Foundation internal copies and decoded-string erasure are not established. |
+| Core run/text/file projections and simulated UTF-16 | Wiping owners implemented at `09901309` | DocRun uses Zeroizing and exact coalescing; Segment wipes on drop and receives the allocation by transfer; `text_of` and file text APIs return Zeroizing; SimUnits reserve for all inserts before copying. Six regression tests below; upstream Loro construction remains unresolved. |
+| Resident excerpts, names, notes, titles, origins and edit parsing | Planned wiped owners or narrower projections | Ordinary EditOp/Value, excerpt/name/title/origin/restore and fragment wire-name copies remain; Note's Loro storage remains blocked. The guide records each entry. |
 | Loro state/history/import/export | Dependency-level wiped storage or representation change needed | Pinned source confirms non-wiping arena growth and growing update output. Shared/static/inline allocations and snapshot scratch need further source work. Wrapping returned vectors is only a partial implementation. |
 | Pasteboard/drag input, refusal and bridge | Planned early wiping owners and narrow intentional egress | Issue #256: refused images drop ordinary vectors; MemoryPasteboard read/origin copies remain. Objective-C constructors copy; `clearContents` is not evidence of a storage wipe. |
 
@@ -141,9 +142,17 @@ For a new interaction:
 
 ## Tests for the implemented portion of issue #256
 
-Source baseline: `7384bff1` plus `9a2d14e4`. These are implementation tests,
-not normative authority or a statement that the entire issue is complete.
+Source baseline: `7384bff1`, `9a2d14e4`, `09901309` and inspected uncommitted
+Swift helper/tests. These are implementation tests, not normative authority
+or a statement that the entire issue is complete.
 
+- Core at `09901309`: `document.rs::projected_ink_coalesces_marked_pieces_at_exact_capacity`,
+  `sheet.rs::segment_ink_and_its_clone_have_independent_wiping_owners`,
+  `ink.rs::text_projection_is_exact_and_zeroizing_including_sentinels`,
+  `files.rs::normalization_and_file_projections_are_exact_zeroizing_text`,
+  `store.rs::simulated_ink_uses_one_reserved_wiping_allocation`,
+  `store.rs::a_late_surrogate_refusal_leaves_the_document_unchanged`.
+  All six passed in focused all-features runs during this documentation update.
 - `crates/ffi/src/content_json.rs`:
   `exact_nul_encoding_matches_serde_and_wipes_the_live_allocation`,
   `chip_and_cut_fields_match_the_previous_sorted_json_bytes`,
@@ -171,25 +180,33 @@ not normative authority or a statement that the entire issue is complete.
   `withdrawal_after_a_partial_seal_failure_publishes_only_the_surviving_ops`,
   `a_refused_seal_keeps_the_queue_for_the_next_tick`,
   `sealed_blobs_reach_the_wire_in_power_of_two_buckets`.
-- **Pending parent work:** `ContentJSONDecodingTests.swift` is intended to test
-  nil/success/error, exactly-once release, borrowed-pointer alias through an
-  injectable synchronous decoder, and long escaped Unicode. Its final source
-  and passing results have not been established by this documentation pass.
+- [ContentJSONDecodingTests.swift](../../shell/Tests/CompanionKitTests/ContentJSONDecodingTests.swift)
+  is source-inspected: seven tests cover nil, success/error, invalid UTF-8,
+  exactly-once release, synchronous pointer alias, long escaped Unicode and real
+  FFI release. Parent reports **7 passed within 221 focused Swift tests**.
+
+Validation timing: parent reports workspace normal/test-util tests, clippy and
+`build-core.sh --test-util` passed before `09901309`; the core agent reports
+core/FFI all-features suites **576/340 passed after** it. The guide records the
+Swift filters and directly executed subset. The full final gate remains pending;
+these reports do not establish final-gate completion or Foundation-internal
+no-copy behavior.
 
 ## Why this remains draft
 
 The issue permits recording blockers instead of ratification. The remaining
 blockers are explicit:
 
-- **Core/application software:** ordinary resident/projection strings, simulated
-  UTF-16 units, origin/name/title/restore copies, fragment wire names, test-wire
-  parsing, file reading/normalization, and image-refusal cleanup still need
-  wiping owners or narrower representations and regression tests.
+- **Core/application software:** resident excerpts and origin/name/title/restore
+  copies, EditOp/fragment/test-wire parsing, fragment wire names, the FFI file
+  reader and image-refusal cleanup still need implementation and regression
+  tests. C02–C05, C07 and C06 normalization are implemented; their upstream
+  Loro allocations remain separate.
 - **Dependency software:** serde_json escaped-string scratch; Loro arena,
   history/fork/import/export allocations; snapshot intermediates; shared and
   static string storage. Source inspection confirms specific non-wiping paths;
   the complete allocation graph remains unverified.
-- **Swift/AppKit architecture:** parent boundary helper/results are pending;
+- **Swift/AppKit architecture:** the boundary helper and tests are implemented;
   decoded models, NSTextStorage, cached renderings, attachments, composition
   fragments, and Foundation/Objective-C copies are not erased by that helper.
   No Foundation-internal no-copy or decoded-string-erasure result is asserted.
@@ -198,8 +215,8 @@ blockers are explicit:
   these checks. No test covers every planned inventory entry yet.
 
 These are blockers to accepting this proposed rule, not grounds for omitting
-the affected entries. The guide's B1–B6 register separates implementation work,
-parent validation, and remaining machine observations.
+the affected entries. The guide's register separates remaining software work
+from machine observations; B4's explicit boundary validation is resolved.
 
 ## What needs a person at the machine
 
@@ -227,4 +244,9 @@ server, destination app, window server, compression/swap, or prior copies.
 - 2026-10-16: Issue #256 added exact-size wiping Rust FFI output, sync owners,
   test references, the per-entry handling guide, and explicit parser/core/AppKit
   blockers. Replaced the stale outgoing-JSON scope question with implementation
-  status. Swift parent results remain pending; this law remains draft.
+  status; this law remains draft.
+- 2026-10-16: Core `09901309` implemented wiping run/segment/text/file projections,
+  exact newline normalization and reserved zeroizing simulation. Inspected the
+  Swift boundary helper/tests and recorded parent-reported results separately
+  from direct checks. Reader, resident-content, parser/dependency and AppKit
+  limits remain; the full final gate is pending.
