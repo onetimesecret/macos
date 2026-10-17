@@ -119,8 +119,10 @@ removing that history.
 - **Logical reading anchors survive reflow.** Wrap changes, resize, and content
   relayout preserve the logical source position being read rather than merely
   reusing a pixel offset. Clamping may adjust its viewport position; explicit
-  reveal requests and the existing summon anchor take precedence. This adds
-  no per-day scroll memory or persisted anchor state.
+  reveal requests and the existing summon anchor take precedence. Turning
+  wrapping off brings the line that contains that position to the top at
+  horizontal offset zero; the column within the line is not restored. This
+  adds no per-day scroll memory or persisted anchor state.
 - **Horizontal scrolling does not repeat text measurement.** A horizontal
   bounds change alone does not remeasure source text or every day, rebuild
   renderings, or trigger document-wide layout. Measurement is refreshed when
