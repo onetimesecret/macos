@@ -219,9 +219,25 @@ final class MarkdownPreviewView: AskingTextView {
         needsDisplay = true
     }
 
-    static func render(_ source: NSAttributedString) -> NSAttributedString {
-        MarkdownPreviewRenderer(source: source).render()
+    /// The parser is swift-markdown's until plan R1 replaces it; `dialect` selects how raw HTML composes.
+    static func render(
+        _ source: NSAttributedString, dialect: PreviewDialect = .gfm,
+        limits: CompositionLimits = CompositionLimits()
+    ) -> NSAttributedString {
+        MarkdownPreviewRenderer(source: source, dialect: dialect, limits: limits).render()
     }
+}
+
+extension NSAttributedString.Key {
+    /// An image's alt text and objects in a rendered preview, valued by its `PreviewImageDescriptor`.
+    static let previewImage = NSAttributedString.Key("CompanionKitPreviewImage")
+}
+
+/// An image in one rendering: its ordinal among that rendering's images, and its address as
+/// composed. The Load Image control that would read it is plan R5 (ADR-0059).
+struct PreviewImageDescriptor: Hashable {
+    let occurrence: Int
+    let destination: PreviewAddress
 }
 
 /// The preview's delegate: a link opens only by `openAimedLink`, and an object's
@@ -258,16 +274,28 @@ private final class MarkdownPreviewRenderer {
         var spacing: CGFloat = 8
     }
 
+    /// A composed identity naming no object of this rendering, or a token spelled twice outside an address.
+    private enum TokenFailure: Error {
+        case unknownObject, repeatedSpelling
+    }
+
+    /// Marks text inside a Markdown link, accepted or refused, so no HTML link applies there.
+    private static let insideMarkdownLink = NSAttributedString.Key("CompanionKitInsideMarkdownLink")
+
     private let output = NSMutableAttributedString(string: "")
     private let markdown: String
     private let tokenPrefix: String
     /// The attachments in source order, which is also the order of `location`.
     private let tokens: [AttachmentToken]
-    private var emittedAttachments: Set<Int> = []
-    /// Every token below this index is emitted, so a flush never walks them again.
+    /// Tokens handed to the composer, each once.
+    private var assigned: Set<Int> = []
+    /// Every token below this index is assigned, so a flush never walks them again.
     private var nextToken = 0
+    /// One stream for the document, so HTML scope crosses blocks (plan R3).
+    private var composer: PreviewCompositionStream
+    private var images = 0
 
-    init(source: NSAttributedString) {
+    init(source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits) {
         var prefix = "OTSAttachment" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
         while source.string.contains(prefix) { prefix += "X" }
         tokenPrefix = prefix
@@ -320,13 +348,45 @@ private final class MarkdownPreviewRenderer {
         masked += normalized(raw.substring(from: cursor))
         markdown = masked
         tokens = captured
+        composer = PreviewComposer(dialect: dialect, limits: limits).start()
     }
 
+    /// The preview, or the page's plain text when composition refuses the page.
     func render() -> NSAttributedString {
-        let document = Document(parsing: markdown, options: [.disableSmartOpts])
-        for child in document.children { renderBlock(child, context: Context()) }
-        flushAttachments(before: nil, context: Context())
-        return NSAttributedString(attributedString: output)
+        do {
+            let document = Document(parsing: markdown, options: [.disableSmartOpts])
+            for child in document.children { try renderBlock(child, context: Context()) }
+            try flushAttachments(before: nil, context: Context())
+            try composer.finish()
+            return NSAttributedString(attributedString: output)
+        } catch {
+            return plainText()
+        }
+    }
+
+    /// The page's text and objects in source order, one unstyled paragraph style.
+    private func plainText() -> NSAttributedString {
+        let result = NSMutableAttributedString(string: "")
+        let raw = markdown as NSString
+        var cursor = 0
+        for (range, index) in tokenSpellings(in: raw) {
+            result.append(NSAttributedString(string: raw.substring(with: NSRange(
+                location: cursor, length: range.location - cursor
+            )), attributes: baseAttributes))
+            var attributes = baseAttributes
+            attributes[.attachment] = tokens[index].attachment
+            result.append(NSAttributedString(string: "\u{FFFC}", attributes: attributes))
+            cursor = NSMaxRange(range)
+        }
+        result.append(NSAttributedString(string: raw.substring(from: cursor), attributes: baseAttributes))
+        if result.length > 0, !result.string.hasSuffix("\n") {
+            result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+        }
+        result.addAttribute(
+            .paragraphStyle, value: paragraphStyle(Context()),
+            range: NSRange(location: 0, length: result.length)
+        )
+        return result
     }
 
     private var baseAttributes: [NSAttributedString.Key: Any] {
@@ -365,10 +425,11 @@ private final class MarkdownPreviewRenderer {
         output.append(text)
     }
 
-    private func renderBlock(_ node: any Markup, context: Context, marker: String? = nil) {
+    private func renderBlock(_ node: any Markup, context: Context, marker: String? = nil) throws {
         if let location = node.range?.lowerBound {
-            flushAttachments(before: location, context: context)
+            try flushAttachments(before: location, context: context)
         }
+        composer.beginBlock()
         switch node {
         case let heading as Heading:
             var attributes = baseAttributes
@@ -379,9 +440,9 @@ private final class MarkdownPreviewRenderer {
             let style = paragraphStyle(context, marker: marker)
             style.paragraphSpacingBefore = heading.level <= 2 ? 10 : 6
             style.paragraphSpacing = 6
-            paragraph(inlineChildren(heading, attributes: attributes), context: context, marker: marker, style: style)
+            paragraph(try inlineChildren(heading, attributes: attributes), context: context, marker: marker, style: style)
         case let prose as Paragraph:
-            paragraph(inlineChildren(prose, attributes: baseAttributes), context: context, marker: marker)
+            paragraph(try inlineChildren(prose, attributes: baseAttributes), context: context, marker: marker)
         case let code as CodeBlock:
             var nested = context
             let block = NSTextBlock()
@@ -390,7 +451,7 @@ private final class MarkdownPreviewRenderer {
             nested.blocks.append(block)
             var attributes = baseAttributes
             attributes[.font] = InkStyle.codeFont
-            paragraph(literal(code.code, attributes: attributes), context: nested, marker: marker)
+            paragraph(try literal(code.code, attributes: attributes), context: nested, marker: marker)
         case let quote as BlockQuote:
             var nested = context
             let block = NSTextBlock()
@@ -399,15 +460,19 @@ private final class MarkdownPreviewRenderer {
             block.setWidth(10, type: .absoluteValueType, for: .padding, edge: .minX)
             nested.blocks.append(block)
             nested.indent += 12
-            for child in quote.children { renderBlock(child, context: nested) }
+            for child in quote.children { try renderBlock(child, context: nested) }
         case let list as OrderedList:
-            renderList(list, startingAt: list.startIndex, context: context)
+            try renderList(list, startingAt: list.startIndex, context: context)
         case let list as UnorderedList:
-            renderList(list, startingAt: nil, context: context)
+            try renderList(list, startingAt: nil, context: context)
         case let table as Markdown.Table:
-            renderTable(table, context: context)
+            try renderTable(table, context: context)
         case let html as HTMLBlock:
-            paragraph(literal(html.rawHTML, attributes: baseAttributes), context: context, marker: marker)
+            // A block of tags alone, or of a comment, leaves no empty paragraph.
+            let content = trimmed(try compose(.rawHTML(try parts(html.rawHTML)), attributes: baseAttributes))
+            if content.length > 0 || marker != nil {
+                paragraph(content, context: context, marker: marker)
+            }
         case is ThematicBreak:
             var nested = context
             let rule = NSTextBlock()
@@ -421,14 +486,26 @@ private final class MarkdownPreviewRenderer {
             style.paragraphSpacing = 12
             paragraph(NSAttributedString(string: "\u{200B}", attributes: baseAttributes), context: nested, style: style)
         default:
-            for child in node.children { renderBlock(child, context: context) }
+            for child in node.children { try renderBlock(child, context: context) }
         }
         if let location = node.range?.upperBound {
-            flushAttachments(before: location, context: context)
+            try flushAttachments(before: location, context: context)
         }
     }
 
-    private func renderList(_ list: any Markup, startingAt start: UInt?, context: Context) {
+    /// An HTML block without the whitespace its source lines leave at either end.
+    private func trimmed(_ text: NSAttributedString) -> NSAttributedString {
+        let string = text.string as NSString
+        let kept = CharacterSet.whitespacesAndNewlines.inverted
+        let first = string.rangeOfCharacter(from: kept)
+        guard first.location != NSNotFound else { return NSAttributedString(string: "") }
+        let last = string.rangeOfCharacter(from: kept, options: .backwards)
+        return text.attributedSubstring(from: NSRange(
+            location: first.location, length: NSMaxRange(last) - first.location
+        ))
+    }
+
+    private func renderList(_ list: any Markup, startingAt start: UInt?, context: Context) throws {
         var nested = context
         nested.indent += 28
         nested.spacing = 3
@@ -443,16 +520,16 @@ private final class MarkdownPreviewRenderer {
             }
             let children = Array(item.children)
             if let first = children.first, first is Paragraph || first is Heading {
-                renderBlock(first, context: nested, marker: marker)
-                for block in children.dropFirst() { renderBlock(block, context: nested) }
+                try renderBlock(first, context: nested, marker: marker)
+                for block in children.dropFirst() { try renderBlock(block, context: nested) }
             } else {
                 paragraph(NSAttributedString(string: ""), context: nested, marker: marker)
-                for block in children { renderBlock(block, context: nested) }
+                for block in children { try renderBlock(block, context: nested) }
             }
         }
     }
 
-    private func renderTable(_ node: Markdown.Table, context: Context) {
+    private func renderTable(_ node: Markdown.Table, context: Context) throws {
         let columnCount = node.maxColumnCount
         guard columnCount > 0 else { return }
         let table = NSTextTable()
@@ -496,7 +573,8 @@ private final class MarkdownPreviewRenderer {
                 if rowIndex == 0 {
                     attributes[.font] = NSFontManager.shared.convert(InkStyle.baseFont, toHaveTrait: .boldFontMask)
                 }
-                let content = source.map { inlineChildren($0, attributes: attributes) }
+                composer.beginBlock()
+                let content = try source.map { try inlineChildren($0, attributes: attributes) }
                     ?? NSAttributedString(string: "")
                 paragraph(content, context: nested, style: style)
             }
@@ -507,55 +585,139 @@ private final class MarkdownPreviewRenderer {
 
     private func inlineChildren(
         _ node: any Markup, attributes: [NSAttributedString.Key: Any]
-    ) -> NSAttributedString {
+    ) throws -> NSAttributedString {
         let text = NSMutableAttributedString(string: "")
-        for child in node.children { text.append(inline(child, attributes: attributes)) }
+        for child in node.children { text.append(try inline(child, attributes: attributes)) }
         return text
     }
 
     private func inline(
         _ node: any Markup, attributes: [NSAttributedString.Key: Any]
-    ) -> NSAttributedString {
+    ) throws -> NSAttributedString {
         var styled = attributes
         switch node {
         case let text as Markdown.Text:
-            return literal(text.string, attributes: attributes)
+            return try literal(text.string, attributes: attributes)
         case is Strong:
-            let font = attributes[.font] as? NSFont ?? InkStyle.baseFont
-            styled[.font] = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            return try marked(.strong) { try inlineChildren(node, attributes: attributes) }
         case is Emphasis:
-            let font = attributes[.font] as? NSFont ?? InkStyle.baseFont
-            styled[.font] = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            return try marked(.emphasis) { try inlineChildren(node, attributes: attributes) }
         case is Strikethrough:
-            styled[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            return try marked(.deletion) { try inlineChildren(node, attributes: attributes) }
         case let code as InlineCode:
-            let inherited = attributes[.font] as? NSFont ?? InkStyle.baseFont
-            let traits = NSFontManager.shared.traits(of: inherited)
-                .intersection([.boldFontMask, .italicFontMask])
-            let sized = NSFontManager.shared.convert(InkStyle.codeFont, toSize: inherited.pointSize)
-            styled[.font] = NSFontManager.shared.convert(sized, toHaveTrait: traits)
-            styled[.backgroundColor] = NSColor.controlBackgroundColor
-            return literal(code.code, attributes: styled)
+            return try marked(.code) { try literal(code.code, attributes: attributes) }
         case let link as Markdown.Link:
+            styled[Self.insideMarkdownLink] = true
             if let destination = link.destination, let url = safeURL(destination) {
                 styled[.link] = url
                 styled[.foregroundColor] = NSColor.linkColor
                 styled[.underlineStyle] = NSUnderlineStyle.single.rawValue
             }
-        case is Markdown.Image:
-            styled.removeValue(forKey: .link)
-            styled.removeValue(forKey: .underlineStyle)
-            styled[.foregroundColor] = NSColor.secondaryLabelColor
+        case let image as Markdown.Image:
+            let alt = try parts(altText(image))
+            let destination = try image.source.map { try parts($0, addressOf: image) }
+            return try compose(.markdownImage(alt: alt, destination: destination), attributes: attributes)
         case let html as InlineHTML:
-            return literal(html.rawHTML, attributes: attributes)
+            return try compose(.rawHTML(try parts(html.rawHTML)), attributes: attributes)
         case is SoftBreak:
-            return NSAttributedString(string: " ", attributes: attributes)
+            return try compose(.text(" "), attributes: attributes)
         case is LineBreak:
-            return NSAttributedString(string: "\u{2028}", attributes: attributes)
+            return try compose(.text("\u{2028}"), attributes: attributes)
         default:
             break
         }
-        return inlineChildren(node, attributes: styled)
+        return try inlineChildren(node, attributes: styled)
+    }
+
+    /// `content` under a Markdown trait, which the composer joins to the open HTML scope.
+    private func marked(
+        _ trait: PreviewTrait, _ content: () throws -> NSAttributedString
+    ) throws -> NSAttributedString {
+        _ = try composer.consume(.enterMarkdown(trait))
+        let text = try content()
+        _ = try composer.consume(.leaveMarkdown(trait))
+        return text
+    }
+
+    /// An image's alt text as CommonMark's HTML writer gives it: the plain text of its inlines,
+    /// raw HTML spelled out and each break a space.
+    private func altText(_ node: any Markup) -> String {
+        node.children.map { child in
+            switch child {
+            case let text as Markdown.Text: return text.string
+            case let code as InlineCode: return code.code
+            case let html as InlineHTML: return html.rawHTML
+            case is SoftBreak, is LineBreak: return " "
+            default: return altText(child)
+            }
+        }.joined()
+    }
+
+    /// The native text of one composer event: `attributes` under the composed style.
+    private func compose(
+        _ event: PreviewEvent, attributes: [NSAttributedString.Key: Any]
+    ) throws -> NSAttributedString {
+        let result = NSMutableAttributedString(string: "")
+        for run in try composer.consume(event) {
+            switch run {
+            case .text(let text, let style):
+                result.append(NSAttributedString(string: text, attributes: styled(attributes, style)))
+            case .object(let identity, _):
+                result.append(try object(identity))
+            case .image(let image, let style):
+                result.append(try inertImage(image, attributes: styled(attributes, style)))
+            }
+        }
+        return result
+    }
+
+    /// `attributes` with the composed traits, and an HTML link outside every Markdown link.
+    private func styled(
+        _ attributes: [NSAttributedString.Key: Any], _ style: PreviewStyle
+    ) -> [NSAttributedString.Key: Any] {
+        var result = attributes
+        let insideMarkdownLink = result.removeValue(forKey: Self.insideMarkdownLink) != nil
+        let manager = NSFontManager.shared
+        var font = attributes[.font] as? NSFont ?? InkStyle.baseFont
+        if style.traits.contains(.code) {
+            let inherited = manager.traits(of: font).intersection([.boldFontMask, .italicFontMask])
+            font = manager.convert(manager.convert(InkStyle.codeFont, toSize: font.pointSize), toHaveTrait: inherited)
+            result[.backgroundColor] = NSColor.controlBackgroundColor
+        }
+        if style.traits.contains(.strong) { font = manager.convert(font, toHaveTrait: .boldFontMask) }
+        if style.traits.contains(.emphasis) { font = manager.convert(font, toHaveTrait: .italicFontMask) }
+        result[.font] = font
+        if style.traits.contains(.deletion) {
+            result[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
+        if !insideMarkdownLink, case .unreviewed(let address)? = style.link, let url = safeURL(address) {
+            result[.link] = url
+            result[.foregroundColor] = NSColor.linkColor
+            result[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        return result
+    }
+
+    /// An image as its alt text and objects in secondary ink, marked with its descriptor and
+    /// no link; its Load Image control is plan R5 (ADR-0059).
+    private func inertImage(
+        _ image: PreviewImage, attributes: [NSAttributedString.Key: Any]
+    ) throws -> NSAttributedString {
+        let descriptor = PreviewImageDescriptor(occurrence: images, destination: image.destination)
+        images += 1
+        var alt = attributes
+        alt.removeValue(forKey: .link)
+        alt.removeValue(forKey: .underlineStyle)
+        alt[.foregroundColor] = NSColor.secondaryLabelColor
+        let result = NSMutableAttributedString(string: "")
+        for part in image.fallback {
+            switch part {
+            case .text(let text): result.append(NSAttributedString(string: text, attributes: alt))
+            case .object(let identity): result.append(try object(identity))
+            }
+        }
+        result.addAttribute(.previewImage, value: descriptor, range: NSRange(location: 0, length: result.length))
+        return result
     }
 
     private func safeURL(_ destination: String) -> URL? {
@@ -577,26 +739,49 @@ private final class MarkdownPreviewRenderer {
         return components.url
     }
 
+    /// Decoded text and the objects spelled in it, each its own composer event.
     private func literal(
         _ string: String, attributes: [NSAttributedString.Key: Any]
-    ) -> NSAttributedString {
+    ) throws -> NSAttributedString {
         let result = NSMutableAttributedString(string: "")
+        for part in try parts(string) {
+            switch part {
+            case .text(let text): result.append(try compose(.text(text), attributes: attributes))
+            case .object(let identity): result.append(try compose(.object(identity), attributes: attributes))
+            }
+        }
+        return result
+    }
+
+    /// `string` as the composer reads it, each token spelling assigned as its object. The address
+    /// of `node` assigns only unassigned tokens inside `node`'s own source; any other spelling stays
+    /// text, so the composer refuses the address and the object keeps its own place.
+    private func parts(_ string: String, addressOf node: (any Markup)? = nil) throws -> [HTMLPart] {
+        var result: [HTMLPart] = []
         let raw = string as NSString
         var cursor = 0
+        func text(_ range: NSRange) {
+            if range.length > 0 { result.append(.text(raw.substring(with: range))) }
+        }
         for (range, index) in tokenSpellings(in: raw) {
-            result.append(NSAttributedString(string: raw.substring(with: NSRange(
-                location: cursor, length: range.location - cursor
-            )), attributes: attributes))
-            // An object a link destination or a reference hid before this one keeps its place.
-            while nextToken < index {
-                if !emittedAttachments.contains(nextToken) { result.append(object(nextToken)) }
-                nextToken += 1
+            text(NSRange(location: cursor, length: range.location - cursor))
+            if let node, assigned.contains(index) || node.range?.contains(tokens[index].location) != true {
+                text(range)
+            } else if assigned.contains(index) {
+                throw TokenFailure.repeatedSpelling
+            } else {
+                // An object a link destination or a reference hid before this one keeps its place.
+                while nextToken < index {
+                    if assigned.insert(nextToken).inserted { result.append(.object(String(nextToken))) }
+                    nextToken += 1
+                }
+                assigned.insert(index)
+                result.append(.object(String(index)))
+                if nextToken == index { nextToken += 1 }
             }
-            if !emittedAttachments.contains(index) { result.append(object(index)) }
-            if nextToken == index { nextToken += 1 }
             cursor = NSMaxRange(range)
         }
-        result.append(NSAttributedString(string: raw.substring(from: cursor), attributes: attributes))
+        text(NSRange(location: cursor, length: raw.length - cursor))
         return result
     }
 
@@ -625,9 +810,9 @@ private final class MarkdownPreviewRenderer {
         return found
     }
 
-    /// The object at `index`, marked emitted.
-    private func object(_ index: Int) -> NSAttributedString {
-        emittedAttachments.insert(index)
+    /// The object a composed identity names, as its attachment character.
+    private func object(_ identity: String) throws -> NSAttributedString {
+        guard let index = Int(identity), tokens.indices.contains(index) else { throw TokenFailure.unknownObject }
         var attributes = baseAttributes
         attributes[.attachment] = tokens[index].attachment
         return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
@@ -635,15 +820,17 @@ private final class MarkdownPreviewRenderer {
 
     /// Objects with no visible leaf, in a reference or a link destination, each as a
     /// paragraph of its own before the block at `location`; every token before `nextToken`
-    /// is emitted, so the walk is linear over a render.
-    private func flushAttachments(before location: SourceLocation?, context: Context) {
+    /// is assigned, so the walk is linear over a render.
+    private func flushAttachments(before location: SourceLocation?, context: Context) throws {
         while nextToken < tokens.count {
-            if emittedAttachments.contains(nextToken) {
+            if assigned.contains(nextToken) {
                 nextToken += 1
                 continue
             }
             if let location, !(tokens[nextToken].location < location) { return }
-            paragraph(object(nextToken), context: context)
+            assigned.insert(nextToken)
+            composer.beginBlock()
+            paragraph(try compose(.object(String(nextToken)), attributes: baseAttributes), context: context)
             nextToken += 1
         }
     }

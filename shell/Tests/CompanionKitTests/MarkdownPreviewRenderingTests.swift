@@ -175,7 +175,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(block.width(for: .border, edge: .maxY), 1)
     }
 
-    func testImagesUseAltTextAndHTMLIsLiteralText() throws {
+    /// Images show alt text, supported HTML formats, and a script stays visible text
+    /// (`MarkdownPreviewCompositionTests` has the composition fixtures).
+    func testImagesUseAltTextAndHTMLComposesUnderThePreviewPolicy() throws {
         let rendered = render("""
         ![Remote **alt**](https://example.com/pixel.png) ![Local](file:///tmp/image.png)
         inline <em>HTML</em>
@@ -185,7 +187,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(rendered.string.contains("Remote alt Local"))
         XCTAssertFalse(rendered.string.contains("pixel.png"))
         XCTAssertFalse(rendered.string.contains("/tmp/image.png"))
-        XCTAssertTrue(rendered.string.contains("inline <em>HTML</em>"))
+        XCTAssertTrue(rendered.string.contains("inline HTML\n"))
+        XCTAssertTrue(NSFontManager.shared.traits(of: try font("HTML", in: rendered)).contains(.italicFontMask))
         XCTAssertTrue(rendered.string.contains("<script>alert('literal')</script>"))
         XCTAssertTrue(attachments(in: rendered).isEmpty)
         XCTAssertNil(try link("Remote", in: rendered))
