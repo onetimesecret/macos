@@ -28,6 +28,27 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
   back to it; `wrapPlace` reuses the last restored anchor while the clip origin and
   `generation` are unchanged, the tab form of the `readingPlace` rule above.
 
+- Second review round (2026-10-17): TextKit 1's `lineFragmentUsedRect` spans BOTH line
+  fragment paddings (measured: pad 5, glyphs 48.2, used 0..58.2), so
+  `measuredSourceWidth` adds the insets and no padding; DayScrollTests and
+  PageViewStateTests restate that formula. Unwrapped tooltip rects run
+  to the text view's bounds.maxX so a sideways scroll keeps their AppKit tags.
+- `DayStackView.mountedStorageEdited` rebases `readingPlace` through the mounted
+  storage's `editedRange` and `changeInLength`. It observes with `object: nil` because the
+  editor's storage swaps per page, and it is nonisolated with a main thread check because
+  the `@objc` main actor isolation check would trap on a storage edited off main. The
+  notification posts before the storage delegate and the layout managers. A whole storage
+  restate (undo, `setAttributedString`) reports (0, new length), so an interior index stays.
+- `InkLayoutManager.layoutGeneration` keys the cached widest line (`widestUsedMaxX`).
+  Measured routing: storage edits and fonts reach `processEditing`; container size,
+  padding, exclusion paths, line break mode reach `textContainerChangedGeometry`;
+  showsInvisible/hyphenation/orientation reach `invalidateGlyphs`; `typesetter`,
+  `glyphGenerator`, `usesFontLeading`, `typesetterBehavior`, non contiguous layout and
+  suspicious contents call no public hook, hence their didSet overrides. A new geometry
+  route needs a bump there or quiet days in the roll keep a stale width.
+- `MainActor.assumeIsolated` cannot capture a non-Sendable `NSTextContainer` that is used
+  after the closure (region isolation error); read the `@MainActor` view out first.
+
 **Why:** reviewers (Copilot, Greptile, Claude) flagged each; all verified by failing tests.
 
 **How to apply:** when touching the roll's place logic, run the three tests
