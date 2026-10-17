@@ -83,9 +83,11 @@ enum TextOffers {
     /// Writing Tools' items or a submenu of them, should AppKit add them where the view answers
     /// Writing Tools with none. By name: its `#selector` needs macOS 15.2; the package targets 13.
     static func isWritingTools(_ item: NSMenuItem) -> Bool {
-        item.action.map(NSStringFromSelector) == "showWritingTools:"
-            || item.submenu?.items.contains(where: isWritingTools) == true
+        item.action == showWritingToolsAction
+            || item.submenu?.items.contains { $0.action == showWritingToolsAction } == true
     }
+
+    private static let showWritingToolsAction = NSSelectorFromString("showWritingTools:")
 
     /// A link's Open With, whose applications AppKit hands the URL to with no delegate asked.
     static func isOpenWith(_ item: NSMenuItem) -> Bool {

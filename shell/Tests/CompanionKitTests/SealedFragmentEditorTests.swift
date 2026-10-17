@@ -504,6 +504,20 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertFalse(file.isAutomaticDataDetectionEnabled, "a page mounted where a file stood")
     }
 
+    /// Writing Tools, should AppKit nest it under a parent item with no action as it does
+    /// Speech, goes with its parent; the item beside it stays.
+    func testWritingToolsUnderAParentItemGoesWithItsParent() {
+        let parent = NSMenuItem(title: "Writing Tools", action: nil, keyEquivalent: "")
+        parent.submenu = NSMenu()
+        parent.submenu?.addItem(NSMenuItem(
+            title: "Show Writing Tools", action: NSSelectorFromString("showWritingTools:"), keyEquivalent: ""))
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: ""))
+        menu.addItem(parent)
+        TextOffers.removeSelectionReaders(from: menu)
+        XCTAssertEqual(menu.items.map(\.title), ["Copy"])
+    }
+
     /// Look Up and Translate are built titled with the selection they hold, Speech reads it
     /// out and Spelling and Grammar hands it to the spell server, so no gate at the click
     /// can stop a menu held open past a deadline: a page's, a sealed name's and a note's

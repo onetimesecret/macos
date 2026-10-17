@@ -321,20 +321,6 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(preview.inlinePredictionType, .no)
     }
 
-    /// Writing Tools nested under a parent item with no action, the way Speech's items are,
-    /// goes with its parent; the item beside it stays.
-    func testWritingToolsUnderAParentItemGoesWithItsParent() {
-        let parent = NSMenuItem(title: "Writing Tools", action: nil, keyEquivalent: "")
-        parent.submenu = NSMenu()
-        parent.submenu?.addItem(NSMenuItem(
-            title: "Show Writing Tools", action: NSSelectorFromString("showWritingTools:"), keyEquivalent: ""))
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: ""))
-        menu.addItem(parent)
-        TextOffers.removeSelectionReaders(from: menu)
-        XCTAssertEqual(menu.items.map(\.title), ["Copy"])
-    }
-
     /// The preview copies what it shows through the core (Law 0001, copy row): one fragment
     /// whose ink runs are the rendered text between the objects, never the source markdown,
     /// and whose references are the objects, in rendered order; the public text puts a
