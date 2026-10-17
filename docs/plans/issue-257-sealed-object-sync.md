@@ -81,7 +81,7 @@ acceptance gate; it does not mean the implementation exists or is approved.
 | C6 | Note LWW would lose text without accepted product approval. | Addressed in ADR Decision 4 and Q2: recommend no note sync initially; retain CRDT/conflict-preserving/LWW alternatives and explicit loss question. | Compared accepted ADR-0043 text-only restore and local `Note`; no loss acceptance attributed to issue direction. |
 | C7 | Authority, acceptance and #256 edit boundary must remain explicit. | Addressed in §1, §7–§9 and ADR status/history; no law or accepted ADR edited. | Local links, exact quotations, ADR linter and changed-path checks in the design handoff. |
 | C8 | A's #267 overlay scope was conflated with cross-device ownership/clock design. | Addressed in §1, §3, §5, Q5 and §8: #257 maintainer gate; A coordinates shared Law 0001 textual edits only. | Checked every A reference in both documents against the user's scope clarification. |
-| C9 | #256's local implementation needs a concrete integration reference without implying upstream merge or policy acceptance. | Addressed in §8: local `fe03c8cb` API note, user-reported testing, pending merge/acceptance and unchanged historical baseline. | Read-only Git inspection of the commit/API and ancestry; no C-side rebase or runtime tests. |
+| C9 | #256's local implementation needs a concrete integration reference without implying upstream merge or policy acceptance. | Addressed in §8: local `fe03c8cb` API note, parent-agent test results, pending merge/acceptance and unchanged historical baseline. | Read-only Git inspection of the commit/API and ancestry; no C-side rebase or runtime tests. |
 
 ### Implementation observations
 
@@ -357,8 +357,9 @@ availability, metadata, cut state and disk behavior rather than only a label.
 ### Local foundation integration note
 
 B's local #256 branch `fix/256-content-buffers` is implemented at
-`fe03c8cb652df11b34f4c155eb9b2b6fe6becf9a`. The user reports it fully tested;
-C has inspected APIs, not rerun that suite. At that commit:
+`fe03c8cb652df11b34f4c155eb9b2b6fe6becf9a`. The coordinating agent ran the
+local Rust/Swift gate at that commit; C inspected APIs but did not rerun the
+suite. That validation does not complete #256. At that commit:
 
 - `ByteBlob` has private zeroizing storage, `From` constructors and `as_slice()`;
   `DeltaEnvelope::encode()` returns `Zeroizing<Vec<u8>>` through the exact writer
@@ -366,7 +367,7 @@ C has inspected APIs, not rerun that suite. At that commit:
 - FFI `content_json::to_c_json(&T)` serializes borrowed projections such as
   `ChipFace<'_>` into a wiping `Box<[u8]>` C-string owner;
   `companion_string_free` delegates to `content_json::free`.
-- Swift `decodeOwnedJSON` decodes synchronously over no-copy `Data` before
+- Swift `decodeOwnedJSON` uses `Data(bytesNoCopy:count:deallocator:)` before
   releasing the Rust owner. Core `DocRun::Ink` and file text use zeroizing
   strings, `Segment` wipes on drop, and `sim_units` returns
   `Option<Zeroizing<Vec<SimUnit>>>`; do not copy their historical baseline types.
