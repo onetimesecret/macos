@@ -552,7 +552,7 @@ impl SyncSession {
     pub fn queue_ops(&mut self, page: ItemId, ops: &[u8]) {
         self.outbox.push(DeltaEnvelope::Ops {
             page: page_wire_id(page),
-            ops: ByteBlob(ops.to_vec()),
+            ops: ByteBlob::from(ops),
         });
     }
 
@@ -608,7 +608,7 @@ impl SyncSession {
         channel.note_terminal();
         self.outbox.push(DeltaEnvelope::Terminal {
             page: page_wire_id(page),
-            marker: ByteBlob(marker.to_vec()),
+            marker: ByteBlob::from(marker),
         });
         true
     }
@@ -831,7 +831,7 @@ impl SyncSession {
                         // this device's own echo, not an arrival
                         // (surface.md §6; client protocol §6).
                         let before = store.document_version(sheet_id);
-                        if store.apply_remote_update(sheet_id, &ops.0).is_ok()
+                        if store.apply_remote_update(sheet_id, ops.as_slice()).is_ok()
                             && store.document_version(sheet_id) != before
                         {
                             events.push(SyncEvent::Applied(page));
@@ -882,7 +882,7 @@ impl SyncSession {
                 };
                 // Client protocol §6: a marker counts only if it names
                 // this page and verifies under a trusted identity.
-                if !marker_trusted(&marker.0, page, trusted) {
+                if !marker_trusted(marker.as_slice(), page, trusted) {
                     return;
                 }
                 self.channels.entry(page).or_default().note_terminal();
@@ -945,7 +945,8 @@ impl SyncSession {
                 let Some(sealed) = entropy_sealed.get(&self.device_fingerprint) else {
                     return;
                 };
-                let Some(entropy) = open_proposal_entropy(packages, pending, &sealed.0) else {
+                let Some(entropy) = open_proposal_entropy(packages, pending, sealed.as_slice())
+                else {
                     crate::diagnostics::diag_fault!(
                         "companion-ffi: a ceremony proposal named this device and neither key package opened its entry; the device stays out of that ballot."
                     );
@@ -1042,12 +1043,12 @@ impl SyncSession {
         let Some(own_sealed) = own_package.seal_entropy(&entropy) else {
             return false;
         };
-        entropy_sealed.insert(self.device_fingerprint.clone(), ByteBlob(own_sealed));
+        entropy_sealed.insert(self.device_fingerprint.clone(), ByteBlob::from(own_sealed));
         for peer in peers {
             let Some(sealed) = peer.package.seal_entropy(&entropy) else {
                 return false;
             };
-            entropy_sealed.insert(peer.fingerprint.clone(), ByteBlob(sealed));
+            entropy_sealed.insert(peer.fingerprint.clone(), ByteBlob::from(sealed));
             attached.push(ballot_token(&peer.fingerprint));
         }
         let channel = self.channels.entry(page).or_default();
@@ -1508,6 +1509,52 @@ mod tests {
         let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
         assert_eq!(body["blobs"].as_array().unwrap().len(), 2);
         assert!(session.outbox.is_empty(), "a sealed batch leaves the queue");
+    }
+
+    #[test]
+    fn withdrawal_after_a_partial_seal_failure_publishes_only_the_surviving_ops() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (gone, kept) = (ItemId::random(), ItemId::random());
+        session.queue_ops(gone, b"withdraw after the refusal");
+        session.queue_ops(kept, b"still queued");
+        let before = session.outbox.clone();
+        let calls = std::cell::Cell::new(0);
+        assert!(
+            session
+                .publish_request_sealed_with(0, chain.epoch(), |plaintext| {
+                    let call = calls.get();
+                    calls.set(call + 1);
+                    let envelope = DeltaEnvelope::decode(pad::unpad(plaintext).unwrap()).unwrap();
+                    assert_eq!(envelope, before[call]);
+                    if call == 0 {
+                        chain.seal(plaintext)
+                    } else {
+                        None
+                    }
+                })
+                .is_none()
+        );
+        assert_eq!(calls.get(), 2);
+        assert_eq!(session.outbox, before);
+        assert!(session.in_flight.is_none());
+        assert!(session.last_publish_ms.is_none());
+        session.withdraw_ops(gone);
+        let request = session.publish_request(0, &chain).unwrap();
+        assert!(session.outbox.is_empty());
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(kept),
+                ops: ByteBlob::from(b"still queued".as_slice()),
+            })
+        );
     }
 
     #[test]
@@ -2294,7 +2341,8 @@ mod tests {
         let (pkcs8_b, identity_b) = identity();
         let (_, wrong_identity) = identity();
         let keeper_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
-        let package_value = serde_json::to_value(ByteBlob(keeper_b.package().encode())).unwrap();
+        let package_value =
+            serde_json::to_value(ByteBlob::from(keeper_b.package().encode())).unwrap();
         let body = serde_json::json!({
             "epoch": 2,
             "frame_present": false,
@@ -2473,7 +2521,7 @@ mod tests {
             vec![
                 DeltaEnvelope::Ops {
                     page: page_wire_id(kept),
-                    ops: ByteBlob(b"ops still readable".to_vec()),
+                    ops: ByteBlob::from(b"ops still readable".as_slice()),
                 },
                 DeltaEnvelope::Expiry {
                     page: page_wire_id(gone),
