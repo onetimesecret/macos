@@ -161,7 +161,8 @@ struct RollPlace: Equatable {
 
     /// Past the replaced text an index moves by `delta`; inside it, it stays within the replacement.
     static func rebased(_ index: Int, throughEdit edited: NSRange, changeInLength delta: Int) -> Int {
-        // The end itself moves too, so text arriving at the anchor goes above it.
+        // Text typed or pasted at the anchor stays at the top, where the reader put it.
+        if index == edited.location, edited.length == delta { return index }
         if index >= NSMaxRange(edited) - delta { return index + delta }
         return min(max(index, 0), NSMaxRange(edited))
     }

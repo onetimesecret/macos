@@ -788,6 +788,50 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// Return, or a paste of several lines, with the caret on the first character of the line
+    /// at the clip's top edge: the caret stays in view, so no reveal moves the clip afterwards.
+    func testTextEnteredAtTheTopLinesFirstCharacterStandsAtTheTop() throws {
+        for wraps in [true, false] {
+            for pasted in [nil, "pasted one\npasted two\npasted three\n"] {
+                let model = try makeModel()
+                model.wrapsLines = wraps
+                _ = try page(in: model, saying: longPage(lines: 10))
+                let selected = try page(in: model, saying: longPage(lines: 80))
+                let roll = try mountRoll(model: model)
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                let editor = try XCTUnwrap(roll.stack.editor)
+                XCTAssertTrue(roll.window.makeFirstResponder(editor))
+                func lineTop(at character: Int) throws -> CGFloat {
+                    let manager = try XCTUnwrap(editor.layoutManager)
+                    manager.ensureLayout(for: try XCTUnwrap(editor.textContainer))
+                    let line = manager.lineFragmentRect(
+                        forGlyphAt: manager.glyphIndexForCharacter(at: character), effectiveRange: nil)
+                    return editor.frame.minY + editor.textContainerOrigin.y + line.minY
+                }
+                let index = (editor.string as NSString).range(of: "line 40 ").location
+                scroll(roll, to: NSPoint(x: 0, y: try lineTop(at: index)))
+                let top = roll.scroll.contentView.bounds.minY
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+
+                editor.setSelectedRange(NSRange(location: index, length: 0))
+                if let pasted {
+                    editor.insertText(pasted, replacementRange: NSRange(location: NSNotFound, length: 0))
+                } else {
+                    editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+                }
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+                let entered = pasted ?? "\n"
+                let label = "wraps \(wraps), \(pasted == nil ? "Return" : "a paste")"
+                XCTAssertTrue((editor.string as NSString).substring(from: index).hasPrefix(entered + "line 40 "), label)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, top, accuracy: 0.5, label)
+                XCTAssertEqual(try lineTop(at: index), top, accuracy: 0.5, "the entered text is at the top: \(label)")
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index, label)
+            }
+        }
+    }
+
+    /// The mounted day's edits rebase a place on that day only.
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()

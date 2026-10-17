@@ -1111,16 +1111,23 @@ final class PageViewStateTests: XCTestCase {
         let place = RollPlace(
             page: 4, anchor: ScrollAnchor(characterIndex: 7, lineFraction: 0.25, x: 3),
             length: text.utf16.count)
-        for (location, inserted, expected) in [(0, "new\n", 11), (7, "line 0\n", 14), (10, "X", 7)] {
+        // A reseed sends text arriving at the anchor above it; an edit at the anchor stays in view.
+        for (location, inserted, expected, reseeded) in [
+            (0, "new\n", 11, 11), (7, "line 0\n", 7, 14), (10, "X", 7, 7),
+        ] {
             let edit = inserting(inserted, at: location, into: text)
             let moved = place.rebased(throughEdit: edit.edited, changeInLength: edit.delta)
             XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 3), inserted)
             XCTAssertEqual(moved.length, edit.text.utf16.count)
             XCTAssertEqual(moved.page, place.page)
             XCTAssertEqual(moved.reading, place.reading)
-            XCTAssertEqual(expected, RollPlace.rebased(7, from: text, to: edit.text),
-                           "a storage edit and a reseed agree where both can see the edit")
+            XCTAssertEqual(RollPlace.rebased(7, from: text, to: edit.text), reseeded, inserted)
         }
+        let empty = inserting("first words", at: 0, into: "")
+        XCTAssertEqual(RollPlace.rebased(0, throughEdit: empty.edited, changeInLength: empty.delta), 0)
+        let replaced = storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 7, length: 4), with: "LINE") }
+        XCTAssertEqual(RollPlace.rebased(7, throughEdit: replaced.edited, changeInLength: replaced.delta), 7,
+                       "a replacement starting at the anchor keeps it")
     }
 
     func testARollPlaceInsideAStorageDeletionGoesToWhereTheDeletionWas() {
