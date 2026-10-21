@@ -195,7 +195,7 @@ collection behaviors and the off-Space summon safety net.
 
 ## Amendment 1: ordinary windows stay at normal level, the surface lowers under them
 
-- **Status:** accepted
+- **Status:** proposed
 - **Date:** 2026-10-21
 
 Appended, not folded in. The base Decision text above is left as written.
