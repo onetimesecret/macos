@@ -640,10 +640,20 @@ and with it on, which draws the pads rail.
       the source keeps its run; a click on the node still takes the
       create path. **Fail:** a page is made or
       anything is placed.
+- [ ] **A drop on a rail too dense to fit** (Law 0001, drag row;
+      issue 277). In the stream navigator, make pages until its top
+      rows are drawn above the column, over the *Pad* heading. Drag a
+      run from a page over a row drawn above the column and release;
+      then drag it over a row inside the column and release. **Pass:**
+      the drop over the row above the column offers no operation and
+      leaves the text in place in its source, and the drop over the row
+      inside the column moves the run to the end of that row's page.
+      **Fail:** the drop above the column places the run anywhere, or
+      the row inside the column takes no drop.
 
-| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node |
-|---|---|---|---|---|---|---|
-| Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run |
-| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run |
-| Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run |
-| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run |
+| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Rail too dense to fit |
+|---|---|---|---|---|---|---|---|
+| Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
+| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | n/a: the pads rail scrolls |
+| Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |
+| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | n/a: the pads rail scrolls |
