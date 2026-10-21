@@ -400,11 +400,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// content windows over the one model.
     private lazy var editorWindow = PrimaryEditorWindowController(model: model)
 
-    /// Holds the About panel at the surface's keyless altitude while
-    /// it is open. Settings owns a follower of its own; this one is
-    /// the delegate's because the About panel is AppKit's and has no
-    /// controller of ours to live in.
-    private lazy var aboutLevelFollower = CompanionLevelFollower(model: model)
+    /// Whether a window is one of the app's own ordinary windows:
+    /// Settings, Send Feedback, or the About panel AppKit put up. The
+    /// card lowers while one of them has the keyboard (#293).
+    private func isCompanionWindow(_ window: NSWindow) -> Bool {
+        settings.owns(window) || feedback.owns(window) || standardAboutPanel() === window
+    }
 
     /// Not every activation is the same raise, and one kind of launch
     /// brings no activation at all. A launch the person performs, from
@@ -501,6 +502,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 self.apply(
                     ActivationRouter.decide(.cardClick, in: self.activationContext())
                 )
+            },
+            isCompanionWindow: { [weak self] window in
+                self?.isCompanionWindow(window) ?? false
             }
         )
         self.controller = controller
@@ -1264,18 +1268,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // surface, and Settings takes the same bit at creation. This
         // panel is not ours to construct, so the bit goes on after
         // AppKit has put it up.
-        let panel = standardAboutPanel()
-        panel?.collectionBehavior.insert(.moveToActiveSpace)
-        // About sits at the surface's keyless altitude for as long as
-        // it is open, as Settings does and through the same follower
-        // (ADR-0032, #188). Otherwise About opens at .normal beneath a
-        // raised, pinned or keep above card, and a level read only at
-        // open strands it there the moment the pin is toggled on the
-        // card while About is up. The follower lets go when the panel
-        // closes and picks it up again on the next open.
-        if let panel {
-            aboutLevelFollower.follow(panel)
-        }
+        standardAboutPanel()?.collectionBehavior.insert(.moveToActiveSpace)
+        // About stays at normal level, as Settings does; the card lowers
+        // under it while it has the keyboard (`isCompanionWindow`,
+        // ADR-0032 Amendment 1, #293).
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
@@ -1292,9 +1288,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// text. Settings has a title, and the surface and its key relay are
     /// borderless, so none of those can be mistaken for it. A sheet can:
     /// a confirmation run on the Settings window is visible, titled and
-    /// carries no title text, and following it would hand the About
-    /// follower a window that closes with the answer. So a sheet is
-    /// never the panel, and neither is the Settings window itself,
+    /// has no title text, and taking it for the panel would hand
+    /// the companion lookup a window that closes with the answer (a
+    /// sheet counts through its parent instead). So a sheet is never
+    /// the panel, and neither is the Settings window itself,
     /// whatever its title reads at the time. If a future macOS builds
     /// the panel differently the lookup finds nothing and the panel
     /// keeps the behavior it had before this existed.

@@ -4,8 +4,9 @@ import CompanionKit
 import os
 
 /// The part of the window controller that turns a stance, a key event,
-/// the pin and the keep above preference into what is written on the
-/// window: its level and its collection behavior, and nothing else.
+/// the pin, the keep above preference and a key companion window into
+/// what is written on the window: its level and its collection
+/// behavior, and nothing else.
 ///
 /// It is a type of its own so that it can be tested against a window
 /// that is never put on screen. The controller cannot be built under a
@@ -14,12 +15,39 @@ import os
 /// from whatever app they are typing in and installs a global mouse
 /// monitor. The decisions that matter here need none of that. They are
 /// which stance a key event is judged against, whether a write happens
-/// at all, and which value of a changing pin or preference is read, and
-/// all three are held in this type. What stays a hand check is that the
+/// at all, which value of a changing pin or preference is read, and
+/// which key window counts as a companion of the card's, and all four
+/// are held in this type. What stays a hand check is that the
 /// controller commits before it calls `makeKeyAndOrderFront`.
 @MainActor
 final class BackdropAltitudeKeeper {
     private let window: NSWindow
+
+    /// The companion window of ours that has the keyboard, if one
+    /// does: Settings, About, Send Feedback, or a sheet run on one of
+    /// them (ADR-0032 Amendment 1, #293). Weak because the About panel
+    /// is AppKit's and is let go of on its own terms.
+    private(set) weak var keyedCompanion: NSWindow?
+
+    /// Whether a companion window has the keyboard. Every write reads
+    /// it, so the key delegate turns and the pin and preference sinks
+    /// need not be told.
+    var companionKeyed: Bool { keyedCompanion != nil }
+
+    private weak var model: BackdropModel?
+    private var keyStatus: @MainActor () -> Bool = { false }
+    private var isCompanion: @MainActor (NSWindow) -> Bool = { _ in false }
+
+    // nonisolated(unsafe): deinit is nonisolated even on a @MainActor
+    // class, and the tokens are not Sendable. `removeObserver` is
+    // documented thread safe, and every other touch is on the main actor.
+    private nonisolated(unsafe) var windowObservers: [NSObjectProtocol] = []
+
+    deinit {
+        for token in windowObservers {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
 
     /// The last stance the controller committed to, which is the stance
     /// a key event has to be judged against. The window server calls
@@ -71,13 +99,31 @@ final class BackdropAltitudeKeeper {
     /// reads after it), and one sink calling them in order does not
     /// depend on the order Combine delivers to separate subscribers.
     /// Both are handed the emitted pin for the same willSet reason.
+    ///
+    /// `companion` says which key window counts as one of the card's
+    /// own ordinary windows (#293). The keeper watches every window's
+    /// key gain, key loss and close for it, through the notification
+    /// centre rather than a delegate, because the About panel is
+    /// AppKit's and its delegate is not ours to take.
     func observe(
         _ model: BackdropModel,
         keyed: @escaping @MainActor () -> Bool,
+        companion: @escaping @MainActor (NSWindow) -> Bool = { _ in false },
         willRepin: @escaping @MainActor (Bool) -> Void = { _ in },
         didRepin: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
         observers.removeAll()
+        self.model = model
+        keyStatus = keyed
+        isCompanion = companion
+        for token in windowObservers {
+            NotificationCenter.default.removeObserver(token)
+        }
+        windowObservers = [
+            watch(NSWindow.didBecomeKeyNotification) { $0.companionBecameKey($1) },
+            watch(NSWindow.didResignKeyNotification) { $0.companionReleasedKeys($1) },
+            watch(NSWindow.willCloseNotification) { $0.companionReleasedKeys($1) },
+        ]
         model.$pinned
             .dropFirst()
             .sink { [weak self, weak model] pinned in
@@ -103,6 +149,56 @@ final class BackdropAltitudeKeeper {
     }
 
     private var observers: [AnyCancellable] = []
+
+    /// One window notification, any window, delivered to the keeper on
+    /// the main actor. AppKit posts the three it asks for on the main
+    /// thread, and only the window itself crosses into the isolation.
+    private func watch(
+        _ name: Notification.Name,
+        _ handle: @escaping @MainActor (BackdropAltitudeKeeper, NSWindow) -> Void
+    ) -> NSObjectProtocol {
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) {
+            [weak self] notification in
+            guard let window = notification.object as? NSWindow else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                handle(self, window)
+            }
+        }
+    }
+
+    /// A window of ours took the keyboard. A companion, or a sheet on
+    /// one, lowers the card; any other window is none of the keeper's
+    /// business, the panel's own key turns included.
+    private func companionBecameKey(_ window: NSWindow) {
+        guard isCompanion(window) || window.sheetParent.map(isCompanion) == true else { return }
+        keyedCompanion = window
+        let before = self.window.level
+        reapplyFromModel()
+        // A level written puts the card at the front of its new level,
+        // which can be the companion's. Order the companion front once
+        // the key gain has settled, and only when the card did move:
+        // a card already at normal or on the desktop was never over it.
+        guard self.window.level != before else { return }
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.isKeyWindow, window.isVisible else { return }
+            window.orderFront(nil)
+        }
+    }
+
+    /// The key companion gave the keyboard up, or is closing. A close
+    /// counts on its own because a window that was never on screen
+    /// resigns nothing, and because the close is what the person sees.
+    private func companionReleasedKeys(_ window: NSWindow) {
+        guard keyedCompanion === window else { return }
+        keyedCompanion = nil
+        reapplyFromModel()
+    }
+
+    private func reapplyFromModel() {
+        guard let model else { return }
+        reapply(keyed: keyStatus(), pinned: model.pinned, keepsAbove: model.keepsAboveWhenInactive)
+    }
 
     /// Where the surface sits in the stacking order and what it does on
     /// the Spaces it belongs to, both read from one resolved altitude
@@ -142,7 +238,8 @@ final class BackdropAltitudeKeeper {
         // leaves that app's full screen Space, and on a raise it is
         // already floating by the time it joins one.
         let altitude = BackdropAltitude.resolve(
-            stance: stance, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove
+            stance: stance, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove,
+            companionKeyed: companionKeyed
         )
         let level = altitude.level
         if window.level != level {

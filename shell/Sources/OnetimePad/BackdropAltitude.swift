@@ -14,9 +14,12 @@ import AppKit
 /// `keyed: true` on a fresh raise so the summon does not flash at a
 /// lower level), whether the pin is on, and whether the person has
 /// asked for the card to keep above other apps when it is not being
-/// typed into. The keyless helper is the same rule with the key answer
-/// forced to false, for the companion windows (Settings, About) that
-/// have to answer the altitude question from outside the summon path.
+/// typed into. A fifth input, whether one of the app's own companion
+/// windows (Settings, About, Send Feedback) has the keyboard, lowers
+/// a floating card to normal for as long as that is so (ADR-0032
+/// Amendment 1, #293): those windows are ordinary windows at normal
+/// level, and the card gives way to them rather than the other way
+/// round.
 enum BackdropAltitude {
     /// Just above the wallpaper's own window, below the desktop icons
     /// and every normal window. The unpinned resting altitude.
@@ -43,19 +46,6 @@ enum BackdropAltitude {
         }
     }
 
-    /// The level for a window that must stay visible when it is not
-    /// being typed into (Settings, About): desktop collapses to normal
-    /// there, because a titled window parked below the icons could
-    /// resolve behind the wallpaper as easily as the surface can.
-    /// Every other case rides through unchanged.
-    var companionLevel: NSWindow.Level {
-        switch self {
-        case .desktop: .normal
-        case .normal: .normal
-        case .floating: .floating
-        }
-    }
-
     /// Whether a surface at this altitude shares another app's full
     /// screen Space (ADR-0034). Only a floating one does. An auxiliary
     /// window is shown with the full screen window whatever its level,
@@ -75,29 +65,30 @@ enum BackdropAltitude {
     /// surface that has lost key status drops to normal unless the
     /// keep-above preference lifts it back to floating; an unpinned
     /// rest is desktop furniture.
+    ///
+    /// A key companion window then lowers whatever floats to normal,
+    /// pin and preference included (#293). The card's own keys win
+    /// over it: a raise is committed with `keyed: true` while the
+    /// companion still reports key, and the companion's resign follows
+    /// a moment later. A card on the desktop stays there, since
+    /// lifting furniture to normal would put it among the person's
+    /// windows for nothing.
     static func resolve(
-        stance: BackdropStance, keyed: Bool, pinned: Bool, keepsAbove: Bool
+        stance: BackdropStance, keyed: Bool, pinned: Bool, keepsAbove: Bool,
+        companionKeyed: Bool = false
     ) -> BackdropAltitude {
-        if pinned { return .floating }
-        switch stance {
-        case .resting:
-            return .desktop
-        case .raised:
-            if keyed { return .floating }
-            return keepsAbove ? .floating : .normal
+        let table: BackdropAltitude
+        if pinned {
+            table = .floating
+        } else {
+            switch stance {
+            case .resting:
+                table = .desktop
+            case .raised:
+                table = keyed || keepsAbove ? .floating : .normal
+            }
         }
-    }
-
-    /// The keyless answer: the same rule with `keyed` forced to false.
-    /// Settings and About have no key status to feed in of their own,
-    /// and asking the resolver whether the *surface* holds the keyboard
-    /// while a companion window is up would answer nothing about the
-    /// companion. The keyless reading is what those windows want,
-    /// because they are companion furniture: they should sit where a
-    /// raised but not keyed surface would.
-    static func keylessAltitude(
-        stance: BackdropStance, pinned: Bool, keepsAbove: Bool
-    ) -> BackdropAltitude {
-        resolve(stance: stance, keyed: false, pinned: pinned, keepsAbove: keepsAbove)
+        if table == .floating, companionKeyed, !keyed { return .normal }
+        return table
     }
 }

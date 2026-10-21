@@ -100,15 +100,19 @@ final class FeedbackDraft: ObservableObject {
 final class FeedbackWindowController: NSObject {
     private var window: NSWindow?
     private var draft: FeedbackDraft?
-    private let levelFollower: CompanionLevelFollower
     private let serverURL: () -> String
     private let makeReport: () -> DiagnosticsReport
 
     init(model: BackdropModel, makeReport: @escaping () -> DiagnosticsReport) {
         serverURL = { [weak model] in model?.pages.connection?.serverUrl ?? "https://eu.onetimesecret.com" }
         self.makeReport = makeReport
-        levelFollower = CompanionLevelFollower(model: model)
         super.init()
+    }
+
+    /// Whether a window is the Send Feedback window. The altitude
+    /// keeper asks, to lower the card while it has the keyboard (#293).
+    func owns(_ candidate: NSWindow) -> Bool {
+        window === candidate
     }
 
     func show() {
@@ -140,7 +144,6 @@ final class FeedbackWindowController: NSObject {
             self.window = window
         }
         draft?.prepareForPresentation()
-        if let window { levelFollower.follow(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

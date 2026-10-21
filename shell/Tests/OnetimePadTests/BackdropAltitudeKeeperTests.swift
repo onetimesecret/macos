@@ -393,4 +393,282 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
             [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
         )
     }
+
+    // MARK: A companion window holding the keyboard (ADR-0032 Amendment 1, #293)
+
+    /// A stand in for Settings, About or Send Feedback: titled, built
+    /// deferred and never ordered. Its key turns are posted by hand,
+    /// since a window that never reaches the screen is never keyed.
+    private func makeCompanion() -> CountingWindow {
+        let window = CountingWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: true
+        )
+        window.isReleasedWhenClosed = false
+        return window
+    }
+
+    private func becameKey(_ window: NSWindow) {
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+    }
+
+    private func resignedKey(_ window: NSWindow) {
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+    }
+
+    func testAPinnedCardLowersWhileSettingsIsKeyAndFloatsAgainWhenSettingsCloses() {
+        let model = makeModel(tag: "pinned-under-settings")
+        model.pinned = true
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        XCTAssertEqual(window.level, .floating)
+
+        becameKey(settings)
+        XCTAssertTrue(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .normal)
+        XCTAssertEqual(
+            window.collectionBehavior, [.canJoinAllSpaces, .ignoresCycle, .fullScreenNone]
+        )
+
+        settings.close()
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+        XCTAssertEqual(
+            window.collectionBehavior,
+            [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
+        )
+    }
+
+    func testAKeepAboveCardLowersWhileSettingsIsKeyAndFloatsAgainWhenItResigns() {
+        // The raised card gave Settings the keyboard, so its own key
+        // answer is false; the preference alone would float it.
+        let model = makeModel(tag: "keep-above-under-settings")
+        model.keepsAboveWhenInactive = true
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        raise(keeper, keepsAbove: true)
+        keeper.reapply(keyed: false, pinned: false, keepsAbove: true)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        XCTAssertEqual(window.level, .floating)
+
+        becameKey(settings)
+        XCTAssertEqual(window.level, .normal)
+        XCTAssertEqual(window.collectionBehavior, [.canJoinAllSpaces, .fullScreenNone])
+
+        resignedKey(settings)
+        XCTAssertEqual(window.level, .floating)
+        XCTAssertEqual(window.collectionBehavior, [.canJoinAllSpaces, .fullScreenAuxiliary])
+    }
+
+    func testACompanionWindowStaysAtNormalUnderEveryPinAndPreferenceState() {
+        // The keeper writes the card and never the companion: no level
+        // write reaches it in any row, keyed or not.
+        for stance in [BackdropStance.resting, .raised] {
+            for pinned in [false, true] {
+                for keepsAbove in [false, true] {
+                    let model = makeModel(tag: "companion-\(stance)-\(pinned)-\(keepsAbove)")
+                    model.pinned = pinned
+                    model.keepsAboveWhenInactive = keepsAbove
+                    let companion = makeCompanion()
+                    let window = makeWindow()
+                    let keeper = BackdropAltitudeKeeper(window: window)
+                    keeper.commit(stance, keyed: false, pinned: pinned, keepsAbove: keepsAbove)
+                    keeper.observe(model, keyed: { false }, companion: { $0 === companion })
+
+                    becameKey(companion)
+                    model.pinned.toggle()
+                    model.keepsAboveWhenInactive.toggle()
+                    resignedKey(companion)
+
+                    let row = "stance=\(stance) pinned=\(pinned) keepsAbove=\(keepsAbove)"
+                    XCTAssertEqual(companion.level, .normal, row)
+                    XCTAssertEqual(companion.levelWrites, 0, row)
+                    XCTAssertEqual(companion.behaviorWrites, 0, row)
+                }
+            }
+        }
+    }
+
+    func testCmdTabAwayWithSettingsKeyLeavesBothAtNormal() {
+        // Deactivation makes Settings resign without closing; the card,
+        // raised and keyless under the default preference, is at normal
+        // by the table and stays there.
+        let model = makeModel(tag: "cmd-tab-away")
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        raise(keeper)
+        keeper.reapply(keyed: false, pinned: false, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        becameKey(settings)
+        window.forgetWrites()
+
+        resignedKey(settings)
+
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .normal)
+        XCTAssertEqual(settings.level, .normal)
+        XCTAssertEqual(window.levelWrites, 0)
+    }
+
+    func testARestingUnpinnedCardStaysOnTheDesktopUnderAKeyCompanion() {
+        // Furniture is below the companion already; lifting it to
+        // normal would put it among the person's windows.
+        let model = makeModel(tag: "desktop-under-companion")
+        let companion = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: false, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === companion })
+        window.forgetWrites()
+
+        becameKey(companion)
+
+        XCTAssertTrue(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .backdropDesktop)
+        XCTAssertEqual(window.levelWrites, 0)
+        XCTAssertEqual(window.behaviorWrites, 0)
+    }
+
+    func testAWindowThatIsNoCompanionMovesNothing() {
+        // An open panel, another app's window reported through the
+        // same centre, or the editor window: none is the keeper's.
+        let model = makeModel(tag: "stranger")
+        model.pinned = true
+        let stranger = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { _ in false })
+        window.forgetWrites()
+
+        becameKey(stranger)
+        stranger.close()
+
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+        XCTAssertEqual(window.levelWrites, 0)
+    }
+
+    func testAnotherWindowsResignDoesNotReleaseTheKeyCompanion() {
+        let model = makeModel(tag: "other-resign")
+        model.pinned = true
+        let settings = makeCompanion()
+        let other = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        becameKey(settings)
+
+        resignedKey(other)
+        other.close()
+
+        XCTAssertTrue(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .normal)
+    }
+
+    func testTheCardAboutToTakeKeysFloatsOverAKeyCompanion() {
+        // A summon while Settings is key: the raise is committed with
+        // keyed true before Settings resigns, and the card must not
+        // flash at normal in between. The resign that follows reads
+        // the card's own keys and leaves it floating.
+        let model = makeModel(tag: "summon-over-settings")
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: false, keepsAbove: false)
+        let keys = KeyStatus()
+        keys.held = false
+        keeper.observe(model, keyed: { keys.held }, companion: { $0 === settings })
+        becameKey(settings)
+
+        raise(keeper)
+        XCTAssertEqual(window.level, .floating)
+        keys.held = true
+        resignedKey(settings)
+
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+    }
+
+    func testObservingAgainKeepsOneWatchOnTheCompanion() {
+        let model = makeModel(tag: "observe-twice")
+        model.pinned = true
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        window.forgetWrites()
+
+        becameKey(settings)
+
+        XCTAssertEqual(window.level, .normal)
+        XCTAssertEqual(window.levelWrites, 1)
+    }
+
+    /// Counts ordering calls and answers the key and visible questions
+    /// by hand, so the settle can be asked of a window that is never on
+    /// screen. `orderFront` deliberately does not reach AppKit.
+    private final class OrderCountingWindow: NSWindow {
+        var orderFrontCalls = 0
+        var pretendsToBeKeyAndVisible = false
+
+        override var isKeyWindow: Bool { pretendsToBeKeyAndVisible }
+        override var isVisible: Bool { pretendsToBeKeyAndVisible }
+        override func orderFront(_ sender: Any?) { orderFrontCalls += 1 }
+    }
+
+    private func makeOrderCountingCompanion() -> OrderCountingWindow {
+        let window = OrderCountingWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.pretendsToBeKeyAndVisible = true
+        return window
+    }
+
+    func testAKeyCompanionIsOrderedFrontOnceTheCardHasLowered() {
+        // A level written puts the card at the front of its new level,
+        // the companion's. The companion is ordered front a hop later,
+        // not inside the key notification, and only when the card moved.
+        let model = makeModel(tag: "order-front")
+        model.pinned = true
+        let settings = makeOrderCountingCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+
+        becameKey(settings)
+        XCTAssertEqual(settings.orderFrontCalls, 0, "not inside the key notification")
+        drainMainQueue()
+
+        XCTAssertEqual(settings.orderFrontCalls, 1)
+    }
+
+    func testAKeyCompanionOverADesktopCardIsNotOrdered() {
+        let model = makeModel(tag: "no-order")
+        let settings = makeOrderCountingCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: false, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+
+        becameKey(settings)
+        drainMainQueue()
+
+        XCTAssertEqual(settings.orderFrontCalls, 0)
+    }
 }

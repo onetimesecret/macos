@@ -235,110 +235,61 @@ final class BackdropAltitudeTests: XCTestCase {
         }
     }
 
-    // MARK: The keyless helper — what companion windows read
+    // MARK: A key companion window lowers the card (ADR-0032 Amendment 1, #293)
 
-    func testKeylessMatchesResolveWithKeyedFalse() {
-        // Every stance × pin × preference row, judged both ways: the
-        // helper is the resolver with `keyed: false`, and nothing else.
-        for stance in [BackdropStance.resting, .raised] {
-            for pinned in [false, true] {
-                for keepsAbove in [false, true] {
-                    XCTAssertEqual(
-                        BackdropAltitude.keylessAltitude(
-                            stance: stance, pinned: pinned, keepsAbove: keepsAbove
-                        ),
-                        BackdropAltitude.resolve(
-                            stance: stance, keyed: false,
-                            pinned: pinned, keepsAbove: keepsAbove
-                        )
-                    )
-                }
-            }
-        }
-    }
-
-    // MARK: The companion mapping — desktop collapses to normal
-
-    func testCompanionLevelPromotesDesktopToNormal() {
-        // A titled companion window (Settings, About) parked below the
-        // icons could resolve behind the wallpaper as easily as the
-        // surface can, so the desktop case reads as normal there. The
-        // other two cases carry through unchanged.
-        XCTAssertEqual(BackdropAltitude.desktop.companionLevel, .normal)
-        XCTAssertEqual(BackdropAltitude.normal.companionLevel, .normal)
-        XCTAssertEqual(BackdropAltitude.floating.companionLevel, .floating)
-    }
-
-    func testCompanionLevelForKeylessInputs() {
-        // The two states a companion window actually reads together:
-        // an unpinned resting surface hands the companion the normal
-        // level (desktop lifted), while a pinned or keep-above raise
-        // hands it floating.
-        XCTAssertEqual(
-            BackdropAltitude.keylessAltitude(
-                stance: .resting, pinned: false, keepsAbove: false
-            ).companionLevel,
-            .normal
-        )
-        XCTAssertEqual(
-            BackdropAltitude.keylessAltitude(
-                stance: .resting, pinned: true, keepsAbove: false
-            ).companionLevel,
-            .floating
-        )
-        XCTAssertEqual(
-            BackdropAltitude.keylessAltitude(
-                stance: .raised, pinned: false, keepsAbove: true
-            ).companionLevel,
-            .floating
-        )
-        XCTAssertEqual(
-            BackdropAltitude.keylessAltitude(
-                stance: .raised, pinned: false, keepsAbove: false
-            ).companionLevel,
-            .normal
-        )
-    }
-
-    /// Every stance × pin × preference row a companion window (Settings,
-    /// About) can read the surface in, taken end-to-end from
-    /// `keylessAltitude` through `companionLevel`. The expected level
-    /// is stated per row rather than derived so a regression names the
-    /// row it broke; the table is short enough to read as one.
-    func testKeylessCompanionLevelMatrix() {
+    /// Every stance × pin × preference row with a companion window
+    /// (Settings, About, Send Feedback) holding the keyboard, so the
+    /// card itself keyless. The expected altitude is stated per row
+    /// rather than derived so a regression names the row it broke.
+    func testAKeyCompanionLowersEveryFloatingRowToNormal() {
         let cases:
-            [(stance: BackdropStance, pinned: Bool, keepsAbove: Bool, level: NSWindow.Level)] = [
-                // An unpinned resting surface with the preference off:
-                // Settings sits at normal, above nothing in particular.
-                (.resting, false, false, .normal),
-                // Same, preference on: keep-above lifts a raise, not
-                // a rest; the companion sees the resting answer and
-                // holds at normal.
-                (.resting, false, true, .normal),
-                // Pinned rest: the pin lifts the surface to floating,
-                // so the companion has to float too or the pin would
-                // hide it.
-                (.resting, true, false, .floating),
-                (.resting, true, true, .floating),
-                // Keyless raise, preference off: the raised surface
-                // has dropped to normal, and the companion sits at
-                // normal beside it.
-                (.raised, false, false, .normal),
-                // Keyless raise, preference on: the raise floats
-                // above other apps, and the companion has to too.
-                (.raised, false, true, .floating),
-                // Pinned raise: pin wins whatever the preference does.
-                (.raised, true, false, .floating),
-                (.raised, true, true, .floating),
-            ]
+            [(stance: BackdropStance, pinned: Bool, keepsAbove: Bool, altitude: BackdropAltitude)] =
+                [
+                    // Unpinned rest: furniture stays on the desktop,
+                    // already below the companion.
+                    (.resting, false, false, .desktop),
+                    (.resting, false, true, .desktop),
+                    // Pinned rest: the pin would float the card over
+                    // the companion, so the card gives way.
+                    (.resting, true, false, .normal),
+                    (.resting, true, true, .normal),
+                    // Keyless raise, preference off: normal already.
+                    (.raised, false, false, .normal),
+                    // Keyless raise, preference on: the preference
+                    // would float it over the companion.
+                    (.raised, false, true, .normal),
+                    // Pinned raise: pin and preference both give way.
+                    (.raised, true, false, .normal),
+                    (.raised, true, true, .normal),
+                ]
         for c in cases {
             XCTAssertEqual(
-                BackdropAltitude.keylessAltitude(
-                    stance: c.stance, pinned: c.pinned, keepsAbove: c.keepsAbove
-                ).companionLevel,
-                c.level,
+                BackdropAltitude.resolve(
+                    stance: c.stance, keyed: false, pinned: c.pinned,
+                    keepsAbove: c.keepsAbove, companionKeyed: true
+                ),
+                c.altitude,
                 "stance=\(c.stance) pinned=\(c.pinned) keepsAbove=\(c.keepsAbove)"
             )
         }
     }
+
+    func testTheCardsOwnKeysWinOverAKeyCompanion() {
+        // A raise is committed with `keyed: true` while the companion
+        // it takes the keyboard from still reports key; the summon
+        // must not flash at normal for that frame.
+        for pinned in [false, true] {
+            for keepsAbove in [false, true] {
+                XCTAssertEqual(
+                    BackdropAltitude.resolve(
+                        stance: .raised, keyed: true, pinned: pinned,
+                        keepsAbove: keepsAbove, companionKeyed: true
+                    ),
+                    .floating,
+                    "pinned=\(pinned) keepsAbove=\(keepsAbove)"
+                )
+            }
+        }
+    }
+
 }

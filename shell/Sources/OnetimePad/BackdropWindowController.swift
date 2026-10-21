@@ -62,7 +62,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// Actual window visibility, including the resting desktop presentation.
     var isVisible: Bool { panel.isVisible }
 
-    init(model: BackdropModel, onCardClick: @escaping () -> Void) {
+    /// `isCompanionWindow` names the app's own ordinary windows
+    /// (Settings, About, Send Feedback), which the delegate owns; the
+    /// card lowers while one of them has the keyboard (#293).
+    init(
+        model: BackdropModel,
+        onCardClick: @escaping () -> Void,
+        isCompanionWindow: @escaping @MainActor (NSWindow) -> Bool = { _ in false }
+    ) {
         self.model = model
         panel = BackdropPanel()
         altitude = BackdropAltitudeKeeper(window: panel)
@@ -90,13 +97,16 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // Space membership, mouse transparency and window extent
         // follow, but none of the stance choreography (key relay,
         // activation hand-back, ordering) runs for a mere altitude
-        // change. The keeper owns both altitude sinks, the pin's and
+        // change. The keeper owns the altitude sinks, the pin's and
         // the keep above preference's (ADR-0032, #187), so that which
         // value each reads on willSet is tested there; the hooks are
         // handed the emitted pin, not the model's, for the same reason.
+        // It also watches the key companion window (#293), which lowers
+        // the card the same way: altitude only, no choreography.
         altitude.observe(
             model,
             keyed: { [weak self] in self?.panel.isKeyWindow ?? false },
+            companion: isCompanionWindow,
             willRepin: { [weak self] pinned in
                 guard let self else { return }
                 // In the order `apply(_:)` uses, and for the same
