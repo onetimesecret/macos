@@ -362,7 +362,7 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The row the node's words occupy, which slivers keep out of.
+        /// The box the slivers keep clear of.
         public let rowTop: CGFloat
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
@@ -371,6 +371,13 @@ public enum StreamNavigator {
         public let documentTop: CGFloat
 
         public var id: UInt64 { node.id }
+
+        /// The top of the row as drawn, `Metrics.rowLift` above the centre line.
+        public var drawnTop: CGFloat { y - Metrics.rowLift(firstOfDay: node.firstOfDay) }
+
+        /// Whether the row may seat its node's drop target: not once the foot cap pushed it
+        /// above the column, where nothing clips the target off the heading (issue 267, #277).
+        public var seatsDropTarget: Bool { drawnTop >= 0 }
     }
 
     /// The part of the roll the reader can see, in rail coordinates.

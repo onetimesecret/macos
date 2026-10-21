@@ -618,7 +618,6 @@ struct StreamNavigatorView: View {
         let target = node.target
         let first = node.firstOfDay
         let hovered = hoverID == node.id
-        let drawnTop = placed.y - Metrics.rowLift(firstOfDay: first)
         return HStack(alignment: .top, spacing: 8) {
             marker(for: node)
                 .padding(.top, 4)
@@ -662,11 +661,11 @@ struct StreamNavigatorView: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(hovered ? Color.primary.opacity(0.07) : .clear)
         )
-        // The node takes drops for the page its click selects (issue 267); a row the foot cap
-        // pushed above the column seats none, since nothing clips its view off the heading there.
-        .background(drawnTop < 0 ? nil : TabDropOverlay.node(target, model: model, readOnly: readOnly))
+        // The node takes drops for the page its click selects, where its row seats one (issue 267).
+        .background(
+            placed.seatsDropTarget ? TabDropOverlay.node(target, model: model, readOnly: readOnly) : nil)
         .contentShape(Rectangle())
-        .offset(y: drawnTop)
+        .offset(y: placed.drawnTop)
         .onHover { inside in
             if inside {
                 hoverID = node.id
