@@ -163,9 +163,13 @@ public final class SyncController: ObservableObject {
     private(set) var pairingPolling = false
     /// When the round on the wire went out. The relay call has no
     /// timeout of its own, so a round older than `pairingPollDeadline`
-    /// is given up on rather than wedging pairing for the process.
+    /// is given up on rather than wedging pairing for the process; the
+    /// one-round promise is kept inside that bound.
     private var pairingPollStartedAt: Date?
     static let pairingPollDeadline: TimeInterval = 30
+    /// The round that owns the flag. A round given up on returns as a
+    /// no-op for the flag, so a newer round's claim is not undone.
+    private var pairingRound: UInt64 = 0
     /// Async so a test's stand-in can suspend rather than block a
     /// cooperative thread; the shipping value is one blocking core call.
     private let pairingPoll: @Sendable () async -> SyncPairingStage?
@@ -707,18 +711,20 @@ public final class SyncController: ObservableObject {
         guard !pairingPolling else { return }
         pairingPolling = true
         pairingPollStartedAt = Date()
+        pairingRound &+= 1
         let poll = pairingPoll
-        let mine = (session: session, ceremony: ceremony)
+        let mine = (session: session, ceremony: ceremony, round: pairingRound)
         Task.detached(priority: .utility) {
             let stage = await poll()
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                // The wire is free whatever ceremony's round this was:
-                // the flag is about overlapping rounds against one core
-                // flow, which a confirm does not replace, so an end
-                // cannot free it early. The answer, though, belongs to
-                // the ceremony that asked, and a stale one is dropped.
-                self.pairingPolling = false
+                // The wire is freed by the round that owns the flag,
+                // whatever ceremony it served; the answer belongs to the
+                // ceremony that asked, and a stale one is dropped.
+                if self.pairingRound == mine.round {
+                    self.pairingPolling = false
+                    self.pairingPollStartedAt = nil
+                }
                 guard self.session == mine.session, self.ceremony == mine.ceremony else { return }
                 guard self.pairingStage != nil else { return }
                 switch stage?.stage {
