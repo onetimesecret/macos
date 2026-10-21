@@ -1921,7 +1921,9 @@ fn sim_admit(units: &mut Vec<SimUnit>, sheet: &Sheet, op: &EditOp) -> bool {
                 return false;
             }
             let count = text.encode_utf16().count();
-            if count > units.capacity() - units.len() {
+            let room = units.capacity() - units.len();
+            debug_assert!(count <= room, "phase one reserved too little room");
+            if count > room {
                 return false;
             }
             let old_len = units.len();
@@ -1957,6 +1959,10 @@ fn sim_admit(units: &mut Vec<SimUnit>, sheet: &Sheet, op: &EditOp) -> bool {
             if units.contains(&SimUnit::Chip(*chip)) {
                 return false; // duplicate: the sentinel already stands
             }
+            debug_assert!(
+                units.len() < units.capacity(),
+                "phase one reserved too little room"
+            );
             if units.len() == units.capacity() {
                 return false;
             }
@@ -2017,15 +2023,6 @@ mod tests {
         ));
         assert_eq!(units.as_ptr(), pointer);
         assert_eq!(units.len(), units.capacity());
-        assert!(!sim_admit(
-            &mut units,
-            sheet,
-            &EditOp::Insert {
-                pos_u16: 0,
-                text: "no room".into(),
-            }
-        ));
-        assert_eq!(units.as_ptr(), pointer);
         assert_eq!(units.capacity(), 8);
         for unit in &mut *units {
             unit.zeroize();
@@ -2040,6 +2037,48 @@ mod tests {
         assert_eq!(units.as_ptr(), pointer);
         assert_eq!(units.capacity(), 8);
         assert!(sim_units(&segments, usize::MAX).is_none());
+    }
+
+    #[test]
+    #[cfg_attr(
+        debug_assertions,
+        should_panic(expected = "phase one reserved too little room")
+    )]
+    fn an_insert_past_the_reserved_room_panics_in_tests_and_refuses_in_release() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let segments = [Segment::Ink("ab".into())];
+        let mut units = sim_units(&segments, 0).unwrap();
+        let pointer = units.as_ptr();
+        assert!(!sim_admit(
+            &mut units,
+            store.sheet(id).unwrap(),
+            &EditOp::Insert {
+                pos_u16: 0,
+                text: "no room".into(),
+            }
+        ));
+        assert_eq!(units.as_ptr(), pointer);
+        assert_eq!(units.capacity(), 2);
+    }
+
+    #[test]
+    #[cfg_attr(
+        debug_assertions,
+        should_panic(expected = "phase one reserved too little room")
+    )]
+    fn a_chip_past_the_reserved_room_panics_in_tests_and_refuses_in_release() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "secret");
+        let segments = [Segment::Ink("ab".into())];
+        let mut units = sim_units(&segments, 0).unwrap();
+        assert!(!sim_admit(
+            &mut units,
+            store.sheet(id).unwrap(),
+            &EditOp::InsertChip { pos_u16: 0, chip }
+        ));
+        assert_eq!(units.capacity(), 2);
     }
 
     #[test]
