@@ -220,13 +220,17 @@ final class LanguageSuggestionTests: XCTestCase {
         insert(source, into: textView)
 
         textView.setSelectedRange(NSRange(location: 12, length: 0))
+        // `update()` runs the auto-enable pass a shown menu runs, which
+        // is what overwrote the explicit `isEnabled` before validation.
         var menu = NSMenu()
         coordinator.appendLanguageItems(to: menu)
-        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language…" }?.isEnabled, false)
+        menu.update()
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language" }?.isEnabled, false)
 
         textView.setSelectedRange(NSRange(location: 20, length: 0))
         menu = NSMenu()
         coordinator.appendLanguageItems(to: menu)
-        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language…" }?.isEnabled, false)
+        menu.update()
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language" }?.isEnabled, false)
     }
 }

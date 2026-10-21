@@ -114,8 +114,9 @@ without changing the setting. Do not reuse the sealed-paste shortcut.
 
 ### On-demand detection
 
-Expose **Detect Code Language…** in the editor context menu and an ordinary
-menu so it is keyboard-accessible. Target, in order:
+Expose **Detect Code Language** in the editor context menu and an ordinary
+menu so it is keyboard-accessible (no ellipsis since 2026-10-21: detection
+answers inline, ADR-0055 rule 2). Target, in order:
 
 - A nonempty visible-text selection outside fences: show the suggestion and an
   explicit **Wrap as <Language> Code** action. Preview the affected range; v1

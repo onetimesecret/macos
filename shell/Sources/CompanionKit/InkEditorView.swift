@@ -552,7 +552,7 @@ public struct InkEditorView: NSViewRepresentable {
     // compile time.
     @MainActor
     public final class Coordinator: NSObject, NSTextViewDelegate,
-        @preconcurrency NSTextStorageDelegate {
+        @preconcurrency NSTextStorageDelegate, NSMenuItemValidation {
         let model: PageModel
         weak var textView: InkTextView?
         /// The page or file under the editor, or nil on a note's surface,
@@ -1216,6 +1216,10 @@ public struct InkEditorView: NSViewRepresentable {
             guard let storage = textView?.textStorage, let selection = sealableSelection(),
                   !Self.containsChip(storage, in: selection)
             else { return }
+            // The page's own group, set off from AppKit's text items.
+            if let last = menu.items.last, !last.isSeparatorItem {
+                menu.addItem(.separator())
+            }
             let seal = NSMenuItem(
                 title: SealSelectionMenu.contextMenuTitle,
                 action: #selector(sealSelectionFromMenu(_:)),
@@ -1486,7 +1490,7 @@ public struct InkEditorView: NSViewRepresentable {
             menu.addItem(.separator())
 
             let detect = NSMenuItem(
-                title: "Detect Code Language…",
+                title: "Detect Code Language",
                 action: #selector(detectCodeLanguageFromMenu(_:)),
                 keyEquivalent: ""
             )
@@ -1498,7 +1502,7 @@ public struct InkEditorView: NSViewRepresentable {
                manualLanguageTarget() == suggestion.target
             {
                 let heading = NSMenuItem(
-                    title: "Suggested: \(suggestion.language.capitalized)",
+                    title: "Suggested: \(CodeLanguageName.display(suggestion.language))",
                     action: nil,
                     keyEquivalent: ""
                 )
@@ -1514,7 +1518,7 @@ public struct InkEditorView: NSViewRepresentable {
                 switch suggestion.target.kind {
                 case .selection:
                     let wrap = NSMenuItem(
-                        title: "Wrap as \(suggestion.language.capitalized) Code",
+                        title: "Wrap as \(CodeLanguageName.display(suggestion.language)) Code",
                         action: #selector(applySuggestedWrap(_:)),
                         keyEquivalent: ""
                     )
@@ -1522,7 +1526,7 @@ public struct InkEditorView: NSViewRepresentable {
                     menu.addItem(wrap)
                 case .bareFence:
                     let highlight = NSMenuItem(
-                        title: "Use \(suggestion.language.capitalized) for Highlighting",
+                        title: "Use \(CodeLanguageName.display(suggestion.language)) for Highlighting",
                         action: #selector(applySuggestedHighlighting(_:)),
                         keyEquivalent: ""
                     )
@@ -1543,7 +1547,7 @@ public struct InkEditorView: NSViewRepresentable {
                 let submenu = NSMenu(title: "Choose Language")
                 for language in Self.manualLanguages {
                     let item = NSMenuItem(
-                        title: language.capitalized,
+                        title: CodeLanguageName.display(language),
                         action: #selector(chooseLanguageFromMenu(_:)),
                         keyEquivalent: ""
                     )
@@ -1588,6 +1592,15 @@ public struct InkEditorView: NSViewRepresentable {
         @objc private func chooseLanguageFromMenu(_ sender: NSMenuItem) {
             guard let language = sender.representedObject as? String else { return }
             applyManualLanguage(language)
+        }
+
+        /// The context menu auto-enables, and a target without this
+        /// method has every explicit `isEnabled` overwritten on display.
+        public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+            if item.action == #selector(detectCodeLanguageFromMenu(_:)) {
+                return model.languageDetectionEnabled && manualLanguageTarget() != nil
+            }
+            return true
         }
 
         // MARK: The page swap (ADR-0006)

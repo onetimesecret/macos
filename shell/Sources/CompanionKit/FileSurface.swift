@@ -12,7 +12,7 @@ public enum FileRenderMode: Equatable, Hashable, Sendable {
         switch self {
         case .plainText: return "Plain Text"
         case .markdown: return "Markdown"
-        case .source(let language): return "Source (\(language.capitalized))"
+        case .source(let language): return "Source (\(CodeLanguageName.display(language)))"
         }
     }
 }
@@ -171,7 +171,7 @@ public struct FileRenderSuggestionBanner: View {
             Text("render as \(suggestion.language)?")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
-            Button("Use \(suggestion.language)") {
+            Button("Use \(CodeLanguageName.display(suggestion.language))") {
                 model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
             }
             .font(.system(.caption, design: .monospaced))
@@ -180,7 +180,7 @@ public struct FileRenderSuggestionBanner: View {
             Button("Keep Plain Text") { model.keepFilePlainText(suggestion.fileID) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-            Menu("Choose Language…") {
+            Menu("Choose Language") {
                 Button("Plain Text") { model.selectFileRenderMode(.plainText, for: suggestion.fileID) }
                 Button("Markdown") { model.selectFileRenderMode(.markdown, for: suggestion.fileID) }
                 if let contentHint = model.fileContentRenderHint(for: suggestion.fileID),
@@ -193,7 +193,7 @@ public struct FileRenderSuggestionBanner: View {
                 }
                 Divider()
                 ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
-                    Button(language.capitalized) {
+                    Button(CodeLanguageName.display(language)) {
                         model.selectFileRenderMode(.source(language), for: suggestion.fileID)
                     }
                 }
