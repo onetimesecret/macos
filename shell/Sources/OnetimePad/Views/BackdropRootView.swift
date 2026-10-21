@@ -777,8 +777,10 @@ struct BackdropRootView: View {
     /// corner's entry.
     private func showResizeCursor(_ edge: CardEdge, _ inside: Bool) {
         if inside {
-            guard raised, let cursor = Self.resizeCursor(for: edge) else { return }
+            // A grip with no cursor of its own (a corner before macOS
+            // 15) still takes the neighbouring edge's off the stack.
             popResizeCursor()
+            guard raised, let cursor = Self.resizeCursor(for: edge) else { return }
             cursor.push()
             pushedCursorEdge = edge
         } else if pushedCursorEdge == edge {

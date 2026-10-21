@@ -666,6 +666,7 @@ struct StreamNavigatorView: View {
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
         .accessibilityAddTraits(node.active ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAction { jump(to: placed) }
     }
 
     /// The mark on the track. The active node is a filled ember dot,
@@ -810,13 +811,14 @@ final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
     /// its window or moves between windows, and by the representable's
-    /// dismantle (`retire`). nonisolated(unsafe) for the deinit net, as
-    /// `BackdropWindowController`'s tokens are: removeMonitor is
-    /// thread-safe and every other touch is main-actor.
+    /// dismantle (`retire`). nonisolated(unsafe) because deinit is
+    /// nonisolated; the net below asserts the thread it runs on.
     private nonisolated(unsafe) var monitor: Any?
 
     deinit {
-        if let monitor { NSEvent.removeMonitor(monitor) }
+        guard let monitor else { return }
+        assert(Thread.isMainThread, "a view's monitor is released where it was installed")
+        NSEvent.removeMonitor(monitor)
     }
 
     /// Whether the view is watching its window's wheel events.
@@ -1052,7 +1054,7 @@ private struct SlotRailRow: View {
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer; mid-rename the element is the field's
         // container and offers neither.
-        .accessibilityAction { if !renaming { model.select(sheet.id) } }
+        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
         .accessibilityActions {
             if !renaming {
                 Button("Rename Tab") { beginRename() }
@@ -1205,6 +1207,7 @@ struct FileShelfRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAction { model.select(target: .file(file.id)) }
     }
 }
 
@@ -1254,7 +1257,7 @@ enum TimeUnitTab {
     /// itself shows, and the chord that does it too. With nothing bound
     /// it says only what the click does, which is still true.
     static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
-        chorded("Go to \(spokenLabel)", chord: chord)
+        Keystroke.chorded("Go to \(spokenLabel)", chord: chord)
     }
 
     /// Today's tooltip, which has two readings. Today already holding a
@@ -1264,13 +1267,10 @@ enum TimeUnitTab {
     /// word for word about the day that has one, so a day that gains a
     /// page reads the same either way it was asked.
     static func todayHelp(hasPage: Bool, chord: Keystroke?) -> String {
-        guard hasPage else { return chorded("Start today's page", chord: chord) }
+        guard hasPage else { return Keystroke.chorded("Start today's page", chord: chord) }
         return dayHelp(spokenLabel: "today", chord: chord)
     }
 
-    private static func chorded(_ what: String, chord: Keystroke?) -> String {
-        Keystroke.chorded(what, chord: chord)
-    }
 }
 
 extension View {
@@ -1278,6 +1278,18 @@ extension View {
     func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
         if offered {
             accessibilityAction(named: Text("New page"), action)
+        } else {
+            self
+        }
+    }
+
+    /// The default action, the one VoiceOver's press runs, offered only
+    /// while the row answers a press: a composite built from
+    /// `.ignore`d children inherits none from its tap gesture.
+    @ViewBuilder
+    func accessibilityActivation(when offered: Bool, action: @escaping () -> Void) -> some View {
+        if offered {
+            accessibilityAction(.default, action)
         } else {
             self
         }

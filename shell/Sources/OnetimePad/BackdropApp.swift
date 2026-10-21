@@ -60,6 +60,7 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
+                        present: appDelegate.openEditorPresentation,
                         newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
                         saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
@@ -179,9 +180,15 @@ struct BackdropApp: App {
 /// Enablement is display and never a gate: the model's own arms decide
 /// what happens, and a click that arrives anyway lands on the page
 /// reading of the chord rather than on nothing.
+///
+/// New Page asked from a window that is not the surface (Settings,
+/// About, Feedback) also presents the editor, so the command shows
+/// what it made the way Open… shows its panel.
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
+    /// Brings the editor presentation forward.
+    let present: () -> Void
     let newShortcut: KeyboardShortcut?
     let openShortcut: KeyboardShortcut?
     let saveShortcut: KeyboardShortcut?
@@ -196,8 +203,11 @@ private struct FileMenuItems: View {
     }
 
     var body: some View {
-        Button("New Page") { pages.perform(.pageNew) }
-            .keyboardShortcut(newShortcut)
+        Button("New Page") {
+            pages.perform(.pageNew)
+            if !pages.holdsKeys { present() }
+        }
+        .keyboardShortcut(newShortcut)
         Button("Open…") { pages.perform(.fileOpen) }
             .keyboardShortcut(openShortcut)
         Divider()

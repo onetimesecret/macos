@@ -333,6 +333,7 @@ private struct TimeUnitBottomTab: View {
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAction { model.select(target: TimeUnitTab.target(for: unit)) }
         .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
             model.newPage()
         }
@@ -483,7 +484,7 @@ struct SheetTab: View {
             renaming ? [] : selected ? [.isSelected, .isButton] : [.isButton])
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer, as on the rail's rows.
-        .accessibilityAction { if !renaming { model.select(sheet.id) } }
+        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
         .accessibilityActions {
             if !renaming {
                 Button("Rename Tab") { beginRename() }

@@ -268,7 +268,7 @@ enum DiagnosticsActions {
 
     private static func savePanel() -> NSSavePanel {
         let panel = NSSavePanel()
-        // Save panels stopped drawing `title` in 10.11; `message` shows.
+        // `message` is the text a save panel draws above its fields.
         panel.message = "Export Diagnostics"
         panel.nameFieldStringValue = "OnetimePad-Diagnostics.txt"
         panel.allowedContentTypes = [.plainText]
