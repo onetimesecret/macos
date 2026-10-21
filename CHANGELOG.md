@@ -988,6 +988,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chord the keymap binds. A page's own context menu group starts with
   a separator, and Close Tab and Close File stand apart from the items
   above them. The editor window refuses automatic window tabbing.
+
 - **Rows and close marks reach VoiceOver and the pointer** (app 0.39.1).
   A sync device row combines its words and keeps Revoke as an action;
   the rail's day nodes, slot rows and file rows are buttons, and a slot
@@ -995,9 +996,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strip's tabs likewise, and its file rows Close File. Tab close marks have a 12
   by 16 point hit area and a tooltip; the note's expand button has one
   too. The card's edges and corners show resize cursors while raised,
-  one on the stack at a time, popped when the card rests. The ambient panel
-  carries the app's name for VoiceOver.
-- **A copy that lands as the clear fires keeps its own window** (app
+  one on the stack at a time, kept through a drag and popped when the
+  card rests. The ambient panel is named for VoiceOver.
+
+- **A copy made as the clear fires keeps its own window** (app
   0.39.1; D-29). The clear ran through a main-actor hop after the timer
   fired, so a copy made between the two was cleared at once; it now
   runs inline. One pairing poll runs at a time, so a slow relay no

@@ -754,6 +754,8 @@ struct BackdropRootView: View {
     private static let cornerSide: CGFloat = 12
     /// The grip whose cursor is on the stack, if one is.
     @State private var pushedCursorEdge: CardEdge?
+    /// The grip a resize drag is pulling, whose cursor outlives a hover exit.
+    @State private var draggingEdge: CardEdge?
 
     private func grip(_ edge: CardEdge) -> some View {
         Color.clear
@@ -783,9 +785,26 @@ struct BackdropRootView: View {
             guard raised, let cursor = edge.resizeCursor else { return }
             cursor.push()
             pushedCursorEdge = edge
-        } else if pushedCursorEdge == edge {
+        } else if pushedCursorEdge == edge, draggingEdge != edge {
+            // A drag past the 6 pt margin exits the grip while it still
+            // tracks; the cursor stays until the drag ends.
             popResizeCursor()
         }
+    }
+
+    private func holdResizeCursor(_ edge: CardEdge) {
+        guard draggingEdge != edge else { return }
+        draggingEdge = edge
+        guard pushedCursorEdge != edge else { return }
+        popResizeCursor()
+        guard let cursor = edge.resizeCursor else { return }
+        cursor.push()
+        pushedCursorEdge = edge
+    }
+
+    private func releaseResizeCursor() {
+        draggingEdge = nil
+        popResizeCursor()
     }
 
     private func popResizeCursor() {
@@ -801,6 +820,7 @@ struct BackdropRootView: View {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
                 guard raised else { return }
+                holdResizeCursor(edge)
                 let anchor = anchor(seededBy: value.translation)
                 model.proposeGeometry(
                     edge.resized(model.geometry, by: paneTranslation(from: anchor))
@@ -809,6 +829,7 @@ struct BackdropRootView: View {
             .onEnded { _ in
                 let started = gestureAnchor
                 gestureAnchor = nil
+                releaseResizeCursor()
                 // Same cancellation rule as the header drag: a rest
                 // mid-gesture voids the proposal.
                 guard raised, let started else {

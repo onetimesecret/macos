@@ -26,16 +26,18 @@ extension View {
     }
 }
 
-/// A row is a button unless it is renaming, and selected is selected
-/// either way.
-func rowAccessibilityTraits(selected: Bool, renaming: Bool) -> AccessibilityTraits {
-    var traits: AccessibilityTraits = []
-    if selected { traits.insert(.isSelected) }
-    if !renaming { traits.insert(.isButton) }
-    return traits
-}
+enum RowAccessibility {
+    /// A row is a button unless it is renaming, and selected is
+    /// selected either way.
+    static func traits(selected: Bool, renaming: Bool) -> AccessibilityTraits {
+        var traits: AccessibilityTraits = []
+        if selected { traits.insert(.isSelected) }
+        if !renaming { traits.insert(.isButton) }
+        return traits
+    }
 
-/// The same rule for a row that never renames.
-func rowAccessibilityTraits(selected: Bool) -> AccessibilityTraits {
-    rowAccessibilityTraits(selected: selected, renaming: false)
+    /// The same rule for a row that never renames.
+    static func traits(selected: Bool) -> AccessibilityTraits {
+        traits(selected: selected, renaming: false)
+    }
 }

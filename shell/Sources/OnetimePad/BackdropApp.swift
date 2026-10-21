@@ -1002,9 +1002,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// the panel, by the route a dismissed sheet takes: a menu command
     /// run from Settings names no surface (ADR-0033, ADR-0036).
     func returnToOwner() {
-        // Under one of our own modals the surface stays put, as the
-        // other takers of this route hold (`raisesAfterModal`).
-        guard startupComplete, !ModalSession.isRunning else { return }
+        // Under one of our own modals or sheets the surface stays put,
+        // as the route's other takers do (`raisesAfterModal`).
+        guard startupComplete, !ModalSession.isRunning,
+              NSApp.keyWindow?.sheetParent == nil
+        else { return }
         apply(ActivationRouter.decide(.modalReturn, in: activationContext()))
     }
 

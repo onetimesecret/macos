@@ -45,6 +45,19 @@ final class CodeLanguageNameTests: XCTestCase {
         XCTAssertEqual(CodeLanguageName.display("csharp"), "C#")
     }
 
+    /// The fence words a person types, which must never fall back to
+    /// the capitalised guess.
+    func testCommonFenceWordsResolve() {
+        let expected = [
+            "js": "JavaScript", "ts": "TypeScript", "py": "Python", "rb": "Ruby",
+            "rs": "Rust", "sh": "Shell", "bash": "Shell", "zsh": "Shell", "yml": "YAML",
+            "objc": "Objective-C", "csharp": "C#", "golang": "Go", "psql": "SQL",
+        ]
+        for (word, name) in expected {
+            XCTAssertEqual(CodeLanguageName.display(word), name, word)
+        }
+    }
+
     func testAnUnknownIdFallsBackToCapitalised() {
         XCTAssertEqual(CodeLanguageName.display("kotlinscript"), "Kotlinscript")
     }

@@ -141,7 +141,7 @@ final class ClipboardClearLifecycleTests: XCTestCase {
             ConcealOutcome(ok: true, receiptId: "receipt-a", error: nil),
             for: target, draftID: first
         )
-        // The second copy lands inside the first one's window.
+        // The second copy is made inside the first one's window.
         model.beginConceal(target)
         let second = try XCTUnwrap(model.concealDraft?.id)
         model.dismissConceal()

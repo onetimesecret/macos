@@ -554,6 +554,7 @@ public struct InkEditorView: NSViewRepresentable {
     public final class Coordinator: NSObject, NSTextViewDelegate,
         @preconcurrency NSTextStorageDelegate, NSMenuItemValidation {
         let model: PageModel
+        private var reportedUnnamedSelectors: Set<String> = []
         weak var textView: InkTextView?
         /// The page or file under the editor, or nil on a note's surface,
         /// whose page only paths key on it (ADR-0044).
@@ -1592,14 +1593,8 @@ public struct InkEditorView: NSViewRepresentable {
             applyManualLanguage(language)
         }
 
-        /// The context menu auto-enables, and a target without this
-        /// method has every explicit `isEnabled` overwritten on display.
-        /// Detect answers from the text view's predicate, the one the
-        /// Edit menu and the chord use, so the two menus agree. Every
-        /// other item this coordinator targets, the language items and
-        /// the sealed object's whole menu, is appended only when it
-        /// applies, so it is enabled. An item not named here is enabled
-        /// too, and a debug build says so, so a new item chooses.
+        /// The context menu auto-enables, so this is where enablement is
+        /// decided; the rest is appended only when it applies.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
             switch item.action {
             case #selector(detectCodeLanguageFromMenu(_:)):
@@ -1619,9 +1614,13 @@ public struct InkEditorView: NSViewRepresentable {
                  #selector(removeChip(_:)):
                 return true
             default:
-                // Loud, not fatal: a menu is on screen.
-                Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
-                    .fault("unnamed menu selector \(item.action.map(NSStringFromSelector) ?? "nil", privacy: .public)")
+                // Loud once, not fatal: a menu is on screen and validates
+                // on every display.
+                let name = item.action.map(NSStringFromSelector) ?? "nil"
+                if reportedUnnamedSelectors.insert(name).inserted {
+                    Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+                        .fault("unnamed menu selector \(name, privacy: .public)")
+                }
                 return true
             }
         }

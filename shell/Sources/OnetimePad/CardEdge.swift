@@ -13,28 +13,32 @@ enum CardEdge: CaseIterable {
     case top, bottom, leading, trailing
     case topLeading, topTrailing, bottomLeading, bottomTrailing
 
-    /// The pointer a window shows over this margin. Diagonal frame
-    /// cursors are macOS 15 API; earlier systems keep the arrow on
-    /// corners, as they do for windows.
+    /// The pointer a window shows over this margin: macOS 15's frame
+    /// cursors on every grip, and before 15 the axis arrows on edges
+    /// with the plain arrow on corners, as windows showed then.
     var resizeCursor: NSCursor? {
+        if #available(macOS 15, *) {
+            return .frameResize(position: frameResizePosition, directions: .all)
+        }
         switch self {
         case .leading, .trailing: return .resizeLeftRight
         case .top, .bottom: return .resizeUpDown
-        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
-            guard #available(macOS 15, *), let position = frameResizePosition else { return nil }
-            return .frameResize(position: position, directions: .all)
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing: return nil
         }
     }
 
-    /// The frame position a corner's cursor names; nil for an edge.
+    /// The frame position this grip's cursor names.
     @available(macOS 15, *)
-    var frameResizePosition: NSCursor.FrameResizePosition? {
+    var frameResizePosition: NSCursor.FrameResizePosition {
         switch self {
+        case .top: return .top
+        case .bottom: return .bottom
+        case .leading: return .left
+        case .trailing: return .right
         case .topLeading: return .topLeft
         case .topTrailing: return .topRight
         case .bottomLeading: return .bottomLeft
         case .bottomTrailing: return .bottomRight
-        case .top, .bottom, .leading, .trailing: return nil
         }
     }
 

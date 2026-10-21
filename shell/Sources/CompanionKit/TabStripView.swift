@@ -330,7 +330,7 @@ private struct TimeUnitBottomTab: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected))
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
         .accessibilityAction { model.select(target: TimeUnitTab.target(for: unit)) }
         .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
             model.newPage()
@@ -478,7 +478,7 @@ struct SheetTab: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: renaming))
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer, as on the rail's rows.
         .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
@@ -724,7 +724,7 @@ struct FileTab: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected))
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
         .accessibilityAction { model.select(target: .file(file.id)) }
         .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {

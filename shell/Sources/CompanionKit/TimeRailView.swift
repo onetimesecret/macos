@@ -330,7 +330,6 @@ public struct TimeRailView: View {
         return chords
     }
 
-
     /// Which day the rail marks as the one the surface is showing.
     ///
     /// The mark follows the selected page's day rather than the row
@@ -665,7 +664,7 @@ struct StreamNavigatorView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: node.active))
+        .accessibilityAddTraits(RowAccessibility.traits(selected: node.active))
         .accessibilityAction { jump(to: placed) }
     }
 
@@ -1042,7 +1041,7 @@ private struct SlotRailRow: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: renaming))
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer; mid-rename the element is the field's
         // container and offers neither.
@@ -1198,7 +1197,7 @@ struct FileShelfRow: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected))
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
         .accessibilityAction { model.select(target: .file(file.id)) }
     }
 }
