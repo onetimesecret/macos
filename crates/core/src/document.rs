@@ -971,7 +971,7 @@ impl SheetDocument {
 
 /// A body split into ink and chips; free-standing so a fork can be read.
 fn runs_of(body: &LoroText) -> Vec<DocRun> {
-    let pieces: Vec<_> = body
+    let mut pieces: Vec<_> = body
         .to_delta()
         .into_iter()
         .filter_map(|piece| {
@@ -987,9 +987,12 @@ fn runs_of(body: &LoroText) -> Vec<DocRun> {
         })
         .collect();
     let mut runs = Vec::new();
-    for group in pieces.chunk_by(|a, b| a.1.is_none() && b.1.is_none()) {
+    for group in pieces.chunk_by_mut(|a, b| a.1.is_none() && b.1.is_none()) {
         if let Some(id) = group[0].1 {
             runs.push(DocRun::Chip(id));
+        } else if let [(insert, None)] = group {
+            // One piece moves; projected_ink_coalesces_marked_pieces_at_exact_capacity checks its capacity.
+            runs.push(DocRun::Ink(std::mem::take(insert)));
         } else {
             let len = group.iter().map(|(insert, _)| insert.len()).sum();
             let mut text = Zeroizing::new(String::with_capacity(len));
