@@ -1399,11 +1399,12 @@ mod tests {
     /// owners (Law 0004, C13 to C15): the types say so, and a plain `String` would not compile.
     #[test]
     fn a_name_a_derived_title_and_a_label_are_wiping_owners() {
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
         let mut page = bare_sheet(STAMP);
         page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         let mut tab = unnamed_tab(Some(page));
         tab.name = Some(Zeroizing::new("the vault".into()));
-        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
         let name = tab.name.as_ref().unwrap();
         wiping_owner(name);
         let derived = tab.page.as_ref().unwrap().derived_title.as_ref().unwrap();
@@ -1430,7 +1431,12 @@ mod tests {
             "the owner grew past its size"
         );
         assert_eq!(capped_title("short").as_str(), "short");
-        assert_eq!(derived.as_deref().map(String::as_str), Some("first"));
+        let under = derive_title(&[Segment::Ink("short line".into())]).unwrap();
+        assert_eq!(
+            under.capacity(),
+            under.len(),
+            "an under cap title took a second owner"
+        );
     }
 
     #[test]
