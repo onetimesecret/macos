@@ -312,6 +312,49 @@ final class StreamNavigatorTests: XCTestCase {
             nodes: [], geometry: .unmeasured, height: 300, width: 102), .empty)
     }
 
+    /// A day's first row is drawn a point higher than a later row, so a rail packed tight from
+    /// the top, or capped from the foot when too dense, still draws no row into the one above.
+    func testPackedRowsAreDrawnClearOfTheRowAbove() throws {
+        var tabs: [TabSummary] = []
+        for day in 0..<3 {
+            for index in 0..<4 {
+                let number = UInt64(day * 4 + index + 1)
+                let created: UInt64 = born - UInt64(day) * 86_400_000 + UInt64(index) * 60_000
+                tabs.append(slot(tab: number, page: 100 + number, day: -day, createdMs: created))
+            }
+        }
+        let nodes = nodes(tabs, selecting: 4)
+        XCTAssertTrue(
+            zip(nodes, nodes.dropFirst()).contains { !$0.firstOfDay && $1.firstOfDay },
+            "the control: no later row meets the next day's first")
+        for (height, dense) in [(CGFloat(400), false), (120, true)] {
+            let layout = StreamNavigator.layout(
+                nodes: nodes, geometry: .unmeasured, height: height, width: 102)
+            let first = try XCTUnwrap(layout.placed.first)
+            if dense {
+                XCTAssertLessThan(first.y, StreamNavigator.Metrics.top, "the control: the rail fits its rows")
+            } else {
+                XCTAssertEqual(first.y, StreamNavigator.Metrics.top, "the control: the foot moved a row")
+            }
+            let frames = layout.placed.map { placed in
+                CGRect(
+                    x: 0, y: placed.y - StreamNavigator.Metrics.rowLift(firstOfDay: placed.node.firstOfDay),
+                    width: 102, height: placed.rowHeight)
+            }
+            for (index, upper) in frames.enumerated() {
+                for lower in frames.dropFirst(index + 1) {
+                    XCTAssertFalse(upper.intersects(lower), "rows at \(upper) and \(lower) meet at height \(height)")
+                }
+            }
+            for (upper, lower) in zip(frames, frames.dropFirst()) {
+                XCTAssertLessThanOrEqual(upper.maxY, lower.minY, "a row rose into the one above at height \(height)")
+            }
+            XCTAssertLessThanOrEqual(
+                try XCTUnwrap(frames.last).maxY, height - StreamNavigator.Metrics.bottom,
+                "the last row passed the foot at height \(height)")
+        }
+    }
+
     /// A measured roll puts each node where its page's share of the
     /// roll falls, and the map from document to rail runs through the
     /// nodes as placed: a node's own y answers back its page's top, and
