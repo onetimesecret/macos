@@ -1,6 +1,7 @@
 //! The tab, a durable slot, and the sheet, the page that expires in it
 //! (doc 04, ADR-0017). Masking is by gesture, never by content (doc 04).
 
+use std::fmt;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -150,12 +151,21 @@ impl ChipId {
 }
 
 /// One run of the body's projection, cached from the sheet's document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Segment {
     /// Visible text, exactly as typed.
     Ink(String),
     /// A sealed chip sits here.
     Chip(ChipId),
+}
+
+impl fmt::Debug for Segment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ink(_) => formatter.write_str("Ink([REDACTED])"),
+            Self::Chip(id) => formatter.debug_tuple("Chip").field(id).finish(),
+        }
+    }
 }
 
 impl Zeroize for Segment {
@@ -1295,6 +1305,20 @@ mod tests {
 
     /// `ManualClock::new()`'s stamp, 2023-11-14 22:13:20 UTC.
     const STAMP: u64 = 1_700_000_000_000;
+
+    #[test]
+    fn segment_debug_output_never_prints_its_ink() {
+        let segments = vec![
+            Segment::Ink("hunter2 🙂 deploy key".into()),
+            Segment::Chip(ChipId(7)),
+        ];
+        for printed in [format!("{segments:?}"), format!("{segments:#?}")] {
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(!printed.contains("deploy"), "{printed}");
+        }
+        assert_eq!(format!("{:?}", segments[0]), "Ink([REDACTED])");
+        assert_eq!(format!("{:?}", segments[1]), "Chip(ChipId(7))");
+    }
 
     #[test]
     fn segment_ink_and_its_clone_have_independent_wiping_owners() {

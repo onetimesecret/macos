@@ -127,8 +127,9 @@ page ink or secret values.
 ## Core and adjacent buffer inventory
 
 Paths in the evidence column are relative to `crates/`. Rows C01–C47 follow
-Table 2 of the issue inventory, including metadata-only rows. Proposed work is
-explicit rather than silently exempting an existing content copy.
+Table 2 of the issue inventory, including metadata-only rows. C48 comes from the
+PR 270 review, not from the inventory. Proposed work is explicit rather than
+silently exempting an existing content copy.
 
 | ID | Buffer / data | Selected treatment | Status and inspected evidence |
 | --- | --- | --- | --- |
@@ -179,6 +180,7 @@ explicit rather than silently exempting an existing content copy.
 | C45 | Inbound `PasteboardContent::Text` / `::Image` | **W** immediately, before validation | **Partial/Planned**: FFI explicitly wipes text after sealing; accepted image moves to SecretBuffer. Image refusal in `seal_image` or `seal_image_at_with_origin` drops an ordinary vector unwiped (`core/src/store.rs`). Needs early zeroizing ownership and refusal tests. |
 | C46 | System pasteboard/drag write | **W** Rust owner; **N** narrow intentional egress | **Blocked** for end-to-end erasure: adapters create NSString/NSData copies; malformed-UTF-8 text may also create an ordinary lossy Rust string (`pasteboard/src/macos.rs::write_content`). Clearing calls `clearContents`, not a wipe of Foundation or system storage. |
 | C47 | `MemoryPasteboard`, `MemoryDragItem` | **W** resident and read-copy owners | **Partial/Planned**: stored/provided bytes zeroize; origin strings, text/image read copies and lossy conversions do not (`pasteboard/src/lib.rs`). Test doubles are not exempt from content ownership work. |
+| C48 | `Debug` output of `Segment::Ink` and `DocRun::Ink` (added in the PR 270 review) | **N** redacted `Debug` | **Implemented**: both print `Ink([REDACTED])` (`core/src/sheet.rs`, `document.rs`), as `ByteBlob` prints `ByteBlob([REDACTED])`; `segment_debug_output_never_prints_its_ink` and `doc_run_debug_output_never_prints_its_ink` check that the ink appears in neither `{:?}` nor `{:#?}`. **Planned**: `EditOp::Insert` (`core/src/store.rs`) and `PasteboardContent::Text` (`pasteboard/src/lib.rs`) still derive `Debug` and print their text. |
 
 
 ## Swift residence and input inventory
@@ -281,7 +283,7 @@ behavior, not every allocation in the process.
 
 | Source | Tests / observation |
 | --- | --- |
-| `core/src/document.rs`, `sheet.rs` | `projected_ink_coalesces_marked_pieces_at_exact_capacity`, `segment_ink_and_its_clone_have_independent_wiping_owners`: exact coalescing, clone independence and live-allocation wipe. |
+| `core/src/document.rs`, `sheet.rs` | `projected_ink_coalesces_marked_pieces_at_exact_capacity`, `segment_ink_and_its_clone_have_independent_wiping_owners`: exact coalescing, clone independence and live-allocation wipe. `doc_run_debug_output_never_prints_its_ink`, `segment_debug_output_never_prints_its_ink`: redacted `Debug` (C48). |
 | `core/src/ink.rs`, `files.rs` | `text_projection_is_exact_and_zeroizing_including_sentinels`, `normalization_and_file_projections_are_exact_zeroizing_text`: zeroizing result types, exact capacity, Unicode/sentinels and mixed newlines. |
 | `core/src/store.rs` | `simulated_ink_uses_one_reserved_wiping_allocation`, `a_late_surrogate_refusal_leaves_the_document_unchanged`: stable allocation through inserts, overflow refusal, code-unit wipe and atomic late refusal. `an_insert_past_the_reserved_room_panics_in_tests_and_refuses_in_release`, `a_chip_past_the_reserved_room_panics_in_tests_and_refuses_in_release`: an accounting drift in `apply_ops` trips a `debug_assert!` under test and refuses without growing in release. |
 | `ffi/src/content_json.rs` | `exact_nul_encoding_matches_serde_and_wipes_the_live_allocation`: empty/escaped/Unicode/large output, terminal NUL, explicit live-allocation wipe; not post-free memory inspection. |

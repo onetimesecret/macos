@@ -122,12 +122,21 @@ impl EditIntent {
 }
 
 /// One run of the body: contiguous ink between chips, or one chip.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum DocRun {
     /// Visible, editable text.
     Ink(Zeroizing<String>),
     /// A sealed chip, present in the body as one sentinel character.
     Chip(ItemId),
+}
+
+impl std::fmt::Debug for DocRun {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ink(_) => formatter.write_str("Ink([REDACTED])"),
+            Self::Chip(id) => formatter.debug_tuple("Chip").field(id).finish(),
+        }
+    }
 }
 
 /// An edit whose offsets name no position in the body; the body is unchanged.
@@ -1213,6 +1222,21 @@ mod tests {
             assert_eq!(text.as_ptr(), pointer);
         }
         assert!(SheetDocument::new().runs().is_empty());
+    }
+
+    #[test]
+    fn doc_run_debug_output_never_prints_its_ink() {
+        let chip = ItemId::random();
+        let runs = vec![
+            DocRun::Ink(Zeroizing::new("hunter2 🙂 deploy key".to_string())),
+            DocRun::Chip(chip),
+        ];
+        for printed in [format!("{runs:?}"), format!("{runs:#?}")] {
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(!printed.contains("deploy"), "{printed}");
+        }
+        assert_eq!(format!("{:?}", runs[0]), "Ink([REDACTED])");
+        assert_eq!(format!("{:?}", runs[1]), format!("Chip({chip:?})"));
     }
 
     #[test]
