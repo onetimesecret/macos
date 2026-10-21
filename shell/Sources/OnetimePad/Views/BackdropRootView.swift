@@ -373,10 +373,10 @@ struct BackdropRootView: View {
         // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())
         .gesture(dragGesture, including: raised ? .all : .subviews)
-        // A window zooms on a title-bar double-click; the header is
-        // where this card's title bar would be.
+        // The header is where this card's title bar would be, so it
+        // answers a double-click by the title bar preference (issue #298).
         .simultaneousGesture(
-            TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
+            TapGesture(count: 2).onEnded { if raised { model.headerDoubleClicked() } }
         )
     }
 

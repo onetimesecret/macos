@@ -164,13 +164,27 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// always owns.
     private let panelMayOwn: Bool
 
+    /// The system's title bar double-click preference, read on each
+    /// double-click so a change in System Settings takes at once. Seamed
+    /// for tests; the shipping reader is the global domain's own key.
+    private let titleBarDoubleClickPreference: () -> String?
+
+    /// The macOS major version the preference's default depends on.
+    private let operatingSystemMajor: Int
+
     init(
         defaults: UserDefaults = FormFactor.settingsDefaults,
         pages: PageModel? = nil,
-        panelMayOwn: Bool = true
+        panelMayOwn: Bool = true,
+        titleBarDoubleClickPreference: @escaping () -> String? = {
+            UserDefaults.standard.string(forKey: BackdropModel.titleBarDoubleClickKey)
+        },
+        operatingSystemMajor: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
     ) {
         self.defaults = defaults
         self.panelMayOwn = panelMayOwn
+        self.titleBarDoubleClickPreference = titleBarDoubleClickPreference
+        self.operatingSystemMajor = operatingSystemMajor
         geometry = BackdropGeometry.load(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
@@ -834,16 +848,67 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// zoomed header stays where a double-click can still reach it to
     /// come back down.
     func toggleZoom() {
+        var zoomed = geometry
+        zoomed.origin.y = pane.minY
+        zoomed.height = pane.height
+        toggle(to: zoomed)
+    }
+
+    /// Fill: the card takes the whole pane, and a second double-click
+    /// returns it, by the same remembered geometry as the zoom.
+    func toggleFill() {
+        toggle(to: BackdropGeometry(origin: pane.origin, width: pane.width, height: pane.height))
+    }
+
+    /// Out to `target`, or back to the geometry an earlier trip left.
+    private func toggle(to target: BackdropGeometry) {
         if let restored = zoomRestore {
             zoomRestore = nil
             applyGeometry(restored.clamped(to: pane))
             return
         }
         zoomRestore = geometry
-        var zoomed = geometry
-        zoomed.origin.y = pane.minY
-        zoomed.height = pane.height
-        applyGeometry(zoomed.clamped(to: pane))
+        applyGeometry(target.clamped(to: pane))
+    }
+
+    /// The key the system stores the title bar double-click preference
+    /// under (System Settings, Desktop & Dock).
+    static let titleBarDoubleClickKey = "AppleActionOnDoubleClick"
+
+    /// What a title bar double-click does, read off the preference.
+    enum TitleBarDoubleClick: Equatable {
+        /// Fill: the card takes the whole pane.
+        case fill
+        /// Zoom, stored as Maximize: full working height, width kept.
+        case zoom
+        /// Minimize, which a card cannot do, and Do Nothing.
+        case none
+    }
+
+    /// The preference's four values and its default, which the system
+    /// moved from Zoom to Fill in macOS 15 (issue #298).
+    nonisolated static func titleBarDoubleClick(
+        preference: String?, operatingSystemMajor: Int
+    ) -> TitleBarDoubleClick {
+        switch preference {
+        case "Fill": .fill
+        case "Maximize": .zoom
+        case "Minimize", "None": .none
+        default: operatingSystemMajor >= 15 ? .fill : .zoom
+        }
+    }
+
+    /// Double-click the header: the title bar verb the person chose in
+    /// System Settings, as a window's own title bar reads it.
+    func headerDoubleClicked() {
+        switch Self.titleBarDoubleClick(
+            preference: titleBarDoubleClickPreference(),
+            operatingSystemMajor: operatingSystemMajor
+        ) {
+        case .zoom: toggleZoom()
+        case .fill: toggleFill()
+        case .none: break
+        }
     }
 
     /// The geometry a zoom is holding for its return trip, if the card
