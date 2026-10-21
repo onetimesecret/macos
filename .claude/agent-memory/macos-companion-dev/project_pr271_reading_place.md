@@ -1,6 +1,6 @@
 ---
 name: pr271-reading-place
-description: PR 271 (fix/editor-preference) roll reading place rules; readingPlace survives restoring passes, RollPlace knows source vs preview and the top edge, dismantle removeObserver is load bearing, remote sync restates all but the mounted storage, AppKit widens a styled insertion's edited range to the paragraph end
+description: PR 271 (fix/editor-preference) roll reading place rules; readingPlace survives restoring passes, RollPlace knows source vs preview and the top edge, dismantle must unpick the editor's frame watch, a whole range edit keeps the place only when the projection wrote it, remote sync restates all but the mounted storage, AppKit widens a styled insertion's edited range to the paragraph end
 metadata:
   type: project
 ---
@@ -17,9 +17,12 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
   position map exists. Defaults keep `RollPlace(page:anchor:)` compiling.
 - A reseed of the reading page's region rebases the index by common suffix then prefix
   (`RollPlace.rebased`); suffix first so text arriving at the anchor goes above it.
-- `NotificationCenter.default.removeObserver(stack)` in `DayScrollView.dismantleNSView`
-  is required: without it `testTheRollAnswersAJumpFromTheRailUntilItIsDismantled` fails
-  (the dismantled roll's clip moves from 120 to 32).
+- `DayScrollView.dismantleNSView` calls `stack.unobserveEditor()` (2026-10-20, was a blanket
+  `removeObserver(stack)`): it takes off the mounted storage watch and the editor's frame and
+  text watches. The editor's frame watch is the one that matters: `leavePage` resizes the
+  editor while the dismantled roll stands, and with that watch left on
+  `testTheRollAnswersAJumpFromTheRailUntilItIsDismantled` fails (clip 120 to 40). The clip and
+  model registrations from `observeRoll` stay; they are zeroing.
 - Remote sync: `onRemoteChange` now hands over the applied pages, and
   `PageModel.settleRemoteEdits` drops their quiet renderings and restates any storage with
   no layout manager (`testAPeersEditReachesAQuietDayAndThePageTheEditorLeft`). The
@@ -47,6 +50,22 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
   level replace at the item start) and `insertText` of an attributed string. Hence the
   rebase moves an index inside an edited span by delta, except a whole restate (the storage
   length is passed in). The emission (`editOps`) then sends del plus ins of that whole span.
+- Fourth round (2026-10-20): a styled insertion on a page of ONE paragraph with no newline is
+  reported as (0, whole length), the restate's shape, so `RollPlace.rebased` now takes
+  `byProjection` (read from `PageModel.isApplyingProjection` inside `mountedStorageEdited`) and
+  keeps the index only for a projection write of the whole text. Every whole restate of an
+  editor storage runs inside `applyingProjection` (restateStorage: undo, redo, sync, file
+  recovery; showNote). A test through `insertText` cannot see the rebase: the reveal of the caret
+  moves the clip afterwards, so the test inserts through the storage.
+- Typing with the caret scrolled out of view: the reveal wins without help, because the clip
+  moving outside a pass recaptures `readingPlace` in `rollScrolled`
+  (`testTypingWithTheCaretScrolledOutOfViewRevealsTheCaret` pins it).
+- With legacy scrollers, setting `hasHorizontalScroller` tiles the clip synchronously and its
+  frame notification runs a whole `relayout` (measured), which is why the toggle stays inside
+  the `isLayingOut` gate. Overlay scrollers start no pass.
+- Block pills are placed again on a clip bounds change only when `blockAffordanceMeasure`
+  moved (`placedBlockMeasure`); not gated on minX, because the editor's visibleRect is empty
+  while it is scrolled out of view on the roll.
 - `readingPlace` is restored whenever there is one; `currentPlace` is the only gate. A place
   taken at the top edge (`RollPlace.atTop`) restores only `x`, which keeps Day 0 at the top
   when a day is prepended (`testPrependingAndReorderingAtHorizontalOnlyOffsets...`).
