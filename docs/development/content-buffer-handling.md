@@ -104,8 +104,8 @@ This changes the final allocation; it does not retroactively wipe earlier
 | F08 | `sheet_copy_fragment`, `sheet_cut_fragment` | Envelope JSON as a string, plus public text; **Z + W**, borrowed `Copied` fields | Implemented Rust output; refusal object is metadata. Owned lossy-UTF-8 fallback is wiped after serialization, but its construction is not a wiping-growth implementation. Fragment names/parser and Swift envelope/text remain C19–C22 / S01. |
 | F09 | `sheet_paste_fragment`, `sheet_paste_active_cut`, `sheet_move_range`, `sheet_move_range_to`, `sheet_clone_range` | Placement ranges/counts, unreadable/expiry flags; **N + W** output | Implemented output; content input and core temporaries remain separate work. |
 | F10 | `active_cut_json` | Object excerpts and names, plus page id; **Z + W**, borrowed faces | Implemented output; core and Swift active-cut storage are not fixed by this. |
-| F11 | `tabs_json` | Typed/derived titles and tab metadata; **Z + W** | Implemented output and zeroizing temporary label; upstream title/name construction remains C13–C15. |
-| F12 | `ledger_json` | Titles and event metadata; **Z + W**, borrowed title | Implemented output; resident and restored title owners remain C16 / C31. |
+| F11 | `tabs_json` | Typed/derived titles and tab metadata; **Z + W** | Implemented output and zeroizing temporary label; upstream title/name construction is C13–C15, implemented 2026-10-21. |
+| F12 | `ledger_json` | Titles and event metadata; **Z + W**, borrowed title | Implemented output; the resident and restored title owner is C16, implemented 2026-10-21; the restored chip owners remain C31. |
 | F13 | `sheet_document_json` | All ink, object excerpts/names; **Z + W**, borrowed `DocumentRuns` | Implemented output without content `Value` copies; projection owners C02/C03 now wipe, while upstream Loro allocations remain C01. |
 | F14 | `sheet_meta_json`, `sheet_blocks_json` | Stamps, block ids and counts; **N + W** | Implemented content-free shape as inspected; not permission to add block text to these serializers. |
 | F15 | `connection_json`, `connection_test` | Connection state and result/error metadata; **N + W** | Implemented; no page text in the inspected output. |
@@ -147,7 +147,7 @@ silently exempting an existing content copy.
 | C10 | `SealedChip.name` | **W** resident/name-update owner | **Planned**: ordinary `Option<String>` remains, including transfer and restore assignments (`core/src/sheet.rs`, `store.rs`, `transfer.rs`, `persist.rs`). |
 | C11 | `SealedChip.note`, `Note` | **W** document and projection | **Partial/Blocked**: `Note::text` is zeroizing and exact; underlying Loro has C01's limits (`core/src/note.rs`). |
 | C12 | `SealedChip.bytes` | **W**, fixed `SecretBuffer` | **Implemented** for this owner: `core/src/secret.rs` wipes length and spare capacity on drop; no resizing API. Text attempts page locking; images use the unlocked constructor. This is not evidence of successful OS page locking for every allocation. |
-| C13 | `Sheet.derived_title`, `derive_title` / `strip_markdown` | **W**, bounded exact construction | **W — implemented** resident owner (2026-10-21): `derived_title` and `derive_title`'s result are `Zeroizing<String>`; the first line's trimmed copy and `strip_markdown`'s result are wrapped as they are made, and the cap is taken by `capped_title`, one allocation at the exact size. `strip_markdown`'s own building scratch remains ordinary (`core/src/sheet.rs`). |
+| C13 | `Sheet.derived_title`, `derive_title` / `strip_markdown` | **W**, bounded exact construction | **W — implemented** resident owner (2026-10-21): `derived_title` and `derive_title`'s result are `Zeroizing<String>`; the first line's trimmed copy is wrapped as it is made, `strip_markdown` and `flatten_links` build in wiping owners sized once from the line, and the cap is cut in place (`core/src/sheet.rs`). |
 | C14 | `Tab.name` | **W**, bounded exact construction | **W — implemented** resident owner (2026-10-21): `Option<Zeroizing<String>>` on the tab, the set and the restore taking the cap through `capped_title`, one allocation at the exact size with no growing scratch (`core/src/store.rs`, `sheet.rs`, `persist.rs`). |
 | C15 | `Tab::label` result | **W** temporary | **W — implemented** (2026-10-21): `label` returns `Zeroizing<String>`, so every ledger label and F11 are wiping temporaries; `TabSummary.title` takes it without a re-wrap. What remains is the route's, not this owner's: serde_json's writer path and the C string buffer (F11, C28). |
 | C16 | `LedgerRecord.title` | **W** resident/restored title | **W — implemented** resident and restored owner (2026-10-21): `Zeroizing<String>` on the record, the restore taking the cap through `capped_title` at the exact size, and the record's `Debug` writing `[REDACTED]` for it (`core/src/ledger.rs`, `store.rs`, `persist.rs`). F12 borrows it; persistence output is separately C28. No new retention policy is established here. |
@@ -366,9 +366,11 @@ pass, caching the length per document revision is one option to evaluate.
 B4's explicit Swift boundary validation is resolved by source inspection and
 the parent-reported focused results; it is no longer a blocker. C02–C05, C07
 and C06 normalization are implemented; C06's FFI reader remains unresolved.
+C13–C16 are implemented (2026-10-21): the derived title, the tab name, the
+tab label and the ledger title are wiping owners.
 
-1. **B1 — remaining core ownership:** implement and test C08–C10, C13–C17,
-   C19–C21 and C27/C31: parser/refusal cleanup, resident excerpt/name/title/origin
+1. **B1 — remaining core ownership:** implement and test C08–C10, C17,
+   C19–C21 and C27/C31: parser/refusal cleanup, resident excerpt/name/origin
    copies, fragment wire names and restored owners. Also restrict or return a
    wiping owner from `OpenFile::bytes_to_write`; current in-tree callers are tests.
 2. **B2 — dependency storage and parsing:** resolve C01/C29 and escaped-string

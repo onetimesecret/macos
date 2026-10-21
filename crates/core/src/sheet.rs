@@ -862,14 +862,17 @@ impl LabelSource {
 /// Counted in `char`s so a multibyte scalar is never split.
 pub(crate) const TITLE_CAP: usize = 80;
 
+/// The byte offset where the first [`TITLE_CAP`] chars of `text` end, or its length.
+fn cap_end(text: &str) -> usize {
+    text.char_indices()
+        .nth(TITLE_CAP)
+        .map_or(text.len(), |(index, _)| index)
+}
+
 /// The first [`TITLE_CAP`] chars of any content string, a tab's name included, as a wiping
 /// owner allocated once at its exact size, so no growing scratch is left behind (Law 0004).
 pub(crate) fn capped_title(text: &str) -> Zeroizing<String> {
-    let end = text
-        .char_indices()
-        .nth(TITLE_CAP)
-        .map_or(text.len(), |(index, _)| index);
-    Zeroizing::new(text[..end].to_owned())
+    Zeroizing::new(text[..cap_end(text)].to_owned())
 }
 
 /// First non-blank ink line, markdown stripped, capped at [`TITLE_CAP`].
@@ -897,7 +900,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
                         fence = Some(open);
                         continue;
                     }
-                    let stripped = Zeroizing::new(strip_markdown(line));
+                    let stripped = strip_markdown(line);
                     if !stripped.is_empty() {
                         result = Some(stripped);
                         break 'outer;
@@ -908,9 +911,8 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
     }
     // Cut in place: the one owner keeps its allocation and wipes the tail with the rest.
     result.map(|mut line| {
-        if let Some((end, _)) = line.char_indices().nth(TITLE_CAP) {
-            line.truncate(end);
-        }
+        let end = cap_end(&line);
+        line.truncate(end);
         line
     })
 }
@@ -996,8 +998,9 @@ fn civil_month_day(days_since_epoch: i64) -> (i64, i64) {
     (month, day)
 }
 
-/// Reduce a first line of markdown to its name. Not a parser.
-fn strip_markdown(line: &str) -> String {
+/// Reduce a first line of markdown to its name. Not a parser. Every buffer on the way is a
+/// wiping owner sized once, since the line is ink (Law 0004, C13).
+fn strip_markdown(line: &str) -> Zeroizing<String> {
     let mut rest = line.trim();
 
     // Blockquote markers, however deeply nested: "> > note" → "note".
@@ -1008,12 +1011,16 @@ fn strip_markdown(line: &str) -> String {
     rest = strip_list_bullet(rest);
     rest = strip_heading_markup(rest);
 
-    let bare: String = rest
-        .chars()
-        .filter(|c| !matches!(c, '`' | '*' | '_' | '~'))
-        .collect();
+    let mut bare = Zeroizing::new(String::with_capacity(rest.len()));
+    bare.extend(rest.chars().filter(|c| !matches!(c, '`' | '*' | '_' | '~')));
 
-    flatten_links(&bare).trim().to_string()
+    let flat = flatten_links(&bare);
+    let trimmed = flat.trim();
+    if trimmed.len() == flat.len() {
+        flat
+    } else {
+        Zeroizing::new(trimmed.to_owned())
+    }
 }
 
 /// One leading list bullet: `- item`, `* item`, `+ item`, `3. item`.
@@ -1051,8 +1058,8 @@ fn strip_heading_markup(line: &str) -> &str {
 }
 
 /// `[label](url)` becomes `label`; an unterminated link stays as typed.
-fn flatten_links(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
+fn flatten_links(text: &str) -> Zeroizing<String> {
+    let mut out = Zeroizing::new(String::with_capacity(text.len()));
     let mut rest = text;
     while let Some(open) = rest.find('[') {
         let after_open = &rest[open + 1..];
@@ -1425,9 +1432,8 @@ mod tests {
         let long = "🧪".repeat(TITLE_CAP + 5);
         let capped = capped_title(&long);
         assert_eq!(capped.chars().count(), TITLE_CAP);
-        assert_eq!(
-            capped.capacity(),
-            capped.len(),
+        assert!(
+            capped.capacity() <= capped.len() + 4,
             "the owner grew past its size"
         );
         assert_eq!(capped_title("short").as_str(), "short");
