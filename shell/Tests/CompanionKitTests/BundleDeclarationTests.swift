@@ -127,26 +127,25 @@ final class BundleDeclarationTests: XCTestCase {
         )
     }
 
-    /// ⌘N belongs to the pad because nothing in AppKit is holding it
-    /// (issue #77).
-    ///
-    /// The stock New item is a document-based app's, and this app has
-    /// no document model: no declared document types here, and no
-    /// window or document scene in `BackdropApp`, whose only scene is
-    /// the Settings placeholder. Declaring a document type would hand
-    /// AppKit a File menu with its own ⌘N in it, and a main-menu key
-    /// equivalent wins over the surface's hidden buttons, so the chord
-    /// the keymap installs would quietly stop reaching the pad. That is
-    /// a subtle enough failure to be worth a test that names it.
-    func testTheBundleClaimsNoDocumentTypesSoTheNewChordIsTheKeymaps() throws {
+    /// Open With lists the pad for text files, never as their default app.
+    /// No NSDocumentClass, which issue #77 relies on to keep ⌘N for page::New.
+    func testTheBundleOpensTextAsAnAlternateEditorWithNoDocumentClass() throws {
         let plist = Self.shellDirectory.appendingPathComponent("OnetimePad-Info.plist")
         let data = try Data(contentsOf: plist)
         let parsed = try PropertyListSerialization.propertyList(
             from: data, options: [], format: nil)
         let keys = try XCTUnwrap(parsed as? [String: Any])
+        let types = try XCTUnwrap(
+            keys["CFBundleDocumentTypes"] as? [[String: Any]],
+            "with no document type the Finder greys the pad out under Open With")
 
+        XCTAssertEqual(types.count, 1)
+        let text = try XCTUnwrap(types.first)
+        XCTAssertEqual(text["CFBundleTypeRole"] as? String, "Editor")
+        XCTAssertEqual(text["LSHandlerRank"] as? String, "Alternate")
+        XCTAssertEqual(text["LSItemContentTypes"] as? [String], ["public.plain-text"])
         XCTAssertNil(
-            keys["CFBundleDocumentTypes"],
-            "a declared document type gives AppKit its own ⌘N, which would shadow page::New")
+            text["NSDocumentClass"],
+            "a document model would bring AppKit's own New, and ⌘N belongs to page::New")
     }
 }

@@ -879,8 +879,18 @@ fn settle_frontier(
 /// page's export cursor; a resend keeps the first record, a batch the
 /// chain has moved past is dropped and its pages rewound, and nothing
 /// goes while this device's frame for the epoch waits (client protocol
-/// §4.4).
+/// §4.4). A page whose ops failed to encode is rewound to export again.
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
+    stage_publish_with(companion, now_ms, SyncSession::publish_request)
+}
+
+/// [`stage_publish`] with the session's publish handed in, so the tests
+/// can make an envelope fail to encode.
+fn stage_publish_with(
+    companion: &mut Companion,
+    now_ms: u64,
+    publish: impl FnOnce(&mut SyncSession, u64, &GopKeyChain) -> Option<ots_client::HttpRequest>,
+) -> Option<ots_client::HttpRequest> {
     let engine = companion.sync.engine.as_mut()?;
     let EngineState {
         session,
@@ -901,7 +911,14 @@ fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::H
     if unpublished_frame.is_some() || session.frame_outstanding() {
         return None;
     }
-    let request = session.publish_request(now_ms, chain)?;
+    let request = publish(session, now_ms, chain);
+    // Before the batch records its cursors, so none of them names ops it left out.
+    for page in session.take_unencoded_ops() {
+        if let Some(tracking) = companion.sync.enrolled.get_mut(&page) {
+            let _ = rewind_export(tracking);
+        }
+    }
+    let request = request?;
     let batch = session.in_flight_batch();
     let known = companion
         .sync
@@ -3096,7 +3113,73 @@ mod tests {
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(opened_envelopes(chain, &request).iter().any(|e| matches!(
             e,
-            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(&ops.0, b"no peer has")
+            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(ops.as_slice(), b"no peer has")
+        )));
+    }
+
+    #[test]
+    fn ops_that_fail_to_encode_export_again_on_the_next_sweep() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "ink the encoder refuses");
+        let other = inked_page(&mut companion, "ink that goes out");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, other, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let other_uuid = companion.store.sheet(other).unwrap().uuid();
+        let wire = crate::sync_session::page_wire_id(uuid);
+        let acked = companion.sync.enrolled[&uuid].acked.clone();
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_ne!(companion.sync.enrolled[&uuid].frontier, acked);
+
+        // The page's export fails to encode: the other page and both
+        // expiries go out, and the page's cursor goes back to what the
+        // relay acknowledged, in the batch's record too.
+        let refuse = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::Ops { page, .. } if *page == wire => None,
+            _ => envelope.encode().ok(),
+        };
+        let request = stage_publish_with(&mut companion, 0, |session, now_ms, chain| {
+            session.publish_request_with(now_ms, chain.epoch(), refuse, |plaintext| {
+                chain.seal(plaintext)
+            })
+        })
+        .expect("the other page's ops");
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, acked);
+        let staged = companion.sync.staged_batch.as_ref().unwrap();
+        assert_eq!(staged.cursors[&uuid], acked);
+        assert_eq!(
+            staged.cursors[&other_uuid],
+            companion.sync.enrolled[&other_uuid].frontier
+        );
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let sealed = opened_envelopes(chain, &request);
+        assert!(
+            !sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+        assert!(
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Expiry { page, .. } if *page == wire))
+        );
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(companion.sync.enrolled[&uuid].acked, acked);
+
+        // The next sweep exports the gap again, and an encoder that takes it sends it.
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let request = stage_publish(&mut companion, 2_000).expect("the page's ops");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(opened_envelopes(chain, &request).iter().any(|e| matches!(
+            e,
+            DeltaEnvelope::Ops { page, ops } if *page == wire && contains(ops.as_slice(), b"encoder refuses")
         )));
     }
 
@@ -3712,7 +3795,7 @@ mod tests {
         let paired_fp = pairing::identity_fingerprint(b"peer identity");
         // The roster reports the paired peer attached, plus a stranger
         // that attached with a token but never paired.
-        let package = serde_json::to_value(companion_sync::ByteBlob(vec![1; 96])).unwrap();
+        let package = serde_json::to_value(companion_sync::ByteBlob::from(vec![1; 96])).unwrap();
         let body = serde_json::json!({
             "epoch": 0, "frame_present": false, "next_seq": 0,
             "peers": [

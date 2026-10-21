@@ -811,7 +811,9 @@ fn read_page(
     let mut referenced: Vec<ChipId> = Vec::new();
     for run in document.runs() {
         match run {
-            DocRun::Ink(text) => segments.push(Segment::Ink(text)),
+            DocRun::Ink(mut text) => {
+                segments.push(Segment::Ink(std::mem::take(&mut *text)));
+            }
             DocRun::Chip(wanted) => {
                 let chip = chips.iter().find(|c| c.uuid() == wanted).ok_or(Malformed)?;
                 if referenced.contains(&chip.id) {

@@ -971,6 +971,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line at the top of the window now stays at the top, and a round
   trip returns to the same point inside the paragraph.
 
+- **The Finder opens text files in the pad** (app 0.38.1; the file
+  editing spec's Opening section). The bundle now declares plain text,
+  which takes in Markdown and source files, with the Editor role and the
+  Alternate rank, so Open With lists the pad instead of greying it out,
+  and the pad is not preferred as the default app for any of them. A
+  file opened from the Finder, or dropped on the Dock icon, opens as a
+  drop onto the pad does and selects the editor window. At launch the
+  open waits until the files the last session left open are restored.
+  While an open or save panel is up it waits until the panel returns,
+  and while a dirty file's close decision is showing under the
+  multiple pads experiment it waits until the decision is answered.
+
 - **A refusal over an object that no longer stood never says a page
   expired** (app 0.36.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001's expiry row, issue #170). Copy decrypted, Copy
@@ -1170,6 +1182,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when it takes the keyboard.
 
 ### Security
+
+- **Page text crossing the seam is written once, at its final size, and
+  wiped on release** (`companion-core` 0.33.1, `companion-ffi` 0.43.0,
+  `companion-sync` 0.5.0; Law 0004, still draft; issue #256). Every JSON
+  route that names page ink, a sealed object's excerpt or name, a tab
+  title or a ledger title now counts its output, writes it into one
+  allocation of exactly that size, and wipes it when the shell frees it,
+  with no `serde_json::Value` copy on the way. The core's run, segment,
+  text and file projections and its edit simulation wipe their
+  allocations, and the sync queue's ops, envelopes and padding live in
+  zeroizing owners. An envelope that fails to encode raises a diagnostic
+  fault instead of a panic and leaves the rest of the batch to publish:
+  a page's ops export again from the relay's acknowledged cursor on the
+  next sweep, and an expiry, hold or terminal envelope stays queued.
+  `companion_string_free` takes back only a string the core handed out,
+  at its recorded length, and leaves a static version string or any
+  other pointer alone.
+  `Segment` and `DocRun` print `Ink([REDACTED])` under `Debug`. The shell
+  decodes each JSON answer straight from the core's buffer before
+  freeing it, so an answer with invalid UTF-8 now decodes to nothing,
+  where it used to decode with U+FFFD in place of the bad bytes. Loro's
+  own storage, serde_json's parsing scratch, resident excerpts, names and
+  titles, and Swift and AppKit copies are not covered;
+  `docs/development/content-buffer-handling.md` lists each.
 
 - **No route gives out a page past its deadline** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's expiry

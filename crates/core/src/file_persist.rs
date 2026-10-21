@@ -359,13 +359,13 @@ mod tests {
         assert_eq!(files[0].path(), Path::new("/clean.txt"));
         assert!(!files[0].is_dirty());
         assert_eq!(
-            files[0].text(),
+            files[0].text().as_str(),
             "",
             "a clean file records identity only, so its buffer comes back empty"
         );
         assert_eq!(files[1].path(), Path::new("/dirty.txt"));
         assert!(files[1].is_dirty());
-        assert_eq!(files[1].text(), "typed dirty body\n");
+        assert_eq!(files[1].text().as_str(), "typed dirty body\n");
         assert_eq!(files[1].bookmark(), &[9, 8, 7, 0, 255]);
         assert_eq!(files[1].line_ending(), LineEnding::Crlf);
         assert_eq!(files[1].last_edited_at(), 42);
@@ -399,7 +399,7 @@ mod tests {
         store.refresh_conflict(&io, id);
         store.take_theirs(&io, id).unwrap();
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(store.is_dirty(id));
 
         let bytes = emit(&store, 5_000).bytes;
@@ -407,7 +407,7 @@ mod tests {
         assert!(notices.is_empty());
         let file = &back.files()[0];
         let restored = file.id();
-        assert_eq!(file.text(), "same\n");
+        assert_eq!(file.text().as_str(), "same\n");
         assert!(
             !file.is_dirty(),
             "a generation marker without its undo history cannot keep equal output dirty"
@@ -458,7 +458,7 @@ mod tests {
         store.refresh_conflict(&io, id);
         store.take_theirs(&io, id).unwrap();
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\nline\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\nline\n");
 
         let bytes = emit(&store, 5_000).bytes;
         let (mut back, notices) = relaunch(&io, &bytes);
@@ -544,7 +544,7 @@ mod tests {
         assert_eq!(back.files().len(), 2);
         assert!(!back.files()[0].is_dirty());
         assert!(back.files()[1].is_dirty());
-        assert_eq!(back.files()[1].text(), "typed dirty body\n");
+        assert_eq!(back.files()[1].text().as_str(), "typed dirty body\n");
     }
 
     #[test]
@@ -615,7 +615,7 @@ mod tests {
         let mut back = FileStore::new();
         assert_eq!(restore(&mut back, &widened, 1).unwrap(), 2);
         assert_eq!(back.files()[0].path(), Path::new("/clean.txt"));
-        assert_eq!(back.files()[1].text(), "typed dirty body\n");
+        assert_eq!(back.files()[1].text().as_str(), "typed dirty body\n");
     }
 
     fn widen_first_record(bytes: &[u8], extra: &[u8]) -> Vec<u8> {
@@ -716,7 +716,7 @@ mod tests {
         let (back, clean, dirty) = restored_only(&bytes);
         assert!(back.file(clean).unwrap().pending_hydration());
         assert!(back.file(dirty).unwrap().pending_hydration());
-        assert_eq!(back.text(clean).unwrap(), "", "nothing was read");
+        assert_eq!(back.text(clean).unwrap().as_str(), "", "nothing was read");
     }
 
     #[test]
@@ -757,8 +757,8 @@ mod tests {
                 .unwrap()
                 .contains_key(Path::new("/elsewhere.txt"))
         );
-        assert_eq!(back.text(clean).unwrap(), "");
-        assert_eq!(back.text(dirty).unwrap(), "typed dirty body\n");
+        assert_eq!(back.text(clean).unwrap().as_str(), "");
+        assert_eq!(back.text(dirty).unwrap().as_str(), "typed dirty body\n");
 
         io.put("/dirty.txt", b"somebody else wrote this\r\n");
         let _ = back.refresh_conflict(&io, dirty);
@@ -796,7 +796,7 @@ mod tests {
         assert_eq!(again.fate, HydrationFate::NotPending);
         assert_eq!(again.rebind, PathRebind::Unmoved);
         assert_eq!(back.file(clean).unwrap().path(), Path::new("/clean.txt"));
-        assert_eq!(back.text(clean).unwrap(), "clean body\n");
+        assert_eq!(back.text(clean).unwrap().as_str(), "clean body\n");
     }
 
     #[test]
@@ -813,7 +813,7 @@ mod tests {
         assert!(outcome.notice.is_none());
         let file = back.file(clean).unwrap();
         assert_eq!(file.path(), Path::new("/moved/clean.txt"));
-        assert_eq!(file.text(), "clean body\n");
+        assert_eq!(file.text().as_str(), "clean body\n");
         assert!(
             !file.externally_reloaded(),
             "a move is not a change to the file"
@@ -846,10 +846,10 @@ mod tests {
             Path::new("/dirty.txt"),
             "the recorded path stands"
         );
-        assert_eq!(back.text(dirty).unwrap(), "typed dirty body\n");
+        assert_eq!(back.text(dirty).unwrap().as_str(), "typed dirty body\n");
         let other = back.file(clean).unwrap();
         assert_eq!(other.path(), Path::new("/clean.txt"));
-        assert_eq!(other.text(), "clean body\n");
+        assert_eq!(other.text().as_str(), "clean body\n");
         let paths: HashSet<&Path> = back.files().iter().map(OpenFile::path).collect();
         assert_eq!(paths.len(), 2, "no two buffers share one path");
     }
@@ -867,7 +867,7 @@ mod tests {
         let waiting = back.file(dirty).unwrap();
         assert!(waiting.pending_hydration());
         assert_eq!(waiting.path(), Path::new("/dirty.txt"));
-        assert_eq!(waiting.text(), "typed dirty body\n");
+        assert_eq!(waiting.text().as_str(), "typed dirty body\n");
         let holder = back.file(clean).unwrap();
         assert!(holder.pending_hydration());
         assert_eq!(holder.path(), Path::new("/clean.txt"));
@@ -889,12 +889,12 @@ mod tests {
             .file(clean)
             .expect("the clean file's bookmark found it");
         assert_eq!(file.path(), Path::new("/dirty.txt"));
-        assert_eq!(file.text(), "clean body\n");
+        assert_eq!(file.text().as_str(), "clean body\n");
         assert!(!file.externally_reloaded());
         let file = back.file(dirty).unwrap();
         assert_eq!(file.path(), Path::new("/old.txt"));
         assert_eq!(file.conflict(), FileConflict::None);
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         let paths: HashSet<&Path> = back.files().iter().map(OpenFile::path).collect();
         assert_eq!(paths.len(), 2, "no two buffers share one path");
         back.save(io, dirty).unwrap();
@@ -969,7 +969,7 @@ mod tests {
         assert!(file.externally_reloaded());
         let file = back.file(dirty).unwrap();
         assert_eq!(file.path(), Path::new("/dirty.txt"));
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         assert_eq!(file.conflict(), FileConflict::Changed);
     }
 
@@ -987,7 +987,7 @@ mod tests {
 
         let file = back.file(dirty).unwrap();
         assert!(file.pending_hydration());
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         let outcome = back.hydrate_one(&io, dirty, None);
         assert_eq!(outcome.fate, HydrationFate::Kept);
         assert!(outcome.notice.is_none());
@@ -1012,12 +1012,16 @@ mod tests {
         assert_eq!(held.path(), Path::new("/clean.txt"));
         assert!(held.pending_hydration());
         assert!(held.access_refused());
-        assert_eq!(held.text(), "");
+        assert_eq!(held.text().as_str(), "");
         assert!(!held.is_dirty());
 
         let file = &back.files()[1];
         assert!(!file.pending_hydration());
-        assert_eq!(file.text(), "typed dirty body\n", "the draft is not lost");
+        assert_eq!(
+            file.text().as_str(),
+            "typed dirty body\n",
+            "the draft is not lost"
+        );
         assert!(file.is_dirty());
         assert_eq!(file.conflict(), FileConflict::Changed);
         assert!(file.access_refused(), "so take theirs has nothing to take");
@@ -1054,7 +1058,7 @@ mod tests {
         let file = back.file(held).unwrap();
         assert!(!file.pending_hydration());
         assert!(!file.access_refused());
-        assert_eq!(file.text(), "clean body\n");
+        assert_eq!(file.text().as_str(), "clean body\n");
         assert!(back.apply_ops(held, &typed, 9_000));
     }
 
@@ -1085,7 +1089,7 @@ mod tests {
         let file = &back.files()[0];
         assert!(!file.pending_hydration());
         assert!(!file.access_refused());
-        assert_eq!(file.text(), "clean body\n");
+        assert_eq!(file.text().as_str(), "clean body\n");
     }
 
     #[test]
@@ -1132,7 +1136,11 @@ mod tests {
         let file = back.file(id).unwrap();
         assert_eq!(file.path(), Path::new("/moved/dirty.txt"));
         assert_eq!(file.conflict(), FileConflict::None, "the same generation");
-        assert_eq!(file.text(), "typed dirty body\n", "the draft stands");
+        assert_eq!(
+            file.text().as_str(),
+            "typed dirty body\n",
+            "the draft stands"
+        );
         assert!(file.is_dirty());
         assert!(!file.access_refused());
 
@@ -1179,7 +1187,7 @@ mod tests {
         );
         let file = store.file(dirty).unwrap();
         assert_eq!(file.conflict(), FileConflict::None);
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         assert!(file.is_dirty());
         assert_eq!(file.line_ending(), LineEnding::Crlf);
         store.save(&io, dirty).unwrap();
@@ -1208,11 +1216,18 @@ mod tests {
         assert_eq!(file.path(), Path::new("/found.txt"));
         assert_eq!(file.conflict(), FileConflict::Changed);
         assert!(!file.access_refused(), "the disk copy was read");
-        assert_eq!(file.text(), "typed dirty body\n", "the draft stands");
+        assert_eq!(
+            file.text().as_str(),
+            "typed dirty body\n",
+            "the draft stands"
+        );
         assert_eq!(back.save(&io, id), Err(SaveError::Conflict));
 
         back.take_theirs(&io, id).unwrap();
-        assert_eq!(back.text(id).unwrap(), "somebody else wrote this\n");
+        assert_eq!(
+            back.text(id).unwrap().as_str(),
+            "somebody else wrote this\n"
+        );
         assert!(!back.is_dirty(id));
     }
 
@@ -1226,7 +1241,7 @@ mod tests {
         );
         let file = store.file(clean).unwrap();
         assert_eq!(file.path(), Path::new("/moved/clean.txt"));
-        assert_eq!(file.text(), "clean body\n");
+        assert_eq!(file.text().as_str(), "clean body\n");
         assert!(!file.is_dirty());
         assert!(!file.externally_reloaded(), "a move is not a change");
 
@@ -1236,7 +1251,7 @@ mod tests {
             Ok(None)
         );
         let file = store.file(clean).unwrap();
-        assert_eq!(file.text(), "another text\n");
+        assert_eq!(file.text().as_str(), "another text\n");
         assert!(!file.is_dirty());
         assert_eq!(file.conflict(), FileConflict::None);
         assert!(file.externally_reloaded());
@@ -1258,7 +1273,7 @@ mod tests {
         assert!(!file.pending_hydration());
         assert!(!file.access_refused());
         assert_eq!(file.path(), Path::new("/granted/clean.txt"));
-        assert_eq!(file.text(), "clean body\n");
+        assert_eq!(file.text().as_str(), "clean body\n");
         assert!(!file.is_dirty());
         back.save(&io, held).unwrap();
     }
@@ -1275,8 +1290,8 @@ mod tests {
         let file = store.file(dirty).unwrap();
         assert_eq!(file.path(), Path::new("/dirty.txt"));
         assert_eq!(file.conflict(), FileConflict::Missing);
-        assert_eq!(file.text(), "typed dirty body\n");
-        assert_eq!(store.text(clean).unwrap(), "clean body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
+        assert_eq!(store.text(clean).unwrap().as_str(), "clean body\n");
     }
 
     #[test]
@@ -1317,7 +1332,7 @@ mod tests {
         assert_eq!(file.path(), Path::new("/dirty.txt"));
         assert_eq!(file.conflict(), FileConflict::Changed);
         assert!(file.access_refused());
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
 
         assert_eq!(
             back.relocate(
@@ -1495,7 +1510,11 @@ mod tests {
             FileConflict::None,
             "a clean file never enters a conflict"
         );
-        assert_eq!(file.text(), "clean body\n", "the buffer is as it was");
+        assert_eq!(
+            file.text().as_str(),
+            "clean body\n",
+            "the buffer is as it was"
+        );
 
         let _ = store.refresh_conflict(&io, clean);
         assert_eq!(store.save(&io, clean), Err(SaveError::NotFound));
@@ -1520,7 +1539,7 @@ mod tests {
         let file = store.file(dirty).unwrap();
         assert!(file.not_found());
         assert!(file.is_dirty(), "the draft stands");
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         assert_eq!(file.conflict(), FileConflict::Missing);
         assert_eq!(store.save(&io, dirty), Err(SaveError::Conflict));
 
@@ -1585,7 +1604,7 @@ mod tests {
             "a move that changed no word must not empty the undo stack"
         );
         assert!(store.undo(dirty).unwrap().applied);
-        assert_eq!(store.text(dirty).unwrap(), "dirty body\n");
+        assert_eq!(store.text(dirty).unwrap().as_str(), "dirty body\n");
         assert!(store.is_dirty(dirty), "and dirtiness is still truthful");
     }
 
@@ -1611,7 +1630,7 @@ mod tests {
         io.put("/dirty.txt", b"theirs\n");
         let _ = store.refresh_conflict(&io, dirty);
         store.take_theirs(&io, dirty).unwrap();
-        assert_eq!(store.text(dirty).unwrap(), "theirs\n");
+        assert_eq!(store.text(dirty).unwrap().as_str(), "theirs\n");
         assert!(!store.is_dirty(dirty));
 
         io.rename("/dirty.txt", "/moved/dirty.txt");
@@ -1622,7 +1641,7 @@ mod tests {
         assert!(store.can_undo(dirty));
         assert!(store.undo(dirty).unwrap().applied);
         assert_eq!(
-            store.text(dirty).unwrap(),
+            store.text(dirty).unwrap().as_str(),
             "typed dirty body\n",
             "the draft that was set aside comes back"
         );
@@ -1641,7 +1660,7 @@ mod tests {
             store.relocate(&io, dirty, Path::new("/other.txt")),
             Ok(None)
         );
-        assert_eq!(store.text(dirty).unwrap(), "another text\n");
+        assert_eq!(store.text(dirty).unwrap().as_str(), "another text\n");
         assert!(
             !store.can_undo(dirty),
             "the old steps are not steps of this text"
@@ -1658,7 +1677,11 @@ mod tests {
         );
         let file = store.file(clean).unwrap();
         assert!(file.access_refused());
-        assert_eq!(file.text(), "clean body\n", "the buffer is as it was");
+        assert_eq!(
+            file.text().as_str(),
+            "clean body\n",
+            "the buffer is as it was"
+        );
 
         io.remove("/clean.txt");
         assert_eq!(
@@ -1709,7 +1732,7 @@ mod tests {
 
         let (back, notices) = relaunch(&io, &again.bytes);
         assert_eq!(back.files().len(), 2);
-        assert_eq!(back.files()[1].text(), "dirty body\n");
+        assert_eq!(back.files()[1].text().as_str(), "dirty body\n");
         assert!(!back.files()[1].is_dirty());
         assert_eq!(notices.len(), 1);
         assert_eq!(notices[0].reason, DroppedReason::DraftTooLarge);
@@ -1717,7 +1740,7 @@ mod tests {
         let (pending, _clean, _dirty) = restored_only(&bytes);
         let (back, notices) = relaunch(&io, &emit(&pending, 3_000).bytes);
         assert!(notices.is_empty());
-        assert_eq!(back.files()[1].text(), "typed dirty body\n");
+        assert_eq!(back.files()[1].text().as_str(), "typed dirty body\n");
         assert!(back.files()[1].is_dirty());
     }
 
@@ -1728,7 +1751,7 @@ mod tests {
         let (back, notices) = relaunch(&io, &bytes);
         let file = &back.files()[0];
         assert_eq!(file.path(), Path::new("/clean.txt"));
-        assert_eq!(file.text(), "clean body\n", "filled from disk");
+        assert_eq!(file.text().as_str(), "clean body\n", "filled from disk");
         assert!(!file.is_dirty());
         assert!(!file.externally_reloaded(), "nothing to say about it");
         assert!(
@@ -1746,7 +1769,7 @@ mod tests {
         let (mut back, notices) = relaunch(&io, &bytes);
         let id = back.files()[0].id();
         let file = back.file(id).unwrap();
-        assert_eq!(file.text(), "somebody else wrote this\n");
+        assert_eq!(file.text().as_str(), "somebody else wrote this\n");
         assert!(!file.is_dirty(), "a clean copy reloads without asking");
         assert_eq!(file.conflict(), crate::files::FileConflict::None);
         assert!(file.externally_reloaded(), "the shell owes one notice");
@@ -1791,7 +1814,11 @@ mod tests {
         assert!(notices.is_empty());
         let id = back.files()[1].id();
         let file = back.file(id).unwrap();
-        assert_eq!(file.text(), "typed dirty body\n", "the draft stands");
+        assert_eq!(
+            file.text().as_str(),
+            "typed dirty body\n",
+            "the draft stands"
+        );
         assert!(file.is_dirty());
         assert_eq!(file.conflict(), crate::files::FileConflict::None);
         assert_eq!(file.line_ending(), LineEnding::Crlf);
@@ -1805,7 +1832,7 @@ mod tests {
             }],
             50_000,
         ));
-        assert_eq!(back.text(id).unwrap(), "dirty body\n");
+        assert_eq!(back.text(id).unwrap().as_str(), "dirty body\n");
         assert!(!back.is_dirty(id), "back at the file's own text is clean");
     }
 
@@ -1817,7 +1844,7 @@ mod tests {
         let (mut back, notices) = relaunch(&io, &bytes);
         assert!(notices.is_empty());
         let id = back.files()[1].id();
-        assert_eq!(back.text(id).unwrap(), "typed dirty body\n");
+        assert_eq!(back.text(id).unwrap().as_str(), "typed dirty body\n");
         assert!(back.is_dirty(id));
         assert_eq!(
             back.file(id).unwrap().conflict(),
@@ -1836,7 +1863,7 @@ mod tests {
         let (back, notices) = relaunch(&io, &bytes);
         assert!(notices.is_empty(), "a draft is never dropped silently");
         let file = &back.files()[1];
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         assert!(file.is_dirty());
         assert_eq!(file.conflict(), crate::files::FileConflict::Missing);
     }
@@ -1849,7 +1876,7 @@ mod tests {
         let (back, notices) = relaunch(&io, &bytes);
         assert!(notices.is_empty());
         let file = &back.files()[1];
-        assert_eq!(file.text(), "typed dirty body\n");
+        assert_eq!(file.text().as_str(), "typed dirty body\n");
         assert!(file.is_dirty());
         assert_eq!(
             file.conflict(),
@@ -1876,7 +1903,7 @@ mod tests {
         let notices = store.hydrate_restored(&io);
         assert!(notices.is_empty());
         assert_eq!(store.files().len(), 2);
-        assert_eq!(store.text(clean).unwrap(), "clean body\n");
+        assert_eq!(store.text(clean).unwrap().as_str(), "clean body\n");
     }
 
     #[test]
@@ -1904,7 +1931,11 @@ mod tests {
         assert_eq!(back.files().len(), 2, "the file itself still came back");
         let file = &back.files()[1];
         assert_eq!(file.path(), Path::new("/dirty.txt"));
-        assert_eq!(file.text(), "dirty body\n", "filled from disk instead");
+        assert_eq!(
+            file.text().as_str(),
+            "dirty body\n",
+            "filled from disk instead"
+        );
         assert!(!file.is_dirty(), "there is no draft to be dirty against");
         assert_eq!(notices.len(), 1);
         assert_eq!(notices[0].name, "dirty.txt");
@@ -1924,7 +1955,7 @@ mod tests {
         assert!(held.pending_hydration());
         assert!(held.access_refused());
         assert!(held.is_dirty(), "dirty in name only");
-        assert_eq!(held.text(), "", "there is no draft in the buffer");
+        assert_eq!(held.text().as_str(), "", "there is no draft in the buffer");
         assert_eq!(held.conflict(), FileConflict::None);
         assert_eq!(back.save(&io, id), Err(SaveError::PendingHydration));
 
@@ -1934,7 +1965,7 @@ mod tests {
         assert_eq!(outcome.notice.unwrap().reason, DroppedReason::DraftTooLarge);
         let file = back.file(id).unwrap();
         assert!(!file.is_dirty());
-        assert_eq!(file.text(), "dirty body\n");
+        assert_eq!(file.text().as_str(), "dirty body\n");
     }
 
     fn strip_the_dirty_snapshot(bytes: &[u8]) -> Vec<u8> {

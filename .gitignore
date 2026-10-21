@@ -38,3 +38,5 @@ secrets/
 [0-9][0-9][0-9][0-9]*-*.md
 !/docs/spec/design/*.md
 .agent-telemetry
+
+.zed/*

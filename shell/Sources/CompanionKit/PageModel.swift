@@ -456,6 +456,8 @@ public final class PageModel: ObservableObject {
 
     /// The dirty file whose close request is awaiting an inline outcome.
     @Published public private(set) var pendingFileClose: PendingFileClose?
+    /// `openFile(at:)` refuses while this is true; the Finder's opens wait on it instead.
+    public var openRefusedForCloseDecision: Bool { pads.isEnabled && pendingFileClose != nil }
     private var selectionBeforePendingFileClose: UInt64?
     private var ledgerBeforePendingFileClose = false
 
@@ -3739,7 +3741,7 @@ public final class PageModel: ObservableObject {
     /// reads the file afresh. One that is still held is refused by the
     /// core, and the refusal is said like any other.
     public func openFile(at url: URL) {
-        if pads.isEnabled, pendingFileClose != nil {
+        if openRefusedForCloseDecision {
             flash("Finish the file close decision before opening another file.")
             return
         }
