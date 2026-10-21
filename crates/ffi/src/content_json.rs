@@ -18,8 +18,17 @@ use zeroize::{Zeroize, Zeroizing};
 struct CStringBuffer(Box<[u8]>);
 
 impl CStringBuffer {
-    fn zeroed(len: usize) -> Self {
-        Self(vec![0; len].into_boxed_slice())
+    /// Room for `body` bytes and the terminal NUL, zeroed; `None` when that overflows.
+    fn for_body(body: usize) -> Option<Self> {
+        Some(Self(vec![0; body.checked_add(1)?].into_boxed_slice()))
+    }
+
+    fn body_mut(&mut self) -> &mut [u8] {
+        self.0.split_last_mut().map_or(&mut [], |(_, body)| body)
+    }
+
+    fn body(&self) -> &[u8] {
+        self.0.split_last().map_or(&[], |(_, body)| body)
     }
 
     fn into_raw(mut self) -> *mut c_char {
@@ -65,12 +74,9 @@ impl Write for Count {
 fn encode<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<CStringBuffer> {
     let mut count = Count(0);
     serde_json::to_writer(&mut count, value)?;
-    let len = count
-        .0
-        .checked_add(1)
+    let mut output = CStringBuffer::for_body(count.0)
         .ok_or_else(|| serde_json::Error::io(io::Error::other("JSON terminator size overflow")))?;
-    let mut output = CStringBuffer::zeroed(len);
-    let mut remaining = &mut output.0[..count.0];
+    let mut remaining = output.body_mut();
     serde_json::to_writer(&mut remaining, value)?;
     if !remaining.is_empty() {
         return Err(serde_json::Error::io(io::Error::other(
@@ -78,7 +84,7 @@ fn encode<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<CStringBuffer>
         )));
     }
     // JSON escapes text NULs; also reject a custom serializer's raw interior NUL.
-    if output.0[..count.0].contains(&0) {
+    if output.body().contains(&0) {
         return Err(serde_json::Error::io(io::Error::other(
             "interior NUL in JSON output",
         )));
@@ -95,11 +101,10 @@ pub(super) fn from_string(text: String) -> *mut c_char {
     if text.as_bytes().contains(&0) {
         return ptr::null_mut();
     }
-    let Some(len) = text.len().checked_add(1) else {
+    let Some(mut output) = CStringBuffer::for_body(text.len()) else {
         return ptr::null_mut();
     };
-    let mut output = CStringBuffer::zeroed(len);
-    output.0[..text.len()].copy_from_slice(text.as_bytes());
+    output.body_mut().copy_from_slice(text.as_bytes());
     output.into_raw()
 }
 
@@ -435,6 +440,17 @@ mod tests {
         };
         text.zeroize();
         assert!(text.is_empty());
+    }
+
+    #[test]
+    fn every_buffer_has_room_for_its_terminal_nul() {
+        let mut empty = CStringBuffer::for_body(0).unwrap();
+        assert_eq!(&*empty.0, &[0]);
+        assert!(empty.body_mut().is_empty());
+        assert!(CStringBuffer::for_body(usize::MAX).is_none());
+        let raw = CStringBuffer::for_body(0).unwrap().into_raw();
+        assert_eq!(unsafe { CStr::from_ptr(raw) }.to_bytes(), b"");
+        unsafe { free(raw) };
     }
 
     #[test]
