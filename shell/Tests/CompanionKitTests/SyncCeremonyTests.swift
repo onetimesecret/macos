@@ -141,12 +141,17 @@ final class SyncCeremonyTests: XCTestCase {
         // belongs to the old session and is dropped, so nothing but
         // the sign-out itself can clear the in-flight flag.
         sync.pumping = true
+        // And an earlier trip's failure still stands on the surface.
+        sync.settleSignin(.refused("refused"), session: sync.session)
+        XCTAssertNotNil(sync.signinFailure)
         let stale = sync.session
         sync.signOut()
         XCTAssertNotEqual(sync.session, stale, "a sign-out is a new session")
         XCTAssertFalse(sync.pumping, "the sign-out clears the flag the dropped settle cannot")
+        XCTAssertNil(sync.signinFailure, "signed out is the whole state")
         sync.settlePump(quietTurn(), session: stale)
         XCTAssertFalse(sync.pumping)
+        sync.settleSignin(.refused("abandoned"), session: stale)
         XCTAssertNil(sync.signinFailure, "a sign-out is not a browser that never returned")
         XCTAssertNil(sync.pairingStage, "a pairing ceremony ends with the engine")
     }

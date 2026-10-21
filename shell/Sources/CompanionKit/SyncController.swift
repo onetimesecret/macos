@@ -256,7 +256,8 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    private func settleSignin(_ outcome: SyncOutcome, session mine: UInt64) {
+    /// Internal, as `settlePump` is, so a test can drive a settle.
+    func settleSignin(_ outcome: SyncOutcome, session mine: UInt64) {
         // A ceremony belongs to the session that opened the browser.
         guard session == mine else { return }
         status = client.syncStatus()
@@ -300,14 +301,17 @@ public final class SyncController: ObservableObject {
     public func signOut() {
         // A browser trip still out settles as `abandoned`; the new
         // session drops that settle, so a sign-out is never worded as
-        // a browser that never returned. A dropped pump settle clears
-        // no flag, so `pumping` goes here, as in `stop()`; the pairing
-        // poll clears its own flag unconditionally, and its ceremony
-        // ends with the engine. The core's sign-out abandons the trip.
+        // a browser that never returned. A dropped settle clears no
+        // flag, so both in-flight flags go here, as in `stop()`, and
+        // the pairing ceremony ends with the engine. The core's
+        // sign-out abandons the trip. An earlier failure's sentence
+        // goes too: signed out is the whole state.
         session &+= 1
         pumping = false
+        pairingPolling = false
         pairingStage = nil
         pairingTimer?.invalidate()
+        signinFailure = nil
         _ = client.syncSignout()
         attached = false
         trouble = enabled ? .signedOut : nil
@@ -349,6 +353,7 @@ public final class SyncController: ObservableObject {
         let wasAttached = attached
         attached = false
         pumping = false
+        pairingPolling = false
         // The switch ends a browser trip too; the core would persist a
         // late grant before the shell could decline it.
         trouble = nil
@@ -650,10 +655,15 @@ public final class SyncController: ObservableObject {
         guard !pairingPolling else { return }
         pairingPolling = true
         let client = self.client
+        let mine = session
         Task.detached(priority: .utility) {
             let stage = client.syncPairingPoll()
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                // Before the flag, as `settlePump`: a poll from an ended
+                // session must not write its stage into the next one's
+                // ceremony, and the session's end cleared the flag.
+                guard self.session == mine else { return }
                 self.pairingPolling = false
                 guard self.pairingStage != nil else { return }
                 switch stage?.stage {
