@@ -131,15 +131,25 @@ pub struct LedgerRecord {
 /// `Segment` does (Law 0004, C16).
 impl fmt::Debug for LedgerRecord {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Destructured in full, so a new field is a compile error here, not a silent print.
+        let Self {
+            event,
+            item,
+            title: _,
+            at_wall_ms,
+            item_created_wall_ms,
+            size,
+            destination,
+        } = self;
         formatter
             .debug_struct("LedgerRecord")
-            .field("event", &self.event)
-            .field("item", &self.item)
+            .field("event", event)
+            .field("item", item)
             .field("title", &"[REDACTED]")
-            .field("at_wall_ms", &self.at_wall_ms)
-            .field("item_created_wall_ms", &self.item_created_wall_ms)
-            .field("size", &self.size)
-            .field("destination", &self.destination)
+            .field("at_wall_ms", at_wall_ms)
+            .field("item_created_wall_ms", item_created_wall_ms)
+            .field("size", size)
+            .field("destination", destination)
             .finish()
     }
 }
