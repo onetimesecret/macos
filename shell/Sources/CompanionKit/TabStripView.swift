@@ -230,11 +230,9 @@ public struct TabStripView: View {
 /// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
 public struct TimeStripView: View {
     @ObservedObject var model: PageModel
-    let readOnly: Bool
 
-    public init(model: PageModel, readOnly: Bool = false) {
+    public init(model: PageModel) {
         self.model = model
-        self.readOnly = readOnly
     }
 
     public var body: some View {
@@ -267,11 +265,6 @@ public struct TimeStripView: View {
                                 keymap: model.keymap),
                             model: model
                         )
-                        .background {
-                            if case .tab(let slot) = TimeUnitTab.target(for: unit) {
-                                TabDropOverlay(model: model, slot: slot, readOnly: readOnly)
-                            }
-                        }
                     }
                 }
             }
