@@ -201,7 +201,7 @@ public struct DayScrollView: NSViewRepresentable {
     ) {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let stack = scroll.documentView as? DayStackView else { return }
-        NotificationCenter.default.removeObserver(stack)
+        stack.unobserveEditor()
         // Whatever became of the editor, this roll's measurement
         // describes a surface that is going away, and the rail must not
         // keep drawing the shape of it behind a ledger (issue #131).
@@ -489,12 +489,22 @@ final class DayStackView: NSView {
         )
     }
 
+    /// For a dismantle: the page's storage and the editor outlive this roll, and `leavePage`
+    /// resizes the editor while the roll still stands, which would lay the roll out again.
+    func unobserveEditor() {
+        observeMountedStorage(nil)
+        guard let editor else { return }
+        let center = NotificationCenter.default
+        center.removeObserver(self, name: NSView.frameDidChangeNotification, object: editor)
+        center.removeObserver(self, name: NSText.didChangeNotification, object: editor)
+    }
+
     /// The storage `mountedStorageEdited` is registered for, held so the registration can be
     /// taken off it when the editor moves to another day.
     private var observedStorage: NSTextStorage?
 
-    private func observeMountedStorage() {
-        let mounted = editor?.textStorage
+    /// Watch `mounted` alone, or nothing for nil.
+    private func observeMountedStorage(_ mounted: NSTextStorage?) {
         guard mounted !== observedStorage else { return }
         let center = NotificationCenter.default
         if let observedStorage {
@@ -938,7 +948,7 @@ final class DayStackView: NSView {
     /// because nothing was re-parented, but the mounted editor moved and
     /// every path that moves it asks for the keys back (ADR-0005).
     private func settleEditor(on page: UInt64?) {
-        defer { observeMountedStorage() }
+        defer { observeMountedStorage(editor?.textStorage) }
         guard let page else {
             parkEditor()
             return
