@@ -990,7 +990,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above them. The editor window refuses automatic window tabbing.
 
 - **Rows and close marks reach VoiceOver and the pointer** (app 0.39.1).
-  A sync device row combines its words and keeps Revoke as an action;
+  A sync device row reads its words in their order and keeps Revoke a
+  button for the keyboard and an action for VoiceOver;
   the rail's day nodes, slot rows and file rows are buttons, and a slot
   row offers Rename Tab and Close Tab as actions outside a rename, the
   strip's tabs likewise, and its file rows Close File. Tab close marks have a 12
@@ -1003,16 +1004,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.39.1; D-29). The clear ran through a main-actor hop after the timer
   fired, so a copy made between the two was cleared at once; it now
   runs inline. One pairing poll runs at a time, so a slow relay no
-  longer sees the same queued message posted twice; a round older than
-  thirty seconds is given up on rather than wedging pairing, so that
-  promise is kept inside that bound. A poll from a ceremony that was
+  longer sees the same queued message posted twice; a round that has
+  outlived the transport's own first-byte bound is given up on rather
+  than wedging pairing, so that promise is kept inside that bound. A
+  poll from a ceremony that was
   cancelled, answered or signed out of is dropped rather than writing
   its verdict over the next ceremony's digits. A verdict the core
   cannot answer shows as a failure instead of the sheet vanishing.
-  Turning sync off mid-ceremony now cancels the pairing flow in the
-  core as well as the browser trip; detach alone left it open, so a
-  peer could still commit an enrolment against a pad whose person had
-  switched sync off. Signing out while a browser trip is still out no
+  Turning sync off mid-ceremony cancels the pairing flow in the core
+  at once, as it does the browser trip, rather than leaving it to the
+  detach that follows on a background task, or to nothing on a switch
+  that was never attached. Signing out while a browser trip is still out no
   longer reads as the browser never returning, and a sign-in after it
   pumps again once the round that was out returns, rather than never.
 

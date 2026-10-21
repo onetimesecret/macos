@@ -161,10 +161,11 @@ public final class SyncController: ObservableObject {
     /// One pairing poll on the wire at a time, as `pumping` is for the
     /// pump; `SyncCeremonyTests` keeps a round open and ticks again.
     private(set) var pairingPolling = false
-    /// When the round on the wire went out: the relay call has no timeout,
-    /// so a round past `pairingPollDeadline` is given up on (issue #280).
+    /// When the round on the wire went out. A round past the transport's
+    /// 60 s first-byte bound is already failing; giving up then bounds the
+    /// wedge while keeping the overlap of issue #280 rare.
     private var pairingPollStartedAt: Date?
-    static let pairingPollDeadline: TimeInterval = 30
+    static let pairingPollDeadline: TimeInterval = 75
     /// The round that owns the flag. A round given up on returns as a
     /// no-op for the flag, so a newer round's claim is not undone.
     private var pairingRound: UInt64 = 0
@@ -375,7 +376,8 @@ public final class SyncController: ObservableObject {
         retryTimer?.invalidate()
         quietRefusals = 0
         _ = client.syncSigninCancel()
-        // And a pairing flow: detach alone leaves it open in the core.
+        // And a pairing flow, now: the detach that also ends it runs on
+        // a background task below, and not at all when never attached.
         _ = client.syncPairingCancel()
         signinGivenUp = false
         clearElsewhere()
