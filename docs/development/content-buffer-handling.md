@@ -80,9 +80,13 @@ All abbreviated names in this table have the `companion_` prefix. The source is
 
 Every **owned** string return now uses the exact boxed-byte layout from
 [`content_json.rs`](../../crates/ffi/src/content_json.rs), including metadata
-routes still using `into_c_string`. `companion_string_free` reconstructs the
-full slice, including the terminal NUL, and its owner zeroizes that slice before
-release. The three static version pointers are borrowed and are not freed.
+routes still using `into_c_string`. `content_json.rs` records the address and
+full length of every buffer it hands out, and `companion_string_free`
+reconstructs, zeroizes and releases only a recorded buffer, at its recorded
+length. Null, the three static version pointers (`const char *`), and any
+pointer not recorded are left alone. The FFI test helpers `take_json` in
+`lib.rs` and `files.rs` assert that each owned return they read was recorded,
+so a route that bypasses `content_json.rs` fails its tests.
 This changes the final allocation; it does not retroactively wipe earlier
 `String` growth or `Value` intermediates.
 
@@ -283,6 +287,7 @@ behavior, not every allocation in the process.
 | `ffi/src/content_json.rs` | `exact_nul_encoding_matches_serde_and_wipes_the_live_allocation`: empty/escaped/Unicode/large output, terminal NUL, explicit live-allocation wipe; not post-free memory inspection. |
 | `ffi/src/content_json.rs` | `chip_and_cut_fields_match_the_previous_sorted_json_bytes`, `copied_envelope_stays_a_string_with_the_same_lossy_utf8_semantics`: projection shape and fallback behavior. |
 | `ffi/src/content_json.rs` | `raw_transfer_and_reconstruction_use_the_same_pointer_and_full_slice_length`, `ordinary_strings_share_the_exact_box_layout_and_free_path`: ownership layout, null and ordinary-string path. |
+| `ffi/src/content_json.rs` | `every_buffer_has_room_for_its_terminal_nul`, `free_takes_back_only_what_this_module_handed_out`: no empty buffer; static version pointers, a `CString::into_raw` pointer and an interior pointer survive a free; a buffer is taken back once. |
 | `ffi/src/content_json.rs` | `errors_and_size_drift_return_null_instead_of_transferring_a_partial_buffer`: first/second-pass errors and both directions of length drift. |
 | `ffi/src/lib.rs` | `content_routes_preserve_escaped_text_and_sorted_json_shapes`, `tab_projection_matches_the_previous_json_bytes_for_each_label_source`. |
 | `ffi/src/files.rs` | `file_runs_match_previous_json_bytes_for_empty_escaped_and_large_text`. |

@@ -3479,11 +3479,11 @@ pub unsafe extern "C" fn companion_sync_pairing_cancel(handle: *mut CompanionHan
     guard.sync.pairing.take().is_some()
 }
 
-/// Free a string returned by this library. Passing null is a no-op.
+/// Wipe and free an owned string returned by this library. Null, a static
+/// version string and any pointer this library did not hand out are left alone.
 ///
 /// # Safety
-/// `s` must be an owned string pointer returned by this library (or null),
-/// not previously freed.
+/// The caller must not read through `s` after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
     unsafe { content_json::free(s) };
@@ -3936,6 +3936,10 @@ mod tests {
 
     unsafe fn take_json(p: *mut c_char) -> String {
         assert!(!p.is_null(), "expected a JSON string, got null");
+        assert!(
+            content_json::is_live(p),
+            "an owned return bypassed content_json"
+        );
         let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_owned();
         unsafe { companion_string_free(p) };
         s

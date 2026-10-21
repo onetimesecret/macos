@@ -2,9 +2,11 @@
 //! Upstream Loro allocations and serde's internal scratch are outside this owner.
 
 use std::borrow::Cow;
-use std::ffi::{CStr, c_char};
+use std::collections::BTreeMap;
+use std::ffi::c_char;
 use std::io::{self, Write};
 use std::ptr;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use companion_core::{
@@ -31,16 +33,35 @@ impl CStringBuffer {
         self.0.split_last().map_or(&[], |(_, body)| body)
     }
 
+    /// Hand the buffer across the seam, recorded in [`LIVE`]; null, wiped, if it cannot be.
     fn into_raw(mut self) -> *mut c_char {
+        let Ok(mut live) = LIVE.lock() else {
+            return ptr::null_mut();
+        };
         let bytes = std::mem::take(&mut self.0);
-        Box::into_raw(bytes).cast::<u8>().cast::<c_char>()
+        let len = bytes.len();
+        let raw = Box::into_raw(bytes).cast::<u8>();
+        live.insert(raw.addr(), len);
+        raw.cast::<c_char>()
     }
 
-    unsafe fn from_raw(raw: *mut c_char) -> Self {
-        let len = unsafe { CStr::from_ptr(raw) }.to_bytes_with_nul().len();
+    /// Take back a buffer [`LIVE`] recorded, at its recorded length; `None` for any other pointer.
+    ///
+    /// # Safety
+    /// The caller must not read through `raw` once this returns `Some`.
+    unsafe fn from_raw(raw: *mut c_char) -> Option<Self> {
+        let len = LIVE.lock().ok()?.remove(&raw.addr())?;
         let slice = ptr::slice_from_raw_parts_mut(raw.cast::<u8>(), len);
-        Self(unsafe { Box::from_raw(slice) })
+        Some(Self(unsafe { Box::from_raw(slice) }))
     }
+}
+
+/// Every buffer `into_raw` handed out and `from_raw` has not taken back: address to length.
+static LIVE: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
+
+#[cfg(test)]
+pub(super) fn is_live(raw: *const c_char) -> bool {
+    LIVE.lock().is_ok_and(|live| live.contains_key(&raw.addr()))
 }
 
 impl Zeroize for CStringBuffer {
@@ -108,7 +129,10 @@ pub(super) fn from_string(text: String) -> *mut c_char {
     output.into_raw()
 }
 
-/// `raw` must be an unmodified, not-yet-freed return allocation, or null.
+/// Wipe and free a buffer this module handed out; null and any other pointer are left alone.
+///
+/// # Safety
+/// The caller must not read through `raw` after this call.
 pub(super) unsafe fn free(raw: *mut c_char) {
     if !raw.is_null() {
         drop(unsafe { CStringBuffer::from_raw(raw) });
@@ -325,6 +349,7 @@ pub(super) fn ledger_row(record: &LedgerRecord) -> LedgerRow<'_> {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::ffi::{CStr, CString};
 
     use super::*;
 
@@ -422,7 +447,7 @@ mod tests {
             });
             let raw = copied_json(&copied);
             assert!(!raw.is_null());
-            let mut output = unsafe { CStringBuffer::from_raw(raw) };
+            let mut output = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
             assert_eq!(
                 CStr::from_bytes_with_nul(&output.0).unwrap().to_bytes(),
                 serde_json::to_vec(&expected).unwrap()
@@ -460,11 +485,41 @@ mod tests {
         let len = owner.0.len();
         let raw = owner.into_raw();
         assert_eq!(raw.cast::<u8>().cast_const(), address);
-        let mut owner = unsafe { CStringBuffer::from_raw(raw) };
+        let mut owner = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
         assert_eq!(owner.0.as_ptr(), address);
         assert_eq!(owner.0.len(), len);
         owner.zeroize();
         assert!(owner.0.iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn free_takes_back_only_what_this_module_handed_out() {
+        let versions: [extern "C" fn() -> *const c_char; 3] = [
+            super::super::companion_ffi_version,
+            super::super::companion_version,
+            super::super::companion_core_version,
+        ];
+        for version in versions {
+            let raw = version();
+            let before = unsafe { CStr::from_ptr(raw) }.to_owned();
+            assert!(!is_live(raw));
+            unsafe { super::super::companion_string_free(raw.cast_mut()) };
+            assert_eq!(unsafe { CStr::from_ptr(raw) }, before.as_c_str());
+        }
+
+        let foreign = CString::new("foreign").unwrap().into_raw();
+        unsafe { free(foreign) };
+        assert_eq!(unsafe { CStr::from_ptr(foreign) }.to_bytes(), b"foreign");
+        drop(unsafe { CString::from_raw(foreign) });
+
+        let raw = from_string("handed out".to_string());
+        assert!(is_live(raw));
+        unsafe { free(raw.wrapping_add(1)) };
+        assert_eq!(unsafe { CStr::from_ptr(raw) }.to_bytes(), b"handed out");
+        let owner = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
+        assert!(!is_live(raw));
+        assert!(unsafe { CStringBuffer::from_raw(raw) }.is_none());
+        drop(owner);
     }
 
     #[test]
@@ -477,7 +532,7 @@ mod tests {
             let expected = text.as_bytes().to_vec();
             let raw = from_string(text);
             assert!(!raw.is_null());
-            let mut owner = unsafe { CStringBuffer::from_raw(raw) };
+            let mut owner = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
             assert_eq!(owner.0.len(), expected.len() + 1);
             assert_eq!(&owner.0[..expected.len()], expected);
             owner.zeroize();

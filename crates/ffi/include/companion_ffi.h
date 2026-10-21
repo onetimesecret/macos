@@ -2025,7 +2025,9 @@ bool companion_file_hydrate(CompanionHandle *handle, uint64_t file,
  */
 char *companion_drafts_notices_json(CompanionHandle *handle);
 
-/* Free an owned string returned by this library. Null is a no-op. */
+/* Wipe and free an owned string returned by this library. Null, a static
+ * version string and any pointer this library did not hand out are left
+ * alone. Do not read through s after the call. */
 void companion_string_free(char *s);
 
 #ifdef __cplusplus

@@ -1395,6 +1395,10 @@ mod tests {
 
     unsafe fn take_json(ptr: *mut c_char) -> String {
         assert!(!ptr.is_null(), "the route answered null");
+        assert!(
+            crate::content_json::is_live(ptr),
+            "an owned return bypassed content_json"
+        );
         let text = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
         unsafe { crate::companion_string_free(ptr) };
         text
