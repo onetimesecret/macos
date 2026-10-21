@@ -1009,7 +1009,7 @@ private struct SlotRailRow: View {
                 Button { model.close(sheet.id) } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .frame(width: 16, height: 18)
+                        .frame(width: 12, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1047,12 +1047,18 @@ private struct SlotRailRow: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(
+            renaming ? [] : selected ? [.isSelected, .isButton] : [.isButton])
         // The hover-only close mark and the menu verbs, reachable
-        // without a pointer.
+        // without a pointer; mid-rename the element is the field's
+        // container and offers neither.
         .accessibilityAction { if !renaming { model.select(sheet.id) } }
-        .accessibilityAction(named: Text("Rename Tab")) { beginRename() }
-        .accessibilityAction(named: Text("Close Tab")) { model.close(sheet.id) }
+        .accessibilityActions {
+            if !renaming {
+                Button("Rename Tab") { beginRename() }
+                Button("Close Tab") { model.close(sheet.id) }
+            }
+        }
         .contextMenu {
             Button("Rename Tab") { beginRename() }
             Button(SheetTab.holdMenuTitle(
@@ -1262,12 +1268,8 @@ enum TimeUnitTab {
         return dayHelp(spokenLabel: "today", chord: chord)
     }
 
-    /// The chord in parentheses after the description, or the plain
-    /// description when the keymap bound nothing, `newPageHelp`'s
-    /// shape, so every tooltip in the app degrades the same way.
     private static func chorded(_ what: String, chord: Keystroke?) -> String {
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
+        Keystroke.chorded(what, chord: chord)
     }
 }
 

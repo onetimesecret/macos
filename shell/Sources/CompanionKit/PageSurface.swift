@@ -202,8 +202,7 @@ public struct PageStatusStack: View {
     /// The offer's button names the chord the keymap binds, as the
     /// strip's tooltip does; unbound, it names only the verb.
     static func sealItTitle(chord: Keystroke?) -> String {
-        guard let chord else { return "Seal It" }
-        return "Seal It (\(chord.displaySymbol))"
+        Keystroke.chorded("Seal It", chord: chord)
     }
 
     @ObservedObject var model: PageModel

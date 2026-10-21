@@ -158,8 +158,7 @@ public struct TabStripView: View {
     /// that unbound it leaves the tooltip saying only what the button
     /// does, which is still true.
     static func newPageHelp(chord: Keystroke?) -> String {
-        guard let chord else { return "New page" }
-        return "New page (\(chord.displaySymbol))"
+        Keystroke.chorded("New page", chord: chord)
     }
 
     /// The ledger tab's tooltip, on the same terms. It named ⌘0 until
@@ -421,7 +420,7 @@ struct SheetTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .frame(width: 16, height: 18)
+                        .frame(width: 12, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -683,7 +682,7 @@ struct FileTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .frame(width: 16, height: 18)
+                        .frame(width: 12, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
