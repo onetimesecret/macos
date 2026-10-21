@@ -161,11 +161,12 @@ public final class SyncController: ObservableObject {
     /// One pairing poll on the wire at a time, as `pumping` is for the
     /// pump; `SyncCeremonyTests` keeps a round open and ticks again.
     private(set) var pairingPolling = false
-    /// When the round on the wire went out. A round past the transport's
-    /// 60 s first-byte bound is already failing; giving up then bounds the
-    /// wedge while keeping the overlap of issue #280 rare.
+    /// When the round on the wire went out. The deadline is a chosen
+    /// number: a round is several calls, each bounded by the transport,
+    /// so this is long enough for a slow live round and short enough to
+    /// free a wedged sheet; a give-up is one overlap of issue #280.
     private var pairingPollStartedAt: Date?
-    static let pairingPollDeadline: TimeInterval = 75
+    static let pairingPollDeadline: TimeInterval = 90
     /// The round that owns the flag. A round given up on returns as a
     /// no-op for the flag, so a newer round's claim is not undone.
     private var pairingRound: UInt64 = 0
@@ -687,8 +688,10 @@ public final class SyncController: ObservableObject {
 
     private func armPairingPoll() {
         pairingTimer?.invalidate()
+        // Inline, as the clipboard clear is: a hop lets a tick already
+        // enqueued run after endCeremony and poll the next ceremony.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollPairing() }
+            MainActor.assumeIsolated { self?.pollPairing() }
         }
         RunLoop.main.add(timer, forMode: .common)
         pairingTimer = timer
