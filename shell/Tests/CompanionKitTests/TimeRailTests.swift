@@ -6,9 +6,9 @@ import XCTest
 ///
 /// A rail is a drawing, and drawings are hardware verification's
 /// business (docs/qa/hardware-verification.md). What is here is everything
-/// that was deliberately kept out of the drawing: the target a tap
-/// resolves to, the day the selected mark sits on, the words in each
-/// tooltips are all pure functions, in the idiom
+/// that was deliberately kept out of the drawing: the day a node's
+/// click lands on beside the keyboard's, the chord a row names and the
+/// words in each tooltip are all pure functions, in the idiom
 /// `TabStripView.newPageHelp` and `SheetTab.holdMenuTitle` set. If one
 /// of them is wrong the rail sends a click to the wrong page or names a
 /// chord that does nothing, and neither needs a window to catch.
@@ -77,23 +77,37 @@ final class TimeRailTests: XCTestCase {
             "the rail went back to the abbreviation the wider column retired")
     }
 
-    /// The navigator's nodes and the keyboard resolve the same pages the
-    /// same way, which is what keeps a click on the second node and ⌘2
-    /// from disagreeing about where the second page is. Asserted against
-    /// a live pad in the mode, on both shapes a live core can make: a pad
-    /// with nothing on it, and a pad with today's page on it.
+    /// A day's first node and the keyboard resolve the day the same way,
+    /// which is what keeps a click on the second day's node and ⌘2 from
+    /// disagreeing about where the second day is; a later page on the
+    /// same day has a node of its own, which ⌘n does not count. Asserted
+    /// against a live pad in the mode, on the shapes a live core can
+    /// make: a pad with nothing on it, with today's page, and with two.
     func testTheNodesLandWhereTheKeyboardLands() throws {
         let model = try makeModel()
         model.showsTimeUnits = true
         XCTAssertTrue(model.tabs.isEmpty)
-        func nodeTargets() -> [SurfaceTarget] {
-            StreamNavigator.nodes(projection: model.timeUnits, tabs: model.tabs, selection: model.selection)
-                .map(\.target)
+        func nodes() -> [StreamNavigator.Node] {
+            StreamNavigator.nodes(
+                projection: model.timeUnits, tabs: model.tabs, selection: model.selection)
         }
-        XCTAssertEqual(nodeTargets(), model.visibleTargets, "an empty pad's node and its ⌘1 went to different places")
+        func firstTargets() -> [SurfaceTarget] { nodes().filter(\.firstOfDay).map(\.target) }
+        XCTAssertEqual(
+            firstTargets(), model.visibleTargets,
+            "an empty pad's node and its ⌘1 went to different places")
 
         model.newPage()
-        XCTAssertEqual(nodeTargets(), model.visibleTargets, "a peopled today's node and its ⌘1 went to different places")
+        XCTAssertEqual(
+            firstTargets(), model.visibleTargets,
+            "a peopled today's node and its ⌘1 went to different places")
+
+        model.newPage()
+        XCTAssertEqual(model.tabs.count, 2)
+        XCTAssertEqual(
+            firstTargets(), model.visibleTargets, "a second page on today moved where ⌘1 goes")
+        XCTAssertEqual(
+            nodes().map(\.target), model.tabs.map { .tab($0.id) },
+            "each page's node selects its own slot")
     }
 
     // MARK: Today, with and without a page
