@@ -1130,6 +1130,9 @@ mod tests {
     use super::*;
     use crate::clock::{Clock, ManualClock};
 
+    /// Compiles only for a type that wipes on drop: the pin the owner tests rest on.
+    fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);
         (excerpt, label)
@@ -1346,8 +1349,6 @@ mod tests {
 
     #[test]
     fn segment_ink_and_its_clone_have_independent_wiping_owners() {
-        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
-
         let mut original = Segment::Ink("🙂\r\n尾".into());
         let mut cloned = original.clone();
         wiping_owner(&original);
@@ -1402,8 +1403,6 @@ mod tests {
     /// owners (Law 0004, C13 to C15): the types say so, and a plain `String` would not compile.
     #[test]
     fn a_name_a_derived_title_and_a_label_are_wiping_owners() {
-        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
-
         let mut page = bare_sheet(STAMP);
         page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         let mut tab = unnamed_tab(Some(page));
@@ -1422,8 +1421,8 @@ mod tests {
         assert_eq!(fresh.as_str(), "first");
     }
 
-    /// The cap counts chars, not bytes, wherever it is taken: `capped_title` allocates its owner
-    /// once at that size, and `derive_title` cuts its owner in place.
+    /// The cap counts chars, not bytes, wherever it is taken, and `capped_title` allocates the
+    /// owner once at that size, for a derived title as for a name.
     #[test]
     fn the_cap_counts_chars_and_allocates_once() {
         let long = "🧪".repeat(TITLE_CAP + 5);
