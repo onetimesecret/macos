@@ -762,7 +762,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The Finder's Open and Open With, and files dropped on the Dock icon.
-    /// Queued, then opened by the drain once startup is done.
+    /// Queued, then opened by the drain once startup is done and no modal is up.
     func application(_ application: NSApplication, open urls: [URL]) {
         finderDocuments += urls
         drainFinderDocuments()
@@ -774,6 +774,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let plan = FinderOpenPlan.decide(
             queued: finderDocuments,
             startupComplete: startupComplete,
+            modalSessionRunning: ModalSession.isRunning,
             launchActivationOutstanding: launchActivationOutstanding,
             appActive: NSApp?.isActive == true,
             context: activationContext())
@@ -823,9 +824,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // there (no modal of ours running now). The route itself is
         // the routing function's, so "back to the owner" is written
         // in one place.
-        guard model.stance == .raised else { return }
+        let raisedWhenItEnded = model.stance == .raised
         Task { @MainActor [weak self] in
-            guard let self,
+            // A Finder open held through the modal selects the editor in place of the return.
+            guard let self, !self.drainFinderDocuments(), raisedWhenItEnded,
                 Self.raisesAfterModal(
                     stance: self.model.stance, modalSessionRunning: ModalSession.isRunning)
             else { return }

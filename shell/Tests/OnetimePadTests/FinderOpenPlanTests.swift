@@ -15,12 +15,14 @@ final class FinderOpenPlanTests: XCTestCase {
     private func plan(
         _ queued: [URL],
         startupComplete: Bool = true,
+        modalSessionRunning: Bool = false,
         launchActivationOutstanding: Bool = false,
         appActive: Bool = true
     ) -> FinderOpenPlan {
         FinderOpenPlan.decide(
             queued: queued,
             startupComplete: startupComplete,
+            modalSessionRunning: modalSessionRunning,
             launchActivationOutstanding: launchActivationOutstanding,
             appActive: appActive,
             context: context)
@@ -83,5 +85,18 @@ final class FinderOpenPlanTests: XCTestCase {
         let drained = plan([notes], launchActivationOutstanding: true, appActive: false)
 
         XCTAssertEqual(drained, FinderOpenPlan(open: [notes]))
+    }
+
+    func testAFinderOpenDuringAModalIsHeldWhole() {
+        let held = plan([notes, link], modalSessionRunning: true)
+
+        XCTAssertEqual(held, FinderOpenPlan(held: [notes, link]))
+    }
+
+    func testTheHeldFilesOpenOnceTheModalHasEnded() {
+        let held = plan([notes], modalSessionRunning: true).held
+        let drained = plan(held + [draft])
+
+        XCTAssertEqual(drained, FinderOpenPlan(open: [notes, draft]))
     }
 }
