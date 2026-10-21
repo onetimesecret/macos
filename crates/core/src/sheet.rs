@@ -862,6 +862,16 @@ impl LabelSource {
 /// Counted in `char`s so a multibyte scalar is never split.
 pub(crate) const TITLE_CAP: usize = 80;
 
+/// The first [`TITLE_CAP`] chars of `text` as a wiping owner, allocated once at its exact
+/// size, so no growing scratch is left unwiped behind it (Law 0004).
+pub(crate) fn capped_title(text: &str) -> Zeroizing<String> {
+    let end = text
+        .char_indices()
+        .nth(TITLE_CAP)
+        .map_or(text.len(), |(index, _)| index);
+    Zeroizing::new(text[..end].to_owned())
+}
+
 /// First non-blank ink line, markdown stripped, capped at [`TITLE_CAP`].
 /// Fence rules are skipped and fenced code is taken as typed (D-12).
 /// No fallback here; that is the tab's (ADR-0017).
@@ -896,7 +906,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
             }
         }
     }
-    result.map(|line| Zeroizing::new(line.chars().take(TITLE_CAP).collect()))
+    result.map(|line| capped_title(&line))
 }
 
 /// An open fence. A closer must match its marker and be at least as long
@@ -1394,6 +1404,19 @@ mod tests {
         assert_eq!(label.as_str(), "the vault");
         let derived: Option<Zeroizing<String>> =
             derive_title(&[Segment::Ink("# first\nsecond".into())]);
+        let long = "🧪".repeat(TITLE_CAP + 5);
+        let capped = capped_title(&long);
+        assert_eq!(
+            capped.chars().count(),
+            TITLE_CAP,
+            "the cap counts chars, not bytes"
+        );
+        assert_eq!(
+            capped.capacity(),
+            capped.len(),
+            "the owner was allocated at its size"
+        );
+        assert_eq!(capped_title("short").as_str(), "short");
         assert_eq!(derived.as_deref().map(String::as_str), Some("first"));
     }
 

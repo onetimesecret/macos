@@ -17,7 +17,7 @@ use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evic
 use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
+    SheetId, Tab, TabId, capped_title, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::transfer::ActiveCut;
@@ -665,15 +665,7 @@ fn read_tab(
     let name = match reader.u8().ok_or(Malformed)? {
         0 => None,
         // Re-capped: the name is durable and reaches the ledger.
-        1 => Some(
-            reader
-                .str()
-                .ok_or(Malformed)?
-                .chars()
-                .take(TITLE_CAP)
-                .collect::<String>()
-                .into(),
-        ),
+        1 => Some(capped_title(reader.str().ok_or(Malformed)?)),
         _ => return Err(Malformed),
     };
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
@@ -994,13 +986,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         _ => return Err(Malformed),
     };
     let item = reader.uuid().ok_or(Malformed)?;
-    let title: Zeroizing<String> = reader
-        .str()
-        .ok_or(Malformed)?
-        .chars()
-        .take(TITLE_CAP)
-        .collect::<String>()
-        .into();
+    let title = capped_title(reader.str().ok_or(Malformed)?);
     let at_wall_ms = reader.u64().ok_or(Malformed)?;
     let item_created_wall_ms = reader.u64().ok_or(Malformed)?;
     let size = match reader.u8().ok_or(Malformed)? {
@@ -1699,8 +1685,12 @@ mod tests {
         let snapshot = empty_tab_snapshot(Some(&long));
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 0);
         let name = store.tabs().next().unwrap().name().unwrap();
-        assert_eq!(name.chars().count(), TITLE_CAP);
-        assert_eq!(name.len(), TITLE_CAP * 2, "counted in chars, not bytes");
+        assert_eq!(name.chars().count(), crate::sheet::TITLE_CAP);
+        assert_eq!(
+            name.len(),
+            crate::sheet::TITLE_CAP * 2,
+            "counted in chars, not bytes"
+        );
     }
 
     #[test]

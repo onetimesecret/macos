@@ -17,7 +17,7 @@ use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evic
 use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
-    SheetClock, SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
+    SheetClock, SheetId, Tab, TabId, capped_title, derive_title, judge_name,
 };
 use crate::sync::{ExpiryPolicy, HoldRegister};
 use crate::ttl::{self, Ttl};
@@ -1277,7 +1277,7 @@ impl<C: Clock> SheetStore<C> {
         tab.name = if trimmed.is_empty() {
             None
         } else {
-            Some(Zeroizing::new(trimmed.chars().take(TITLE_CAP).collect()))
+            Some(capped_title(trimmed))
         };
         true
     }
