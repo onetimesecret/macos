@@ -355,6 +355,9 @@ public enum StreamNavigator {
         /// How far above its node's y a row is drawn; a day's first row rises a point more
         /// so its larger dot centres on the same line as a later row's.
         public static func rowLift(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 6 }
+        /// How far above its node's y the box the slivers and the packing keep clear of
+        /// begins: a point past either lift.
+        public static let rowClearance: CGFloat = rowLift(firstOfDay: true) + 1
     }
 
     /// A node with its place on the rail.
@@ -362,8 +365,8 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The top of the box around the node's words, which the slivers keep clear of;
-        /// `drawnTop` is where the row is drawn, `Metrics.rowLift` above the centre line.
+        /// The top of the box around the node's words, `Metrics.rowClearance` above the centre
+        /// line, which the slivers and the packing keep clear of; `drawnTop` is where the row is drawn.
         public let rowTop: CGFloat
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
@@ -565,7 +568,7 @@ public enum StreamNavigator {
         let placed = nodes.indices.map { index in
             Placed(
                 node: nodes[index], y: nodeYs[index],
-                rowTop: nodeYs[index] - 8, rowHeight: heights[index] - reserves[index],
+                rowTop: nodeYs[index] - Metrics.rowClearance, rowHeight: heights[index] - reserves[index],
                 noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
