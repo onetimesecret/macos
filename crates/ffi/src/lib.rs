@@ -3480,10 +3480,11 @@ pub unsafe extern "C" fn companion_sync_pairing_cancel(handle: *mut CompanionHan
 }
 
 /// Wipe and free an owned string returned by this library. Null, a static
-/// version string and any pointer this library did not hand out are left alone.
+/// version string and a pointer this library never handed out are left alone.
 ///
 /// # Safety
-/// The caller must not read through `s` after this call.
+/// `s` must not be freed already, since its address may now belong to a newer
+/// string; the caller must not read through `s` after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
     unsafe { content_json::free(s) };

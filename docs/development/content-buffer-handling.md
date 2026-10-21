@@ -86,7 +86,9 @@ reconstructs, zeroizes and releases only a recorded buffer, at its recorded
 length. Null, the three static version pointers (`const char *`), and any
 pointer not recorded are left alone. The FFI test helpers `take_json` in
 `lib.rs` and `files.rs` assert that each owned return they read was recorded,
-so a route that bypasses `content_json.rs` fails its tests.
+so a route that bypasses `content_json.rs` fails its tests. The record does not
+make a second free safe: once a freed address is reused for a newer string, a
+stale pointer to it frees that string, as with plain `malloc` and `free`.
 This changes the final allocation; it does not retroactively wipe earlier
 `String` growth or `Value` intermediates.
 

@@ -129,10 +129,11 @@ pub(super) fn from_string(text: String) -> *mut c_char {
     output.into_raw()
 }
 
-/// Wipe and free a buffer this module handed out; null and any other pointer are left alone.
+/// Wipe and free a buffer this module handed out; null and any pointer it never handed out are left alone.
 ///
 /// # Safety
-/// The caller must not read through `raw` after this call.
+/// `raw` must not be freed already, since its address may now belong to a newer
+/// buffer; the caller must not read through `raw` after this call.
 pub(super) unsafe fn free(raw: *mut c_char) {
     if !raw.is_null() {
         drop(unsafe { CStringBuffer::from_raw(raw) });
