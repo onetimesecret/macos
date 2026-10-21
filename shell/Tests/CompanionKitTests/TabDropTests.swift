@@ -556,7 +556,7 @@ final class TabDropTests: XCTestCase {
             XCTAssertEqual(model.timeUnits.units.first?.pageIDs, [], "today holds a page in \(rail)")
 
             let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host)
+            let targets = nodeTargets(in: host, on: model)
             XCTAssertEqual(targets.map(\.slot), [first.slot, next.slot, oldest.slot], rail)
             XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), "a drop and a click part in \(rail)")
             XCTAssertEqual(targets.map(\.page), [first.sheet, next.sheet, oldest.sheet], rail)
@@ -589,7 +589,7 @@ final class TabDropTests: XCTestCase {
 
             /// The target on the destination's node as the rail stands now.
             func target() throws -> TabDropTarget {
-                try XCTUnwrap(nodeTargets(in: host).first { $0.slot == destination.slot }, rail)
+                try XCTUnwrap(nodeTargets(in: host, on: model).first { $0.slot == destination.slot }, rail)
             }
 
             /// The node offers nothing, places nothing, reads no board and says nothing.
@@ -635,13 +635,13 @@ final class TabDropTests: XCTestCase {
             let second = try unshownPage(on: model, text: "b")
             let third = try unshownPage(on: model, text: "c")
             let host = mountTimeline(on: model, readOnly: false)
-            let before = nodeTargets(in: host)
+            let before = nodeTargets(in: host, on: model)
             XCTAssertEqual(before.map(\.slot), clickedSlots(on: model), rail)
             XCTAssertEqual(Set(before.map(\.slot)), [first.slot, second.slot, third.slot], rail)
 
             let index = try XCTUnwrap(model.navigationTabs.firstIndex { $0.id == before[0].slot })
             model.move(try XCTUnwrap(before.last?.slot), to: index)
-            let resorted = nodeTargets(in: host)
+            let resorted = nodeTargets(in: host, on: model)
             XCTAssertNotEqual(clickedSlots(on: model), before.map(\.slot), "the move re sorted nothing")
             XCTAssertEqual(resorted.map(\.slot), clickedSlots(on: model), "a target kept its old row in \(rail)")
             for target in resorted {
@@ -651,7 +651,7 @@ final class TabDropTests: XCTestCase {
             model.newPage()
             let made = try XCTUnwrap(model.selectedPageID)
             let madeSlot = try slot(of: made, on: model)
-            let grown = nodeTargets(in: host)
+            let grown = nodeTargets(in: host, on: model)
             XCTAssertEqual(grown.count, 4, rail)
             XCTAssertEqual(grown.map(\.slot), clickedSlots(on: model), "the new node's row aims elsewhere in \(rail)")
             XCTAssertEqual(grown.first { $0.slot == madeSlot }?.page, made, rail)
@@ -671,7 +671,7 @@ final class TabDropTests: XCTestCase {
             let sourceSlot = try slot(of: source.sheet, on: model)
             model.select(sourceSlot)
             let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host)
+            let targets = nodeTargets(in: host, on: model)
             XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), rail)
             let target = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
             let board = try beginDrag(source, NSRange(location: 0, length: 4))
@@ -701,7 +701,7 @@ final class TabDropTests: XCTestCase {
             let sourceSlot = try slot(of: source.sheet, on: model)
             model.select(sourceSlot)
             let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host)
+            let targets = nodeTargets(in: host, on: model)
             let other = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
             let own = try XCTUnwrap(targets.first { $0.slot == sourceSlot }, rail)
 
@@ -740,7 +740,7 @@ final class TabDropTests: XCTestCase {
             let page = try mountPage(on: model)
             let destination = try unshownPage(on: model, text: "xy")
             let pageSlot = try slot(of: page.sheet, on: model)
-            let targets = nodeTargets(in: mountTimeline(on: model, readOnly: false))
+            let targets = nodeTargets(in: mountTimeline(on: model, readOnly: false), on: model)
             let (source, item) = try XCTUnwrap(
                 page.coordinator.beginDecryptedDrag(at: 3), "the handle started no drag in \(rail)")
             let board = NSPasteboard.withUniqueName()
@@ -781,7 +781,7 @@ final class TabDropTests: XCTestCase {
             let destination = try unshownPage(on: model, text: "xy")
             XCTAssertTrue(client.setRung(tab: destination.slot, rung: .oneHour), rail)
             let host = mountTimeline(on: model, readOnly: false)
-            let target = try XCTUnwrap(nodeTargets(in: host).first { $0.slot == destination.slot }, rail)
+            let target = try XCTUnwrap(nodeTargets(in: host, on: model).first { $0.slot == destination.slot }, rail)
             let board = try beginDrag(source, NSRange(location: 0, length: 4))
             let drop = drag(from: source.textView, board: board, mask: move)
             XCTAssertEqual(target.dropRoute(for: drop), .move, "the control: a live page takes the move in \(rail)")
@@ -793,7 +793,7 @@ final class TabDropTests: XCTestCase {
             XCTAssertFalse(model.tabs.contains { $0.pageID == destination.sheet }, "the due page stayed in \(rail)")
             XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "the refused move changed the source in \(rail)")
             XCTAssertFalse(
-                nodeTargets(in: host).contains { $0.slot == destination.slot },
+                nodeTargets(in: host, on: model).contains { $0.slot == destination.slot },
                 "the swept page's node still seats a target in \(rail)")
         }
     }
@@ -815,12 +815,21 @@ final class TabDropTests: XCTestCase {
         return host
     }
 
-    /// Every target seated under `host` once it has laid out, top to bottom as drawn.
-    private func nodeTargets(in host: NSView) -> [TabDropTarget] {
+    /// Every target seated under `host` once it has laid out, top to bottom as drawn; a count
+    /// other than the page nodes `model` draws, an unmounted host's zero among them, fails the test.
+    private func nodeTargets(
+        in host: NSView, on model: PageModel, file: StaticString = #filePath, line: UInt = #line
+    ) -> [TabDropTarget] {
         host.layoutSubtreeIfNeeded()
         drainMainQueue()
         host.layoutSubtreeIfNeeded()
-        return mountedTargets(in: host).sorted { frame(of: $0).midY > frame(of: $1).midY }
+        let targets = mountedTargets(in: host).sorted { frame(of: $0).midY > frame(of: $1).midY }
+        let pageNodes = clickedSlots(on: model).count
+        XCTAssertGreaterThan(pageNodes, 0, "the rail draws no page node to look for", file: file, line: line)
+        XCTAssertEqual(
+            targets.count, pageNodes, "the host seated \(targets.count) of \(pageNodes) page nodes' targets",
+            file: file, line: line)
+        return targets
     }
 
     /// Every target under `view`, in the order the view tree holds them.
