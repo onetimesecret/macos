@@ -227,14 +227,6 @@ public struct Keystroke: Hashable, Sendable {
     /// order: a keymap file reads left to right in the order the words
     /// were typed, and a chord on screen reads in the order the symbols
     /// have sat in every macOS menu for thirty years.
-    /// A description with the chord in parentheses after it, or the
-    /// plain description when the keymap bound nothing, so every
-    /// tooltip and button that names a chord degrades the same way.
-    public static func chorded(_ what: String, chord: Keystroke?) -> String {
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
-    }
-
     public var displaySymbol: String {
         var symbols = ""
         if modifiers.contains(.control) { symbols += "⌃" }
@@ -246,6 +238,14 @@ public struct Keystroke: Hashable, Sendable {
         case .named(let named): symbols += named.displaySymbol
         }
         return symbols
+    }
+
+    /// A description with the chord in parentheses after it, or the
+    /// plain description when the keymap bound nothing, so every
+    /// tooltip and button that names a chord degrades the same way.
+    public static func chorded(_ what: String, chord: Keystroke?) -> String {
+        guard let chord else { return what }
+        return "\(what) (\(chord.displaySymbol))"
     }
 }
 

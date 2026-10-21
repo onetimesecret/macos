@@ -1487,7 +1487,9 @@ public struct InkEditorView: NSViewRepresentable {
 
         func appendLanguageItems(to menu: NSMenu) {
             guard PageModel.languageDetectionFeaturesAvailable, let textView else { return }
-            menu.addItem(.separator())
+            if let last = menu.items.last, !last.isSeparatorItem {
+                menu.addItem(.separator())
+            }
 
             let detect = NSMenuItem(
                 title: "Detect Code Language",
@@ -1532,6 +1534,8 @@ public struct InkEditorView: NSViewRepresentable {
                     )
                     highlight.target = self
                     menu.addItem(highlight)
+                    // The slug, not the display name: it is the literal
+                    // token the fence's info string receives.
                     let insert = NSMenuItem(
                         title: "Insert \(suggestion.language) in Fence",
                         action: #selector(insertSuggestedFenceLabel(_:)),
@@ -1596,22 +1600,15 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The context menu auto-enables, and a target without this
         /// method has every explicit `isEnabled` overwritten on display.
-        /// One arm per selector this coordinator targets, so a new item
-        /// that wants a gate has to be named here.
+        /// Detect answers from the text view's predicate, the one the
+        /// Edit menu and the chord use, so the two menus agree; every
+        /// other item this coordinator targets is enabled whenever it
+        /// is offered, since each is appended only when it applies.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-            switch item.action {
-            case #selector(detectCodeLanguageFromMenu(_:)):
-                return canDetectCodeLanguage
-            case #selector(sealSelectionFromMenu(_:)),
-                 #selector(dismissLanguageSuggestionFromMenu(_:)),
-                 #selector(applySuggestedWrap(_:)),
-                 #selector(applySuggestedHighlighting(_:)),
-                 #selector(insertSuggestedFenceLabel(_:)),
-                 #selector(chooseLanguageFromMenu(_:)):
-                return true
-            default:
-                return true
+            if item.action == #selector(detectCodeLanguageFromMenu(_:)) {
+                return textView?.canDetectCodeLanguage == true
             }
+            return true
         }
 
         // MARK: The page swap (ADR-0006)
