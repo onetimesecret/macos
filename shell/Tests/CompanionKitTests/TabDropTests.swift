@@ -600,7 +600,9 @@ final class TabDropTests: XCTestCase {
             }
             let targets = seatedTargets(in: host)
             XCTAssertFalse(targets.isEmpty, "\(rail) seated no target")
-            XCTAssertLessThan(targets.count, slots.count, "the control: \(rail) pushed no row above its column")
+            XCTAssertLessThan(
+                targets.count, slots.count,
+                "the control: \(rail) pushed no row above its column; if #277 changed the dense layout, revisit this test")
             XCTAssertEqual(
                 targets.map(\.slot), Array(slots.suffix(targets.count)),
                 "a row pushed above \(rail) seated a target, or a seated one left its node")
