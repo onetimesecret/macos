@@ -75,7 +75,10 @@ draws only a typed name (D-46 amends the gutter paragraph).
   lengthen the drawing past it and the column scrolls inside its clip,
   as the Finder sidebar does; the heading, its plus and the Files shelf
   stay outside the scrolling part, and a selection change scrolls the
-  active node into view. The viewport band, the active stretch and the
+  active node into view, with the note or the window mark above it;
+  ⌘-number or a click on the page already showing scrolls nothing,
+  a choice for this issue and open to revisit. The viewport band, the
+  active stretch and the
   slivers stay level with the nodes, in the drawing's own coordinates,
   so they scroll with the rows and the band can be out of the clip on a
   rail scrolled away from it. The box the slivers keep clear of is the
