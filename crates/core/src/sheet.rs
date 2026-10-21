@@ -912,12 +912,9 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
             }
         }
     }
-    // Cut in place: the one owner keeps its allocation and wipes the tail with the rest.
-    result.map(|mut line| {
-        let end = cap_end(&line);
-        line.truncate(end);
-        line
-    })
+    // The resident owner is the cap's size, not the line's: a long first line wipes as the
+    // intermediate drops rather than living on in the title's spare capacity.
+    result.map(|line| capped_title(&line))
 }
 
 /// An open fence. A closer must match its marker and be at least as long
@@ -1455,6 +1452,10 @@ mod tests {
         let derived = derive_title(&[Segment::Ink(long.clone())]).unwrap();
         assert_eq!(derived.chars().count(), TITLE_CAP);
         assert_eq!(derived.as_str(), capped.as_str());
+        assert!(
+            derived.capacity() <= derived.len() + 4,
+            "the resident title kept the line's capacity"
+        );
     }
 
     /// A sealed object's excerpt and typed name are wiping owners (Law 0004, C09, C10), and

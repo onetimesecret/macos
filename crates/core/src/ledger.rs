@@ -3,7 +3,6 @@
 //! title is the one content-derived field.
 
 use std::collections::VecDeque;
-use std::fmt;
 
 use zeroize::Zeroizing;
 
@@ -129,8 +128,8 @@ pub struct LedgerRecord {
 
 /// The title is the one content derived field, so a record formats without it, as
 /// `Segment` does (Law 0004, C16).
-impl fmt::Debug for LedgerRecord {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for LedgerRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Destructured in full, so a new field is a compile error here, not a silent print.
         let Self {
             event,
