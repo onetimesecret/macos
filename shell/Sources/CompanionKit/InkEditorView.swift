@@ -2424,6 +2424,27 @@ public struct InkEditorView: NSViewRepresentable {
             finishComposition(in: storage, document: document)
         }
 
+        /// Drop a composition in flight, provisional text and all: the span returns to its
+        /// baseline with no op emitted, and the input method is told. For a peer's edit, whose
+        /// merge a commit read against the old storage would cross (#276).
+        func abandonComposition(in textView: InkTextView) {
+            guard textView.hasMarkedText(), let storage = textView.textStorage else { return }
+            let span = imeComposition.map { NSRange(location: $0.location, length: max(0, $0.spanLength)) }
+            let baseline = imeComposition?.baseline ?? ""
+            let selection = imeComposition?.selectionBefore
+            imeComposition = nil
+            textView.inputContext?.discardMarkedText()
+            model.applyingProjection {
+                textView.unmarkText()
+                if let span, NSMaxRange(span) <= storage.length {
+                    storage.replaceCharacters(in: span, with: baseline)
+                }
+            }
+            if let selection {
+                textView.setSelectedRange(Self.clamped(selection, to: storage.length))
+            }
+        }
+
         /// The outermost TextKit action currently producing storage edits.
         /// Nested calls keep the outer action: list continuation calls
         /// `insertText`, for example, but remains automation rather than typing.

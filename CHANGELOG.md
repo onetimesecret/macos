@@ -995,10 +995,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   managers, so a second layout manager on a storage cannot leave a
   quiet page stale. The roll sets its horizontal scroller only when it
   differs from what the wrap setting asks, not on every keystroke's
-  pass. A test pins that
-  a page switch handing the keys to the editor, with its caret below
-  the viewport, keeps the reader's place; the switch already did. The
-  mixed edit fallback in the reading anchor's rebase has its own issue,
+  pass. A test pins that a page switch handing the keys to the editor,
+  with its caret below the viewport, keeps the reader's place; the
+  switch already did. The mixed edit fallback in the reading anchor's
+  rebase has its own issue,
   #283.
 
 - **Menus, dialogs and rows follow the platform's conventions** (app

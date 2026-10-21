@@ -6827,9 +6827,14 @@ public final class PageModel: ObservableObject {
     /// A peer's edit merged into the storage `shown` lays out, one stretch at a time, so the
     /// caret, the selection and the reading place outside each stretch stand where they were and
     /// the next local edit is read from the merged text (#276). A rewrite past `mergeDiffLimit`
-    /// is replaced as one stretch instead, since the diff is quadratic in it.
+    /// units or `mergeStretchLimit` stretches is replaced as one stretch instead. Each stretch is
+    /// its own storage edit on purpose: a begin and end editing pair would fold them into one
+    /// edited range, and the selection fixups AppKit makes per edit with them.
     private func mergeIntoShownStorage(sheet: UInt64, shown: InkTextView) {
         guard let storage = storages[sheet] else { return }
+        // A composition in flight is the input method's provisional text, not the core's, and its
+        // commit would be read against a storage the peer's edit has moved under; it is dropped.
+        shown.coordinator?.abandonComposition(in: shown)
         let rebuilt = rebuiltRuns(of: sheet)
         let old = Self.units(of: storage)
         let new = Self.units(of: rebuilt)
@@ -6839,43 +6844,98 @@ public final class PageModel: ObservableObject {
         let oldMiddle = Array(old[head..<(old.count - tail)])
         let newMiddle = Array(new[head..<(new.count - tail)])
         guard !oldMiddle.isEmpty || !newMiddle.isEmpty else { return }
-        InkEditorView.discardComposition(in: shown)
-        applyingProjection {
-            if oldMiddle.count > Self.mergeDiffLimit || newMiddle.count > Self.mergeDiffLimit {
-                storage.replaceCharacters(
-                    in: NSRange(location: head, length: oldMiddle.count),
-                    with: rebuilt.attributedSubstring(from: NSRange(location: head, length: newMiddle.count)))
-                return
-            }
+        // Offsets in UTF-16 units: the head's, and each middle unit's start within its middle.
+        let headOffset = Self.width(of: old.prefix(head))
+        let oldStarts = Self.starts(of: oldMiddle)
+        let newStarts = Self.starts(of: newMiddle)
+        var stretches: (removals: [Range<Int>], insertions: [Range<Int>])?
+        if oldMiddle.count <= Self.mergeDiffLimit, newMiddle.count <= Self.mergeDiffLimit {
             let difference = newMiddle.difference(from: oldMiddle)
-            for run in Self.runs(of: Self.offsets(of: difference.removals)).reversed() {
-                storage.deleteCharacters(in: NSRange(location: head + run.lowerBound, length: run.count))
-            }
-            for run in Self.runs(of: Self.offsets(of: difference.insertions)) {
-                let at = head + run.lowerBound
-                storage.insert(rebuilt.attributedSubstring(from: NSRange(location: at, length: run.count)), at: at)
+            let removals = Self.runs(of: Self.offsets(of: difference.removals))
+            let insertions = Self.runs(of: Self.offsets(of: difference.insertions))
+            if removals.count + insertions.count <= Self.mergeStretchLimit {
+                stretches = (removals, insertions)
             }
         }
+        applyingProjection {
+            guard let stretches else {
+                storage.replaceCharacters(
+                    in: NSRange(location: headOffset, length: oldStarts[oldMiddle.count]),
+                    with: rebuilt.attributedSubstring(
+                        from: NSRange(location: headOffset, length: newStarts[newMiddle.count])))
+                return
+            }
+            for run in stretches.removals.reversed() {
+                storage.deleteCharacters(in: NSRange(
+                    location: headOffset + oldStarts[run.lowerBound],
+                    length: oldStarts[run.upperBound] - oldStarts[run.lowerBound]))
+            }
+            for run in stretches.insertions {
+                let at = headOffset + newStarts[run.lowerBound]
+                let length = newStarts[run.upperBound] - newStarts[run.lowerBound]
+                storage.insert(rebuilt.attributedSubstring(from: NSRange(location: at, length: length)), at: at)
+            }
+        }
+        #if DEBUG
+            assertProjectionParity(sheet: sheet)
+        #endif
     }
 
-    private static let mergeDiffLimit = 4_096
+    /// The diff is quadratic in the middle's length, and each stretch is a layout pass.
+    private static let mergeDiffLimit = 2_048
+    private static let mergeStretchLimit = 64
 
-    /// One UTF-16 unit, or the object standing at it, so two objects never read as one character.
+    /// One character, a surrogate pair as one so no edit leaves half of it standing, or the
+    /// object standing there, so two objects never read as one character; an object is its id,
+    /// since no edit a peer sends changes a face.
     private enum ProjectionUnit: Equatable {
         case character(unichar)
+        case pair(unichar, unichar)
         case object(UInt64)
+
+        var width: Int {
+            if case .pair = self { return 2 }
+            return 1
+        }
     }
 
     private static func units(of text: NSAttributedString) -> [ProjectionUnit] {
         let string = text.string as NSString
-        var units = (0..<string.length).map { ProjectionUnit.character(string.character(at: $0)) }
+        var buffer = [unichar](repeating: 0, count: string.length)
+        string.getCharacters(&buffer, range: NSRange(location: 0, length: string.length))
+        var objects: [Int: UInt64] = [:]
         text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, range, _ in
             guard let chip = value as? ChipAttachment else { return }
-            for index in range.location..<NSMaxRange(range) {
-                units[index] = .object(chip.info.chipId)
+            for index in range.location..<NSMaxRange(range) { objects[index] = chip.info.chipId }
+        }
+        var units: [ProjectionUnit] = []
+        units.reserveCapacity(buffer.count)
+        var index = 0
+        while index < buffer.count {
+            if let object = objects[index] {
+                units.append(.object(object))
+            } else if UTF16.isLeadSurrogate(buffer[index]), index + 1 < buffer.count,
+                      UTF16.isTrailSurrogate(buffer[index + 1]) {
+                units.append(.pair(buffer[index], buffer[index + 1]))
+                index += 1
+            } else {
+                units.append(.character(buffer[index]))
             }
+            index += 1
         }
         return units
+    }
+
+    private static func width(of units: some Sequence<ProjectionUnit>) -> Int {
+        units.reduce(0) { $0 + $1.width }
+    }
+
+    /// Each unit's UTF-16 offset from the first, with the total at the end.
+    private static func starts(of units: [ProjectionUnit]) -> [Int] {
+        var starts = [0]
+        starts.reserveCapacity(units.count + 1)
+        for unit in units { starts.append(starts[starts.count - 1] + unit.width) }
+        return starts
     }
 
     private static func offsets(of changes: [CollectionDifference<ProjectionUnit>.Change]) -> [Int] {

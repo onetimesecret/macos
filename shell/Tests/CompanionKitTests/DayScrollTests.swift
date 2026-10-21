@@ -651,7 +651,7 @@ final class DayScrollTests: XCTestCase {
 
     /// A peer's edit around a sealed object keeps the object's attachment, and a wholesale
     /// rewrite past the diff's limit still ends on the core's text (#276).
-    func testAPeersEditAroundASealedObjectKeepsTheObjectAndAWholesaleRewriteLandsWhole() throws {
+    func testAPeersEditAroundASealedObjectKeepsTheObjectAndAWholesaleRewriteEndsOnTheCoresText() throws {
         let model = try makeModel()
         let mounted = try page(in: model, saying: "before secret after")
         XCTAssertNotNil(model.coreClient.sealText(sheet: mounted, "secret", at: 7, length: 6))
@@ -679,6 +679,130 @@ final class DayScrollTests: XCTestCase {
             sheet: mounted, json: "[{\"ink\":\"\(rewrite.replacingOccurrences(of: "\n", with: "\\n"))\"}]"))
         model.settleRemoteEdits(on: [mounted])
         XCTAssertEqual(editor.string, rewrite)
+        XCTAssertTrue(editor.textStorage === storage)
+    }
+
+    /// A peer's edit arriving mid composition drops the composition, provisional text and all,
+    /// since the input method's text is not the core's and its commit would be read against a
+    /// storage the merge moves; the merge then runs, and the next keystroke is ordinary (#276).
+    func testAPeersEditDuringACompositionDropsTheCompositionAndMerges() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "alpha beta")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 6, length: 4))
+        editor.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "alpha ka", "the case needs a composition over a selection")
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 10, text: " gamma")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertFalse(editor.hasMarkedText(), "the composition stood through the merge")
+        XCTAssertEqual(editor.string, "alpha beta gamma")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 6, length: 4), "the selection the composition replaced is back")
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+        editor.insertText("\u{304B}", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(editor.string, "alpha \u{304B} gamma")
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+    }
+
+    /// A peer's edit that changes one emoji for another replaces the whole pair, never one of
+    /// its halves, and a settle that finds the page current touches the storage not at all (#276).
+    func testAPeersEditInsideASurrogatePairReplacesTheWholePairAndAnEchoTouchesNothing() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "a 😀 b")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        editor.setSelectedRange(NSRange(location: 5, length: 1))
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 2, len: 2), .ins(at: 2, text: "😁")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+        final class Watch: @unchecked Sendable {
+            var edits = 0
+            var halves = 0
+        }
+        let watch = Watch()
+        let token = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
+        ) { notification in
+            watch.edits += 1
+            if let edited = notification.object as? NSTextStorage, Self.holdsHalfAPair(edited.string) {
+                watch.halves += 1
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertEqual(editor.string, "a 😁 b")
+        XCTAssertEqual(watch.halves, 0, "an edit left half a surrogate pair standing")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 5, length: 1))
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+
+        let edits = watch.edits
+        model.settleRemoteEdits(on: [mounted])
+        XCTAssertEqual(watch.edits, edits, "a settle with nothing new edited the storage")
+    }
+
+    private static func holdsHalfAPair(_ text: String) -> Bool {
+        let units = Array(text.utf16)
+        for (index, unit) in units.enumerated() {
+            if UTF16.isLeadSurrogate(unit), index + 1 >= units.count || !UTF16.isTrailSurrogate(units[index + 1]) {
+                return true
+            }
+            if UTF16.isTrailSurrogate(unit), index == 0 || !UTF16.isLeadSurrogate(units[index - 1]) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// A rewrite of a few stretches keeps a selection on the words between them; one of more
+    /// stretches than the merge applies singly is replaced whole and ends on the core's text (#276).
+    func testAFewStretchesKeepTheWordsBetweenThemAndManyAreReplacedWhole() throws {
+        let model = try makeModel()
+        let words = (0..<100).map { "x\($0)" }
+        let mounted = try page(in: model, saying: words.joined(separator: " "))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        let island = (editor.string as NSString).range(of: "x50")
+        editor.setSelectedRange(island)
+        func rewrite(_ changed: Range<Int>) throws {
+            let text = words.enumerated().map { changed.contains($0.offset) ? "y\($0.offset)" : $0.element }
+                .joined(separator: " ")
+            XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"\(text)\"}]"))
+            model.settleRemoteEdits(on: [mounted])
+            XCTAssertEqual(editor.string, text)
+            XCTAssertNil(PageModel.parityBreach(
+                editor: InkEditorView.Coordinator.runs(of: storage),
+                core: model.coreClient.documentRuns(sheet: mounted)))
+        }
+
+        try rewrite(10..<20)
+        XCTAssertEqual(
+            (editor.string as NSString).substring(with: editor.selectedRange()), "x50",
+            "a selection between the stretches moved")
+
+        try rewrite(0..<100)
         XCTAssertTrue(editor.textStorage === storage)
     }
 
