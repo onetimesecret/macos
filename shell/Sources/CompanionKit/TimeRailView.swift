@@ -431,8 +431,8 @@ struct StreamNavigatorView: View {
                 height: proxy.size.height, width: proxy.size.width
             )
             // Rows that outrun the column lengthen the drawing, and the column scrolls to
-            // reach them inside its clip, as a sidebar does (#277).
-            ScrollView(.vertical, showsIndicators: false) {
+            // reach them inside its clip, with the overlay scroller a sidebar shows (#277).
+            ScrollView(.vertical, showsIndicators: true) {
                 stream(layout, size: proxy.size)
             }
         }
@@ -448,7 +448,8 @@ struct StreamNavigatorView: View {
         // turns the roll (D-38), through a relay only the owner's rail installs, since a
         // relay in the other window would swallow that window's wheel for a roll it may
         // not drive.
-        let relays = drivesRoll && layout.contentHeight <= size.height
+        let relays = drivesRoll
+            && StreamNavigator.relaysWheel(contentHeight: layout.contentHeight, columnHeight: size.height)
         let reveal = layout.placed.first { $0.node.active }.map {
             RailReveal.Request(id: $0.id, rowTop: $0.drawnTop, rowHeight: $0.rowHeight)
         }
@@ -836,16 +837,22 @@ private final class RailRevealView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Scroll the row into the clip, once per active node: a later layout that moves the
-    /// row leaves the reader's own scrolling alone.
+    /// Scroll the row into the clip, by `StreamNavigator.revealIsDue`: the node is recorded
+    /// as revealed only once its row was measured against the clip, so an attempt made
+    /// before the view sits under a scroll view is made again by the next update.
     func reveal(_ request: RailReveal.Request?) {
-        guard let request, request.id != revealed else { return }
-        revealed = request.id
+        guard let request, StreamNavigator.revealIsDue(for: request.id, after: revealed) else { return }
         DispatchQueue.main.async { [weak self] in self?.scroll(to: request) }
     }
 
     private func scroll(to request: RailReveal.Request) {
-        guard let scrollView = enclosingScrollView, let document = scrollView.documentView else { return }
+        guard StreamNavigator.revealIsDue(for: request.id, after: revealed),
+              let scrollView = enclosingScrollView, let document = scrollView.documentView,
+              // The offset is a distance down from the top, which is the clip origin's y
+              // only over a flipped document, the one SwiftUI's scroll view keeps.
+              document.isFlipped
+        else { return }
+        revealed = request.id
         let clip = scrollView.contentView
         let row = convert(
             NSRect(x: 0, y: request.rowTop, width: 1, height: request.rowHeight), to: document)

@@ -427,7 +427,7 @@ public enum StreamNavigator {
         /// unchecked height from a caller.
         let sourceHeight: CGFloat
         /// How tall the drawing is: the column's height, or more when the rows outrun it,
-        /// in which case the column scrolls (#277).
+        /// in which case the column scrolls (#277). `.empty` alone reads 0, having no column.
         public let contentHeight: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
@@ -506,6 +506,22 @@ public enum StreamNavigator {
             return min(furthest, max(0, rowTop + rowHeight - visibleHeight))
         }
         return nil
+    }
+
+    /// Whether the column reveals a node again: once per active node,
+    /// so a later layout that moves the row leaves the reader's own
+    /// scrolling alone, and a reveal that could not be made is asked
+    /// for again (#277).
+    public static func revealIsDue(for id: UInt64, after revealed: UInt64?) -> Bool {
+        revealed != id
+    }
+
+    /// Whether a wheel over the column turns the roll (D-38) rather
+    /// than the column: while the drawing fits the column, with the
+    /// foot's margin as tolerance so a hair of overflow does not change
+    /// what the wheel means (#277).
+    public static func relaysWheel(contentHeight: CGFloat, columnHeight: CGFloat) -> Bool {
+        contentHeight <= columnHeight + Metrics.bottom
     }
 
     /// The drawing, decided.
