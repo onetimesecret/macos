@@ -513,7 +513,7 @@ public struct ConnectionSettingsView: View {
                 SettingsCaption("Where a conceal goes, over https only.")
             }
             Section {
-                TextField("Organization extid", text: $extid, prompt: Text("empty for guest conceals"))
+                TextField("Organization ID", text: $extid, prompt: Text("empty for guest conceals"))
                 SecureField("API token", text: $token, prompt: Text(tokenPrompt))
                 if model.connection?.hasToken == true {
                     Button("Clear Stored Token", role: .destructive) { confirmingClear = true }

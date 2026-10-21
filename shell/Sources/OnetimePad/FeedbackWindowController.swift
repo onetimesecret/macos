@@ -268,7 +268,8 @@ enum DiagnosticsActions {
 
     private static func savePanel() -> NSSavePanel {
         let panel = NSSavePanel()
-        panel.title = "Export Diagnostics"
+        // Save panels stopped drawing `title` in 10.11; `message` shows.
+        panel.message = "Export Diagnostics"
         panel.nameFieldStringValue = "OnetimePad-Diagnostics.txt"
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true

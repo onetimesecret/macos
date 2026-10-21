@@ -159,7 +159,9 @@ private struct SyncDeviceRow: View {
                     }
             }
         }
-        .accessibilityElement(children: .ignore)
+        // `.combine`, not `.ignore`: the row reads as one element and
+        // keeps Revoke reachable as an action of it.
+        .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(title), \(seen), \(badge)"))
     }
 
@@ -215,7 +217,7 @@ private struct SyncPairingStatus: View {
                     .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
                 HStack {
                     Button("They Match") { sync.confirmPairing(matched: true) }
-                    Button("They Don't Match", role: .destructive) {
+                    Button("They Don’t Match", role: .destructive) {
                         sync.confirmPairing(matched: false)
                     }
                 }
