@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 
 /// Which edge or corner of the card a resize drag is pulling, and what
@@ -11,6 +12,25 @@ import CoreGraphics
 enum CardEdge: CaseIterable {
     case top, bottom, leading, trailing
     case topLeading, topTrailing, bottomLeading, bottomTrailing
+
+    /// The pointer a window shows over this margin. Diagonal frame
+    /// cursors are macOS 15 API; earlier systems keep the arrow on
+    /// corners, as they do for windows.
+    var resizeCursor: NSCursor? {
+        switch self {
+        case .leading, .trailing: return .resizeLeftRight
+        case .top, .bottom: return .resizeUpDown
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
+            guard #available(macOS 15, *) else { return nil }
+            let position: NSCursor.FrameResizePosition = switch self {
+            case .topLeading: .topLeft
+            case .topTrailing: .topRight
+            case .bottomLeading: .bottomLeft
+            default: .bottomRight
+            }
+            return .frameResize(position: position, directions: .all)
+        }
+    }
 
     /// Whether this grip moves the card's leading edge, which changes
     /// the origin as well as the width.

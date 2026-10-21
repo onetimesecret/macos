@@ -162,7 +162,7 @@ private struct SyncDeviceRow: View {
         // `.combine`, not `.ignore`: the row reads as one element and
         // keeps Revoke reachable as an action of it.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(title), \(seen), \(badge)"))
+        .accessibilityLabel(Text("\(device.fingerprint.prefix(8)), \(title), \(seen), \(badge)"))
     }
 
     private var title: String {

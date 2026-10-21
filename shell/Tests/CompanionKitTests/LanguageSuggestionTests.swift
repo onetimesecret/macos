@@ -204,7 +204,7 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertTrue(menu.items.contains { $0.title == "Suggested: Swift" })
         XCTAssertTrue(menu.items.contains { $0.title == "Dismiss Suggestion" })
         XCTAssertTrue(menu.items.contains { $0.title == "Paste Without Detection" })
-        let insert = try XCTUnwrap(menu.items.first { $0.title == "Insert swift in Fence" })
+        let insert = try XCTUnwrap(menu.items.first { $0.title == "Insert “swift” in Fence" })
         var emitted: [[DocumentEditOp]] = []
         coordinator.onEmit = { emitted.append($0) }
 

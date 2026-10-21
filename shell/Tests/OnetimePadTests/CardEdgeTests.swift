@@ -109,4 +109,20 @@ final class CardEdgeTests: XCTestCase {
             }
         }
     }
+
+    // MARK: The pointer over each grip
+
+    func testEdgesShowTheAxisCursorAndCornersTheFrameCursorFromMacOS15() {
+        XCTAssertEqual(CardEdge.leading.resizeCursor, .resizeLeftRight)
+        XCTAssertEqual(CardEdge.trailing.resizeCursor, .resizeLeftRight)
+        XCTAssertEqual(CardEdge.top.resizeCursor, .resizeUpDown)
+        XCTAssertEqual(CardEdge.bottom.resizeCursor, .resizeUpDown)
+        for corner in [CardEdge.topLeading, .topTrailing, .bottomLeading, .bottomTrailing] {
+            if #available(macOS 15, *) {
+                XCTAssertNotNil(corner.resizeCursor, "\(corner)")
+            } else {
+                XCTAssertNil(corner.resizeCursor, "\(corner) keeps the arrow before macOS 15")
+            }
+        }
+    }
 }

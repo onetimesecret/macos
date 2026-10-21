@@ -1535,7 +1535,7 @@ public struct InkEditorView: NSViewRepresentable {
                     highlight.target = self
                     menu.addItem(highlight)
                     let insert = NSMenuItem(
-                        title: "Insert \(suggestion.language) in Fence",
+                        title: "Insert “\(suggestion.language)” in Fence",
                         action: #selector(insertSuggestedFenceLabel(_:)),
                         keyEquivalent: ""
                     )
@@ -1599,15 +1599,22 @@ public struct InkEditorView: NSViewRepresentable {
         /// The context menu auto-enables, and a target without this
         /// method has every explicit `isEnabled` overwritten on display.
         /// Detect answers from the text view's predicate, the one the
-        /// Edit menu and the chord use, so the two menus agree; every
-        /// other item this coordinator targets is enabled whenever it
-        /// is offered, since each is appended only when it applies.
+        /// Edit menu and the chord use, so the two menus agree. The
+        /// others are appended only when they apply, so they are on;
+        /// an item not named here shows disabled until it chooses.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
             switch item.action {
             case #selector(detectCodeLanguageFromMenu(_:)):
                 return textView?.canDetectCodeLanguage == true
-            default:
+            case #selector(sealSelectionFromMenu(_:)),
+                 #selector(dismissLanguageSuggestionFromMenu(_:)),
+                 #selector(applySuggestedWrap(_:)),
+                 #selector(applySuggestedHighlighting(_:)),
+                 #selector(insertSuggestedFenceLabel(_:)),
+                 #selector(chooseLanguageFromMenu(_:)):
                 return true
+            default:
+                return false
             }
         }
 

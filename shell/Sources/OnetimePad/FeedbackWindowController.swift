@@ -268,8 +268,9 @@ enum DiagnosticsActions {
 
     private static func savePanel() -> NSSavePanel {
         let panel = NSSavePanel()
-        // `message` is the text a save panel draws above its fields.
-        panel.message = "Export Diagnostics"
+        // `message` is the text a save panel draws above its fields: a
+        // notice, in D-15's lower case (ADR-0055 rule 1).
+        panel.message = "export the diagnostics as a text file"
         panel.nameFieldStringValue = "OnetimePad-Diagnostics.txt"
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true

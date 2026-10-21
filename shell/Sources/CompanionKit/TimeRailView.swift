@@ -811,15 +811,8 @@ final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
     /// its window or moves between windows, and by the representable's
-    /// dismantle (`retire`). nonisolated(unsafe) because deinit is
-    /// nonisolated; the net below asserts the thread it runs on.
-    private nonisolated(unsafe) var monitor: Any?
-
-    deinit {
-        guard let monitor else { return }
-        assert(Thread.isMainThread, "a view's monitor is released where it was installed")
-        NSEvent.removeMonitor(monitor)
-    }
+    /// dismantle (`retire`).
+    private var monitor: Any?
 
     /// Whether the view is watching its window's wheel events.
     var isWatching: Bool { monitor != nil }
@@ -1270,7 +1263,6 @@ enum TimeUnitTab {
         guard hasPage else { return Keystroke.chorded("Start today's page", chord: chord) }
         return dayHelp(spokenLabel: "today", chord: chord)
     }
-
 }
 
 extension View {

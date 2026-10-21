@@ -2060,8 +2060,9 @@ public final class PageModel: ObservableObject {
                 self.saveState()
             }
         }
-        RunLoop.main.add(timer, forMode: mode)
+        // Stored before it is scheduled, the clear timer's order.
         saveTimer = timer
+        RunLoop.main.add(timer, forMode: mode)
     }
 
     /// Arm the clear-after-copy (D-29, D-32; ADR-0012): one shot, the

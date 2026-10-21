@@ -780,7 +780,7 @@ struct BackdropRootView: View {
             // A grip with no cursor of its own (a corner before macOS
             // 15) still takes the neighbouring edge's off the stack.
             popResizeCursor()
-            guard raised, let cursor = Self.resizeCursor(for: edge) else { return }
+            guard raised, let cursor = edge.resizeCursor else { return }
             cursor.push()
             pushedCursorEdge = edge
         } else if pushedCursorEdge == edge {
@@ -792,24 +792,6 @@ struct BackdropRootView: View {
         guard pushedCursorEdge != nil else { return }
         NSCursor.pop()
         pushedCursorEdge = nil
-    }
-
-    private static func resizeCursor(for edge: CardEdge) -> NSCursor? {
-        switch edge {
-        case .leading, .trailing: return .resizeLeftRight
-        case .top, .bottom: return .resizeUpDown
-        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
-            // Diagonal frame cursors are macOS 15 API; earlier systems
-            // keep the arrow on corners, as they do for windows.
-            guard #available(macOS 15, *) else { return nil }
-            let position: NSCursor.FrameResizePosition = switch edge {
-            case .topLeading: .topLeft
-            case .topTrailing: .topRight
-            case .bottomLeading: .bottomLeft
-            default: .bottomRight
-            }
-            return .frameResize(position: position, directions: .all)
-        }
     }
 
     /// One resize drag, per edge: the pure `CardEdge` decision turns the
