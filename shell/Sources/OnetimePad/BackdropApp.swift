@@ -420,7 +420,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var pendingEditorSummon: ActivationRoute?
 
     /// Files the Finder asked to open, waiting for a drain (`FinderOpenPlan`).
-    private var finderDocuments: [URL] = []
+    private(set) var finderDocuments: [URL] = []
+
+    /// Stands in for the editor selection after a Finder open, so a test's runner opens no window.
+    var selectEditorForTests: (() -> Void)?
 
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
@@ -569,8 +572,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // editor and trigger Keychain access behind the introduction.
         KeychainIntroduction.showIfNeeded(defaults: FormFactor.settingsDefaults)
         controller.show()
+        completeStartup(notification)
+    }
+
+    /// The surface is up: replay an activation that came during launch, then drain the Finder queue.
+    func completeStartup(_ notification: Notification) {
         startupComplete = true
-        let replaysLaunchActivation = activationDuringStartup && NSApp.isActive
+        let replaysLaunchActivation = activationDuringStartup && NSApp?.isActive == true
         if replaysLaunchActivation {
             activationDuringStartup = false
             launchedAt = Date()
@@ -788,7 +796,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private func openDocuments(_ urls: [URL]) -> Bool {
         guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
         else { return false }
-        applySummon(.openEditorPresentation)
+        if let selectEditorForTests {
+            selectEditorForTests()
+        } else {
+            applySummon(.openEditorPresentation)
+        }
         return true
     }
 

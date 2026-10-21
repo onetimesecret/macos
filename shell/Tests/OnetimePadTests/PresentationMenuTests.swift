@@ -48,14 +48,18 @@ final class PresentationMenuTests: XCTestCase {
                                            client: CompanionClient(adopting: handle)))
         let model = BackdropModel(defaults: defaults, pages: pages)
         let delegate = BackdropAppDelegate(model: model)
+        var selections = 0
+        delegate.selectEditorForTests = { selections += 1 }
 
         delegate.application(NSApplication.shared, open: [file])
-        XCTAssertTrue(pages.openFiles.isEmpty, "the launch's file waits for the restored roster")
-        XCTAssertFalse(model.editorWindowOpen)
+        XCTAssertEqual(delegate.finderDocuments, [file], "the launch's file waits for the restored roster")
+        XCTAssertTrue(pages.openFiles.isEmpty)
+        XCTAssertEqual(selections, 0)
 
-        // The same file opens directly, so the gate is what held it back.
-        pages.openFile(at: file)
+        delegate.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+        XCTAssertEqual(delegate.finderDocuments, [])
         XCTAssertEqual(pages.openFiles.map(\.name), ["notes.txt"])
+        XCTAssertEqual(selections, 1)
     }
 
     @MainActor
