@@ -980,6 +980,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The card's header follows the title bar double-click preference**
+  (app 0.40.10; issue #298; a dated note on the 2026-0707 interaction
+  model). A double-click on the header reads the setting a window's own
+  title bar reads (System Settings, Desktop & Dock, Double-click a
+  window's title bar to), where before it always stretched the card to
+  full working height. Zoom is that stretch; Fill takes the whole
+  visible frame; Minimize and Do Nothing leave the card where it is,
+  since a panel cannot miniaturise. With the setting unset the system's
+  default applies, Fill from macOS 15 and Zoom before. A second
+  double-click returns the card either way, and a drag or resize by
+  hand still ends the return trip.
+
 - **The drafts file is read before it is written** (app 0.40.9; issue
   #296). The model writes the drafts file only once its restore has
   run, where before only the app layer's call order kept a save from
