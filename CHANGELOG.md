@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Seat words and note hints take their size from the platform** (app
+  0.40.8; issue #297). The thirteen places that spelled the mini font
+  size as a literal 9 now read `NSFont.systemFontSize(for: .mini)`
+  through one `NSFont.miniSystemFontSize`, and a test pins that number
+  at 9 so a platform change is noticed. Nothing on screen changes.
+
 - **Captions and tooltips say one-time link, not conceal** (app 0.40.7;
   issue #295). The Connection settings caption, the guest prompt, the
   clear token message, the sync sign out message, the sheet's server
