@@ -5161,7 +5161,7 @@ final class InkTextContainer: NSTextContainer {
 /// projection write that posted no text change notification.
 @MainActor
 protocol EditorSizingHost: AnyObject {
-    func relayout()
+    @discardableResult func relayout() -> Bool
 }
 
 extension DayStackView: EditorSizingHost {}

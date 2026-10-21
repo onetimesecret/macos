@@ -630,16 +630,13 @@ final class DayStackView: NSView {
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
         let anchor = expandedLayout == model.isPageExpanded ? topmostPageAnchor() : nil
-        let place = readingPlace
         rendered = signature
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
         isLayingOut = false
         refreshEditorPresentation(heldEditorFocus: heldEditorFocus)
         model.scheduleEditStepsRefresh()
-        relayout()
-        let restoredReadingPage = place.map { place in rows.contains { $0.page == place.page } } ?? false
-        if !restoredReadingPage { keepStill(anchoredOn: anchor) }
+        if !relayout() { keepStill(anchoredOn: anchor) }
         settlePendingPlace()
     }
 
@@ -1029,11 +1026,12 @@ final class DayStackView: NSView {
 
     // MARK: Measuring and placing
 
-    /// Re-measure and place every region, then return the clip to the reading place, or to
-    /// today for a waiting summon; the rail's measurement is published on a hop (issue #131).
-    func relayout() {
+    /// Re-measure and place every region, then return the clip to the reading place, or to today
+    /// for a waiting summon, and answer whether it did; the rail's measurement follows on a hop (#131).
+    @discardableResult
+    func relayout() -> Bool {
         guard !isLayingOut, model.owner == coordinator.surface,
-              let scroll = enclosingScrollView else { return }
+              let scroll = enclosingScrollView else { return false }
         isLayingOut = true
         measurements += 1
         let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
@@ -1117,6 +1115,7 @@ final class DayStackView: NSView {
         }
         setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
         var restoredPlace: RollPlace?
+        var summoned = false
         if !expansionChanged, pendingPlace == nil, let place = readingPlace, restore(place: place) {
             restoredPlace = place
         }
@@ -1124,13 +1123,15 @@ final class DayStackView: NSView {
         if pendingTodayAnchor {
             scrollToDayZero()
             // The summon scrolled when it cleared its flag, and it outranks the restored place.
-            if !pendingTodayAnchor { restoredPlace = nil }
+            summoned = !pendingTodayAnchor
+            if summoned { restoredPlace = nil }
         }
         positionViewportChrome()
         readingPlace = restoredPlace ?? currentPlace
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
+        return restoredPlace != nil || summoned
     }
 
     private func constrainScrollOffset() {
