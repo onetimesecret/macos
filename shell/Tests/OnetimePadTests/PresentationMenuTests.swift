@@ -56,6 +56,8 @@ final class PresentationMenuTests: XCTestCase {
         XCTAssertTrue(pages.openFiles.isEmpty)
         XCTAssertEqual(selections, 0)
 
+        // A launch restores the roster in `model.start()`, before `completeStartup`.
+        pages.loadStateIfNeeded()
         delegate.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
         XCTAssertEqual(delegate.finderDocuments, [])
         XCTAssertEqual(pages.openFiles.map(\.name), ["notes.txt"])
