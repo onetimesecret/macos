@@ -191,7 +191,7 @@ struct BackdropRootView: View {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
                     Group {
                         if pages.showsTimeUnits {
-                            TimeRailView(model: pages)
+                            TimeRailView(model: pages, readOnly: !raised)
                         } else {
                             SlotRailView(model: pages)
                         }
