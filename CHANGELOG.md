@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Menus, dialogs and rows follow the platform's conventions** (app
+  0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
+  head, on the chord the keymap binds. The Window menu's switches and
+  Close Window head that menu, before Minimize and Zoom, as the comment
+  always said. Detect Code Language drops its ellipsis in both menus,
+  since detection answers inline, and the context menu item now greys
+  out when it has no target: the menu auto-enables, and without a
+  validation method the explicit state was overwritten on display.
+  Language names read as their communities write them (JavaScript,
+  SQL, YAML) wherever a language is named. The shortcut alert offers
+  Try Again and Cancel, names the input source shortcut that takes
+  ⌃⌥Space, and the status item's menu says Quit OnetimePad and ⌃⌥Space
+  Unavailable…. The Connection tab's field is Organization ID. The
+  pairing verdict reads They Don’t Match. The diagnostics save panel
+  shows its words again (the panel's title has not drawn since 10.11).
+  The clipboard offer's Seal It names the chord the keymap binds. A
+  page's own context menu group starts with a separator, and Close Tab
+  and Close File stand apart from the items above them. The editor
+  window refuses automatic window tabbing.
+- **Rows and close marks reach VoiceOver and the pointer** (app 0.39.1).
+  A sync device row combines its words and keeps Revoke as an action;
+  the rail's day nodes, slot rows and file rows are buttons, and a slot
+  row offers Rename Tab and Close Tab as actions. Tab close marks have
+  a 16 by 18 point hit area and a tooltip; the note's expand button has
+  one too. The card's edges and corners show resize cursors while
+  raised. The ambient panel carries the app's name for VoiceOver. The
+  wheel relay removes its event monitor on deallocation.
+- **A copy that lands as the clear fires keeps its own window** (app
+  0.39.1; D-29). The clear ran through a main-actor hop after the timer
+  fired, so a copy made between the two was cleared at once; it now
+  runs inline and stands down when a re-arm beat it. One pairing poll
+  runs at a time, so a slow relay no longer sees the same queued
+  message posted twice. Signing out while a browser trip is still out
+  no longer reads as the browser never returning.
+
 ### Changed
 
 - **Days down the side follow the wrap setting** (app 0.39.0; the
