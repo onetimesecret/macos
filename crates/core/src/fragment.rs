@@ -142,8 +142,10 @@ impl Fragment {
                 Node::Ink(text) => WireNode::Ink(Cow::Borrowed(text.as_str())),
                 Node::Ref(reference) => WireNode::Ref(WireRef {
                     uuid: reference.uuid.to_string(),
-                    // The wire's own copy, which serde owns (C21).
-                    name: reference.name.as_ref().map(|name| name.as_str().to_owned()),
+                    name: reference
+                        .name
+                        .as_ref()
+                        .map(|name| Cow::Borrowed(name.as_str())),
                     note: reference
                         .note
                         .as_ref()
@@ -204,7 +206,7 @@ impl Fragment {
                         name: reference
                             .name
                             .filter(|name| !name.is_empty())
-                            .map(Zeroizing::new),
+                            .map(|name| Zeroizing::new(name.into_owned())),
                         note: reference.note.and_then(ink_of),
                     }));
                 }
@@ -378,8 +380,8 @@ enum WireNode<'a> {
 #[serde(deny_unknown_fields)]
 struct WireRef<'a> {
     uuid: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
+    name: Option<Cow<'a, str>>,
     #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
     note: Option<Cow<'a, str>>,
 }

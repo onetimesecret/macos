@@ -260,8 +260,9 @@ pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
     Ok(Some(name))
 }
 
-/// A sealed chip: secret bytes, the non-secret face it shows, and the
-/// typed name and note beside it (ADR-0043 point 1).
+/// A sealed chip: secret bytes, the face it shows, and the typed name and
+/// note beside it (ADR-0043 point 1); the face and the name are content too,
+/// and wipe with the bytes (Law 0004).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
@@ -380,7 +381,7 @@ impl SealedChip {
     /// The typed name, if one was given.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_ref().map(|name| name.as_str())
+        self.name.as_deref().map(String::as_str)
     }
 
     /// Whether a note holds anything but whitespace: the block's doorway.
@@ -716,7 +717,7 @@ impl Sheet {
     /// The first typed line, markdown stripped; `None` until one is typed.
     #[must_use]
     pub fn derived_title(&self) -> Option<&str> {
-        self.derived_title.as_ref().map(|title| title.as_str())
+        self.derived_title.as_deref().map(String::as_str)
     }
 
     /// Unix ms at this page's creation; neither expiry nor the placeholder reads it.
@@ -781,7 +782,7 @@ impl Tab {
     /// The name the user typed, if they typed one.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_ref().map(|name| name.as_str())
+        self.name.as_deref().map(String::as_str)
     }
 
     /// The rung pages born in this slot start at.
@@ -1091,7 +1092,7 @@ fn text_face(text: &str) -> (Zeroizing<String>, String, ChipMeta) {
         let head = &first[..char_boundary(first, 17)];
         let chars = trimmed.chars().count();
         return (
-            joined(head, "…", ""),
+            head_and_tail(head, ""),
             size_label,
             ChipMeta::Text { chars, lines },
         );
@@ -1107,7 +1108,7 @@ fn text_face(text: &str) -> (Zeroizing<String>, String, ChipMeta) {
     let tail_len = budget - head_len;
     let head = &trimmed[..char_boundary(trimmed, head_len)];
     let tail = &trimmed[char_boundary(trimmed, n.saturating_sub(tail_len))..];
-    (joined(head, "…", tail), size_label, meta)
+    (head_and_tail(head, tail), size_label, meta)
 }
 
 /// The byte offset of the `chars`th char of `text`, or its end.
@@ -1117,12 +1118,13 @@ fn char_boundary(text: &str, chars: usize) -> usize {
         .map_or(text.len(), |(index, _)| index)
 }
 
-/// The three joined into one wiping owner allocated at its exact size, with no growing
-/// scratch and no copy of the slices before it (Law 0004).
-fn joined(head: &str, mark: &str, tail: &str) -> Zeroizing<String> {
-    let mut out = String::with_capacity(head.len() + mark.len() + tail.len());
+/// The head, the mark and the tail joined into one wiping owner allocated at its exact
+/// size, with no growing scratch and no copy of the slices before it (Law 0004).
+fn head_and_tail(head: &str, tail: &str) -> Zeroizing<String> {
+    const MARK: &str = "…";
+    let mut out = String::with_capacity(head.len() + MARK.len() + tail.len());
     out.push_str(head);
-    out.push_str(mark);
+    out.push_str(MARK);
     out.push_str(tail);
     Zeroizing::new(out)
 }
@@ -1145,6 +1147,9 @@ fn sniff_image_kind(bytes: &[u8]) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Compiles only for a type that wipes on drop: the pin the owner tests rest on.
+    fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
     use crate::clock::{Clock, ManualClock};
 
     fn face(text: &str) -> (String, String) {
@@ -1363,8 +1368,6 @@ mod tests {
 
     #[test]
     fn segment_ink_and_its_clone_have_independent_wiping_owners() {
-        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
-
         let mut original = Segment::Ink("🙂\r\n尾".into());
         let mut cloned = original.clone();
         wiping_owner(&original);
@@ -1419,8 +1422,6 @@ mod tests {
     /// owners (Law 0004, C13 to C15): the types say so, and a plain `String` would not compile.
     #[test]
     fn a_name_a_derived_title_and_a_label_are_wiping_owners() {
-        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
-
         let mut page = bare_sheet(STAMP);
         page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         let mut tab = unnamed_tab(Some(page));
@@ -1460,8 +1461,6 @@ mod tests {
     /// the excerpt is joined once at its size from slices that never split a char.
     #[test]
     fn an_objects_excerpt_and_name_are_wiping_owners() {
-        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
-
         let mut chip = SealedChip::text(ChipId(1), &"🧪".repeat(60));
         chip.name = Some(Zeroizing::new("TOKEN".into()));
         wiping_owner(&chip.excerpt);
@@ -1479,6 +1478,12 @@ mod tests {
         );
         let (excerpt, _, _) = text_face("🧪🧪🧪🧪🧪\nsecond line");
         assert_eq!(excerpt.as_str(), "🧪🧪🧪🧪🧪…");
+        let (excerpt, _, _) = text_face(&("🧪".repeat(20) + "\nsecond"));
+        assert_eq!(
+            excerpt.as_str(),
+            "🧪".repeat(17) + "…",
+            "a multibyte first line cut at 17 chars"
+        );
     }
 
     #[test]
