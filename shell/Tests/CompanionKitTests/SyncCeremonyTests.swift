@@ -148,6 +148,7 @@ final class SyncCeremonyTests: XCTestCase {
         sync.settlePump(quietTurn(), session: stale)
         XCTAssertFalse(sync.pumping)
         XCTAssertNil(sync.signinFailure, "a sign-out is not a browser that never returned")
+        XCTAssertNil(sync.pairingStage, "a pairing ceremony ends with the engine")
     }
 
     func testATurnFromAStoppedSessionIsNotTheReplacementsTurn() throws {

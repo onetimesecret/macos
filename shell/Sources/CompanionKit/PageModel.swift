@@ -2080,6 +2080,7 @@ public final class PageModel: ObservableObject {
         // cannot fire, so the identity check is only a second net.
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
             let fired = ObjectIdentifier(timer)
+            guard Thread.isMainThread else { return }
             MainActor.assumeIsolated {
                 guard let self, let armed = self.clipboardClearTimer,
                       ObjectIdentifier(armed) == fired
@@ -2816,6 +2817,7 @@ public final class PageModel: ObservableObject {
         if clipboardClearTimer != nil {
             _ = clearClipboardIfOurs()
             clipboardClearTimer?.invalidate()
+            clipboardClearTimer = nil
         }
         // A pending write dies with the model. In practice the model
         // outlives everything but the process, and the process's own

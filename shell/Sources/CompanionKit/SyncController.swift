@@ -300,11 +300,14 @@ public final class SyncController: ObservableObject {
     public func signOut() {
         // A browser trip still out settles as `abandoned`; the new
         // session drops that settle, so a sign-out is never worded as
-        // a browser that never returned. A dropped settle clears no
-        // flag, so the in-flight flags go here, as `stop()` does.
+        // a browser that never returned. A dropped pump settle clears
+        // no flag, so `pumping` goes here, as in `stop()`; the pairing
+        // poll clears its own flag unconditionally, and its ceremony
+        // ends with the engine. The core's sign-out abandons the trip.
         session &+= 1
         pumping = false
-        pairingPolling = false
+        pairingStage = nil
+        pairingTimer?.invalidate()
         _ = client.syncSignout()
         attached = false
         trouble = enabled ? .signedOut : nil
