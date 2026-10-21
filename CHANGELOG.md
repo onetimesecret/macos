@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings, About and Send Feedback are ordinary windows** (app 0.41.0;
+  ADR-0032 Amendment 1, issue #293). The three windows stay at normal
+  level whatever the pin and the keep above preference say, so they no
+  longer float over other apps and go behind like any window when
+  OnetimePad deactivates. The card gives way instead: a pinned or kept
+  above card drops to normal level while one of its own windows has the
+  keyboard and floats again when that window closes or the card takes
+  the keyboard back. A card resting on the desktop stays there. The
+  `CompanionLevelFollower` that wrote the card's altitude onto those
+  windows is retired; the rule is one more input to
+  `BackdropAltitude.resolve`, written by `BackdropAltitudeKeeper`.
+
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue
   #79). With pages shown as days, Settings and ⌥Z turn wrapping on and
