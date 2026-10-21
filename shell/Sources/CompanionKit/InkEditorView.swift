@@ -2016,7 +2016,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// mount) land here too and re-resolve hover deliberately, the
         /// way tracking-area hover behaves on AppKit controls.
         @objc private func clipBoundsChanged(_ notification: Notification) {
-            repositionBlockLabels()
+            // A pill's place reads the scroll only through the measure, which a vertical scroll keeps.
+            if blockAffordanceMeasure != placedBlockMeasure { repositionBlockLabels() }
             textView?.refreshHover()
         }
 
@@ -4324,6 +4325,7 @@ public struct InkEditorView: NSViewRepresentable {
             var blockToolTipRects: [Int: NSRect] { blockToolTipRegistrations.mapValues(\.rect) }
             private(set) var blockLabelShapeCount = 0
             private(set) var blockLabelFitCount = 0
+            private(set) var blockLabelPlacementCount = 0
 
             /// What the last restyle laid out, in document order: one entry
             /// per edited block, the range being the line its affordance
@@ -4571,6 +4573,9 @@ public struct InkEditorView: NSViewRepresentable {
             )
         }
 
+        /// The measure the pills were last placed against.
+        private var placedBlockMeasure: CGFloat?
+
         nonisolated static func blockAffordanceMeasure(
             containerWidth: CGFloat, visibleRect: NSRect, containerOriginX: CGFloat
         ) -> CGFloat {
@@ -4631,6 +4636,10 @@ public struct InkEditorView: NSViewRepresentable {
             blockFirstLineDisplayRects.removeAll()
             guard let textView else { return }
             let measure = blockAffordanceMeasure
+            placedBlockMeasure = measure
+            #if DEBUG
+                blockLabelPlacementCount += 1
+            #endif
             let containerWidth = textView.textContainer?.size.width ?? .infinity
             let origin = textView.textContainerOrigin
             var requestedToolTips: [Int: (rect: NSRect, text: String)] = [:]

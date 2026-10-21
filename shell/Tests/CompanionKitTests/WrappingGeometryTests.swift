@@ -312,6 +312,72 @@ final class WrappingGeometryTests: XCTestCase {
         withExtendedLifetime(window) {}
     }
 
+    /// A vertical scroll leaves the measure a pill is placed against alone, so no pill is placed
+    /// again; a sideways scroll over unwrapped text moves the measure and places them.
+    func testAVerticalDayScrollPlacesNoBlockMetadata() throws {
+        for wraps in [true, false] {
+            let suite = "wrapping-metadata-vertical-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let model = isolatedModel(defaults: defaults)
+            model.showsTimeUnits = true
+            model.wrapsLines = wraps
+            let tab = model.coreClient.newTab()
+            let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
+            let lines = (0..<80).map { "line \($0) of a day that goes on" }
+            let source = "alpha\n\n" + String(repeating: "ordinary words across a long day ", count: 40)
+                + "\n" + lines.joined(separator: "\n")
+            let json = try JSONSerialization.data(withJSONObject: [["ink": source]])
+            XCTAssertTrue(model.coreClient.syncDocument(
+                sheet: page, json: try XCTUnwrap(String(data: json, encoding: .utf8))
+            ))
+            model.refresh()
+            model.select(tab)
+            let coordinator = InkEditorView.Coordinator(model: model)
+            coordinator.surface = model.owner
+            let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "")
+            scroll.scrollerStyle = .legacy
+            let card = NSRect(x: 0, y: 0, width: 720, height: 320)
+            let window = NSWindow(
+                contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+            )
+            defer { DayScrollView.dismantleNSView(scroll, coordinator: coordinator) }
+            window.contentView?.addSubview(scroll)
+            scroll.frame = card
+            scroll.layoutSubtreeIfNeeded()
+            DayScrollView.updateRoll(scroll, model: model, readOnly: false, coordinator: coordinator)
+            scroll.layoutSubtreeIfNeeded()
+            let stack = try XCTUnwrap(scroll.documentView as? DayStackView)
+            let editor = try XCTUnwrap(stack.editor)
+            coordinator.layOutBlockLabels(forMetas: [
+                BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1),
+                BlockInfo(id: "blank", createdS: 1_000, modifiedS: 1_000, paragraphs: 1),
+                BlockInfo(id: "rest", createdS: 1_000, modifiedS: 1_000, paragraphs: lines.count + 1),
+            ])
+            scroll.layoutSubtreeIfNeeded()
+            let field = try XCTUnwrap(editor.subviews.compactMap { $0 as? BlockMetadataField }.first)
+            let frame = field.frame
+            let placements = coordinator.blockLabelPlacementCount
+            let clip = scroll.contentView
+            XCTAssertGreaterThan(stack.frame.height - clip.bounds.height, 400, "the case needs room to scroll")
+
+            for y: CGFloat in [120, 400, 60] {
+                clip.scroll(to: NSPoint(x: 0, y: y))
+                scroll.reflectScrolledClipView(clip)
+                XCTAssertEqual(clip.bounds.minY, y, accuracy: 0.5)
+                XCTAssertEqual(coordinator.blockLabelPlacementCount, placements, "wraps \(wraps), y \(y)")
+                XCTAssertEqual(field.frame, frame, "wraps \(wraps), y \(y)")
+            }
+            if !wraps {
+                clip.scroll(to: NSPoint(x: 120, y: 60))
+                scroll.reflectScrolledClipView(clip)
+                XCTAssertEqual(coordinator.blockLabelPlacementCount, placements + 1)
+                XCTAssertEqual(field.frame.minX, frame.minX + 120, accuracy: 0.5)
+            }
+            withExtendedLifetime(window) {}
+        }
+    }
+
     func testAWrappedRowsTooltipIsTheRowAndAnUnwrappedOneRunsToTheViewsEdge() {
         let row = NSRect(x: 12, y: 40, width: 396, height: 18)
         XCTAssertEqual(InkEditorView.Coordinator.blockToolTipRect(
