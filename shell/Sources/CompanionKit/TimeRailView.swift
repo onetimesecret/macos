@@ -1043,7 +1043,7 @@ private struct SlotRailRow: View {
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(
-            renaming ? [] : selected ? [.isSelected, .isButton] : [.isButton])
+            renaming ? (selected ? [.isSelected] : []) : selected ? [.isSelected, .isButton] : [.isButton])
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer; mid-rename the element is the field's
         // container and offers neither.
@@ -1265,25 +1265,3 @@ enum TimeUnitTab {
     }
 }
 
-extension View {
-    @ViewBuilder
-    func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
-        if offered {
-            accessibilityAction(named: Text("New page"), action)
-        } else {
-            self
-        }
-    }
-
-    /// The default action, the one VoiceOver's press runs, offered only
-    /// while the row answers a press: a composite built from
-    /// `.ignore`d children inherits none from its tap gesture.
-    @ViewBuilder
-    func accessibilityActivation(when offered: Bool, action: @escaping () -> Void) -> some View {
-        if offered {
-            accessibilityAction(.default, action)
-        } else {
-            self
-        }
-    }
-}

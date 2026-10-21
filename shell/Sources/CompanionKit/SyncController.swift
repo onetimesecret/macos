@@ -162,7 +162,9 @@ public final class SyncController: ObservableObject {
     /// pump: a relay slower than the tick would otherwise stack rounds
     /// and post the same queued message twice.
     private var pairingPolling = false
-    private let pairingPoll: @Sendable () -> SyncPairingStage?
+    /// Async so a test's stand-in can suspend rather than block a
+    /// cooperative thread; the shipping value is one blocking core call.
+    private let pairingPoll: @Sendable () async -> SyncPairingStage?
     /// The pairing ceremony's generation. A poll carries the one it
     /// started under, and ending a ceremony, by cancel, mismatch, the
     /// switch or a sign-out, moves it on so the poll's answer is dropped.
@@ -178,7 +180,7 @@ public final class SyncController: ObservableObject {
     /// defaulted parameter whose shipping value is the core's poll.
     public init(
         client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults,
-        pairingPoll: (@Sendable () -> SyncPairingStage?)? = nil
+        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil
     ) {
         self.client = client
         self.defaults = defaults
@@ -631,13 +633,11 @@ public final class SyncController: ObservableObject {
     /// The human's verdict on the six digits; a mismatch aborts whole.
     public func confirmPairing(matched: Bool) {
         let stage = client.syncPairingConfirm(matched: matched)
-        if matched {
-            pairingStage = stage
-            armPairingPoll()
-        } else {
-            endCeremony()
-            pairingStage = stage
-        }
+        // Either way the leg that was polling is over: a poll out
+        // before the verdict must not write the digits back over it.
+        endCeremony()
+        pairingStage = stage
+        if matched { armPairingPoll() }
     }
 
     /// Dismiss the pairing flow at any stage.
@@ -693,7 +693,7 @@ public final class SyncController: ObservableObject {
         let poll = pairingPoll
         let mine = (session: session, ceremony: ceremony)
         Task.detached(priority: .utility) {
-            let stage = poll()
+            let stage = await poll()
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 // Before the flag, as `settlePump`: a poll from an ended

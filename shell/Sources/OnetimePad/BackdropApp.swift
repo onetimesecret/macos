@@ -60,7 +60,7 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
-                        present: appDelegate.openEditorPresentation,
+                        present: appDelegate.returnToOwner,
                         newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
                         saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
@@ -182,8 +182,8 @@ struct BackdropApp: App {
 /// reading of the chord rather than on nothing.
 ///
 /// New Page asked from a window that is not the surface (Settings,
-/// About, Feedback) also presents the editor, so the command shows
-/// what it made the way Open… shows its panel.
+/// About, Feedback) also brings the owner surface back, so the command
+/// shows what it made the way Open… shows its panel.
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
@@ -996,6 +996,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Explicit selection ignores companion activation claims, unlike reopen.
     @objc func openEditorPresentation() {
         applySummon(.openEditorPresentation)
+    }
+
+    /// Back to whichever surface owns the pages, the editor window or
+    /// the panel, by the route a dismissed sheet takes: a menu command
+    /// run from Settings names no surface (ADR-0033, ADR-0036).
+    func returnToOwner() {
+        guard startupComplete else { return }
+        apply(ActivationRouter.decide(.modalReturn, in: activationContext()))
     }
 
     /// Switch presentations without toggling rest or anchoring on today. This

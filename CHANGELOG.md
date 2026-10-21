@@ -970,7 +970,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
-  Feedback it also brings the editor forward. The Window menu's switches and
+  Feedback it also brings the surface back, the editor window or the
+  panel, whichever owns the pages. The Window menu's switches and
   Close Window head that menu, before Minimize and Zoom, as the comment
   always said. Detect Code Language drops its ellipsis in both menus,
   since detection answers inline, and the context menu item now greys
@@ -995,8 +996,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by 16 point hit area and a tooltip; the note's expand button has one
   too. The card's edges and corners show resize cursors while raised,
   one on the stack at a time, popped when the card rests. The ambient panel
-  carries the app's name for VoiceOver. The wheel relay removes its
-  event monitor on deallocation.
+  carries the app's name for VoiceOver.
 - **A copy that lands as the clear fires keeps its own window** (app
   0.39.1; D-29). The clear ran through a main-actor hop after the timer
   fired, so a copy made between the two was cleared at once; it now

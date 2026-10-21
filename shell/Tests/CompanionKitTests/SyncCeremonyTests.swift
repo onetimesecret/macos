@@ -25,7 +25,7 @@ final class SyncCeremonyTests: XCTestCase {
     /// A controller over a configured core, signed out, with the
     /// browser replaced by a recorder.
     private func configured(
-        pairingPoll: (@Sendable () -> SyncPairingStage?)? = nil
+        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil
     ) throws -> (SyncController, CompanionClient, Box) {
         let suiteName = "companion-sync-ceremony-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -136,22 +136,31 @@ final class SyncCeremonyTests: XCTestCase {
         )
     }
 
-    /// A poll that does not return until released, counting its calls.
+    /// A poll that suspends until released, counting its calls. It
+    /// parks on a continuation, not a semaphore, so two held rounds
+    /// occupy no cooperative threads.
     private final class HeldPoll: @unchecked Sendable {
         private let lock = NSLock()
         private var count = 0
-        let release = DispatchSemaphore(value: 0)
+        private var waiters: [CheckedContinuation<Void, Never>] = []
 
         var calls: Int { lock.withLock { count } }
 
         /// The first call answers as a mismatch, every later one as done,
         /// so a stale answer written into a later ceremony is visible.
-        func poll() -> SyncPairingStage? {
+        func poll() async -> SyncPairingStage? {
             let n = lock.withLock { count += 1; return count }
-            release.wait()
+            await withCheckedContinuation { continuation in
+                lock.withLock { waiters.append(continuation) }
+            }
             return n == 1
                 ? SyncPairingStage(stage: "failed", sas: nil, reason: "stale")
                 : SyncPairingStage(stage: "done", sas: nil, reason: nil)
+        }
+
+        func release() {
+            let held = lock.withLock { let held = waiters; waiters = []; return held }
+            for continuation in held { continuation.resume() }
         }
     }
 
@@ -164,7 +173,7 @@ final class SyncCeremonyTests: XCTestCase {
 
     func testOnePollInFlightAndACancelledCeremonysAnswerIsDropped() throws {
         let held = HeldPoll()
-        let (sync, _, _) = try configured(pairingPoll: { held.poll() })
+        let (sync, _, _) = try configured(pairingPoll: { await held.poll() })
         let waiting = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
         sync.pairingStage = waiting
 
@@ -185,8 +194,7 @@ final class SyncCeremonyTests: XCTestCase {
 
         // Both rounds come back: the old one's mismatch is dropped, the
         // new one's done lands.
-        held.release.signal()
-        held.release.signal()
+        held.release()
         spin { sync.pairingStage?.stage == "done" }
         XCTAssertEqual(sync.pairingStage?.stage, "done")
         XCTAssertNil(sync.pairingStage?.reason, "the cancelled ceremony's verdict never reached this one")

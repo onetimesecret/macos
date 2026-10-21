@@ -481,7 +481,7 @@ struct SheetTab: View {
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(
-            renaming ? [] : selected ? [.isSelected, .isButton] : [.isButton])
+            renaming ? (selected ? [.isSelected] : []) : selected ? [.isSelected, .isButton] : [.isButton])
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer, as on the rail's rows.
         .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
