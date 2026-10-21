@@ -35,8 +35,11 @@ final class PresentationMenuTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(suite, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("notes.txt")
+        let fixtures = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(suite).fixtures", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixtures) }
+        try FileManager.default.createDirectory(at: fixtures, withIntermediateDirectories: true)
+        let file = fixtures.appendingPathComponent("notes.txt")
         try "notes\n".write(to: file, atomically: true, encoding: .utf8)
         companion_init()
         let handle = "startup-open".withCString { companion_new_ephemeral($0) }!

@@ -419,8 +419,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
 
-    /// Files the Finder asked to open before the launch restored the roster.
-    private var launchDocuments: [URL] = []
+    /// Files the Finder asked to open that `FinderOpenPlan` holds back.
+    private var finderDocuments: [URL] = []
 
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
@@ -570,18 +570,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         KeychainIntroduction.showIfNeeded(defaults: FormFactor.settingsDefaults)
         controller.show()
         startupComplete = true
-        if activationDuringStartup, NSApp.isActive {
+        let replaysLaunchActivation = activationDuringStartup && NSApp.isActive
+        if replaysLaunchActivation {
             activationDuringStartup = false
             launchedAt = Date()
             applicationDidBecomeActive(notification)
         }
-        if !launchDocuments.isEmpty {
-            let documents = launchDocuments
-            launchDocuments = []
-            openDocuments(documents)
-            // The launch activation may still be on its way; keep it off today's page.
-            if NSApp.isActive { pendingEditorSummon = .openEditorWindow(.activation) }
-        }
+        drainFinderDocuments(launchActivationOutstanding: !replaysLaunchActivation)
     }
 
 
@@ -767,20 +762,33 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The Finder's Open and Open With, and files dropped on the Dock icon.
-    /// A launch delivers them before `applicationDidFinishLaunching`, so they wait for startup.
+    /// Queued, then opened by the drain once startup is done.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard startupComplete else {
-            launchDocuments += urls
-            return
-        }
-        openDocuments(urls)
+        finderDocuments += urls
+        drainFinderDocuments()
+    }
+
+    /// Opens what `FinderOpenPlan` allows and keeps the rest; true when a file opened.
+    @discardableResult
+    private func drainFinderDocuments(launchActivationOutstanding: Bool = false) -> Bool {
+        let plan = FinderOpenPlan.decide(
+            queued: finderDocuments,
+            startupComplete: startupComplete,
+            launchActivationOutstanding: launchActivationOutstanding,
+            appActive: NSApp?.isActive == true,
+            context: activationContext())
+        finderDocuments = plan.held
+        guard openDocuments(plan.open) else { return false }
+        if let route = plan.pendingRoute { pendingEditorSummon = route }
+        return true
     }
 
     /// Opens each file as a drop would, then selects the editor window without moving the roll.
-    private func openDocuments(_ urls: [URL]) {
+    private func openDocuments(_ urls: [URL]) -> Bool {
         guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
-        else { return }
+        else { return false }
         applySummon(.openEditorPresentation)
+        return true
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.
