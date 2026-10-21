@@ -575,21 +575,24 @@ final class DayScrollTests: XCTestCase {
         XCTAssertTrue(editor.isHidden)
         let quiet = try XCTUnwrap(roll.stack.quietRegions[top])
         let index = (quiet.string as NSString).range(of: "line 20 ").location
+        XCTAssertNotEqual(index, NSNotFound)
         let glyph = try glyphRect(in: quiet, at: index)
         scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
         let place = try XCTUnwrap(roll.stack.currentPlace)
         XCTAssertEqual(place.page, top)
         XCTAssertEqual(place.anchor.characterIndex, index)
         let top0 = roll.scroll.contentView.bounds.minY
+        let nextRegion = try XCTUnwrap(roll.stack.quietRegions[next])
+        XCTAssertGreaterThan(
+            nextRegion.frame.minY, roll.scroll.contentView.bounds.maxY,
+            "the case needs the caret's page below the viewport")
 
         roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
 
         XCTAssertTrue(roll.window.firstResponder === editor, "the keys did not pass to the editor")
         XCTAssertEqual(roll.coordinator.currentSheet, next)
         XCTAssertEqual(editor.selectedRange().location, end, "the caret was not put back at the page's end")
-        XCTAssertGreaterThan(
-            editor.frame.minY, roll.scroll.contentView.bounds.maxY,
-            "the case needs the caret's page below the viewport")
+        XCTAssertGreaterThan(editor.frame.minY, top0 + roll.scroll.contentView.bounds.height)
         XCTAssertEqual(roll.stack.currentPlace?.page, top)
         XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
         XCTAssertEqual(roll.scroll.contentView.bounds.minY, top0, accuracy: 0.5)
@@ -606,15 +609,19 @@ final class DayScrollTests: XCTestCase {
             projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
         let editor = try XCTUnwrap(roll.stack.editor)
         XCTAssertTrue(editor.textStorage === model.storage(for: mounted))
+        // The quiet page's storage, minted before the peer's edit so the settle has one to restate,
+        // under a manager with no text view, as a torn down editor leaves behind.
+        let stale = model.storage(for: quiet)
+        let stray = NSLayoutManager()
+        stale.addLayoutManager(stray)
         XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
         XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
-        // A manager with no text view, as a torn down editor leaves behind, shows the page to nobody.
-        let stray = NSLayoutManager()
-        model.storage(for: quiet).addLayoutManager(stray)
+        XCTAssertEqual(stale.string, "quiet before", "the case needs a stale storage to restate")
 
         model.settleRemoteEdits(on: [quiet, mounted])
 
-        XCTAssertEqual(model.storage(for: quiet).string, "quiet after", "a stray manager kept the page stale")
+        XCTAssertTrue(model.storage(for: quiet) === stale)
+        XCTAssertEqual(stale.string, "quiet after", "a stray manager kept the page stale")
         XCTAssertEqual(editor.string, "mounted before", "the mounted page was restated under the editor")
         roll.stack.update(
             projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)

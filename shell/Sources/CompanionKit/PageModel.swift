@@ -6823,7 +6823,7 @@ public final class PageModel: ObservableObject {
     func settleRemoteEdits(on pages: Set<UInt64>) {
         for page in pages {
             invalidateQuietRendering(for: page)
-            // A page a surface shows is left alone; no merge into live text exists yet (#276).
+            // A page whose storage a surface lays out is left alone; no merge into live text exists yet (#276).
             if surface(showing: page) == nil {
                 restateStorage(sheet: page)
             }
