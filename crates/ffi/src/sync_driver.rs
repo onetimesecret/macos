@@ -1850,9 +1850,10 @@ impl Drop for HeadClaim<'_> {
     }
 }
 
-/// Post the queued messages in order until the queue empties or the
-/// wire declines, leaving the rest queued. `Err` carries the stage to
-/// report instead, `signed_out` when no request can be built.
+/// Post the queued messages in order until the queue empties, the wire
+/// declines or another round is already posting the head, leaving the
+/// rest queued. `Err` carries the stage to report instead, `signed_out`
+/// when no request can be built.
 fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
     drain_outgoing_with(handle, |transport, request| {
         matches!(
@@ -1892,7 +1893,7 @@ fn drain_outgoing_with(
             return Ok(());
         };
         // Built outside the lock: its drop takes the lock to release the head.
-        let mut claim = HeadClaim {
+        let mut held = HeadClaim {
             handle,
             claim,
             delivered: false,
@@ -1900,9 +1901,9 @@ fn drain_outgoing_with(
         let Some((request, transport)) = staged else {
             return Err(serde_json::json!({ "stage": "failed", "reason": "signed_out" }));
         };
-        claim.delivered = send(&transport, request);
-        let delivered = claim.delivered;
-        drop(claim);
+        let delivered = send(&transport, request);
+        held.delivered = delivered;
+        drop(held);
         if !delivered {
             return Ok(());
         }
