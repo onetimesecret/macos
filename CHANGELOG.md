@@ -980,6 +980,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **⌘W closes what the key window shows** (app 0.40.5; issue #201).
+  While Settings, About or Send Feedback has the keyboard there is no
+  page or file for `page::Close`, and the chord used to beep; it now
+  closes that window, as in Xcode, Safari and Terminal. The File menu's
+  item reads Close Window in that state. On the pad ⌘W stays
+  `page::Close` and ⇧⌘W stays `window::Close`.
+
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
