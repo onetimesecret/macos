@@ -866,16 +866,18 @@ final class PageViewStateTests: XCTestCase {
         let old = head + oldBody + tail
         let new = head + newBody + tail
         XCTAssertEqual(RollPlace.rebased(2, from: old, to: new), 2, "an anchor in the shared head moved")
-        XCTAssertEqual(RollPlace.rebased(5 + 1_000, from: old, to: new), 5 + 2_000)
-        XCTAssertEqual(RollPlace.rebased(5 + 500, from: old, to: new), 5 + 1_000)
+        XCTAssertEqual(RollPlace.rebased(5 + 1_000, from: old, to: new), 5 + 2_000, "the share, halfway")
+        XCTAssertEqual(RollPlace.rebased(5 + 500, from: old, to: new), 5 + 1_000, "the share, a quarter in")
         XCTAssertEqual(RollPlace.rebased(5, from: old, to: new), 5)
         XCTAssertEqual(
             RollPlace.rebased(old.utf16.count - 2, from: old, to: new), new.utf16.count - 2,
             "an anchor in the shared tail moved")
-        XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: newBody), 2_000)
-        XCTAssertEqual(RollPlace.rebased(2_000, from: oldBody, to: "x"), 1)
-        XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: ""), 0)
-        XCTAssertEqual(RollPlace.rebased(5 + 1_000, from: old, to: head + tail), 5, "a middle deleted to nothing")
+        XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: newBody), 2_000, "the share with no head or tail")
+        XCTAssertEqual(RollPlace.rebased(2_000, from: oldBody, to: "x"), 1, "the end is the tail's")
+        XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: ""), 0, "a middle deleted to nothing")
+        XCTAssertEqual(
+            RollPlace.rebased(5 + 1_000, from: old, to: head + tail), 5,
+            "a middle deleted to nothing between a head and a tail")
 
         let paired = String(repeating: "🧪", count: 1_000)
         XCTAssertEqual(RollPlace.rebased(1_001, from: oldBody, to: paired), 1_000)

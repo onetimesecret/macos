@@ -984,9 +984,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (app 0.40.3; issue #283). When a day the editor is not on changed by
   a mixed edit too large for the reading anchor's bounded search, the
   anchor went to the start of the changed stretch, often the top of the
-  page. It now keeps its share of
-  that stretch, so the view stays near where the reader was; an anchor
-  in the unchanged head or tail still maps exactly.
+  page. It now keeps its share of that stretch, so the view stays near
+  where the reader was; an anchor in the unchanged head or tail still
+  maps exactly.
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or

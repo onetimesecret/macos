@@ -203,16 +203,17 @@ struct RollPlace: Equatable {
         let oldMiddle = oldCount - prefixLength - suffixLength
         let newMiddle = newCount - prefixLength - suffixLength
         guard newMiddle > 0 else { return prefixLength }
+        // Past the prefix and short of the suffix, so the old middle is at least two units.
         let share = (Double(index - prefixLength) * Double(newMiddle) / Double(oldMiddle)).rounded()
         return scalarBoundary(at: prefixLength + min(Int(share), newMiddle), in: new)
     }
 
-    /// `offset`, or the start of the scalar it falls inside.
+    /// `offset`, or the start of the surrogate pair it falls inside.
     private static func scalarBoundary(at offset: Int, in text: String) -> Int {
-        var offset = min(max(offset, 0), text.utf16.count)
-        while offset > 0,
-              String.Index(utf16Offset: offset, in: text).samePosition(in: text.unicodeScalars) == nil {
-            offset -= 1
+        let offset = min(max(offset, 0), text.utf16.count)
+        if offset > 0,
+           String.Index(utf16Offset: offset, in: text).samePosition(in: text.unicodeScalars) == nil {
+            return offset - 1
         }
         return offset
     }
