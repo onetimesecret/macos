@@ -1090,7 +1090,7 @@ final class DayStackView: NSView {
                 }
             }
         }
-        // Keystrokes run passes, and a scroller set is a layout even when nothing changed (#278).
+        // Set only on change; a keystroke runs a pass (#278).
         let scroller = !model.wrapsLines
         if scroll.hasHorizontalScroller != scroller {
             scroll.hasHorizontalScroller = scroller

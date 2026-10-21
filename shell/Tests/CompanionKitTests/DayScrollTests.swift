@@ -619,6 +619,7 @@ final class DayScrollTests: XCTestCase {
         let stale = model.storage(for: quiet)
         let stray = NSLayoutManager()
         stale.addLayoutManager(stray)
+        defer { stale.removeLayoutManager(stray) }
         XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
         XCTAssertEqual(stale.string, "quiet before", "the case needs a stale storage to restate")
         // The peer wrote at both ends of the mounted page, in the core alone.
@@ -634,8 +635,8 @@ final class DayScrollTests: XCTestCase {
 
         model.settleRemoteEdits(on: [quiet, mounted])
 
-        XCTAssertTrue(model.storage(for: quiet) === stale)
         XCTAssertEqual(stale.string, "quiet after", "a stray manager kept the page stale")
+        XCTAssertTrue(model.storage(for: quiet) === stale)
         XCTAssertEqual(editor.string, "zero alpha beta gamma delta")
         XCTAssertTrue(editor.textStorage === storage)
         XCTAssertEqual(
