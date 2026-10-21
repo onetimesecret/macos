@@ -209,6 +209,12 @@ private struct SyncPairingStatus: View {
     let stage: SyncPairingStage
     @ObservedObject var sync: SyncController
 
+    static func spelledDigits(_ digits: String) -> AttributedString {
+        var spelled = AttributedString(digits)
+        spelled.accessibilitySpeechSpellsOutCharacters = true
+        return spelled
+    }
+
     var body: some View {
         switch stage.stage {
         case "sas":
@@ -216,12 +222,10 @@ private struct SyncPairingStatus: View {
                 Text("Compare with the other device's screen. Continue only on a match.")
                     .font(.caption)
                     .foregroundStyle(Color.secondaryInk)
-                Text(stage.sas ?? "")
+                // Digit by digit: a code compared by ear against another
+                // screen is not a number, and the caption is not spelled.
+                Text(Self.spelledDigits(stage.sas ?? ""))
                     .font(.system(.title2, design: .monospaced))
-                    .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
-                    // Digit by digit: a code compared by ear against
-                    // another screen is not a number.
-                    .speechSpellsOutCharacters()
                 HStack {
                     Button("They Match") { sync.confirmPairing(matched: true) }
                     Button("They Don’t Match", role: .destructive) {

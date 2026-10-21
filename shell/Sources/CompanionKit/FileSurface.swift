@@ -208,8 +208,9 @@ public struct FileRenderSuggestionBanner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Contained, with no label of its own: the question and the
+        // buttons read in order, as the sync device row does.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Rendering suggestion: \(suggestion.languageName)"))
     }
 }
 
