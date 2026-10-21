@@ -61,12 +61,23 @@ public enum CodeLanguageName {
         "yaml": "YAML",
     ]
 
-    /// A fence's own spelling (`yml`, `objc`, `js`) reaches the registry
-    /// through the same aliases the fences use, so the banner for a
-    /// ```` ```yml ```` reads YAML. Only a spelling neither knows is
-    /// capitalised.
+    /// Fence spellings of the registry's uncoloured languages, which
+    /// `CodeInk.aliases` cannot carry since every alias there names a
+    /// token scanner.
+    static let fenceSpellings: [String: String] = [
+        "objc": "objectivec",
+        "objective-c": "objectivec",
+        "csharp": "cs",
+        "c#": "cs",
+    ]
+
+    /// A fence's own spelling (`yml`, `js`, `objc`) reaches the registry
+    /// through the fences' aliases and the table above, so the banner
+    /// for a ```` ```yml ```` reads YAML. Only a spelling none of them
+    /// knows is capitalised.
     public static func display(_ language: String) -> String {
         let id = language.lowercased()
-        return names[CodeInk.aliases[id] ?? id] ?? language.capitalized
+        let slug = CodeInk.aliases[id] ?? fenceSpellings[id] ?? id
+        return names[slug] ?? language.capitalized
     }
 }

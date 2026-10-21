@@ -32,13 +32,17 @@ final class CodeLanguageNameTests: XCTestCase {
     }
 
     func testAFencesOwnSpellingReachesTheRegistryThroughTheAliases() {
-        for (alias, slug) in CodeInk.aliases {
+        for (alias, slug) in CodeInk.aliases.merging(CodeLanguageName.fenceSpellings, uniquingKeysWith: { a, _ in a }) {
             XCTAssertEqual(
                 CodeLanguageName.display(alias), CodeLanguageName.display(slug),
                 "\(alias) names what \(slug) names"
             )
+            XCTAssertNotNil(CodeLanguageName.names[slug], "\(alias) points at a named slug")
         }
         XCTAssertEqual(CodeLanguageName.display("yml"), "YAML")
+        XCTAssertEqual(CodeLanguageName.display("objc"), "Objective-C")
+        XCTAssertEqual(CodeLanguageName.display("objective-c"), "Objective-C")
+        XCTAssertEqual(CodeLanguageName.display("csharp"), "C#")
     }
 
     func testAnUnknownIdFallsBackToCapitalised() {

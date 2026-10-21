@@ -124,5 +124,14 @@ final class CardEdgeTests: XCTestCase {
                 XCTAssertNil(corner.resizeCursor, "\(corner) keeps the arrow before macOS 15")
             }
         }
+        if #available(macOS 15, *) {
+            XCTAssertEqual(CardEdge.topLeading.frameResizePosition, .topLeft)
+            XCTAssertEqual(CardEdge.topTrailing.frameResizePosition, .topRight)
+            XCTAssertEqual(CardEdge.bottomLeading.frameResizePosition, .bottomLeft)
+            XCTAssertEqual(CardEdge.bottomTrailing.frameResizePosition, .bottomRight)
+            for edge in [CardEdge.top, .bottom, .leading, .trailing] {
+                XCTAssertNil(edge.frameResizePosition, "\(edge)")
+            }
+        }
     }
 }

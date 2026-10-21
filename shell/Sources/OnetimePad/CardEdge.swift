@@ -21,14 +21,20 @@ enum CardEdge: CaseIterable {
         case .leading, .trailing: return .resizeLeftRight
         case .top, .bottom: return .resizeUpDown
         case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
-            guard #available(macOS 15, *) else { return nil }
-            let position: NSCursor.FrameResizePosition = switch self {
-            case .topLeading: .topLeft
-            case .topTrailing: .topRight
-            case .bottomLeading: .bottomLeft
-            default: .bottomRight
-            }
+            guard #available(macOS 15, *), let position = frameResizePosition else { return nil }
             return .frameResize(position: position, directions: .all)
+        }
+    }
+
+    /// The frame position a corner's cursor names; nil for an edge.
+    @available(macOS 15, *)
+    var frameResizePosition: NSCursor.FrameResizePosition? {
+        switch self {
+        case .topLeading: return .topLeft
+        case .topTrailing: return .topRight
+        case .bottomLeading: return .bottomLeft
+        case .bottomTrailing: return .bottomRight
+        case .top, .bottom, .leading, .trailing: return nil
         }
     }
 

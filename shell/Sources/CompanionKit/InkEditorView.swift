@@ -1619,7 +1619,9 @@ public struct InkEditorView: NSViewRepresentable {
                  #selector(removeChip(_:)):
                 return true
             default:
-                assertionFailure("name \(item.action.map(String.init(describing:)) ?? "nil") in validateMenuItem")
+                // Loud, not fatal: a menu is on screen.
+                Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+                    .fault("unnamed menu selector \(item.action.map(NSStringFromSelector) ?? "nil", privacy: .public)")
                 return true
             }
         }

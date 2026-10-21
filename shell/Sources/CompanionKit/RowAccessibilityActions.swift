@@ -34,3 +34,8 @@ func rowAccessibilityTraits(selected: Bool, renaming: Bool) -> AccessibilityTrai
     if !renaming { traits.insert(.isButton) }
     return traits
 }
+
+/// The same rule for a row that never renames.
+func rowAccessibilityTraits(selected: Bool) -> AccessibilityTraits {
+    rowAccessibilityTraits(selected: selected, renaming: false)
+}

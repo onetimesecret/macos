@@ -665,7 +665,7 @@ struct StreamNavigatorView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: node.active, renaming: false))
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: node.active))
         .accessibilityAction { jump(to: placed) }
     }
 
@@ -1198,7 +1198,7 @@ struct FileShelfRow: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: false))
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected))
         .accessibilityAction { model.select(target: .file(file.id)) }
     }
 }

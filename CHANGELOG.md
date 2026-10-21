@@ -991,8 +991,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rows and close marks reach VoiceOver and the pointer** (app 0.39.1).
   A sync device row combines its words and keeps Revoke as an action;
   the rail's day nodes, slot rows and file rows are buttons, and a slot
-  row offers Rename Tab and Close Tab as actions outside a rename, and
-  the strip's tabs and file rows the same. Tab close marks have a 12
+  row offers Rename Tab and Close Tab as actions outside a rename, the
+  strip's tabs likewise, and its file rows Close File. Tab close marks have a 12
   by 16 point hit area and a tooltip; the note's expand button has one
   too. The card's edges and corners show resize cursors while raised,
   one on the stack at a time, popped when the card rests. The ambient panel
@@ -1007,8 +1007,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verdict the core cannot answer shows as a failure instead of the
   sheet vanishing. Signing out while a
   browser trip is still out no longer reads as the browser never
-  returning, and no longer leaves a pump latched so that the next sign
-  in never pumps.
+  returning, and a sign-in after it pumps again once the round that
+  was out returns, rather than never.
 - **A peer's edit shows on the days the editor is not on** (app
   0.39.0). With sync on, another device's edit reached the core but
   not the roll: a day the editor was not on kept its old text until
