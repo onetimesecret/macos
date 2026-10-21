@@ -987,8 +987,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is read from, and the title a ledger record keeps could stay in
   memory after the tab closed, the page expired or the record aged
   out. Each is now a zeroizing owner, as the notes already were, and
-  the label a tab builds from either is one too. The register records
-  what each row still leaves ordinary.
+  the label a tab builds from either is one too, so `Tab::label`
+  returns `Zeroizing<String>` to any caller of the core crate. A ledger
+  record formats its title as `[REDACTED]`, as a segment's ink is. The
+  register records what each row still leaves ordinary.
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or

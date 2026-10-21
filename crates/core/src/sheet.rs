@@ -862,8 +862,8 @@ impl LabelSource {
 /// Counted in `char`s so a multibyte scalar is never split.
 pub(crate) const TITLE_CAP: usize = 80;
 
-/// The first [`TITLE_CAP`] chars of `text` as a wiping owner, allocated once at its exact
-/// size, so no growing scratch is left unwiped behind it (Law 0004).
+/// The first [`TITLE_CAP`] chars of any content string, a tab's name included, as a wiping
+/// owner allocated once at its exact size, so no growing scratch is left behind (Law 0004).
 pub(crate) fn capped_title(text: &str) -> Zeroizing<String> {
     let end = text
         .char_indices()
@@ -906,13 +906,12 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
             }
         }
     }
-    // Under the cap in bytes is under it in chars, so the common case keeps its one owner.
-    result.map(|line| {
-        if line.len() <= TITLE_CAP {
-            line
-        } else {
-            capped_title(&line)
+    // Cut in place: the one owner keeps its allocation and wipes the tail with the rest.
+    result.map(|mut line| {
+        if let Some((end, _)) = line.char_indices().nth(TITLE_CAP) {
+            line.truncate(end);
         }
+        line
     })
 }
 
@@ -1419,7 +1418,8 @@ mod tests {
         assert_eq!(fresh.as_str(), "first");
     }
 
-    /// The cap counts chars, not bytes, and the owner it makes is allocated once at its size.
+    /// The cap counts chars, not bytes, wherever it is taken: `capped_title` allocates its owner
+    /// once at that size, and `derive_title` cuts its owner in place.
     #[test]
     fn the_cap_counts_chars_and_allocates_once() {
         let long = "🧪".repeat(TITLE_CAP + 5);
@@ -1431,12 +1431,9 @@ mod tests {
             "the owner grew past its size"
         );
         assert_eq!(capped_title("short").as_str(), "short");
-        let under = derive_title(&[Segment::Ink("short line".into())]).unwrap();
-        assert_eq!(
-            under.capacity(),
-            under.len(),
-            "an under cap title took a second owner"
-        );
+        let derived = derive_title(&[Segment::Ink(long.clone())]).unwrap();
+        assert_eq!(derived.chars().count(), TITLE_CAP);
+        assert_eq!(derived.as_str(), capped.as_str());
     }
 
     #[test]

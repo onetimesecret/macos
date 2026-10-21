@@ -3,6 +3,7 @@
 //! title is the one content-derived field.
 
 use std::collections::VecDeque;
+use std::fmt;
 
 use zeroize::Zeroizing;
 
@@ -114,7 +115,7 @@ impl std::fmt::Display for DestinationClass {
 }
 
 /// One thing that happened, in metadata only.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LedgerRecord {
     pub(crate) event: LedgerEvent,
     pub(crate) item: ItemId,
@@ -124,6 +125,23 @@ pub struct LedgerRecord {
     pub(crate) item_created_wall_ms: u64,
     pub(crate) size: SizeClass,
     pub(crate) destination: DestinationClass,
+}
+
+/// The title is the one content derived field, so a record formats without it, as
+/// `Segment` does (Law 0004, C16).
+impl fmt::Debug for LedgerRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LedgerRecord")
+            .field("event", &self.event)
+            .field("item", &self.item)
+            .field("title", &"[REDACTED]")
+            .field("at_wall_ms", &self.at_wall_ms)
+            .field("item_created_wall_ms", &self.item_created_wall_ms)
+            .field("size", &self.size)
+            .field("destination", &self.destination)
+            .finish()
+    }
 }
 
 impl LedgerRecord {
@@ -194,13 +212,20 @@ mod tests {
         }
     }
 
-    /// The title, the one content derived field here, is a wiping owner (Law 0004, C16).
+    /// The title, the one content derived field here, is a wiping owner (Law 0004, C16), and a
+    /// record formats without it.
     #[test]
     fn the_title_is_a_wiping_owner() {
         let record = record(1);
         let title: &Zeroizing<String> = &record.title;
         assert_eq!(title.as_str(), "a page");
         assert_eq!(record.title(), "a page");
+        let formatted = format!("{record:?}");
+        assert!(formatted.contains("[REDACTED]"), "{formatted}");
+        assert!(
+            !formatted.contains("a page"),
+            "the title reached a debug line: {formatted}"
+        );
     }
 
     #[test]
