@@ -1,6 +1,6 @@
 ---
 name: pr271-reading-place
-description: PR 271 (fix/editor-preference) roll reading place rules; readingPlace survives restoring passes, RollPlace knows source vs preview, dismantle removeObserver is load bearing, remote sync restates all but the mounted storage
+description: PR 271 (fix/editor-preference) roll reading place rules; readingPlace survives restoring passes, RollPlace knows source vs preview and the top edge, dismantle removeObserver is load bearing, remote sync restates all but the mounted storage, AppKit widens a styled insertion's edited range to the paragraph end
 metadata:
   type: project
 ---
@@ -34,11 +34,24 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
   PageViewStateTests restate that formula. Unwrapped tooltip rects run
   to the text view's bounds.maxX so a sideways scroll keeps their AppKit tags.
 - `DayStackView.mountedStorageEdited` rebases `readingPlace` through the mounted
-  storage's `editedRange` and `changeInLength`. It observes with `object: nil` because the
-  editor's storage swaps per page, and it is nonisolated with a main thread check because
+  storage's `editedRange` and `changeInLength`. It is registered for the mounted storage
+  only (`observeMountedStorage`, run by a `defer` in `settleEditor`, which every storage
+  move inside the roll goes through), and it is nonisolated with a main thread check because
   the `@objc` main actor isolation check would trap on a storage edited off main. The
   notification posts before the storage delegate and the layout managers. A whole storage
   restate (undo, `setAttributedString`) reports (0, new length), so an interior index stays.
+- Third review round (2026-10-20), measured: the page storage is NSConcreteTextStorage with
+  `fixesAttributesLazily` true, so typing (styled runs, emoji, CJK, Return in a list) reports
+  exactly the typed characters. An insertion carrying another paragraph's style is reported
+  from the insertion to the paragraph's end: the list depth nudge (⇥ in a marker, a storage
+  level replace at the item start) and `insertText` of an attributed string. Hence the
+  rebase moves an index inside an edited span by delta, except a whole restate (the storage
+  length is passed in). The emission (`editOps`) then sends del plus ins of that whole span.
+- `readingPlace` is restored whenever there is one; `currentPlace` is the only gate. A place
+  taken at the top edge (`RollPlace.atTop`) restores only `x`, which keeps Day 0 at the top
+  when a day is prepended (`testPrependingAndReorderingAtHorizontalOnlyOffsets...`).
+  `relayout()` returns whether it restored or answered a summon, and the assembly pass
+  calls `keepStill` only when it did neither; `EditorSizingHost.relayout` returns that Bool.
 - `InkLayoutManager.layoutGeneration` keys the cached widest line (`widestUsedMaxX`).
   Measured routing: storage edits and fonts reach `processEditing`; container size,
   padding, exclusion paths, line break mode reach `textContainerChangedGeometry`;
@@ -51,6 +64,7 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
 
 **Why:** reviewers (Copilot, Greptile, Claude) flagged each; all verified by failing tests.
 
-**How to apply:** when touching the roll's place logic, run the three tests
-`testWrapAndWidthRoundTrips...`, `testSyncedTextAround...`, `testTogglingAPreview...` in
-DayScrollTests. Related: [[issue79-perforated-roll]], [[issue131-rail-minimap]].
+**How to apply:** when touching the roll's place logic, run
+`testWrapAndWidthRoundTrips...`, `testSyncedTextAround...`, `testTogglingAPreview...`,
+`testADepthNudgeAbove...`, `testAFirstDayReaderScrolledOnlySideways...` and
+`testPrependingAndReordering...` in DayScrollTests. Related: [[issue79-perforated-roll]], [[issue131-rail-minimap]].
