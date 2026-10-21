@@ -198,19 +198,24 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertEqual(held.calls, 1, "a slow relay gets one round, not one per tick")
 
         // The person cancels and starts over before the round returns.
+        // The wire is still busy, so the new ceremony's tick waits.
         sync.cancelPairing()
         XCTAssertNil(sync.pairingStage)
         sync.pairingStage = waiting
         sync.pollPairing()
-        spin { held.calls == 2 }
-        XCTAssertEqual(held.calls, 2, "the new ceremony polls at once; the old flag is not its gate")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertEqual(held.calls, 1, "one round on the wire, whichever ceremony opened it")
 
-        // Both rounds come back: the old one's mismatch is dropped, the
-        // new one's done lands.
+        // The old round comes back: its mismatch is dropped and the
+        // wire is free, so the next tick's round goes out and lands.
         held.release()
+        spin { held.calls == 1 && sync.pairingStage?.stage == "waiting" && !sync.pairingPollingForTests }
+        XCTAssertEqual(sync.pairingStage?.stage, "waiting", "the cancelled ceremony's verdict never reached this one")
+        sync.pollPairing()
         spin { sync.pairingStage?.stage == "done" }
+        XCTAssertEqual(held.calls, 2)
         XCTAssertEqual(sync.pairingStage?.stage, "done")
-        XCTAssertNil(sync.pairingStage?.reason, "the cancelled ceremony's verdict never reached this one")
+        XCTAssertNil(sync.pairingStage?.reason)
     }
 
     func testSigningOutUnderALongPollLeavesNoPumpLatched() throws {

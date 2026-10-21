@@ -158,9 +158,8 @@ public final class SyncController: ObservableObject {
     /// backoff in `attachRetryDelay`.
     private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
-    /// One pairing poll in flight at a time, as `pumping` is for the
-    /// pump: a relay slower than the tick would otherwise stack rounds
-    /// and post the same queued message twice.
+    /// One pairing poll on the wire at a time, as `pumping` is for the
+    /// pump; `SyncCeremonyTests` holds a round open and ticks again.
     private var pairingPolling = false
     /// Async so a test's stand-in can suspend rather than block a
     /// cooperative thread; the shipping value is one blocking core call.
@@ -651,12 +650,14 @@ public final class SyncController: ObservableObject {
         refreshState()
     }
 
-    /// The ceremony is over: its poll's answer is dropped, the flag it
-    /// held is free for the next one, and the tick stops. The stage is
-    /// the caller's to set, since a mismatch shows its verdict.
+    /// The ceremony is over: its poll's answer is dropped and the tick
+    /// stops. The flag stays with the round still on the wire, which
+    /// frees it when it returns; the next ceremony's first tick waits
+    /// for that, at most one round trip. The stage is the caller's to
+    /// set: a mismatch shows its verdict, a sign-out shows nothing,
+    /// since the person asked for the whole thing to end.
     private func endCeremony() {
         ceremony &+= 1
-        pairingPolling = false
         pairingStage = nil
         pairingTimer?.invalidate()
     }
@@ -690,6 +691,9 @@ public final class SyncController: ObservableObject {
         pairingTimer = timer
     }
 
+    /// Whether a round is on the wire; read by the ceremony test.
+    var pairingPollingForTests: Bool { pairingPolling }
+
     /// One tick of the ceremony's poll; internal so a test can tick it.
     func pollPairing() {
         guard pairingStage != nil else {
@@ -704,12 +708,13 @@ public final class SyncController: ObservableObject {
             let stage = await poll()
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                // Before the flag, as `settlePump`: a poll from an ended
-                // session or ceremony must not write its stage into the
-                // next one's, and the end that moved either on cleared
-                // the flag.
-                guard self.session == mine.session, self.ceremony == mine.ceremony else { return }
+                // The wire is free whatever ceremony's round this was:
+                // the flag is about overlapping rounds against one core
+                // flow, which a confirm does not replace, so an end
+                // cannot free it early. The answer, though, belongs to
+                // the ceremony that asked, and a stale one is dropped.
                 self.pairingPolling = false
+                guard self.session == mine.session, self.ceremony == mine.ceremony else { return }
                 guard self.pairingStage != nil else { return }
                 switch stage?.stage {
                 case "done":
