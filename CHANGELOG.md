@@ -1009,7 +1009,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round, is given up on rather than wedging pairing, so that promise
   is kept inside it. A poll from a ceremony that was
   cancelled, answered or signed out of is dropped rather than writing
-  its verdict over the next ceremony's digits. A verdict the core
+  its verdict over the next ceremony's digits, and the next ceremony
+  polls at its first tick rather than waiting that round out. A verdict the core
   cannot answer shows as a failure instead of the sheet vanishing.
   Turning sync off mid-ceremony cancels the pairing flow in the core
   at once, as it does the browser trip, rather than leaving it to the

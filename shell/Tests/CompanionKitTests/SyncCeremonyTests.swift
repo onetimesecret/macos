@@ -204,25 +204,24 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertEqual(held.calls, 1, "a slow relay gets one round, not one per tick")
 
         // The person cancels and starts over before the round returns.
-        // The wire is still busy, so the new ceremony's tick waits.
+        // The old round is given up at once: the new ceremony's first
+        // tick sends its own rather than waiting out the deadline.
         sync.cancelPairing()
         XCTAssertNil(sync.pairingStage)
         sync.pairingStage = waiting
+        // The timer's next tick, here by hand.
         sync.pollPairing()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-        XCTAssertEqual(held.calls, 1, "one round on the wire, whichever ceremony opened it")
+        spin { held.calls == 2 }
+        XCTAssertEqual(held.calls, 2, "a cancelled ceremony's round does not hold the next one")
 
-        // The old round comes back: its mismatch is dropped and the
-        // wire is free, so the next tick's round goes out and is taken.
+        // Both come back: the old round's mismatch is dropped, by
+        // ceremony and by round, and the new round's done lands.
         held.release()
-        spin { held.calls == 1 && sync.pairingStage?.stage == "waiting" && !sync.pairingPolling }
-        XCTAssertEqual(sync.pairingStage?.stage, "waiting", "the cancelled ceremony's verdict never reached this one")
-        // The timer's next tick, here by hand: a settle never re-polls.
-        sync.pollPairing()
         spin { sync.pairingStage?.stage == "done" }
-        XCTAssertEqual(held.calls, 2)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
         XCTAssertEqual(sync.pairingStage?.stage, "done")
-        XCTAssertNil(sync.pairingStage?.reason)
+        XCTAssertNil(sync.pairingStage?.reason, "the cancelled ceremony's verdict never reached this one")
+        XCTAssertFalse(sync.pairingPolling)
     }
 
     func testARoundGivenUpOnCannotWriteOverTheRoundThatReplacedIt() throws {

@@ -47,7 +47,7 @@ final class SealedCapsuleTests: XCTestCase {
         // The auto-enable pass a shown menu runs asks the coordinator,
         // which validates; the object's verbs must survive it.
         menu.update()
-        for item in menu.items where !item.isSeparatorItem {
+        for item in menu.items where item.action != nil {
             XCTAssertTrue(item.isEnabled, "\(item.title) is offered, so it is enabled")
         }
         XCTAssertNotNil(copy.action)

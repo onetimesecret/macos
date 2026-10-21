@@ -158,14 +158,13 @@ public final class SyncController: ObservableObject {
     /// backoff in `attachRetryDelay`.
     private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
-    /// One pairing poll on the wire at a time, as `pumping` is for the
-    /// pump; `SyncCeremonyTests` keeps a round open and ticks again.
-    private(set) var pairingPolling = false
-    /// When the round on the wire went out. The deadline is a chosen
-    /// number: a round is several calls, each bounded by the transport,
-    /// so this is long enough for a slow live round and short enough to
-    /// free a wedged sheet; a give-up is one overlap of issue #280.
-    private var pairingPollStartedAt: Date?
+    /// When the round on the wire went out, nil with no round out: one
+    /// pairing poll at a time, as `pumping` is for the pump.
+    private var pairingRoundStartedAt: Date?
+    var pairingPolling: Bool { pairingRoundStartedAt != nil }
+    /// A chosen number: a round is several transport-bounded calls, so
+    /// this frees a wedged sheet without cutting a slow live round
+    /// short; a give-up is one overlap of issue #280.
     private let pairingPollDeadline: TimeInterval
     /// The round that owns the flag. A round given up on returns as a
     /// no-op for the flag, so a newer round's claim is not undone.
@@ -673,6 +672,10 @@ public final class SyncController: ObservableObject {
         ceremony &+= 1
         pairingStage = nil
         pairingTimer?.invalidate()
+        pairingTimer = nil
+        // A round still out is the old ceremony's: the next ceremony's
+        // first tick gives it up at once rather than waiting the deadline.
+        if pairingRoundStartedAt != nil { pairingRoundStartedAt = .distantPast }
     }
 
     /// The session is over, and its ceremony with it. Neither in-flight
@@ -708,13 +711,12 @@ public final class SyncController: ObservableObject {
             pairingTimer?.invalidate()
             return
         }
-        if pairingPolling, let started = pairingPollStartedAt,
+        if let started = pairingRoundStartedAt,
            Date().timeIntervalSince(started) > pairingPollDeadline {
-            pairingPolling = false
+            pairingRoundStartedAt = nil
         }
         guard !pairingPolling else { return }
-        pairingPolling = true
-        pairingPollStartedAt = Date()
+        pairingRoundStartedAt = Date()
         pairingRound &+= 1
         let poll = pairingPoll
         let mine = (session: session, ceremony: ceremony, round: pairingRound)
@@ -726,8 +728,7 @@ public final class SyncController: ObservableObject {
                 // whatever ceremony it served; the answer belongs to the
                 // ceremony that asked, and a stale one is dropped.
                 guard self.pairingRound == mine.round else { return }
-                self.pairingPolling = false
-                self.pairingPollStartedAt = nil
+                self.pairingRoundStartedAt = nil
                 // A round given up on is stale too: its answer must not
                 // write over the round that replaced it.
                 guard self.session == mine.session, self.ceremony == mine.ceremony else { return }

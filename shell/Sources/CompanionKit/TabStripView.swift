@@ -158,7 +158,7 @@ public struct TabStripView: View {
     /// that unbound it leaves the tooltip saying only what the button
     /// does, which is still true.
     static func newPageHelp(chord: Keystroke?) -> String {
-        Keystroke.chorded("New page", chord: chord)
+        Keystroke.chorded(CompanionL10n.string("pad.page.new"), chord: chord)
     }
 
     /// The ledger tab's tooltip, on the same terms. It named ⌘0 until

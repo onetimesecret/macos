@@ -2079,8 +2079,7 @@ public final class PageModel: ObservableObject {
             clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
         // Inline on the main run loop, not through a Task hop: a hop
         // lets a copy land between fire and clear, and the clear then
-        // takes the newer copy at once. Inline, an invalidated timer
-        // cannot fire, so the identity check is only a second net.
+        // takes the newer copy at once.
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
             let fired = ObjectIdentifier(timer)
             MainActor.assumeIsolated {
