@@ -32,6 +32,28 @@ final class ScriptedFilePanels: FilePanels {
     }
 }
 
+/// An ephemeral client that counts the calls that reach the drafts
+/// file. A subclass because the core writes whatever it is handed, so
+/// "nothing was asked to write" can be seen from nowhere else.
+final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
+    private(set) var draftsWrites = 0
+    private(set) var draftsErasures = 0
+
+    init(tag: String) {
+        super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+    }
+
+    override func draftsSave(to path: String) -> Bool {
+        draftsWrites += 1
+        return super.draftsSave(to: path)
+    }
+
+    override func draftsErase(at path: String) -> Bool {
+        draftsErasures += 1
+        return super.draftsErase(at: path)
+    }
+}
+
 /// The file lane driven whole through the model: open a real file in a
 /// directory the test owns, type into it, watch the dirty mark move,
 /// save it and read the bytes back off disk, and stand a second model
@@ -1238,6 +1260,109 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(
             try XCTUnwrap(model.openFiles.first).isDirty,
             "the file stays dirty; only its draft is on disk")
+    }
+
+    // MARK: Read before write (issue #296)
+
+    /// A model that has not restored the drafts file does not write
+    /// one, whatever the app layer's call order: the save settles, the
+    /// write stays owed, and the restore that follows grants it.
+    func testASaveBeforeTheRestoreWritesNoDraftsFile() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        XCTAssertTrue(model.saveState(), "left alone is settled, not refused")
+        XCTAssertEqual(client.draftsWrites, 0)
+        XCTAssertEqual(client.draftsErasures, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draftsFile.path))
+        XCTAssertTrue(model.draftsDirty, "the write is still owed")
+
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(client.draftsWrites, 1, "the restore grants the write")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: draftsFile.path))
+        XCTAssertFalse(model.draftsDirty)
+    }
+
+    /// The content file's rule, applied to the drafts: a session that
+    /// could not read an existing drafts file does not write over it.
+    func testASaveAfterAFailedRestoreOfAnExistingDraftsFileWritesNothing() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: url)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState())
+        let sealedByOwner = try Data(contentsOf: draftsFile)
+
+        // A different credential tag never held the content key, so
+        // the drafts file exists and will not open.
+        let stranger = DraftsCountingClient(tag: "stranger-\(UUID().uuidString)")
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        let other = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: other)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        XCTAssertTrue(model.saveState(), "left alone is settled, not refused")
+        XCTAssertEqual(stranger.draftsWrites, 0)
+        XCTAssertEqual(stranger.draftsErasures, 0)
+        XCTAssertEqual(try Data(contentsOf: draftsFile), sealedByOwner, "the owner's drafts stand")
+        XCTAssertTrue(model.draftsDirty, "the write is still owed")
+
+        // The user's discard takes the unreadable files down, and the
+        // drafts write is this session's to make from there.
+        model.clearUnreadableStateFile()
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(stranger.draftsWrites, 1)
+        XCTAssertFalse(model.draftsDirty)
+        XCTAssertNotEqual(try Data(contentsOf: draftsFile), sealedByOwner)
+    }
+
+    /// The ordinary launch: the restore reads the file, and the next
+    /// save writes it as it always has.
+    func testASaveAfterTheRestoreWritesTheDraftsFile() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: url)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState())
+        let sealedByOwner = try Data(contentsOf: draftsFile)
+
+        let relaunched = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: relaunched)
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertEqual(model.storage(for: id).string, "well one\n", "the draft came back")
+        try type("and ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(relaunched.draftsWrites, 1)
+        XCTAssertFalse(model.draftsDirty)
+        XCTAssertNotEqual(try Data(contentsOf: draftsFile), sealedByOwner)
     }
 
     // MARK: The roster is the authority

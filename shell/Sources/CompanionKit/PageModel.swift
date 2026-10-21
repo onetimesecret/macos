@@ -1683,6 +1683,15 @@ public final class PageModel: ObservableObject {
     /// background section 9).
     private var ledgerLicence = false
 
+    /// The same licence for the drafts file, by the same truth table.
+    /// False until `restoreDrafts` has run, so a save that is asked
+    /// before the restore writes nothing over a file nobody has read
+    /// yet (issue #296); withheld afterwards when an existing drafts
+    /// file would not open. The one way back is the content discard
+    /// (`clearUnreadableStateFile`): the core drops or reseals the
+    /// drafts beside the state file it discards, on the user's word.
+    private var draftsLicence = false
+
     /// The persistence trail in the unified log: restore refusals and
     /// save failures, never content — the file is ciphertext and
     /// these lines carry only what happened to it.
@@ -2270,6 +2279,9 @@ public final class PageModel: ObservableObject {
     /// or a rotation will not find them.
     private func saveDrafts(in directory: URL) -> Bool {
         guard draftsDirty else { return true }
+        // Read before write, as for the state file: settled, not refused,
+        // and the dirtiness stays so the write is owed later (issue #296).
+        guard draftsLicence else { return true }
         let path = FormFactor.draftsFileURL(in: directory).path
         let wrote = openFiles.isEmpty
             ? client.draftsErase(at: path)
@@ -2316,12 +2328,23 @@ public final class PageModel: ObservableObject {
     /// file that came back from a disk copy that had changed while the
     /// app was away.
     private func restoreDrafts() {
-        guard client.draftsRestore(from: draftsFileURL.path) else {
-            padFileRosterReady = !FileManager.default.fileExists(atPath: draftsFileURL.path)
-            if padFileRosterReady { pads.reconcileFiles([]) }
+        let path = draftsFileURL.path
+        let restored = client.draftsRestore(from: path)
+        // Probed after the restore, as for the other two files.
+        draftsLicence = Self.grantsSaveLicence(
+            fileExists: FileManager.default.fileExists(atPath: path), restored: restored
+        )
+        padFileRosterReady = draftsLicence
+        guard restored else {
+            if draftsLicence {
+                pads.reconcileFiles([])
+            } else {
+                logger.error(
+                    "restore failed over an existing drafts file; withholding the drafts write"
+                )
+            }
             return
         }
-        padFileRosterReady = true
         // Whether the roster in memory came to differ from the one the
         // drafts file holds, which decides at the end whether a write
         // is owed.
@@ -5113,6 +5136,9 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
+        // The discard takes the drafts file with the state file (decisions.md
+        // item 14), so the drafts write is the user's to make again.
+        draftsLicence = true
         contentRestoreRefused = false
         quitRefusal = Self.quitOfferAfterContentClear(offer: quitRefusal)
         markDirty()
