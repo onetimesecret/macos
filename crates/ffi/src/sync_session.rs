@@ -626,8 +626,8 @@ impl SyncSession {
     /// `POST /channel/deltas`: pad and seal everything queued under the
     /// current GOP key, one request, or resend the batch in flight at the
     /// epoch that sealed it. `None` when the clock says wait, nothing is
-    /// queued, an envelope fails to encode, a seal refuses, or no access
-    /// token is held.
+    /// queued, a seal refuses, or no access token is held. An envelope that
+    /// fails to encode is dropped with a fault, unsent.
     #[must_use]
     pub fn publish_request(
         &mut self,
@@ -645,6 +645,18 @@ impl SyncSession {
         epoch: u64,
         seal: impl Fn(&[u8]) -> Option<Vec<u8>>,
     ) -> Option<HttpRequest> {
+        self.publish_request_with(now_ms, epoch, |envelope| envelope.encode().ok(), seal)
+    }
+
+    /// [`SyncSession::publish_request_sealed_with`] with the encoder handed
+    /// in too, so the tests can make one envelope fail to encode.
+    fn publish_request_with(
+        &mut self,
+        now_ms: u64,
+        epoch: u64,
+        encode: impl Fn(&DeltaEnvelope) -> Option<Zeroizing<Vec<u8>>>,
+        seal: impl Fn(&[u8]) -> Option<Vec<u8>>,
+    ) -> Option<HttpRequest> {
         if !self.publish_due(now_ms) {
             return None;
         }
@@ -652,29 +664,42 @@ impl SyncSession {
         if self.in_flight.is_none() {
             // Borrowed, never drained: a dropped `Drain` would take the
             // whole queue with one declined nonce.
-            let blobs = self
-                .outbox
-                .iter()
-                .map(|envelope| {
-                    let plaintext = envelope.encode().ok()?;
-                    seal(&pad::pad(&plaintext))
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let mut blobs = Vec::with_capacity(self.outbox.len());
+            let mut encoded = Vec::with_capacity(self.outbox.len());
+            for envelope in &self.outbox {
+                let plaintext = encode(envelope);
+                if let Some(plaintext) = &plaintext {
+                    blobs.push(seal(&pad::pad(plaintext))?);
+                }
+                encoded.push(plaintext.is_some());
+            }
             let restate = self
                 .outbox
                 .iter()
-                .filter(|envelope| {
-                    matches!(
-                        envelope,
-                        DeltaEnvelope::Expiry { .. }
-                            | DeltaEnvelope::Hold { .. }
-                            | DeltaEnvelope::Terminal { .. }
-                    )
+                .zip(&encoded)
+                .filter(|(envelope, encoded)| {
+                    **encoded
+                        && matches!(
+                            envelope,
+                            DeltaEnvelope::Expiry { .. }
+                                | DeltaEnvelope::Hold { .. }
+                                | DeltaEnvelope::Terminal { .. }
+                        )
                 })
-                .cloned()
+                .map(|(envelope, _)| envelope.clone())
                 .collect();
-            // Every seal succeeded; only now does the queue let go.
+            // Every seal succeeded; only now does the queue let go. An
+            // encode failure repeats on every tick, so that envelope goes too.
             self.outbox.clear();
+            let unencoded = encoded.iter().filter(|encoded| !**encoded).count();
+            if unencoded > 0 {
+                crate::diagnostics::diag_fault!(
+                    "companion-ffi: {unencoded} queued sync envelope(s) failed to encode and left the queue unsent."
+                );
+            }
+            if blobs.is_empty() {
+                return None;
+            }
             self.in_flight = Some(InFlightBatch {
                 epoch,
                 blobs,
@@ -1513,6 +1538,60 @@ mod tests {
         let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
         assert_eq!(body["blobs"].as_array().unwrap().len(), 2);
         assert!(session.outbox.is_empty(), "a sealed batch leaves the queue");
+    }
+
+    #[test]
+    fn an_envelope_that_cannot_encode_leaves_the_queue_instead_of_stalling_it() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (broken, kept) = (ItemId::random(), ItemId::random());
+        session.queue_ops(broken, b"never encodes");
+        session.queue_ops(kept, b"encodes");
+        session.queue_hold(broken, HoldRegister::Released);
+        let refuse_broken = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::Ops { page, .. } | DeltaEnvelope::Hold { page, .. }
+                if *page == page_wire_id(broken) =>
+            {
+                None
+            }
+            _ => envelope.encode().ok(),
+        };
+        let request = session
+            .publish_request_with(0, chain.epoch(), refuse_broken, |plaintext| {
+                chain.seal(plaintext)
+            })
+            .unwrap();
+        assert!(
+            session.outbox.is_empty(),
+            "the broken envelopes left the queue"
+        );
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(kept),
+                ops: ByteBlob::from(b"encodes".as_slice()),
+            })
+        );
+
+        // A queue of nothing but broken envelopes empties and sends nothing.
+        session.in_flight = None;
+        session.last_publish_ms = None;
+        session.queue_ops(broken, b"never encodes");
+        assert!(
+            session
+                .publish_request_with(0, chain.epoch(), refuse_broken, |plaintext| {
+                    chain.seal(plaintext)
+                })
+                .is_none()
+        );
+        assert!(session.outbox.is_empty());
+        assert!(session.in_flight.is_none());
     }
 
     #[test]
