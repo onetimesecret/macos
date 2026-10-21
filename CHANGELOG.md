@@ -1144,6 +1144,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Page text crossing the seam is written once, at its final size, and
+  wiped on release** (`companion-core` 0.33.1, `companion-ffi` 0.42.1,
+  `companion-sync` 0.4.1; Law 0004, still draft; issue #256). Every JSON
+  route that names page ink, a sealed object's excerpt or name, a tab
+  title or a ledger title now counts its output, writes it into one
+  allocation of exactly that size, and wipes it when the shell frees it,
+  with no `serde_json::Value` copy on the way. The core's run, segment,
+  text and file projections and its edit simulation wipe their
+  allocations, and the sync queue's ops, envelopes and padding live in
+  zeroizing owners; an envelope that fails to encode refuses the publish
+  and keeps the queue instead of panicking. `companion_string_free`
+  takes back only a string the core handed out, at its recorded length,
+  and leaves a static version string or any other pointer alone.
+  `Segment` and `DocRun` print `Ink([REDACTED])` under `Debug`. The shell
+  decodes each JSON answer straight from the core's buffer before
+  freeing it, so an answer with invalid UTF-8 now decodes to nothing,
+  where it used to decode with U+FFFD in place of the bad bytes. Loro's
+  own storage, serde_json's parsing scratch, resident excerpts, names and
+  titles, and Swift and AppKit copies are not covered;
+  `docs/development/content-buffer-handling.md` lists each.
+
 - **No route gives out a page past its deadline** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's expiry
   row, issue #170). Between a page's deadline and its timer's sweep, copy

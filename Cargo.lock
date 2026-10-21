@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "betlang",
  "companion-credentials",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "companion-ffi"
-version = "0.42.0"
+version = "0.42.1"
 dependencies = [
  "base64",
  "companion-core",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "companion-sync"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ots-client",
  "ring",
