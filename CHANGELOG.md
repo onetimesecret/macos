@@ -1153,10 +1153,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no `serde_json::Value` copy on the way. The core's run, segment,
   text and file projections and its edit simulation wipe their
   allocations, and the sync queue's ops, envelopes and padding live in
-  zeroizing owners; an envelope that fails to encode is dropped unsent
-  with a diagnostic fault instead of panicking. `companion_string_free`
-  takes back only a string the core handed out, at its recorded length,
-  and leaves a static version string or any other pointer alone.
+  zeroizing owners. An envelope that fails to encode raises a diagnostic
+  fault instead of a panic and leaves the rest of the batch to publish:
+  a page's ops export again from the relay's acknowledged cursor on the
+  next sweep, and an expiry, hold or terminal envelope stays queued.
+  `companion_string_free` takes back only a string the core handed out,
+  at its recorded length, and leaves a static version string or any
+  other pointer alone.
   `Segment` and `DocRun` print `Ink([REDACTED])` under `Debug`. The shell
   decodes each JSON answer straight from the core's buffer before
   freeing it, so an answer with invalid UTF-8 now decodes to nothing,

@@ -41,9 +41,12 @@ withdrawal, retry, epoch, or relay behavior is introduced here.
   and the `ZeroizeOnDrop` marker are available.
 - `DeltaEnvelope::encode()` now returns
   `serde_json::Result<Zeroizing<Vec<u8>>>` through the generic serializer
-  above. The publish path in `ffi/src/sync_session.rs` drops an envelope that
-  fails to encode, unsent, with a diagnostic fault, since the same envelope
-  would fail on every tick; the rest of the batch publishes.
+  above. When an envelope fails to encode, the publish path in
+  `ffi/src/sync_session.rs` raises a diagnostic fault and publishes the
+  rest of the batch. A page's ops go back to `ffi/src/sync_driver.rs`, which
+  rewinds that page's export cursor to the acknowledged one so the next
+  sweep exports the gap again; an expiry, hold or terminal envelope stays
+  queued; a ceremony message is dropped.
 - `pad::pad(&[u8])` now returns `Zeroizing<Vec<u8>>`, allocated at the bucket
   size before copying plaintext. Prefix, payload, and zero suffix are unchanged.
 - These returned `Zeroizing<Vec<u8>>` values still expose vector mutation;
