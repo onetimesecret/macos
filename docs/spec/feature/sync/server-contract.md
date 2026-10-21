@@ -49,22 +49,25 @@ and no check in this repository notices when either moves. This draft
 proposes the re-read as the bump's own step, with the person moving a
 pin as its owner. Whoever moves either pin in this document re-reads,
 in the same change, every row of the **Server today** column that
-cites the repository that moved, against its new commit; a row citing
-both repositories is re-read on either bump. The same reading covers
-the citations outside the column that stand at a pin: the paragraph
-above on the ADR comparison, the short file names below, §4's grep and
-§6's "at this pin" statements. The bump then updates the symbol, file
-and line beside each entry, revises **Standing** where the reading
-changed, writes the new pin, with its date or version, in the opening
-paragraph and in this one, and sets the status line's revised date to
-the day of the re-read, so the document always says which commits it
-describes. Where a row's **Standing** changes, the pull request that
-bumps the pin says so in its body, so the owner's decision on which
-side moves is not left in a citation update. An automated check
-against the two server repositories is out of scope; the reading is
-by hand. The symbol
-beside each line is there to find a moved line again. Server file names
-are short: `features/oauth.rb` and `hooks/oauth.rb` are under
+cites the repository that moved, against its new commit (the short
+file names in the next paragraph say which repository a citation is
+in); a row citing both repositories is re-read on either bump. The
+same reading covers every statement outside the column that describes
+develop or the fork as it stands at a pin, the ADR-0027 comparison
+above, §4's grep and §6's readings among them. The bump then updates
+the symbol, file and line beside each entry, revises **Standing**
+where the reading changed, writes the new pin in the opening paragraph
+and in this one, with its date or version where the opening paragraph
+gives one, redates §4's grep when it was rerun, and sets the status
+line's revised date to the day of the re-read, so the document always
+says which commits it describes. Where a row's **Standing** changes,
+the pull request that bumps the pin says so in its body, so the
+owner's decision on which side moves is not left in a citation update.
+An automated check against the two server repositories is out of
+scope; the reading is by hand. The symbol beside each line is there to
+find a moved line again.
+
+Server file names are short: `features/oauth.rb` and `hooks/oauth.rb` are under
 `apps/web/auth/config/` on develop, and `router.rb`, `initializers/`
 and `docs/` are under `apps/web/auth/`; `oauth-server.md` is develop's
 `docs/authentication/oauth-server.md`. `oauth_*.rb` and `oidc.rb` are
