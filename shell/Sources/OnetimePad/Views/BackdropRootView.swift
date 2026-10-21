@@ -744,10 +744,13 @@ struct BackdropRootView: View {
                 }
             }
         }
+        .onDisappear { popResizeCursor() }
     }
 
     private static let gripThickness: CGFloat = 6
     private static let cornerSide: CGFloat = 12
+    /// The grip whose cursor is on the stack, if one is.
+    @State private var pushedCursorEdge: CardEdge?
 
     private func grip(_ edge: CardEdge) -> some View {
         Color.clear
@@ -764,12 +767,26 @@ struct BackdropRootView: View {
             .gesture(resizeGesture(edge))
     }
 
-    /// The pointer a window shows over its resize margins. Pushed on
-    /// entry and popped on exit; a resting card is mouse transparent
-    /// (ADR-0015), so no hover reaches a grip that cannot resize.
+    /// The pointer a window shows over its resize margins. One push at
+    /// a time, popped by the grip that pushed it or by the frame
+    /// leaving the hierarchy: SwiftUI does not promise an exit hover to
+    /// a view that disappears, and an edge's exit can arrive after its
+    /// corner's entry.
     private func showResizeCursor(_ edge: CardEdge, _ inside: Bool) {
-        guard let cursor = Self.resizeCursor(for: edge) else { return }
-        if inside, raised { cursor.push() } else { NSCursor.pop() }
+        if inside {
+            guard raised, let cursor = Self.resizeCursor(for: edge) else { return }
+            popResizeCursor()
+            cursor.push()
+            pushedCursorEdge = edge
+        } else if pushedCursorEdge == edge {
+            popResizeCursor()
+        }
+    }
+
+    private func popResizeCursor() {
+        guard pushedCursorEdge != nil else { return }
+        NSCursor.pop()
+        pushedCursorEdge = nil
     }
 
     private static func resizeCursor(for edge: CardEdge) -> NSCursor? {
