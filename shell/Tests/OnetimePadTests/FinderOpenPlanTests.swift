@@ -87,10 +87,16 @@ final class FinderOpenPlanTests: XCTestCase {
         XCTAssertEqual(drained, FinderOpenPlan(open: [notes]))
     }
 
-    func testAFinderOpenDuringAModalIsHeldWhole() {
+    func testAFinderOpenDuringAModalKeepsOnlyItsFiles() {
         let held = plan([notes, link], modalSessionRunning: true)
 
-        XCTAssertEqual(held, FinderOpenPlan(held: [notes, link]))
+        XCTAssertEqual(held, FinderOpenPlan(held: [notes]))
+    }
+
+    func testABatchWithNoFileKeepsNothingBeforeStartup() {
+        let held = plan([link], startupComplete: false)
+
+        XCTAssertEqual(held, FinderOpenPlan())
     }
 
     func testTheHeldFilesOpenOnceTheModalHasEnded() {
@@ -98,5 +104,18 @@ final class FinderOpenPlanTests: XCTestCase {
         let drained = plan(held + [draft])
 
         XCTAssertEqual(drained, FinderOpenPlan(open: [notes, draft]))
+    }
+
+    func testTheModelIsNotReadBeforeStartup() {
+        var reads = 0
+        func readContext() -> ActivationContext {
+            reads += 1
+            return context
+        }
+        _ = FinderOpenPlan.decide(
+            queued: [notes], startupComplete: false, modalSessionRunning: false,
+            launchActivationOutstanding: true, appActive: true, context: readContext())
+
+        XCTAssertEqual(reads, 0)
     }
 }
