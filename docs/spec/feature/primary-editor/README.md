@@ -203,6 +203,10 @@ reading and not something the ADR says.
   the owner, which is today's behaviour with one window.
 - **⌘W stays `page::Close`.** The page strip is a tab strip, and
   Safari and Terminal close the tab on ⌘W.
+  Note, 2026-10-21 (issue #201): ⌘W closes what the key window shows.
+  While Settings, About or Send Feedback has the keyboard there is no
+  page target, and the chord sends `performClose:` to that window
+  instead of beeping. On the surface it stays `page::Close`.
 - **⇧⌘W closes the window** (`window::Close`). ADR-0033 recorded
   that the default keymap left ⇧⌘W free; B5 bound it there
   (`"cmd-shift-w": "window::Close"` in

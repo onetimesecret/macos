@@ -77,15 +77,15 @@
       "cmd-t": "page::New",
       "cmd-alt-left": "page::Previous",
       "cmd-alt-right": "page::Next",
+      // cmd-w closes what the key window shows (issue #201): the page or
+      // the file on the surface, and Settings, About or Send Feedback
+      // when one of those has the keyboard, as in Safari and Terminal.
       "cmd-w": "page::Close",
 
-      // The window ⇧⌘W closes is the one the keyboard is in: the editor
-      // window and Settings alike (issue #201). Distinct from ⌘W above,
-      // which acts on the strip's page or the file. Carried by the
-      // Window menu's item, which lets the chord fire even in Settings
-      // where the surface installs nothing. The panel is borderless
-      // and answers `performClose:` with nothing to do, so a stray press
-      // over the resting card is harmless.
+      // cmd-shift-w closes the window the keyboard is in, the editor
+      // window and Settings alike (issue #201). The Window menu's item
+      // fires it, so it works where the surface installs nothing. The
+      // panel is borderless and answers `performClose:` with nothing to do.
       "cmd-shift-w": "window::Close",
 
       // Sealing, which is the one gesture that cannot be undone. Both

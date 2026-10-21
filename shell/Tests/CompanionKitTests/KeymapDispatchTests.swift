@@ -65,6 +65,39 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.perform(.windowClose))
     }
 
+    /// ⌘W closes what the key window shows (issue #201). While Settings,
+    /// About or Send Feedback has the keyboard there is no page target,
+    /// and the chord closes that window instead of beeping.
+    func testTheCloseChordClosesAKeyWindowWithoutAPageTarget() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        XCTAssertFalse(model.holdsKeys)
+        XCTAssertEqual(model.closeChordTarget, .keyWindow)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 1)
+        XCTAssertEqual(model.tabs.count, 2, "a page is not closed from a window that does not show it")
+    }
+
+    /// The pad's own ⌘W is unchanged: with the owner's window key, the
+    /// chord is `page::Close` and no window is asked to close.
+    func testTheCloseChordStaysThePagesOnTheSurface() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        model.reportKeys(true, from: .panel)
+        XCTAssertEqual(model.closeChordTarget, .surface)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 0)
+        XCTAssertEqual(model.tabs.count, 1)
+    }
+
     /// Edit → Seal Selected Content and the chord are one verb (D-30):
     /// the menu item names the same command id the keymap binds, and
     /// the chord it advertises is read from the keymap rather than

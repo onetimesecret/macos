@@ -341,3 +341,4 @@ The proposal carried five open questions. Each is answered in the Decision.
   window rule's reach over the editor window). ADR-0006 stands and its second
   eject trigger did not fire.
 - 2026-10-01: Superseded in part by [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md). The panel and primary editor are mutually exclusive visible presentations. Raising the panel closes the editor window; opening the editor window hides the entire panel, including its resting and pinned forms. This replaces the non-owner glance and the consequences describing both windows remaining visible; the other decisions stand.
+- 2026-10-21: Note under issue #201. ⌘W closes what the key window shows. On the surface it stays `page::Close`; while Settings, About or Send Feedback has the keyboard there is no page target, and the chord sends `performClose:` to that window instead of beeping. ⇧⌘W stays `window::Close`.

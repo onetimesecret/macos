@@ -65,7 +65,10 @@ struct BackdropApp: App {
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
                         saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
                         saveAsShortcut: appDelegate.shortcut(for: .fileSaveAs),
-                        closeShortcut: appDelegate.shortcut(for: .pageClose)
+                        closeShortcut: appDelegate.shortcut(for: .pageClose),
+                        closeKeyWindow: {
+                            appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
+                        }
                     )
                 }
                 // No Print… until a print that emits placeholders is designed
@@ -131,25 +134,14 @@ struct BackdropApp: App {
                     Divider()
                     Button("Send Feedback…") { appDelegate.sendFeedback() }
                 }
-                // The Window menu's Close Window (issue #201, ADR-0033).
-                // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
-                // window the keyboard is in and reaches Settings too.
-                // The group is placed before AppKit's Minimize/Zoom
-                // group (`.windowSize`) so it heads the menu;
-                // `.windowArrangement` is Bring All to Front, which sits
-                // after Minimize and Zoom. Apple keeps Close in File;
-                // the Window menu seat is issue #201's call while ⌘W
-                // is the strip's. The chord comes from the keymap, so an
-                // override that takes it away leaves the item without a
-                // shortcut rather than lying (see docs/development/keymap-format-and-dispatch.md).
+                // The Window menu's Close Window, ⇧⌘W (issue #201, ADR-0033),
+                // ahead of AppKit's Minimize and Zoom. ⌘W is the File menu's
+                // above. The chord comes from the keymap; an override that
+                // takes it away leaves the item without a shortcut.
                 //
-                // `performClose:` down the responder chain: the key
-                // window answers, so Settings closes on Settings, the
-                // editor closes on itself, and the borderless panel
-                // (`.panel` and its key relay) answers with nothing to
-                // do because it carries no close box. Panel and relay
-                // are also `isExcludedFromWindowsMenu = true`, so the
-                // menu itself lists the editor window and Settings only.
+                // `performClose:` down the responder chain: the key window
+                // answers, and the borderless panel and its key relay have
+                // no close box, so they answer with nothing to do.
                 CommandGroup(before: .windowSize) {
                     appDelegate.presentationCommands
                     Divider()
@@ -184,6 +176,11 @@ struct BackdropApp: App {
 /// New Page asked from a window that is not the surface (Settings,
 /// About, Feedback) also brings the owner surface back, so the command
 /// shows what it made the way Open… shows its panel.
+///
+/// The close item reads `closeChordTarget` (issue #201). On the surface
+/// it is Close File, dimmed on a page because the page's own ⌘W is the
+/// surface's hidden button; while Settings, About or Send Feedback has
+/// the keyboard it is Close Window, and ⌘W closes that window.
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
@@ -194,6 +191,8 @@ private struct FileMenuItems: View {
     let saveShortcut: KeyboardShortcut?
     let saveAsShortcut: KeyboardShortcut?
     let closeShortcut: KeyboardShortcut?
+    /// Sends `performClose:` to the key window.
+    let closeKeyWindow: () -> Void
 
     /// Whether the surface is showing a file, which is what the three
     /// file verbs need to be true.
@@ -218,9 +217,15 @@ private struct FileMenuItems: View {
             .keyboardShortcut(saveAsShortcut)
             .disabled(!onAFile)
         Divider()
-        Button("Close File") { pages.perform(.pageClose) }
-            .keyboardShortcut(closeShortcut)
-            .disabled(!onAFile)
+        switch pages.closeChordTarget {
+        case .surface:
+            Button("Close File") { pages.closeWhatIsShowing(closeKeyWindow: closeKeyWindow) }
+                .keyboardShortcut(closeShortcut)
+                .disabled(!onAFile)
+        case .keyWindow:
+            Button("Close Window") { pages.closeWhatIsShowing(closeKeyWindow: closeKeyWindow) }
+                .keyboardShortcut(closeShortcut)
+        }
     }
 }
 

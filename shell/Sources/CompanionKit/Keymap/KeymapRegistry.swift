@@ -27,11 +27,9 @@ extension PageModel {
         case .pageNew:
             newPage()
         case .pageClose:
-            // ⌘W closes what is on screen. A dirty file publishes its
-            // Save file, Discard changes, and Keep editing decision
-            // inline; on a page it is the page, as it always
-            // was. The second reading rather than a third id, for
-            // `.pageNew`'s reason above (ADR-0028).
+            // ⌘W closes what is on the surface: the file, with its dirty
+            // decision inline, or the page (ADR-0028). A key window with
+            // neither takes the chord through `closeWhatIsShowing` (issue #201).
             if case .file = activeTarget { closeActiveFile() } else { closeCurrent() }
         case .fileOpen:
             openFile()
@@ -65,12 +63,8 @@ extension PageModel {
             // document underneath it.
             return false
         case .windowClose:
-            // The Window menu's item carries this chord app-wide and
-            // sends `performClose:` to the key window (issue #201). The
-            // model has no window of its own to close, and the surface
-            // installer never installs it, so this arm is only reached
-            // if a future call site asked the model directly; refuse it
-            // the same way the text-view commands do.
+            // ⇧⌘W is the Window menu's and sends `performClose:` to the
+            // key window (issue #201). The model has no window to close.
             return false
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
             .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9:
@@ -79,5 +73,32 @@ extension PageModel {
             return true
         }
         return true
+    }
+}
+
+/// What ⌘W closes (issue #201): the page or file on the surface while
+/// the owner's window is key, otherwise the key window itself, which is
+/// Settings, About or Send Feedback.
+public enum CloseChordTarget: Equatable, Sendable {
+    case surface
+    case keyWindow
+}
+
+extension PageModel {
+    /// Where ⌘W goes right now. `holdsKeys` is the owner's fact, and it
+    /// is false exactly while a window without a surface has the keys.
+    public var closeChordTarget: CloseChordTarget {
+        holdsKeys ? .surface : .keyWindow
+    }
+
+    /// Runs ⌘W: `page::Close` on the surface, or `closeKeyWindow` when
+    /// the keyboard is in a window with no page or file to close.
+    public func closeWhatIsShowing(closeKeyWindow: () -> Void) {
+        switch closeChordTarget {
+        case .surface:
+            perform(.pageClose)
+        case .keyWindow:
+            closeKeyWindow()
+        }
     }
 }
