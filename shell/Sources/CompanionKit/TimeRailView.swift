@@ -679,7 +679,7 @@ struct StreamNavigatorView: View {
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
         .accessibilityAddTraits(RowAccessibility.traits(selected: node.active))
-        .accessibilityActivation(when: true) { jump(to: placed) }
+        .accessibilityActivation(when: true) { jump(to: target, documentTop: placed.documentTop) }
     }
 
     /// The mark on the track. The active node is a filled ember dot,
