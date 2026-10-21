@@ -322,6 +322,7 @@ final class SealedNoteEditor: NSObject {
             systemSymbolName: isExpanded
                 ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
             accessibilityDescription: isExpanded ? "Contract note" : "Expand note")
+        popover.expand.toolTip = isExpanded ? "Contract note" : "Expand note"
         popover.expandHint.stringValue = model.keymap.hintKeystroke(for: .noteToggleExpanded)
             .map { $0.displaySymbol.replacingOccurrences(of: "⎋", with: "esc") } ?? ""
         popover.needsLayout = true

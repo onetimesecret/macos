@@ -744,14 +744,27 @@ struct BackdropRootView: View {
                 }
             }
         }
+        // The grips exist only while raised, so a rest removes them.
+        .onDisappear {
+            popResizeCursor()
+            hoveringEdge = nil
+            draggingEdge = nil
+        }
     }
 
     private static let gripThickness: CGFloat = 6
     private static let cornerSide: CGFloat = 12
+    /// The grip whose cursor is on the stack, if one is.
+    @State private var pushedCursorEdge: CardEdge?
+    /// The grip a resize drag is pulling, whose cursor outlives a hover exit.
+    @State private var draggingEdge: CardEdge?
+    /// The grip under the pointer, for the end of a drag that stays on it.
+    @State private var hoveringEdge: CardEdge?
 
     private func grip(_ edge: CardEdge) -> some View {
         Color.clear
             .contentShape(Rectangle())
+            .onHover { showResizeCursor(edge, $0) }
             .gesture(resizeGesture(edge))
     }
 
@@ -759,7 +772,53 @@ struct BackdropRootView: View {
         Color.clear
             .frame(width: Self.cornerSide, height: Self.cornerSide)
             .contentShape(Rectangle())
+            .onHover { showResizeCursor(edge, $0) }
             .gesture(resizeGesture(edge))
+    }
+
+    /// The pointer a window shows over its resize margins: one push at a
+    /// time, popped by the grip that pushed it or by the frame's exit.
+    private func showResizeCursor(_ edge: CardEdge, _ inside: Bool) {
+        hoveringEdge = inside ? edge : (hoveringEdge == edge ? nil : hoveringEdge)
+        // While a grip is being pulled its cursor stands whatever the
+        // pointer crosses or leaves; the end of the drag settles it.
+        guard draggingEdge == nil else { return }
+        if inside {
+            pushResizeCursor(edge)
+        } else if pushedCursorEdge == edge {
+            popResizeCursor()
+        }
+    }
+
+    /// The pull's own cursor, restored under a neighbour the pointer
+    /// crossed, and kept past the hover exit a drag beyond the 6 pt
+    /// margin brings.
+    private func holdResizeCursor(_ edge: CardEdge) {
+        guard draggingEdge != edge else { return }
+        draggingEdge = edge
+        pushResizeCursor(edge)
+    }
+
+    /// The drag is over: the pointer may still rest on a grip, and no
+    /// new hover will say so, so that grip's cursor goes back up.
+    private func releaseResizeCursor() {
+        draggingEdge = nil
+        if let hoveringEdge { pushResizeCursor(hoveringEdge) } else { popResizeCursor() }
+    }
+
+    /// One cursor on the stack: a grip with no cursor of its own (a
+    /// corner before macOS 15) still takes the neighbour's off.
+    private func pushResizeCursor(_ edge: CardEdge) {
+        popResizeCursor()
+        guard raised, let cursor = edge.resizeCursor else { return }
+        cursor.push()
+        pushedCursorEdge = edge
+    }
+
+    private func popResizeCursor() {
+        guard pushedCursorEdge != nil else { return }
+        NSCursor.pop()
+        pushedCursorEdge = nil
     }
 
     /// One resize drag, per edge: the pure `CardEdge` decision turns the
@@ -769,6 +828,7 @@ struct BackdropRootView: View {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
                 guard raised else { return }
+                holdResizeCursor(edge)
                 let anchor = anchor(seededBy: value.translation)
                 model.proposeGeometry(
                     edge.resized(model.geometry, by: paneTranslation(from: anchor))
@@ -777,6 +837,7 @@ struct BackdropRootView: View {
             .onEnded { _ in
                 let started = gestureAnchor
                 gestureAnchor = nil
+                releaseResizeCursor()
                 // Same cancellation rule as the header drag: a rest
                 // mid-gesture voids the proposal.
                 guard raised, let started else {

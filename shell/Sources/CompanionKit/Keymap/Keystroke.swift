@@ -239,6 +239,14 @@ public struct Keystroke: Hashable, Sendable {
         }
         return symbols
     }
+
+    /// A description with the chord in parentheses after it, or the
+    /// plain description when the keymap bound nothing, so every
+    /// tooltip and button that names a chord degrades the same way.
+    public static func chorded(_ what: String, chord: Keystroke?) -> String {
+        guard let chord else { return what }
+        return "\(what) (\(chord.displaySymbol))"
+    }
 }
 
 extension NamedKey {

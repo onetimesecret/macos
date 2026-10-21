@@ -181,7 +181,8 @@ public struct TimeRailView: View {
                     }
                     Spacer(minLength: 0)
                     Button(action: model.newPage) { Image(systemName: "plus") }
-                        .buttonStyle(.plain).help(CompanionL10n.string("pad.page.new"))
+                        .buttonStyle(.plain)
+                        .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
                         .accessibilityLabel(CompanionL10n.string("pad.page.new"))
                 }
                 ForEach(projection.units) { unit in
@@ -297,7 +298,7 @@ public struct TimeRailView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.emberText)
-            .help(TimeUnitTab.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
+            .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
             .accessibilityLabel(Text("New page"))
         }
         .padding(.top, 6)
@@ -329,7 +330,6 @@ public struct TimeRailView: View {
         }
         return chords
     }
-
 
     /// Which day the rail marks as the one the surface is showing.
     ///
@@ -665,7 +665,8 @@ struct StreamNavigatorView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
-        .accessibilityAddTraits(node.active ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: node.active))
+        .accessibilityActivation(when: true) { jump(to: placed) }
     }
 
     /// The mark on the track. The active node is a filled ember dot,
@@ -810,8 +811,13 @@ final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
     /// its window or moves between windows, and by the representable's
-    /// dismantle (`retire`).
-    private var monitor: Any?
+    /// dismantle (`retire`), and as a last net by deinit, which copies
+    /// the token out; nonisolated(unsafe) because deinit is nonisolated.
+    private nonisolated(unsafe) var monitor: Any?
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+    }
 
     /// Whether the view is watching its window's wheel events.
     var isWatching: Bool { monitor != nil }
@@ -1003,12 +1009,17 @@ private struct SlotRailRow: View {
                 Button { model.close(sheet.id) } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close tab"))
+                .help("Close tab")
+                // The row offers Close Tab as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             Group {
                 if sheet.hasPage {
@@ -1038,7 +1049,17 @@ private struct SlotRailRow: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
+        // The hover-only close mark and the menu verbs, reachable
+        // without a pointer; mid-rename the element is the field's
+        // container and offers neither.
+        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
+        .accessibilityActions {
+            if !renaming {
+                Button("Rename Tab") { beginRename() }
+                Button("Close Tab") { model.close(sheet.id) }
+            }
+        }
         .contextMenu {
             Button("Rename Tab") { beginRename() }
             Button(SheetTab.holdMenuTitle(
@@ -1053,6 +1074,7 @@ private struct SlotRailRow: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
+            Divider()
             Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
@@ -1183,7 +1205,8 @@ struct FileShelfRow: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
     }
 }
 
@@ -1209,14 +1232,6 @@ enum TimeUnitTab {
         unit.bucket == 0
     }
 
-    /// The + button's tooltip, which is the strip's tooltip: one
-    /// sentence for one action, so a keymap that moved `page::New`
-    /// moves both, and a keymap that unbound it leaves both saying only
-    /// what the button does.
-    static func newPageHelp(chord: Keystroke?) -> String {
-        TabStripView.newPageHelp(chord: chord)
-    }
-
     /// Where a click on a day lands.
     ///
     /// The same answer the keyboard gets, and deliberately the same
@@ -1233,7 +1248,7 @@ enum TimeUnitTab {
     /// itself shows, and the chord that does it too. With nothing bound
     /// it says only what the click does, which is still true.
     static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
-        chorded("Go to \(spokenLabel)", chord: chord)
+        Keystroke.chorded("Go to \(spokenLabel)", chord: chord)
     }
 
     /// Today's tooltip, which has two readings. Today already holding a
@@ -1243,26 +1258,8 @@ enum TimeUnitTab {
     /// word for word about the day that has one, so a day that gains a
     /// page reads the same either way it was asked.
     static func todayHelp(hasPage: Bool, chord: Keystroke?) -> String {
-        guard hasPage else { return chorded("Start today's page", chord: chord) }
+        guard hasPage else { return Keystroke.chorded("Start today's page", chord: chord) }
         return dayHelp(spokenLabel: "today", chord: chord)
     }
-
-    /// The chord in parentheses after the description, or the plain
-    /// description when the keymap bound nothing, `newPageHelp`'s
-    /// shape, so every tooltip in the app degrades the same way.
-    private static func chorded(_ what: String, chord: Keystroke?) -> String {
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
-    }
 }
 
-extension View {
-    @ViewBuilder
-    func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
-        if offered {
-            accessibilityAction(named: Text("New page"), action)
-        } else {
-            self
-        }
-    }
-}

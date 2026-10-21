@@ -552,8 +552,9 @@ public struct InkEditorView: NSViewRepresentable {
     // compile time.
     @MainActor
     public final class Coordinator: NSObject, NSTextViewDelegate,
-        @preconcurrency NSTextStorageDelegate {
+        @preconcurrency NSTextStorageDelegate, NSMenuItemValidation {
         let model: PageModel
+        private var reportedUnnamedSelectors: Set<String> = []
         weak var textView: InkTextView?
         /// The page or file under the editor, or nil on a note's surface,
         /// whose page only paths key on it (ADR-0044).
@@ -1130,8 +1131,12 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
+        /// Under a field or a note that holds the keys the page offers no
+        /// language verb, Choose included (Law 0007, keys row).
         var manualLanguageTargetAvailable: Bool {
-            PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
+            PageModel.languageDetectionFeaturesAvailable
+                && textView?.answersChords == true
+                && manualLanguageTarget() != nil
         }
 
         /// The Edit menu's language and seal items as the key holder can answer
@@ -1216,6 +1221,8 @@ public struct InkEditorView: NSViewRepresentable {
             guard let storage = textView?.textStorage, let selection = sealableSelection(),
                   !Self.containsChip(storage, in: selection)
             else { return }
+            // The page's own group, set off from AppKit's text items.
+            menu.addSeparatorIfNeeded()
             let seal = NSMenuItem(
                 title: SealSelectionMenu.contextMenuTitle,
                 action: #selector(sealSelectionFromMenu(_:)),
@@ -1468,7 +1475,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         func applyManualLanguage(_ language: String) {
-            guard PageModel.languageDetectionFeaturesAvailable,
+            guard manualLanguageTargetAvailable,
                   Self.manualLanguages.contains(language),
                   let target = manualLanguageTarget()
             else {
@@ -1483,22 +1490,22 @@ public struct InkEditorView: NSViewRepresentable {
 
         func appendLanguageItems(to menu: NSMenu) {
             guard PageModel.languageDetectionFeaturesAvailable, let textView else { return }
-            menu.addItem(.separator())
+            menu.addSeparatorIfNeeded()
 
             let detect = NSMenuItem(
-                title: "Detect Code Language…",
+                title: "Detect Code Language",
                 action: #selector(detectCodeLanguageFromMenu(_:)),
                 keyEquivalent: ""
             )
             detect.target = self
-            detect.isEnabled = model.languageDetectionEnabled && manualLanguageTarget() != nil
+            // Enablement is `validateMenuItem`'s: the menu auto-enables.
             menu.addItem(detect)
 
             if let suggestion = languageSuggestion,
                manualLanguageTarget() == suggestion.target
             {
                 let heading = NSMenuItem(
-                    title: "Suggested: \(suggestion.language.capitalized)",
+                    title: "Suggested: \(CodeLanguageName.display(suggestion.language))",
                     action: nil,
                     keyEquivalent: ""
                 )
@@ -1514,7 +1521,7 @@ public struct InkEditorView: NSViewRepresentable {
                 switch suggestion.target.kind {
                 case .selection:
                     let wrap = NSMenuItem(
-                        title: "Wrap as \(suggestion.language.capitalized) Code",
+                        title: "Wrap as \(CodeLanguageName.display(suggestion.language)) Code",
                         action: #selector(applySuggestedWrap(_:)),
                         keyEquivalent: ""
                     )
@@ -1522,14 +1529,14 @@ public struct InkEditorView: NSViewRepresentable {
                     menu.addItem(wrap)
                 case .bareFence:
                     let highlight = NSMenuItem(
-                        title: "Use \(suggestion.language.capitalized) for Highlighting",
+                        title: "Use \(CodeLanguageName.display(suggestion.language)) for Highlighting",
                         action: #selector(applySuggestedHighlighting(_:)),
                         keyEquivalent: ""
                     )
                     highlight.target = self
                     menu.addItem(highlight)
                     let insert = NSMenuItem(
-                        title: "Insert \(suggestion.language) in Fence",
+                        title: "Insert “\(suggestion.language)” in Fence",
                         action: #selector(insertSuggestedFenceLabel(_:)),
                         keyEquivalent: ""
                     )
@@ -1543,7 +1550,7 @@ public struct InkEditorView: NSViewRepresentable {
                 let submenu = NSMenu(title: "Choose Language")
                 for language in Self.manualLanguages {
                     let item = NSMenuItem(
-                        title: language.capitalized,
+                        title: CodeLanguageName.display(language),
                         action: #selector(chooseLanguageFromMenu(_:)),
                         keyEquivalent: ""
                     )
@@ -1561,7 +1568,7 @@ public struct InkEditorView: NSViewRepresentable {
                 keyEquivalent: ""
             )
             bypass.target = textView
-            bypass.isEnabled = textView.isEditable
+            // Enablement is the text view's `validateMenuItem`.
             menu.addItem(bypass)
         }
 
@@ -1588,6 +1595,41 @@ public struct InkEditorView: NSViewRepresentable {
         @objc private func chooseLanguageFromMenu(_ sender: NSMenuItem) {
             guard let language = sender.representedObject as? String else { return }
             applyManualLanguage(language)
+        }
+
+        /// The context menu auto-enables, so this is where enablement is
+        /// decided; the rest is appended only when it applies.
+        public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+            // An item with a target and no action is disabled.
+            guard let action = item.action else { return false }
+            switch action {
+            case #selector(detectCodeLanguageFromMenu(_:)):
+                return textView?.canDetectCodeLanguage == true
+            case #selector(sealSelectionFromMenu(_:)),
+                 #selector(dismissLanguageSuggestionFromMenu(_:)),
+                 #selector(applySuggestedWrap(_:)),
+                 #selector(applySuggestedHighlighting(_:)),
+                 #selector(insertSuggestedFenceLabel(_:)),
+                 #selector(chooseLanguageFromMenu(_:)),
+                 #selector(copyChipName(_:)),
+                 #selector(copyOutChip(_:)),
+                 #selector(copyChipNameValue(_:)),
+                 #selector(concealChip(_:)),
+                 #selector(nameChip(_:)),
+                 #selector(openChipNote(_:)),
+                 #selector(removeChip(_:)):
+                return true
+            default:
+                // Once in the log, since the menu validates on every
+                // display; a debug build stops here.
+                let name = NSStringFromSelector(action)
+                if reportedUnnamedSelectors.insert(name).inserted {
+                    Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
+                        .fault("unnamed menu selector \(name, privacy: .public)")
+                    assertionFailure("add \(name) to validateMenuItem")
+                }
+                return true
+            }
         }
 
         // MARK: The page swap (ADR-0006)
@@ -6113,6 +6155,18 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// its two items while the editor is first responder. A native field
     /// editor answers the same selectors through AppKit's own validation.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // The language verbs answer on every surface, a note's too,
+        // where there is no document for the cases below.
+        switch item.action {
+        case #selector(detectCodeLanguage(_:)):
+            return canDetectCodeLanguage
+        case #selector(chooseCodeLanguage(_:)):
+            return canChooseCodeLanguage
+        case #selector(pasteWithoutDetection(_:)):
+            return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
+        default:
+            break
+        }
         guard let document = coordinator?.document, let model = coordinator?.model else {
             return super.validateMenuItem(item)
         }
@@ -6122,12 +6176,6 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             let verb = back ? "Undo" : "Redo"
             item.title = model.editStepName(document, back: back).map { "\(verb) \($0)" } ?? verb
             return isEditable && answersChords && model.canStepEdit(document, back: back)
-        case #selector(detectCodeLanguage(_:)):
-            return canDetectCodeLanguage
-        case #selector(chooseCodeLanguage(_:)):
-            return canChooseCodeLanguage
-        case #selector(pasteWithoutDetection(_:)):
-            return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
         case #selector(copy(_:)), #selector(cut(_:)), #selector(paste(_:)),
              #selector(pasteAsPlainText(_:)):
             return answersChords && super.validateMenuItem(item)

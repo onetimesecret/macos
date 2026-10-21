@@ -199,6 +199,12 @@ public struct PageContentView: View {
 /// something to say, so a quiet surface shows none of them and the
 /// layout does not reserve their room.
 public struct PageStatusStack: View {
+    /// The offer's button names the chord the keymap binds, as the
+    /// strip's tooltip does; unbound, it names only the verb.
+    static func sealItTitle(chord: Keystroke?) -> String {
+        Keystroke.chorded("Seal It", chord: chord)
+    }
+
     @ObservedObject var model: PageModel
     /// Observed directly: the controller is its own `ObservableObject`,
     /// and a nested object's changes do not republish through the
@@ -352,7 +358,9 @@ public struct PageStatusStack: View {
                 Text("the clipboard holds content")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.secondaryInk)
-                Button("Seal It (⇧⌘V)") { model.performSealedPaste?() }
+                Button(Self.sealItTitle(chord: model.keymap.hintKeystroke(for: .clipboardSeal))) {
+                    model.performSealedPaste?()
+                }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Seal the clipboard's content onto this page"))

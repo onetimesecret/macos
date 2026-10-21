@@ -967,6 +967,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Menus, dialogs and rows follow the platform's conventions** (app
+  0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
+  head, on the chord the keymap binds; asked from Settings, About or
+  Feedback it also brings the surface back, the editor window or the
+  panel, whichever owns the pages. The Window menu's switches and
+  Close Window head that menu, before Minimize and Zoom, as the comment
+  always said. Detect Code Language drops its ellipsis in both menus,
+  since detection answers inline, and the context menu item now greys
+  out when it has no target: the menu auto-enables, and without a
+  validation method the explicit state was overwritten on display.
+  Language names read as their communities write them (JavaScript,
+  SQL, YAML) wherever a language is named, for every slug the detector
+  can emit. The shortcut alert offers Try Again and Cancel, names the
+  input source shortcut that takes ⌃⌥Space, and the status item's menu
+  says Quit OnetimePad and ⌃⌥Space Unavailable…. The Connection tab's
+  field is Organization ID. The pairing verdict reads They Don’t Match.
+  The diagnostics save panel shows its words again (the panel's title
+  has not drawn since 10.11). The clipboard offer's Seal It names the
+  chord the keymap binds. A page's own context menu group starts with
+  a separator, and Close Tab and Close File stand apart from the items
+  above them. The editor window refuses automatic window tabbing.
+
+- **Rows and close marks reach VoiceOver and the pointer** (app 0.39.1).
+  A sync device row reads its words in their order and keeps Revoke a
+  button for the keyboard and an action for VoiceOver;
+  the rail's day nodes, slot rows and file rows are buttons, and a slot
+  row offers Rename Tab and Close Tab as actions outside a rename, the
+  strip's tabs likewise, and its file rows Close File. Tab close marks have a 12
+  by 16 point hit area and a tooltip; the note's expand button has one
+  too. The card's edges and corners show resize cursors while raised,
+  one on the stack at a time, kept through a drag and popped when the
+  card rests. The ambient panel is named for VoiceOver.
+
+- **A copy made as the clear fires keeps its own window** (app
+  0.39.1; D-29). The clear ran through a main-actor hop after the timer
+  fired, so a copy made between the two was cleared at once; it now
+  runs inline. One pairing poll runs at a time, so a slow relay no
+  longer sees the same queued message posted twice; a round out for
+  more than ninety seconds, a chosen bound well past a slow live
+  round, is given up on rather than wedging pairing, so that promise
+  is kept inside it. A poll from a ceremony that was
+  cancelled, answered or signed out of is dropped rather than writing
+  its verdict over the next ceremony's digits, and the next ceremony
+  polls at its first tick rather than waiting that round out. A verdict the core
+  cannot answer shows as a failure instead of the sheet vanishing.
+  Turning sync off mid-ceremony cancels the pairing flow in the core
+  at once, as it does the browser trip, rather than leaving it to the
+  detach that follows on a background task, or to nothing on a switch
+  that was never attached. Signing out while a browser trip is still out no
+  longer reads as the browser never returning, and a sign-in after it
+  pumps again once the round that was out returns, rather than never.
+
 - **A peer's edit shows on the days the editor is not on** (app
   0.39.0). With sync on, another device's edit reached the core but
   not the roll: a day the editor was not on kept its old text until
