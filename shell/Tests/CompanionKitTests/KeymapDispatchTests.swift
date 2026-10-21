@@ -72,8 +72,11 @@ final class KeymapDispatchTests: XCTestCase {
         let model = try makeModel()
         model.perform(.pageNew)
         model.perform(.pageNew)
-        XCTAssertFalse(model.holdsKeys)
-        XCTAssertEqual(model.closeChordTarget, .keyWindow)
+        // The pad had the keys, then Settings took them.
+        model.reportKeys(true, from: .panel)
+        XCTAssertEqual(model.closeChordTarget, .surface)
+        model.reportKeys(false, from: .panel)
+        XCTAssertEqual(model.closeChordTarget, .auxiliaryWindow)
 
         var windowCloses = 0
         model.closeWhatIsShowing { windowCloses += 1 }

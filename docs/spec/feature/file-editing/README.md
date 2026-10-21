@@ -571,6 +571,11 @@ Close File, and reading each chord from the keymap rather than spelling
 it in the menu code. Save, Save As and Close File are inert when the
 active tab is a page rather than a file.
 
+Note, 2026-10-21 (issue #201): the close item reads Close File only while
+the owner's window is key. While Settings, About or Send Feedback has the
+keyboard it reads Close Window, enabled when that window can close, and
+⌘W sends `performClose:` to it.
+
 ## Accessibility
 
 - Every file tab and shelf row exposes a label that names the file and

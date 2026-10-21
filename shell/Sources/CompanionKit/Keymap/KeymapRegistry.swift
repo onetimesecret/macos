@@ -77,18 +77,19 @@ extension PageModel {
 }
 
 /// What ⌘W closes (issue #201): the page or file on the surface while
-/// the owner's window is key, otherwise the key window itself, which is
-/// Settings, About or Send Feedback.
+/// the owner's window is key, otherwise the auxiliary window that has
+/// the keys, which is Settings, About or Send Feedback.
 public enum CloseChordTarget: Equatable, Sendable {
     case surface
-    case keyWindow
+    case auxiliaryWindow
 }
 
 extension PageModel {
-    /// Where ⌘W goes right now. `holdsKeys` is the owner's fact, and it
-    /// is false exactly while a window without a surface has the keys.
+    /// The model's half of where ⌘W goes. `holdsKeys` is false while an
+    /// auxiliary window has the keys, and also while no window of ours is
+    /// key; the File menu asks AppKit whether the key window can close.
     public var closeChordTarget: CloseChordTarget {
-        holdsKeys ? .surface : .keyWindow
+        holdsKeys ? .surface : .auxiliaryWindow
     }
 
     /// Runs ⌘W: `page::Close` on the surface, or `closeKeyWindow` when
@@ -97,7 +98,7 @@ extension PageModel {
         switch closeChordTarget {
         case .surface:
             perform(.pageClose)
-        case .keyWindow:
+        case .auxiliaryWindow:
             closeKeyWindow()
         }
     }

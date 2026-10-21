@@ -60,6 +60,7 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
+                        keyWindow: appDelegate.keyWindowCloseability,
                         present: appDelegate.returnToOwner,
                         newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
@@ -182,10 +183,12 @@ struct BackdropApp: App {
 /// The close item reads `closeChordTarget` (issue #201). On the surface
 /// it is Close File, dimmed on a page because the page's own ⌘W is the
 /// surface's hidden button; while Settings, About or Send Feedback has
-/// the keyboard it is Close Window, and ⌘W closes that window.
+/// the keyboard it is Close Window, dimmed unless the key window can close.
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
+    /// Whether the key window has a close box for `performClose:`.
+    @ObservedObject var keyWindow: KeyWindowCloseability
     /// Brings the owner surface back, the editor window or the panel.
     let present: () -> Void
     let newShortcut: KeyboardShortcut?
@@ -221,12 +224,13 @@ private struct FileMenuItems: View {
         Divider()
         switch pages.closeChordTarget {
         case .surface:
-            Button("Close File") { pages.closeWhatIsShowing(closeKeyWindow: closeKeyWindow) }
+            Button("Close File") { pages.perform(.pageClose) }
                 .keyboardShortcut(closeShortcut)
                 .disabled(!onAFile)
-        case .keyWindow:
+        case .auxiliaryWindow:
             Button("Close Window") { pages.closeWhatIsShowing(closeKeyWindow: closeKeyWindow) }
                 .keyboardShortcut(closeShortcut)
+                .disabled(!keyWindow.canClose)
         }
     }
 }
@@ -469,6 +473,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
     private var windowCloseObserver: NSObjectProtocol?
 
+    /// Whether the key window can close, for the File menu's Close Window
+    /// item (issue #201). Starts observing once the app has finished launching.
+    let keyWindowCloseability = KeyWindowCloseability()
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
     }
@@ -491,8 +499,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // the menu bar reads: App | File | Edit | View | Window | Help.
         Self.moveFileMenuAfterAppMenu()
         Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
+        keyWindowCloseability.observe()
         // The Help menu's first item is the app's help (issue #294), and
-        // `helpMenu` is what puts the system's search field above it.
+        // the menu becomes `helpMenu`.
         NSApp.helpMenu = Self.installHelpItem(
             in: NSApp.mainMenu, productName: Self.productName, target: self)
 
