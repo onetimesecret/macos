@@ -114,8 +114,9 @@ without changing the setting. Do not reuse the sealed-paste shortcut.
 
 ### On-demand detection
 
-Expose **Detect Code Language…** in the editor context menu and an ordinary
-menu so it is keyboard-accessible. Target, in order:
+Expose **Detect Code Language** in the editor context menu and an ordinary
+menu so it is keyboard-accessible (no ellipsis since 2026-10-21: detection
+answers inline, ADR-0055 rule 2). Target, in order:
 
 - A nonempty visible-text selection outside fences: show the suggestion and an
   explicit **Wrap as <Language> Code** action. Preview the affected range; v1
@@ -157,7 +158,8 @@ sequences can cross the density threshold. That is an acknowledged false rejecti
 of this first increment rather than evidence that the text has an invalid encoding.
 
 After successful open, offer a nonmodal **Do you want to render as <Language>?**
-with **Use <Language>**, **Keep Plain Text**, and **Choose Language…**. Opening
+with **Use <Language>**, **Keep Plain Text**, and **Choose Language** (no
+ellipsis since 2026-10-21: the pull-down is the input, ADR-0055 rule 2). Opening
 and editing remain possible if inference fails or yields no suggestion.
 
 Proposed precedence: explicit user selection > recognized filename hint >

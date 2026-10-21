@@ -158,8 +158,7 @@ public struct TabStripView: View {
     /// that unbound it leaves the tooltip saying only what the button
     /// does, which is still true.
     static func newPageHelp(chord: Keystroke?) -> String {
-        guard let chord else { return "New page" }
-        return "New page (\(chord.displaySymbol))"
+        Keystroke.chorded(CompanionL10n.string("pad.page.new"), chord: chord)
     }
 
     /// The ledger tab's tooltip, on the same terms. It named ⌘0 until
@@ -168,9 +167,7 @@ public struct TabStripView: View {
     /// chord appears only when something bound it, which for the tab's
     /// own build is a keymap the user wrote.
     static func ledgerHelp(chord: Keystroke?) -> String {
-        let what = "The ledger: what the app did with each page and chip"
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
+        Keystroke.chorded("The ledger: what the app did with each page and chip", chord: chord)
     }
 
     /// ↗ page (docs/spec/04, conceal flow): conceal the visible page
@@ -300,7 +297,7 @@ private struct TimeUnitBottomTab: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.secondaryInk)
-                    .help(TimeUnitTab.newPageHelp(
+                    .help(TabStripView.newPageHelp(
                         chord: model.keymap.hintKeystroke(for: .pageNew)))
                     .accessibilityLabel(Text("New page"))
                 }
@@ -333,7 +330,8 @@ private struct TimeUnitBottomTab: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
+        .accessibilityActivation(when: true) { model.select(target: TimeUnitTab.target(for: unit)) }
         .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
             model.newPage()
         }
@@ -421,12 +419,17 @@ struct SheetTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close tab"))
+                .help("Close tab")
+                // The row offers Close Tab as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -474,10 +477,21 @@ struct SheetTab: View {
         .help(holdDescription)
         // The tab speaks as one element until it holds the field, which
         // has to be reachable on its own for the draft to be read back.
+        // Mid-rename the label stays on the container: the field speaks
+        // its own "Tab name", not the tab's description, so nothing doubles.
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
+        // The hover-only close mark and the menu verbs, reachable
+        // without a pointer, as on the rail's rows.
+        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
+        .accessibilityActions {
+            if !renaming {
+                Button("Rename Tab") { beginRename() }
+                Button("Close Tab") { model.close(sheet.id) }
+            }
+        }
         .contextMenu {
             Button("Rename Tab") { beginRename() }
             // Disabled rather than hidden on an empty slot: the item
@@ -496,6 +510,7 @@ struct SheetTab: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
+            Divider()
             Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
@@ -679,12 +694,17 @@ struct FileTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close file"))
+                .help("Close file")
+                // The row offers Close File as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -710,10 +730,13 @@ struct FileTab: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
+        .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
             Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
+            Divider()
             Button("Close File", role: .destructive) { model.closeFile(file.id) }
         }
     }

@@ -24,7 +24,10 @@ import XCTest
 final class SyncCeremonyTests: XCTestCase {
     /// A controller over a configured core, signed out, with the
     /// browser replaced by a recorder.
-    private func configured() throws -> (SyncController, CompanionClient, Box) {
+    private func configured(
+        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil,
+        pairingPollDeadline: TimeInterval = 90
+    ) throws -> (SyncController, CompanionClient, Box) {
         let suiteName = "companion-sync-ceremony-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
@@ -32,7 +35,9 @@ final class SyncCeremonyTests: XCTestCase {
         defaults.set("https://account.example/oauth/authorize", forKey: "sync.authorizeURL")
         defaults.set("https://account.example/oauth/token", forKey: "sync.tokenURL")
         let client = CompanionClient.ephemeral(tag: "sync-ceremony-\(UUID().uuidString)")
-        let sync = SyncController(client: client, defaults: defaults)
+        let sync = SyncController(
+            client: client, defaults: defaults, pairingPoll: pairingPoll,
+            pairingPollDeadline: pairingPollDeadline)
         sync.serverUrlProvider = { "https://account.example" }
         let opened = Box()
         sync.openAuthorizeUrl = { url in opened.url = url }
@@ -132,6 +137,140 @@ final class SyncCeremonyTests: XCTestCase {
             sync.standingSentence,
             "sync fell behind a key rotation; edits stay local until this pad rejoins"
         )
+    }
+
+    /// A poll that suspends until released, counting its calls. It
+    /// parks on a continuation, not a semaphore, so two held rounds
+    /// occupy no cooperative threads.
+    private final class HeldPoll: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        /// A latch, so a round counted but not yet parked when the
+        /// release comes resumes at once rather than parking for good.
+        private var released = false
+
+        var calls: Int { lock.withLock { count } }
+
+        /// The first call answers as a mismatch, every later one as done,
+        /// so a stale answer written into a later ceremony is visible.
+        func poll() async -> SyncPairingStage? {
+            let n = lock.withLock { count += 1; return count }
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock {
+                    if released { return true }
+                    waiters.append(continuation)
+                    return false
+                }
+                if resumeNow { continuation.resume() }
+            }
+            return n == 1
+                ? SyncPairingStage(stage: "failed", sas: nil, reason: "stale")
+                : SyncPairingStage(stage: "done", sas: nil, reason: nil)
+        }
+
+        func release() {
+            let held = lock.withLock {
+                released = true
+                let held = waiters
+                waiters = []
+                return held
+            }
+            for continuation in held { continuation.resume() }
+        }
+    }
+
+    private func spin(
+        until condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while !condition(), Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        XCTAssertTrue(condition(), "the condition did not settle in two seconds", file: file, line: line)
+    }
+
+    func testOnePollInFlightAndACancelledCeremonysAnswerIsDropped() throws {
+        let held = HeldPoll()
+        let (sync, _, _) = try configured(pairingPoll: { await held.poll() })
+        let waiting = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
+        sync.pairingStage = waiting
+
+        // Two ticks while the relay is slow: one round on the wire.
+        sync.pollPairing()
+        sync.pollPairing()
+        spin { held.calls == 1 }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertEqual(held.calls, 1, "a slow relay gets one round, not one per tick")
+
+        // The person cancels and starts over before the round returns.
+        // The old round is given up at once: the new ceremony's first
+        // tick sends its own rather than waiting out the deadline.
+        sync.cancelPairing()
+        XCTAssertNil(sync.pairingStage)
+        sync.pairingStage = waiting
+        // The timer's next tick, here by hand.
+        sync.pollPairing()
+        spin { held.calls == 2 }
+        XCTAssertEqual(held.calls, 2, "a cancelled ceremony's round does not hold the next one")
+
+        // Both come back: the old round's mismatch is dropped, by
+        // ceremony and by round, and the new round's done lands.
+        held.release()
+        spin { sync.pairingStage?.stage == "done" }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        XCTAssertEqual(sync.pairingStage?.stage, "done")
+        XCTAssertNil(sync.pairingStage?.reason, "the cancelled ceremony's verdict never reached this one")
+        XCTAssertFalse(sync.pairingPolling)
+    }
+
+    func testARoundGivenUpOnCannotWriteOverTheRoundThatReplacedIt() throws {
+        let held = HeldPoll()
+        let (sync, _, _) = try configured(
+            pairingPoll: { await held.poll() }, pairingPollDeadline: 0.05)
+        sync.pairingStage = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
+
+        // Round one hangs past the deadline; the next tick gives up on
+        // it and sends round two under the same ceremony.
+        sync.pollPairing()
+        spin { held.calls == 1 }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        sync.pollPairing()
+        spin { held.calls == 2 }
+        XCTAssertEqual(held.calls, 2, "the deadline frees the wire for a second round")
+
+        // Both return: round two's done stands, whichever order they
+        // settle in, and round one's stale mismatch is dropped.
+        held.release()
+        spin { sync.pairingStage?.stage == "done" }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        XCTAssertEqual(sync.pairingStage?.stage, "done")
+        XCTAssertNil(sync.pairingStage?.reason, "the given-up round's answer never lands")
+    }
+
+    func testSigningOutUnderALongPollFreesTheWireWhenTheRoundReturns() throws {
+        let (sync, _, _) = try configured()
+        sync.enabled = true
+        // A long poll is out when the person signs out. Its answer
+        // belongs to the old session and is dropped, but the wire is
+        // its until it returns: the core's pump has no guard, so a
+        // flag freed early would let two rounds share one handle.
+        sync.pumping = true
+        // A ceremony is up as well.
+        sync.pairingStage = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
+        // And an earlier trip's failure still stands on the surface.
+        sync.settleSignin(.refused("refused"), session: sync.session)
+        XCTAssertNotNil(sync.signinFailure)
+        let stale = sync.session
+        sync.signOut()
+        XCTAssertNotEqual(sync.session, stale, "a sign-out is a new session")
+        XCTAssertTrue(sync.pumping, "the round still out keeps the wire")
+        XCTAssertNil(sync.signinFailure, "signed out is the whole state")
+        sync.settlePump(quietTurn(), session: stale)
+        XCTAssertFalse(sync.pumping, "the returning round frees the wire, its answer dropped")
+        sync.settleSignin(.refused("abandoned"), session: stale)
+        XCTAssertNil(sync.signinFailure, "a sign-out is not a browser that never returned")
+        XCTAssertNil(sync.pairingStage, "a pairing ceremony ends with the engine")
     }
 
     func testATurnFromAStoppedSessionIsNotTheReplacementsTurn() throws {

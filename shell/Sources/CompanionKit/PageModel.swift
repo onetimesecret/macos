@@ -309,8 +309,10 @@ public struct FileRenderSuggestion: Equatable, Sendable {
         self.mode = mode
     }
 
-    public var language: String {
-        if case .source(let language) = mode { return language.capitalized }
+    /// The name the offer shows, never the slug: `CodeLanguageName`'s
+    /// for a source language, the mode's own label otherwise.
+    public var languageName: String {
+        if case .source(let language) = mode { return CodeLanguageName.display(language) }
         return mode.formatLabel
     }
 }
@@ -2058,8 +2060,9 @@ public final class PageModel: ObservableObject {
                 self.saveState()
             }
         }
-        RunLoop.main.add(timer, forMode: mode)
+        // Stored before it is scheduled, the clear timer's order.
         saveTimer = timer
+        RunLoop.main.add(timer, forMode: mode)
     }
 
     /// Arm the clear-after-copy (D-29, D-32; ADR-0012): one shot, the
@@ -2074,15 +2077,23 @@ public final class PageModel: ObservableObject {
         clipboardClearTimer?.invalidate()
         let interval =
             clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
-        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
+        // Inline on the main run loop, not through a Task hop: a hop
+        // lets a copy land between fire and clear, and the clear then
+        // takes the newer copy at once.
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
+            let fired = ObjectIdentifier(timer)
+            MainActor.assumeIsolated {
+                guard let self, let armed = self.clipboardClearTimer,
+                      ObjectIdentifier(armed) == fired
+                else { return }
                 self.clipboardClearTimer = nil
                 _ = self.clearClipboardIfOurs()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        // Stored before it is scheduled, so a near-zero test interval
+        // under a nested run loop still finds itself armed.
         clipboardClearTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// Seal the store into its two files: live pages and their chips
@@ -2807,6 +2818,7 @@ public final class PageModel: ObservableObject {
         if clipboardClearTimer != nil {
             _ = clearClipboardIfOurs()
             clipboardClearTimer?.invalidate()
+            clipboardClearTimer = nil
         }
         // A pending write dies with the model. In practice the model
         // outlives everything but the process, and the process's own

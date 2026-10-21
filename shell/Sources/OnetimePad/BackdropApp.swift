@@ -60,6 +60,8 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
+                        present: appDelegate.returnToOwner,
+                        newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
                         saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
                         saveAsShortcut: appDelegate.shortcut(for: .fileSaveAs),
@@ -132,9 +134,12 @@ struct BackdropApp: App {
                 // The Window menu's Close Window (issue #201, ADR-0033).
                 // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
                 // window the keyboard is in and reaches Settings too.
-                // The item is placed before AppKit's Minimize/Zoom group
-                // so it heads the menu the way Close does in every other
-                // macOS app. The chord comes from the keymap, so an
+                // The group is placed before AppKit's Minimize/Zoom
+                // group (`.windowSize`) so it heads the menu;
+                // `.windowArrangement` is Bring All to Front, which sits
+                // after Minimize and Zoom. Apple keeps Close in File;
+                // the Window menu seat is issue #201's call while ⌘W
+                // is the strip's. The chord comes from the keymap, so an
                 // override that takes it away leaves the item without a
                 // shortcut rather than lying (see docs/development/keymap-format-and-dispatch.md).
                 //
@@ -145,23 +150,25 @@ struct BackdropApp: App {
                 // do because it carries no close box. Panel and relay
                 // are also `isExcludedFromWindowsMenu = true`, so the
                 // menu itself lists the editor window and Settings only.
-                CommandGroup(before: .windowArrangement) {
+                CommandGroup(before: .windowSize) {
                     appDelegate.presentationCommands
                     Divider()
                     WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
                         appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
                     }
-                    Divider()
+                    // No trailing divider: SwiftUI separates command groups.
                 }
             }
     }
 }
 
-/// The File menu: Open, Save, Save As and Close File (ADR-0028).
+/// The File menu: New Page, Open, Save, Save As and Close File (ADR-0028).
 ///
 /// A view of its own because a `CommandMenu`'s content is a view, and a
 /// view is what can observe the model whose state greys three of these
-/// four out.
+/// five out. New Page heads the menu as New does in every macOS app; it
+/// is the same `page::New` the chord and the strip's + run, an explicit
+/// ask that always mints.
 ///
 /// Every item goes through `perform`, the same route the chord takes,
 /// so each verb has one implementation. Save, Save As and Close File
@@ -173,9 +180,16 @@ struct BackdropApp: App {
 /// Enablement is display and never a gate: the model's own arms decide
 /// what happens, and a click that arrives anyway lands on the page
 /// reading of the chord rather than on nothing.
+///
+/// New Page asked from a window that is not the surface (Settings,
+/// About, Feedback) also brings the owner surface back, so the command
+/// shows what it made the way Open… shows its panel.
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
+    /// Brings the owner surface back, the editor window or the panel.
+    let present: () -> Void
+    let newShortcut: KeyboardShortcut?
     let openShortcut: KeyboardShortcut?
     let saveShortcut: KeyboardShortcut?
     let saveAsShortcut: KeyboardShortcut?
@@ -189,6 +203,11 @@ private struct FileMenuItems: View {
     }
 
     var body: some View {
+        Button("New Page") {
+            pages.perform(.pageNew)
+            if !pages.holdsKeys { present() }
+        }
+        .keyboardShortcut(newShortcut)
         Button("Open…") { pages.perform(.fileOpen) }
             .keyboardShortcut(openShortcut)
         Divider()
@@ -270,7 +289,9 @@ private struct LanguageDetectionMenuItems: View {
     }
 
     var body: some View {
-        Button("Detect Code Language…") {
+        // No ellipsis: detection answers inline, in a flash line and a
+        // find indicator, never in a window or sheet (ADR-0055 rule 2).
+        Button("Detect Code Language") {
             send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)), nil)
         }
         .disabled(!languageActions.canDetect)
@@ -282,7 +303,7 @@ private struct LanguageDetectionMenuItems: View {
                 Divider()
             }
             ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
-                Button(language.capitalized) { chooseSourceLanguage(language) }
+                Button(CodeLanguageName.display(language)) { chooseSourceLanguage(language) }
             }
         }
         .disabled(manualChoiceTarget == nil)
@@ -946,7 +967,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             settingsItem.target = self
             menu.addItem(.separator())
             menu.addItem(
-                withTitle: "Quit",
+                withTitle: "Quit \(Self.productName)",
                 action: #selector(NSApplication.terminate(_:)),
                 keyEquivalent: "q"
             ).target = NSApp
@@ -977,6 +998,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         applySummon(.openEditorPresentation)
     }
 
+    /// Back to whichever surface owns the pages, the editor window or
+    /// the panel, by the route a dismissed sheet takes: a menu command
+    /// run from Settings names no surface (ADR-0033, ADR-0036).
+    func returnToOwner() {
+        // Under one of our own modals or sheets the surface stays put,
+        // as the route's other takers do (`raisesAfterModal`).
+        guard startupComplete, !ModalSession.isRunning,
+              NSApp.keyWindow?.sheetParent == nil
+        else { return }
+        apply(ActivationRouter.decide(.modalReturn, in: activationContext()))
+    }
+
     /// Switch presentations without toggling rest or anchoring on today. This
     /// preserves the page the person is viewing, unlike a hotkey/status summon.
     @objc func showAmbientPresentation() {
@@ -1002,9 +1035,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         guard let failure = summonKeyFailure else { return }
         let alert = NSAlert()
         alert.messageText = "The keyboard shortcut is unavailable"
-        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, including another copy of OnetimePad, may already use it. You can still open the pad from the menu bar. Close any other copy or change a conflicting shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
+        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, or another copy of \(Self.productName), may use it; with two or more input sources, the Input Sources pane of Keyboard Shortcuts may hold it. The pad still opens from the menu bar. Free the shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
         alert.addButton(withTitle: "Try Again")
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
         auxiliaryActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
         if ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn {
@@ -1017,7 +1050,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         Self.addPresentationItems(to: menu, ambientPanelEnabled: model.ambientPanelEnabled,
                                   target: self)
         if summonKeyFailure != nil {
-            menu.addItem(withTitle: "⌃⌥Space unavailable…",
+            menu.addItem(withTitle: "⌃⌥Space Unavailable…",
                          action: #selector(explainUnavailableShortcut), keyEquivalent: "").target = self
         }
     }
