@@ -147,11 +147,10 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(projection.units.map(TimeUnitTab.offersNewPage), [true, false])
         XCTAssertTrue(TimeUnitTab.offersNewPage(try XCTUnwrap(project([]).units.first)))
 
+        // One helper for every + button, the strip's and the rail's.
         let chord = model.keymap.hintKeystroke(for: .pageNew)
-        XCTAssertEqual(TimeUnitTab.newPageHelp(chord: chord), "New page (⌘N)")
-        XCTAssertEqual(
-            TimeUnitTab.newPageHelp(chord: chord), TabStripView.newPageHelp(chord: chord))
-        XCTAssertEqual(TimeUnitTab.newPageHelp(chord: nil), "New page")
+        XCTAssertEqual(TabStripView.newPageHelp(chord: chord), "New page (⌘N)")
+        XCTAssertEqual(TabStripView.newPageHelp(chord: nil), "New page")
     }
 
     // MARK: What the tooltips say you can press

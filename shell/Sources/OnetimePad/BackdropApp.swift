@@ -156,7 +156,7 @@ struct BackdropApp: App {
                     WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
                         appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
                     }
-                    Divider()
+                    // No trailing divider: SwiftUI separates command groups.
                 }
             }
     }

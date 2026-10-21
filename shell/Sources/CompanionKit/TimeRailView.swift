@@ -181,7 +181,8 @@ public struct TimeRailView: View {
                     }
                     Spacer(minLength: 0)
                     Button(action: model.newPage) { Image(systemName: "plus") }
-                        .buttonStyle(.plain).help(CompanionL10n.string("pad.page.new"))
+                        .buttonStyle(.plain)
+                        .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
                         .accessibilityLabel(CompanionL10n.string("pad.page.new"))
                 }
                 ForEach(projection.units) { unit in
@@ -297,7 +298,7 @@ public struct TimeRailView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.emberText)
-            .help(TimeUnitTab.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
+            .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
             .accessibilityLabel(Text("New page"))
         }
         .padding(.top, 6)
@@ -1224,14 +1225,6 @@ enum TimeUnitTab {
     /// plus on the PAD heading for the same reason.
     nonisolated static func offersNewPage(_ unit: TimeUnitProjection.Unit) -> Bool {
         unit.bucket == 0
-    }
-
-    /// The + button's tooltip, which is the strip's tooltip: one
-    /// sentence for one action, so a keymap that moved `page::New`
-    /// moves both, and a keymap that unbound it leaves both saying only
-    /// what the button does.
-    static func newPageHelp(chord: Keystroke?) -> String {
-        TabStripView.newPageHelp(chord: chord)
     }
 
     /// Where a click on a day lands.

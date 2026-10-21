@@ -297,7 +297,7 @@ private struct TimeUnitBottomTab: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.secondaryInk)
-                    .help(TimeUnitTab.newPageHelp(
+                    .help(TabStripView.newPageHelp(
                         chord: model.keymap.hintKeystroke(for: .pageNew)))
                     .accessibilityLabel(Text("New page"))
                 }
@@ -477,6 +477,8 @@ struct SheetTab: View {
         .help(holdDescription)
         // The tab speaks as one element until it holds the field, which
         // has to be reachable on its own for the draft to be read back.
+        // Mid-rename the label stays on the container: the field speaks
+        // its own "Tab name", not the tab's description, so nothing doubles.
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))

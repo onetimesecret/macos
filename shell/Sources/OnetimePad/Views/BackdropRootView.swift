@@ -794,8 +794,9 @@ struct BackdropRootView: View {
     /// crossed, and kept past the hover exit a drag beyond the 6 pt
     /// margin brings.
     private func holdResizeCursor(_ edge: CardEdge) {
+        guard draggingEdge != edge else { return }
         draggingEdge = edge
-        if pushedCursorEdge != edge { pushResizeCursor(edge) }
+        pushResizeCursor(edge)
     }
 
     /// The drag is over: the pointer may still rest on a grip, and no

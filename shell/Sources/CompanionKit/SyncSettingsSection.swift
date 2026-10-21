@@ -219,6 +219,9 @@ private struct SyncPairingStatus: View {
                 Text(stage.sas ?? "")
                     .font(.system(.title2, design: .monospaced))
                     .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
+                    // Digit by digit: a code compared by ear against
+                    // another screen is not a number.
+                    .speechSpellsOutCharacters()
                 HStack {
                     Button("They Match") { sync.confirmPairing(matched: true) }
                     Button("They Don’t Match", role: .destructive) {
