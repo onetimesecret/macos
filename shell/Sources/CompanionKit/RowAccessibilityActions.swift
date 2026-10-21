@@ -1,20 +1,11 @@
 import SwiftUI
 
-/// Accessibility actions the strip's and the rail's rows offer only
-/// while they apply. A row is one element built from `.ignore`d
-/// children, which inherits no activation from its tap gesture, so the
-/// press and the named verbs are given here, and withheld, for example
+/// The press the strip's rows, the Files shelf's rows and the Timeline's
+/// nodes offer only while it applies. A row is one element built from
+/// `.ignore`d children, which inherits no activation from its tap
+/// gesture, so the press is given here, and withheld, for example
 /// mid-rename, when the element is the field's container instead.
 extension View {
-    @ViewBuilder
-    func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
-        if offered {
-            accessibilityAction(named: Text("New Page"), action)
-        } else {
-            self
-        }
-    }
-
     /// The default action, the one VoiceOver's press runs.
     @ViewBuilder
     func accessibilityActivation(when offered: Bool, action: @escaping () -> Void) -> some View {
