@@ -250,12 +250,13 @@ public struct TimeRailView: View {
 
     private func sortMenu<Heading: View>(
         direction: PadSortDirection, subject: String,
-        select: @escaping (PadSortDirection) -> Void,
+        select: @escaping @MainActor (PadSortDirection) -> Void,
         @ViewBuilder heading: () -> Heading
     ) -> some View {
         let copy = PadSortCopy(direction: direction, subject: subject)
         return Menu {
-            Picker(copy.label, selection: Binding(get: { direction }, set: select)) {
+            // A closure literal: `set: select` crashed Xcode 26.6's IRGen (see PR 261).
+            Picker(copy.label, selection: Binding(get: { direction }, set: { select($0) })) {
                 ForEach(PadSortCopy.orders, id: \.self) { order in
                     Text(PadSortCopy(direction: order, subject: subject).currentOrder).tag(order)
                 }
