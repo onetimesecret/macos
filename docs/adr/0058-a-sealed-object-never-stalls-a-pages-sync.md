@@ -82,12 +82,12 @@ What the records say about sync and chips:
   build, the frame is the page's rebuild
   (`SheetStore::perform_ceremony`, sealed by `seal_owed_frame` and
   `commit_advance` in `crates/ffi/src/sync_session.rs`).
-- ADR-0043 (proposed) decides "A sealed object's name and note are
+- ADR-0043 (accepted 2026-10-16) decides "A sealed object's name and note are
   fields of its chip, not ink in the page's document, not on the tab
   and not in the ledger." Its point 1 says "A clone copies the name and
   the note's text, not the note's undo." Its first open question says
   "This proposal decides nothing about sync."
-- ADR-0046 (proposed) decides that "A page keeps the sealed objects its
+- ADR-0046 (accepted 2026-10-16) decides that "A page keeps the sealed objects its
   body no longer shows, on its own clock, until the page ends or the
   object is burned." Its point 1 names "a peer's update" among the edits
   that detach a chip and its first open question leaves to this record
