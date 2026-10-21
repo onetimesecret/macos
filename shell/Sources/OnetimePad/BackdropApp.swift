@@ -134,10 +134,11 @@ struct BackdropApp: App {
                 // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
                 // window the keyboard is in and reaches Settings too.
                 // The group is placed before AppKit's Minimize/Zoom
-                // group (`.windowSize`) so it heads the menu the way
-                // Close does in every other macOS app; `.windowArrangement`
-                // is Bring All to Front, which sits after Minimize and
-                // Zoom. The chord comes from the keymap, so an
+                // group (`.windowSize`) so it heads the menu;
+                // `.windowArrangement` is Bring All to Front, which sits
+                // after Minimize and Zoom. Apple keeps Close in File;
+                // the Window menu seat is issue #201's call while ⌘W
+                // is the strip's. The chord comes from the keymap, so an
                 // override that takes it away leaves the item without a
                 // shortcut rather than lying (see docs/development/keymap-format-and-dispatch.md).
                 //
