@@ -12,6 +12,6 @@ PR 269 (issue 267) first seated `TabDropOverlay` in `SlotRailView` and `TimeStri
 **How to apply:**
 - Before building on a placement, check that `BackdropRootView` and `PrimaryEditorRootView` draw it.
 - Anything per Timeline node goes in both renderings; tests loop `for pads in [false, true]`, setting `model.pads.isEnabled` before making pages.
-- The navigator's rows overlap by 1 pt where a later row meets a first of day row (offsets 6 and 7), so assert distinct rows by midY, not by disjoint frames. `StreamNavigator.layout` has no lower clamp, so a dense rail draws rows above the column (pre-existing).
+- A day's first row is drawn a point higher (`StreamNavigator.Metrics.rowLift`); the packing adds that point at a day boundary, so node targets are asserted disjoint. Change the lift in one place only. `StreamNavigator.layout` has no lower clamp, so a dense rail draws rows above the column (pre-existing); the pads rail scrolls, so only the navigator's foot is checked against the host.
 - `TimeRailView(model:readOnly:)` and `TabStripView(model:readOnly:)` take no default; the editor window passes false.
 - Hand checks owed: sealed-fragment.md, "Drops on the side Timeline's page nodes". Related: [[issue254-tab-drop]].
