@@ -1437,8 +1437,8 @@ mod tests {
         assert_eq!(fresh.as_str(), "first");
     }
 
-    /// The cap counts chars, not bytes, wherever it is taken: `capped_title` allocates its owner
-    /// once at that size, and `derive_title` cuts its owner in place.
+    /// The cap counts chars, not bytes, wherever it is taken, and `capped_title` allocates the
+    /// owner once at that size, for a derived title as for a name.
     #[test]
     fn the_cap_counts_chars_and_allocates_once() {
         let long = "🧪".repeat(TITLE_CAP + 5);
