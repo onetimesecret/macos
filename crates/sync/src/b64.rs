@@ -105,7 +105,7 @@ fn decode_into(input: &str, out: &mut [u8]) -> Option<()> {
         bits += 6;
         if bits >= 8 {
             bits -= 8;
-            out[at] = (acc >> bits) as u8;
+            *out.get_mut(at)? = (acc >> bits) as u8;
             at += 1;
         }
     }
@@ -113,7 +113,7 @@ fn decode_into(input: &str, out: &mut [u8]) -> Option<()> {
     if acc & ((1 << bits) - 1) != 0 {
         return None;
     }
-    Some(())
+    (at == out.len()).then_some(())
 }
 
 #[cfg(test)]
@@ -158,6 +158,23 @@ mod tests {
         for invalid in ["c2VjcmV0!", "Zg=A", "Zh", "A", "Zg=", "Zm9v===="] {
             assert!(decode_zeroizing(invalid).is_none());
         }
+    }
+
+    #[test]
+    fn a_buffer_of_the_wrong_size_is_refused_not_overrun() {
+        for (text, len) in [
+            ("Zm9v", 2),
+            ("Zm9vYg==", 3),
+            ("Zm9v", 4),
+            ("Zg", 0),
+            ("", 1),
+        ] {
+            let mut out = vec![0; len];
+            assert!(decode_into(text, &mut out).is_none(), "{text:?} into {len}");
+        }
+        let mut out = vec![0; 3];
+        assert_eq!(decode_into("Zm9v", &mut out), Some(()));
+        assert_eq!(out, b"foo");
     }
 
     #[test]
