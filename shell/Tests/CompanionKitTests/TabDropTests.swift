@@ -567,10 +567,32 @@ final class TabDropTests: XCTestCase {
                 XCTAssertGreaterThan(target.bounds.height, 0, rail)
                 XCTAssertNil(target.hitTest(NSPoint(x: target.bounds.midX, y: target.bounds.midY)), rail)
             }
-            for (above, below) in zip(targets, targets.dropFirst()) {
-                XCTAssertLessThan(
-                    frame(of: below).midY, frame(of: above).minY, "one target spans two rows in \(rail)")
+            assertTheTargetsStack(targets, in: host, footInside: !pads, rail)
+        }
+    }
+
+    /// A rail too dense for its pages' places, which the navigator packs up from the foot and
+    /// the pads rail scrolls, still stacks its targets in node order without one meeting another.
+    func testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting() throws {
+        for pads in [false, true] {
+            let rail = pads ? "the pads rail" : "the default rail"
+            let client = DayProjectionClockClient(tag: UUID().uuidString)
+            let model = try makeModel(client: client)
+            model.pads.isEnabled = pads
+            for _ in 0..<3 {
+                for index in 0..<12 { _ = try unshownPage(on: model, text: "page \(index)") }
+                XCTAssertTrue(client.advanceDay())
+                model.refresh()
             }
+            let host = mountTimeline(on: model, readOnly: false)
+            let targets = nodeTargets(in: host, on: model)
+            XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), rail)
+            if !pads {
+                let first = try XCTUnwrap(targets.first.map(frame(of:)), rail)
+                XCTAssertGreaterThan(
+                    first.maxY, host.convert(host.bounds, to: nil).maxY, "the control: \(rail) fits its pages")
+            }
+            assertTheTargetsStack(targets, in: host, footInside: !pads, rail)
         }
     }
 
@@ -830,6 +852,32 @@ final class TabDropTests: XCTestCase {
             targets.count, pageNodes, "the host seated \(targets.count) of \(pageNodes) page nodes' targets",
             file: file, line: line)
         return targets
+    }
+
+    /// Asserts `targets`, top to bottom as drawn, never meet and each sits under the one before;
+    /// with `footInside`, the stream navigator's, the last one's bottom edge lies inside `host`.
+    private func assertTheTargetsStack(
+        _ targets: [TabDropTarget], in host: NSView, footInside: Bool, _ rail: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let frames = targets.map(frame(of:))
+        for (index, upper) in frames.enumerated() {
+            for lower in frames.dropFirst(index + 1) {
+                XCTAssertFalse(
+                    upper.intersects(lower), "targets at \(upper) and \(lower) overlap in \(rail)",
+                    file: file, line: line)
+            }
+        }
+        for (upper, lower) in zip(frames, frames.dropFirst()) {
+            XCTAssertLessThanOrEqual(
+                lower.maxY, upper.minY, "a target at \(lower) rises into \(upper) in \(rail)",
+                file: file, line: line)
+        }
+        guard footInside else { return }
+        let bounds = host.convert(host.bounds, to: nil)
+        guard let foot = frames.last?.minY else { return XCTFail("no target in \(rail)", file: file, line: line) }
+        XCTAssertGreaterThanOrEqual(foot, bounds.minY, "the last target passes the foot of \(rail)", file: file, line: line)
+        XCTAssertLessThanOrEqual(foot, bounds.maxY, "the last target ends above \(rail)", file: file, line: line)
     }
 
     /// Every target under `view`, in the order the view tree holds them.
