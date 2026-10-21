@@ -1145,8 +1145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Page text crossing the seam is written once, at its final size, and
-  wiped on release** (`companion-core` 0.33.1, `companion-ffi` 0.42.1,
-  `companion-sync` 0.4.1; Law 0004, still draft; issue #256). Every JSON
+  wiped on release** (`companion-core` 0.33.1, `companion-ffi` 0.43.0,
+  `companion-sync` 0.5.0; Law 0004, still draft; issue #256). Every JSON
   route that names page ink, a sealed object's excerpt or name, a tab
   title or a ledger title now counts its output, writes it into one
   allocation of exactly that size, and wipes it when the shell frees it,
