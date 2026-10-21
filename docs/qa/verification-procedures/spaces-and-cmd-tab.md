@@ -555,22 +555,24 @@ re-keys the card with the hotkey instead.
       its right click menu's Settings… item. Run all three with the pin
       off, then with the pin on (raise the card, use the header toggle,
       rest it with Esc). **Pass:** every time, Settings opens in front
-      of the card, keyed, and what is typed lands in Settings. ADR-0032:
-      "When Settings or another ordinary window of OnetimePad takes the
-      keyboard, its level must be compatible with the surface's
-      resulting inactive altitude." `CompanionLevelFollower` holds
-      Settings at the card's keyless altitude for as long as it is open.
-      **Fail:** Settings opens beneath the card, or opens without the
-      keyboard.
+      of the card, keyed, and what is typed goes into Settings; with the
+      pin on, the card is at normal level while Settings is key and
+      floats again when Settings closes. ADR-0032 Amendment 1
+      (2026-10-21, issue #293): Settings stays at normal level and
+      `BackdropAltitudeKeeper` lowers the card under it for as long as
+      it is key. **Fail:** Settings opens beneath the card, opens
+      without the keyboard, or floats over another app's windows.
 - [ ] **The preference toggled inside Settings over a raised keyless
       card.** *Companion.* With the pin off, raise the card (⌃⌥Space),
       then open Settings with `⌘,`; Settings takes the keyboard, so the
       card is raised and keyless. Turn **Keep OnetimePad above other
       apps when switching away** on, then off, then on, and finish with
       it off. **Pass:** Settings stays in front of the card at every
-      toggle. Each toggle moves the card between normal and floating,
-      and `CompanionLevelFollower` moves Settings with it. **Fail:**
-      Settings is left beneath the card after a toggle.
+      toggle, and the card stays at normal level throughout, since a
+      key Settings window lowers it whatever the preference says
+      (ADR-0032 Amendment 1, 2026-10-21, issue #293). Then turn it on
+      and close Settings: the card floats. **Fail:** Settings is left
+      beneath the card after a toggle, or Settings changes level.
 - [ ] **Open panel round trip on a desktop.** *Panel.* On an ordinary
       desktop, with the pin and the preference off, raise the card
       (⌃⌥Space), press ⌘O, then Cancel. **Pass:** while the open panel

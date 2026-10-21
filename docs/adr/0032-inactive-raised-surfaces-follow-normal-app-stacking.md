@@ -186,3 +186,79 @@ collection behaviors and the off-Space summon safety net.
   full-screen participation." for full-screen participation only, which now
   follows altitude. The Space membership half of the clause, the altitude
   table, the preference and every other part of this decision stand.
+- 2026-10-21: Amendment 1 replaces the companion window paragraph ("When
+  Settings or another ordinary window of OnetimePad takes the keyboard, its
+  level must be compatible with the surface's resulting inactive altitude...")
+  for [issue #293](https://github.com/onetimesecret/macos/issues/293). The
+  ordinary windows stay at normal level and the surface lowers under them.
+  The altitude table gains one input; everything else stands.
+
+## Amendment 1: ordinary windows stay at normal level, the surface lowers under them
+
+- **Status:** accepted
+- **Date:** 2026-10-21
+
+Appended, not folded in. The base Decision text above is left as written.
+This amendment replaces one paragraph of it, the companion window rule, for
+[issue #293](https://github.com/onetimesecret/macos/issues/293).
+
+### What was observed
+
+With the pin on, or the keep above preference on, Settings, About and Send
+Feedback opened at floating level and stayed there while open, so they sat
+over every other application's windows and did not go behind when
+OnetimePad deactivated. The base rule asked for exactly that: an ordinary
+window "may also need floating altitude to avoid opening keyed but
+underneath the surface". The HIG audit left in PR #279 named it as a
+defect. On macOS an application's Settings, About and feedback windows are
+ordinary windows at normal level; floating belongs to palettes and
+inspectors, which also hide on deactivate.
+
+### What this replaces
+
+The paragraph beginning "When Settings or another ordinary window of
+OnetimePad takes the keyboard" is replaced by the following rule.
+
+Settings, About and Send Feedback are ordinary windows at normal level and
+never change level. A companion window of OnetimePad's own holding the
+keyboard is a further input to the surface's altitude, beside stance,
+keyboard ownership, Pin and the preference. While one of those windows is
+key, or a sheet run on one of them is, a surface that the table would float
+lowers to normal; a resting unpinned surface stays at desktop level, since
+it is below the ordinary window already. The surface returns to the table's
+level when that window closes, resigns the keyboard, or the surface takes
+the keyboard back. The surface's own keyboard ownership wins over the
+companion's: a raise committed as "about to take keys" floats, and the
+companion's resign follows. All routes to the same ordinary window use the
+same rule.
+
+The altitude table reads, with the new row first because it governs the
+rows below it:
+
+| State | Window level |
+| --- | --- |
+| A companion window is key and the surface would float | normal |
+| Resting and unpinned | desktop/backdrop |
+| Raised and keyed, or about to take keys | floating |
+| Raised, keyless, unpinned, default preference | normal |
+| Raised, keyless, unpinned, keep-above preference enabled | floating |
+| Pinned, in either stance | floating |
+
+### Consequences of the amendment
+
+- A pinned or kept above surface is covered by Settings, About or Send
+  Feedback while the person works in one of them, and floats again the
+  moment that window closes. Pin is still the stronger instruction over the
+  preference; it yields only to the app's own ordinary windows.
+- Those windows go behind other applications on ⌘Tab like any ordinary
+  window, and the surface, keyless after the switch, sits where the table
+  puts it.
+- Full screen participation still follows altitude (ADR-0034), so a surface
+  lowered under a companion window leaves other apps' full screen Spaces for
+  as long as it is lowered.
+- The one follower that wrote levels onto companion windows is retired. The
+  decision lives in the altitude resolver and the keeper that writes the
+  surface's level, which is where the rest of the table already lived.
+- ADR-0033's narrowing of the companion window rule, that it does not
+  govern the primary editor window, stands: the editor window is not a
+  companion window and does not lower the surface.
