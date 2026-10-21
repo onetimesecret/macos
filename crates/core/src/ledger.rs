@@ -4,6 +4,8 @@
 
 use std::collections::VecDeque;
 
+use zeroize::Zeroizing;
+
 use crate::sheet::ItemId;
 
 /// The retention window: 90 days of records, keyed on wall-clock time.
@@ -116,7 +118,8 @@ impl std::fmt::Display for DestinationClass {
 pub struct LedgerRecord {
     pub(crate) event: LedgerEvent,
     pub(crate) item: ItemId,
-    pub(crate) title: String,
+    /// A wiping owner, the one content derived field here (Law 0004, C16).
+    pub(crate) title: Zeroizing<String>,
     pub(crate) at_wall_ms: u64,
     pub(crate) item_created_wall_ms: u64,
     pub(crate) size: SizeClass,
@@ -139,7 +142,7 @@ impl LedgerRecord {
     /// The owning page's title at the event, capped by the page.
     #[must_use]
     pub fn title(&self) -> &str {
-        &self.title
+        self.title.as_str()
     }
 
     /// When the event happened, in Unix epoch milliseconds.
@@ -183,12 +186,21 @@ mod tests {
         LedgerRecord {
             event: LedgerEvent::Created,
             item: ItemId::random(),
-            title: String::from("a page"),
+            title: Zeroizing::new(String::from("a page")),
             at_wall_ms,
             item_created_wall_ms: at_wall_ms,
             size: SizeClass::Tiny,
             destination: DestinationClass::None,
         }
+    }
+
+    /// The title, the one content derived field here, is a wiping owner (Law 0004, C16).
+    #[test]
+    fn the_title_is_a_wiping_owner() {
+        let record = record(1);
+        let title: &Zeroizing<String> = &record.title;
+        assert_eq!(title.as_str(), "a page");
+        assert_eq!(record.title(), "a page");
     }
 
     #[test]

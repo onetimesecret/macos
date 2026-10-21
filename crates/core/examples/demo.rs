@@ -38,7 +38,7 @@ fn main() {
     loop {
         let title = current.and_then(|id| tab_holding(&store, id)).map_or_else(
             || "no page".to_string(),
-            |tab| tab.label(store.local_offset_seconds()),
+            |tab| tab.label(store.local_offset_seconds()).as_str().to_owned(),
         );
         print!("companionapp:{title}> ");
         std::io::stdout().flush().ok();
@@ -325,7 +325,11 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
         } else {
             ""
         };
-        strip.push_str(&format!("[{marker}{} {held}{}]", i + 1, tab.label(offset)));
+        strip.push_str(&format!(
+            "[{marker}{} {held}{}]",
+            i + 1,
+            tab.label(offset).as_str()
+        ));
     }
     strip.push_str(&format!("[◌ {}]", store.ledger().count()));
     println!("{strip}");
@@ -346,7 +350,7 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
     };
     println!(
         "┌ {} ── {} of {}{held} ┐",
-        tab.label(offset),
+        tab.label(offset).as_str(),
         sheet.remaining_label(now),
         tab.rung()
     );

@@ -4,7 +4,7 @@
 use std::fmt;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
@@ -428,7 +428,8 @@ pub struct Sheet {
     pub(crate) id: SheetId,
     pub(crate) uuid: ItemId,
     /// First non-blank line, re-derived on edit; never persisted (ADR-0017).
-    pub(crate) derived_title: Option<String>,
+    /// A wiping owner, since it is ink (Law 0004, C13).
+    pub(crate) derived_title: Option<Zeroizing<String>>,
     /// Unix ms at the page's creation, not the tab's.
     pub(crate) created_wall_ms: u64,
     /// The body (ADR-0013): source of truth for ink and chip positions.
@@ -713,7 +714,7 @@ impl Sheet {
     /// The first typed line, markdown stripped; `None` until one is typed.
     #[must_use]
     pub fn derived_title(&self) -> Option<&str> {
-        self.derived_title.as_deref()
+        self.derived_title.as_ref().map(|title| title.as_str())
     }
 
     /// Unix ms at this page's creation; neither expiry nor the placeholder reads it.
@@ -748,7 +749,8 @@ pub struct Tab {
     /// Unix ms the slot opened; the placeholder renders from it.
     pub(crate) created_wall_ms: u64,
     /// The name the user typed, at most [`TITLE_CAP`] chars; never derived.
-    pub(crate) name: Option<String>,
+    /// A wiping owner, since a name is content (Law 0004, C14).
+    pub(crate) name: Option<Zeroizing<String>>,
     /// The rung new pages start at. No clock: a tab never expires.
     pub(crate) rung: Ttl,
     /// The page in the slot; `None` once it expires or before the first.
@@ -777,7 +779,7 @@ impl Tab {
     /// The name the user typed, if they typed one.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.name.as_ref().map(|name| name.as_str())
     }
 
     /// The rung pages born in this slot start at.
@@ -800,7 +802,7 @@ impl Tab {
     /// The user's name, else the page's derived title, else the placeholder
     /// from the tab's own stamp, so an unnamed slot keeps its label.
     #[must_use]
-    pub fn label(&self, utc_offset_seconds: i32) -> String {
+    pub fn label(&self, utc_offset_seconds: i32) -> Zeroizing<String> {
         match self.label_source() {
             LabelSource::Name => self
                 .name
@@ -811,7 +813,9 @@ impl Tab {
                 .as_ref()
                 .and_then(|page| page.derived_title.clone())
                 .expect("label_source promised Derived has a derived title"),
-            LabelSource::Placeholder => placeholder_title(self.created_wall_ms, utc_offset_seconds),
+            LabelSource::Placeholder => {
+                Zeroizing::new(placeholder_title(self.created_wall_ms, utc_offset_seconds))
+            }
         }
     }
 
@@ -861,9 +865,9 @@ pub(crate) const TITLE_CAP: usize = 80;
 /// First non-blank ink line, markdown stripped, capped at [`TITLE_CAP`].
 /// Fence rules are skipped and fenced code is taken as typed (D-12).
 /// No fallback here; that is the tab's (ADR-0017).
-pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
+pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
     let mut fence: Option<Fence> = None;
-    let mut result: Option<String> = None;
+    let mut result: Option<Zeroizing<String>> = None;
     'outer: for text in segments.iter().filter_map(|s| match s {
         Segment::Ink(text) => Some(text),
         Segment::Chip(_) => None,
@@ -874,7 +878,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
                 Some(_) => {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
-                        result = Some(trimmed.to_string());
+                        result = Some(Zeroizing::new(trimmed.to_string()));
                         break 'outer;
                     }
                 }
@@ -883,7 +887,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
                         fence = Some(open);
                         continue;
                     }
-                    let stripped = strip_markdown(line);
+                    let stripped = Zeroizing::new(strip_markdown(line));
                     if !stripped.is_empty() {
                         result = Some(stripped);
                         break 'outer;
@@ -892,7 +896,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
             }
         }
     }
-    result.map(|line| line.chars().take(TITLE_CAP).collect())
+    result.map(|line| Zeroizing::new(line.chars().take(TITLE_CAP).collect()))
 }
 
 /// An open fence. A closer must match its marker and be at least as long
@@ -1356,7 +1360,10 @@ mod tests {
     }
 
     fn title_of(line: &str) -> String {
-        derive_title(&[Segment::Ink(line.into())]).expect("this line derives a title")
+        derive_title(&[Segment::Ink(line.into())])
+            .expect("this line derives a title")
+            .as_str()
+            .to_owned()
     }
 
     /// An unnamed tab born at [`STAMP`].
@@ -1371,12 +1378,37 @@ mod tests {
         }
     }
 
+    /// The tab's name, the page's derived title and the label built from either are wiping
+    /// owners (Law 0004, C13 to C15): the types say so, and a plain `String` would not compile.
+    #[test]
+    fn a_name_a_derived_title_and_a_label_are_wiping_owners() {
+        let mut page = bare_sheet(STAMP);
+        page.derived_title = Some(Zeroizing::new("deploy notes".into()));
+        let mut tab = unnamed_tab(Some(page));
+        tab.name = Some(Zeroizing::new("the vault".into()));
+        let name: &Option<Zeroizing<String>> = &tab.name;
+        let derived: &Option<Zeroizing<String>> = &tab.page.as_ref().unwrap().derived_title;
+        let label: Zeroizing<String> = tab.label(0);
+        assert_eq!(name.as_ref().map(|n| n.as_str()), Some("the vault"));
+        assert_eq!(derived.as_ref().map(|t| t.as_str()), Some("deploy notes"));
+        assert_eq!(label.as_str(), "the vault");
+        let derived: Option<Zeroizing<String>> =
+            derive_title(&[Segment::Ink("# first\nsecond".into())]);
+        assert_eq!(derived.as_deref().map(String::as_str), Some("first"));
+    }
+
     #[test]
     fn titles_strip_heading_markup_only_when_it_is_markup() {
         let segs = vec![Segment::Ink("### deploy friday\nrest".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("deploy friday"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("deploy friday")
+        );
         let segs = vec![Segment::Ink("#hashtag stays".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("#hashtag stays"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("#hashtag stays")
+        );
     }
 
     #[test]
@@ -1422,7 +1454,10 @@ mod tests {
             Segment::Chip(ChipId(9)),
             Segment::Ink("\n\n  \nerrands".into()),
         ];
-        assert_eq!(derive_title(&segs).as_deref(), Some("errands"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("errands")
+        );
     }
 
     #[test]
@@ -1435,23 +1470,23 @@ mod tests {
     #[test]
     fn a_label_resolves_name_then_derived_title_then_the_tabs_own_stamp() {
         let mut tab = unnamed_tab(None);
-        assert_eq!(tab.label(0), "1114-2213", "no name, no page");
+        assert_eq!(tab.label(0).as_str(), "1114-2213", "no name, no page");
         assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
         // The page is born a day after the tab.
         let day = 24 * 60 * 60 * 1000;
         let mut page = bare_sheet(STAMP + day);
-        page.derived_title = Some("deploy notes".into());
+        page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         tab.page = Some(page);
-        assert_eq!(tab.label(0), "deploy notes");
+        assert_eq!(tab.label(0).as_str(), "deploy notes");
         assert_eq!(tab.label_source(), LabelSource::Derived);
 
         tab.page = Some(bare_sheet(STAMP + day));
-        assert_eq!(tab.label(0), "1114-2213");
+        assert_eq!(tab.label(0).as_str(), "1114-2213");
         assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
-        tab.name = Some("the vault".into());
-        assert_eq!(tab.label(0), "the vault");
+        tab.name = Some(Zeroizing::new("the vault".into()));
+        assert_eq!(tab.label(0).as_str(), "the vault");
         assert_eq!(tab.label_source(), LabelSource::Name);
     }
 
@@ -1461,11 +1496,14 @@ mod tests {
             "```ruby\n  if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))\n```".into(),
         )];
         assert_eq!(
-            derive_title(&segs).as_deref(),
+            derive_title(&segs).as_deref().map(String::as_str),
             Some("if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))")
         );
         let segs = vec![Segment::Ink("```\n```\n## after the fence".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("after the fence"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("after the fence")
+        );
         assert_eq!(title_of("~~~sh\nls -la"), "ls -la");
         assert_eq!(derive_title(&[Segment::Ink("```ruby\n".into())]), None);
     }
@@ -1475,13 +1513,19 @@ mod tests {
         let segs = vec![Segment::Ink(
             "```\ninner code\n~~~\nmore code\n```\n## after".into(),
         )];
-        assert_eq!(derive_title(&segs).as_deref(), Some("inner code"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("inner code")
+        );
     }
 
     #[test]
     fn a_fence_indented_four_spaces_is_prose_not_a_fence() {
         let segs = vec![Segment::Ink("    ```\n**bold**".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("bold"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("bold")
+        );
     }
 
     #[test]
@@ -1489,7 +1533,10 @@ mod tests {
         let segs = vec![Segment::Ink(
             "```\nfirst line of code\n``` js\nstill code\n```".into(),
         )];
-        assert_eq!(derive_title(&segs).as_deref(), Some("first line of code"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("first line of code")
+        );
     }
 
     #[test]
@@ -1686,7 +1733,7 @@ mod tests {
         assert_eq!(tab.created_wall_ms(), STAMP);
         assert_eq!(page.local_day(0), local_day(STAMP, 0) + 3);
         assert_eq!(
-            tab.label(0),
+            tab.label(0).as_str(),
             "1114-2213",
             "and the label still reads the slot's stamp, which is the point of the split"
         );
