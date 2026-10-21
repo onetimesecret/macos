@@ -1164,8 +1164,8 @@ final class PageViewStateTests: XCTestCase {
         }
     }
 
-    /// An insertion carrying another paragraph's style, as a list depth nudge's does, is
-    /// reported through to its paragraph's end, wider than the characters that changed.
+    /// An insertion with another paragraph's style, as a list depth nudge makes, is reported
+    /// through to its paragraph's end, wider than the characters that changed.
     func testARollPlaceInsideAWidenedStorageEditMovesWithTheTextAfterTheInsertion() throws {
         final class Reported: @unchecked Sendable { var edit: (range: NSRange, delta: Int)? }
         let text = "a plain line\n- an item the reader is partway through\nlast line"

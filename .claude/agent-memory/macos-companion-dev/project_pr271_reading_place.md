@@ -42,7 +42,7 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
   restate (undo, `setAttributedString`) reports (0, new length), so an interior index stays.
 - Third review round (2026-10-20), measured: the page storage is NSConcreteTextStorage with
   `fixesAttributesLazily` true, so typing (styled runs, emoji, CJK, Return in a list) reports
-  exactly the typed characters. An insertion carrying another paragraph's style is reported
+  exactly the typed characters. An insertion with another paragraph's style is reported
   from the insertion to the paragraph's end: the list depth nudge (⇥ in a marker, a storage
   level replace at the item start) and `insertText` of an attributed string. Hence the
   rebase moves an index inside an edited span by delta, except a whole restate (the storage
