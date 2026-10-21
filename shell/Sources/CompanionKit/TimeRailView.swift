@@ -661,9 +661,8 @@ struct StreamNavigatorView: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(hovered ? Color.primary.opacity(0.07) : .clear)
         )
-        // The node takes drops for the page its click selects, where its row seats one (issue 267).
-        .background(
-            placed.seatsDropTarget ? TabDropOverlay.node(target, model: model, readOnly: readOnly) : nil)
+        // The node takes drops for the page its click selects (issue 267).
+        .background(TabDropOverlay.node(target, model: model, readOnly: readOnly))
         .contentShape(Rectangle())
         .offset(y: placed.drawnTop)
         .onHover { inside in

@@ -362,8 +362,7 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The box the slivers keep clear of.
-        public let rowTop: CGFloat
+        /// The height of the drawn row and of the box the slivers keep clear of alike.
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
         public let noteY: CGFloat?
@@ -375,9 +374,8 @@ public enum StreamNavigator {
         /// The top of the row as drawn, `Metrics.rowLift` above the centre line.
         public var drawnTop: CGFloat { y - Metrics.rowLift(firstOfDay: node.firstOfDay) }
 
-        /// Whether the row may seat its node's drop target: not once the foot cap pushed it
-        /// above the column, where nothing clips the target off the heading (issue 267, #277).
-        public var seatsDropTarget: Bool { drawnTop >= 0 }
+        /// The top of the box the slivers keep clear of: the drawn row, one point higher (#277).
+        public var rowTop: CGFloat { drawnTop - 1 }
     }
 
     /// The part of the roll the reader can see, in rail coordinates.
@@ -428,6 +426,9 @@ public enum StreamNavigator {
         /// for. Viewport-only updates reuse it rather than accepting an
         /// unchecked height from a caller.
         let sourceHeight: CGFloat
+        /// How tall the drawing is: the column's height, or more when the rows outrun it,
+        /// in which case the column scrolls (#277).
+        public let contentHeight: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
 
@@ -455,7 +456,7 @@ public enum StreamNavigator {
 
         public static let empty = Layout(
             placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
-            activeSegment: nil, slivers: [], sourceHeight: 0, anchors: []
+            activeSegment: nil, slivers: [], sourceHeight: 0, contentHeight: 0, anchors: []
         )
     }
 
@@ -495,12 +496,14 @@ public enum StreamNavigator {
     /// Each node starts where its page's share of the roll puts it
     /// (`top / documentHeight` of the column), then the nodes are
     /// pushed apart just far enough that no node's words overlap the
-    /// next, from the top down, and pulled back up from the foot so the
-    /// last one stays on the rail. A node reserves room above itself
-    /// for its empty days note and, at the window, for the seven day
-    /// mark. The map from document to rail then runs through the nodes
-    /// as they were finally placed, so the band and the slivers are
-    /// level with the nodes and not with the roll's raw proportions.
+    /// next, from the top down. No row is ever moved back up: rows that
+    /// outrun the column lengthen the drawing past it (`contentHeight`)
+    /// and the column scrolls to reach them, as a sidebar does (#277).
+    /// A node reserves room above itself for its empty days note and,
+    /// at the window, for the seven day mark. The map from document to
+    /// rail then runs through the nodes as they were finally placed, so
+    /// the band and the slivers are level with the nodes and not with
+    /// the roll's raw proportions.
     ///
     /// An unmeasured roll has no proportions: every node starts at the
     /// top and the packing alone decides, which is where the nodes go
@@ -546,12 +549,9 @@ public enum StreamNavigator {
         for index in 1..<ys.count {
             ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
         }
-        let limit = height - Metrics.bottom
-        for index in ys.indices.reversed() {
-            let cap = index == ys.count - 1
-                ? limit - heights[index] : ys[index + 1] - heights[index] - clearances[index + 1]
-            ys[index] = min(ys[index], cap)
-        }
+        let lastBottom = ys[ys.count - 1] + heights[ys.count - 1]
+        let contentHeight = max(height, lastBottom + Metrics.bottom)
+        let limit = contentHeight - Metrics.bottom
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }
 
         let anchors = [Anchor(document: 0, y: Metrics.top - 8)]
@@ -564,13 +564,14 @@ public enum StreamNavigator {
         let placed = nodes.indices.map { index in
             Placed(
                 node: nodes[index], y: nodeYs[index],
-                rowTop: nodeYs[index] - 8, rowHeight: heights[index] - reserves[index],
+                rowHeight: heights[index] - reserves[index],
                 noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
         }
 
-        let band = band(anchors: anchors, trackBottom: limit, geometry: geometry, height: height)
+        let band = band(
+            anchors: anchors, trackBottom: limit, geometry: geometry, height: contentHeight)
 
         var segment: Segment?
         if let active = nodes.firstIndex(where: \.active) {
@@ -618,6 +619,7 @@ public enum StreamNavigator {
             activeSegment: segment,
             slivers: slivers.values.sorted { $0.y < $1.y },
             sourceHeight: height,
+            contentHeight: contentHeight,
             anchors: anchors
         )
     }
@@ -630,7 +632,7 @@ public enum StreamNavigator {
     ) -> Layout {
         let band = band(
             anchors: layout.anchors, trackBottom: layout.trackBottom,
-            geometry: geometry, height: layout.sourceHeight)
+            geometry: geometry, height: layout.contentHeight)
         let slivers = layout.slivers.map { sliver in
             Sliver(
                 id: sliver.id, y: sliver.y, width: sliver.width,
@@ -645,6 +647,7 @@ public enum StreamNavigator {
             activeSegment: layout.activeSegment,
             slivers: slivers,
             sourceHeight: layout.sourceHeight,
+            contentHeight: layout.contentHeight,
             anchors: layout.anchors
         )
     }
