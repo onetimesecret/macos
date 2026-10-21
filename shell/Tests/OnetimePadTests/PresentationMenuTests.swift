@@ -49,7 +49,7 @@ final class PresentationMenuTests: XCTestCase {
         let model = BackdropModel(defaults: defaults, pages: pages)
         let delegate = BackdropAppDelegate(model: model)
         var selections = 0
-        delegate.selectEditorForTests = { selections += 1 }
+        delegate.selectEditor = { selections += 1 }
 
         delegate.application(NSApplication.shared, open: [file])
         XCTAssertEqual(delegate.finderDocuments, [file], "the launch's file waits for the restored roster")
@@ -86,7 +86,7 @@ final class PresentationMenuTests: XCTestCase {
         let model = BackdropModel(defaults: defaults, pages: pages)
         let delegate = BackdropAppDelegate(model: model)
         var selections = 0
-        delegate.selectEditorForTests = { selections += 1 }
+        delegate.selectEditor = { selections += 1 }
         pages.loadStateIfNeeded()
         delegate.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
         pages.pads.isEnabled = true

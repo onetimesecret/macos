@@ -423,8 +423,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Files the Finder asked to open, waiting for a drain (`FinderOpenPlan`).
     private(set) var finderDocuments: [URL] = []
 
-    /// Stands in for the editor selection after a Finder open, so a test's runner opens no window.
-    var selectEditorForTests: (() -> Void)?
+    /// Selects the editor after a Finder open; a test replaces it so its runner opens no window.
+    lazy var selectEditor: () -> Void = { [weak self] in
+        self?.applySummon(.openEditorPresentation)
+    }
 
     /// Drains the Finder queue a turn after `pendingFileClose` returns to nil.
     private var closeDecisionObserver: AnyCancellable?
@@ -812,11 +814,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private func openDocuments(_ urls: [URL]) -> Bool {
         guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
         else { return false }
-        if let selectEditorForTests {
-            selectEditorForTests()
-        } else {
-            applySummon(.openEditorPresentation)
-        }
+        selectEditor()
         return true
     }
 
