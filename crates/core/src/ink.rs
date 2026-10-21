@@ -2,7 +2,7 @@
 //! sealed object's note (ADR-0043 point 2) each are: one batch rule,
 //! one step rule.
 
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::document::{DocRun, EditIntent, EditSelection, SheetDocument, TextSelection};
 use crate::store::EditOp;
@@ -42,7 +42,7 @@ pub(crate) fn document_holding(text: &str) -> SheetDocument {
 
 /// The document's text at its final size, each run wiped once copied; a
 /// chip sentinel, unreachable here, is written as U+FFFC.
-pub(crate) fn text_of(document: &SheetDocument) -> String {
+pub(crate) fn text_of(document: &SheetDocument) -> Zeroizing<String> {
     let runs = document.runs();
     let len = runs
         .iter()
@@ -51,13 +51,10 @@ pub(crate) fn text_of(document: &SheetDocument) -> String {
             DocRun::Chip(_) => '\u{FFFC}'.len_utf8(),
         })
         .sum();
-    let mut text = String::with_capacity(len);
+    let mut text = Zeroizing::new(String::with_capacity(len));
     for run in runs {
         match run {
-            DocRun::Ink(mut ink) => {
-                text.push_str(&ink);
-                ink.zeroize();
-            }
+            DocRun::Ink(ink) => text.push_str(&ink),
             DocRun::Chip(_) => text.push('\u{FFFC}'),
         }
     }
@@ -77,7 +74,7 @@ pub(crate) fn apply_batch(
     }
     // Phase one: simulate in UTF-16 so a refusal is atomic. Sized once and
     // zeroized, so no reallocation leaves plaintext behind.
-    let text = Zeroizing::new(text_of(document));
+    let text = text_of(document);
     // Every variant named, so a new inserting op fails to compile here.
     let room = ops
         .iter()
@@ -183,4 +180,35 @@ fn boundary(sim: &[u16], at: usize) -> bool {
     let before = sim[at - 1];
     let after = sim[at];
     !((0xD800..=0xDBFF).contains(&before) && (0xDC00..=0xDFFF).contains(&after))
+}
+
+#[cfg(test)]
+mod tests {
+    use zeroize::{Zeroize, ZeroizeOnDrop};
+
+    use super::*;
+    use crate::sheet::ItemId;
+
+    #[test]
+    fn text_projection_is_exact_and_zeroizing_including_sentinels() {
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
+        let large = "λ".repeat(8192);
+        for body in ["", "🙂\r\n尾", "x", large.as_str()] {
+            let document = document_holding(body);
+            let mut text: Zeroizing<String> = text_of(&document);
+            wiping_owner(&text);
+            assert_eq!(text.as_str(), body);
+            assert_eq!(text.capacity(), text.len());
+            let pointer = text.as_ptr();
+            text.as_mut_str().zeroize();
+            assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+            assert_eq!(text.as_ptr(), pointer);
+        }
+        let document = document_holding("a🙂");
+        document.insert_chip(1, ItemId::random()).unwrap();
+        let text = text_of(&document);
+        assert_eq!(text.as_str(), "a\u{FFFC}🙂");
+        assert_eq!(text.capacity(), text.len());
+    }
 }

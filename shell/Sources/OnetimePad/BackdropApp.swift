@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CompanionKit
 import SwiftUI
 import os
@@ -419,6 +420,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
 
+    /// Files the Finder asked to open, waiting for a drain (`FinderOpenPlan`).
+    private(set) var finderDocuments: [URL] = []
+
+    /// Selects the editor after a Finder open; a test replaces it so its runner opens no window.
+    lazy var selectEditor: () -> Void = { [weak self] in
+        self?.applySummon(.openEditorPresentation)
+    }
+
+    /// Drains the Finder queue a turn after `pendingFileClose` returns to nil.
+    private var closeDecisionObserver: AnyCancellable?
+
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
     private var modalEndObserver: NSObjectProtocol?
@@ -566,12 +578,28 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // editor and trigger Keychain access behind the introduction.
         KeychainIntroduction.showIfNeeded(defaults: FormFactor.settingsDefaults)
         controller.show()
+        completeStartup(notification)
+    }
+
+    /// The surface is up: replay an activation that came during launch, then drain the Finder queue.
+    func completeStartup(_ notification: Notification) {
         startupComplete = true
-        if activationDuringStartup, NSApp.isActive {
+        let replaysLaunchActivation = activationDuringStartup && NSApp?.isActive == true
+        if replaysLaunchActivation {
             activationDuringStartup = false
             launchedAt = Date()
             applicationDidBecomeActive(notification)
         }
+        // @Published emits before the store, so the drain waits a turn to read the decision gone.
+        closeDecisionObserver = pages.$pendingFileClose
+            .map { $0 == nil }
+            .removeDuplicates()
+            .dropFirst()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.drainFinderDocuments() }
+            }
+        drainFinderDocuments(launchActivationOutstanding: !replaysLaunchActivation)
     }
 
 
@@ -756,6 +784,40 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         pendingEditorSummon = nil
     }
 
+    /// The Finder's Open and Open With, and files dropped on the Dock icon.
+    /// Queued, then opened by the drain once startup is done, no modal is
+    /// up and no close decision stands.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        finderDocuments += urls
+        drainFinderDocuments()
+    }
+
+    /// Opens what `FinderOpenPlan` allows and keeps the rest; true when a file opened.
+    @discardableResult
+    private func drainFinderDocuments(launchActivationOutstanding: Bool = false) -> Bool {
+        let plan = FinderOpenPlan.decide(
+            queued: finderDocuments,
+            startupComplete: startupComplete,
+            modalSessionRunning: ModalSession.isRunning,
+            modalBracketed: ModalSession.isBracketed,
+            closeDecisionPending: pages.openRefusedForCloseDecision,
+            launchActivationOutstanding: launchActivationOutstanding,
+            appActive: NSApp?.isActive == true,
+            context: activationContext())
+        finderDocuments = plan.held
+        guard openDocuments(plan.open) else { return false }
+        if let route = plan.pendingRoute { pendingEditorSummon = route }
+        return true
+    }
+
+    /// Opens each file as a drop would, then selects the editor window without moving the roll.
+    private func openDocuments(_ urls: [URL]) -> Bool {
+        guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
+        else { return false }
+        selectEditor()
+        return true
+    }
+
     /// A modal open or save panel has returned, accepted or cancelled.
     /// The surface was raised when it went up, since either panel is
     /// reached from a keyed card or from a menu of an active
@@ -788,9 +850,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // there (no modal of ours running now). The route itself is
         // the routing function's, so "back to the owner" is written
         // in one place.
-        guard model.stance == .raised else { return }
+        let raisedWhenItEnded = model.stance == .raised
         Task { @MainActor [weak self] in
-            guard let self,
+            // A Finder open held through the modal selects the editor in place of the return.
+            guard let self, !self.drainFinderDocuments(), raisedWhenItEnded,
                 Self.raisesAfterModal(
                     stance: self.model.stance, modalSessionRunning: ModalSession.isRunning)
             else { return }

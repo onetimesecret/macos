@@ -1002,7 +1002,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// The strip, in visible order: one entry per slot, page or no page.
     public func tabs() -> [TabSummary] {
-        decodeJSON([TabSummary].self, from: companion_tabs_json(handle)) ?? []
+        decodeOwnedJSON([TabSummary].self, from: companion_tabs_json(handle)) ?? []
     }
 
     /// Both emptiness predicates, asked of the core rather than derived
@@ -1019,14 +1019,14 @@ public class CompanionClient: @unchecked Sendable {
     /// A page's provenance (ADR-0013): creation stamp and derived
     /// modified stamp. Nil for an unknown page.
     public func sheetMeta(sheet: UInt64) -> SheetMeta? {
-        decodeJSON(SheetMeta.self, from: companion_sheet_meta_json(handle, sheet))
+        decodeOwnedJSON(SheetMeta.self, from: companion_sheet_meta_json(handle, sheet))
     }
 
     /// A page's blocks in document order: block identities with their
     /// derived created/modified stamps and how far each reaches, and
     /// nothing else.
     public func blocks(sheet: UInt64) -> [BlockInfo] {
-        decodeJSON([BlockInfo].self, from: companion_sheet_blocks_json(handle, sheet)) ?? []
+        decodeOwnedJSON([BlockInfo].self, from: companion_sheet_blocks_json(handle, sheet)) ?? []
     }
 
     // MARK: Sealing — the gesture routes
@@ -1046,7 +1046,7 @@ public class CompanionClient: @unchecked Sendable {
         sheet: UInt64, at: UInt32, length: UInt32
     ) -> (chip: ChipInfo?, cleared: Bool) {
         var cleared = false
-        let chip = decodeJSON(
+        let chip = decodeOwnedJSON(
             ChipInfo.self,
             from: companion_sheet_seal_from_pasteboard(handle, sheet, at, length, &cleared))
         return (chip, cleared)
@@ -1069,7 +1069,7 @@ public class CompanionClient: @unchecked Sendable {
     /// dragged.
     @discardableResult
     public func sealFromDrag(sheet: UInt64, at: UInt32, length: UInt32) -> ChipInfo? {
-        decodeJSON(
+        decodeOwnedJSON(
             ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet, at, length))
     }
 
@@ -1087,7 +1087,7 @@ public class CompanionClient: @unchecked Sendable {
         // its copy and nothing was sealed.
         guard !text.contains("\0") else { return nil }
         return text.withCString { cText in
-            decodeJSON(
+            decodeOwnedJSON(
                 ChipInfo.self,
                 from: companion_sheet_seal_text(handle, sheet, cText, at, length))
         }
@@ -1353,7 +1353,7 @@ public class CompanionClient: @unchecked Sendable {
                     self.handle, sheet, wire.0, wire.1, base, bytes.count, plain)
             }
             let result = plain.map { $0.withCString { paste($0) } } ?? paste(nil)
-            return decodeJSON(PlacedFragment.self, from: result)
+            return decodeOwnedJSON(PlacedFragment.self, from: result)
         }
     }
 
@@ -1362,7 +1362,7 @@ public class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func pasteActiveCut(sheet: UInt64, range: NSRange) -> PlacedFragment? {
         guard let wire = selectionWire(range) else { return nil }
-        return decodeJSON(
+        return decodeOwnedJSON(
             PlacedFragment.self,
             from: companion_sheet_paste_active_cut(handle, sheet, wire.0, wire.1))
     }
@@ -1372,7 +1372,7 @@ public class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func moveRange(sheet: UInt64, range: NSRange, to: Int) -> PlacedFragment? {
         guard let wire = selectionWire(range), let to = UInt32(exactly: to) else { return nil }
-        return decodeJSON(
+        return decodeOwnedJSON(
             PlacedFragment.self,
             from: companion_sheet_move_range(handle, sheet, wire.0, wire.1, to))
     }
@@ -1384,7 +1384,7 @@ public class CompanionClient: @unchecked Sendable {
         sheet: UInt64, range: NSRange, toSheet dest: UInt64, at: Int
     ) -> PlacedFragment? {
         guard let wire = selectionWire(range), let at = UInt32(exactly: at) else { return nil }
-        return decodeJSON(
+        return decodeOwnedJSON(
             PlacedFragment.self,
             from: companion_sheet_move_range_to(handle, sheet, wire.0, wire.1, dest, at))
     }
@@ -1394,14 +1394,14 @@ public class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func cloneRange(sheet: UInt64, range: NSRange, to: Int) -> PlacedFragment? {
         guard let wire = selectionWire(range), let to = UInt32(exactly: to) else { return nil }
-        return decodeJSON(
+        return decodeOwnedJSON(
             PlacedFragment.self,
             from: companion_sheet_clone_range(handle, sheet, wire.0, wire.1, to))
     }
 
     /// The active cut, for the clipboard slot; nil when none stands.
     public func activeCut() -> ActiveCut? {
-        guard let wire = decodeJSON(ActiveCut.Wire.self, from: companion_active_cut_json(handle)),
+        guard let wire = decodeOwnedJSON(ActiveCut.Wire.self, from: companion_active_cut_json(handle)),
               let page = wire.pageID
         else { return nil }
         return ActiveCut(pageID: page, objects: wire.objects)
@@ -1429,7 +1429,7 @@ public class CompanionClient: @unchecked Sendable {
     private func fragment(
         from ptr: UnsafeMutablePointer<CChar>?
     ) -> Result<SealedFragment, FragmentRefusal> {
-        SealedFragment.outcome(of: decodeJSON(SealedFragment.Wire.self, from: ptr))
+        SealedFragment.outcome(of: decodeOwnedJSON(SealedFragment.Wire.self, from: ptr))
     }
 
     // MARK: A sealed object's note (core interface, The note's routes)
@@ -1438,7 +1438,7 @@ public class CompanionClient: @unchecked Sendable {
     /// empty without a note, nil for an unknown chip or a page past its
     /// deadline (Law 0001, expiry row).
     public func noteRuns(chip: UInt64) -> [RestoredRun]? {
-        decodeJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip))
+        decodeOwnedJSON([RestoredRun].self, from: companion_chip_note_runs_json(handle, chip))
     }
 
     /// Apply an edit batch to the note. False means it was refused whole
@@ -1466,12 +1466,12 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Take back the note's own last step.
     public func undoNote(chip: UInt64) -> StepOutcome? {
-        decodeJSON(StepOutcome.self, from: companion_chip_note_undo(handle, chip))
+        decodeOwnedJSON(StepOutcome.self, from: companion_chip_note_undo(handle, chip))
     }
 
     /// Put back the step `undoNote(chip:)` took.
     public func redoNote(chip: UInt64) -> StepOutcome? {
-        decodeJSON(StepOutcome.self, from: companion_chip_note_redo(handle, chip))
+        decodeOwnedJSON(StepOutcome.self, from: companion_chip_note_redo(handle, chip))
     }
 
     /// Whether the note has a step of its own waiting in either direction.
@@ -1559,13 +1559,13 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Connection state for Settings — never the token itself.
     public func connectionInfo() -> ConnectionInfo? {
-        decodeJSON(ConnectionInfo.self, from: companion_connection_json(handle))
+        decodeOwnedJSON(ConnectionInfo.self, from: companion_connection_json(handle))
     }
 
     /// The Settings "test" button: one status round-trip. **Blocks** —
     /// call off the main actor.
     public func testConnection() -> ConcealOutcome {
-        decodeJSON(ConcealOutcome.self, from: companion_connection_test(handle))
+        decodeOwnedJSON(ConcealOutcome.self, from: companion_connection_test(handle))
             ?? ConcealOutcome(ok: false, receiptId: nil, error: "no connection configured")
     }
 
@@ -1605,7 +1605,7 @@ public class CompanionClient: @unchecked Sendable {
             return ConcealOutcome(ok: false, receiptId: nil, error: "malformed conceal options")
         }
         let outcome = json.withCString { opts in
-            decodeJSON(ConcealOutcome.self, from: route(handle, id, opts))
+            decodeOwnedJSON(ConcealOutcome.self, from: route(handle, id, opts))
         }
         return outcome
             ?? ConcealOutcome(ok: false, receiptId: nil, error: "the core refused the request")
@@ -1639,7 +1639,7 @@ public class CompanionClient: @unchecked Sendable {
     /// Sync's standing state for Settings — existence checks only,
     /// never a decrypt and never a network wait.
     public func syncStatus() -> SyncStatus? {
-        decodeJSON(SyncStatus.self, from: companion_sync_status_json(handle))
+        decodeOwnedJSON(SyncStatus.self, from: companion_sync_status_json(handle))
     }
 
     /// Where the account gate stands, without the rest of the status.
@@ -1647,16 +1647,14 @@ public class CompanionClient: @unchecked Sendable {
     /// attach. `SyncStatus.gate`'s nil, a core that named none, means
     /// no opinion.
     public func syncGate() -> SyncGate? {
-        guard let ptr = companion_sync_gate(handle) else { return nil }
-        defer { companion_string_free(ptr) }
-        return SyncGate(rawValue: String(cString: ptr))
+        ownedString(from: companion_sync_gate(handle)).flatMap(SyncGate.init(rawValue:))
     }
 
     /// Begin the sign-in ceremony: the result's `authorizeUrl` opens in
     /// the system browser — never a web view — and the finish call
     /// waits out the consent screen.
     public func syncSigninBegin() -> SyncOutcome {
-        decodeJSON(SyncOutcome.self, from: companion_sync_signin_begin(handle))
+        decodeOwnedJSON(SyncOutcome.self, from: companion_sync_signin_begin(handle))
             ?? .refused("no_ceremony")
     }
 
@@ -1664,7 +1662,7 @@ public class CompanionClient: @unchecked Sendable {
     /// redirect and persist the rotated refresh token. **Blocks** for
     /// up to the whole patience — call off the main actor.
     public func syncSigninFinish(patienceMs: UInt64) -> SyncOutcome {
-        decodeJSON(SyncOutcome.self, from: companion_sync_signin_finish(handle, patienceMs))
+        decodeOwnedJSON(SyncOutcome.self, from: companion_sync_signin_finish(handle, patienceMs))
             ?? .refused("no_ceremony")
     }
 
@@ -1691,7 +1689,7 @@ public class CompanionClient: @unchecked Sendable {
     /// Attach to the account's channel. **Blocks** for the round-trips
     /// — call off the main actor.
     public func syncAttach() -> SyncOutcome {
-        decodeJSON(SyncOutcome.self, from: companion_sync_attach(handle))
+        decodeOwnedJSON(SyncOutcome.self, from: companion_sync_attach(handle))
             ?? .refused("not_configured")
     }
 
@@ -1707,12 +1705,12 @@ public class CompanionClient: @unchecked Sendable {
     /// up to the whole long-poll — call off the main actor, in the
     /// loop that runs while sync is on.
     public func syncPump(waitSeconds: UInt32) -> SyncPumpOutcome? {
-        decodeJSON(SyncPumpOutcome.self, from: companion_sync_pump(handle, waitSeconds))
+        decodeOwnedJSON(SyncPumpOutcome.self, from: companion_sync_pump(handle, waitSeconds))
     }
 
     /// The device list for Settings.
     public func syncDevices() -> [SyncDevice] {
-        decodeJSON(SyncDeviceList.self, from: companion_sync_devices_json(handle))?.devices ?? []
+        decodeOwnedJSON(SyncDeviceList.self, from: companion_sync_devices_json(handle))?.devices ?? []
     }
 
     /// Revoke a paired peer: this device seals nothing new to it and
@@ -1725,13 +1723,13 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Begin inviting a new device into the channel; then poll.
     public func syncInviteBegin() -> SyncOutcome {
-        decodeJSON(SyncOutcome.self, from: companion_sync_invite_begin(handle))
+        decodeOwnedJSON(SyncOutcome.self, from: companion_sync_invite_begin(handle))
             ?? .refused("not_attached")
     }
 
     /// Begin joining a channel from this new device; then poll.
     public func syncJoinBegin() -> SyncOutcome {
-        decodeJSON(SyncOutcome.self, from: companion_sync_join_begin(handle))
+        decodeOwnedJSON(SyncOutcome.self, from: companion_sync_join_begin(handle))
             ?? .refused("not_attached")
     }
 
@@ -1739,14 +1737,14 @@ public class CompanionClient: @unchecked Sendable {
     /// round-trips — call off the main actor, on a timer while the
     /// enrolment sheet is open.
     public func syncPairingPoll() -> SyncPairingStage? {
-        decodeJSON(SyncPairingStage.self, from: companion_sync_pairing_poll(handle))
+        decodeOwnedJSON(SyncPairingStage.self, from: companion_sync_pairing_poll(handle))
     }
 
     /// The human's verdict on the six digits: a match moves the
     /// ceremony forward, a mismatch aborts it whole with nothing
     /// stored.
     public func syncPairingConfirm(matched: Bool) -> SyncPairingStage? {
-        decodeJSON(SyncPairingStage.self, from: companion_sync_pairing_confirm(handle, matched))
+        decodeOwnedJSON(SyncPairingStage.self, from: companion_sync_pairing_confirm(handle, matched))
     }
 
     /// Forget the pairing ceremony in flight, at any stage.
@@ -1762,7 +1760,7 @@ public class CompanionClient: @unchecked Sendable {
     /// Records accumulate on ordinary use, not only on death, so a
     /// session in which pages were merely opened still has records.
     public func ledger() -> [LedgerEntry] {
-        decodeJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
+        decodeOwnedJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
     }
 
     /// Throw the whole ledger away: the user-facing "clear the ledger"
@@ -1807,7 +1805,7 @@ public class CompanionClient: @unchecked Sendable {
     /// A live page's document runs, for rebuilding the editor after a
     /// restore: ink verbatim, chips as their non-secret faces.
     public func documentRuns(sheet: UInt64) -> [RestoredRun] {
-        decodeJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
+        decodeOwnedJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
     }
 
     /// Save the staged content (pages, sealed chips, clocks) to `path`,
@@ -1926,9 +1924,7 @@ public class CompanionClient: @unchecked Sendable {
     /// Why the last `openFile(path:)` refused, as the raw JSON the
     /// header describes. Nil when nothing has refused.
     public func openFileErrorJSON() -> String? {
-        guard let ptr = companion_file_open_error_json(handle) else { return nil }
-        defer { companion_string_free(ptr) }
-        return String(cString: ptr)
+        ownedString(from: companion_file_open_error_json(handle))
     }
 
     /// Close the file and drop its buffer. The draft goes with it: a
@@ -1941,7 +1937,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// The file's document runs, the same shape a page's arrive in.
     public func fileRuns(_ file: UInt64) -> [RestoredRun] {
-        decodeJSON([RestoredRun].self, from: companion_file_runs_json(handle, file)) ?? []
+        decodeOwnedJSON([RestoredRun].self, from: companion_file_runs_json(handle, file)) ?? []
     }
 
     /// Apply an ordered edit batch to the file's body. False means the
@@ -1977,12 +1973,12 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Take back the file's last local edit step.
     public func undoFile(_ file: UInt64) -> StepOutcome? {
-        decodeJSON(StepOutcome.self, from: companion_file_undo(handle, file))
+        decodeOwnedJSON(StepOutcome.self, from: companion_file_undo(handle, file))
     }
 
     /// Put back the step `undoFile(_:)` took, on the same terms.
     public func redoFile(_ file: UInt64) -> StepOutcome? {
-        decodeJSON(StepOutcome.self, from: companion_file_redo(handle, file))
+        decodeOwnedJSON(StepOutcome.self, from: companion_file_redo(handle, file))
     }
 
     /// Whether the file has a step waiting in either direction: what
@@ -2060,9 +2056,7 @@ public class CompanionClient: @unchecked Sendable {
     /// asked for, and when it was refused for an argument the core
     /// could not read. A plain read: the next save replaces the answer.
     public func saveFileErrorJSON() -> String? {
-        guard let ptr = companion_file_save_error_json(handle) else { return nil }
-        defer { companion_string_free(ptr) }
-        return String(cString: ptr)
+        ownedString(from: companion_file_save_error_json(handle))
     }
 
     /// `saveFileErrorJSON()`, read. Asked straight after a save that
@@ -2074,7 +2068,7 @@ public class CompanionClient: @unchecked Sendable {
     /// Whether anything else wrote the file since the core last read or
     /// wrote it. Asked on activate and before every save.
     public func checkFile(_ file: UInt64) -> FileCheck? {
-        decodeJSON(FileCheck.self, from: companion_file_check(handle, file))
+        decodeOwnedJSON(FileCheck.self, from: companion_file_check(handle, file))
     }
 
     /// Re-read a clean file, replacing its buffer.
@@ -2093,7 +2087,7 @@ public class CompanionClient: @unchecked Sendable {
 
     /// Every open file, in open order.
     public func fileRoster() -> [FileSummary] {
-        decodeJSON([FileSummary].self, from: companion_file_roster_json(handle)) ?? []
+        decodeOwnedJSON([FileSummary].self, from: companion_file_roster_json(handle)) ?? []
     }
 
     /// Keep mine: the first of the three conflict resolutions. Take theirs
@@ -2128,9 +2122,7 @@ public class CompanionClient: @unchecked Sendable {
     /// The bookmark last attached to a file, or an empty string when
     /// none was. Nil for a file the core does not hold.
     public func fileBookmarkBase64(_ file: UInt64) -> String? {
-        guard let ptr = companion_file_bookmark_b64(handle, file) else { return nil }
-        defer { companion_string_free(ptr) }
-        return String(cString: ptr)
+        ownedString(from: companion_file_bookmark_b64(handle, file))
     }
 
     /// Say that the reload notice for a file has been posted, so its
@@ -2145,7 +2137,7 @@ public class CompanionClient: @unchecked Sendable {
     /// list, so this is asked once, after every restored file has been
     /// hydrated, rather than polled.
     public func draftNotices() -> [DraftNotice] {
-        decodeJSON([DraftNotice].self, from: companion_drafts_notices_json(handle)) ?? []
+        decodeOwnedJSON([DraftNotice].self, from: companion_drafts_notices_json(handle)) ?? []
     }
 
     /// Seal the open file roster and every dirty file's draft to
@@ -2248,9 +2240,7 @@ public class CompanionClient: @unchecked Sendable {
                 }
             }
 
-        guard let detected else { return nil }
-        defer { companion_string_free(detected) }
-        return String(cString: detected)
+        return ownedString(from: detected)
     }
 
     /// The C-ABI seam crate linked into this process.
@@ -2267,21 +2257,26 @@ public class CompanionClient: @unchecked Sendable {
     @available(*, deprecated, renamed: "ffiVersion")
     public static var version: String { ffiVersion }
 
-    // MARK: Plumbing
+}
 
-    /// Read and release a string allocated by the C ABI.
-    private func ownedString(from ptr: UnsafeMutablePointer<CChar>?) -> String? {
-        guard let ptr else { return nil }
-        defer { companion_string_free(ptr) }
-        return String(cString: ptr)
-    }
+// MARK: Plumbing
 
-    /// Decode an owned JSON C string from the seam, freeing it either way.
-    private func decodeJSON<T: Decodable>(_ type: T.Type, from ptr: UnsafeMutablePointer<CChar>?) -> T? {
-        guard let ptr else { return nil }
-        defer { companion_string_free(ptr) }
-        let json = String(cString: ptr)
-        guard let data = json.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
-    }
+/// Read and release a string allocated by the C ABI.
+func ownedString(from pointer: UnsafeMutablePointer<CChar>?) -> String? {
+    guard let pointer else { return nil }
+    defer { companion_string_free(pointer) }
+    return String(cString: pointer)
+}
+
+// The Rust allocation stays live through decoding; decoded Swift values have their own lifetime.
+func decodeOwnedJSON<T: Decodable>(
+    _ type: T.Type,
+    from pointer: UnsafeMutablePointer<CChar>?,
+    release: (UnsafeMutablePointer<CChar>) -> Void = { companion_string_free($0) },
+    decode: (T.Type, Data) throws -> T = { try JSONDecoder().decode($0, from: $1) }
+) -> T? {
+    guard let pointer else { return nil }
+    defer { release(pointer) }
+    let data = Data(bytesNoCopy: UnsafeMutableRawPointer(pointer), count: strlen(pointer), deallocator: .none)
+    return try? decode(type, data)
 }
