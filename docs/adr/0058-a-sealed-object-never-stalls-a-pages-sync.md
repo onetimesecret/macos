@@ -6,7 +6,7 @@ documentation_status: needs-review
 
 - **Status:** proposed
 - **Date:** 2026-10-16
-- **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), whose relay, key model and key frame carry everything decided here; [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md) (accepted 2026-10-16), whose chip holds the name and note this record carries; [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md) (accepted 2026-10-16), whose detached store a peer's record enters and leaves.
+- **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), whose relay, key model and key frame cover everything decided here; [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md) (accepted 2026-10-16), whose chip has the name and note this record states; [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md) (accepted 2026-10-16), whose detached store a peer's record enters and leaves.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 

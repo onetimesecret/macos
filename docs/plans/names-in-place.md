@@ -2,6 +2,7 @@
 
 **GitHub milestone:** [Names in place](https://github.com/onetimesecret/macos/milestone/5)  
 **Status:** Open. The epic's build tickets all closed by 2026-10-17; #256 and #257 remain, and the epic closes with them.  
+**Sources:** [Law 0007](../law/0007-edit-in-place.md) (accepted 2026-10-13), [Law 0001](../law/0001-sealed-object.md) (its 2026-10-13 amendment), [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md) to [ADR-0047](../adr/0047-name-value-copies-the-value-unquoted.md) (accepted 2026-10-16), [ADR-0058](../adr/0058-a-sealed-object-never-stalls-a-pages-sync.md) (proposed).  
 **Source of execution status:** GitHub issues, not this document. The plan proper is the epic, [#252](https://github.com/onetimesecret/macos/issues/252), with the gap table, the invariants and the dependency graph; this page is the index to it.
 
 ## Goal
@@ -28,4 +29,4 @@ As the epic states it: every row of its gap table has a closed ticket, and every
 
 ## Explicitly unchanged
 
-The epic lists what this milestone leaves alone: the create pad sheet, the strip's double click as the hold, the ledger record's shape, and the plain text placeholder. No envelope takes a sealed object to a peer, as the client protocol stands (row 10.31, which ADR-0058 proposes to replace; `crates/core/src/store.rs` `sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer` and `sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`), so names and notes do not sync either, which is what #257 reopens.
+The epic lists what this milestone leaves alone: the create pad sheet, the strip's double click as the hold, the ledger record's shape, and the plain text placeholder. No envelope takes a sealed object to a peer, as the client protocol, itself a draft, stands (row 10.31, which ADR-0058 proposes to replace; `crates/core/src/store.rs` `sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer` and `sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`), so names and notes do not sync either, which is what #257 reopens.
