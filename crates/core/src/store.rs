@@ -1302,7 +1302,7 @@ impl<C: Clock> SheetStore<C> {
     /// [`NameRefusal::UnknownChip`], or the rule's own refusal.
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
         let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
-        chip.name = judge_name(draft)?.map(str::to_owned);
+        chip.name = judge_name(draft)?.map(|name| Zeroizing::new(name.to_owned()));
         Ok(())
     }
 
@@ -1428,7 +1428,7 @@ impl<C: Clock> SheetStore<C> {
         if matches!(chip.meta, ChipMeta::Image { .. }) {
             return None;
         }
-        let name = chip.name.as_deref()?;
+        let name = chip.name.as_ref()?.as_str();
         let value = chip.bytes.expose();
         // Exact size: a reallocation would strand sealed bytes unwiped (Law 0004).
         let mut out = Zeroizing::new(Vec::with_capacity(name.len() + 1 + value.len()));

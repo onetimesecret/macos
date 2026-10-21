@@ -77,8 +77,8 @@ pub(crate) enum Node {
 /// A sealed object as a fragment names it.
 pub(crate) struct Reference {
     pub(crate) uuid: ItemId,
-    /// The object's typed name, ink (issue #247).
-    pub(crate) name: Option<String>,
+    /// The object's typed name, ink, a wiping owner (issue #247; Law 0004, C19).
+    pub(crate) name: Option<Zeroizing<String>>,
     /// The object's note, ink, never empty (issue #247).
     pub(crate) note: Option<Zeroizing<String>>,
 }
@@ -142,7 +142,8 @@ impl Fragment {
                 Node::Ink(text) => WireNode::Ink(Cow::Borrowed(text.as_str())),
                 Node::Ref(reference) => WireNode::Ref(WireRef {
                     uuid: reference.uuid.to_string(),
-                    name: reference.name.clone(),
+                    // The wire's own copy, which serde owns (C21).
+                    name: reference.name.as_ref().map(|name| name.as_str().to_owned()),
                     note: reference
                         .note
                         .as_ref()
@@ -200,7 +201,10 @@ impl Fragment {
                     }
                     nodes.push(Node::Ref(Reference {
                         uuid,
-                        name: reference.name.filter(|name| !name.is_empty()),
+                        name: reference
+                            .name
+                            .filter(|name| !name.is_empty())
+                            .map(Zeroizing::new),
                         note: reference.note.and_then(ink_of),
                     }));
                 }
@@ -632,7 +636,7 @@ mod tests {
     fn name_and_note(node: &Node) -> (Option<&str>, Option<&str>) {
         match node {
             Node::Ref(reference) => (
-                reference.name.as_deref(),
+                reference.name.as_deref().map(String::as_str),
                 reference.note.as_deref().map(String::as_str),
             ),
             Node::Ink(_) => panic!("not a reference"),

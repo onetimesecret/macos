@@ -267,10 +267,12 @@ pub struct SealedChip {
     pub(crate) uuid: ItemId,
     pub(crate) bytes: SecretBuffer,
     pub(crate) meta: ChipMeta,
-    pub(crate) excerpt: String,
+    /// A wiping owner: the excerpt is the content's own head and tail (Law 0004, C09).
+    pub(crate) excerpt: Zeroizing<String>,
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
-    pub(crate) name: Option<String>,
+    /// A wiping owner, since a name is content (Law 0004, C10).
+    pub(crate) name: Option<Zeroizing<String>>,
     /// Made by its first accepted edit.
     pub(crate) note: Option<Note>,
     /// Whether its sentinel has stood in a body; the first standing is the
@@ -309,7 +311,7 @@ impl SealedChip {
     /// Seal image bytes under an existing identity (restore path).
     pub(crate) fn image_with_uuid(id: ChipId, uuid: ItemId, bytes: Vec<u8>) -> Self {
         let byte_len = bytes.len();
-        let excerpt = format!("{} image", sniff_image_kind(&bytes));
+        let excerpt = Zeroizing::new(format!("{} image", sniff_image_kind(&bytes)));
         Self {
             id,
             uuid,
@@ -360,7 +362,7 @@ impl SealedChip {
     /// The mechanical excerpt, the only rendering the content ever gets.
     #[must_use]
     pub fn excerpt(&self) -> &str {
-        &self.excerpt
+        self.excerpt.as_str()
     }
 
     /// The ledger's size class, never an exact length (D-29).
@@ -378,7 +380,7 @@ impl SealedChip {
     /// The typed name, if one was given.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.name.as_ref().map(|name| name.as_str())
     }
 
     /// Whether a note holds anything but whitespace: the block's doorway.
@@ -1073,21 +1075,16 @@ fn flatten_links(text: &str) -> String {
 
 /// The mechanical excerpt rule (doc 04), returning (excerpt, size label,
 /// meta). The label is a size class, never a count (D-29).
-fn text_face(text: &str) -> (String, String, ChipMeta) {
+fn text_face(text: &str) -> (Zeroizing<String>, String, ChipMeta) {
     let size_label = SizeClass::of(text.len()).to_string();
     let trimmed = text.trim_end_matches('\n');
     let lines = trimmed.split('\n').count().max(1);
     if lines > 1 {
-        let head: String = trimmed
-            .split('\n')
-            .next()
-            .unwrap_or_default()
-            .chars()
-            .take(17)
-            .collect();
+        let first = trimmed.split('\n').next().unwrap_or_default();
+        let head = &first[..char_boundary(first, 17)];
         let chars = trimmed.chars().count();
         return (
-            format!("{head}…"),
+            joined(head, "…", ""),
             size_label,
             ChipMeta::Text { chars, lines },
         );
@@ -1096,14 +1093,31 @@ fn text_face(text: &str) -> (String, String, ChipMeta) {
     let meta = ChipMeta::Text { chars: n, lines };
     let budget = (n / 3).min(24);
     if budget < 1 {
-        return ("···".to_string(), size_label, meta);
+        return (Zeroizing::new("···".to_string()), size_label, meta);
     }
     // 60/40 head–tail, head rounded up: max(1, ⌈0.6·B⌉) = max(1, ⌈3B/5⌉).
     let head_len = (3 * budget).div_ceil(5).max(1);
     let tail_len = budget - head_len;
-    let head: String = trimmed.chars().take(head_len).collect();
-    let tail: String = trimmed.chars().skip(n.saturating_sub(tail_len)).collect();
-    (format!("{head}…{tail}"), size_label, meta)
+    let head = &trimmed[..char_boundary(trimmed, head_len)];
+    let tail = &trimmed[char_boundary(trimmed, n.saturating_sub(tail_len))..];
+    (joined(head, "…", tail), size_label, meta)
+}
+
+/// The byte offset of the `chars`th char of `text`, or its end.
+fn char_boundary(text: &str, chars: usize) -> usize {
+    text.char_indices()
+        .nth(chars)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+/// The three joined into one wiping owner allocated at its exact size, with no growing
+/// scratch and no copy of the slices before it (Law 0004).
+fn joined(head: &str, mark: &str, tail: &str) -> Zeroizing<String> {
+    let mut out = String::with_capacity(head.len() + mark.len() + tail.len());
+    out.push_str(head);
+    out.push_str(mark);
+    out.push_str(tail);
+    Zeroizing::new(out)
 }
 
 /// Image container from magic bytes; never a decode.
@@ -1128,7 +1142,7 @@ mod tests {
 
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);
-        (excerpt, label)
+        (excerpt.as_str().to_owned(), label)
     }
 
     #[test]
@@ -1434,6 +1448,31 @@ mod tests {
         let derived = derive_title(&[Segment::Ink(long.clone())]).unwrap();
         assert_eq!(derived.chars().count(), TITLE_CAP);
         assert_eq!(derived.as_str(), capped.as_str());
+    }
+
+    /// A sealed object's excerpt and typed name are wiping owners (Law 0004, C09, C10), and
+    /// the excerpt is joined once at its size from slices that never split a char.
+    #[test]
+    fn an_objects_excerpt_and_name_are_wiping_owners() {
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
+        let mut chip = SealedChip::text(ChipId(1), &"🧪".repeat(60));
+        chip.name = Some(Zeroizing::new("TOKEN".into()));
+        wiping_owner(&chip.excerpt);
+        wiping_owner(chip.name.as_ref().unwrap());
+        assert_eq!(chip.name(), Some("TOKEN"));
+        assert_eq!(
+            chip.excerpt().chars().count(),
+            20 + 1,
+            "budget 20, head 12, tail 8, one mark"
+        );
+        assert_eq!(
+            chip.excerpt.capacity(),
+            chip.excerpt.len(),
+            "the excerpt grew past its size"
+        );
+        let (excerpt, _, _) = text_face("🧪🧪🧪🧪🧪\nsecond line");
+        assert_eq!(excerpt.as_str(), "🧪🧪🧪🧪🧪…");
     }
 
     #[test]

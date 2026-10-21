@@ -451,9 +451,9 @@ impl<C: Clock> SheetStore<C> {
                 // The envelope's name and note, the name judged as a typed one is.
                 clone.name = reference
                     .name
-                    .as_deref()
+                    .as_ref()
                     .and_then(|name| judge_name(name).ok().flatten())
-                    .map(str::to_owned);
+                    .map(|name| Zeroizing::new(name.to_owned()));
                 clone.note = reference.note.as_deref().map(|text| Note::holding(text));
                 placed.cloned += 1;
                 plan.push(Planned::Clone(Box::new(clone)));
@@ -1457,7 +1457,7 @@ mod tests {
         nodes.push(Node::Ink(Zeroizing::new(" 3 ".into())));
         nodes.push(Node::Ref(crate::fragment::Reference {
             uuid: ItemId::random(),
-            name: Some("FOREIGN".into()),
+            name: Some(Zeroizing::new("FOREIGN".into())),
             note: None,
         }));
         let mixed = Fragment { cut: None, nodes }.envelope().unwrap();
