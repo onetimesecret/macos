@@ -167,9 +167,7 @@ public struct TabStripView: View {
     /// chord appears only when something bound it, which for the tab's
     /// own build is a keymap the user wrote.
     static func ledgerHelp(chord: Keystroke?) -> String {
-        let what = "The ledger: what the app did with each page and chip"
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
+        Keystroke.chorded("The ledger: what the app did with each page and chip", chord: chord)
     }
 
     /// ↗ page (docs/spec/04, conceal flow): conceal the visible page
@@ -480,8 +478,7 @@ struct SheetTab: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(
-            renaming ? (selected ? [.isSelected] : []) : selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: renaming))
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer, as on the rail's rows.
         .accessibilityActivation(when: !renaming) { model.select(sheet.id) }

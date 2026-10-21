@@ -1042,8 +1042,7 @@ private struct SlotRailRow: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(
-            renaming ? (selected ? [.isSelected] : []) : selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: renaming))
         // The hover-only close mark and the menu verbs, reachable
         // without a pointer; mid-rename the element is the field's
         // container and offers neither.

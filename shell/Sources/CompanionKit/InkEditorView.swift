@@ -1217,9 +1217,7 @@ public struct InkEditorView: NSViewRepresentable {
                   !Self.containsChip(storage, in: selection)
             else { return }
             // The page's own group, set off from AppKit's text items.
-            if let last = menu.items.last, !last.isSeparatorItem {
-                menu.addItem(.separator())
-            }
+            menu.addSeparatorIfNeeded()
             let seal = NSMenuItem(
                 title: SealSelectionMenu.contextMenuTitle,
                 action: #selector(sealSelectionFromMenu(_:)),
@@ -1487,9 +1485,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         func appendLanguageItems(to menu: NSMenu) {
             guard PageModel.languageDetectionFeaturesAvailable, let textView else { return }
-            if let last = menu.items.last, !last.isSeparatorItem {
-                menu.addItem(.separator())
-            }
+            menu.addSeparatorIfNeeded()
 
             let detect = NSMenuItem(
                 title: "Detect Code Language",

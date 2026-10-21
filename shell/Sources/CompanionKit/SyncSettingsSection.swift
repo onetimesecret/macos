@@ -128,7 +128,7 @@ private struct SyncDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(String(device.fingerprint.prefix(8)))
+            Text(fingerprintHead)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
             Text(title)
@@ -162,8 +162,12 @@ private struct SyncDeviceRow: View {
         // `.combine`, not `.ignore`: the row reads as one element and
         // keeps Revoke reachable as an action of it.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(device.fingerprint.prefix(8)), \(title), \(seen), \(badge)"))
+        .accessibilityLabel(Text("\(fingerprintHead), \(title), \(seen), \(badge)"))
     }
+
+    /// The head of the fingerprint, drawn and spoken alike, which is
+    /// what tells two unlabelled peers apart.
+    private var fingerprintHead: String { String(device.fingerprint.prefix(8)) }
 
     private var title: String {
         if device.thisDevice { return "this Mac" }

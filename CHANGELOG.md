@@ -1001,7 +1001,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.39.1; D-29). The clear ran through a main-actor hop after the timer
   fired, so a copy made between the two was cleared at once; it now
   runs inline. One pairing poll runs at a time, so a slow relay no
-  longer sees the same queued message posted twice. Signing out while a
+  longer sees the same queued message posted twice, and a poll from a
+  ceremony that was cancelled, answered or signed out of is dropped
+  rather than writing its verdict over the next ceremony's digits. A
+  verdict the core cannot answer shows as a failure instead of the
+  sheet vanishing. Signing out while a
   browser trip is still out no longer reads as the browser never
   returning, and no longer leaves a pump latched so that the next sign
   in never pumps.

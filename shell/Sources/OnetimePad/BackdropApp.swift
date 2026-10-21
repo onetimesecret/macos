@@ -187,7 +187,7 @@ struct BackdropApp: App {
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
-    /// Brings the editor presentation forward.
+    /// Brings the owner surface back, the editor window or the panel.
     let present: () -> Void
     let newShortcut: KeyboardShortcut?
     let openShortcut: KeyboardShortcut?
