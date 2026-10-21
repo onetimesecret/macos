@@ -159,7 +159,14 @@ the entire issue is complete.
   `copied_envelope_stays_a_string_with_the_same_lossy_utf8_semantics`,
   `raw_transfer_and_reconstruction_use_the_same_pointer_and_full_slice_length`,
   `ordinary_strings_share_the_exact_box_layout_and_free_path`,
-  `errors_and_size_drift_return_null_instead_of_transferring_a_partial_buffer`.
+  `errors_and_size_drift_return_null_instead_of_transferring_a_partial_buffer`,
+  `every_buffer_has_room_for_its_terminal_nul`,
+  `free_takes_back_only_what_this_module_handed_out`.
+- PR 270 review: `store.rs::an_insert_past_the_reserved_room_panics_in_tests_and_refuses_in_release`,
+  `store.rs::a_chip_past_the_reserved_room_panics_in_tests_and_refuses_in_release`,
+  `sheet.rs::segment_debug_output_never_prints_its_ink`,
+  `document.rs::doc_run_debug_output_never_prints_its_ink`,
+  `b64.rs::a_buffer_of_the_wrong_size_is_refused_not_overrun`.
 - `crates/ffi/src/lib.rs`:
   `content_routes_preserve_escaped_text_and_sorted_json_shapes`,
   `tab_projection_matches_the_previous_json_bytes_for_each_label_source`.
@@ -183,7 +190,9 @@ the entire issue is complete.
 - [ContentJSONDecodingTests.swift](../../shell/Tests/CompanionKitTests/ContentJSONDecodingTests.swift)
   is source-inspected: seven tests cover nil, success/error, invalid UTF-8,
   exactly-once release, synchronous pointer alias, long escaped Unicode and real
-  FFI release. Parent reports **7 passed within 221 focused Swift tests**.
+  FFI release. Parent reports **7 passed within 221 focused Swift tests**. The
+  PR 270 review added `testRustFreeLeavesStaticAndForeignStringsAlone` and
+  `testOnlyTheTwoOwnedHelpersReleaseCoreStrings`.
 
 The full local gate passed at `fe03c8cb`: formatting, workspace clippy, workspace
 tests with and without `test-util`, the universal test-util core build, Swift
@@ -249,3 +258,6 @@ server, destination app, window server, compression/swap, or prior copies.
   Swift boundary helper/tests and recorded parent-reported results separately
   from direct checks. Reader, resident-content, parser/dependency and AppKit
   limits remain; the full final gate is pending.
+- 2026-10-20: The PR 270 review recorded the free's registry of handed out
+  buffers, the single Swift release path, redacted `Segment`/`DocRun` debug
+  output and their tests in the contract rows above. This law remains draft.

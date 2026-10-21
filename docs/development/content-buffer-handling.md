@@ -295,7 +295,7 @@ behavior, not every allocation in the process.
 | `ffi/src/files.rs` | `file_runs_match_previous_json_bytes_for_empty_escaped_and_large_text`. |
 | `sync/src/secret_json.rs` | `escaped_json_matches_serde_at_exact_capacity`, `both_directions_of_size_drift_are_errors`, `errors_in_either_pass_are_returned`, `count_refuses_overflow`. |
 | `sync/src/envelope.rs` | `blob_clones_are_independent_zeroizing_owners_with_redacted_debug`, `escaped_fields_and_base64_still_decode`, `invalid_base64_and_truncated_envelopes_are_refused`, `every_variant_round_trips`. |
-| `sync/src/b64.rs`, `pad.rs` | `zeroizing_buffers_match_public_encoding_across_chunk_boundaries`, `round_trips_and_pads_to_the_bucket`. |
+| `sync/src/b64.rs`, `pad.rs` | `zeroizing_buffers_match_public_encoding_across_chunk_boundaries`, `round_trips_and_pads_to_the_bucket`, `a_buffer_of_the_wrong_size_is_refused_not_overrun`. |
 | `ffi/src/sync_session.rs` | `withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued`, `withdrawal_after_a_partial_seal_failure_publishes_only_the_surviving_ops`, `a_refused_seal_keeps_the_queue_for_the_next_tick`, `sealed_blobs_reach_the_wire_in_power_of_two_buckets`. |
 
 **Executed here:** the initial documentation pass ran 51 sync library tests and
@@ -313,6 +313,16 @@ Swift tests passed** with filters `ContentJSONDecodingTests`,
 `SealedNoteTests`, `FileDocumentTests`, `FileAccessTests`, and
 `PersistenceRoundTripTests`. Pointer alias at the injected decoder does not
 prove JSONDecoder internals avoid copies or decoded Strings are erased.
+
+**PR 270 review round:** the suite gained
+`testRustFreeLeavesStaticAndForeignStringsAlone` and
+`testOnlyTheTwoOwnedHelpersReleaseCoreStrings`, nine tests in all. Each
+crate's tests and clippy ran on the touched crates, `cargo test -p
+companion-ffi` with and without `test-util`, and the focused Swift suites
+`ContentJSONDecodingTests`, `CompanionClientTests`,
+`CompanionClientLanguageDetectionTests`, `FileAccessTests`,
+`SyncCeremonyTests` and `SyncOffSwitchTests` against a fresh test-util core.
+The full gate for this round is left to CI on the pushed branch.
 
 **Final gate at `fe03c8cb`:** all commands below passed after the Rust and Swift
 changes were committed:
@@ -334,6 +344,20 @@ passed. Both Rust configurations left the existing credential test
 in-memory credential/pasteboard and relay seams where specified; they do not
 validate a deployed relay, installed-app entitlements, real-pointer alternate
 placements, system-storage erasure, or allocator-wide wipe instrumentation.
+
+## Known tradeoffs
+
+**Each content route serializes twice.** `companion_sheet_document_json`,
+`companion_tabs_json`, `companion_file_runs_json` and `companion_ledger_json`
+run on UI refresh. `content_json::encode` walks the value once into a byte
+counter and once into the fixed buffer, so serde_json escapes every string of
+the document body twice, and a third scan over the output looks for an
+interior NUL. The single pass it replaced walked once, but grew a `String` and
+built `serde_json::Value` copies of the content, each growth leaving an
+unwiped allocation behind. This change accepts the extra walks for the fixed
+destination. No refresh has been measured; if a profile shows the counting
+pass, caching the length per document revision is one option to evaluate.
+`DeltaEnvelope::encode` (C35) makes the same trade on each queued envelope.
 
 ## Remaining blockers for #256 and Law 0004
 
