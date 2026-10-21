@@ -106,16 +106,31 @@ are looking at can be one of your files.
 
 ## Opening
 
-Three ways in, all of them explicit.
+Four ways in, all of them explicit.
 
-- **Open panel.** File > Open raises the standard macOS open panel,
-  filtered to plain text and Markdown. The panel is the shell's job.
+- **Open panel.** File > Open raises the standard macOS open panel for
+  a single file. It sets no type filter, so any file can be chosen; its
+  message asks for a UTF-8 text file. The panel is the shell's job.
 - **Drag onto the pad.** Dropping a file onto the pad opens it. A drop
   of several files opens each in its own tab. A drop of a file type the
   pad does not open is refused with a notice naming the type, and
   nothing is inserted into the page under the cursor. This matters:
   dropping a file must never silently turn into pasting its bytes into
   a staged page.
+- **Open from the Finder.** The bundle declares plain text with the
+  Editor role and the Alternate rank, so Open With lists the pad, and
+  the pad is not preferred as the default app for those files. A file
+  opened this way, or dropped on the Dock icon, takes the drop's path
+  and selects the editor window. At launch it waits until the open
+  files are restored, while an open or save panel is up it waits until
+  the panel returns, and while a dirty file's close decision is showing
+  under the multiple pads experiment it waits until the decision is
+  answered. Known limits: macOS types some text files as plain data
+  rather than text, among them dotfiles such as `.gitignore` and
+  `.zshrc` and names such as `Dockerfile`, and Open With does not offer
+  the pad for those; File > Open and a drop still take them.
+  Every installed build registers the same declaration, so a debug
+  build beside the installed app is a second entry under Open With.
 - **Reopening on relaunch.** The pad remembers which files were open,
   in what order, with what selection, and reopens them at launch. It
   remembers them by URL bookmark, so a file that moved or was renamed

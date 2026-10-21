@@ -944,6 +944,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Finder opens text files in the pad** (app 0.38.1; the file
+  editing spec's Opening section). The bundle now declares plain text,
+  which takes in Markdown and source files, with the Editor role and the
+  Alternate rank, so Open With lists the pad instead of greying it out,
+  and the pad is not preferred as the default app for any of them. A
+  file opened from the Finder, or dropped on the Dock icon, opens as a
+  drop onto the pad does and selects the editor window. At launch the
+  open waits until the files the last session left open are restored.
+  While an open or save panel is up it waits until the panel returns,
+  and while a dirty file's close decision is showing under the
+  multiple pads experiment it waits until the decision is answered.
+
 - **A refusal over an object that no longer stood never says a page
   expired** (app 0.36.0; `companion-core` 0.32.0, `companion-ffi`
   0.40.0; Law 0001's expiry row, issue #170). Copy decrypted, Copy

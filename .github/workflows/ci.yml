@@ -142,6 +142,19 @@ jobs:
           sudden="$(plutil -extract NSSupportsSuddenTermination raw "dist/OnetimePad Debug.app/Contents/Info.plist")"
           test "$sudden" = "true" \
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
+          # The Finder's Open With (BundleDeclarationTests pins the source
+          # plist): one plain text type, Editor and Alternate, and no
+          # NSDocumentClass, so cmd-n stays with page::New (issue #77).
+          plist="dist/OnetimePad Debug.app/Contents/Info.plist"
+          types="$(plutil -extract CFBundleDocumentTypes raw "$plist")"
+          role="$(plutil -extract CFBundleDocumentTypes.0.CFBundleTypeRole raw "$plist")"
+          rank="$(plutil -extract CFBundleDocumentTypes.0.LSHandlerRank raw "$plist")"
+          uti="$(plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$plist")"
+          test "$types/$role/$rank/$uti" = "1/Editor/Alternate/public.plain-text" \
+            || { echo "expected 1/Editor/Alternate/public.plain-text, got: $types/$role/$rank/$uti" >&2; exit 1; }
+          if plutil -extract CFBundleDocumentTypes.0.NSDocumentClass raw "$plist" >/dev/null 2>&1; then
+            echo "CFBundleDocumentTypes.0 names an NSDocumentClass; cmd-n belongs to page::New" >&2; exit 1
+          fi
           # The pre-signature digest is the published artifact; an
           # empty file means the hash pipeline broke silently.
           test -s "dist/OnetimePad Debug.presig.sha256" \
@@ -219,6 +232,17 @@ jobs:
           sudden="$(plutil -extract NSSupportsSuddenTermination raw "dist/OnetimePad Local.app/Contents/Info.plist")"
           test "$sudden" = "true" \
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
+          # The document type, on the plist that ships; the debug job says why.
+          plist="dist/OnetimePad Local.app/Contents/Info.plist"
+          types="$(plutil -extract CFBundleDocumentTypes raw "$plist")"
+          role="$(plutil -extract CFBundleDocumentTypes.0.CFBundleTypeRole raw "$plist")"
+          rank="$(plutil -extract CFBundleDocumentTypes.0.LSHandlerRank raw "$plist")"
+          uti="$(plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$plist")"
+          test "$types/$role/$rank/$uti" = "1/Editor/Alternate/public.plain-text" \
+            || { echo "expected 1/Editor/Alternate/public.plain-text, got: $types/$role/$rank/$uti" >&2; exit 1; }
+          if plutil -extract CFBundleDocumentTypes.0.NSDocumentClass raw "$plist" >/dev/null 2>&1; then
+            echo "CFBundleDocumentTypes.0 names an NSDocumentClass; cmd-n belongs to page::New" >&2; exit 1
+          fi
           test -s "dist/OnetimePad Local.presig.sha256" \
             || { echo "dist/OnetimePad Local.presig.sha256 is missing or empty" >&2; exit 1; }
           cmp THIRD_PARTY_NOTICES.md "dist/OnetimePad Local.app/Contents/Resources/THIRD_PARTY_NOTICES.md"
