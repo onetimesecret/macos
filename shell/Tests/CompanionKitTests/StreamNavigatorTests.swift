@@ -368,6 +368,16 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(layout.trackBottom, layout.contentHeight - StreamNavigator.Metrics.bottom)
         XCTAssertEqual(layout.anchors.last?.y, layout.trackBottom, "the map stops short of the drawing's foot")
         assertLaidOutInOrder(layout, height: height)
+
+        // A column shorter than its two margins, as a collapsing column publishes.
+        let tall = RollGeometry(extents: [], documentHeight: 1000, viewportTop: 0, viewportHeight: 300)
+        let short = StreamNavigator.layout(nodes: threeDays(pagesPerDay: 12), geometry: tall, height: 8, width: 102)
+        XCTAssertEqual(short.placed.first?.y, StreamNavigator.Metrics.top)
+        for placed in short.placed {
+            XCTAssertGreaterThanOrEqual(
+                placed.drawnTop, 0, "a row was placed above a short column at \(placed.drawnTop)")
+        }
+        assertLaidOutInOrder(short, height: 8)
     }
 
     /// A selection moving to a row outside the clip asks for the least scroll that shows it,
@@ -391,12 +401,74 @@ final class StreamNavigatorTests: XCTestCase {
     }
 
     /// The column reveals the active node once, and again only after the selection moved
-    /// on and back; a reveal that could not be made stays due.
-    func testTheColumnRevealsANodeOnceUntilTheSelectionMoves() {
-        XCTAssertTrue(StreamNavigator.revealIsDue(for: 11, after: nil), "the first node was not revealed")
-        XCTAssertFalse(StreamNavigator.revealIsDue(for: 11, after: 11), "a layout moving the row revealed it again")
-        XCTAssertTrue(StreamNavigator.revealIsDue(for: 22, after: 11), "the selection moved and nothing scrolled")
-        XCTAssertTrue(StreamNavigator.revealIsDue(for: 11, after: 22), "a node selected again was not revealed")
+    /// on and back, or after the roll left and came back; a reveal that could not be made,
+    /// and so was never recorded, stays due.
+    func testTheColumnRevealsANodeOnceUntilTheSelectionMovesOrTheRollLeaves() {
+        var memory = StreamNavigator.RevealMemory()
+        XCTAssertTrue(memory.isDue(11), "the first node was not revealed")
+        XCTAssertTrue(memory.isDue(11), "a reveal that was never made stopped being due")
+        memory.record(11)
+        XCTAssertFalse(memory.isDue(11), "a layout moving the row revealed it again")
+        XCTAssertTrue(memory.isDue(22), "the selection moved and nothing scrolled")
+        memory.record(22)
+        XCTAssertTrue(memory.isDue(11), "a node selected again was not revealed")
+        memory.record(11)
+        XCTAssertFalse(memory.isDue(nil), "the roll leaving asked for a scroll")
+        XCTAssertTrue(memory.isDue(11), "the roll came back and its node stayed out of view")
+    }
+
+    /// A row's ground begins at the note or the mark it keeps above itself, and at its own
+    /// sliver box when it keeps none, so a reveal brings the note in with the row.
+    func testARowsGroundBeginsAtItsNoteWhenItKeepsOne() throws {
+        let layout = StreamNavigator.layout(
+            nodes: nodes([
+                slot(tab: 1, page: 11, day: 0),
+                slot(tab: 2, page: 22, day: -3),
+                slot(tab: 3, page: 33, day: -9),
+            ]),
+            geometry: .unmeasured, height: 400, width: 102)
+        let plain = try XCTUnwrap(layout.placed.first)
+        XCTAssertEqual(plain.node.emptyDays, 0, "the control")
+        XCTAssertEqual(plain.groundTop, plain.rowTop)
+        let noted = layout.placed[1]
+        XCTAssertEqual(noted.node.emptyDays, 2, "the control")
+        XCTAssertEqual(noted.groundTop, noted.y - StreamNavigator.Metrics.gapBand)
+        XCTAssertEqual(noted.noteY, noted.groundTop + 1, "the note is drawn off its row's ground")
+        let marked = layout.placed[2]
+        XCTAssertTrue(marked.node.trailing, "the control")
+        XCTAssertEqual(
+            marked.groundTop,
+            marked.y - StreamNavigator.Metrics.gapBandAtWindow - StreamNavigator.Metrics.windowReserve)
+        XCTAssertLessThan(try XCTUnwrap(layout.windowY), marked.rowTop, "the window mark is drawn below its row's box")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(layout.windowY), marked.groundTop, "the window mark is drawn off its row's ground")
+    }
+
+    /// On a dense rail the band lives in the drawing's coordinates and stays inside it, on
+    /// the first layout and on the viewport only path alike, at either end of the roll.
+    func testADenseRailsBandStaysInsideTheDrawingOnTheViewportOnlyPath() throws {
+        let nodes = threeDays(pagesPerDay: 12)
+        let top = RollGeometry(extents: [], documentHeight: 10_000, viewportTop: 0, viewportHeight: 300)
+        let layout = StreamNavigator.layout(nodes: nodes, geometry: top, height: 480, width: 102)
+        XCTAssertGreaterThan(layout.contentHeight, 480, "the control: the column fits its rows")
+        for viewportTop: CGFloat in [0, 4_850, 9_700] {
+            let geometry = RollGeometry(
+                extents: [], documentHeight: 10_000, viewportTop: viewportTop, viewportHeight: 300)
+            let fresh = try XCTUnwrap(
+                StreamNavigator.layout(nodes: nodes, geometry: geometry, height: 480, width: 102).band)
+            let updated = try XCTUnwrap(StreamNavigator.updatingViewport(in: layout, geometry: geometry).band)
+            XCTAssertEqual(updated, fresh, "the viewport only path drew the band elsewhere at \(viewportTop)")
+            XCTAssertGreaterThanOrEqual(updated.y, 0, "the band rose above the drawing at \(viewportTop)")
+            XCTAssertLessThanOrEqual(
+                updated.y + updated.height, layout.contentHeight,
+                "the band passed the drawing's foot at \(viewportTop)")
+        }
+        let foot = try XCTUnwrap(
+            StreamNavigator.updatingViewport(
+                in: layout,
+                geometry: RollGeometry(
+                    extents: [], documentHeight: 10_000, viewportTop: 9_700, viewportHeight: 300)
+            ).band)
+        XCTAssertGreaterThan(foot.y + foot.height, 480, "the control: the band at the roll's end sits inside the column")
     }
 
     /// A wheel over the column turns the roll while the drawing fits the column, the foot's

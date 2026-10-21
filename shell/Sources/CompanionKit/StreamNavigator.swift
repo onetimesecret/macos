@@ -364,6 +364,9 @@ public enum StreamNavigator {
         public let y: CGFloat
         /// The height of the drawn row and of the box the slivers keep clear of alike.
         public let rowHeight: CGFloat
+        /// Where the row's ground begins: the note or the window mark reserved above it,
+        /// or the sliver box when it keeps none. A reveal brings the ground in with the row.
+        public let groundTop: CGFloat
         /// Where the empty days note is drawn, when there is one.
         public let noteY: CGFloat?
         /// The top of the page in the document, for the jump.
@@ -422,10 +425,6 @@ public enum StreamNavigator {
         public let band: Band?
         public let activeSegment: Segment?
         public let slivers: [Sliver]
-        /// The rail height this document-proportional layout was prepared
-        /// for. Viewport-only updates reuse it rather than accepting an
-        /// unchecked height from a caller.
-        let sourceHeight: CGFloat
         /// How tall the drawing is: the column's height, or more when the rows outrun it,
         /// in which case the column scrolls (#277). `.empty` alone reads 0, having no column.
         public let contentHeight: CGFloat
@@ -456,7 +455,7 @@ public enum StreamNavigator {
 
         public static let empty = Layout(
             placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
-            activeSegment: nil, slivers: [], sourceHeight: 0, contentHeight: 0, anchors: []
+            activeSegment: nil, slivers: [], contentHeight: 0, anchors: []
         )
     }
 
@@ -508,12 +507,30 @@ public enum StreamNavigator {
         return nil
     }
 
-    /// Whether the column reveals a node again: once per active node,
-    /// so a later layout that moves the row leaves the reader's own
-    /// scrolling alone, and a reveal that could not be made is asked
-    /// for again (#277).
-    public static func revealIsDue(for id: UInt64, after revealed: UInt64?) -> Bool {
-        revealed != id
+    /// What the column remembers of its reveals: the node last brought
+    /// into view. A node is revealed once, so a later layout that moves
+    /// its row leaves the reader's own scrolling alone, and a reveal
+    /// that could not be made stays due. No active node at all (a file
+    /// or the ledger showing) forgets, so the same node is revealed
+    /// again when the roll comes back (#277).
+    public struct RevealMemory: Equatable, Sendable {
+        public private(set) var revealed: UInt64?
+
+        public init() {}
+
+        /// Whether a reveal of `id` is due; nil is the roll leaving.
+        public mutating func isDue(_ id: UInt64?) -> Bool {
+            guard let id else {
+                revealed = nil
+                return false
+            }
+            return revealed != id
+        }
+
+        /// The reveal of `id` was made.
+        public mutating func record(_ id: UInt64) {
+            revealed = id
+        }
     }
 
     /// Whether a wheel over the column turns the roll (D-38) rather
@@ -577,7 +594,7 @@ public enum StreamNavigator {
         let clearances = nodes.indices.map { index in
             index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
         }
-        let span = height - Metrics.top - Metrics.bottom
+        let span = max(0, height - Metrics.top - Metrics.bottom)
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
         for index in 1..<ys.count {
             ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
@@ -598,6 +615,7 @@ public enum StreamNavigator {
             Placed(
                 node: nodes[index], y: nodeYs[index],
                 rowHeight: heights[index] - reserves[index],
+                groundTop: min(ys[index], nodeYs[index] - lifts[index] - 1),
                 noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
@@ -620,9 +638,7 @@ public enum StreamNavigator {
         if available > 2 {
             // A node's words, and the note and the mark reserved above
             // them, are ground no sliver may cross.
-            let rows = placed.indices.map {
-                (min(ys[$0], placed[$0].rowTop), placed[$0].rowTop + placed[$0].rowHeight)
-            }
+            let rows = placed.map { ($0.groundTop, $0.rowTop + $0.rowHeight) }
             for extent in geometry.extents {
                 for line in extent.lines {
                     // Whole points: a one point sliver is drawn on a
@@ -651,7 +667,6 @@ public enum StreamNavigator {
             band: band,
             activeSegment: segment,
             slivers: slivers.values.sorted { $0.y < $1.y },
-            sourceHeight: height,
             contentHeight: contentHeight,
             anchors: anchors
         )
@@ -679,7 +694,6 @@ public enum StreamNavigator {
             band: band,
             activeSegment: layout.activeSegment,
             slivers: slivers,
-            sourceHeight: layout.sourceHeight,
             contentHeight: layout.contentHeight,
             anchors: layout.anchors
         )

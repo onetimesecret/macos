@@ -421,20 +421,26 @@ struct StreamNavigatorView: View {
     @State private var scrollDrag: StreamNavigator.ScrollDrag?
     @State private var hoverID: UInt64?
     @State private var layoutCache = StreamNavigatorLayoutCache()
+    /// The width the clip gives the drawing, less a legacy scroller when the system shows one.
+    @State private var clipWidth: CGFloat?
 
     private typealias Metrics = StreamNavigator.Metrics
 
     var body: some View {
         GeometryReader { proxy in
+            let size = CGSize(width: clipWidth ?? proxy.size.width, height: proxy.size.height)
             let layout = layoutCache.layout(
-                nodes: nodes, geometry: roll.geometry,
-                height: proxy.size.height, width: proxy.size.width
-            )
+                nodes: nodes, geometry: roll.geometry, height: size.height, width: size.width)
             // Rows that outrun the column lengthen the drawing, and the column scrolls to
             // reach them inside its clip, with the overlay scroller a sidebar shows (#277).
             ScrollView(.vertical, showsIndicators: true) {
-                stream(layout, size: proxy.size)
+                stream(layout, size: size)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background(GeometryReader { content in
+                        Color.clear.preference(key: ClipWidthKey.self, value: content.size.width)
+                    })
             }
+            .onPreferenceChange(ClipWidthKey.self) { clipWidth = $0 }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
@@ -443,6 +449,7 @@ struct StreamNavigatorView: View {
 
     /// The drawing itself, `layout.contentHeight` tall and clipped by the scroll view around it.
     private func stream(_ layout: StreamNavigator.Layout, size: CGSize) -> some View {
+        // The one clamp: `.empty` reads 0 and the drawing still fills the column.
         let contentHeight = max(size.height, layout.contentHeight)
         // A wheel over a column that scrolls turns the column; over one that fits, it
         // turns the roll (D-38), through a relay only the owner's rail installs, since a
@@ -451,7 +458,7 @@ struct StreamNavigatorView: View {
         let relays = drivesRoll
             && StreamNavigator.relaysWheel(contentHeight: layout.contentHeight, columnHeight: size.height)
         let reveal = layout.placed.first { $0.node.active }.map {
-            RailReveal.Request(id: $0.id, rowTop: $0.drawnTop, rowHeight: $0.rowHeight)
+            RailReveal.Request(id: $0.id, top: $0.groundTop, bottom: $0.drawnTop + $0.rowHeight)
         }
         return ZStack(alignment: .topLeading) {
             // Bare track: a click here scrolls the roll to the
@@ -810,10 +817,11 @@ private final class StreamNavigatorLayoutCache {
 /// hop on the main queue, for the content to have taken the new row
 /// heights before the clip is measured against them.
 private struct RailReveal: NSViewRepresentable {
+    /// The active node's ground, from the note or mark above its row through the row's bottom.
     struct Request: Equatable {
         let id: UInt64
-        let rowTop: CGFloat
-        let rowHeight: CGFloat
+        let top: CGFloat
+        let bottom: CGFloat
     }
 
     let request: Request?
@@ -830,40 +838,59 @@ private struct RailReveal: NSViewRepresentable {
 }
 
 private final class RailRevealView: NSView {
-    private var revealed: UInt64?
+    private var memory = StreamNavigator.RevealMemory()
+    /// The request standing when the hop runs, so two in one hop make one move, the last.
+    private var pending: RailReveal.Request?
 
     /// Flipped so a row's top is measured as the layout measures it, down from the column's top.
     override var isFlipped: Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Scroll the row into the clip, by `StreamNavigator.revealIsDue`: the node is recorded
-    /// as revealed only once its row was measured against the clip, so an attempt made
+    /// Scroll the ground into the clip, by `StreamNavigator.RevealMemory`: the node is
+    /// recorded only once its ground was measured against the clip, so an attempt made
     /// before the view sits under a scroll view is made again by the next update.
     func reveal(_ request: RailReveal.Request?) {
-        guard let request, StreamNavigator.revealIsDue(for: request.id, after: revealed) else { return }
-        DispatchQueue.main.async { [weak self] in self?.scroll(to: request) }
+        let due = memory.isDue(request?.id)
+        guard let request, due else {
+            if request == nil { pending = nil }
+            return
+        }
+        pending = request
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let next = self.pending else { return }
+            self.pending = nil
+            self.scroll(to: next)
+        }
     }
 
     private func scroll(to request: RailReveal.Request) {
-        guard StreamNavigator.revealIsDue(for: request.id, after: revealed),
+        guard memory.isDue(request.id),
               let scrollView = enclosingScrollView, let document = scrollView.documentView,
               // The offset is a distance down from the top, which is the clip origin's y
               // only over a flipped document, the one SwiftUI's scroll view keeps.
               document.isFlipped
         else { return }
-        revealed = request.id
+        memory.record(request.id)
         let clip = scrollView.contentView
-        let row = convert(
-            NSRect(x: 0, y: request.rowTop, width: 1, height: request.rowHeight), to: document)
+        let ground = convert(
+            NSRect(x: 0, y: request.top, width: 1, height: request.bottom - request.top), to: document)
         let visible = clip.documentVisibleRect
         guard let offset = StreamNavigator.revealOffset(
-            rowTop: row.minY, rowHeight: row.height,
+            rowTop: ground.minY, rowHeight: ground.height,
             visibleTop: visible.minY, visibleHeight: visible.height,
             contentHeight: document.frame.height)
         else { return }
         clip.scroll(to: NSPoint(x: visible.minX, y: offset))
         scrollView.reflectScrolledClipView(clip)
+    }
+}
+
+/// The width the scroll view's clip gives the drawing.
+private struct ClipWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
     }
 }
 
