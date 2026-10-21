@@ -143,6 +143,9 @@ final class SyncCeremonyTests: XCTestCase {
         private let lock = NSLock()
         private var count = 0
         private var waiters: [CheckedContinuation<Void, Never>] = []
+        /// A latch, so a round counted but not yet parked when the
+        /// release comes resumes at once rather than parking for good.
+        private var released = false
 
         var calls: Int { lock.withLock { count } }
 
@@ -151,7 +154,12 @@ final class SyncCeremonyTests: XCTestCase {
         func poll() async -> SyncPairingStage? {
             let n = lock.withLock { count += 1; return count }
             await withCheckedContinuation { continuation in
-                lock.withLock { waiters.append(continuation) }
+                let resumeNow = lock.withLock {
+                    if released { return true }
+                    waiters.append(continuation)
+                    return false
+                }
+                if resumeNow { continuation.resume() }
             }
             return n == 1
                 ? SyncPairingStage(stage: "failed", sas: nil, reason: "stale")
@@ -159,7 +167,12 @@ final class SyncCeremonyTests: XCTestCase {
         }
 
         func release() {
-            let held = lock.withLock { let held = waiters; waiters = []; return held }
+            let held = lock.withLock {
+                released = true
+                let held = waiters
+                waiters = []
+                return held
+            }
             for continuation in held { continuation.resume() }
         }
     }
@@ -207,6 +220,8 @@ final class SyncCeremonyTests: XCTestCase {
         // belongs to the old session and is dropped, so nothing but
         // the sign-out itself can clear the in-flight flag.
         sync.pumping = true
+        // A ceremony is up as well.
+        sync.pairingStage = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
         // And an earlier trip's failure still stands on the surface.
         sync.settleSignin(.refused("refused"), session: sync.session)
         XCTAssertNotNil(sync.signinFailure)

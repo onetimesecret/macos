@@ -322,7 +322,6 @@ public final class SyncController: ObservableObject {
         // earlier failure's sentence goes too: signed out is the whole
         // state.
         endSession()
-        endCeremony()
         retryTimer?.invalidate()
         quietRefusals = 0
         signinGivenUp = false
@@ -368,7 +367,6 @@ public final class SyncController: ObservableObject {
         let wasAttached = attached
         attached = false
         endSession()
-        endCeremony()
         // The switch ends a browser trip too; the core would persist a
         // late grant before the shell could decline it.
         trouble = nil
@@ -636,6 +634,12 @@ public final class SyncController: ObservableObject {
         // Either way the leg that was polling is over: a poll out
         // before the verdict must not write the digits back over it.
         endCeremony()
+        guard let stage else {
+            // The core answered nothing: a sheet that vanished without
+            // a word would be worse than a failure it can read.
+            pairingStage = SyncPairingStage(stage: "failed", sas: nil, reason: "no_ceremony")
+            return
+        }
         pairingStage = stage
         if matched { armPairingPoll() }
     }
@@ -662,6 +666,10 @@ public final class SyncController: ObservableObject {
     private func endSession() {
         session &+= 1
         pumping = false
+        // A ceremony belongs to its session: the poll is stamped with
+        // both, so a session end that left the ceremony standing would
+        // drop the poll with its flag raised.
+        endCeremony()
     }
 
     /// Nothing is arriving now, so no page says something is.
