@@ -612,7 +612,8 @@ and with it on, which draws the pads rail.
       page of a day takes the drop meant for it, the TextEdit word
       stands there as a new sealed object, the decrypted drag shows no
       operation and places nothing, and afterwards a click on the node
-      still selects its page and scrolls the roll to it, its hover fill
+      still selects its page and scrolls the roll to it, a VoiceOver
+      press on the node does what the click does, its hover fill
       and tooltip show as before, and in the stream navigator a click
       on the bare track still scrolls and a drag along the column still
       scrubs. **Fail:** the cursor never changes over a node (AppKit
@@ -660,9 +661,9 @@ and with it on, which draws the pads rail.
       node under the pointer, whether or not the rail scrolled.
       **Fail:** the run goes to any other page.
 
-| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Rail too dense to fit |
+| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, VoiceOver press, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Rail too dense to fit (stream navigator) or a node below the fold (pads rail) |
 |---|---|---|---|---|---|---|---|
 | Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
-| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (below the fold) |
+| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
 | Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |
-| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run (below the fold) |
+| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |

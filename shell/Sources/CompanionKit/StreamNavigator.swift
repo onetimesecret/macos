@@ -362,7 +362,8 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The box the slivers keep clear of.
+        /// The top of the box around the node's words, which the slivers keep clear of;
+        /// `drawnTop` is where the row is drawn, `Metrics.rowLift` above the centre line.
         public let rowTop: CGFloat
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
