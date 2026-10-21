@@ -2907,7 +2907,8 @@ mod tests {
         fragments.extend(fragments_of(CHIP_NOTE));
         let mut checked = 0usize;
         for record in store.ledger() {
-            let rendered = format!("{record:?}");
+            // The title itself too: the record's Debug redacts it, and the walk must not go blind.
+            let rendered = format!("{record:?} title={}", record.title());
             for fragment in &fragments {
                 assert!(
                     !rendered.contains(fragment.as_str()),
