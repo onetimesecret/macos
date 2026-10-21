@@ -476,8 +476,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   placed at the end of the page a click on that node selects, by the
   routes a drop on a tab takes and behind the same gates: only on the
   raised card, only in the window that owns the page content, and never
-  while a name or note has the keys. Today's empty node takes no drop,
-  so a drop makes no page. The node's click and its scroll of the roll
+  while a name or note has the keys. A node with no page, such as
+  today's while it is empty, takes no drop, so a drop makes no page. A
+  row that a rail too full to fit has pushed above the column, over the
+  Pad heading, takes none either (#277). The node's click and its scroll of the roll
   are unchanged. The Tabs down the side and the Timeline along the
   bottom, which no layout draws since ADR-0037, take none.
 

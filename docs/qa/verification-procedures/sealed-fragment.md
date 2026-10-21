@@ -650,10 +650,19 @@ and with it on, which draws the pads rail.
       inside the column moves the run to the end of that row's page.
       **Fail:** the drop above the column places the run anywhere, or
       the row inside the column takes no drop.
+- [ ] **A drop on a pads rail node below the fold** (Law 0001, drag
+      row). The pads rail scrolls instead of packing, and nothing in
+      this change scrolls it during a drag. With pads on, make pages
+      until a node sits below the rail's visible bottom. Drag a run
+      from a page to the rail's lower edge, hold for two seconds, and
+      write down whether the rail scrolls. Release over the last node
+      in view. **Pass:** the run moves to the end of the page of the
+      node under the pointer, whether or not the rail scrolled.
+      **Fail:** the run goes to any other page.
 
 | Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Rail too dense to fit |
 |---|---|---|---|---|---|---|---|
 | Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
-| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | n/a: the pads rail scrolls |
+| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (below the fold) |
 | Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |
-| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | n/a: the pads rail scrolls |
+| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run (below the fold) |
