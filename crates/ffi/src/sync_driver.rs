@@ -1510,7 +1510,37 @@ pub(crate) struct PairingState {
     /// Wire messages queued for posting, drained by the poll and kept
     /// on a transport failure so the next poll retries.
     outgoing: Vec<serde_json::Value>,
+    /// The message one poll round is posting right now, claimed under
+    /// the lock so an overlapping round cannot post it too (issue #280).
+    sending: Option<serde_json::Value>,
     step: PairingStep,
+}
+
+impl PairingState {
+    /// Take the head for one sender; nothing while another round sends.
+    fn claim_head(&mut self) -> Option<serde_json::Value> {
+        if self.sending.is_some() || self.outgoing.is_empty() {
+            return None;
+        }
+        let message = self.outgoing.remove(0);
+        self.sending = Some(message.clone());
+        Some(message)
+    }
+
+    /// Give the claim back: delivered, the message is gone; otherwise it
+    /// is the head again for the next poll.
+    fn release_head(&mut self, delivered: bool) {
+        if let Some(message) = self.sending.take()
+            && !delivered
+        {
+            self.outgoing.insert(0, message);
+        }
+    }
+
+    /// Whether a post is still owed, queued or on the wire.
+    fn owes_a_post(&self) -> bool {
+        !self.outgoing.is_empty() || self.sending.is_some()
+    }
 }
 
 enum PairingStep {
@@ -1563,7 +1593,7 @@ fn stage_word(step: &PairingStep) -> &'static str {
 fn stage_json(flow: &PairingState) -> serde_json::Value {
     // A ceremony that still owes a post reads `confirmed`, not `done`:
     // the shell stops polling at `done`, and only the poll drains.
-    let stage = if matches!(flow.step, PairingStep::Done) && !flow.outgoing.is_empty() {
+    let stage = if matches!(flow.step, PairingStep::Done) && flow.owes_a_post() {
         "confirmed"
     } else {
         stage_word(&flow.step)
@@ -1624,6 +1654,7 @@ fn pairing_begin(companion: &mut Companion, inviter: bool) -> Result<(), Refusal
     companion.sync.pairing = Some(PairingState {
         since: 0,
         outgoing,
+        sending: None,
         step,
     });
     Ok(())
@@ -1795,43 +1826,54 @@ pub(crate) fn pairing_confirm(companion: &mut Companion, matched: bool) -> serde
 /// report instead, `signed_out` when no request can be built.
 fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
     loop {
+        // The head is claimed under the lock before the send, so two
+        // overlapping rounds cannot both post it: the second finds the
+        // claim and leaves the queue to the first (issue #280).
         let staged = {
-            let Ok(guard) = handle.inner.lock() else {
+            let Ok(mut guard) = handle.inner.lock() else {
                 return Err(serde_json::json!({ "stage": "failed", "reason": "poisoned" }));
             };
-            let Some(flow) = guard.sync.pairing.as_ref() else {
-                return Err(serde_json::json!({ "stage": "idle" }));
-            };
             let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
-            flow.outgoing.first().cloned().map(|message| {
-                let sent = message.clone();
+            let request = {
+                let Some(flow) = guard.sync.pairing.as_mut() else {
+                    return Err(serde_json::json!({ "stage": "idle" }));
+                };
+                flow.claim_head()
+            }
+            .map(|message| {
                 guard
                     .sync
                     .engine
                     .as_ref()
                     .and_then(|engine| engine.session.post_pairing_request(message))
                     .zip(transport)
-                    .map(|(request, transport)| (sent, request, transport))
-            })
+            });
+            if let Some(None) = request
+                && let Some(flow) = guard.sync.pairing.as_mut()
+            {
+                flow.release_head(false);
+            }
+            request
         };
         match staged {
             None => return Ok(()),
             Some(None) => {
                 return Err(serde_json::json!({ "stage": "failed", "reason": "signed_out" }));
             }
-            Some(Some((sent, request, transport))) => match transport.send(request) {
-                Ok(response) if (200..300).contains(&response.status) => {
-                    // Remove the head only if it is still this post;
-                    // the queue may have moved while unlocked.
-                    if let Ok(mut guard) = handle.inner.lock()
-                        && let Some(flow) = guard.sync.pairing.as_mut()
-                        && flow.outgoing.first() == Some(&sent)
-                    {
-                        flow.outgoing.remove(0);
-                    }
+            Some(Some((request, transport))) => {
+                let delivered = matches!(
+                    transport.send(request),
+                    Ok(response) if (200..300).contains(&response.status)
+                );
+                if let Ok(mut guard) = handle.inner.lock()
+                    && let Some(flow) = guard.sync.pairing.as_mut()
+                {
+                    flow.release_head(delivered);
                 }
-                _ => return Ok(()),
-            },
+                if !delivered {
+                    return Ok(());
+                }
+            }
         }
     }
 }
@@ -3595,6 +3637,36 @@ mod tests {
 
     fn take_outgoing(companion: &mut Companion) -> Vec<serde_json::Value> {
         std::mem::take(&mut companion.sync.pairing.as_mut().unwrap().outgoing)
+    }
+
+    #[test]
+    fn one_round_claims_the_head_and_a_failed_send_puts_it_back() {
+        let mut flow = PairingState {
+            since: 0,
+            outgoing: vec![serde_json::json!(1), serde_json::json!(2)],
+            sending: None,
+            step: PairingStep::Done,
+        };
+        assert_eq!(flow.claim_head(), Some(serde_json::json!(1)));
+        assert_eq!(
+            flow.claim_head(),
+            None,
+            "an overlapping round posts nothing while the head is claimed"
+        );
+        assert_eq!(
+            stage_json(&flow)["stage"],
+            "confirmed",
+            "a message on the wire is still owed"
+        );
+        flow.release_head(false);
+        assert_eq!(flow.outgoing, vec![serde_json::json!(1), serde_json::json!(2)]);
+        assert_eq!(flow.claim_head(), Some(serde_json::json!(1)));
+        flow.release_head(true);
+        assert_eq!(flow.outgoing, vec![serde_json::json!(2)]);
+        assert_eq!(flow.claim_head(), Some(serde_json::json!(2)));
+        flow.release_head(true);
+        assert!(flow.outgoing.is_empty());
+        assert_eq!(stage_json(&flow)["stage"], "done");
     }
 
     fn stage_of(companion: &Companion) -> serde_json::Value {
