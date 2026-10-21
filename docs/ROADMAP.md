@@ -16,11 +16,11 @@ Every build ticket of the epic closed on 2026-10-16 and 2026-10-17 (#240 to #251
 - [#257 Sync: a sealed object never stalls a page's sync](https://github.com/onetimesecret/macos/issues/257), decided in principle by [ADR-0058](adr/0058-a-sealed-object-never-stalls-a-pages-sync.md), still proposed.
 - The epic closes with them.
 
-Decisions: [ADR-0042](adr/0042-a-sealed-name-is-a-shell-identifier.md) to [ADR-0047](adr/0047-name-value-copies-the-value-unquoted.md) (accepted 2026-10-16) and [ADR-0055](adr/0055-menus-and-buttons-use-the-platforms-wording.md) (accepted 2026-10-14). [#170](https://github.com/onetimesecret/macos/issues/170), the sealed object pasteboard model, is built and tested on `main` since PR 259; the issue stays open for the maintainer's hand checks before it closes.
+Decisions: [ADR-0042](adr/0042-a-sealed-name-is-a-shell-identifier.md) to [ADR-0047](adr/0047-name-value-copies-the-value-unquoted.md) (accepted 2026-10-16) and [ADR-0055](adr/0055-menus-and-buttons-use-the-platforms-wording.md) (accepted 2026-10-14). [#170](https://github.com/onetimesecret/macos/issues/170), the sealed object pasteboard model, is built and tested on `main` across PRs 259 to 269; the issue stays open for the maintainer's hand checks before it closes.
 
 ### [Review follow-ups](https://github.com/onetimesecret/macos/milestone/6)
 
-The faults and chores that the October reviews left behind, each small enough to go alone: the Timeline drawing over the Pad heading when too dense (#277), the page under the editor not taking a peer's edit (#276), the reading-place follow-ups from PR 271 (#278), the core posting a queued pairing message twice under overlapping rounds (#280), the two views no layout draws (#275), and the server contract's re-read trigger (#266).
+The faults and chores that the October reviews left behind, each small enough to go alone: the Timeline drawing over the Pad heading when too dense ([#277](https://github.com/onetimesecret/macos/issues/277), a choice between scrolling, compressing and folding that waits on the maintainer), the page under the editor not taking a peer's edit ([#276](https://github.com/onetimesecret/macos/issues/276)), the reading place follow ups from PR 271 ([#278](https://github.com/onetimesecret/macos/issues/278), [PR 284](https://github.com/onetimesecret/macos/pull/284)), the reading anchor's mixed edit fallback ([#283](https://github.com/onetimesecret/macos/issues/283)), the core posting a queued pairing message twice under overlapping rounds ([#280](https://github.com/onetimesecret/macos/issues/280), [PR 281](https://github.com/onetimesecret/macos/pull/281)), the two views no layout drew since ADR-0037, deleted ([#275](https://github.com/onetimesecret/macos/issues/275), [PR 285](https://github.com/onetimesecret/macos/pull/285)), and the server contract's re-read trigger ([#266](https://github.com/onetimesecret/macos/issues/266)).
 
 ### Proposals with no milestone
 
@@ -30,7 +30,7 @@ Filed and argued, not scheduled: [#155](https://github.com/onetimesecret/macos/i
 
 - File backed documents merged to `main` in PR 153 (September 2026): a content class that is a peer to pages, with the file on disk as the artifact, explicit save, and drafts staged in their own sealed file. [ADR-0028](adr/0028-file-backed-documents-are-a-peer-content-class.md) is still proposed, as are [ADR-0025](adr/0025-block-revision-history.md) (block revision history), [ADR-0056](adr/0056-inserting-a-checkpoint-keeps-the-timelines-chosen-sort.md), [ADR-0057](adr/0057-moved-content-lives-as-long-as-the-page-it-lands-on.md) and [ADR-0058](adr/0058-a-sealed-object-never-stalls-a-pages-sync.md). The behaviour of files is written down in the [file backed documents specification](spec/feature/file-editing/README.md) and the code is mapped in [file-backed document implementation](development/file-backed-documents.md).
 - The [paradigms note](spec/feature/vertical-time-tabs/2026-0828-paradigms.md) keeps the parked questions, including the durable tab mapping that ADR-0011 section 6 requires before a second paradigm may ship. They stay parked until a second paradigm is wanted.
-- The last tagged release is v0.18.0 (2026-09-04). Everything since, 0.19.0 to 0.40.0, is in the changelog's Unreleased section and has shipped through the TestFlight lane rather than a tag.
+- The last tagged release is v0.18.0 (2026-09-04). Everything since, 0.19.0 to 0.40.0, is in the changelog's Unreleased section and is unreleased by tag.
 
 ## Completed milestones
 
