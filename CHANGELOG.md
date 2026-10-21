@@ -980,6 +980,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The drafts file is read before it is written** (app 0.40.9; issue
+  #296). The model writes the drafts file only once its restore has
+  run, where before only the app layer's call order kept a save from
+  writing over a file nobody had read. An existing drafts file that
+  would not open is left alone for the session, as the state file
+  already is: the save settles rather than fails, the unsaved file
+  edits stay owed in memory, and one line in the log says why. The
+  discard of an unreadable state file, which takes the drafts file with
+  it, gives the drafts write back.
+
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
