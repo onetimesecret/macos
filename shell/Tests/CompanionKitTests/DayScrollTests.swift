@@ -595,30 +595,119 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.scroll.contentView.bounds.minY, top0, accuracy: 0.5)
     }
 
-    /// A peer's applied edit restates a quiet page and leaves the page a surface shows alone (#276);
-    /// the answer comes from the model's own view of what is mounted (#278, point 4).
-    func testAPeersEditRestatesAQuietPageAndNotTheMountedOne() throws {
+    /// A peer's applied edit restates a quiet page and merges into the page a surface shows, one
+    /// stretch at a time, so a selection outside the stretches follows the text and the next
+    /// keystroke is read from the merged text (#276); the model's own view of what is mounted
+    /// answers which is which (#278, point 4).
+    func testAPeersEditRestatesAQuietPageAndMergesIntoTheMountedOne() throws {
         let model = try makeModel()
         let quiet = try page(in: model, saying: "quiet before")
-        let mounted = try page(in: model, saying: "mounted before")
+        let mounted = try page(in: model, saying: "alpha beta gamma")
         let roll = try mountRoll(model: model)
         roll.stack.update(
             projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
         let editor = try XCTUnwrap(roll.stack.editor)
-        XCTAssertTrue(editor.textStorage === model.storage(for: mounted))
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(storage === model.storage(for: mounted))
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 6, length: 4))
         XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
-        XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
         // A manager with no text view, as a torn down editor leaves behind, shows the page to nobody.
         let stray = NSLayoutManager()
         model.storage(for: quiet).addLayoutManager(stray)
+        // The peer wrote at both ends of the mounted page, in the core alone.
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 16, text: " delta"), .ins(at: 0, text: "zero ")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+        let coreText = {
+            model.coreClient.documentRuns(sheet: mounted).reduce(into: "") {
+                if case .ink(let ink) = $1 { $0 += ink }
+            }
+        }
+        XCTAssertEqual(coreText(), "zero alpha beta gamma delta")
+        XCTAssertEqual(editor.string, "alpha beta gamma", "the case needs the storage behind the core")
 
         model.settleRemoteEdits(on: [quiet, mounted])
 
         XCTAssertEqual(model.storage(for: quiet).string, "quiet after", "a stray manager kept the page stale")
-        XCTAssertEqual(editor.string, "mounted before", "the mounted page was restated under the editor")
+        XCTAssertEqual(editor.string, "zero alpha beta gamma delta")
+        XCTAssertTrue(editor.textStorage === storage)
+        XCTAssertEqual(
+            editor.selectedRange(), NSRange(location: 11, length: 4),
+            "the selection did not follow the peer's text above it")
+        editor.insertText("!", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "zero alpha ! gamma delta")
+        XCTAssertEqual(coreText(), editor.string, "the keystroke after the merge was read from stale text")
         roll.stack.update(
             projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
         XCTAssertEqual(roll.stack.quietRegions[quiet]?.string, "quiet after")
+    }
+
+    /// A peer's edit around a sealed object keeps the object's attachment, and a wholesale
+    /// rewrite past the diff's limit still ends on the core's text (#276).
+    func testAPeersEditAroundASealedObjectKeepsTheObjectAndAWholesaleRewriteLandsWhole() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "before secret after")
+        XCTAssertNotNil(model.coreClient.sealText(sheet: mounted, "secret", at: 7, length: 6))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertEqual(editor.string, "before \u{FFFC} after")
+        let chip = try XCTUnwrap(storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment)
+        editor.setSelectedRange(NSRange(location: 9, length: 0))
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 14, text: "wards"), .del(at: 0, len: 2)]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertEqual(editor.string, "fore \u{FFFC} afterwards")
+        XCTAssertTrue(
+            storage.attribute(.attachment, at: 5, effectiveRange: nil) as? ChipAttachment === chip,
+            "the object's attachment was rebuilt under the editor")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 0))
+
+        let rewrite = String(repeating: "a page rewritten whole by a peer\n", count: 200)
+        XCTAssertTrue(model.coreClient.syncDocument(
+            sheet: mounted, json: "[{\"ink\":\"\(rewrite.replacingOccurrences(of: "\n", with: "\\n"))\"}]"))
+        model.settleRemoteEdits(on: [mounted])
+        XCTAssertEqual(editor.string, rewrite)
+        XCTAssertTrue(editor.textStorage === storage)
+    }
+
+    /// A peer's paragraph merged in above the reader on the mounted day keeps the same line at
+    /// the top of the clip, as a local paste there does (#276).
+    func testAPeersParagraphMergedAboveTheReaderInTheMountedDayKeepsTheSameLineAtTheTop() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        _ = try page(in: model, saying: longPage(lines: 10))
+        let selected = try page(in: model, saying: longPage(lines: 80))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let target = "line 40 "
+        let index = (editor.string as NSString).range(of: target).location
+        let glyph = try glyphRect(in: editor, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        editor.setSelectedRange(NSRange(location: index, length: 0))
+
+        let paragraph = "a paragraph a peer wrote 🧪 above the reader, long enough to wrap at this width\n"
+        let above = (editor.string as NSString).range(of: "line 10 ").location
+        XCTAssertTrue(model.coreClient.applyOps(
+            sheet: selected, json: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: above, text: paragraph)]))))
+        model.settleRemoteEdits(on: [selected])
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+        let moved = (editor.string as NSString).range(of: target).location
+        XCTAssertEqual(moved, index + (paragraph as NSString).length)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: moved, length: 0))
+        var expected = place.anchor
+        expected.characterIndex = moved
+        let offset = try XCTUnwrap(expected.offset(in: editor))
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
     }
 
     func testWrapAndWidthRoundTripsReturnAMidParagraphReaderToTheSameLine() throws {

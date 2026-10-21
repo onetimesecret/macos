@@ -6801,6 +6801,14 @@ public final class PageModel: ObservableObject {
     /// core cleared or moved it before this was called.
     private func restateStorage(sheet: UInt64) {
         guard let storage = storages[sheet] else { return }
+        let rebuilt = rebuiltRuns(of: sheet)
+        applyingProjection {
+            storage.setAttributedString(rebuilt)
+        }
+    }
+
+    /// The page's runs as a storage shows them: ink in the base style, each object as its chip.
+    private func rebuiltRuns(of sheet: UInt64) -> NSMutableAttributedString {
         let rebuilt = NSMutableAttributedString()
         for run in runs(of: sheet) {
             switch run {
@@ -6813,18 +6821,93 @@ public final class PageModel: ObservableObject {
                 rebuilt.append(NSAttributedString(attachment: ChipAttachment(info: info)))
             }
         }
+        return rebuilt
+    }
+
+    /// A peer's edit merged into the storage `shown` lays out, one stretch at a time, so the
+    /// caret, the selection and the reading place outside each stretch stand where they were and
+    /// the next local edit is read from the merged text (#276). A rewrite past `mergeDiffLimit`
+    /// is replaced as one stretch instead, since the diff is quadratic in it.
+    private func mergeIntoShownStorage(sheet: UInt64, shown: InkTextView) {
+        guard let storage = storages[sheet] else { return }
+        let rebuilt = rebuiltRuns(of: sheet)
+        let old = Self.units(of: storage)
+        let new = Self.units(of: rebuilt)
+        let head = zip(old, new).prefix { $0 == $1 }.count
+        let room = min(old.count, new.count) - head
+        let tail = zip(old.reversed(), new.reversed()).prefix { $0 == $1 }.prefix(room).count
+        let oldMiddle = Array(old[head..<(old.count - tail)])
+        let newMiddle = Array(new[head..<(new.count - tail)])
+        guard !oldMiddle.isEmpty || !newMiddle.isEmpty else { return }
+        InkEditorView.discardComposition(in: shown)
         applyingProjection {
-            storage.setAttributedString(rebuilt)
+            if oldMiddle.count > Self.mergeDiffLimit || newMiddle.count > Self.mergeDiffLimit {
+                storage.replaceCharacters(
+                    in: NSRange(location: head, length: oldMiddle.count),
+                    with: rebuilt.attributedSubstring(from: NSRange(location: head, length: newMiddle.count)))
+                return
+            }
+            let difference = newMiddle.difference(from: oldMiddle)
+            for run in Self.runs(of: Self.offsets(of: difference.removals)).reversed() {
+                storage.deleteCharacters(in: NSRange(location: head + run.lowerBound, length: run.count))
+            }
+            for run in Self.runs(of: Self.offsets(of: difference.insertions)) {
+                let at = head + run.lowerBound
+                storage.insert(rebuilt.attributedSubstring(from: NSRange(location: at, length: run.count)), at: at)
+            }
         }
     }
 
-    /// A pump's applied edits: the pages they moved are read again from the core, and the
-    /// dirty mark schedules the sealed write as a local keystroke would.
+    private static let mergeDiffLimit = 4_096
+
+    /// One UTF-16 unit, or the object standing at it, so two objects never read as one character.
+    private enum ProjectionUnit: Equatable {
+        case character(unichar)
+        case object(UInt64)
+    }
+
+    private static func units(of text: NSAttributedString) -> [ProjectionUnit] {
+        let string = text.string as NSString
+        var units = (0..<string.length).map { ProjectionUnit.character(string.character(at: $0)) }
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, range, _ in
+            guard let chip = value as? ChipAttachment else { return }
+            for index in range.location..<NSMaxRange(range) {
+                units[index] = .object(chip.info.chipId)
+            }
+        }
+        return units
+    }
+
+    private static func offsets(of changes: [CollectionDifference<ProjectionUnit>.Change]) -> [Int] {
+        changes.map { change in
+            switch change {
+            case .insert(let offset, _, _), .remove(let offset, _, _): return offset
+            }
+        }.sorted()
+    }
+
+    /// Consecutive offsets as ranges, in order.
+    private static func runs(of offsets: [Int]) -> [Range<Int>] {
+        var runs: [Range<Int>] = []
+        for offset in offsets {
+            if let last = runs.last, last.upperBound == offset {
+                runs[runs.count - 1] = last.lowerBound..<(offset + 1)
+            } else {
+                runs.append(offset..<(offset + 1))
+            }
+        }
+        return runs
+    }
+
+    /// A pump's applied edits: the pages they moved are read again from the core, merged into
+    /// the one a surface shows, and the dirty mark schedules the sealed write as a local
+    /// keystroke would.
     func settleRemoteEdits(on pages: Set<UInt64>) {
         for page in pages {
             invalidateQuietRendering(for: page)
-            // A page a surface shows is left alone; no merge into live text exists yet (#276).
-            if surface(showing: page) == nil {
+            if let shown = surface(showing: page) {
+                mergeIntoShownStorage(sheet: page, shown: shown)
+            } else {
                 restateStorage(sheet: page)
             }
         }
