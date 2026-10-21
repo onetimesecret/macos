@@ -97,9 +97,9 @@ public final class SyncController: ObservableObject {
     @Published public private(set) var enrolledPages: Set<UInt64> = []
 
     /// What a remote change should do to the surface: the model
-    /// refreshes and marks the store dirty, so a peer's edit both
-    /// shows and persists.
-    public var onRemoteChange: (() -> Void)?
+    /// rereads the local pages an applied edit moved, refreshes, and
+    /// marks the store dirty.
+    public var onRemoteChange: ((Set<UInt64>) -> Void)?
     /// What a refused enrolment should do: the model settles as the timer would, since
     /// a page past its deadline refuses (Law 0001, expiry row), and says so.
     public var onEnrolRefused: ((UInt64) -> Void)?
@@ -432,6 +432,7 @@ public final class SyncController: ObservableObject {
         var sawUnreachable = false
         var sawUnauthorized = false
         var remoteChanged = false
+        var editedPages: Set<UInt64> = []
         for event in outcome.events {
             switch event.kind {
             case "applied", "countdown_moved", "terminal":
@@ -440,6 +441,7 @@ public final class SyncController: ObservableObject {
                 // elsewhere (issue #102).
                 if event.kind == "applied", let page = event.pageID {
                     remoteEdits[page] = Date()
+                    editedPages.insert(page)
                 }
             case "rejoin_required", "epoch_conflict":
                 trouble = .behind
@@ -454,7 +456,7 @@ public final class SyncController: ObservableObject {
             }
         }
         sweepElsewhere()
-        if remoteChanged { onRemoteChange?() }
+        if remoteChanged { onRemoteChange?(editedPages) }
         switch Self.pumpTurn(
             ok: outcome.ok, reason: outcome.reason, sawUnreachable: sawUnreachable,
             sawUnauthorized: sawUnauthorized)

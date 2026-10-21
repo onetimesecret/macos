@@ -212,11 +212,15 @@ final class MarkdownPreviewView: AskingTextView {
         return super.beginDraggingSession(with: items, event: event, source: source)
     }
 
-    func reseed(with rendering: PageModel.QuietRendering) {
-        guard rendering !== seeded else { return }
+    /// The text it replaced, or nil on the first seeding and for the rendering already seeded.
+    @discardableResult
+    func reseed(with rendering: PageModel.QuietRendering) -> String? {
+        guard rendering !== seeded else { return nil }
+        let previous = seeded == nil ? nil : previewStorage.string
         seeded = rendering
         previewStorage.setAttributedString(Self.render(rendering.text))
         needsDisplay = true
+        return previous
     }
 
     static func render(_ source: NSAttributedString) -> NSAttributedString {

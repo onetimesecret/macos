@@ -14,6 +14,24 @@ ADR if it is a decision, DOGFOOD.md if it is operational guidance other
 people need, an issue if it should be fixed.
 
 
+---
+
+2026-10-16:
+
+Large mixed rewrites can still use a bounded-search fallback that resets the reading anchor; insertion-only and deletion-only updates avoid that limit. It means there is still a case where **the view can jump away from the sentence you were reading**.
+
+For example:
+1. You are reading an older day.
+2. A sync update adds some text and removes other text in that day.
+3. The app tries to locate your original reading position in the updated text.
+4. If that comparison takes too much work, it stops searching and uses a fallback position—sometimes the beginning of the page.
+
+“Reading anchor” means the text position near the top of your viewport, **not your caret or selection**.
+
+Updates that only add text, or only remove text, now have a separate method without that search limit. Updates combining additions and removals can still reach it.
+
+My wording also overstated “very large”: a mixed update involving roughly 1,000 changed characters can reach one limit. **This remains an unresolved scroll-position defect**, not a completed part of the recommendation.
+
 
 ---
 

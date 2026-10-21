@@ -48,7 +48,8 @@ final class FocusLawTests: XCTestCase {
     func testAnOffsetWithinTheDocumentComesBackUntouched() {
         XCTAssertEqual(
             InkEditorView.Coordinator.clampedScrollOffset(
-                NSPoint(x: 0, y: 120), documentHeight: 500, clipHeight: 200
+                NSPoint(x: 0, y: 120), documentSize: NSSize(width: 200, height: 500),
+                clipSize: NSSize(width: 200, height: 200), wraps: true
             ),
             NSPoint(x: 0, y: 120)
         )
@@ -57,7 +58,8 @@ final class FocusLawTests: XCTestCase {
     func testAnOffsetBeyondShrunkenContentIsClampedToTheBottom() {
         XCTAssertEqual(
             InkEditorView.Coordinator.clampedScrollOffset(
-                NSPoint(x: 0, y: 400), documentHeight: 300, clipHeight: 200
+                NSPoint(x: 0, y: 400), documentSize: NSSize(width: 200, height: 300),
+                clipSize: NSSize(width: 200, height: 200), wraps: true
             ),
             NSPoint(x: 0, y: 100)
         )
@@ -66,7 +68,8 @@ final class FocusLawTests: XCTestCase {
     func testANegativeOffsetSeatsAtTheTop() {
         XCTAssertEqual(
             InkEditorView.Coordinator.clampedScrollOffset(
-                NSPoint(x: 0, y: -50), documentHeight: 500, clipHeight: 200
+                NSPoint(x: 0, y: -50), documentSize: NSSize(width: 200, height: 500),
+                clipSize: NSSize(width: 200, height: 200), wraps: true
             ),
             NSPoint(x: 0, y: 0)
         )
@@ -75,7 +78,8 @@ final class FocusLawTests: XCTestCase {
     func testAZeroOffsetStaysAtZero() {
         XCTAssertEqual(
             InkEditorView.Coordinator.clampedScrollOffset(
-                .zero, documentHeight: 500, clipHeight: 200
+                .zero, documentSize: NSSize(width: 200, height: 500),
+                clipSize: NSSize(width: 200, height: 200), wraps: true
             ),
             .zero
         )
@@ -84,9 +88,42 @@ final class FocusLawTests: XCTestCase {
     func testADocumentShorterThanTheClipCannotScrollAtAll() {
         XCTAssertEqual(
             InkEditorView.Coordinator.clampedScrollOffset(
-                NSPoint(x: 0, y: 80), documentHeight: 150, clipHeight: 200
+                NSPoint(x: 0, y: 80), documentSize: NSSize(width: 200, height: 150),
+                clipSize: NSSize(width: 200, height: 200), wraps: true
             ),
             NSPoint(x: 0, y: 0)
+        )
+    }
+
+    func testUnwrappedHorizontalOffsetsAreClampedAtBothEdges() {
+        for (x, expected): (CGFloat, CGFloat) in [(-20, 0), (120, 120), (400, 300)] {
+            XCTAssertEqual(
+                InkEditorView.Coordinator.clampedScrollOffset(
+                    NSPoint(x: x, y: 120), documentSize: NSSize(width: 500, height: 500),
+                    clipSize: NSSize(width: 200, height: 200), wraps: false
+                ),
+                NSPoint(x: expected, y: 120)
+            )
+        }
+    }
+
+    func testWrappedRestorationResetsXEvenWithAnEarlierWideFrame() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                NSPoint(x: 120, y: 120), documentSize: NSSize(width: 500, height: 500),
+                clipSize: NSSize(width: 200, height: 200), wraps: true
+            ),
+            NSPoint(x: 0, y: 120)
+        )
+    }
+
+    func testUnwrappedSourceNarrowerThanTheViewportRestoresAtXZero() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                NSPoint(x: 120, y: 120), documentSize: NSSize(width: 150, height: 500),
+                clipSize: NSSize(width: 200, height: 200), wraps: false
+            ),
+            NSPoint(x: 0, y: 120)
         )
     }
 

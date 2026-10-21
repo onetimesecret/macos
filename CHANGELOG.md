@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Days down the side follow the wrap setting** (app 0.39.0; the
+  2026-10-16 wrapping amendment to the vertical time tabs spec, issue
+  #79). With pages shown as days, Settings and ⌥Z turn wrapping on and
+  off as they do with tabs, and the one `wrapsLines` value applies to
+  every day on the roll, the selected one and the rest. With wrapping
+  off, long lines run on, the days scroll sideways together, and their
+  headings stay at the left edge of the window. ⌥Z no longer answers
+  `long lines always wrap while the days are showing`. With wrapping
+  off, fenced code keeps its wash for the whole width of the page,
+  where before it had none; the wash reaches as far as the longest
+  line, in a tab and on the roll alike. On the roll the line at the top
+  of the window stays there when wrapping is turned on or off and when
+  the window is resized, with the reader in a day the editor is not on,
+  and a round trip brings a reader partway through a paragraph back to
+  the same line. It also stays when text changes in a day above the
+  reader, when text is added or removed around the reader in a day the
+  editor is not on, and when a paragraph is added above the reader in
+  the day being written on. Turning a day's Markdown preview on or off
+  keeps the reader on that day, at the place with the same share of its
+  text; no map joins a source position to its rendered one, so that
+  place is approximate. Turning the preview on and off again without
+  scrolling comes back to the same line.
+
 - **A drag between pages moves its objects** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag
   row, issue #170). A selection dragged from one page onto another leaves
@@ -943,6 +966,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
 ### Fixed
+
+- **A peer's edit shows on the days the editor is not on** (app
+  0.39.0). With sync on, another device's edit reached the core but
+  not the roll: a day the editor was not on kept its old text until
+  something else redrew it, and a page left earlier reopened in the
+  editor with the old text. Each applied event now redraws its page's
+  day and rereads that page's text. The page under the editor does
+  not take a peer's edit yet.
+
+- **Turning wrapping on or off in a tab keeps the reader's line** (app
+  0.39.0). ⌥Z or the Settings switch rebuilt a tab's layout without
+  putting the reading position back, so the page showed another line,
+  and turning wrapping back on went to the start of the paragraph. The
+  line at the top of the window now stays at the top, and a round
+  trip returns to the same point inside the paragraph.
 
 - **The Finder opens text files in the pad** (app 0.38.1; the file
   editing spec's Opening section). The bundle now declares plain text,

@@ -398,6 +398,34 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = true
     }
 
+    /// Configure TextKit geometry; the caller owns the view's frame and sizing policy.
+    /// `viewportWidth` includes the text view's horizontal container insets.
+    static func configureWrapping(
+        _ wraps: Bool, textView: NSTextView, viewportWidth: CGFloat
+    ) {
+        guard let container = textView.textContainer else { return }
+        let ink = container as? InkTextContainer
+        let measure = InkTextContainer.usableMeasure(
+            viewportWidth - textView.textContainerInset.width * 2
+        )
+        let measureChanged = measure.flatMap { ink?.setEditorMeasure($0) } ?? false
+        if container.widthTracksTextView != wraps {
+            container.widthTracksTextView = wraps
+        }
+        // A viewport with no usable measure keeps the captured measure, or the current width.
+        let wrappedWidth = measure ?? ink?.capturedEditorMeasure ?? container.size.width
+        let size = NSSize(
+            width: wraps ? wrappedWidth : .greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        if container.size != size {
+            container.size = size
+        }
+        if measureChanged {
+            textView.layoutManager?.textContainerChangedGeometry(container)
+        }
+    }
+
     /// Wrap, or let the lines run (⌥Z, and the setting behind it).
     ///
     /// Wrapped, the container takes its width from the text view and the
@@ -421,26 +449,28 @@ public struct InkEditorView: NSViewRepresentable {
     /// text view that ran wide keeps that frame, and nothing else takes
     /// it back, so the width is handed to the clip explicitly.
     static func setWrap(_ wraps: Bool, textView: InkTextView, scroll: NSScrollView) {
-        guard let container = textView.textContainer else { return }
+        guard textView.textContainer != nil else { return }
+        // A legacy horizontal scroller takes its height out of the clip, so it goes first.
+        scroll.hasHorizontalScroller = !wraps
         let clip = scroll.contentSize
+        configureWrapping(wraps, textView: textView, viewportWidth: clip.width)
         if wraps {
-            container.widthTracksTextView = true
-            container.size = NSSize(width: clip.width, height: .greatestFiniteMagnitude)
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
             textView.setFrameSize(NSSize(width: clip.width, height: textView.frame.height))
-            scroll.hasHorizontalScroller = false
         } else {
-            container.widthTracksTextView = false
-            container.size = NSSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
-            )
             textView.isHorizontallyResizable = true
             textView.autoresizingMask = []
-            scroll.hasHorizontalScroller = true
         }
         textView.minSize = NSSize(width: clip.width, height: clip.height)
+    }
+
+    /// The longest laid-out line plus insets: the width unwrapped source needs.
+    static func measuredSourceWidth(of text: NSTextView) -> CGFloat {
+        guard let manager = text.layoutManager, let container = text.textContainer else { return 0 }
+        let right = (manager as? InkLayoutManager)?.widestUsedMaxX(in: container)
+            ?? InkLayoutManager.walkWidestUsedMaxX(of: manager, in: container)
+        return ceil(right + text.textContainerInset.width * 2)
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -1810,43 +1840,30 @@ public struct InkEditorView: NSViewRepresentable {
                     self.deferredScrollRestore = (sheet, anchor)
                     return
                 }
-                // Measure against layout that has been forced current,
-                // not the `frame` height a relayout still in flight can
-                // report as zero. The text view is the document view;
-                // when its TextKit stack is somehow gone, fall back to
-                // the frame the clamp used to trust.
-                let documentHeight = textView.flatMap { self.documentHeight(of: $0) }
-                    ?? scrollView.documentView?.frame.height ?? 0
-                // After the height, so the anchor's line is looked up
-                // in the layout that was just made certain. A page with
-                // nothing saved opens at the top.
+                // Resolve the anchor against current text layout, not an earlier view frame.
+                let documentSize = textView.flatMap { self.documentSize(of: $0) }
+                    ?? scrollView.documentView?.frame.size ?? .zero
                 let offset = textView.flatMap { anchor?.offset(in: $0) } ?? .zero
                 let clamped = Self.clampedScrollOffset(
                     offset,
-                    documentHeight: documentHeight,
-                    clipHeight: scrollView.contentView.bounds.height
+                    documentSize: documentSize,
+                    clipSize: scrollView.contentView.bounds.size,
+                    wraps: self.model.wrapsLines
                 )
                 scrollView.contentView.scroll(to: clamped)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
             }
         }
 
-        /// The document's true height, forced current. One main-queue
-        /// hop gives the layout manager room to re-lay the swapped
-        /// storage, but room is not the same as done, so the height is
-        /// made certain rather than assumed: ensure layout for the text
-        /// container, then measure its used rect plus the top and bottom
-        /// text inset. A height read straight off `frame` can still be
-        /// zero here, and a zero height collapses the clamp's ceiling to
-        /// the top of the page, discarding a perfectly valid saved
-        /// offset. Returns nil only when the TextKit stack is missing,
-        /// leaving the caller to fall back to the frame.
-        private func documentHeight(of textView: InkTextView) -> CGFloat? {
+        /// Measure current source extents after a storage swap or an unsized mount.
+        private func documentSize(of textView: InkTextView) -> NSSize? {
             guard let layoutManager = textView.layoutManager,
                   let container = textView.textContainer else { return nil }
             layoutManager.ensureLayout(for: container)
-            return layoutManager.usedRect(for: container).height
-                + textView.textContainerInset.height * 2
+            return NSSize(
+                width: InkEditorView.measuredSourceWidth(of: textView),
+                height: layoutManager.usedRect(for: container).height + textView.textContainerInset.height * 2
+            )
         }
 
         // MARK: Wrapping (⌥Z, Settings)
@@ -1865,11 +1882,36 @@ public struct InkEditorView: NSViewRepresentable {
         /// first apply.
         private var appliedWrap: Bool?
 
-        /// Rebuild the page's geometry for `wraps`, if it has moved.
+        /// The line the last wrap change put back, with the clip origin and edit count it left.
+        /// Reused while both stand, since recapturing after a reflow names the paragraph's start.
+        private var wrapPlace: (sheet: UInt64, anchor: ScrollAnchor, origin: NSPoint, generation: Int)?
+
+        /// Rebuild the page's geometry for `wraps`, if it has moved, keeping the reader's line.
         func applyWrap(_ wraps: Bool) {
-            guard let textView, let scroll = scrollView, appliedWrap != wraps else { return }
+            guard let textView, let scroll = scrollView,
+                  scroll.documentView === textView, appliedWrap != wraps else { return }
+            // The first apply is the mount's, whose restore puts the saved place back.
+            let place = appliedWrap == nil ? nil : wrapReadingPlace(textView: textView, clip: scroll.contentView)
             appliedWrap = wraps
             InkEditorView.setWrap(wraps, textView: textView, scroll: scroll)
+            guard let place, let sheet = currentSheet, let size = documentSize(of: textView) else { return }
+            let clip = scroll.contentView
+            let offset = Self.clampedScrollOffset(
+                place.offset(in: textView) ?? .zero,
+                documentSize: size, clipSize: clip.bounds.size, wraps: wraps
+            )
+            clip.scroll(to: offset)
+            scroll.reflectScrolledClipView(clip)
+            wrapPlace = (sheet, place, clip.bounds.origin, generation)
+        }
+
+        private func wrapReadingPlace(textView: InkTextView, clip: NSClipView) -> ScrollAnchor? {
+            guard !clip.bounds.isEmpty else { return nil }
+            if let kept = wrapPlace, kept.sheet == currentSheet, kept.origin == clip.bounds.origin,
+               kept.generation == generation {
+                return kept.anchor
+            }
+            return ScrollAnchor(topOf: textView, clipOrigin: clip.bounds.origin)
         }
 
         /// The typeface the mounted page was last styled in, so the
@@ -1974,6 +2016,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// mount) land here too and re-resolve hover deliberately, the
         /// way tracking-area hover behaves on AppKit controls.
         @objc private func clipBoundsChanged(_ notification: Notification) {
+            // A pill's place reads the scroll only through the measure, which a vertical scroll keeps.
+            if blockAffordanceMeasure != placedBlockMeasure { repositionBlockLabels() }
             textView?.refreshHover()
         }
 
@@ -2027,17 +2071,13 @@ public struct InkEditorView: NSViewRepresentable {
             return NSRange(location: location, length: span)
         }
 
-        /// A scroll offset saved against yesterday's geometry may
-        /// overhang today's. `NSClipView.scroll(to:)` does not clamp,
-        /// so a page that shrank in the background would come back
-        /// showing blank space below its document. Clamp y to what the
-        /// document can actually scroll; x stays as saved, since the
-        /// page never scrolls horizontally.
+        /// Clamp restored offsets to current geometry; wrapped source starts at the left edge.
         nonisolated static func clampedScrollOffset(
-            _ offset: NSPoint, documentHeight: CGFloat, clipHeight: CGFloat
+            _ offset: NSPoint, documentSize: NSSize, clipSize: NSSize, wraps: Bool
         ) -> NSPoint {
-            let maxY = max(0, documentHeight - clipHeight)
-            return NSPoint(x: offset.x, y: min(max(offset.y, 0), maxY))
+            let maxX = wraps ? 0 : max(0, documentSize.width - clipSize.width)
+            let maxY = max(0, documentSize.height - clipSize.height)
+            return NSPoint(x: min(max(offset.x, 0), maxX), y: min(max(offset.y, 0), maxY))
         }
 
         /// ⌘Z and ⇧⌘Z, taken off AppKit's stack and handed to the
@@ -2102,6 +2142,8 @@ public struct InkEditorView: NSViewRepresentable {
                 to: length
             )
             textView.setSelectedRange(selection)
+            // Projection writes bypass text-change notifications; size the roll before revealing the step.
+            (textView.superview as? EditorSizingHost)?.relayout()
             // Rewriting the whole storage resets the scroller, so a
             // step taken over an edit that was off screen would put the
             // caret somewhere the writer cannot see. Follow it.
@@ -4280,7 +4322,10 @@ public struct InkEditorView: NSViewRepresentable {
             /// read the tooltip table through the same door AppKit does.
             /// A seam, so it is not built into a shipped binary.
             var blockToolTipTags: [NSView.ToolTipTag] { blockToolTips.keys.sorted() }
+            var blockToolTipRects: [Int: NSRect] { blockToolTipRegistrations.mapValues(\.rect) }
             private(set) var blockLabelShapeCount = 0
+            private(set) var blockLabelFitCount = 0
+            private(set) var blockLabelPlacementCount = 0
 
             /// What the last restyle laid out, in document order: one entry
             /// per edited block, the range being the line its affordance
@@ -4497,6 +4542,9 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func expandedLabelFits(_ text: String, for display: BlockDisplay) -> Bool {
+            #if DEBUG
+                blockLabelFitCount += 1
+            #endif
             guard let line = firstLineUsedRect(for: display) else { return true }
             return Self.blockAffordanceFits(
                 lineMaxX: line.maxX, containerWidth: blockAffordanceMeasure,
@@ -4525,13 +4573,28 @@ public struct InkEditorView: NSViewRepresentable {
             )
         }
 
+        /// The measure the pills were last placed against.
+        private var placedBlockMeasure: CGFloat?
+
         nonisolated static func blockAffordanceMeasure(
             containerWidth: CGFloat, visibleRect: NSRect, containerOriginX: CGFloat
         ) -> CGFloat {
-            guard containerWidth.isFinite,
-                  containerWidth < SealedBlockCell.effectivelyUnboundedWidth
+            guard !containerIsUnbounded(containerWidth)
             else { return visibleRect.maxX - containerOriginX }
             return min(containerWidth, visibleRect.maxX - containerOriginX)
+        }
+
+        nonisolated static func containerIsUnbounded(_ width: CGFloat) -> Bool {
+            !width.isFinite || width >= SealedBlockCell.effectivelyUnboundedWidth
+        }
+
+        /// Unwrapped, a row's tooltip runs to the text view's trailing edge rather
+        /// than the viewport's, which moves with every sideways scroll.
+        nonisolated static func blockToolTipRect(
+            row: NSRect, containerWidth: CGFloat, viewMaxX: CGFloat
+        ) -> NSRect {
+            guard containerIsUnbounded(containerWidth) else { return row }
+            return NSRect(x: row.minX, y: row.minY, width: viewMaxX - row.minX, height: row.height)
         }
 
         /// The used rect of the line a block's affordance rides, in
@@ -4573,6 +4636,11 @@ public struct InkEditorView: NSViewRepresentable {
             blockFirstLineDisplayRects.removeAll()
             guard let textView else { return }
             let measure = blockAffordanceMeasure
+            placedBlockMeasure = measure
+            #if DEBUG
+                blockLabelPlacementCount += 1
+            #endif
+            let containerWidth = textView.textContainer?.size.width ?? .infinity
             let origin = textView.textContainerOrigin
             var requestedToolTips: [Int: (rect: NSRect, text: String)] = [:]
             for (field, display) in zip(blockLabelViews, blockDisplays) {
@@ -4594,7 +4662,11 @@ public struct InkEditorView: NSViewRepresentable {
                 )
                 blockFirstLineDisplayRects[display.range.location] = displayRect
                 requestedToolTips[display.range.location] = (
-                    rect: displayRect, text: display.accessibilityText
+                    rect: Self.blockToolTipRect(
+                        row: displayRect, containerWidth: containerWidth,
+                        viewMaxX: textView.bounds.maxX
+                    ),
+                    text: display.accessibilityText
                 )
             }
             reconcileBlockToolTips(requestedToolTips, in: textView)
@@ -4776,9 +4848,160 @@ final class InkLayoutManager: NSLayoutManager {
     /// document order. `restyle` owns these; drawing only reads them.
     var fenceRegions: [NSRange] = []
 
+    // MARK: Layout generation
+
+    /// Moved by each route below that can move a line fragment; a cached
+    /// measurement is reused only at the count it was taken at.
+    private(set) var layoutGeneration = 0
+    private var widestLine: (generation: Int, container: ObjectIdentifier, maxX: CGFloat)?
+    #if DEBUG
+        /// The walks `widestUsedMaxX(in:)` actually made, for the tests.
+        private(set) var widestLineWalks = 0
+    #endif
+
+    private func layoutMoved() {
+        layoutGeneration &+= 1
+    }
+
+    /// `walkWidestUsedMaxX(of:in:)`, walked again only after the layout generation moves.
+    func widestUsedMaxX(in container: NSTextContainer) -> CGFloat {
+        let id = ObjectIdentifier(container)
+        if let cached = widestLine, cached.generation == layoutGeneration, cached.container == id {
+            return cached.maxX
+        }
+        // Read before the walk, so a count moved by the layout it forces is not stamped.
+        let generation = layoutGeneration
+        #if DEBUG
+            widestLineWalks += 1
+        #endif
+        let maxX = Self.walkWidestUsedMaxX(of: self, in: container)
+        widestLine = (generation, id, maxX)
+        return maxX
+    }
+
+    /// The widest finite used rect's maxX among `container`'s line fragments.
+    nonisolated static func walkWidestUsedMaxX(
+        of manager: NSLayoutManager, in container: NSTextContainer
+    ) -> CGFloat {
+        var right: CGFloat = 0
+        // The aggregate used rect can include an unbounded fragment's sentinel width.
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) {
+            _, used, _, _, _ in
+            if used.maxX.isFinite { right = max(right, used.maxX) }
+        }
+        return right
+    }
+
+    override func processEditing(
+        for textStorage: NSTextStorage, edited editMask: NSTextStorageEditActions,
+        range newCharRange: NSRange, changeInLength delta: Int,
+        invalidatedRange invalidatedCharRange: NSRange
+    ) {
+        super.processEditing(
+            for: textStorage, edited: editMask, range: newCharRange,
+            changeInLength: delta, invalidatedRange: invalidatedCharRange
+        )
+        layoutMoved()
+    }
+
+    override func invalidateGlyphs(
+        forCharacterRange charRange: NSRange, changeInLength delta: Int,
+        actualCharacterRange actualCharRange: NSRangePointer?
+    ) {
+        super.invalidateGlyphs(
+            forCharacterRange: charRange, changeInLength: delta,
+            actualCharacterRange: actualCharRange
+        )
+        layoutMoved()
+    }
+
+    override func invalidateLayout(
+        forCharacterRange charRange: NSRange, actualCharacterRange actualCharRange: NSRangePointer?
+    ) {
+        super.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: actualCharRange)
+        layoutMoved()
+    }
+
+    @available(macOS, deprecated: 10.11)
+    override func invalidateLayout(
+        forCharacterRange charRange: NSRange, isSoft flag: Bool,
+        actualCharacterRange actualCharRange: NSRangePointer?
+    ) {
+        super.invalidateLayout(
+            forCharacterRange: charRange, isSoft: flag, actualCharacterRange: actualCharRange
+        )
+        layoutMoved()
+    }
+
+    override func textContainerChangedGeometry(_ container: NSTextContainer) {
+        super.textContainerChangedGeometry(container)
+        layoutMoved()
+    }
+
+    override func textContainerChangedTextView(_ container: NSTextContainer) {
+        super.textContainerChangedTextView(container)
+        layoutMoved()
+    }
+
+    override func replaceTextStorage(_ newTextStorage: NSTextStorage) {
+        super.replaceTextStorage(newTextStorage)
+        layoutMoved()
+    }
+
+    override var textStorage: NSTextStorage? {
+        didSet { layoutMoved() }
+    }
+
+    override func addTextContainer(_ container: NSTextContainer) {
+        super.addTextContainer(container)
+        layoutMoved()
+    }
+
+    override func insertTextContainer(_ container: NSTextContainer, at index: Int) {
+        super.insertTextContainer(container, at: index)
+        layoutMoved()
+    }
+
+    override func removeTextContainer(at index: Int) {
+        super.removeTextContainer(at: index)
+        layoutMoved()
+    }
+
+    // Setters that call none of the overrides above when they change.
+    override var typesetter: NSTypesetter {
+        didSet { layoutMoved() }
+    }
+
+    override var glyphGenerator: NSGlyphGenerator {
+        didSet { layoutMoved() }
+    }
+
+    override var typesetterBehavior: NSLayoutManager.TypesetterBehavior {
+        didSet { layoutMoved() }
+    }
+
+    override var usesFontLeading: Bool {
+        didSet { layoutMoved() }
+    }
+
+    override var allowsNonContiguousLayout: Bool {
+        didSet { layoutMoved() }
+    }
+
+    override var limitsLayoutForSuspiciousContents: Bool {
+        didSet { layoutMoved() }
+    }
+
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        if let container = textContainers.first, let storage = textStorage {
+        if !fenceRegions.isEmpty, let container = textContainers.first, let storage = textStorage {
             let whole = NSRange(location: 0, length: storage.length)
+            // Unwrapped, the text view is as wide as its longest line
+            // (or the roll's stack); that width is the slab's reach.
+            let view = container.textView
+            let extent = MainActor.assumeIsolated { () -> CGFloat? in
+                guard let view else { return nil }
+                return view.bounds.width - view.textContainerInset.width * 2
+            }
             for region in fenceRegions {
                 // Clamped, because an edit can land between the restyle
                 // that computed these ranges and the draw that reads
@@ -4799,7 +5022,9 @@ final class InkLayoutManager: NSLayoutManager {
                 let bottom = boundingRect(forGlyphRange: glyphs, in: container).maxY
                 guard let slab = Self.slabRect(
                     firstLineTop: top, regionBottom: bottom,
-                    containerWidth: container.size.width, origin: origin
+                    containerWidth: container.size.width, origin: origin,
+                    editorMeasure: (container as? InkTextContainer)?.capturedEditorMeasure,
+                    documentExtent: extent
                 ) else { continue }
                 // TextKit draws on the main thread; the assumption is
                 // stated rather than inherited because the SDK does not
@@ -4813,23 +5038,40 @@ final class InkLayoutManager: NSLayoutManager {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
 
-    /// The rectangle a fence region's wash covers, in the view's
-    /// coordinates: from the top of the region's first used line to the
-    /// bottom of its last fragment, at the full width of the text
-    /// container, offset by the container's origin. Nil when the metrics
-    /// describe nothing worth painting. Pure, so the geometry is
-    /// testable without a layout pass.
+    /// Wrapped, the slab is the container's width. Unwrapped, it runs the
+    /// document's extent and never less than the viewport measure.
     nonisolated static func slabRect(
         firstLineTop: CGFloat, regionBottom: CGFloat,
-        containerWidth: CGFloat, origin: NSPoint
+        containerWidth: CGFloat, origin: NSPoint,
+        editorMeasure: CGFloat? = nil, documentExtent: CGFloat? = nil
     ) -> NSRect? {
-        guard regionBottom > firstLineTop, containerWidth > 0 else { return nil }
+        guard firstLineTop.isFinite, regionBottom.isFinite, regionBottom > firstLineTop,
+              let width = slabWidth(
+                containerWidth: containerWidth, editorMeasure: editorMeasure,
+                documentExtent: documentExtent
+              )
+        else { return nil }
         return NSRect(
             x: origin.x,
             y: origin.y + firstLineTop,
-            width: containerWidth,
+            width: width,
             height: regionBottom - firstLineTop
         )
+    }
+
+    /// Nil when no finite, bounded width is known, so nothing is painted.
+    nonisolated static func slabWidth(
+        containerWidth: CGFloat, editorMeasure: CGFloat?, documentExtent: CGFloat?
+    ) -> CGFloat? {
+        func usable(_ value: CGFloat?) -> CGFloat? {
+            guard let value, value.isFinite, value > 0,
+                  value < SealedBlockCell.effectivelyUnboundedWidth else { return nil }
+            return value
+        }
+        if let bounded = usable(containerWidth) {
+            return min(bounded, usable(editorMeasure) ?? bounded)
+        }
+        return [usable(editorMeasure), usable(documentExtent)].compactMap { $0 }.max()
     }
 }
 
@@ -4903,8 +5145,16 @@ public enum SealSelectionMenu {
 final class InkTextContainer: NSTextContainer {
     private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
+    /// The measure itself, or nil for zero, negative, NaN and unbounded widths.
+    nonisolated static func usableMeasure(_ measure: CGFloat) -> CGFloat? {
+        guard measure.isFinite, measure > 0,
+              measure < SealedBlockCell.effectivelyUnboundedWidth else { return nil }
+        return measure
+    }
+
     nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
-        editorMeasure.withLock { current in
+        guard let measure = Self.usableMeasure(measure) else { return false }
+        return editorMeasure.withLock { current in
             guard current != measure else { return false }
             current = measure
             return true
@@ -4915,6 +5165,15 @@ final class InkTextContainer: NSTextContainer {
         editorMeasure.withLock { $0 }
     }
 }
+
+/// A superview that sizes the editor by frame, re-measured on demand after a
+/// projection write that posted no text change notification.
+@MainActor
+protocol EditorSizingHost: AnyObject {
+    @discardableResult func relayout() -> Bool
+}
+
+extension DayStackView: EditorSizingHost {}
 
 /// Keep an ordinary page's typing surface at least as tall as its viewport.
 /// Roll editors get their minimum height from DayStackView instead. This
@@ -5775,21 +6034,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         coordinator?.followNote()
     }
 
-    /// TextKit's attachment sizing callback is explicitly nonisolated,
-    /// while an editor's bounds are main-actor state. Capture the scalar
-    /// measure here, before layout, into each cell's lock-protected sizing
-    /// state so the callback never reaches across actor isolation.
+    /// Capture the standalone viewport before TextKit's nonisolated sizing callbacks.
+    /// Nested editors are measured by their stack's layout pass instead.
     private func updateChipEditorMeasure() {
         guard let container = textContainer as? InkTextContainer, let layoutManager else { return }
-        // In unwrapped mode the text view can grow to its longest line;
-        // the scroll viewport remains the page measure the chip should
-        // occupy. A mount without a scroller uses its editor bounds.
-        // Either way the container inset comes off both edges, as it
-        // does for the ink, so a block is never wider than the page it
-        // sits on. A viewport not yet sized measures nothing, and a
-        // zero captured as the ceiling would refuse every candidate and
-        // drop every block to the floor, so an earlier capture is left
-        // in place until a real measure arrives.
+        // A stack-owned editor gets its viewport measure from configureWrapping.
+        if let scroll = enclosingScrollView, scroll.documentView !== self { return }
         let viewport = enclosingScrollView?.contentSize.width ?? bounds.width
         let measure = viewport - textContainerInset.width * 2
         guard measure > 0 else { return }
