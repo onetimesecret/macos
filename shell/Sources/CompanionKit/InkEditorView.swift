@@ -1495,7 +1495,7 @@ public struct InkEditorView: NSViewRepresentable {
                 keyEquivalent: ""
             )
             detect.target = self
-            detect.isEnabled = model.languageDetectionEnabled && manualLanguageTarget() != nil
+            // Enablement is `validateMenuItem`'s: the menu auto-enables.
             menu.addItem(detect)
 
             if let suggestion = languageSuggestion,
@@ -1565,7 +1565,7 @@ public struct InkEditorView: NSViewRepresentable {
                 keyEquivalent: ""
             )
             bypass.target = textView
-            bypass.isEnabled = textView.isEditable
+            // Enablement is the text view's `validateMenuItem`.
             menu.addItem(bypass)
         }
 
@@ -1596,11 +1596,22 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The context menu auto-enables, and a target without this
         /// method has every explicit `isEnabled` overwritten on display.
+        /// One arm per selector this coordinator targets, so a new item
+        /// that wants a gate has to be named here.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-            if item.action == #selector(detectCodeLanguageFromMenu(_:)) {
-                return model.languageDetectionEnabled && manualLanguageTarget() != nil
+            switch item.action {
+            case #selector(detectCodeLanguageFromMenu(_:)):
+                return canDetectCodeLanguage
+            case #selector(sealSelectionFromMenu(_:)),
+                 #selector(dismissLanguageSuggestionFromMenu(_:)),
+                 #selector(applySuggestedWrap(_:)),
+                 #selector(applySuggestedHighlighting(_:)),
+                 #selector(insertSuggestedFenceLabel(_:)),
+                 #selector(chooseLanguageFromMenu(_:)):
+                return true
+            default:
+                return true
             }
-            return true
         }
 
         // MARK: The page swap (ADR-0006)
