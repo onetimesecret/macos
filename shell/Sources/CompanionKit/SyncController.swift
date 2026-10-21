@@ -160,7 +160,7 @@ public final class SyncController: ObservableObject {
     private nonisolated(unsafe) var pairingTimer: Timer?
     /// One pairing poll on the wire at a time, as `pumping` is for the
     /// pump; `SyncCeremonyTests` holds a round open and ticks again.
-    private var pairingPolling = false
+    private(set) var pairingPolling = false
     /// Async so a test's stand-in can suspend rather than block a
     /// cooperative thread; the shipping value is one blocking core call.
     private let pairingPoll: @Sendable () async -> SyncPairingStage?
@@ -319,7 +319,8 @@ public final class SyncController: ObservableObject {
         // give-up and the marks from elsewhere end with the engine, as
         // on the switch; the core's sign-out abandons the trip. An
         // earlier failure's sentence goes too: signed out is the whole
-        // state.
+        // state. A pump round still out keeps the wire until it
+        // returns, and the next sign-in's first round waits for it.
         endSession()
         retryTimer?.invalidate()
         quietRefusals = 0
@@ -440,9 +441,17 @@ public final class SyncController: ObservableObject {
     }
 
     func settlePump(_ outcome: SyncPumpOutcome?, session mine: UInt64) {
-        // Before the flag: an ended session's turn owns nothing now.
-        guard session == mine else { return }
+        // The wire is free whatever session's round this was, the
+        // pairing poll's rule: the core's pump has no guard of its own,
+        // so a session end must not free the flag while a round is
+        // still out. A turn from an ended session owns nothing else,
+        // except that the new session's first round, which waited for
+        // the wire, goes out now.
         pumping = false
+        guard session == mine else {
+            pump()
+            return
+        }
         guard enabled else { return }
         guard let outcome else {
             trouble = Self.standing(trouble: trouble, after: .unreachable)
@@ -662,14 +671,14 @@ public final class SyncController: ObservableObject {
         pairingTimer?.invalidate()
     }
 
-    /// The session is over: an in-flight pump's settle is dropped, so
-    /// the flag it would have cleared is cleared here.
+    /// The session is over: an in-flight pump's or poll's answer is
+    /// dropped when it returns. Neither flag is cleared here; each
+    /// belongs to the round still on the wire and is freed by its
+    /// settle, so the next session's first round waits for it.
     private func endSession() {
         session &+= 1
-        pumping = false
         // A ceremony belongs to its session: the poll is stamped with
-        // both, so a session end that left the ceremony standing would
-        // drop the poll with its flag raised.
+        // both.
         endCeremony()
     }
 
@@ -690,9 +699,6 @@ public final class SyncController: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         pairingTimer = timer
     }
-
-    /// Whether a round is on the wire; read by the ceremony test.
-    var pairingPollingForTests: Bool { pairingPolling }
 
     /// One tick of the ceremony's poll; internal so a test can tick it.
     func pollPairing() {

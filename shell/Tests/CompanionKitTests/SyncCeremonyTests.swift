@@ -209,7 +209,7 @@ final class SyncCeremonyTests: XCTestCase {
         // The old round comes back: its mismatch is dropped and the
         // wire is free, so the next tick's round goes out and lands.
         held.release()
-        spin { held.calls == 1 && sync.pairingStage?.stage == "waiting" && !sync.pairingPollingForTests }
+        spin { held.calls == 1 && sync.pairingStage?.stage == "waiting" && !sync.pairingPolling }
         XCTAssertEqual(sync.pairingStage?.stage, "waiting", "the cancelled ceremony's verdict never reached this one")
         sync.pollPairing()
         spin { sync.pairingStage?.stage == "done" }
@@ -218,12 +218,13 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertNil(sync.pairingStage?.reason)
     }
 
-    func testSigningOutUnderALongPollLeavesNoPumpLatched() throws {
+    func testSigningOutUnderALongPollFreesTheWireWhenTheRoundReturns() throws {
         let (sync, _, _) = try configured()
         sync.enabled = true
-        // A long poll is out when the person signs out. Its settle
-        // belongs to the old session and is dropped, so nothing but
-        // the sign-out itself can clear the in-flight flag.
+        // A long poll is out when the person signs out. Its answer
+        // belongs to the old session and is dropped, but the wire is
+        // its until it returns: the core's pump has no guard, so a
+        // flag freed early would let two rounds share one handle.
         sync.pumping = true
         // A ceremony is up as well.
         sync.pairingStage = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
@@ -233,10 +234,10 @@ final class SyncCeremonyTests: XCTestCase {
         let stale = sync.session
         sync.signOut()
         XCTAssertNotEqual(sync.session, stale, "a sign-out is a new session")
-        XCTAssertFalse(sync.pumping, "the sign-out clears the flag the dropped settle cannot")
+        XCTAssertTrue(sync.pumping, "the round still out keeps the wire")
         XCTAssertNil(sync.signinFailure, "signed out is the whole state")
         sync.settlePump(quietTurn(), session: stale)
-        XCTAssertFalse(sync.pumping)
+        XCTAssertFalse(sync.pumping, "the returning round frees the wire, its answer dropped")
         sync.settleSignin(.refused("abandoned"), session: stale)
         XCTAssertNil(sync.signinFailure, "a sign-out is not a browser that never returned")
         XCTAssertNil(sync.pairingStage, "a pairing ceremony ends with the engine")
