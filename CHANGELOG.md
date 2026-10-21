@@ -447,6 +447,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A Timeline page node takes a drop** (app 0.40.0; Law 0001's drag
+  row, the 2026-10-20 Timeline node amendment, issue #267). In the
+  Timeline layout, content dragged onto a page node down the side is
+  placed at the end of the page a click on that node selects, by the
+  routes a drop on a tab takes and behind the same gates: only on the
+  raised card, only in the window that owns the page content, and never
+  while a name or note has the keys. Today's empty node takes no drop,
+  so a drop makes no page. The node's click and its scroll of the roll
+  are unchanged. The Tabs down the side and the Timeline along the
+  bottom, which no layout draws since ADR-0037, take none.
+
 - **A page's Markdown, rendered in place** (app 0.38.0; `companion-core`
   0.33.0, `companion-ffi` 0.42.0; Law 0001's AppKit text routes table,
   the 2026-10-16 Markdown preview amendment; ADR-0030). A toggle in a
