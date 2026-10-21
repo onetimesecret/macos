@@ -831,6 +831,42 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// The roll watches the storage the editor stands on, so the watch moves with the editor.
+    func testAnEditAboveTheReaderFollowsTheEditorToTheDayItMovedTo() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let left = try page(in: model, saying: longPage(lines: 30))
+        let reading = try page(in: model, saying: longPage(lines: 80))
+        try select(left, in: model)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: left, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        try select(reading, in: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: reading, readOnly: false)
+        XCTAssertTrue(roll.stack.editor === editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(storage === model.storage(for: reading), "the case needs the editor on the second day")
+        let index = (editor.string as NSString).range(of: "line 40 ").location
+        let glyph = try glyphRect(in: editor, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, reading)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+
+        let paragraph = "a paragraph written above the reader on the day the editor moved to\n"
+        let above = NSRange(location: (editor.string as NSString).range(of: "line 10 ").location, length: 0)
+        storage.replaceCharacters(in: above, with: paragraph)
+        roll.stack.update(projection: model.timeUnits, selectedPage: reading, readOnly: false)
+
+        let moved = index + (paragraph as NSString).length
+        XCTAssertEqual((editor.string as NSString).range(of: "line 40 ").location, moved)
+        var expected = place.anchor
+        expected.characterIndex = moved
+        let offset = try XCTUnwrap(expected.offset(in: editor))
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
+    }
+
     /// The mounted day's edits rebase a place on that day only.
     func testAnEditAboveInTheMountedDayLeavesAQuietDaysReaderOnTheirLine() throws {
         let model = try makeModel()

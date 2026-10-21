@@ -484,13 +484,24 @@ final class DayStackView: NSView {
             name: NSText.didChangeNotification,
             object: editor
         )
-        // Any storage, because the editor's storage is swapped per page; the handler filters.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(mountedStorageEdited),
-            name: NSTextStorage.didProcessEditingNotification,
-            object: nil
-        )
+    }
+
+    /// The storage `mountedStorageEdited` is registered for, held so the registration can be
+    /// taken off it when the editor moves to another day.
+    private var observedStorage: NSTextStorage?
+
+    private func observeMountedStorage() {
+        let mounted = editor?.textStorage
+        guard mounted !== observedStorage else { return }
+        let center = NotificationCenter.default
+        if let observedStorage {
+            center.removeObserver(self, name: NSTextStorage.didProcessEditingNotification, object: observedStorage)
+        }
+        observedStorage = mounted
+        guard let mounted else { return }
+        center.addObserver(
+            self, selector: #selector(mountedStorageEdited),
+            name: NSTextStorage.didProcessEditingNotification, object: mounted)
     }
 
     /// Rebase a reading place on the mounted page through an edit to its storage. Only the
@@ -922,6 +933,7 @@ final class DayStackView: NSView {
     /// because nothing was re-parented, but the mounted editor moved and
     /// every path that moves it asks for the keys back (ADR-0005).
     private func settleEditor(on page: UInt64?) {
+        defer { observeMountedStorage() }
         guard let page else {
             parkEditor()
             return
