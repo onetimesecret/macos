@@ -60,7 +60,7 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
-                        keyWindow: appDelegate.keyWindowCloseability,
+                        keyWindow: appDelegate.keyWindow,
                         present: appDelegate.returnToOwner,
                         newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
@@ -185,8 +185,8 @@ struct BackdropApp: App {
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
-    /// Whether the key window has a close box for `performClose:`.
-    @ObservedObject var keyWindow: KeyWindowCloseability
+    /// Which window is key: a companion one, and one with a close box.
+    @ObservedObject var keyWindow: KeyWindowFacts
     /// Brings the owner surface back, the editor window or the panel.
     let present: () -> Void
     let newShortcut: KeyboardShortcut?
@@ -220,15 +220,49 @@ private struct FileMenuItems: View {
             .keyboardShortcut(saveAsShortcut)
             .disabled(!onAFile)
         Divider()
-        switch pages.closeChordTarget {
-        case .surface:
-            Button("Close File") { pages.perform(.pageClose) }
-                .keyboardShortcut(closeShortcut)
-                .disabled(!onAFile)
-        case .auxiliaryWindow:
-            Button("Close Window") { pages.closeWhatIsShowing(closeKeyWindow: closeKeyWindow) }
-                .keyboardShortcut(closeShortcut)
-                .disabled(!keyWindow.canClose)
+        // One item, so the NSMenuItem and its ⌘W equivalent stay put
+        // while the title and enablement follow the key window.
+        Button(closeItem.title) {
+            pages.closeWhatIsShowing(
+                companionWindowIsKey: keyWindow.companionIsKey, closeKeyWindow: closeKeyWindow)
+        }
+        .keyboardShortcut(closeShortcut)
+        .disabled(!closeItem.isEnabled)
+    }
+
+    private var closeItem: CloseMenuItem {
+        CloseMenuItem.resolve(
+            target: pages.closeChordTarget(companionWindowIsKey: keyWindow.companionIsKey),
+            onAFile: onAFile, keyWindowCanClose: keyWindow.canClose)
+    }
+}
+
+/// The File menu's ⌘W item (issue #201): Close File on the surface,
+/// enabled on a file, or Close Window while a companion window is key,
+/// enabled when that window can close.
+enum CloseMenuItem: Equatable {
+    case closeFile(enabled: Bool)
+    case closeWindow(enabled: Bool)
+
+    static func resolve(
+        target: CloseChordTarget, onAFile: Bool, keyWindowCanClose: Bool
+    ) -> CloseMenuItem {
+        switch target {
+        case .surface: return .closeFile(enabled: onAFile)
+        case .auxiliaryWindow: return .closeWindow(enabled: keyWindowCanClose)
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .closeFile: return "Close File"
+        case .closeWindow: return "Close Window"
+        }
+    }
+
+    var isEnabled: Bool {
+        switch self {
+        case .closeFile(let enabled), .closeWindow(let enabled): return enabled
         }
     }
 }
@@ -409,6 +443,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// content windows over the one model.
     private lazy var editorWindow = PrimaryEditorWindowController(model: model)
 
+    /// Whether a window is one of the app's own ordinary windows:
+    /// Settings, Send Feedback, or the About panel AppKit put up. ⌘W
+    /// closes one of them while it has the keyboard (#201).
+    private func isCompanionWindow(_ window: NSWindow) -> Bool {
+        settings.owns(window) || feedback.owns(window) || standardAboutPanel() === window
+    }
+
     /// Holds the About panel at the surface's keyless altitude while
     /// it is open. Settings owns a follower of its own; this one is
     /// the delegate's because the About panel is AppKit's and has no
@@ -471,9 +512,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
     private var windowCloseObserver: NSObjectProtocol?
 
-    /// Whether the key window can close, for the File menu's Close Window
-    /// item (issue #201). Starts observing once the app has finished launching.
-    let keyWindowCloseability = KeyWindowCloseability()
+    /// Which window is key, for the File menu's ⌘W item (issue #201).
+    /// Starts observing once the app has finished launching.
+    private(set) lazy var keyWindow = KeyWindowFacts { [weak self] window in
+        self?.isCompanionWindow(window) ?? false
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
@@ -497,7 +540,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // the menu bar reads: App | File | Edit | View | Window | Help.
         Self.moveFileMenuAfterAppMenu()
         Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
-        keyWindowCloseability.observe()
+        keyWindow.observe()
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to

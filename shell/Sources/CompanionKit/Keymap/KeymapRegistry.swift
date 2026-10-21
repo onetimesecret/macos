@@ -85,17 +85,18 @@ public enum CloseChordTarget: Equatable, Sendable {
 }
 
 extension PageModel {
-    /// The model's half of where ⌘W goes. `holdsKeys` is false while an
-    /// auxiliary window has the keys, and also while no window of ours is
-    /// key; the File menu asks AppKit whether the key window can close.
-    public var closeChordTarget: CloseChordTarget {
-        holdsKeys ? .surface : .auxiliaryWindow
+    /// Where ⌘W goes, from two facts: the shell's, that a companion window
+    /// (Settings, Send Feedback, About) is key, and the owner's `holdsKeys`.
+    /// A content window that is key is never `.auxiliaryWindow`, whatever
+    /// the owner has reported so far.
+    public func closeChordTarget(companionWindowIsKey: Bool) -> CloseChordTarget {
+        companionWindowIsKey && !holdsKeys ? .auxiliaryWindow : .surface
     }
 
     /// Runs ⌘W: `page::Close` on the surface, or `closeKeyWindow` when
-    /// the keyboard is in a window with no page or file to close.
-    public func closeWhatIsShowing(closeKeyWindow: () -> Void) {
-        switch closeChordTarget {
+    /// the keyboard is in a companion window with no page or file to close.
+    public func closeWhatIsShowing(companionWindowIsKey: Bool, closeKeyWindow: () -> Void) {
+        switch closeChordTarget(companionWindowIsKey: companionWindowIsKey) {
         case .surface:
             perform(.pageClose)
         case .auxiliaryWindow:

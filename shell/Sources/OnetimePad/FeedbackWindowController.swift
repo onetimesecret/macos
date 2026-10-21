@@ -111,6 +111,12 @@ final class FeedbackWindowController: NSObject {
         super.init()
     }
 
+    /// Whether a window is the Send Feedback window. The File menu's
+    /// ⌘W asks, to close it while it has the keyboard (#201).
+    func owns(_ candidate: NSWindow) -> Bool {
+        window === candidate
+    }
+
     func show() {
         if window == nil {
             let draft = FeedbackDraft(serverURL: serverURL, makeReport: makeReport)
