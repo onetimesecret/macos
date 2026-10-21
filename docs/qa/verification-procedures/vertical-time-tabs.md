@@ -455,7 +455,10 @@ Do not remove a daily-use profile's saved preference to test the unset default.
 4. With wrapping off in days mode, scroll horizontally to a nonzero offset.
    Check that all source regions move together through one document offset,
    including the inactive region. Scroll vertically to another wide day and
-   select it: it does not introduce an independent horizontal offset.
+   select it: it does not introduce an independent horizontal offset. A day
+   shown as a Markdown preview keeps the viewport's width and stays where it
+   is while the unwrapped source days beside it slide sideways; this is the
+   expected presentation, not a failure.
 5. At that nonzero horizontal offset, check day/page headings and their controls.
    They remain viewport-aligned, readable, and operable while source text moves.
    Repeat after resize and after changing the active day. This does not require
