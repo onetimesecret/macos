@@ -356,7 +356,10 @@ final class DayStackView: NSView {
     private var rendered: Signature?
     private var expandedLayout = false
     private var readingPlace: RollPlace?
-    private(set) var measurements = 0
+    #if DEBUG
+        /// The passes `relayout()` made, for the tests.
+        private(set) var measurements = 0
+    #endif
 
     /// Extents and line marks change only during layout. Scroll
     /// notifications reuse this captured document half and publish a new
@@ -1045,7 +1048,9 @@ final class DayStackView: NSView {
         guard !isLayingOut, model.owner == coordinator.surface,
               let scroll = enclosingScrollView else { return false }
         isLayingOut = true
-        measurements += 1
+        #if DEBUG
+            measurements += 1
+        #endif
         let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
         let expanded = model.isPageExpanded && expandedBody != nil
         let expansionChanged = expanded != expandedLayout
