@@ -219,12 +219,11 @@ public struct TimeRailView: View {
                                     Text(node.stamp.isEmpty ? CompanionL10n.string("pad.page.newPlaceholder") : node.stamp)
                                     Spacer(minLength: 0)
                                 }
-                                .padding(6)
+                                .padding(6).contentShape(Rectangle())
                                 .background(node.active ? Color.ember.opacity(0.14) : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                                 // The node takes drops for the page its click selects (issue 267).
                                 .background(TabDropOverlay.node(target, model: model, readOnly: readOnly))
-                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .font(.system(.caption, design: .monospaced))
