@@ -1096,7 +1096,7 @@ final class DayStackView: NSView {
         var documentWidth = width
         var sourceHeights: [ObjectIdentifier: CGFloat] = [:]
         for row in rows where !expanded || row.body === expandedBody {
-            guard let text = row.body as? NSTextView, !(text is MarkdownPreviewView) else { continue }
+            guard let text = Self.sourceText(row.body) else { continue }
             text.autoresizingMask = []
             text.isHorizontallyResizable = false
             text.minSize = .zero
@@ -1131,7 +1131,7 @@ final class DayStackView: NSView {
             } else {
                 height = Self.minimumRegionHeight
             }
-            let bodyWidth = sourceHeights[ObjectIdentifier(row.body)] != nil ? documentWidth : width
+            let bodyWidth = Self.sourceText(row.body) != nil ? documentWidth : width
             row.body.frame = NSRect(x: 0, y: y, width: bodyWidth, height: height)
             (row.body as? EmptyTodayView)?.place()
             y += height
@@ -1314,6 +1314,13 @@ final class DayStackView: NSView {
     /// A region no shorter than one line of ink, so an empty day is
     /// still somewhere a click can land.
     static let minimumRegionHeight: CGFloat = 32
+
+    /// The region's source text, which is measured for wrapping and set at the document's width;
+    /// nil for a preview or any other body, which keeps the viewport's width.
+    private static func sourceText(_ body: NSView) -> NSTextView? {
+        guard let text = body as? NSTextView, !(text is MarkdownPreviewView) else { return nil }
+        return text
+    }
 
     /// How tall a region has to be to show all of its text at this
     /// width: the used rect of laid-out glyphs plus the inset above and
