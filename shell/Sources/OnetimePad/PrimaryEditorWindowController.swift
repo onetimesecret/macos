@@ -353,7 +353,7 @@ private struct PrimaryEditorRootView: View {
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
                     if pages.showsTimeUnits {
-                        TimeRailView(model: pages)
+                        TimeRailView(model: pages, readOnly: false)
                     } else {
                         SlotRailView(model: pages)
                     }

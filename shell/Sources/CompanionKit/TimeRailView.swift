@@ -36,6 +36,8 @@ import SwiftUI
 /// the claim that horizontal mode is untouched is a fact about the diff.
 public struct TimeRailView: View {
     @ObservedObject var model: PageModel
+    /// The stance the page content takes; a read only rail's nodes take no drop (issue 267).
+    let readOnly: Bool
     @Environment(\.presentationSurface) private var surface
 
     /// The roll handed to a rail whose window does not own the page
@@ -46,8 +48,9 @@ public struct TimeRailView: View {
     /// can honestly say about one.
     @StateObject private var unclaimedRoll = RollGeometryModel()
 
-    public init(model: PageModel) {
+    public init(model: PageModel, readOnly: Bool) {
         self.model = model
+        self.readOnly = readOnly
     }
 
     /// Whether this window's rail reads and drives the roll, pure: only
@@ -149,6 +152,7 @@ public struct TimeRailView: View {
                     owners: model.rollGeometry, unclaimed: unclaimedRoll
                 ),
                 drivesRoll: Self.drivesRoll(surface: surface, owner: model.owner),
+                readOnly: readOnly,
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
@@ -200,8 +204,9 @@ public struct TimeRailView: View {
                             Spacer(minLength: 0)
                         }
                         ForEach(Self.nodes(for: unit, in: nodes)) { node in
+                            let target = node.target
                             Button {
-                                model.select(target: node.target)
+                                model.select(target: target)
                                 if Self.drivesRoll(surface: surface, owner: model.owner),
                                    let extent = model.rollGeometry.geometry.extents.first(where: {
                                        $0.page == node.page && $0.bucket == node.bucket
@@ -214,9 +219,12 @@ public struct TimeRailView: View {
                                     Text(node.stamp.isEmpty ? CompanionL10n.string("pad.page.newPlaceholder") : node.stamp)
                                     Spacer(minLength: 0)
                                 }
-                                .padding(6).contentShape(Rectangle())
+                                .padding(6)
                                 .background(node.active ? Color.ember.opacity(0.14) : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
+                                // The node takes drops for the page its click selects (issue 267).
+                                .background(TabDropOverlay.node(target, model: model, readOnly: readOnly))
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .font(.system(.caption, design: .monospaced))
@@ -405,6 +413,8 @@ struct StreamNavigatorView: View {
     /// to move. Selection is the shared model's and either window may
     /// change it; the scroll that follows is the owner's own business.
     let drivesRoll: Bool
+    /// The rail's stance (`TimeRailView.readOnly`); a read only rail's nodes take no drop.
+    let readOnly: Bool
     let nodes: [StreamNavigator.Node]
     let chords: [UInt64: Keystroke]
 
@@ -606,6 +616,7 @@ struct StreamNavigatorView: View {
     /// the tooltip repeats what the gutter already shows.
     private func node(_ placed: StreamNavigator.Placed, width: CGFloat) -> some View {
         let node = placed.node
+        let target = node.target
         let first = node.firstOfDay
         let hovered = hoverID == node.id
         return HStack(alignment: .top, spacing: 8) {
@@ -651,6 +662,8 @@ struct StreamNavigatorView: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(hovered ? Color.primary.opacity(0.07) : .clear)
         )
+        // The node takes drops for the page its click selects (issue 267).
+        .background(TabDropOverlay.node(target, model: model, readOnly: readOnly))
         .contentShape(Rectangle())
         .offset(y: placed.y - (first ? 7 : 6))
         .onHover { inside in
@@ -660,7 +673,7 @@ struct StreamNavigatorView: View {
                 hoverID = nil
             }
         }
-        .onTapGesture { jump(to: placed) }
+        .onTapGesture { jump(to: target, documentTop: placed.documentTop) }
         .help(StreamNavigator.help(for: node, chord: chords[node.id]))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
@@ -705,10 +718,10 @@ struct StreamNavigatorView: View {
     /// gets, and bring its gutter to the top of the roll. The empty
     /// today place takes the create path, which is the one click on the
     /// rail that makes something (ADR-0017).
-    private func jump(to placed: StreamNavigator.Placed) {
-        model.select(target: placed.node.target)
+    private func jump(to target: SurfaceTarget, documentTop: CGFloat) {
+        model.select(target: target)
         guard drivesRoll else { return }
-        roll.scroll(toDocumentOffset: StreamNavigator.jumpOffset(forDocumentTop: placed.documentTop))
+        roll.scroll(toDocumentOffset: StreamNavigator.jumpOffset(forDocumentTop: documentTop))
     }
 
     /// Bare track was clicked: scroll the roll to the stretch under the

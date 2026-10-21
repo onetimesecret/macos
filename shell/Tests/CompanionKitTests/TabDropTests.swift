@@ -534,8 +534,213 @@ final class TabDropTests: XCTestCase {
         XCTAssertEqual(target.page, first, "the target lost its slot's page across the reorder")
     }
 
+    // MARK: The side Timeline's page nodes (issue 267)
+
+    /// Each page node of the side Timeline, in the default rail and the pads rail, seats one
+    /// target aimed at the slot its click selects, the row a person aims at, and today's
+    /// empty place, whose click takes the create path, seats none (ADR-0017).
+    func testTheSideTimelineSeatsATargetOnEachPageNodeForThePageItsClickSelects() throws {
+        for pads in [false, true] {
+            let rail = pads ? "the pads rail" : "the default rail"
+            let client = DayProjectionClockClient(tag: UUID().uuidString)
+            let model = try makeModel(client: client)
+            model.pads.isEnabled = pads
+            let oldest = try unshownPage(on: model, text: "oldest")
+            XCTAssertTrue(client.advanceDay())
+            model.refresh()
+            let first = try unshownPage(on: model, text: "first")
+            let next = try unshownPage(on: model, text: "next")
+            XCTAssertTrue(client.advanceDay())
+            model.refresh()
+            XCTAssertEqual(model.timeUnits.units.map(\.bucket), [0, -1, -2], rail)
+            XCTAssertEqual(model.timeUnits.units.first?.pageIDs, [], "today holds a page in \(rail)")
+
+            let host = mountTimeline(on: model, readOnly: false)
+            let targets = nodeTargets(in: host)
+            XCTAssertEqual(targets.map(\.slot), [first.slot, next.slot, oldest.slot], rail)
+            XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), "a drop and a click part in \(rail)")
+            XCTAssertEqual(targets.map(\.page), [first.sheet, next.sheet, oldest.sheet], rail)
+            XCTAssertEqual(nodes(on: model).filter { !$0.hasPage }.map(\.target), [.today], rail)
+            for target in targets {
+                XCTAssertTrue(target.takesDrops, rail)
+                XCTAssertGreaterThan(target.bounds.width, 0, rail)
+                XCTAssertGreaterThan(target.bounds.height, 0, rail)
+                XCTAssertNil(target.hitTest(NSPoint(x: target.bounds.midX, y: target.bounds.midY)), rail)
+            }
+            for (above, below) in zip(targets, targets.dropFirst()) {
+                XCTAssertLessThan(
+                    frame(of: below).midY, frame(of: above).minY, "one target spans two rows in \(rail)")
+            }
+        }
+    }
+
+    /// A node on a resting card takes no drop, as its read only page takes none (ADR-0015),
+    /// and a node in the window that does not own the page content takes none (ADR-0033);
+    /// raised, or once its window owns, the same node seals another app's drag.
+    func testANodeOnARestingCardOrInTheWindowThatDoesNotOwnTakesNoDrop() throws {
+        for pads in [false, true] {
+            let rail = pads ? "the pads rail" : "the default rail"
+            let standIn = DragStandIn(tag: UUID().uuidString)
+            let model = try makeModel(client: standIn)
+            model.pads.isEnabled = pads
+            let destination = try unshownPage(on: model, text: "xy")
+            let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
+            let host = mountTimeline(on: model, readOnly: true)
+
+            /// The target on the destination's node as the rail stands now.
+            func target() throws -> TabDropTarget {
+                try XCTUnwrap(nodeTargets(in: host).first { $0.slot == destination.slot }, rail)
+            }
+
+            /// The node offers nothing, places nothing, reads no board and says nothing.
+            func refuses(_ state: String) throws {
+                let node = try target()
+                XCTAssertFalse(node.takesDrops, "\(rail) \(state)")
+                XCTAssertEqual(node.dropRoute(for: foreign), .refused, "\(rail) \(state)")
+                XCTAssertEqual(node.draggingEntered(foreign), [], "\(rail) \(state)")
+                XCTAssertFalse(node.performDragOperation(foreign), "\(rail) \(state)")
+                XCTAssertEqual(standIn.drops, [], "the core read the board \(state)")
+                XCTAssertEqual(shape(model, destination.sheet), "xy", "a drop was placed \(state)")
+                XCTAssertNil(model.notice, "a refused drop said something \(state)")
+            }
+
+            XCTAssertTrue(try target().readOnly, rail)
+            try refuses("on a resting card")
+
+            host.rootView = timeline(model, readOnly: false, surface: .panel)
+            XCTAssertFalse(try target().readOnly, rail)
+            XCTAssertEqual(try target().draggingEntered(foreign), .copy, "the raised card's node refused")
+
+            host.rootView = timeline(model, readOnly: false, surface: .editorWindow)
+            XCTAssertEqual(try target().surface, .editorWindow, rail)
+            try refuses("in the window that does not own")
+
+            model.transferOwnership(to: .editorWindow)
+            let owner = try target()
+            XCTAssertTrue(owner.takesDrops, rail)
+            XCTAssertTrue(owner.performDragOperation(foreign), rail)
+            XCTAssertEqual(standIn.drops, [[destination.sheet, 2, 0]], rail)
+            XCTAssertEqual(shape(model, destination.sheet), "xy#", rail)
+        }
+    }
+
+    /// A node's target moves with its node when the nodes re sort, and a new page's node
+    /// seats its own, so a drop still goes where the click on that row goes.
+    func testANodesTargetFollowsItsNodeThroughAResortAndANewPage() throws {
+        for pads in [false, true] {
+            let rail = pads ? "the pads rail" : "the default rail"
+            let model = try makeModel()
+            model.pads.isEnabled = pads
+            let first = try unshownPage(on: model, text: "a")
+            let second = try unshownPage(on: model, text: "b")
+            let third = try unshownPage(on: model, text: "c")
+            let host = mountTimeline(on: model, readOnly: false)
+            let before = nodeTargets(in: host)
+            XCTAssertEqual(before.map(\.slot), clickedSlots(on: model), rail)
+            XCTAssertEqual(Set(before.map(\.slot)), [first.slot, second.slot, third.slot], rail)
+
+            let index = try XCTUnwrap(model.navigationTabs.firstIndex { $0.id == before[0].slot })
+            model.move(try XCTUnwrap(before.last?.slot), to: index)
+            let resorted = nodeTargets(in: host)
+            XCTAssertNotEqual(clickedSlots(on: model), before.map(\.slot), "the move re sorted nothing")
+            XCTAssertEqual(resorted.map(\.slot), clickedSlots(on: model), "a target kept its old row in \(rail)")
+            for target in resorted {
+                XCTAssertEqual(target.page, model.tabs.first { $0.id == target.slot }?.pageID, rail)
+            }
+
+            model.newPage()
+            let made = try XCTUnwrap(model.selectedPageID)
+            let madeSlot = try slot(of: made, on: model)
+            let grown = nodeTargets(in: host)
+            XCTAssertEqual(grown.count, 4, rail)
+            XCTAssertEqual(grown.map(\.slot), clickedSlots(on: model), "the new node's row aims elsewhere in \(rail)")
+            XCTAssertEqual(grown.first { $0.slot == madeSlot }?.page, made, rail)
+        }
+    }
+
+    /// A page's drag dropped on another page's node moves its range to the end of the page
+    /// that node names, keeping the object, through the same target a tab seats.
+    func testADragDroppedOnAPageNodeMovesItsRangeToTheEndOfThatNodesPage() throws {
+        for pads in [false, true] {
+            let rail = pads ? "the pads rail" : "the default rail"
+            let model = try makeModel()
+            model.pads.isEnabled = pads
+            let source = try mountPage(on: model)
+            let ids = chips(model, source.sheet).map(\.chipId)
+            let destination = try unshownPage(on: model, text: "xy")
+            let sourceSlot = try slot(of: source.sheet, on: model)
+            model.select(sourceSlot)
+            let host = mountTimeline(on: model, readOnly: false)
+            let targets = nodeTargets(in: host)
+            XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), rail)
+            let target = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
+            let board = try beginDrag(source, NSRange(location: 0, length: 4))
+            let drop = drag(from: source.textView, board: board, mask: move)
+
+            XCTAssertEqual(target.draggingEntered(drop), .move, rail)
+            XCTAssertTrue(target.performDragOperation(drop), rail)
+            XCTAssertEqual(shape(model, destination.sheet), "xyab #", "the run was not placed at the end")
+            XCTAssertEqual(chips(model, destination.sheet).map(\.chipId), [ids[0]], "the move took a new identity")
+            XCTAssertEqual(shape(model, source.sheet), " cd # ef", "the move left its source run")
+            XCTAssertEqual(model.selection, sourceSlot, "a drop on a node selected its page in \(rail)")
+            source.coordinator.endPageDrag()
+        }
+    }
+
+    /// The side Timeline as the card or editor window mounts it, under `readOnly` and `surface`.
+    private func timeline(_ model: PageModel, readOnly: Bool, surface: PresentationOwner) -> AnyView {
+        AnyView(TimeRailView(model: model, readOnly: readOnly).environment(\.presentationSurface, surface))
+    }
+
+    /// The side Timeline hosted in a window of its own that is never ordered on screen.
+    private func mountTimeline(on model: PageModel, readOnly: Bool) -> NSHostingView<AnyView> {
+        let host = NSHostingView(rootView: timeline(model, readOnly: readOnly, surface: .panel))
+        host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width(experimental: model.pads.isEnabled), height: 480)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        addTeardownBlock { window.close() }
+        return host
+    }
+
+    /// Every target seated under `host` once it has laid out, top to bottom as drawn.
+    private func nodeTargets(in host: NSView) -> [TabDropTarget] {
+        host.layoutSubtreeIfNeeded()
+        drainMainQueue()
+        host.layoutSubtreeIfNeeded()
+        return mountedTargets(in: host).sorted { frame(of: $0).midY > frame(of: $1).midY }
+    }
+
+    /// Every target under `view`, in the order the view tree holds them.
+    private func mountedTargets(in view: NSView) -> [TabDropTarget] {
+        if let target = view as? TabDropTarget { return [target] }
+        return view.subviews.flatMap { mountedTargets(in: $0) }
+    }
+
+    /// A target's frame in its window, whose y grows upward.
+    private func frame(of target: TabDropTarget) -> NSRect {
+        target.convert(target.bounds, to: nil)
+    }
+
+    /// The nodes the rail draws, top to bottom, as `TimeRailView` asks `StreamNavigator`.
+    private func nodes(on model: PageModel) -> [StreamNavigator.Node] {
+        StreamNavigator.nodes(
+            projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
+    }
+
+    /// The slot each page node's click selects (`StreamNavigator.Node.target`), top to bottom.
+    private func clickedSlots(on model: PageModel) -> [UInt64] {
+        nodes(on: model).compactMap { node in
+            if case .tab(let slot) = node.target { slot } else { nil }
+        }
+    }
+
+    /// A client whose pages are born on a day count of the test's own, so the Timeline draws
+    /// several days; `advanceDay` ages the core by the same day, so deadlines keep pace.
     private final class DayProjectionClockClient: CompanionClient, @unchecked Sendable {
         private static let dayMs: UInt64 = 24 * 60 * 60 * 1_000
+        private let lock = NSLock()
         private var day = 0
         private var birthDays: [String: Int] = [:]
 
@@ -545,12 +750,17 @@ final class TabDropTests: XCTestCase {
 
         func advanceDay() -> Bool {
             guard ageForTests(byMs: Self.dayMs) else { return false }
+            lock.lock()
+            defer { lock.unlock() }
             day += 1
             return true
         }
 
         override func tabs() -> [TabSummary] {
-            super.tabs().map { tab in
+            let tabs = super.tabs()
+            lock.lock()
+            defer { lock.unlock() }
+            return tabs.map { tab in
                 guard tab.hasPage, let uuid = tab.pageUUID else { return tab }
                 let born = birthDays[uuid, default: day]
                 birthDays[uuid] = born

@@ -20,6 +20,15 @@ struct TabDropOverlay: NSViewRepresentable {
         view.readOnly = readOnly
         view.surface = context.environment.presentationSurface
     }
+
+    /// The target behind a Timeline node, aimed at the slot its click selects; today's empty
+    /// place selects no slot and seats none (ADR-0017).
+    @ViewBuilder
+    static func node(_ target: SurfaceTarget, model: PageModel, readOnly: Bool) -> some View {
+        if case .tab(let slot) = target {
+            TabDropOverlay(model: model, slot: slot, readOnly: readOnly)
+        }
+    }
 }
 
 /// Where a drop on a tab goes: the end of the slot's page, by the routes a drop on the
