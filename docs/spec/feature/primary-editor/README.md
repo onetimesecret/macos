@@ -54,7 +54,9 @@ storages, or nothing (ADR-0006, ADR-0020).
   title or page content appears there (ADR-0033 Restoration).
 - **Traffic light buttons.** Standard. The green button enters full
   screen; the yellow minimises to the Dock; the red closes the window
-  (⌘W stays `page::Close`, so ⇧⌘W closes the window; see Commands).
+  (⌘W stays `page::Close`, so ⇧⌘W closes the window; see Commands.
+  Note, 2026-10-21, issue #201: ⌘W closes an auxiliary window that has
+  the keyboard, since there it has no page to close).
 - **Minimize.** A miniaturized editor window is open for ownership and
   not on screen for the keyboard (`BackdropModel.editorWindowOpen`,
   `editorWindowOnScreen`). It keeps the page while the panel rests, so
