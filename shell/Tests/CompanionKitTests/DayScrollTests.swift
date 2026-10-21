@@ -555,6 +555,69 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// A switch that hands the keys to the editor must not let a scroll the hand off makes
+    /// stand in for the reader's own (#278, point 1).
+    func testAPageSwitchHandingTheKeysToAnOffscreenCaretKeepsTheReadingPlace() throws {
+        let model = try makeModel()
+        let top = try page(in: model, saying: longPage(lines: 60))
+        let previewed = try page(in: model, saying: "# Preview\n" + longPage(lines: 40))
+        let next = try page(in: model, saying: longPage(lines: 80))
+        model.toggleMarkdownPreview(for: previewed)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let end = editor.string.utf16.count
+        editor.setSelectedRange(NSRange(location: end, length: 0))
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: previewed), selectedPage: previewed, readOnly: false)
+        let preview = try XCTUnwrap(roll.stack.previewRegions[previewed])
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        XCTAssertTrue(editor.isHidden)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[top])
+        let index = (quiet.string as NSString).range(of: "line 20 ").location
+        let glyph = try glyphRect(in: quiet, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, top)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        let top0 = roll.scroll.contentView.bounds.minY
+
+        roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
+
+        XCTAssertTrue(roll.window.firstResponder === editor, "the keys did not pass to the editor")
+        XCTAssertEqual(roll.coordinator.currentSheet, next)
+        XCTAssertEqual(editor.selectedRange().location, end, "the caret was not put back at the page's end")
+        XCTAssertGreaterThan(
+            editor.frame.minY, roll.scroll.contentView.bounds.maxY,
+            "the case needs the caret's page below the viewport")
+        XCTAssertEqual(roll.stack.currentPlace?.page, top)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, top0, accuracy: 0.5)
+    }
+
+    /// A peer's applied edit restates a quiet page and leaves the page a surface shows alone (#276);
+    /// the answer comes from the model's own view of what is mounted (#278, point 4).
+    func testAPeersEditRestatesAQuietPageAndNotTheMountedOne() throws {
+        let model = try makeModel()
+        let quiet = try page(in: model, saying: "quiet before")
+        let mounted = try page(in: model, saying: "mounted before")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(editor.textStorage === model.storage(for: mounted))
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
+
+        model.settleRemoteEdits(on: [quiet, mounted])
+
+        XCTAssertEqual(model.storage(for: quiet).string, "quiet after")
+        XCTAssertEqual(editor.string, "mounted before", "the mounted page was restated under the editor")
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        XCTAssertEqual(roll.stack.quietRegions[quiet]?.string, "quiet after")
+    }
+
     func testWrapAndWidthRoundTripsReturnAMidParagraphReaderToTheSameLine() throws {
         let model = try makeModel()
         model.wrapsLines = true

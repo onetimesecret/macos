@@ -1090,7 +1090,10 @@ final class DayStackView: NSView {
                 }
             }
         }
-        scroll.hasHorizontalScroller = !model.wrapsLines
+        // Keystrokes run passes, and a scroller set is a layout even when nothing changed (#278).
+        if scroll.hasHorizontalScroller == model.wrapsLines {
+            scroll.hasHorizontalScroller = !model.wrapsLines
+        }
         let width = max(scroll.contentView.bounds.width, 0)
         let clipHeight = scroll.contentView.bounds.height
         var documentWidth = width
