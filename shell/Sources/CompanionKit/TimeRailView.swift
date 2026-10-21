@@ -1009,7 +1009,7 @@ private struct SlotRailRow: View {
                 Button { model.close(sheet.id) } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .frame(width: 12, height: 18)
+                        .frame(width: 12, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

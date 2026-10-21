@@ -989,10 +989,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rows and close marks reach VoiceOver and the pointer** (app 0.39.1).
   A sync device row combines its words and keeps Revoke as an action;
   the rail's day nodes, slot rows and file rows are buttons, and a slot
-  row offers Rename Tab and Close Tab as actions outside a rename. Tab
-  close marks have a 12 by 18 point hit area and a tooltip; the note's
-  expand button has one too. The card's edges and corners show resize
-  cursors while raised, one on the stack at a time. The ambient panel
+  row offers Rename Tab and Close Tab as actions outside a rename, and
+  the strip's tabs and file rows the same. Tab close marks have a 12
+  by 16 point hit area and a tooltip; the note's expand button has one
+  too. The card's edges and corners show resize cursors while raised,
+  one on the stack at a time, popped when the card rests. The ambient panel
   carries the app's name for VoiceOver. The wheel relay removes its
   event monitor on deallocation.
 - **A copy that lands as the clear fires keeps its own window** (app

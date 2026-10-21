@@ -745,6 +745,9 @@ struct BackdropRootView: View {
             }
         }
         .onDisappear { popResizeCursor() }
+        // A rest under a resting pointer: the grip stays mounted until
+        // the overlay rebuilds, so the pop cannot wait for an exit.
+        .onChange(of: raised) { if !$0 { popResizeCursor() } }
     }
 
     private static let gripThickness: CGFloat = 6

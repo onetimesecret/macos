@@ -332,7 +332,7 @@ private struct TimeUnitBottomTab: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
         .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
             model.newPage()
         }
@@ -420,7 +420,7 @@ struct SheetTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .frame(width: 12, height: 18)
+                        .frame(width: 12, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -479,7 +479,17 @@ struct SheetTab: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(
+            renaming ? [] : selected ? [.isSelected, .isButton] : [.isButton])
+        // The hover-only close mark and the menu verbs, reachable
+        // without a pointer, as on the rail's rows.
+        .accessibilityAction { if !renaming { model.select(sheet.id) } }
+        .accessibilityActions {
+            if !renaming {
+                Button("Rename Tab") { beginRename() }
+                Button("Close Tab") { model.close(sheet.id) }
+            }
+        }
         .contextMenu {
             Button("Rename Tab") { beginRename() }
             // Disabled rather than hidden on an empty slot: the item
@@ -682,7 +692,7 @@ struct FileTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .frame(width: 12, height: 18)
+                        .frame(width: 12, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -716,7 +726,9 @@ struct FileTab: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAction { model.select(target: .file(file.id)) }
+        .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
             Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
