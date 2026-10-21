@@ -9,7 +9,7 @@ extension View {
     @ViewBuilder
     func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
         if offered {
-            accessibilityAction(named: Text("New page"), action)
+            accessibilityAction(named: Text("New Page"), action)
         } else {
             self
         }

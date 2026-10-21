@@ -20,6 +20,10 @@ final class CodeLanguageNameTests: XCTestCase {
                 CodeInk.detectorLanguageRenderers[slug],
                 "\(slug) is named but the detector never emits it"
             )
+            // Aliases resolve before names, so one keyed by a slug
+            // would silently re-point its display name.
+            XCTAssertNil(CodeInk.aliases[slug], "\(slug) is a registry slug; an alias must not shadow it")
+            XCTAssertNil(CodeLanguageName.fenceSpellings[slug], "\(slug) is a registry slug; a spelling must not shadow it")
         }
     }
 

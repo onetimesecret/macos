@@ -6,9 +6,10 @@ import CoreGraphics
 /// card like a window means eight grips, and eight ways one translation
 /// turns into a new geometry.
 ///
-/// Pure, like `BackdropGeometry.clamped(to:)` beside it: the decision is
-/// tested directly rather than by driving AppKit. The clamp still has
-/// the last word; this only says what the user asked for.
+/// The resize decision is pure, like `BackdropGeometry.clamped(to:)`
+/// beside it, and tested directly; the cursor each grip names is the
+/// one AppKit fact kept here so the mapping is tested the same way. The
+/// clamp still has the last word; this only says what the user asked for.
 enum CardEdge: CaseIterable {
     case top, bottom, leading, trailing
     case topLeading, topTrailing, bottomLeading, bottomTrailing

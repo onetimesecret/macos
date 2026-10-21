@@ -1011,7 +1011,9 @@ private struct SlotRailRow: View {
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .help("Close tab")
-                .accessibilityLabel(Text("Close Tab"))
+                // The row offers Close Tab as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             Group {
                 if sheet.hasPage {
