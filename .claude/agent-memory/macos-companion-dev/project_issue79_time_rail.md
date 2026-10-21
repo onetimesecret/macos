@@ -55,11 +55,12 @@ that turns them on. The roll is still branch 6's.
 ## Two testing notes
 
 - **Never hand a main actor type's static to `map` unapplied.** SwiftUI's
-  `View` is `@MainActor`, and so is `TimeUnitTab`, so a static such as
-  `TimeUnitTab.dayHelp` passed as `units.map(TimeUnitTab.dayHelp)` is a
-  conversion that loses the isolation. `units.map { TimeUnitTab.dayHelp(
-  spokenLabel: $0.spokenLabel, chord: nil) }` is a closure formed in an
-  isolated context and inherits it, which is the form to write.
+  `View` is `@MainActor`, so a conforming type's statics are main actor
+  isolated and `nodes.map(StreamNavigator.help)` style conversions lose
+  the isolation. A closure formed in an isolated context, `nodes.map {
+  StreamNavigator.help(for: $0, chord: nil) }`, inherits it, which is the
+  form to write. (`TimeUnitTab` is a plain namespace since 2026-10-21 and
+  its one static, `todayHelp(chord:)`, is `nonisolated`.)
 - A live core still cannot make two days (the ageing seam restores
   every creation stamp intact), so ⌘2 and ⌥⌘→ are pinned as the
   contrast between the two modes on a one-day pad, and the multi-day

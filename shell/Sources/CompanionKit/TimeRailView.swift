@@ -949,15 +949,13 @@ struct FileShelfRow: View {
 ///
 /// Internal rather than private so the wording can be tested without
 /// a window, in the idiom `TabStripView.newPageHelp` and
-/// `SheetTab.holdMenuTitle` set. On the main actor, as the view it
-/// replaced was, since the tooltip it builds reads the strip's.
-@MainActor
+/// `SheetTab.holdMenuTitle` set.
 enum TimeUnitTab {
     /// Today holding no page is the one place where a click conjures
     /// something, and the tooltip says so rather than promising a page
     /// that does not exist; with nothing bound it says only what the
     /// click does, which is still true.
-    static func todayHelp(chord: Keystroke?) -> String {
+    nonisolated static func todayHelp(chord: Keystroke?) -> String {
         Keystroke.chorded("Start today's page", chord: chord)
     }
 }

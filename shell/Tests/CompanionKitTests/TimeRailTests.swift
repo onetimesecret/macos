@@ -46,10 +46,8 @@ final class TimeRailTests: XCTestCase {
         )
     }
 
-    private func project(
-        _ tabs: [TabSummary], selecting page: UInt64? = nil
-    ) -> TimeUnitProjection {
-        TimeUnitProjection.project(tabs: tabs, selectedPageID: page, unit: .day)
+    private func project(_ tabs: [TabSummary]) -> TimeUnitProjection {
+        TimeUnitProjection.project(tabs: tabs, selectedPageID: nil, unit: .day)
     }
 
     private func makeModel() throws -> PageModel {
@@ -62,9 +60,9 @@ final class TimeRailTests: XCTestCase {
     // MARK: The rows, and where they send a click
 
     /// The rail draws the projection's days in the projection's order,
-    /// and each row carries its own day's first slot. Today at the top,
-    /// then back through whatever is still alive, with the day that
-    /// expired showing as a jump in the labels and no row of its own.
+    /// and each day's first node selects that day's first slot. Today at
+    /// the top, then back through whatever is still alive, with the day
+    /// that expired showing as a jump in the labels and no node of its own.
     func testTheRowsAreTheProjectionsDaysNewestFirst() {
         let projection = project([
             slot(tab: 1, page: 11, day: 0),
@@ -75,6 +73,8 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(
             projection.units.map(\.railLabel), ["Today", "Yesterday", "3 days ago"],
             "the rail went back to the abbreviation the wider column retired")
+        let nodes = StreamNavigator.nodes(projection: projection, tabs: [], selection: nil)
+        XCTAssertEqual(nodes.filter(\.firstOfDay).map(\.target), [.tab(1), .tab(2), .tab(3)])
     }
 
     /// A day's first node and the keyboard resolve the day the same way,
@@ -147,8 +147,16 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(TimeRailView.chord(forRowAt: 0, keymap: model.keymap)?.displaySymbol, "⌘1")
         XCTAssertEqual(TimeRailView.chord(forRowAt: 1, keymap: model.keymap)?.displaySymbol, "⌘2")
         XCTAssertEqual(
-            TimeUnitTab.todayHelp(chord: TimeRailView.chord(forRowAt: 1, keymap: model.keymap)),
-            "Start today's page (⌘2)")
+            TimeUnitTab.todayHelp(chord: TimeRailView.chord(forRowAt: 0, keymap: model.keymap)),
+            "Start today's page (⌘1)")
+        let yesterday = try XCTUnwrap(
+            StreamNavigator.nodes(
+                projection: project([slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 22, day: -1)]),
+                tabs: [], selection: nil
+            ).last)
+        XCTAssertTrue(
+            StreamNavigator.help(for: yesterday, chord: TimeRailView.chord(forRowAt: 1, keymap: model.keymap))
+                .hasSuffix("(⌘2)"))
     }
 
     /// And says only what the row does when nothing is bound to it, a

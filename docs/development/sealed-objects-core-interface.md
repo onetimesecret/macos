@@ -232,9 +232,9 @@ actions are its own to answer.
 
 - The page answers unless another text view holds the keys: a field
   editor of any field in its window or in the key window over it (the
-  gutter's, the strip's, the pad cell's, the sealed
-  name's, the find bar's, a Settings field), or a note's surface. A note
-  answers only while it holds the keys itself.
+  gutter's, the strip's, the pad cell's, the sealed name's, the find
+  bar's, a Settings field), or a note's surface. A note answers only
+  while it holds the keys itself.
 - `performKeyEquivalent` and the page's Edit menu actions (Undo, Redo,
   Seal Selected Content, Detect Code Language, Choose Language, Paste
   Without Detection) consult it, and their validation says no when it
