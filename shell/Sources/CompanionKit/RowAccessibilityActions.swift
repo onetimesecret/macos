@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// The press the strip's rows, the Files shelf's rows and the Timeline's
-/// nodes offer only while it applies. A row is one element built from
-/// `.ignore`d children, which inherits no activation from its tap
-/// gesture, so the press is given here, and withheld, for example
-/// mid-rename, when the element is the field's container instead.
+/// The press a row offers only while it applies. A row is one element
+/// built from `.ignore`d children, which inherits no activation from
+/// its tap gesture, so the press is given here, and withheld, for
+/// example mid-rename, when the element is the field's container
+/// instead.
 extension View {
     /// The default action, the one VoiceOver's press runs.
     @ViewBuilder

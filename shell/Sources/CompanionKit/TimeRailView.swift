@@ -338,32 +338,6 @@ public struct TimeRailView: View {
         return chords
     }
 
-    /// Which day the rail marks as the one the surface is showing.
-    ///
-    /// The mark follows the selected page's day rather than the row
-    /// that was last clicked, so a selection moved by the keyboard, or
-    /// dropped onto another day by the fall after an expiry, moves it
-    /// too. A selection standing in a slot the rail draws no node for
-    /// (an empty slot, or a blank old page the content bar is holding
-    /// back) lights nothing at all: what is on screen is then not on
-    /// the rail, and marking a node would say the surface is somewhere
-    /// it is not.
-    ///
-    /// Today is the one day that can answer to no slot, and while it
-    /// holds no page it takes the mark only by elimination, on the pad
-    /// where no drawn day holds a page, so there is nothing else the
-    /// mark could sit on and today is the place the next page would
-    /// land. Pure, because which day is lit is a decision and not a
-    /// drawing; `StreamNavigator.nodes` states the same rule per node.
-    static func selectedBucket(projection: TimeUnitProjection, selection: UInt64?) -> Int? {
-        if let selection,
-            let day = projection.units.first(where: { $0.tabIDs.contains(selection) }) {
-            return day.bucket
-        }
-        guard projection.units.allSatisfy({ $0.pageIDs.isEmpty }) else { return nil }
-        return projection.units.first { $0.bucket == 0 }?.bucket
-    }
-
     /// Where the day at `day` sits in `PageModel.visibleTargets`, which
     /// is the array `select(index:)` indexes.
     ///
@@ -967,40 +941,17 @@ struct FileShelfRow: View {
     }
 }
 
-/// The pure decisions a day's tab makes for the navigator's nodes: the
-/// target a click resolves to, which day offers a plus, and the
-/// tooltips. A namespace and no longer a view since the navigator
-/// replaced the rail's rows; kept under its name so the tests read as
-/// they did.
+/// The tooltips a day's node shows, the one decision of the old rows
+/// the navigator still asks (`StreamNavigator.help`). A namespace and
+/// no longer a view since the navigator replaced the rail's rows; kept
+/// under its name so the tests read as they did.
 ///
-/// Internal rather than private so the decisions can be tested without
+/// Internal rather than private so the wording can be tested without
 /// a window, in the idiom `TabStripView.newPageHelp` and
 /// `SheetTab.holdMenuTitle` set. On the main actor, as the view it
 /// replaced was, since the tooltips it builds read the strip's.
 @MainActor
 enum TimeUnitTab {
-    /// Which bottom tab carries the + button: today, and only today. A
-    /// page is minted with the clock's own reading of now, so today is
-    /// the one day a new page can land on; a plus beside yesterday
-    /// would promise a page in the past. Pure, so the strip's tests
-    /// can pin the placement without a window. The side rail puts its
-    /// plus on the PAD heading for the same reason.
-    nonisolated static func offersNewPage(_ unit: TimeUnitProjection.Unit) -> Bool {
-        unit.bucket == 0
-    }
-
-    /// Where a click on a day lands.
-    ///
-    /// The same answer the keyboard gets, and deliberately the same
-    /// shape: a day answers with its first page's slot, and only today
-    /// can answer with no slot at all. `PageModel.visibleTargets` maps
-    /// the very same units the very same way, so a click on the second
-    /// day and ⌘2 cannot disagree about where the second day is.
-    static func target(for unit: TimeUnitProjection.Unit) -> SurfaceTarget {
-        guard let tab = unit.tabIDs.first else { return .today }
-        return .tab(tab)
-    }
-
     /// A day's tooltip: what the click does, in the same words the day
     /// itself shows, and the chord that does it too. With nothing bound
     /// it says only what the click does, which is still true.

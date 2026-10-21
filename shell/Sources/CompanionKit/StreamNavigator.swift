@@ -19,9 +19,8 @@ import Foundation
 /// its day, how many empty days fall between two, where the seven day
 /// window ends, where each node stands for a given rail height, where
 /// the band and the line slivers fall, and what a click on bare track
-/// scrolls to. In the idiom `TimeRailView.selectedBucket` and
-/// `TimeUnitTab.target(for:)` set, so the whole navigator is under test
-/// without a window.
+/// scrolls to. In the idiom `TabStripView.newPageHelp` set, so the
+/// whole navigator is under test without a window.
 ///
 /// What it never carries is text. `RollGeometry` hands it rectangles
 /// (a page's span, a line's width) and it hands the view rectangles
@@ -100,8 +99,8 @@ public enum StreamNavigator {
     /// `selection` is the selected slot, as `PageModel.selection` names
     /// it. A page node is active when its slot is the selection; the
     /// empty place is active only by elimination, when no drawn page
-    /// holds the selection, the same rule `TimeRailView.selectedBucket`
-    /// states for the old rows. With `surfaceShowsRoll` false (a file or
+    /// holds the selection, the rule the rail's rows stated before the
+    /// navigator replaced them. With `surfaceShowsRoll` false (a file or
     /// the ledger has replaced the roll) no node is active at all: what
     /// is on screen is then not on the rail.
     public static func nodes(

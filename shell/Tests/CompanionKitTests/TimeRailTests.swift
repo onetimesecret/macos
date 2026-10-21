@@ -75,47 +75,31 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(
             projection.units.map(\.railLabel), ["Today", "Yesterday", "3 days ago"],
             "the rail went back to the abbreviation the wider column retired")
-        XCTAssertEqual(
-            projection.units.map { TimeUnitTab.target(for: $0) },
-            [.tab(1), .tab(2), .tab(3)])
     }
 
-    /// A day holding several pages answers with the first of them in
-    /// strip order, one row, one landing, and the rest of the day's
-    /// pages reached by scrolling the roll rather than by the rail.
-    func testADayHoldingSeveralPagesSendsAClickToItsFirst() throws {
-        let projection = project([
-            slot(tab: 7, page: 77, day: -1),
-            slot(tab: 3, page: 33, day: -1),
-        ])
-        let day = try XCTUnwrap(projection.units.last)
-        XCTAssertEqual(day.tabIDs, [7, 3])
-        XCTAssertEqual(TimeUnitTab.target(for: day), .tab(7))
-    }
-
-    /// The rail and the keyboard resolve the same units the same way,
-    /// which is what keeps a click on the second row and ⌘2 from
-    /// disagreeing about where the second day is. Asserted against a
-    /// live pad in the mode, on both shapes a live core can make: a pad
+    /// The navigator's nodes and the keyboard resolve the same pages the
+    /// same way, which is what keeps a click on the second node and ⌘2
+    /// from disagreeing about where the second page is. Asserted against
+    /// a live pad in the mode, on both shapes a live core can make: a pad
     /// with nothing on it, and a pad with today's page on it.
-    func testTheRowsLandWhereTheKeyboardLands() throws {
+    func testTheNodesLandWhereTheKeyboardLands() throws {
         let model = try makeModel()
         model.showsTimeUnits = true
         XCTAssertTrue(model.tabs.isEmpty)
-        XCTAssertEqual(
-            model.timeUnits.units.map { TimeUnitTab.target(for: $0) }, model.visibleTargets,
-            "an empty pad's row and its ⌘1 went to different places")
+        func nodeTargets() -> [SurfaceTarget] {
+            StreamNavigator.nodes(projection: model.timeUnits, tabs: model.tabs, selection: model.selection)
+                .map(\.target)
+        }
+        XCTAssertEqual(nodeTargets(), model.visibleTargets, "an empty pad's node and its ⌘1 went to different places")
 
         model.newPage()
-        XCTAssertEqual(
-            model.timeUnits.units.map { TimeUnitTab.target(for: $0) }, model.visibleTargets,
-            "a peopled today's row and its ⌘1 went to different places")
+        XCTAssertEqual(nodeTargets(), model.visibleTargets, "a peopled today's node and its ⌘1 went to different places")
     }
 
     // MARK: Today, with and without a page
 
-    /// Today is a place, not a page: it has a row either way, and the
-    /// two rows do different things. Holding a page it is a jump like
+    /// Today is a place, not a page: it has a node either way, and the
+    /// two nodes do different things. Holding a page it is a jump like
     /// any other; holding none, a click takes the shipped create path,
     /// which is the one place on the rail where clicking makes
     /// something, and the tooltip says so rather than promising a page
@@ -124,11 +108,9 @@ final class TimeRailTests: XCTestCase {
         let bare = try XCTUnwrap(project([]).units.first)
         XCTAssertEqual(bare.bucket, 0)
         XCTAssertEqual(bare.pageIDs, [])
-        XCTAssertEqual(TimeUnitTab.target(for: bare), .today)
         XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: false, chord: nil), "Start today's page")
 
         let peopled = try XCTUnwrap(project([slot(tab: 1, page: 11, day: 0)]).units.first)
-        XCTAssertEqual(TimeUnitTab.target(for: peopled), .tab(1))
         XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: true, chord: nil), "Go to today")
         XCTAssertEqual(
             TimeUnitTab.todayHelp(hasPage: true, chord: nil),
@@ -136,17 +118,12 @@ final class TimeRailTests: XCTestCase {
             "today read differently depending on which helper was asked")
     }
 
-    /// The + sits on today and on no other row (issue #158): a page is
-    /// minted with the clock's reading of now, so today is the one day
-    /// it can land on. Its tooltip is the strip's own, word for word,
-    /// so the two buttons that do one thing cannot describe it two ways
-    /// and a keymap that moved `page::New` moves both.
-    func testOnlyTodayOffersANewPageAndSaysSoInTheStripsWords() throws {
+    /// The rail's + sits on the PAD heading (issue #158) and its tooltip
+    /// is the strip's own, word for word, so the two buttons that do one
+    /// thing cannot describe it two ways and a keymap that moved
+    /// `page::New` moves both.
+    func testTheRailsNewPageTooltipIsTheStripsWords() throws {
         let model = try makeModel()
-        let projection = project([slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 12, day: -1)])
-        XCTAssertEqual(projection.units.map(TimeUnitTab.offersNewPage), [true, false])
-        XCTAssertTrue(TimeUnitTab.offersNewPage(try XCTUnwrap(project([]).units.first)))
-
         // One helper for every + button, the strip's and the rail's.
         let chord = model.keymap.hintKeystroke(for: .pageNew)
         XCTAssertEqual(TabStripView.newPageHelp(chord: chord), "New page (⌘N)")
@@ -197,42 +174,6 @@ final class TimeRailTests: XCTestCase {
         let nodes = StreamNavigator.nodes(projection: projection, tabs: [], selection: nil,
             surfaceShowsRoll: true, stampFormat: .standard)
         XCTAssertEqual(nodes.compactMap(\.page), [44])
-    }
-
-    // MARK: Which row is lit
-
-    /// The mark follows the selected page's day rather than the row
-    /// that was last clicked, so a selection the keyboard moved, or one
-    /// that fell onto another day after an expiry, moves it too.
-    func testTheMarkSitsOnTheSelectedPagesDay() {
-        let projection = project([
-            slot(tab: 1, page: 11, day: 0),
-            slot(tab: 2, page: 22, day: -1),
-        ])
-        XCTAssertEqual(TimeRailView.selectedBucket(projection: projection, selection: 2), -1)
-        XCTAssertEqual(TimeRailView.selectedBucket(projection: projection, selection: 1), 0)
-    }
-
-    /// Today with no page answers to no slot at all, so it takes the
-    /// mark exactly when no other day has it: the empty pad, where
-    /// today is where the next page would land. A selection sitting on
-    /// a slot the rail does not draw lights nothing, which is honest,
-    /// the thing on screen is not on the rail.
-    func testAnEmptyTodayIsLitOnlyWhenNoDayHoldsTheSelection() {
-        let bare = project([slot(tab: 9)])
-        XCTAssertEqual(TimeRailView.selectedBucket(projection: bare, selection: nil), 0)
-        XCTAssertEqual(TimeRailView.selectedBucket(projection: bare, selection: 9), 0)
-
-        let peopled = project([
-            slot(tab: 1, page: 11, day: -1),
-            slot(tab: 2),
-        ])
-        XCTAssertEqual(
-            TimeRailView.selectedBucket(projection: peopled, selection: 1), -1,
-            "the day holding the selection lost the mark to an empty today")
-        XCTAssertNil(
-            TimeRailView.selectedBucket(projection: peopled, selection: 2),
-            "a slot the rail does not draw lit a row anyway")
     }
 
     // MARK: How a day reads out loud
