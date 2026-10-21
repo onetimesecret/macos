@@ -32,7 +32,7 @@ public struct TabStripView: View {
     /// The stance the page content takes; a read only strip's tabs take no drop (issue 254).
     let readOnly: Bool
 
-    public init(model: PageModel, readOnly: Bool = false) {
+    public init(model: PageModel, readOnly: Bool) {
         self.model = model
         self.readOnly = readOnly
     }

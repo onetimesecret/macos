@@ -355,7 +355,7 @@ private struct PrimaryEditorRootView: View {
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
                     if pages.showsTimeUnits {
-                        TimeRailView(model: pages)
+                        TimeRailView(model: pages, readOnly: false)
                     } else {
                         SlotRailView(model: pages)
                     }
@@ -369,7 +369,7 @@ private struct PrimaryEditorRootView: View {
                 if pages.showsTimeUnits {
                     TimeStripView(model: pages)
                 } else {
-                    TabStripView(model: pages)
+                    TabStripView(model: pages, readOnly: false)
                 }
             }
         }

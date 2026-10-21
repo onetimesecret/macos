@@ -582,3 +582,87 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the object stays and the ledger gains one `sent` to `drag`. Note
       whether Finder wrote a clipping file, which would hold the sealed
       word on disk until deleted. **Fail:** the object leaves.
+
+## Drops on the side Timeline's page nodes (issue #267)
+
+**Status, 2026-10-20:** not run on hardware. Build `fae8228b` (app
+0.40.0) on `fix/267-placement-drop-targets`, or a later commit on that
+branch, with `scripts/dev.sh`, and record the commit with the results.
+The mounted view tests in `TabDropTests` drive each node's target
+through its destination calls; they run no AppKit drag session and no
+pointer (Law 0001, drag row, 2026-10-20 Timeline node amendment).
+
+Choose Timeline in Settings under Page layout. The card and the
+primary editor window then draw the Timeline down the side, so normal
+controls reach every check and no harness is needed. Run each surface
+twice: with the pads experiment off (Settings, *Multiple pads and
+context associations · experiment*), which draws the stream navigator,
+and with it on, which draws the pads rail.
+
+- [ ] **A drop on a Timeline page node** (Law 0001, drag, ⌥ drag and
+      decrypted drag rows; issue 267). Repeat **A drop on a tab** with
+      the page nodes as the tabs: a run of plain ink, a run with a named
+      object and its note, a run onto the source page's own node, an ⌥
+      copy and a word from TextEdit. With two pages on one day, drop
+      onto the second page's node. Drag from an object's decrypted
+      handle over a node. Then click each node you dropped on.
+      **Pass:** over a page node of the raised owner the cursor shows a
+      move (⌥: a copy), the run stands at the end of the page a click
+      on that node selects with the object's name and note, the second
+      page of a day takes the drop meant for it, the TextEdit word
+      stands there as a new sealed object, the decrypted drag shows no
+      operation and places nothing, and afterwards a click on the node
+      still selects its page and scrolls the roll to it, its hover fill
+      and tooltip show as before, and in the stream navigator a click
+      on the bare track still scrolls and a drag along the column still
+      scrubs. **Fail:** the cursor never changes over a node (AppKit
+      delivered no drag to a target whose `hitTest` answers nil), the
+      run goes to another page or anywhere but the end, the decrypted
+      drag places anything, or a node stops answering its click, its
+      scroll or its tooltip.
+- [ ] **A drop on a resting card's Timeline node** (Law 0001, drag
+      row; ADR-0015; issue 267). Pin the card and let it rest, drag a
+      word from TextEdit over a page node and release; then raise the
+      card and repeat. **Pass:** the resting card's node offers no
+      operation, nothing is placed and no line shows; after the raise
+      the word seals at the end of the node's page. **Fail:** anything
+      is placed on a resting card, or a line shows.
+- [ ] **A drop on a node in the window that does not own** (Law 0001,
+      drag row; ADR-0033). Ordinary switches hide the window that does
+      not own (ADR-0036), so this runs only if that window shows at
+      all. **Pass:** its node offers no operation and places nothing.
+      **Fail:** anything is placed through it.
+- [ ] **A drop on today's empty node** (Law 0001, drag row; ADR-0017).
+      While today has no page, its node is a dashed ring in the stream
+      navigator and a *New page…* row in the pads rail. Drag a run from
+      a page and a word from TextEdit over it and release. **Pass:** the
+      cursor shows no operation, nothing is placed, no page is made and
+      the source keeps its run; a click on the node still takes the
+      create path. **Fail:** a page is made or
+      anything is placed.
+- [ ] **A drop on a rail too dense to fit** (Law 0001, drag row;
+      issue 277). In the stream navigator, make pages until its top
+      rows are drawn above the column, over the *Pad* heading. Drag a
+      run from a page over a row drawn above the column and release;
+      then drag it over a row inside the column and release. **Pass:**
+      the drop over the row above the column offers no operation and
+      leaves the text in place in its source, and the drop over the row
+      inside the column moves the run to the end of that row's page.
+      **Fail:** the drop above the column places the run anywhere, or
+      the row inside the column takes no drop.
+- [ ] **A drop on a pads rail node below the fold** (Law 0001, drag
+      row). The pads rail scrolls instead of packing, and nothing in
+      this change scrolls it during a drag. With pads on, make pages
+      until a node sits below the rail's visible bottom. Drag a run
+      from a page to the rail's lower edge, hold for two seconds, and
+      write down whether the rail scrolls. Release over the last node
+      in view. **Pass:** the run moves to the end of the page of the
+      node under the pointer, whether or not the rail scrolled.
+      **Fail:** the run goes to any other page.
+
+| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Rail too dense to fit |
+|---|---|---|---|---|---|---|---|
+| Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
+| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (below the fold) |
+| Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |
+| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run (below the fold) |
