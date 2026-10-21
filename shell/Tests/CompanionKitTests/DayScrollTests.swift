@@ -614,14 +614,15 @@ final class DayScrollTests: XCTestCase {
         let stale = model.storage(for: quiet)
         let stray = NSLayoutManager()
         stale.addLayoutManager(stray)
+        defer { stale.removeLayoutManager(stray) }
         XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
         XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
         XCTAssertEqual(stale.string, "quiet before", "the case needs a stale storage to restate")
 
         model.settleRemoteEdits(on: [quiet, mounted])
 
-        XCTAssertTrue(model.storage(for: quiet) === stale)
         XCTAssertEqual(stale.string, "quiet after", "a stray manager kept the page stale")
+        XCTAssertTrue(model.storage(for: quiet) === stale)
         XCTAssertEqual(editor.string, "mounted before", "the mounted page was restated under the editor")
         roll.stack.update(
             projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
