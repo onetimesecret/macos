@@ -967,7 +967,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Turning wrapping on or off in a tab keeps the reader's line** (app
   0.39.0). ⌥Z or the Settings switch rebuilt a tab's layout without
   putting the reading position back, so the page showed another line,
-  and turning wrapping back went to the start of the paragraph. The
+  and turning wrapping back on went to the start of the paragraph. The
   line at the top of the window now stays at the top, and a round
   trip returns to the same point inside the paragraph.
 
