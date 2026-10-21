@@ -207,7 +207,7 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertEqual(held.calls, 1, "one round on the wire, whichever ceremony opened it")
 
         // The old round comes back: its mismatch is dropped and the
-        // wire is free, so the next tick's round goes out and lands.
+        // wire is free, so the next tick's round goes out and is taken.
         held.release()
         spin { held.calls == 1 && sync.pairingStage?.stage == "waiting" && !sync.pairingPolling }
         XCTAssertEqual(sync.pairingStage?.stage, "waiting", "the cancelled ceremony's verdict never reached this one")

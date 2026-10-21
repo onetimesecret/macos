@@ -159,14 +159,19 @@ public final class SyncController: ObservableObject {
     private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
     /// One pairing poll on the wire at a time, as `pumping` is for the
-    /// pump; `SyncCeremonyTests` holds a round open and ticks again.
+    /// pump; `SyncCeremonyTests` keeps a round open and ticks again.
     private(set) var pairingPolling = false
+    /// When the round on the wire went out. The relay call has no
+    /// timeout of its own, so a round older than `pairingPollDeadline`
+    /// is given up on rather than wedging pairing for the process.
+    private var pairingPollStartedAt: Date?
+    static let pairingPollDeadline: TimeInterval = 30
     /// Async so a test's stand-in can suspend rather than block a
     /// cooperative thread; the shipping value is one blocking core call.
     private let pairingPoll: @Sendable () async -> SyncPairingStage?
-    /// The pairing ceremony's generation. A poll carries the one it
-    /// started under, and ending a ceremony, by cancel, mismatch, the
-    /// switch or a sign-out, moves it on so the poll's answer is dropped.
+    /// The pairing ceremony's generation. A poll is stamped with the one
+    /// it started under; ending a ceremony moves it on, so the poll's
+    /// answer is dropped.
     private var ceremony: UInt64 = 0
     private nonisolated(unsafe) var elsewhereTimer: Timer?
     /// When a peer's edit last landed on each page; in memory only.
@@ -313,14 +318,8 @@ public final class SyncController: ObservableObject {
     /// Sign out: one Keychain account goes, the engine dissolves, the
     /// pad is untouched. Turning sync back on is the ceremony again.
     public func signOut() {
-        // A browser trip still out settles as `abandoned`; the new
-        // session drops that settle, so a sign-out is never worded as
-        // a browser that never returned. The ceremony, the retry, the
-        // give-up and the marks from elsewhere end with the engine, as
-        // on the switch; the core's sign-out abandons the trip. An
-        // earlier failure's sentence goes too: signed out is the whole
-        // state. A pump round still out keeps the wire until it
-        // returns, and the next sign-in's first round waits for it.
+        // The same teardown as the switch, less the core calls: the
+        // core's sign-out abandons the trip and the pairing flow itself.
         endSession()
         retryTimer?.invalidate()
         quietRefusals = 0
@@ -374,6 +373,8 @@ public final class SyncController: ObservableObject {
         retryTimer?.invalidate()
         quietRefusals = 0
         _ = client.syncSigninCancel()
+        // And a pairing flow: detach alone leaves it open in the core.
+        _ = client.syncPairingCancel()
         signinGivenUp = false
         clearElsewhere()
         // The enrolment mirror stays, as the core's enrolment does.
@@ -660,25 +661,18 @@ public final class SyncController: ObservableObject {
     }
 
     /// The ceremony is over: its poll's answer is dropped and the tick
-    /// stops. The flag stays with the round still on the wire, which
-    /// frees it when it returns; the next ceremony's first tick waits
-    /// for that, at most one round trip. The stage is the caller's to
-    /// set: a mismatch shows its verdict, a sign-out shows nothing,
-    /// since the person asked for the whole thing to end.
+    /// stops. The flag stays with the round on the wire; the stage is
+    /// the caller's (a mismatch shows its verdict, a sign-out nothing).
     private func endCeremony() {
         ceremony &+= 1
         pairingStage = nil
         pairingTimer?.invalidate()
     }
 
-    /// The session is over: an in-flight pump's or poll's answer is
-    /// dropped when it returns. Neither flag is cleared here; each
-    /// belongs to the round still on the wire and is freed by its
-    /// settle, so the next session's first round waits for it.
+    /// The session is over, and its ceremony with it. Neither in-flight
+    /// flag is cleared: each is the round's until its settle frees it.
     private func endSession() {
         session &+= 1
-        // A ceremony belongs to its session: the poll is stamped with
-        // both.
         endCeremony()
     }
 
@@ -706,8 +700,13 @@ public final class SyncController: ObservableObject {
             pairingTimer?.invalidate()
             return
         }
+        if pairingPolling, let started = pairingPollStartedAt,
+           Date().timeIntervalSince(started) > Self.pairingPollDeadline {
+            pairingPolling = false
+        }
         guard !pairingPolling else { return }
         pairingPolling = true
+        pairingPollStartedAt = Date()
         let poll = pairingPoll
         let mine = (session: session, ceremony: ceremony)
         Task.detached(priority: .utility) {
