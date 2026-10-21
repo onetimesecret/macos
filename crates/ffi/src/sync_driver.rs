@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use companion_core::{HoldRegister, ItemId, SheetId};
@@ -14,7 +14,7 @@ use companion_sync::TokenKeeper;
 use companion_sync::loopback::OneShotListener;
 use companion_sync::oauth::{AuthCeremony, SyncAuthError, TokenGrant, parse_token_response};
 use companion_sync::relay::RelayRefusal;
-use ots_client::{HttpResponse, Transport};
+use ots_client::{HttpRequest, HttpResponse, Transport};
 use ring::signature::Ed25519KeyPair;
 use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
@@ -1511,29 +1511,38 @@ pub(crate) struct PairingState {
     /// on a transport failure so the next poll retries.
     outgoing: Vec<serde_json::Value>,
     /// The message one poll round is posting right now, claimed under
-    /// the lock so an overlapping round cannot post it too (issue #280).
-    sending: Option<serde_json::Value>,
+    /// the lock so an overlapping round cannot post it too, with the
+    /// claim's number (issue #280).
+    sending: Option<(u64, serde_json::Value)>,
     step: PairingStep,
 }
 
+/// Claims are numbered process wide, so a round whose ceremony was
+/// replaced under its send releases nothing of the replacement's.
+static HEAD_CLAIMS: AtomicU64 = AtomicU64::new(1);
+
 impl PairingState {
     /// Take the head for one sender; nothing while another round sends.
-    fn claim_head(&mut self) -> Option<serde_json::Value> {
+    fn claim_head(&mut self) -> Option<(u64, serde_json::Value)> {
         if self.sending.is_some() || self.outgoing.is_empty() {
             return None;
         }
         let message = self.outgoing.remove(0);
-        self.sending = Some(message.clone());
-        Some(message)
+        let claim = HEAD_CLAIMS.fetch_add(1, Ordering::Relaxed);
+        self.sending = Some((claim, message.clone()));
+        Some((claim, message))
     }
 
-    /// Give the claim back: delivered, the message is gone; otherwise it
-    /// is the head again for the next poll.
-    fn release_head(&mut self, delivered: bool) {
-        if let Some(message) = self.sending.take()
-            && !delivered
-        {
-            self.outgoing.insert(0, message);
+    /// Give `claim` back: delivered, the message is gone; otherwise it
+    /// is the head again for the next poll. Another claim is left as is.
+    fn release_head(&mut self, claim: u64, delivered: bool) {
+        match self.sending.take() {
+            Some((held, message)) if held == claim => {
+                if !delivered {
+                    self.outgoing.insert(0, message);
+                }
+            }
+            other => self.sending = other,
         }
     }
 
@@ -1821,59 +1830,81 @@ pub(crate) fn pairing_confirm(companion: &mut Companion, matched: bool) -> serde
     stage
 }
 
+/// One round's claim on the head, released when the round is done with
+/// it, delivered or not, by an unwind out of the send as well.
+struct HeadClaim<'a> {
+    handle: &'a CompanionHandle,
+    claim: u64,
+    delivered: bool,
+}
+
+impl Drop for HeadClaim<'_> {
+    fn drop(&mut self) {
+        let mut guard = match self.handle.inner.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(flow) = guard.sync.pairing.as_mut() {
+            flow.release_head(self.claim, self.delivered);
+        }
+    }
+}
+
 /// Post the queued messages in order until the queue empties or the
 /// wire declines, leaving the rest queued. `Err` carries the stage to
 /// report instead, `signed_out` when no request can be built.
 fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
+    drain_outgoing_with(handle, |transport, request| {
+        matches!(
+            transport.send(request),
+            Ok(response) if (200..300).contains(&response.status)
+        )
+    })
+}
+
+/// The drain with its wire call passed in, so a test can stand in for the relay.
+fn drain_outgoing_with(
+    handle: &CompanionHandle,
+    mut send: impl FnMut(&companion_transport::UreqTransport, HttpRequest) -> bool,
+) -> Result<(), serde_json::Value> {
     loop {
         // The head is claimed under the lock before the send, so two
         // overlapping rounds cannot both post it: the second finds the
         // claim and leaves the queue to the first (issue #280).
-        let staged = {
+        let claimed = {
             let Ok(mut guard) = handle.inner.lock() else {
                 return Err(serde_json::json!({ "stage": "failed", "reason": "poisoned" }));
             };
             let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
-            let request = {
-                let Some(flow) = guard.sync.pairing.as_mut() else {
-                    return Err(serde_json::json!({ "stage": "idle" }));
-                };
-                flow.claim_head()
-            }
-            .map(|message| {
-                guard
+            let Some(flow) = guard.sync.pairing.as_mut() else {
+                return Err(serde_json::json!({ "stage": "idle" }));
+            };
+            flow.claim_head().map(|(claim, message)| {
+                let request = guard
                     .sync
                     .engine
                     .as_ref()
-                    .and_then(|engine| engine.session.post_pairing_request(message))
-                    .zip(transport)
-            });
-            if let Some(None) = request
-                && let Some(flow) = guard.sync.pairing.as_mut()
-            {
-                flow.release_head(false);
-            }
-            request
+                    .and_then(|engine| engine.session.post_pairing_request(message));
+                (claim, request.zip(transport))
+            })
         };
-        match staged {
-            None => return Ok(()),
-            Some(None) => {
-                return Err(serde_json::json!({ "stage": "failed", "reason": "signed_out" }));
-            }
-            Some(Some((request, transport))) => {
-                let delivered = matches!(
-                    transport.send(request),
-                    Ok(response) if (200..300).contains(&response.status)
-                );
-                if let Ok(mut guard) = handle.inner.lock()
-                    && let Some(flow) = guard.sync.pairing.as_mut()
-                {
-                    flow.release_head(delivered);
-                }
-                if !delivered {
-                    return Ok(());
-                }
-            }
+        let Some((claim, staged)) = claimed else {
+            return Ok(());
+        };
+        // Built outside the lock: its drop takes the lock to release the head.
+        let mut claim = HeadClaim {
+            handle,
+            claim,
+            delivered: false,
+        };
+        let Some((request, transport)) = staged else {
+            return Err(serde_json::json!({ "stage": "failed", "reason": "signed_out" }));
+        };
+        claim.delivered = send(&transport, request);
+        let delivered = claim.delivered;
+        drop(claim);
+        if !delivered {
+            return Ok(());
         }
     }
 }
@@ -3647,7 +3678,8 @@ mod tests {
             sending: None,
             step: PairingStep::Done,
         };
-        assert_eq!(flow.claim_head(), Some(serde_json::json!(1)));
+        let (first, message) = flow.claim_head().unwrap();
+        assert_eq!(message, serde_json::json!(1));
         assert_eq!(
             flow.claim_head(),
             None,
@@ -3658,18 +3690,128 @@ mod tests {
             "confirmed",
             "a message on the wire is still owed"
         );
-        flow.release_head(false);
+        flow.release_head(first + 1, false);
+        assert_eq!(
+            flow.outgoing,
+            vec![serde_json::json!(2)],
+            "another claim's release changes nothing"
+        );
+        flow.release_head(first, false);
         assert_eq!(
             flow.outgoing,
             vec![serde_json::json!(1), serde_json::json!(2)]
         );
-        assert_eq!(flow.claim_head(), Some(serde_json::json!(1)));
-        flow.release_head(true);
+        let (again, message) = flow.claim_head().unwrap();
+        assert_eq!(message, serde_json::json!(1));
+        assert_ne!(again, first, "every claim has its own number");
+        flow.release_head(again, true);
         assert_eq!(flow.outgoing, vec![serde_json::json!(2)]);
-        assert_eq!(flow.claim_head(), Some(serde_json::json!(2)));
-        flow.release_head(true);
+        let (last, _) = flow.claim_head().unwrap();
+        flow.release_head(last, true);
         assert!(flow.outgoing.is_empty());
         assert_eq!(stage_json(&flow)["stage"], "done");
+    }
+
+    /// A handle over an inviter with its commitment queued for the relay.
+    fn inviting_handle() -> CompanionHandle {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        invite_begin(&mut companion).unwrap();
+        CompanionHandle {
+            inner: std::sync::Mutex::new(companion),
+        }
+    }
+
+    fn queue_of(handle: &CompanionHandle) -> (Vec<serde_json::Value>, Option<serde_json::Value>) {
+        let guard = handle.inner.lock().unwrap();
+        let flow = guard.sync.pairing.as_ref().unwrap();
+        (
+            flow.outgoing.clone(),
+            flow.sending.as_ref().map(|(_, message)| message.clone()),
+        )
+    }
+
+    #[test]
+    fn the_drain_claims_the_head_for_the_send_and_releases_it_after() {
+        let handle = inviting_handle();
+        let (queued, _) = queue_of(&handle);
+        assert_eq!(queued.len(), 1, "the commitment is queued");
+        let mut sent = 0;
+        let drained = drain_outgoing_with(&handle, |_, _| {
+            sent += 1;
+            let mut guard = handle.inner.lock().unwrap();
+            let flow = guard.sync.pairing.as_mut().unwrap();
+            assert!(
+                flow.outgoing.is_empty(),
+                "the head is off the queue while on the wire"
+            );
+            assert!(flow.owes_a_post(), "and still owed");
+            assert_eq!(
+                flow.claim_head(),
+                None,
+                "an overlapping round posts nothing"
+            );
+            true
+        });
+        assert!(drained.is_ok());
+        assert_eq!(sent, 1);
+        assert_eq!(queue_of(&handle), (Vec::new(), None));
+    }
+
+    #[test]
+    fn a_declined_send_puts_the_head_back_and_the_drain_stops() {
+        let handle = inviting_handle();
+        let before = queue_of(&handle);
+        let mut sent = 0;
+        assert!(
+            drain_outgoing_with(&handle, |_, _| {
+                sent += 1;
+                false
+            })
+            .is_ok()
+        );
+        assert_eq!(sent, 1, "a declined head is not retried in the same round");
+        assert_eq!(queue_of(&handle), before);
+    }
+
+    #[test]
+    fn an_unwind_out_of_the_send_puts_the_head_back() {
+        let handle = inviting_handle();
+        let before = queue_of(&handle);
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            drain_outgoing_with(&handle, |_, _| panic!("the wire fell over"))
+        }));
+        assert!(unwound.is_err());
+        assert_eq!(queue_of(&handle), before, "the next poll retries the head");
+    }
+
+    #[test]
+    fn a_ceremony_replaced_under_the_send_keeps_its_own_claim() {
+        let handle = inviting_handle();
+        let other = serde_json::json!({ "other": "ceremony" });
+        let drained = drain_outgoing_with(&handle, |_, _| {
+            let mut guard = handle.inner.lock().unwrap();
+            guard.sync.pairing = Some(PairingState {
+                since: 0,
+                outgoing: vec![other.clone()],
+                sending: None,
+                step: PairingStep::Done,
+            });
+            let replacement = guard.sync.pairing.as_mut().unwrap();
+            assert!(
+                replacement.claim_head().is_some(),
+                "the new round claims its head"
+            );
+            false
+        });
+        assert!(drained.is_ok());
+        assert_eq!(
+            queue_of(&handle),
+            (Vec::new(), Some(other)),
+            "the old round's release left the new round's claim and queue alone"
+        );
     }
 
     fn stage_of(companion: &Companion) -> serde_json::Value {
