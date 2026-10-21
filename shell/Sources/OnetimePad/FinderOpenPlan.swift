@@ -17,13 +17,15 @@ struct FinderOpenPlan: Equatable, Sendable {
         queued: [URL],
         startupComplete: Bool,
         modalSessionRunning: Bool,
+        modalBracketed: Bool,
         closeDecisionPending: @autoclosure () -> Bool,
         launchActivationOutstanding: Bool,
         appActive: Bool,
         context: @autoclosure () -> ActivationContext
     ) -> FinderOpenPlan {
         let files = queued.filter(\.isFileURL)
-        guard startupComplete, !modalSessionRunning, !closeDecisionPending() else {
+        // Both modal facts, as every other modal gate reads them (`ModalSession`).
+        guard startupComplete, !modalSessionRunning, !modalBracketed, !closeDecisionPending() else {
             return FinderOpenPlan(held: files)
         }
         guard !files.isEmpty else { return FinderOpenPlan() }

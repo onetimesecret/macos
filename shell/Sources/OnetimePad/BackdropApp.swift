@@ -797,6 +797,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             queued: finderDocuments,
             startupComplete: startupComplete,
             modalSessionRunning: ModalSession.isRunning,
+            modalBracketed: ModalSession.isBracketed,
             closeDecisionPending: pages.openRefusedForCloseDecision,
             launchActivationOutstanding: launchActivationOutstanding,
             appActive: NSApp?.isActive == true,

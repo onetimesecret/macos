@@ -16,6 +16,7 @@ final class FinderOpenPlanTests: XCTestCase {
         _ queued: [URL],
         startupComplete: Bool = true,
         modalSessionRunning: Bool = false,
+        modalBracketed: Bool = false,
         closeDecisionPending: Bool = false,
         launchActivationOutstanding: Bool = false,
         appActive: Bool = true
@@ -24,6 +25,7 @@ final class FinderOpenPlanTests: XCTestCase {
             queued: queued,
             startupComplete: startupComplete,
             modalSessionRunning: modalSessionRunning,
+            modalBracketed: modalBracketed,
             closeDecisionPending: closeDecisionPending,
             launchActivationOutstanding: launchActivationOutstanding,
             appActive: appActive,
@@ -101,6 +103,13 @@ final class FinderOpenPlanTests: XCTestCase {
         XCTAssertEqual(held, FinderOpenPlan())
     }
 
+    func testAFinderOpenWhileAPanelOrdersItselfOutWaits() {
+        // The session is over but the bracket is still on the stack (`ModalSession.isBracketed`).
+        let held = plan([notes, link], modalBracketed: true)
+
+        XCTAssertEqual(held, FinderOpenPlan(held: [notes]))
+    }
+
     func testTheHeldFilesOpenOnceTheModalHasEnded() {
         let held = plan([notes], modalSessionRunning: true).held
         let drained = plan(held + [draft])
@@ -132,7 +141,7 @@ final class FinderOpenPlanTests: XCTestCase {
         }
         _ = FinderOpenPlan.decide(
             queued: [notes], startupComplete: false, modalSessionRunning: false,
-            closeDecisionPending: readCloseDecision(), launchActivationOutstanding: true,
+            modalBracketed: false, closeDecisionPending: readCloseDecision(), launchActivationOutstanding: true,
             appActive: true, context: readContext())
 
         XCTAssertEqual(reads, 0)
