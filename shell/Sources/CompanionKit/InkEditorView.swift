@@ -1599,22 +1599,17 @@ public struct InkEditorView: NSViewRepresentable {
         /// The context menu auto-enables, and a target without this
         /// method has every explicit `isEnabled` overwritten on display.
         /// Detect answers from the text view's predicate, the one the
-        /// Edit menu and the chord use, so the two menus agree. The
-        /// others are appended only when they apply, so they are on;
-        /// an item not named here shows disabled until it chooses.
+        /// Edit menu and the chord use, so the two menus agree. Every
+        /// other item this coordinator targets, the language items and
+        /// the sealed object's whole menu, is appended only when it
+        /// applies, so the answer is the one AppKit gave before this
+        /// method existed: enabled.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
             switch item.action {
             case #selector(detectCodeLanguageFromMenu(_:)):
                 return textView?.canDetectCodeLanguage == true
-            case #selector(sealSelectionFromMenu(_:)),
-                 #selector(dismissLanguageSuggestionFromMenu(_:)),
-                 #selector(applySuggestedWrap(_:)),
-                 #selector(applySuggestedHighlighting(_:)),
-                 #selector(insertSuggestedFenceLabel(_:)),
-                 #selector(chooseLanguageFromMenu(_:)):
-                return true
             default:
-                return false
+                return true
             }
         }
 
