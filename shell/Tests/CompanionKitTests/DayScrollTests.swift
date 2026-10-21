@@ -592,6 +592,63 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// A place another window left can name a character inside a line, and the restore's own
+    /// scroll must not swap it for that line's first character before the next width change.
+    func testAPlaceOpenedFromAnotherWindowKeepsItsCharacterThroughAWidthChange() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let selected = try page(in: model, saying: longLine(repetitions: 30))
+        let paragraph = longLine(repetitions: 12)
+        let older = try page(in: model, saying: Array(repeating: paragraph, count: 40).joined(separator: "\n"))
+        try select(selected, in: model)
+        let roll = try mountRoll(model: model)
+        let projection = spreadOverDays(model, selecting: selected)
+        func reflow(width: CGFloat) {
+            roll.scroll.frame.size.width = width
+            roll.scroll.layoutSubtreeIfNeeded()
+            roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        }
+        reflow(width: 420)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[older])
+        let manager = try XCTUnwrap(quiet.layoutManager)
+        let container = try XCTUnwrap(quiet.textContainer)
+        func lines() -> [NSRange] {
+            manager.ensureLayout(for: container)
+            var lines: [NSRange] = []
+            manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, _, _, glyphs, _ in
+                lines.append(manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil))
+            }
+            return lines
+        }
+        func topLine() -> NSRange {
+            let y = roll.scroll.contentView.bounds.minY - quiet.frame.minY - quiet.textContainerOrigin.y
+            var glyphs = NSRange(location: 0, length: 0)
+            manager.lineFragmentRect(
+                forGlyphAt: manager.glyphIndex(for: NSPoint(x: 0, y: y + 0.5), in: container),
+                effectiveRange: &glyphs)
+            return manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        }
+        let paragraphStart = (paragraph.utf16.count + 1) * 8
+        let paragraphEnd = paragraphStart + paragraph.utf16.count
+        reflow(width: 580)
+        let wide = lines()
+        reflow(width: 420)
+        // A line at this width whose first and last characters part company at the wider one.
+        let line = try XCTUnwrap(lines().first { line in
+            guard line.location > paragraphStart, NSMaxRange(line) < paragraphEnd else { return false }
+            return wide.firstIndex { NSLocationInRange(line.location, $0) }
+                != wide.firstIndex { NSLocationInRange(NSMaxRange(line) - 2, $0) }
+        })
+        let character = NSMaxRange(line) - 2
+
+        roll.stack.open(at: RollPlace(
+            page: older, anchor: ScrollAnchor(characterIndex: character), length: (quiet.string as NSString).length))
+        roll.stack.update(projection: projection, selectedPage: selected, readOnly: false)
+        XCTAssertTrue(NSLocationInRange(character, topLine()), "\(character) is not in \(topLine())")
+        reflow(width: 580)
+        XCTAssertTrue(NSLocationInRange(character, topLine()), "\(character) is not in \(topLine())")
+    }
+
     func testSyncedTextAroundTheReaderInTheirOwnQuietPageKeepsTheSameLineAtTheTop() throws {
         for wraps in [false, true] {
             let model = try makeModel()

@@ -1402,7 +1402,7 @@ final class DayStackView: NSView {
               let scroll = enclosingScrollView, !scroll.contentView.bounds.isEmpty
         else { return }
         pendingPlace = nil
-        restore(place: place)
+        if restore(place: place) { readingPlace = place }
     }
 
     /// True when the place's page stood on the roll and the clip was moved to it.
