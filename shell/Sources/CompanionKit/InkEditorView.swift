@@ -1598,13 +1598,28 @@ public struct InkEditorView: NSViewRepresentable {
         /// Edit menu and the chord use, so the two menus agree. Every
         /// other item this coordinator targets, the language items and
         /// the sealed object's whole menu, is appended only when it
-        /// applies, so the answer is the one AppKit gave before this
-        /// method existed: enabled.
+        /// applies, so it is enabled. An item not named here is enabled
+        /// too, and a debug build says so, so a new item chooses.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
             switch item.action {
             case #selector(detectCodeLanguageFromMenu(_:)):
                 return textView?.canDetectCodeLanguage == true
+            case #selector(sealSelectionFromMenu(_:)),
+                 #selector(dismissLanguageSuggestionFromMenu(_:)),
+                 #selector(applySuggestedWrap(_:)),
+                 #selector(applySuggestedHighlighting(_:)),
+                 #selector(insertSuggestedFenceLabel(_:)),
+                 #selector(chooseLanguageFromMenu(_:)),
+                 #selector(copyChipName(_:)),
+                 #selector(copyOutChip(_:)),
+                 #selector(copyChipNameValue(_:)),
+                 #selector(concealChip(_:)),
+                 #selector(nameChip(_:)),
+                 #selector(openChipNote(_:)),
+                 #selector(removeChip(_:)):
+                return true
             default:
+                assertionFailure("name \(item.action.map(String.init(describing:)) ?? "nil") in validateMenuItem")
                 return true
             }
         }

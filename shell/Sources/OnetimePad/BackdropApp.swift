@@ -1031,7 +1031,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         guard let failure = summonKeyFailure else { return }
         let alert = NSAlert()
         alert.messageText = "The keyboard shortcut is unavailable"
-        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, or another copy of \(Self.productName), may use it; with two or more input sources, the Input Sources pane of Keyboard Shortcuts gives it to Select Next Source. The pad still opens from the menu bar. Free the shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
+        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, or another copy of \(Self.productName), may use it; with two or more input sources, the Input Sources pane of Keyboard Shortcuts may hold it. The pad still opens from the menu bar. Free the shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
         alert.addButton(withTitle: "Try Again")
         alert.addButton(withTitle: "Cancel")
         auxiliaryActivation = !NSApp.isActive

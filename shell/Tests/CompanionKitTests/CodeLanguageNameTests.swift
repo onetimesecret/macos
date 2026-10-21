@@ -31,6 +31,16 @@ final class CodeLanguageNameTests: XCTestCase {
         XCTAssertEqual(CodeLanguageName.display("Swift"), "Swift")
     }
 
+    func testAFencesOwnSpellingReachesTheRegistryThroughTheAliases() {
+        for (alias, slug) in CodeInk.aliases {
+            XCTAssertEqual(
+                CodeLanguageName.display(alias), CodeLanguageName.display(slug),
+                "\(alias) names what \(slug) names"
+            )
+        }
+        XCTAssertEqual(CodeLanguageName.display("yml"), "YAML")
+    }
+
     func testAnUnknownIdFallsBackToCapitalised() {
         XCTAssertEqual(CodeLanguageName.display("kotlinscript"), "Kotlinscript")
     }

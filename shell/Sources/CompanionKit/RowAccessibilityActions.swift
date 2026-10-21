@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Accessibility actions the strip's and the rail's rows offer only
@@ -34,14 +33,4 @@ func rowAccessibilityTraits(selected: Bool, renaming: Bool) -> AccessibilityTrai
     if selected { traits.insert(.isSelected) }
     if !renaming { traits.insert(.isButton) }
     return traits
-}
-
-extension NSMenu {
-    /// A separator ahead of the next group, unless the menu is empty or
-    /// already ends in one.
-    func addSeparatorIfNeeded() {
-        if let last = items.last, !last.isSeparatorItem {
-            addItem(.separator())
-        }
-    }
 }

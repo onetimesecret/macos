@@ -665,7 +665,7 @@ struct StreamNavigatorView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
-        .accessibilityAddTraits(node.active ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: node.active, renaming: false))
         .accessibilityAction { jump(to: placed) }
     }
 
@@ -1012,7 +1012,7 @@ private struct SlotRailRow: View {
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .help("Close tab")
-                .accessibilityLabel(Text("Close tab"))
+                .accessibilityLabel(Text("Close Tab"))
             }
             Group {
                 if sheet.hasPage {
@@ -1198,7 +1198,7 @@ struct FileShelfRow: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: false))
         .accessibilityAction { model.select(target: .file(file.id)) }
     }
 }

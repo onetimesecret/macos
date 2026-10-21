@@ -330,7 +330,7 @@ private struct TimeUnitBottomTab: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: false))
         .accessibilityAction { model.select(target: TimeUnitTab.target(for: unit)) }
         .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
             model.newPage()
@@ -427,7 +427,7 @@ struct SheetTab: View {
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .help("Close tab")
-                .accessibilityLabel(Text("Close tab"))
+                .accessibilityLabel(Text("Close Tab"))
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -698,7 +698,7 @@ struct FileTab: View {
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .help("Close file")
-                .accessibilityLabel(Text("Close file"))
+                .accessibilityLabel(Text("Close File"))
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -724,7 +724,7 @@ struct FileTab: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityAddTraits(rowAccessibilityTraits(selected: selected, renaming: false))
         .accessibilityAction { model.select(target: .file(file.id)) }
         .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {

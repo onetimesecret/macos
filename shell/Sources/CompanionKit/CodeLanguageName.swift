@@ -61,7 +61,12 @@ public enum CodeLanguageName {
         "yaml": "YAML",
     ]
 
+    /// A fence's own spelling (`yml`, `objc`, `js`) reaches the registry
+    /// through the same aliases the fences use, so the banner for a
+    /// ```` ```yml ```` reads YAML. Only a spelling neither knows is
+    /// capitalised.
     public static func display(_ language: String) -> String {
-        names[language.lowercased()] ?? language.capitalized
+        let id = language.lowercased()
+        return names[CodeInk.aliases[id] ?? id] ?? language.capitalized
     }
 }
