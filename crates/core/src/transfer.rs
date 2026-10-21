@@ -452,7 +452,7 @@ impl<C: Clock> SheetStore<C> {
                 clone.name = reference
                     .name
                     .as_ref()
-                    .and_then(|name| judge_name(name).ok().flatten())
+                    .and_then(|name| judge_name(name.as_str()).ok().flatten())
                     .map(|name| Zeroizing::new(name.to_owned()));
                 clone.note = reference.note.as_deref().map(|text| Note::holding(text));
                 placed.cloned += 1;

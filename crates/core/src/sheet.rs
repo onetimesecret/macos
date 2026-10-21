@@ -1119,11 +1119,11 @@ fn char_boundary(text: &str, chars: usize) -> usize {
 /// size, with no growing scratch and no copy of the slices before it (Law 0004).
 fn head_and_tail(head: &str, tail: &str) -> Zeroizing<String> {
     const MARK: &str = "…";
-    let mut out = String::with_capacity(head.len() + MARK.len() + tail.len());
+    let mut out = Zeroizing::new(String::with_capacity(head.len() + MARK.len() + tail.len()));
     out.push_str(head);
     out.push_str(MARK);
     out.push_str(tail);
-    Zeroizing::new(out)
+    out
 }
 
 /// Image container from magic bytes; never a decode.
@@ -1144,10 +1144,10 @@ fn sniff_image_kind(bytes: &[u8]) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::{Clock, ManualClock};
 
     /// Compiles only for a type that wipes on drop: the pin the owner tests rest on.
     fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
-    use crate::clock::{Clock, ManualClock};
 
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);

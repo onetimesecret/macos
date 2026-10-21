@@ -390,6 +390,9 @@ struct WireRef<'a> {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+
+    /// Compiles only for a type that wipes on drop: the pin the owner test rests on.
+    fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
     use crate::sheet::{ChipId, SheetId};
     use crate::store::SheetStore;
 
@@ -635,25 +638,30 @@ mod tests {
         assert!(store.sheet(id).unwrap().chip(chip).unwrap().has_note());
     }
 
-    /// The reference's name and note, each a wiping owner (Law 0004, C19): a plain `String`
-    /// in either field would not compile here.
     fn name_and_note(node: &Node) -> (Option<&str>, Option<&str>) {
-        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         match node {
-            Node::Ref(reference) => {
-                if let Some(name) = &reference.name {
-                    wiping_owner(name);
-                }
-                if let Some(note) = &reference.note {
-                    wiping_owner(note);
-                }
-                (
-                    reference.name.as_deref().map(String::as_str),
-                    reference.note.as_deref().map(String::as_str),
-                )
-            }
+            Node::Ref(reference) => (
+                reference.name.as_deref().map(String::as_str),
+                reference.note.as_deref().map(String::as_str),
+            ),
             Node::Ink(_) => panic!("not a reference"),
         }
+    }
+
+    /// A parsed reference's name and note are wiping owners (Law 0004, C19): a plain
+    /// `String` in either field would not compile here.
+    #[test]
+    fn a_references_name_and_note_are_wiping_owners() {
+        let mut store = store();
+        let (id, a, _) = mixed(&mut store);
+        named(&mut store, id, a);
+        let (fragment, _) = store.sheet(id).unwrap().select(0, BODY).unwrap();
+        let read = Fragment::parse(&fragment.envelope().unwrap()).unwrap();
+        let Node::Ref(reference) = &read.nodes[1] else {
+            panic!("not a reference")
+        };
+        wiping_owner(reference.name.as_ref().unwrap());
+        wiping_owner(reference.note.as_ref().unwrap());
     }
 
     #[test]
