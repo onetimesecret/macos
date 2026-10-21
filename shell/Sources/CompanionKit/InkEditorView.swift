@@ -1131,8 +1131,12 @@ public struct InkEditorView: NSViewRepresentable {
             }
         }
 
+        /// Under a field or a note that holds the keys the page offers no
+        /// language verb, Choose included (Law 0007, keys row).
         var manualLanguageTargetAvailable: Bool {
-            PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
+            PageModel.languageDetectionFeaturesAvailable
+                && textView?.answersChords == true
+                && manualLanguageTarget() != nil
         }
 
         /// The Edit menu's language and seal items as the key holder can answer
@@ -1471,7 +1475,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         func applyManualLanguage(_ language: String) {
-            guard PageModel.languageDetectionFeaturesAvailable,
+            guard manualLanguageTargetAvailable,
                   Self.manualLanguages.contains(language),
                   let target = manualLanguageTarget()
             else {
@@ -1596,7 +1600,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// The context menu auto-enables, so this is where enablement is
         /// decided; the rest is appended only when it applies.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-            switch item.action {
+            // An item with a target and no action is disabled.
+            guard let action = item.action else { return false }
+            switch action {
             case #selector(detectCodeLanguageFromMenu(_:)):
                 return textView?.canDetectCodeLanguage == true
             case #selector(sealSelectionFromMenu(_:)),
@@ -1616,7 +1622,7 @@ public struct InkEditorView: NSViewRepresentable {
             default:
                 // Once in the log, since the menu validates on every
                 // display; a debug build stops here.
-                let name = item.action.map(NSStringFromSelector) ?? "nil"
+                let name = NSStringFromSelector(action)
                 if reportedUnnamedSelectors.insert(name).inserted {
                     Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
                         .fault("unnamed menu selector \(name, privacy: .public)")

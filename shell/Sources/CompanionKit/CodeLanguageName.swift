@@ -71,6 +71,8 @@ public enum CodeLanguageName {
     public static func display(_ language: String) -> String {
         let id = language.lowercased()
         let slug = CodeInk.aliases[id] ?? fenceSpellings[id] ?? id
-        return names[slug] ?? language.capitalized
+        if let name = names[slug] { return name }
+        // A token that already has capitals (GLSL, LaTeX) is its own name.
+        return language.contains(where: \.isUppercase) ? language : language.capitalized
     }
 }

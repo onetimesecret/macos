@@ -331,7 +331,7 @@ private struct TimeUnitBottomTab: View {
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
         .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
-        .accessibilityAction { model.select(target: TimeUnitTab.target(for: unit)) }
+        .accessibilityActivation(when: true) { model.select(target: TimeUnitTab.target(for: unit)) }
         .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
             model.newPage()
         }
@@ -731,7 +731,7 @@ struct FileTab: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
         .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
-        .accessibilityAction { model.select(target: .file(file.id)) }
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
         .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }

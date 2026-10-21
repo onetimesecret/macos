@@ -180,11 +180,14 @@ final class SyncCeremonyTests: XCTestCase {
         }
     }
 
-    private func spin(until condition: () -> Bool) {
+    private func spin(
+        until condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line
+    ) {
         let deadline = Date(timeIntervalSinceNow: 2)
         while !condition(), Date() < deadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
         }
+        XCTAssertTrue(condition(), "the condition did not settle in two seconds", file: file, line: line)
     }
 
     func testOnePollInFlightAndACancelledCeremonysAnswerIsDropped() throws {
@@ -214,6 +217,7 @@ final class SyncCeremonyTests: XCTestCase {
         held.release()
         spin { held.calls == 1 && sync.pairingStage?.stage == "waiting" && !sync.pairingPolling }
         XCTAssertEqual(sync.pairingStage?.stage, "waiting", "the cancelled ceremony's verdict never reached this one")
+        // The timer's next tick, here by hand: a settle never re-polls.
         sync.pollPairing()
         spin { sync.pairingStage?.stage == "done" }
         XCTAssertEqual(held.calls, 2)

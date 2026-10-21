@@ -666,7 +666,7 @@ struct StreamNavigatorView: View {
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
         .accessibilityAddTraits(RowAccessibility.traits(selected: node.active))
-        .accessibilityAction { jump(to: placed) }
+        .accessibilityActivation(when: true) { jump(to: placed) }
     }
 
     /// The mark on the track. The active node is a filled ember dot,
@@ -811,8 +811,13 @@ final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
     /// its window or moves between windows, and by the representable's
-    /// dismantle (`retire`).
-    private var monitor: Any?
+    /// dismantle (`retire`), and as a last net by deinit, which copies
+    /// the token out; nonisolated(unsafe) because deinit is nonisolated.
+    private nonisolated(unsafe) var monitor: Any?
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+    }
 
     /// Whether the view is watching its window's wheel events.
     var isWatching: Bool { monitor != nil }
@@ -1201,7 +1206,7 @@ struct FileShelfRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
         .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
-        .accessibilityAction { model.select(target: .file(file.id)) }
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
     }
 }
 

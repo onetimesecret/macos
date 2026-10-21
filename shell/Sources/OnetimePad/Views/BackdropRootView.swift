@@ -803,8 +803,7 @@ struct BackdropRootView: View {
     /// new hover will say so, so that grip's cursor goes back up.
     private func releaseResizeCursor() {
         draggingEdge = nil
-        popResizeCursor()
-        if let hoveringEdge { pushResizeCursor(hoveringEdge) }
+        if let hoveringEdge { pushResizeCursor(hoveringEdge) } else { popResizeCursor() }
     }
 
     /// One cursor on the stack: a grip with no cursor of its own (a

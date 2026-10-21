@@ -68,5 +68,7 @@ final class CodeLanguageNameTests: XCTestCase {
 
     func testAnUnknownIdFallsBackToCapitalised() {
         XCTAssertEqual(CodeLanguageName.display("kotlinscript"), "Kotlinscript")
+        XCTAssertEqual(CodeLanguageName.display("GLSL"), "GLSL", "a token with capitals is its own name")
+        XCTAssertEqual(CodeLanguageName.display("LaTeX"), "LaTeX")
     }
 }

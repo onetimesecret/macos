@@ -128,7 +128,7 @@ private struct SyncDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(fingerprintHead)
+            Text(SyncPairingStatus.spelledDigits(fingerprintHead))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
             Text(title)
@@ -209,6 +209,7 @@ private struct SyncPairingStatus: View {
     let stage: SyncPairingStage
     @ObservedObject var sync: SyncController
 
+    /// A code or a fingerprint head read character by character.
     static func spelledDigits(_ digits: String) -> AttributedString {
         var spelled = AttributedString(digits)
         spelled.accessibilitySpeechSpellsOutCharacters = true
@@ -223,9 +224,11 @@ private struct SyncPairingStatus: View {
                     .font(.caption)
                     .foregroundStyle(Color.secondaryInk)
                 // Digit by digit: a code compared by ear against another
-                // screen is not a number, and the caption is not spelled.
+                // screen is not a number; the name stays a name.
                 Text(Self.spelledDigits(stage.sas ?? ""))
                     .font(.system(.title2, design: .monospaced))
+                    .accessibilityLabel(Text("Verification digits"))
+                    .accessibilityValue(Text(Self.spelledDigits(stage.sas ?? "")))
                 HStack {
                     Button("They Match") { sync.confirmPairing(matched: true) }
                     Button("They Don’t Match", role: .destructive) {
