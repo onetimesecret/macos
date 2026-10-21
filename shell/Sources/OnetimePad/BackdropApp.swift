@@ -419,7 +419,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
 
-    /// Files the Finder asked to open that `FinderOpenPlan` holds back.
+    /// Files the Finder asked to open, waiting for a drain (`FinderOpenPlan`).
     private var finderDocuments: [URL] = []
 
     /// The observation of `ModalSession.didEndNotification`, held for
