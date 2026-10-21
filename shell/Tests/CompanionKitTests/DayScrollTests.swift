@@ -608,10 +608,13 @@ final class DayScrollTests: XCTestCase {
         XCTAssertTrue(editor.textStorage === model.storage(for: mounted))
         XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
         XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
+        // A manager with no text view, as a torn down editor leaves behind, shows the page to nobody.
+        let stray = NSLayoutManager()
+        model.storage(for: quiet).addLayoutManager(stray)
 
         model.settleRemoteEdits(on: [quiet, mounted])
 
-        XCTAssertEqual(model.storage(for: quiet).string, "quiet after")
+        XCTAssertEqual(model.storage(for: quiet).string, "quiet after", "a stray manager kept the page stale")
         XCTAssertEqual(editor.string, "mounted before", "the mounted page was restated under the editor")
         roll.stack.update(
             projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
