@@ -75,10 +75,13 @@ draws only a typed name (D-46 amends the gutter paragraph).
   lengthen the drawing past it and the column scrolls inside its clip,
   as the Finder sidebar does; the heading, its plus and the Files shelf
   stay outside the scrolling part, and a selection change scrolls the
-  active node into view. The box the slivers keep clear of is the drawn
-  row one point higher and as tall.
+  active node into view. The viewport band, the active stretch and the
+  slivers stay level with the nodes, in the drawing's own coordinates,
+  so they scroll with the rows and the band can be out of the clip on a
+  rail scrolled away from it. The box the slivers keep clear of is the
+  drawn row one point higher and as tall.
   `StreamNavigatorTests.testADenseRailGrowsPastTheColumnRatherThanAboveIt`,
-  `testTheSliverBoxIsTheDrawnRowOnePointHigher`,
+  `testASliverNeverCrossesARowsLastPointAndMayStandJustAboveIt`,
   `TabDropTests.testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting`.
 - **D-35 (fixed)** Geometry, never glyphs. The roll hands the rail each
   page's span and each laid-out line as a rectangle (where it begins,
