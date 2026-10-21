@@ -583,42 +583,67 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       whether Finder wrote a clipping file, which would hold the sealed
       word on disk until deleted. **Fail:** the object leaves.
 
-## Placement-specific tab drops (issue #267)
+## Drops on the side Timeline's page nodes (issue #267)
 
-**Status, 2026-10-16:** not run on hardware. Mounted-view tests in
-`TabDropTests` exercise the actual targets through destination calls;
-they do not run an AppKit drag session or pointer gestures.
+**Status, 2026-10-20:** not run on hardware. Build `fae8228b` (app
+0.40.0) on `fix/267-placement-drop-targets`, or a later commit on that
+branch, with `scripts/dev.sh`, and record the commit with the results.
+The mounted view tests in `TabDropTests` drive each node's target
+through its destination calls; they run no AppKit drag session and no
+pointer (Law 0001, drag row, 2026-10-20 Timeline node amendment).
 
-At the issue's base revision, `bc1bc4e4`, the normal layout selects
-Tabs along the bottom and Timeline down the side. It does not expose
-Tabs down the side (`SlotRailView`) or Timeline along the bottom
-(`TimeStripView`). A hardware run for these two placements needs a
-separate placement harness or a maintainer-approved way to mount them
-in the card. This change does not restore placement controls. Record
-that setup and revision with the results; do not substitute a run on
-the normal bottom Tabs strip or the side Timeline navigator.
+Choose Timeline in Settings under Page layout. The card and the
+primary editor window then draw the Timeline down the side, so normal
+controls reach every check and no harness is needed. Run each surface
+twice: with the pads experiment off (Settings, *Multiple pads and
+context associations · experiment*), which draws the stream navigator,
+and with it on, which draws the pads rail.
 
-For **each** alternate placement:
+- [ ] **A drop on a Timeline page node** (Law 0001, drag, ⌥ drag and
+      decrypted drag rows; issue 267). Repeat **A drop on a tab** with
+      the page nodes as the tabs: a run of plain ink, a run with a named
+      object and its note, a run onto the source page's own node, an ⌥
+      copy and a word from TextEdit. With two pages on one day, drop
+      onto the second page's node. Drag from an object's decrypted
+      handle over a node. Then click each node you dropped on.
+      **Pass:** over a page node of the raised owner the cursor shows a
+      move (⌥: a copy), the run stands at the end of the page a click
+      on that node selects with the object's name and note, the second
+      page of a day takes the drop meant for it, the TextEdit word
+      stands there as a new sealed object, the decrypted drag shows no
+      operation and places nothing, and afterwards a click on the node
+      still selects its page and scrolls the roll to it, its hover fill
+      and tooltip show as before, and in the stream navigator a click
+      on the bare track still scrolls and a drag along the column still
+      scrubs. **Fail:** the cursor never changes over a node (AppKit
+      delivered no drag to a target whose `hitTest` answers nil), the
+      run goes to another page or anywhere but the end, the decrypted
+      drag places anything, or a node stops answering its click, its
+      scroll or its tooltip.
+- [ ] **A drop on a resting card's Timeline node** (Law 0001, drag
+      row; ADR-0015; issue 267). Pin the card and let it rest, drag a
+      word from TextEdit over a page node and release; then raise the
+      card and repeat. **Pass:** the resting card's node offers no
+      operation, nothing is placed and no line shows; after the raise
+      the word seals at the end of the node's page. **Fail:** anything
+      is placed on a resting card, or a line shows.
+- [ ] **A drop on a node in the window that does not own** (Law 0001,
+      drag row; ADR-0033). Ordinary switches hide the window that does
+      not own (ADR-0036), so this runs only if that window shows at
+      all. **Pass:** its node offers no operation and places nothing.
+      **Fail:** anything is placed through it.
+- [ ] **A drop on today's empty node** (Law 0001, drag row; ADR-0017).
+      While today has no page, its node is a dashed ring in the stream
+      navigator and a *New page…* row in the pads rail. Drag a run from
+      a page and a word from TextEdit over it and release. **Pass:** the
+      cursor shows no operation, nothing is placed, no page is made and
+      the source keeps its run; a click on the node still takes the
+      create path. **Fail:** a page is made or
+      anything is placed.
 
-- Repeat **A drop on a tab**, including a plain move, a run with a
-  named object and note, an own-page move, an Option copy and a
-  TextEdit drop. Check actual delivery to the target whose `hitTest`
-  returns nil, the cursor and the end-of-page destination.
-- In the side Tabs rail, check selection, double-click pause and the
-  reorder handle before and after a drop. In the bottom Timeline,
-  check its existing day selection and Today plus button; that view
-  has no double-click pause or reorder handle. When a day contains
-  several pages, its drop destination is the first slot its click
-  selects, not the currently selected page elsewhere in that day.
-- Repeat **A drop on a resting card's tab** with the card pinned.
-  Repeat after raising it. With the editor window owning the content,
-  try the non-owning card row, then the owner's row in a harness with
-  the corresponding `presentationSurface` environment.
-- Repeat **A drop on an empty tab** in the side rail. For an empty
-  Today in the bottom Timeline, check that releasing a drag creates
-  no page; its plus button remains the explicit new-page action.
-
-| Placement | AppKit drag delivery and cursor | Move, Option copy, TextEdit drop | Existing pointer actions | Resting and non-owning gates | Empty slot / Today |
-|---|---|---|---|---|---|
-| Tabs down the side (`SlotRailView`) | Not run | Not run | Not run | Not run | Not run |
-| Timeline along the bottom (`TimeStripView`) | Not run | Not run | Not run | Not run | Not run |
+| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node |
+|---|---|---|---|---|---|---|
+| Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run |
+| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run |
+| Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run |
+| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run |
