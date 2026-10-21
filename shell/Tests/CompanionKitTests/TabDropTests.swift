@@ -151,7 +151,7 @@ final class TabDropTests: XCTestCase {
         let ids = chips(model, source.sheet).map(\.chipId)
         XCTAssertTrue(model.setChipName("API_KEY", chip: ids[0], sheet: source.sheet))
         let (dest, slot) = try unshownPage(on: model, text: "xy")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let board = try beginDrag(source, NSRange(location: 0, length: 4))
         let drop = drag(from: source.textView, board: board, mask: move)
         let records = model.coreClient.ledger().count
@@ -183,7 +183,8 @@ final class TabDropTests: XCTestCase {
         let model = try makeModel()
         let source = try mountPage(on: model)
         let dest = try mountPage(on: model, text: "xy", seals: [])
-        let target = TabDropTarget(model: model, slot: try slot(of: dest.sheet, on: model))
+        let target = TabDropTarget(
+            model: model, slot: try slot(of: dest.sheet, on: model), readOnly: false, surface: .panel)
         let board = try beginDrag(source, NSRange(location: 0, length: 4))
 
         XCTAssertTrue(target.performDragOperation(drag(from: source.textView, board: board, mask: move)))
@@ -200,7 +201,7 @@ final class TabDropTests: XCTestCase {
         let source = try mountPage(on: model)
         let ids = chips(model, source.sheet).map(\.chipId)
         let (dest, slot) = try unshownPage(on: model, text: "xy")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let board = try beginDrag(source, NSRange(location: 0, length: 4))
         let drop = drag(from: source.textView, board: board, mask: copy)
 
@@ -222,7 +223,7 @@ final class TabDropTests: XCTestCase {
         let model = try makeModel(client: standIn)
         let source = try mountPage(on: model)
         let (dest, slot) = try unshownPage(on: model, text: "x😀")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         XCTAssertEqual(model.bodyLength(of: dest), 3, "the pair did not count as two units")
 
         XCTAssertTrue(target.performDragOperation(drag(from: nil, board: inkBoard("hunter2"), mask: copy)))
@@ -244,7 +245,8 @@ final class TabDropTests: XCTestCase {
         let model = try makeModel()
         let page = try mountPage(on: model)
         let ids = chips(model, page.sheet).map(\.chipId)
-        let target = TabDropTarget(model: model, slot: try slot(of: page.sheet, on: model))
+        let target = TabDropTarget(
+            model: model, slot: try slot(of: page.sheet, on: model), readOnly: false, surface: .panel)
         var board = try beginDrag(page, NSRange(location: 0, length: 4))
         var drop = drag(from: page.textView, board: board, mask: move)
 
@@ -282,7 +284,7 @@ final class TabDropTests: XCTestCase {
         let source = try mountPage(on: model)
         let (dest, slot) = try unshownPage(on: model, text: "xy")
         XCTAssertTrue(client.setRung(tab: slot, rung: .oneHour))
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let board = try beginDrag(source, NSRange(location: 0, length: 4))
         let drop = drag(from: source.textView, board: board, mask: move)
         XCTAssertEqual(target.dropRoute(for: drop), .move, "the control: a live page takes the move")
@@ -317,7 +319,7 @@ final class TabDropTests: XCTestCase {
         let client = model.coreClient
         let (dest, slot) = try unshownPage(on: model, text: "xy")
         XCTAssertTrue(client.setRung(tab: slot, rung: .oneHour))
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
         XCTAssertEqual(target.dropRoute(for: foreign), .seal, "the control: a live page takes the seal")
 
@@ -360,7 +362,7 @@ final class TabDropTests: XCTestCase {
             XCTAssertNil(model.notice, "a refused drop said something \(state)")
         }
 
-        let raised = TabDropTarget(model: model, slot: slot, surface: .panel)
+        let raised = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         XCTAssertEqual(raised.dropRoute(for: moving), .move, "the control: the owner's raised tab takes the move")
         refuses(TabDropTarget(model: model, slot: slot, readOnly: true, surface: .panel), "on a resting card")
 
@@ -368,7 +370,7 @@ final class TabDropTests: XCTestCase {
         refuses(raised, "in the window that does not own")
 
         // The hand off ended the standing drag, so the owner's control is the seal.
-        let editor = TabDropTarget(model: model, slot: slot, surface: .editorWindow)
+        let editor = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .editorWindow)
         XCTAssertTrue(editor.takesDrops)
         XCTAssertEqual(editor.draggingEntered(foreign), .copy)
         XCTAssertTrue(editor.performDragOperation(foreign))
@@ -385,7 +387,7 @@ final class TabDropTests: XCTestCase {
         let source = try mountPage(on: model)
         let ids = chips(model, source.sheet).map(\.chipId)
         let (dest, slot) = try unshownPage(on: model, text: "xy")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let board = try beginDrag(source, NSRange(location: 0, length: 4))
         source.coordinator.endPageDrag()
         let drop = drag(from: NSView(), board: board, mask: move)
@@ -407,7 +409,7 @@ final class TabDropTests: XCTestCase {
         let model = try makeModel(client: standIn)
         let source = try mountPage(on: model)
         let (dest, slot) = try unshownPage(on: model, text: "xy")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
 
         XCTAssertEqual(target.dropRoute(for: foreign), .seal)
@@ -434,7 +436,8 @@ final class TabDropTests: XCTestCase {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
         let dest = try mountPage(on: model, text: "xy", seals: [])
-        let target = TabDropTarget(model: model, slot: try slot(of: dest.sheet, on: model))
+        let target = TabDropTarget(
+            model: model, slot: try slot(of: dest.sheet, on: model), readOnly: false, surface: .panel)
         let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
 
         XCTAssertTrue(dest.window.makeFirstResponder(dest.field))
@@ -472,8 +475,10 @@ final class TabDropTests: XCTestCase {
         let drop = drag(from: source, board: board, mask: copy)
 
         for (target, name) in [
-            (TabDropTarget(model: model, slot: slot), "another page's tab"),
-            (TabDropTarget(model: model, slot: try self.slot(of: page.sheet, on: model)), "its own tab"),
+            (TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel), "another page's tab"),
+            (TabDropTarget(
+                model: model, slot: try self.slot(of: page.sheet, on: model), readOnly: false, surface: .panel),
+             "its own tab"),
         ] {
             XCTAssertEqual(target.dropRoute(for: drop), .refused, name)
             XCTAssertEqual(target.draggingEntered(drop), [], name)
@@ -495,7 +500,7 @@ final class TabDropTests: XCTestCase {
         let standIn = DragStandIn(tag: UUID().uuidString)
         let model = try makeModel(client: standIn)
         let (dest, slot) = try unshownPage(on: model, text: "xy")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         let item = NSPasteboardItem()
         XCTAssertTrue(item.setData(Data([1, 2, 3]), forType: SealedFragmentEditorTests.otherBuildsType))
         XCTAssertTrue(item.setString(placeholder, forType: .string))
@@ -522,7 +527,7 @@ final class TabDropTests: XCTestCase {
         let model = try makeModel()
         let (first, slot) = try unshownPage(on: model, text: "")
         let (second, _) = try unshownPage(on: model, text: "")
-        let target = TabDropTarget(model: model, slot: slot)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: .panel)
         target.frame = NSRect(x: 0, y: 0, width: 120, height: 22)
 
         XCTAssertNil(target.hitTest(NSPoint(x: 10, y: 10)))

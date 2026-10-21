@@ -43,10 +43,7 @@ final class TabDropTarget: NSView {
     /// The window this tab stands in; only the owner's tab writes into a page (ADR-0033).
     var surface: PresentationOwner
 
-    init(
-        model: PageModel, slot: UInt64, readOnly: Bool = false,
-        surface: PresentationOwner = .panel
-    ) {
+    init(model: PageModel, slot: UInt64, readOnly: Bool, surface: PresentationOwner) {
         self.model = model
         self.slot = slot
         self.readOnly = readOnly
