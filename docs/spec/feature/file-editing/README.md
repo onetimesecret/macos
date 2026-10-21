@@ -122,11 +122,13 @@ Four ways in, all of them explicit.
   the pad is not preferred as the default app for those files. A file
   opened this way, or dropped on the Dock icon, takes the drop's path
   and selects the editor window. At launch it waits until the open
-  files are restored, and while an open or save panel is up it waits
-  until the panel returns. Known limits: macOS types some text files as
-  plain data rather than text, among them dotfiles such as `.gitignore`
-  and `.zshrc` and names such as `Dockerfile`, and Open With does not
-  offer the pad for those; File > Open and a drop still take them.
+  files are restored, while an open or save panel is up it waits until
+  the panel returns, and while a dirty file's close decision is showing
+  under the multiple pads experiment it waits until the decision is
+  answered. Known limits: macOS types some text files as plain data
+  rather than text, among them dotfiles such as `.gitignore` and
+  `.zshrc` and names such as `Dockerfile`, and Open With does not offer
+  the pad for those; File > Open and a drop still take them.
   Every installed build registers the same declaration, so a debug
   build beside the installed app is a second entry under Open With.
 - **Reopening on relaunch.** The pad remembers which files were open,
