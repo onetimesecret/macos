@@ -854,6 +854,32 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(moved.page, 1)
     }
 
+    /// A mixed rewrite past the search's bound keeps the reader's share of the changed
+    /// stretch rather than sending the anchor to its start (#283); an anchor in the shared
+    /// head or tail still maps exactly, and a share never lands inside a surrogate pair.
+    func testARollPlaceKeepsItsShareOfARewriteTheSearchGivesUpOn() {
+        let head = "HEAD\n"
+        let tail = "\nTAIL"
+        let oldBody = String(repeating: "ab", count: 1_000)
+        let newBody = String(repeating: "cd", count: 2_000)
+        let old = head + oldBody + tail
+        let new = head + newBody + tail
+        XCTAssertEqual(RollPlace.rebased(2, from: old, to: new), 2, "an anchor in the shared head moved")
+        XCTAssertEqual(RollPlace.rebased(5 + 1_000, from: old, to: new), 5 + 2_000)
+        XCTAssertEqual(RollPlace.rebased(5 + 500, from: old, to: new), 5 + 1_000)
+        XCTAssertEqual(RollPlace.rebased(5, from: old, to: new), 5)
+        XCTAssertEqual(
+            RollPlace.rebased(old.utf16.count - 2, from: old, to: new), new.utf16.count - 2,
+            "an anchor in the shared tail moved")
+        XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: newBody), 2_000)
+        XCTAssertEqual(RollPlace.rebased(2_000, from: oldBody, to: "x"), 1)
+
+        let paired = String(repeating: "🧪", count: 1_000)
+        let share = RollPlace.rebased(1_001, from: oldBody, to: paired)
+        XCTAssertEqual(share % 2, 0, "the share landed inside a surrogate pair")
+        XCTAssertEqual(share, 1_000)
+    }
+
     func testARollPlaceSurvivesInsertionsOnBothSidesInOneRefresh() {
         let old = "before\nTARGET\nafter"
         let new = "inserted above\n" + old + "\ninserted below"
@@ -1064,13 +1090,15 @@ final class PageViewStateTests: XCTestCase {
         }
     }
 
-    func testARollPlaceFallsBackForExtensiveMixedReplacements() {
+    /// Past the search's bound the anchor keeps its share of the rewrite (#283); here the
+    /// share is the same offset, which the search could not have found in time.
+    func testARollPlaceKeepsItsShareForExtensiveMixedReplacements() {
         let old = String(repeating: "a", count: 100_000) + "TARGET"
             + String(repeating: "z", count: 100_000)
         let new = String(repeating: "b", count: 100_000) + "TARGET"
             + String(repeating: "c", count: 100_000)
 
-        XCTAssertEqual(RollPlace.rebased(100_000, from: old, to: new), 0)
+        XCTAssertEqual(RollPlace.rebased(100_000, from: old, to: new), 100_000)
     }
 
     func testARollPlaceCrossesBetweenSourceAndPreviewByProportion() {

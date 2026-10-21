@@ -179,7 +179,8 @@ struct RollPlace: Equatable {
         return max(index + delta, edited.location)
     }
 
-    /// Rebase a UTF-16 index through unchanged text, or to its replacement's start.
+    /// Rebase a UTF-16 index through unchanged text, or, past the search's bound, to the
+    /// same share of the replaced stretch (#283).
     static func rebased(_ index: Int, from old: String, to new: String) -> Int {
         let oldCount = old.utf16.count
         let newCount = new.utf16.count
@@ -194,9 +195,26 @@ struct RollPlace: Equatable {
         let suffixLength = utf16Length(a.suffix(suffix))
         if index >= oldCount - suffixLength { return index - oldCount + newCount }
         // A shared prefix can also be an insertion into repeated text; use it only on fallback.
-        return rebasedInterior(
-            index, from: a[..<(a.count - suffix)], to: b[..<(b.count - suffix)])
-            ?? min(index, prefixLength)
+        if let interior = rebasedInterior(
+            index, from: a[..<(a.count - suffix)], to: b[..<(b.count - suffix)]) {
+            return interior
+        }
+        if index <= prefixLength { return index }
+        let oldMiddle = oldCount - prefixLength - suffixLength
+        let newMiddle = newCount - prefixLength - suffixLength
+        guard oldMiddle > 0, newMiddle > 0 else { return prefixLength }
+        let share = (Double(index - prefixLength) * Double(newMiddle) / Double(oldMiddle)).rounded()
+        return scalarBoundary(at: prefixLength + min(Int(share), newMiddle), in: new)
+    }
+
+    /// `offset`, or the start of the scalar it falls inside.
+    private static func scalarBoundary(at offset: Int, in text: String) -> Int {
+        var offset = min(max(offset, 0), text.utf16.count)
+        while offset > 0,
+              String.Index(utf16Offset: offset, in: text).samePosition(in: text.unicodeScalars) == nil {
+            offset -= 1
+        }
+        return offset
     }
 
     private static func utf16Length(_ scalars: ArraySlice<Unicode.Scalar>) -> Int {
