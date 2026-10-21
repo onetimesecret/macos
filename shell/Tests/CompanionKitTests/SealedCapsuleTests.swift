@@ -776,6 +776,15 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(PageModel.removedLine, "sealed content removed.")
     }
 
+    /// The sheet's tooltip and its error lines say one-time link, in the
+    /// menu's verb; conceal stays the code's word (ADR-0055 rule 3, issue #295).
+    func testTheSheetNamesTheLinkAndNotTheServersVerb() {
+        XCTAssertEqual(ConcealView.destinationHelp, "The server this one-time link is created on")
+        XCTAssertEqual(
+            ConcealView.failureLabel("refused"), "Could not create the link: refused")
+        XCTAssertEqual(PageModel.linkFailedLine, "the link was not created")
+    }
+
     /// A removal flashes its line with Undo beside it (D-30), since the core
     /// keeps the object detached; withdrawn, the words stay and the button goes.
     func testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords() throws {

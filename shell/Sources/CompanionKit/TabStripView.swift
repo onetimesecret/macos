@@ -189,9 +189,14 @@ public struct TabStripView: View {
         .buttonStyle(.plain)
         .foregroundStyle(Color.secondaryInk)
         .disabled(model.selectedPageID == nil || model.showingLedger)
-        .help("Conceal this page into a one-time link")
-        .accessibilityLabel(Text("Conceal page into one-time link"))
+        .help(Self.concealPageHelp)
+        .accessibilityLabel(Text(Self.concealPageLabel))
     }
+
+    /// The ↗ page tab's tooltip and spoken label, in one-time link
+    /// vocabulary (ADR-0055 rule 3, issue #295).
+    static let concealPageHelp = "Create a one-time link from this page"
+    static let concealPageLabel = "Create one-time link from page"
 
     /// The dashed residue tab: the audit trail, one line per event. A
     /// toggle, so a second click returns to the page. Built and not

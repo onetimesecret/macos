@@ -137,6 +137,22 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(SheetTab.syncMenuTitle(enrolled: true), "Stop Syncing This Page")
     }
 
+    /// Settings names the API token and the one-time link, never a
+    /// conceal (ADR-0055 rule 3, issue #295).
+    func testSettingsSpeakOfLinksAndTheApiToken() {
+        XCTAssertEqual(
+            SyncSettingsSection.signOutMessage,
+            "Sync stops until you sign in again. Pages, sealed chips and the API token are untouched."
+        )
+        XCTAssertEqual(
+            ConnectionSettingsView.serverCaption,
+            "Where one-time links are created, over https only.")
+        XCTAssertEqual(ConnectionSettingsView.guestPrompt, "empty for guest links")
+        XCTAssertEqual(
+            ConnectionSettingsView.clearTokenMessage,
+            "One-time links are created as guest links until you enter a new token.")
+    }
+
     func testEndpointsDeriveFromTheServerButNeverInventARelay() {
         let derived = SyncEndpoints.resolve(
             serverUrl: "https://eu.onetimesecret.com/",
