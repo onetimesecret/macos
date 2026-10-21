@@ -1036,7 +1036,6 @@ final class DayStackView: NSView {
               let scroll = enclosingScrollView else { return }
         isLayingOut = true
         measurements += 1
-        let reflowPlace = scroll.contentView.bounds.minY > 0 ? readingPlace : nil
         let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
         let expanded = model.isPageExpanded && expandedBody != nil
         let expansionChanged = expanded != expandedLayout
@@ -1118,8 +1117,8 @@ final class DayStackView: NSView {
         }
         setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
         var restoredPlace: RollPlace?
-        if !expansionChanged, pendingPlace == nil, let reflowPlace, restore(place: reflowPlace) {
-            restoredPlace = reflowPlace
+        if !expansionChanged, pendingPlace == nil, let place = readingPlace, restore(place: place) {
+            restoredPlace = place
         }
         constrainScrollOffset()
         if pendingTodayAnchor {
@@ -1352,7 +1351,7 @@ final class DayStackView: NSView {
         else { return nil }
         return RollPlace(
             page: page, anchor: anchor, reading: Self.reading(of: text),
-            length: text.textStorage?.length ?? 0)
+            length: text.textStorage?.length ?? 0, atTop: origin.y <= 0)
     }
 
     private static func reading(of text: NSTextView) -> RollPlace.Reading {
@@ -1401,7 +1400,7 @@ final class DayStackView: NSView {
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(
             x: min(max(within.x, 0), max(frame.width - clip.bounds.width, 0)),
-            y: min(max(text.frame.minY + within.y, 0), floor)
+            y: place.atTop ? 0 : min(max(text.frame.minY + within.y, 0), floor)
         )
         clip.scroll(to: target)
         scroll.reflectScrolledClipView(clip)

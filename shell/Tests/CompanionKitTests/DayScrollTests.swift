@@ -2253,6 +2253,33 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// The capture and the restore read one rule, so a reader on the first day scrolled only
+    /// sideways gets the column back after a wrap round trip, as a reader further down does.
+    func testAFirstDayReaderScrolledOnlySidewaysGetsTheColumnBackAfterAWrapRoundTrip() throws {
+        for belowTop in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let first = try page(in: model, saying: longLine(repetitions: 40) + "\n" + longPage(lines: 80))
+            try page(in: model, saying: longPage(lines: 40))
+            try select(first, in: model)
+            let roll = try mountRoll(model: model)
+            let projection = spreadOverDays(model, selecting: first)
+            roll.stack.update(projection: projection, selectedPage: first, readOnly: false)
+            let start = NSPoint(x: 200, y: belowTop ? 120 : 0)
+            scroll(roll, to: start)
+            XCTAssertEqual(roll.stack.currentPlace?.page, first)
+            let label = belowTop ? "below the top" : "at the top"
+            for wraps in [true, false, true, false] {
+                model.wrapsLines = wraps
+                roll.stack.update(projection: projection, selectedPage: first, readOnly: false)
+                if !belowTop { XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0, accuracy: 0.5, label) }
+                if wraps { XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0, accuracy: 0.5, label) }
+            }
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, start.x, accuracy: 0.5, label)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, start.y, accuracy: 0.5, label)
+        }
+    }
+
     /// The pure half of that rule, and the one place it deliberately
     /// does nothing: a reader at the origin is looking at the top of the
     /// roll, and the top of the roll is where the new day now is.

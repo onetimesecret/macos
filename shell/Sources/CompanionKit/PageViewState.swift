@@ -129,6 +129,8 @@ struct RollPlace: Equatable {
     var reading: Reading = .source
     /// The length of the text the anchor was read from.
     var length: Int = 0
+    /// Taken at the roll's top edge, so a restore keeps the clip there and returns only `x`.
+    var atTop = false
 
     /// The anchor for `reading`'s text of `length` characters. No position map joins
     /// the source to its preview, so the other reading is mapped by proportion.
