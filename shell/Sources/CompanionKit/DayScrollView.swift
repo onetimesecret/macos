@@ -1091,9 +1091,9 @@ final class DayStackView: NSView {
             }
         }
         // Set only on change; a keystroke runs a pass (#278).
-        let scroller = !model.wrapsLines
-        if scroll.hasHorizontalScroller != scroller {
-            scroll.hasHorizontalScroller = scroller
+        let wantsHorizontalScroller = !model.wrapsLines
+        if scroll.hasHorizontalScroller != wantsHorizontalScroller {
+            scroll.hasHorizontalScroller = wantsHorizontalScroller
         }
         let width = max(scroll.contentView.bounds.width, 0)
         let clipHeight = scroll.contentView.bounds.height
