@@ -166,7 +166,7 @@ public final class SyncController: ObservableObject {
     /// so this is long enough for a slow live round and short enough to
     /// free a wedged sheet; a give-up is one overlap of issue #280.
     private var pairingPollStartedAt: Date?
-    static let pairingPollDeadline: TimeInterval = 90
+    private let pairingPollDeadline: TimeInterval
     /// The round that owns the flag. A round given up on returns as a
     /// no-op for the flag, so a newer round's claim is not undone.
     private var pairingRound: UInt64 = 0
@@ -184,15 +184,18 @@ public final class SyncController: ObservableObject {
     /// nothing about the earliest mark leaves the timer standing.
     private var elsewhereDeadline: Date?
 
-    /// `pairingPoll` is a test seam in ADR-0018's Swift shape: a
-    /// defaulted parameter whose shipping value is the core's poll.
+    /// `pairingPoll` and `pairingPollDeadline` are test seams in
+    /// ADR-0018's Swift shape: defaulted parameters whose shipping
+    /// values are the core's poll and ninety seconds.
     public init(
         client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults,
-        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil
+        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil,
+        pairingPollDeadline: TimeInterval = 90
     ) {
         self.client = client
         self.defaults = defaults
         self.pairingPoll = pairingPoll ?? { client.syncPairingPoll() }
+        self.pairingPollDeadline = pairingPollDeadline
         // An enabled flag alone starts nothing; `start()` does, after
         // the state restore, so sync never races the pages it publishes.
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? false
@@ -326,6 +329,7 @@ public final class SyncController: ObservableObject {
         // core's sign-out abandons the trip and the pairing flow itself.
         endSession()
         retryTimer?.invalidate()
+        retryTimer = nil
         quietRefusals = 0
         signinGivenUp = false
         signinFailure = nil
@@ -375,6 +379,7 @@ public final class SyncController: ObservableObject {
         trouble = nil
         signinFailure = nil
         retryTimer?.invalidate()
+        retryTimer = nil
         quietRefusals = 0
         _ = client.syncSigninCancel()
         // And a pairing flow, now: the detach that also ends it runs on
@@ -704,7 +709,7 @@ public final class SyncController: ObservableObject {
             return
         }
         if pairingPolling, let started = pairingPollStartedAt,
-           Date().timeIntervalSince(started) > Self.pairingPollDeadline {
+           Date().timeIntervalSince(started) > pairingPollDeadline {
             pairingPolling = false
         }
         guard !pairingPolling else { return }
@@ -720,10 +725,11 @@ public final class SyncController: ObservableObject {
                 // The wire is freed by the round that owns the flag,
                 // whatever ceremony it served; the answer belongs to the
                 // ceremony that asked, and a stale one is dropped.
-                if self.pairingRound == mine.round {
-                    self.pairingPolling = false
-                    self.pairingPollStartedAt = nil
-                }
+                guard self.pairingRound == mine.round else { return }
+                self.pairingPolling = false
+                self.pairingPollStartedAt = nil
+                // A round given up on is stale too: its answer must not
+                // write over the round that replaced it.
                 guard self.session == mine.session, self.ceremony == mine.ceremony else { return }
                 guard self.pairingStage != nil else { return }
                 switch stage?.stage {

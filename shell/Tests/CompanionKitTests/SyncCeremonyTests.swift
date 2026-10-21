@@ -25,7 +25,8 @@ final class SyncCeremonyTests: XCTestCase {
     /// A controller over a configured core, signed out, with the
     /// browser replaced by a recorder.
     private func configured(
-        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil
+        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil,
+        pairingPollDeadline: TimeInterval = 90
     ) throws -> (SyncController, CompanionClient, Box) {
         let suiteName = "companion-sync-ceremony-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -34,7 +35,9 @@ final class SyncCeremonyTests: XCTestCase {
         defaults.set("https://account.example/oauth/authorize", forKey: "sync.authorizeURL")
         defaults.set("https://account.example/oauth/token", forKey: "sync.tokenURL")
         let client = CompanionClient.ephemeral(tag: "sync-ceremony-\(UUID().uuidString)")
-        let sync = SyncController(client: client, defaults: defaults, pairingPoll: pairingPoll)
+        let sync = SyncController(
+            client: client, defaults: defaults, pairingPoll: pairingPoll,
+            pairingPollDeadline: pairingPollDeadline)
         sync.serverUrlProvider = { "https://account.example" }
         let opened = Box()
         sync.openAuthorizeUrl = { url in opened.url = url }
@@ -216,6 +219,30 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertEqual(held.calls, 2)
         XCTAssertEqual(sync.pairingStage?.stage, "done")
         XCTAssertNil(sync.pairingStage?.reason)
+    }
+
+    func testARoundGivenUpOnCannotWriteOverTheRoundThatReplacedIt() throws {
+        let held = HeldPoll()
+        let (sync, _, _) = try configured(
+            pairingPoll: { await held.poll() }, pairingPollDeadline: 0.05)
+        sync.pairingStage = SyncPairingStage(stage: "waiting", sas: nil, reason: nil)
+
+        // Round one hangs past the deadline; the next tick gives up on
+        // it and sends round two under the same ceremony.
+        sync.pollPairing()
+        spin { held.calls == 1 }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        sync.pollPairing()
+        spin { held.calls == 2 }
+        XCTAssertEqual(held.calls, 2, "the deadline frees the wire for a second round")
+
+        // Both return: round two's done stands, whichever order they
+        // settle in, and round one's stale mismatch is dropped.
+        held.release()
+        spin { sync.pairingStage?.stage == "done" }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        XCTAssertEqual(sync.pairingStage?.stage, "done")
+        XCTAssertNil(sync.pairingStage?.reason, "the given-up round's answer never lands")
     }
 
     func testSigningOutUnderALongPollFreesTheWireWhenTheRoundReturns() throws {
