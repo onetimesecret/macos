@@ -980,6 +980,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A tab's name, a page's derived title and a ledger record's title
+  are wiped when they go** (`companion-core` 0.33.2; issue #256, the
+  content buffer register's C13 to C16). The four held ordinary
+  strings, so a name typed into a tab, the first line a page's title
+  is read from, and the title a ledger record keeps could stay in
+  memory after the tab closed, the page expired or the record aged
+  out. Each is now a zeroizing owner, as the notes already were, and
+  the label a tab builds from either is one too. The register records
+  what each row still leaves ordinary.
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
