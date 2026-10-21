@@ -582,6 +582,12 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(place.page, top)
         XCTAssertEqual(place.anchor.characterIndex, index)
         let top0 = roll.scroll.contentView.bounds.minY
+        // The anchor's glyph, where it stands inside the clip: the invariant, whatever the
+        // rows above it do across the switch.
+        func glyphInClip() throws -> CGFloat {
+            quiet.frame.minY + (try glyphRect(in: quiet, at: index)).minY - roll.scroll.contentView.bounds.minY
+        }
+        let glyphBefore = try glyphInClip()
         let nextRegion = try XCTUnwrap(roll.stack.quietRegions[next])
         XCTAssertGreaterThan(
             nextRegion.frame.minY, roll.scroll.contentView.bounds.maxY,
@@ -595,7 +601,8 @@ final class DayScrollTests: XCTestCase {
         XCTAssertGreaterThan(editor.frame.minY, top0 + roll.scroll.contentView.bounds.height)
         XCTAssertEqual(roll.stack.currentPlace?.page, top)
         XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
-        XCTAssertEqual(roll.scroll.contentView.bounds.minY, top0, accuracy: 0.5)
+        XCTAssertTrue(roll.stack.quietRegions[top] === quiet)
+        XCTAssertEqual(try glyphInClip(), glyphBefore, accuracy: 0.5, "the anchor's line moved in the clip")
     }
 
     /// A peer's applied edit restates a quiet page and leaves the page a surface shows alone (#276);
@@ -614,12 +621,12 @@ final class DayScrollTests: XCTestCase {
         let stale = model.storage(for: quiet)
         let stray = NSLayoutManager()
         stale.addLayoutManager(stray)
-        defer { stale.removeLayoutManager(stray) }
         XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
         XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
         XCTAssertEqual(stale.string, "quiet before", "the case needs a stale storage to restate")
 
         model.settleRemoteEdits(on: [quiet, mounted])
+        stale.removeLayoutManager(stray)
 
         XCTAssertEqual(stale.string, "quiet after", "a stray manager kept the page stale")
         XCTAssertTrue(model.storage(for: quiet) === stale)
