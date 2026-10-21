@@ -2076,8 +2076,8 @@ public final class PageModel: ObservableObject {
             clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
         // Inline on the main run loop, not through a Task hop: a hop
         // lets a copy land between fire and clear, and the clear then
-        // takes the newer copy at once. The identity check stands the
-        // fired timer down if a re-arm beat it anyway.
+        // takes the newer copy at once. Inline, an invalidated timer
+        // cannot fire, so the identity check is only a second net.
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
             let fired = ObjectIdentifier(timer)
             MainActor.assumeIsolated {
@@ -2088,8 +2088,10 @@ public final class PageModel: ObservableObject {
                 _ = self.clearClipboardIfOurs()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        // Stored before it is scheduled, so a near-zero test interval
+        // under a nested run loop still finds itself armed.
         clipboardClearTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// Seal the store into its two files: live pages and their chips

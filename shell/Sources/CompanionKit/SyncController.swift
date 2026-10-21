@@ -143,7 +143,8 @@ public final class SyncController: ObservableObject {
     /// The attach response's peer count is the compatibility fallback
     /// until a readable device roster supplies the current count.
     private var lastAttachPeers: Int?
-    private var pumping = false
+    /// Internal, not private, so a test can stand a pump in flight.
+    var pumping = false
     /// Which run of the engine loop is the live one; a turn that comes
     /// back from an earlier session is dropped, since off and on inside
     /// one long poll leaves `enabled` true for both.
@@ -299,8 +300,11 @@ public final class SyncController: ObservableObject {
     public func signOut() {
         // A browser trip still out settles as `abandoned`; the new
         // session drops that settle, so a sign-out is never worded as
-        // a browser that never returned.
+        // a browser that never returned. A dropped settle clears no
+        // flag, so the in-flight flags go here, as `stop()` does.
         session &+= 1
+        pumping = false
+        pairingPolling = false
         _ = client.syncSignout()
         attached = false
         trouble = enabled ? .signedOut : nil

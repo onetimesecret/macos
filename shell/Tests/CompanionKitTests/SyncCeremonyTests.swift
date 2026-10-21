@@ -134,6 +134,22 @@ final class SyncCeremonyTests: XCTestCase {
         )
     }
 
+    func testSigningOutUnderALongPollLeavesNoPumpLatched() throws {
+        let (sync, _, _) = try configured()
+        sync.enabled = true
+        // A long poll is out when the person signs out. Its settle
+        // belongs to the old session and is dropped, so nothing but
+        // the sign-out itself can clear the in-flight flag.
+        sync.pumping = true
+        let stale = sync.session
+        sync.signOut()
+        XCTAssertNotEqual(sync.session, stale, "a sign-out is a new session")
+        XCTAssertFalse(sync.pumping, "the sign-out clears the flag the dropped settle cannot")
+        sync.settlePump(quietTurn(), session: stale)
+        XCTAssertFalse(sync.pumping)
+        XCTAssertNil(sync.signinFailure, "a sign-out is not a browser that never returned")
+    }
+
     func testATurnFromAStoppedSessionIsNotTheReplacementsTurn() throws {
         let (sync, _, _) = try configured()
         sync.enabled = true
