@@ -36,6 +36,10 @@ pub fn bucket(len: usize) -> usize {
 #[must_use]
 pub fn pad(content: &[u8]) -> Zeroizing<Vec<u8>> {
     let size = bucket(content.len());
+    debug_assert!(
+        size >= PREFIX + content.len(),
+        "a bucket smaller than its frame"
+    );
     let mut out = Zeroizing::new(vec![0; size]);
     #[allow(clippy::cast_possible_truncation)]
     out[..PREFIX].copy_from_slice(&(content.len() as u32).to_be_bytes());
@@ -80,6 +84,26 @@ mod tests {
                 .all(|byte| *byte == 0)
         );
         assert_eq!(unpad(&framed).unwrap(), content.as_slice());
+    }
+
+    #[test]
+    fn every_bucket_edge_has_room_for_the_prefix_and_the_content() {
+        let edges = [
+            0,
+            FLOOR - PREFIX,
+            FLOOR - PREFIX + 1,
+            CEILING - PREFIX,
+            CEILING - PREFIX + 1,
+            2 * CEILING - PREFIX,
+            2 * CEILING - PREFIX + 1,
+        ];
+        for len in edges {
+            let content = vec![9u8; len];
+            let framed = pad(&content);
+            assert!(framed.len() >= PREFIX + len, "{len}");
+            assert_eq!(framed.len(), bucket(len));
+            assert_eq!(unpad(&framed).unwrap(), content.as_slice());
+        }
     }
 
     #[test]
