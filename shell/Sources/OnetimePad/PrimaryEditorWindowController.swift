@@ -367,7 +367,7 @@ private struct PrimaryEditorRootView: View {
                 if pages.showsTimeUnits {
                     TimeStripView(model: pages)
                 } else {
-                    TabStripView(model: pages)
+                    TabStripView(model: pages, readOnly: false)
                 }
             }
         }
