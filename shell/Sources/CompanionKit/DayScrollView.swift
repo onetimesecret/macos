@@ -520,7 +520,9 @@ final class DayStackView: NSView {
             guard let mounted = editor?.textStorage, ObjectIdentifier(mounted) == posted,
                   let place = readingPlace, place.page == coordinator.currentSheet,
                   place.reading == .source else { return }
-            readingPlace = place.rebased(throughEdit: edited, changeInLength: delta, length: length)
+            readingPlace = place.rebased(
+                throughEdit: edited, changeInLength: delta, length: length,
+                byProjection: model.isApplyingProjection)
         }
     }
 

@@ -152,22 +152,29 @@ struct RollPlace: Equatable {
     }
 
     /// The same place after one storage edit, said as the storage says it: the edited
-    /// range and the length of the new text, and the change in length.
-    func rebased(throughEdit edited: NSRange, changeInLength delta: Int, length: Int) -> RollPlace {
+    /// range and the length of the new text, and the change in length. `byProjection`
+    /// says the model wrote the edit (`PageModel.isApplyingProjection`), not a person.
+    func rebased(
+        throughEdit edited: NSRange, changeInLength delta: Int, length: Int, byProjection: Bool
+    ) -> RollPlace {
         var place = self
         place.anchor.characterIndex = Self.rebased(
-            anchor.characterIndex, throughEdit: edited, changeInLength: delta, length: length)
+            anchor.characterIndex, throughEdit: edited, changeInLength: delta, length: length,
+            byProjection: byProjection)
         place.length = length
         return place
     }
 
     /// Before the edit an index stays, and past it the index moves by `delta`. Inside it an
-    /// index moves by `delta` too, unless the edit restated the whole text of `length`.
-    static func rebased(_ index: Int, throughEdit edited: NSRange, changeInLength delta: Int, length: Int) -> Int {
+    /// index moves by `delta` too, unless the projection restated the whole text of `length`.
+    static func rebased(
+        _ index: Int, throughEdit edited: NSRange, changeInLength delta: Int, length: Int, byProjection: Bool
+    ) -> Int {
         // Text typed or pasted at the anchor stays at the top, where the reader put it.
         if index <= edited.location { return max(index, 0) }
         if index >= NSMaxRange(edited) - delta { return index + delta }
-        if edited.location == 0, edited.length == length { return min(index, length) }
+        // A styled insertion on a page of one paragraph is reported as the whole text too.
+        if byProjection, edited.location == 0, edited.length == length { return min(index, length) }
         // AppKit reports an insertion through to its paragraph's end, so the text after it moved.
         return max(index + delta, edited.location)
     }

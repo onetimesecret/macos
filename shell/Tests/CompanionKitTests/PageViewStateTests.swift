@@ -1117,7 +1117,8 @@ final class PageViewStateTests: XCTestCase {
         ] {
             let edit = inserting(inserted, at: location, into: text)
             let moved = place.rebased(
-                throughEdit: edit.edited, changeInLength: edit.delta, length: edit.text.utf16.count)
+                throughEdit: edit.edited, changeInLength: edit.delta, length: edit.text.utf16.count,
+                byProjection: false)
             XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 3), inserted)
             XCTAssertEqual(moved.length, edit.text.utf16.count)
             XCTAssertEqual(moved.page, place.page)
@@ -1125,11 +1126,12 @@ final class PageViewStateTests: XCTestCase {
             XCTAssertEqual(RollPlace.rebased(7, from: text, to: edit.text), reseeded, inserted)
         }
         let empty = inserting("first words", at: 0, into: "")
-        XCTAssertEqual(RollPlace.rebased(0, throughEdit: empty.edited, changeInLength: empty.delta, length: 11), 0)
+        XCTAssertEqual(RollPlace.rebased(
+            0, throughEdit: empty.edited, changeInLength: empty.delta, length: 11, byProjection: false), 0)
         let replaced = storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 7, length: 4), with: "LINE") }
         XCTAssertEqual(
             RollPlace.rebased(7, throughEdit: replaced.edited, changeInLength: replaced.delta,
-                              length: replaced.text.utf16.count), 7,
+                              length: replaced.text.utf16.count, byProjection: false), 7,
             "a replacement starting at the anchor keeps it")
     }
 
@@ -1139,7 +1141,9 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(edit.text, "first\nfourth")
         for (index, expected) in [(2, 2), (6, 6), (13, 6), (18, 6), (19, 6), (21, 8), (25, 12)] {
             XCTAssertEqual(
-                RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta, length: 12), expected,
+                RollPlace.rebased(
+                    index, throughEdit: edit.edited, changeInLength: edit.delta, length: 12, byProjection: false),
+                expected,
                 "index \(index)")
         }
     }
@@ -1153,14 +1157,19 @@ final class PageViewStateTests: XCTestCase {
             let length = edit.text.utf16.count
             XCTAssertEqual(edit.edited, NSRange(location: 6, length: replacement.utf16.count))
             for index in replaced.location..<NSMaxRange(replaced) {
-                let moved = RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta, length: length)
+                let moved = RollPlace.rebased(
+                    index, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false)
                 XCTAssertEqual(moved, index == 6 ? 6 : max(index + edit.delta, 6), "index \(index) in \(replacement)")
                 XCTAssertTrue((6...end).contains(moved), "index \(index) in \(replacement)")
             }
-            XCTAssertEqual(RollPlace.rebased(18, throughEdit: edit.edited, changeInLength: edit.delta, length: length), end)
+            XCTAssertEqual(RollPlace.rebased(
+                18, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false), end)
             XCTAssertEqual(
-                RollPlace.rebased(19, throughEdit: edit.edited, changeInLength: edit.delta, length: length), end + 1)
-            XCTAssertEqual(RollPlace.rebased(2, throughEdit: edit.edited, changeInLength: edit.delta, length: length), 2)
+                RollPlace.rebased(
+                    19, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false),
+                end + 1)
+            XCTAssertEqual(RollPlace.rebased(
+                2, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false), 2)
         }
     }
 
@@ -1191,7 +1200,9 @@ final class PageViewStateTests: XCTestCase {
         for reading in ["an item", "reader", "through", "last line"] {
             let index = (text as NSString).range(of: reading).location
             XCTAssertEqual(
-                RollPlace.rebased(index, throughEdit: edit.range, changeInLength: edit.delta, length: storage.length),
+                RollPlace.rebased(
+                    index, throughEdit: edit.range, changeInLength: edit.delta, length: storage.length,
+                    byProjection: false),
                 (storage.string as NSString).range(of: reading).location, reading)
         }
     }
@@ -1207,7 +1218,9 @@ final class PageViewStateTests: XCTestCase {
             XCTAssertEqual(edit.delta, length - end)
             for (index, expected) in [(0, 0), (13, min(13, length)), (end, length)] {
                 XCTAssertEqual(
-                    RollPlace.rebased(index, throughEdit: edit.edited, changeInLength: edit.delta, length: length),
+                    RollPlace.rebased(
+                        index, throughEdit: edit.edited, changeInLength: edit.delta, length: length,
+                        byProjection: true),
                     expected,
                     "index \(index) in \(rewritten)")
             }
@@ -1228,7 +1241,8 @@ final class PageViewStateTests: XCTestCase {
         ]
         for edit in edits {
             let moved = place.rebased(
-                throughEdit: edit.edited, changeInLength: edit.delta, length: (edit.text as NSString).length)
+                throughEdit: edit.edited, changeInLength: edit.delta, length: (edit.text as NSString).length,
+                byProjection: false)
             let index = moved.anchor.characterIndex
             XCTAssertEqual(index, (edit.text as NSString).range(of: "👩‍💻").location, edit.text)
             XCTAssertEqual(moved.length, (edit.text as NSString).length)

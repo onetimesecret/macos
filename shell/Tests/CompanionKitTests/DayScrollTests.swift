@@ -1042,6 +1042,51 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index + 2)
     }
 
+    /// A styled insertion at the start of a page of one paragraph with no newline is reported as
+    /// the whole text, the shape of a restate; the reader's line still moves down with the text.
+    func testAStyledInsertionAtTheStartOfAOneParagraphPageMovesTheReaderDown() throws {
+        final class Reported: @unchecked Sendable { var edit: (range: NSRange, delta: Int)? }
+        let model = try makeModel()
+        model.wrapsLines = true
+        let selected = try page(in: model, saying: longLine(repetitions: 60))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertFalse(editor.string.contains("\n"), "the case needs one paragraph and no newline")
+        let glyph = try glyphRect(in: editor, at: storage.length / 2)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, selected)
+        XCTAssertGreaterThan(place.anchor.characterIndex, 0)
+        let reported = Reported()
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
+        ) { note in
+            guard let edited = note.object as? NSTextStorage, edited.editedMask.contains(.editedCharacters)
+            else { return }
+            reported.edit = (edited.editedRange, edited.changeInLength)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let style = NSMutableParagraphStyle()
+        style.headIndent = 24
+        let pasted = NSAttributedString(
+            string: String(repeating: "pasted words ", count: 40),
+            attributes: [.font: InkStyle.baseFont, .paragraphStyle: style])
+        storage.insert(pasted, at: 0)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+        let edit = try XCTUnwrap(reported.edit)
+        XCTAssertEqual(edit.range, NSRange(location: 0, length: storage.length),
+                       "the case needs the storage to report the whole text")
+        XCTAssertEqual(edit.delta, pasted.length)
+        var expected = place.anchor
+        expected.characterIndex += edit.delta
+        let offset = try XCTUnwrap(expected.offset(in: editor))
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
+    }
+
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()
