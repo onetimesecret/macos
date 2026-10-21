@@ -83,7 +83,9 @@ public final class SyncController: ObservableObject {
     /// The device list, refreshed with the status.
     @Published public private(set) var devices: [SyncDevice] = []
     /// The pairing ceremony's stage while one is in flight.
-    @Published public private(set) var pairingStage: SyncPairingStage?
+    /// Settable within the module so a test can stand a ceremony up
+    /// without a relay.
+    @Published public internal(set) var pairingStage: SyncPairingStage?
     /// The last degraded condition the loop met; nil while sync is
     /// quiet and well.
     @Published public private(set) var trouble: Trouble?
@@ -160,6 +162,11 @@ public final class SyncController: ObservableObject {
     /// pump: a relay slower than the tick would otherwise stack rounds
     /// and post the same queued message twice.
     private var pairingPolling = false
+    private let pairingPoll: @Sendable () -> SyncPairingStage?
+    /// The pairing ceremony's generation. A poll carries the one it
+    /// started under, and ending a ceremony, by cancel, mismatch, the
+    /// switch or a sign-out, moves it on so the poll's answer is dropped.
+    private var ceremony: UInt64 = 0
     private nonisolated(unsafe) var elsewhereTimer: Timer?
     /// When a peer's edit last landed on each page; in memory only.
     private var remoteEdits: [UInt64: Date] = [:]
@@ -167,9 +174,15 @@ public final class SyncController: ObservableObject {
     /// nothing about the earliest mark leaves the timer standing.
     private var elsewhereDeadline: Date?
 
-    public init(client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults) {
+    /// `pairingPoll` is a test seam in ADR-0018's Swift shape: a
+    /// defaulted parameter whose shipping value is the core's poll.
+    public init(
+        client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults,
+        pairingPoll: (@Sendable () -> SyncPairingStage?)? = nil
+    ) {
         self.client = client
         self.defaults = defaults
+        self.pairingPoll = pairingPoll ?? { client.syncPairingPoll() }
         // An enabled flag alone starts nothing; `start()` does, after
         // the state restore, so sync never races the pages it publishes.
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? false
@@ -301,17 +314,18 @@ public final class SyncController: ObservableObject {
     public func signOut() {
         // A browser trip still out settles as `abandoned`; the new
         // session drops that settle, so a sign-out is never worded as
-        // a browser that never returned. A dropped settle clears no
-        // flag, so both in-flight flags go here, as in `stop()`, and
-        // the pairing ceremony ends with the engine. The core's
-        // sign-out abandons the trip. An earlier failure's sentence
-        // goes too: signed out is the whole state.
-        session &+= 1
-        pumping = false
-        pairingPolling = false
-        pairingStage = nil
-        pairingTimer?.invalidate()
+        // a browser that never returned. The ceremony, the retry, the
+        // give-up and the marks from elsewhere end with the engine, as
+        // on the switch; the core's sign-out abandons the trip. An
+        // earlier failure's sentence goes too: signed out is the whole
+        // state.
+        endSession()
+        endCeremony()
+        retryTimer?.invalidate()
+        quietRefusals = 0
+        signinGivenUp = false
         signinFailure = nil
+        clearElsewhere()
         _ = client.syncSignout()
         attached = false
         trouble = enabled ? .signedOut : nil
@@ -321,7 +335,7 @@ public final class SyncController: ObservableObject {
     // MARK: The engine loop (issue #102)
 
     private func begin() {
-        session &+= 1
+        endSession()
         signinFailure = nil
         // A fresh configuration starts the backoff afresh.
         quietRefusals = 0
@@ -349,27 +363,19 @@ public final class SyncController: ObservableObject {
     }
 
     private func stop() {
-        session &+= 1
         let wasAttached = attached
         attached = false
-        pumping = false
-        pairingPolling = false
+        endSession()
+        endCeremony()
         // The switch ends a browser trip too; the core would persist a
         // late grant before the shell could decline it.
         trouble = nil
         signinFailure = nil
-        pairingStage = nil
-        pairingTimer?.invalidate()
         retryTimer?.invalidate()
         quietRefusals = 0
         _ = client.syncSigninCancel()
         signinGivenUp = false
-        // Nothing is arriving now, so no page says something is.
-        elsewhereTimer?.invalidate()
-        elsewhereTimer = nil
-        elsewhereDeadline = nil
-        remoteEdits = [:]
-        editedElsewhere = []
+        clearElsewhere()
         // The enrolment mirror stays, as the core's enrolment does.
         guard wasAttached else {
             refreshState()
@@ -610,6 +616,8 @@ public final class SyncController: ObservableObject {
     }
 
     private func beginPairing(_ begin: (CompanionClient) -> SyncOutcome) {
+        // A ceremony still polling is over the moment a new one begins.
+        endCeremony()
         let outcome = begin(client)
         guard outcome.ok else {
             pairingStage = SyncPairingStage(
@@ -622,20 +630,47 @@ public final class SyncController: ObservableObject {
 
     /// The human's verdict on the six digits; a mismatch aborts whole.
     public func confirmPairing(matched: Bool) {
-        pairingStage = client.syncPairingConfirm(matched: matched)
+        let stage = client.syncPairingConfirm(matched: matched)
         if matched {
+            pairingStage = stage
             armPairingPoll()
         } else {
-            pairingTimer?.invalidate()
+            endCeremony()
+            pairingStage = stage
         }
     }
 
     /// Dismiss the pairing flow at any stage.
     public func cancelPairing() {
         _ = client.syncPairingCancel()
+        endCeremony()
+        refreshState()
+    }
+
+    /// The ceremony is over: its poll's answer is dropped, the flag it
+    /// held is free for the next one, and the tick stops. The stage is
+    /// the caller's to set, since a mismatch shows its verdict.
+    private func endCeremony() {
+        ceremony &+= 1
+        pairingPolling = false
         pairingStage = nil
         pairingTimer?.invalidate()
-        refreshState()
+    }
+
+    /// The session is over: an in-flight pump's settle is dropped, so
+    /// the flag it would have cleared is cleared here.
+    private func endSession() {
+        session &+= 1
+        pumping = false
+    }
+
+    /// Nothing is arriving now, so no page says something is.
+    private func clearElsewhere() {
+        elsewhereTimer?.invalidate()
+        elsewhereTimer = nil
+        elsewhereDeadline = nil
+        remoteEdits = [:]
+        editedElsewhere = []
     }
 
     private func armPairingPoll() {
@@ -647,23 +682,25 @@ public final class SyncController: ObservableObject {
         pairingTimer = timer
     }
 
-    private func pollPairing() {
+    /// One tick of the ceremony's poll; internal so a test can tick it.
+    func pollPairing() {
         guard pairingStage != nil else {
             pairingTimer?.invalidate()
             return
         }
         guard !pairingPolling else { return }
         pairingPolling = true
-        let client = self.client
-        let mine = session
+        let poll = pairingPoll
+        let mine = (session: session, ceremony: ceremony)
         Task.detached(priority: .utility) {
-            let stage = client.syncPairingPoll()
+            let stage = poll()
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 // Before the flag, as `settlePump`: a poll from an ended
-                // session must not write its stage into the next one's
-                // ceremony, and the session's end cleared the flag.
-                guard self.session == mine else { return }
+                // session or ceremony must not write its stage into the
+                // next one's, and the end that moved either on cleared
+                // the flag.
+                guard self.session == mine.session, self.ceremony == mine.ceremony else { return }
                 self.pairingPolling = false
                 guard self.pairingStage != nil else { return }
                 switch stage?.stage {
