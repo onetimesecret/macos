@@ -1620,6 +1620,7 @@ public struct InkEditorView: NSViewRepresentable {
                 if reportedUnnamedSelectors.insert(name).inserted {
                     Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
                         .fault("unnamed menu selector \(name, privacy: .public)")
+                    assertionFailure("name \(name) in validateMenuItem")
                 }
                 return true
             }

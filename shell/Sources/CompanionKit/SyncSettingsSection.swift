@@ -159,9 +159,9 @@ private struct SyncDeviceRow: View {
                     }
             }
         }
-        // `.combine`, not `.ignore`: the row reads as one element and
-        // keeps Revoke reachable as an action of it.
-        .accessibilityElement(children: .combine)
+        // `.contain`, not `.ignore`: Revoke stays a focusable button for
+        // the keyboard as well as an action VoiceOver can reach.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("\(fingerprintHead), \(title), \(seen), \(badge)"))
     }
 

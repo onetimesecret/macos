@@ -161,10 +161,8 @@ public final class SyncController: ObservableObject {
     /// One pairing poll on the wire at a time, as `pumping` is for the
     /// pump; `SyncCeremonyTests` keeps a round open and ticks again.
     private(set) var pairingPolling = false
-    /// When the round on the wire went out. The relay call has no
-    /// timeout of its own, so a round older than `pairingPollDeadline`
-    /// is given up on rather than wedging pairing for the process; the
-    /// one-round promise is kept inside that bound.
+    /// When the round on the wire went out: the relay call has no timeout,
+    /// so a round past `pairingPollDeadline` is given up on (issue #280).
     private var pairingPollStartedAt: Date?
     static let pairingPollDeadline: TimeInterval = 30
     /// The round that owns the flag. A round given up on returns as a
@@ -446,12 +444,8 @@ public final class SyncController: ObservableObject {
     }
 
     func settlePump(_ outcome: SyncPumpOutcome?, session mine: UInt64) {
-        // The wire is free whatever session's round this was, the
-        // pairing poll's rule: the core's pump has no guard of its own,
-        // so a session end must not free the flag while a round is
-        // still out. A turn from an ended session owns nothing else,
-        // except that the new session's first round, which waited for
-        // the wire, goes out now.
+        // The wire is free whatever session's round this was; a turn
+        // from an ended session owns nothing else but the next round.
         pumping = false
         guard session == mine else {
             pump()

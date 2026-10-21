@@ -36,6 +36,10 @@ final class CodeLanguageNameTests: XCTestCase {
     }
 
     func testAFencesOwnSpellingReachesTheRegistryThroughTheAliases() {
+        XCTAssertTrue(
+            Set(CodeInk.aliases.keys).isDisjoint(with: CodeLanguageName.fenceSpellings.keys),
+            "a spelling in both tables would leave the second entry dead"
+        )
         for (alias, slug) in CodeInk.aliases.merging(CodeLanguageName.fenceSpellings, uniquingKeysWith: { a, _ in a }) {
             XCTAssertEqual(
                 CodeLanguageName.display(alias), CodeLanguageName.display(slug),

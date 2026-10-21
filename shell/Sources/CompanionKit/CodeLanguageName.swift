@@ -1,14 +1,7 @@
 import Foundation
 
-/// The name a source language shows in menus and labels.
-///
-/// Language ids are the detector's slugs (`CodeInk.detectorLanguageRenderers`)
-/// and are lower case; `capitalized` turns them into Javascript, Sql
-/// and Objectivec. The table names every slug the registry can emit
-/// as its community writes it, and `CodeLanguageNameTests` walks the
-/// registry so a Betlang upgrade's new slug is a decision here, not a
-/// capitalised accident. An id outside the registry falls back to the
-/// capitalised form.
+/// The name a source language shows in menus and labels: every slug of
+/// `CodeInk.detectorLanguageRenderers`, as its community writes it.
 public enum CodeLanguageName {
     static let names: [String: String] = [
         "asm": "Assembly",

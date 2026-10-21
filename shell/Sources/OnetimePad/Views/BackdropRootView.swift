@@ -744,10 +744,8 @@ struct BackdropRootView: View {
                 }
             }
         }
+        // The grips exist only while raised, so a rest removes them.
         .onDisappear { popResizeCursor() }
-        // A rest under a resting pointer: the grip stays mounted until
-        // the overlay rebuilds, so the pop cannot wait for an exit.
-        .onChange(of: raised) { if !$0 { popResizeCursor() } }
     }
 
     private static let gripThickness: CGFloat = 6
@@ -774,11 +772,8 @@ struct BackdropRootView: View {
             .gesture(resizeGesture(edge))
     }
 
-    /// The pointer a window shows over its resize margins. One push at
-    /// a time, popped by the grip that pushed it or by the frame
-    /// leaving the hierarchy: SwiftUI does not promise an exit hover to
-    /// a view that disappears, and an edge's exit can arrive after its
-    /// corner's entry.
+    /// The pointer a window shows over its resize margins: one push at a
+    /// time, popped by the grip that pushed it or by the frame's exit.
     private func showResizeCursor(_ edge: CardEdge, _ inside: Bool) {
         hoveringEdge = inside ? edge : (hoveringEdge == edge ? nil : hoveringEdge)
         // While a grip is being pulled its cursor stands whatever the
