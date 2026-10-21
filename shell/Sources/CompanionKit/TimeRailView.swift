@@ -430,82 +430,98 @@ struct StreamNavigatorView: View {
                 nodes: nodes, geometry: roll.geometry,
                 height: proxy.size.height, width: proxy.size.width
             )
-            ZStack(alignment: .topLeading) {
-                // Bare track: a click here scrolls the roll to the
-                // stretch clicked, selecting nothing. Under everything,
-                // so the nodes above take their own clicks first.
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(coordinateSpace: .local) { point in
-                        jump(toTrackY: point.y, layout: layout)
-                    }
-                track(layout)
-                if let windowY = layout.windowY {
-                    windowMark(at: windowY)
-                }
-                ForEach(layout.placed) { placed in
-                    if let noteY = placed.noteY {
-                        emptyDaysNote(placed.node.emptyDays, at: noteY)
-                    }
-                }
-                if let segment = layout.activeSegment {
-                    Rectangle()
-                        .fill(Color.ember)
-                        .frame(width: 2, height: segment.height)
-                        .offset(x: Metrics.trackX - 0.5, y: segment.y)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-                slivers(layout)
-                if let band = layout.band {
-                    viewportBand(band, width: proxy.size.width)
-                }
-                ForEach(layout.placed) { placed in
-                    node(placed, width: proxy.size.width)
-                }
-                // A scrollbar lane along the leading edge stays reachable
-                // where checkpoint rows span the column. It stops short of
-                // the dots on the track, so the dots and the labels keep
-                // their taps.
-                Color.clear
-                    .frame(width: Metrics.scrollLaneWidth, height: proxy.size.height)
-                    .contentShape(Rectangle())
-                    .onTapGesture(coordinateSpace: .local) { point in
-                        jump(toTrackY: point.y, layout: layout)
-                    }
-                    .allowsHitTesting(drivesRoll && layout.band != nil)
-                    .accessibilityHidden(true)
+            // Rows that outrun the column lengthen the drawing, and the column scrolls to
+            // reach them inside its clip, as a sidebar does (#277).
+            ScrollView(.vertical, showsIndicators: false) {
+                stream(layout, size: proxy.size)
             }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .local)
-                    .updating($isScrubbing) { _, active, _ in active = true }
-                    .onChanged { value in
-                        guard drivesRoll, layout.band != nil else { return }
-                        if scrollDrag == nil {
-                            scrollDrag = StreamNavigator.ScrollDrag(
-                                layout: layout, geometry: roll.geometry, startY: value.startLocation.y)
-                        }
-                        if let scrollDrag {
-                            roll.scrub(toDocumentOffset: scrollDrag.offset(atY: value.location.y))
-                        }
-                    }
-                    .onEnded { _ in scrollDrag = nil },
-                including: drivesRoll && layout.band != nil ? .all : .subviews
-            )
-            .onChange(of: isScrubbing) { active in
-                if !active { scrollDrag = nil }
-            }
-            .onChange(of: drivesRoll) { _ in scrollDrag = nil }
-            .onDisappear { scrollDrag = nil }
-            // Only the owner's rail installs the relay. A relay in the
-            // other window would watch that window's wheel events and
-            // swallow each one over the column, for a roll it may not
-            // drive.
-            .background(drivesRoll ? WheelRelay { event in roll.relay(wheel: event) } : nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("pad stream"))
+    }
+
+    /// The drawing itself, `layout.contentHeight` tall and clipped by the scroll view around it.
+    private func stream(_ layout: StreamNavigator.Layout, size: CGSize) -> some View {
+        let contentHeight = max(size.height, layout.contentHeight)
+        // A wheel over a column that scrolls turns the column; over one that fits, it
+        // turns the roll (D-38), through a relay only the owner's rail installs, since a
+        // relay in the other window would swallow that window's wheel for a roll it may
+        // not drive.
+        let relays = drivesRoll && layout.contentHeight <= size.height
+        let reveal = layout.placed.first { $0.node.active }.map {
+            RailReveal.Request(id: $0.id, rowTop: $0.drawnTop, rowHeight: $0.rowHeight)
+        }
+        return ZStack(alignment: .topLeading) {
+            // Bare track: a click here scrolls the roll to the
+            // stretch clicked, selecting nothing. Under everything,
+            // so the nodes above take their own clicks first.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { point in
+                    jump(toTrackY: point.y, layout: layout)
+                }
+            track(layout)
+            if let windowY = layout.windowY {
+                windowMark(at: windowY)
+            }
+            ForEach(layout.placed) { placed in
+                if let noteY = placed.noteY {
+                    emptyDaysNote(placed.node.emptyDays, at: noteY)
+                }
+            }
+            if let segment = layout.activeSegment {
+                Rectangle()
+                    .fill(Color.ember)
+                    .frame(width: 2, height: segment.height)
+                    .offset(x: Metrics.trackX - 0.5, y: segment.y)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            slivers(layout)
+            if let band = layout.band {
+                viewportBand(band, width: size.width)
+            }
+            ForEach(layout.placed) { placed in
+                node(placed, width: size.width)
+            }
+            // A scrollbar lane along the leading edge stays reachable
+            // where checkpoint rows span the column. It stops short of
+            // the dots on the track, so the dots and the labels keep
+            // their taps.
+            Color.clear
+                .frame(width: Metrics.scrollLaneWidth, height: contentHeight)
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { point in
+                    jump(toTrackY: point.y, layout: layout)
+                }
+                .allowsHitTesting(drivesRoll && layout.band != nil)
+                .accessibilityHidden(true)
+        }
+        .frame(width: size.width, height: contentHeight, alignment: .topLeading)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .local)
+                .updating($isScrubbing) { _, active, _ in active = true }
+                .onChanged { value in
+                    guard drivesRoll, layout.band != nil else { return }
+                    if scrollDrag == nil {
+                        scrollDrag = StreamNavigator.ScrollDrag(
+                            layout: layout, geometry: roll.geometry, startY: value.startLocation.y)
+                    }
+                    if let scrollDrag {
+                        roll.scrub(toDocumentOffset: scrollDrag.offset(atY: value.location.y))
+                    }
+                }
+                .onEnded { _ in scrollDrag = nil },
+            including: drivesRoll && layout.band != nil ? .all : .subviews
+        )
+        .onChange(of: isScrubbing) { active in
+            if !active { scrollDrag = nil }
+        }
+        .onChange(of: drivesRoll) { _ in scrollDrag = nil }
+        .onDisappear { scrollDrag = nil }
+        .background(relays ? WheelRelay { event in roll.relay(wheel: event) } : nil)
+        .background(RailReveal(request: reveal))
     }
 
     // MARK: The track
@@ -780,6 +796,67 @@ private final class StreamNavigatorLayoutCache {
         guard let documentLayout else { return .empty }
         return StreamNavigator.updatingViewport(
             in: documentLayout, geometry: geometry)
+    }
+}
+
+/// A selection change brings the active node's row into the column (#277).
+///
+/// The column is a SwiftUI scroll view, and the one place its AppKit
+/// scroll view can be reached is from inside its content: this view
+/// sits behind the drawing, takes no clicks, and when the active node
+/// changes it asks its enclosing scroll view for the least move that
+/// shows the row, by `StreamNavigator.revealOffset`. The move waits one
+/// hop on the main queue, for the content to have taken the new row
+/// heights before the clip is measured against them.
+private struct RailReveal: NSViewRepresentable {
+    struct Request: Equatable {
+        let id: UInt64
+        let rowTop: CGFloat
+        let rowHeight: CGFloat
+    }
+
+    let request: Request?
+
+    func makeNSView(context: Context) -> RailRevealView {
+        let view = RailRevealView()
+        view.reveal(request)
+        return view
+    }
+
+    func updateNSView(_ view: RailRevealView, context: Context) {
+        view.reveal(request)
+    }
+}
+
+private final class RailRevealView: NSView {
+    private var revealed: UInt64?
+
+    /// Flipped so a row's top is measured as the layout measures it, down from the column's top.
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// Scroll the row into the clip, once per active node: a later layout that moves the
+    /// row leaves the reader's own scrolling alone.
+    func reveal(_ request: RailReveal.Request?) {
+        guard let request, request.id != revealed else { return }
+        revealed = request.id
+        DispatchQueue.main.async { [weak self] in self?.scroll(to: request) }
+    }
+
+    private func scroll(to request: RailReveal.Request) {
+        guard let scrollView = enclosingScrollView, let document = scrollView.documentView else { return }
+        let clip = scrollView.contentView
+        let row = convert(
+            NSRect(x: 0, y: request.rowTop, width: 1, height: request.rowHeight), to: document)
+        let visible = clip.documentVisibleRect
+        guard let offset = StreamNavigator.revealOffset(
+            rowTop: row.minY, rowHeight: row.height,
+            visibleTop: visible.minY, visibleHeight: visible.height,
+            contentHeight: document.frame.height)
+        else { return }
+        clip.scroll(to: NSPoint(x: visible.minX, y: offset))
+        scrollView.reflectScrolledClipView(clip)
     }
 }
 

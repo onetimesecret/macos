@@ -491,6 +491,23 @@ public enum StreamNavigator {
         max(0, top - Metrics.jumpLead)
     }
 
+    /// The least scroll of the column that shows a row, as every
+    /// navigator makes it when its selection moves: a row above the
+    /// clip comes to its top, a row below it to its bottom, and a row
+    /// already in view asks for nothing (nil). Never past either end
+    /// of the drawing (#277).
+    public static func revealOffset(
+        rowTop: CGFloat, rowHeight: CGFloat,
+        visibleTop: CGFloat, visibleHeight: CGFloat, contentHeight: CGFloat
+    ) -> CGFloat? {
+        let furthest = max(0, contentHeight - visibleHeight)
+        if rowTop < visibleTop { return min(furthest, max(0, rowTop)) }
+        if rowTop + rowHeight > visibleTop + visibleHeight {
+            return min(furthest, max(0, rowTop + rowHeight - visibleHeight))
+        }
+        return nil
+    }
+
     /// The drawing, decided.
     ///
     /// Each node starts where its page's share of the roll puts it
