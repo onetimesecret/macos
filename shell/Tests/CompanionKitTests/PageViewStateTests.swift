@@ -856,7 +856,8 @@ final class PageViewStateTests: XCTestCase {
 
     /// A mixed rewrite past the search's bound keeps the reader's share of the changed
     /// stretch rather than sending the anchor to its start (#283); an anchor in the shared
-    /// head or tail still maps exactly, and a share never lands inside a surrogate pair.
+    /// head or tail still maps exactly, a middle deleted to nothing maps to its start, and a
+    /// share falling inside a surrogate pair is snapped to the pair's start.
     func testARollPlaceKeepsItsShareOfARewriteTheSearchGivesUpOn() {
         let head = "HEAD\n"
         let tail = "\nTAIL"
@@ -873,11 +874,11 @@ final class PageViewStateTests: XCTestCase {
             "an anchor in the shared tail moved")
         XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: newBody), 2_000)
         XCTAssertEqual(RollPlace.rebased(2_000, from: oldBody, to: "x"), 1)
+        XCTAssertEqual(RollPlace.rebased(1_000, from: oldBody, to: ""), 0)
+        XCTAssertEqual(RollPlace.rebased(5 + 1_000, from: old, to: head + tail), 5, "a middle deleted to nothing")
 
         let paired = String(repeating: "🧪", count: 1_000)
-        let share = RollPlace.rebased(1_001, from: oldBody, to: paired)
-        XCTAssertEqual(share % 2, 0, "the share landed inside a surrogate pair")
-        XCTAssertEqual(share, 1_000)
+        XCTAssertEqual(RollPlace.rebased(1_001, from: oldBody, to: paired), 1_000)
     }
 
     func testARollPlaceSurvivesInsertionsOnBothSidesInOneRefresh() {

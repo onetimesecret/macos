@@ -202,7 +202,7 @@ struct RollPlace: Equatable {
         if index <= prefixLength { return index }
         let oldMiddle = oldCount - prefixLength - suffixLength
         let newMiddle = newCount - prefixLength - suffixLength
-        guard oldMiddle > 0, newMiddle > 0 else { return prefixLength }
+        guard newMiddle > 0 else { return prefixLength }
         let share = (Double(index - prefixLength) * Double(newMiddle) / Double(oldMiddle)).rounded()
         return scalarBoundary(at: prefixLength + min(Int(share), newMiddle), in: new)
     }
