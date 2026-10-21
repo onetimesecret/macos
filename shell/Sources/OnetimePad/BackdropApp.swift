@@ -128,6 +128,8 @@ struct BackdropApp: App {
                         appDelegate.showAbout()
                     }
                 }
+                // The delegate puts OnetimePad Help above these once
+                // AppKit has built the menu (`installHelpItem`, issue #294).
                 CommandGroup(replacing: .help) {
                     Button("Export Diagnostics…") { appDelegate.exportDiagnostics() }
                     Button("Copy Diagnostic Summary") { appDelegate.copyDiagnosticSummary() }
@@ -489,6 +491,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // the menu bar reads: App | File | Edit | View | Window | Help.
         Self.moveFileMenuAfterAppMenu()
         Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
+        // The Help menu's first item is the app's help (issue #294), and
+        // `helpMenu` is what puts the system's search field above it.
+        NSApp.helpMenu = Self.installHelpItem(
+            in: NSApp.mainMenu, productName: Self.productName, target: self)
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -1378,6 +1384,33 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Turn SwiftUI's two placeholder buttons into ordinary nil-targeted
+    /// Where OnetimePad Help goes until the docs site has a page of its
+    /// own (issue #294).
+    static let helpURL = URL(string: "https://docs.onetimesecret.dev/macos")!
+
+    /// The Help menu's item, through the model's `openURL` seam so a test
+    /// records the URL rather than starting a browser.
+    @objc func openHelp() {
+        model.pages.openURL(Self.helpURL)
+    }
+
+    /// Puts "<product> Help" with ⌘? at the head of the Help menu SwiftUI
+    /// built, above the diagnostics items, and returns that menu for
+    /// `NSApp.helpMenu`. Nil when there is no Help menu to find.
+    @discardableResult
+    static func installHelpItem(in mainMenu: NSMenu?, productName: String,
+                                target: NSObject) -> NSMenu? {
+        guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
+        else { return nil }
+        let help = NSMenuItem(title: "\(productName) Help",
+                              action: #selector(openHelp), keyEquivalent: "?")
+        help.keyEquivalentModifierMask = [.command]
+        help.target = target
+        helpMenu.insertItem(help, at: 0)
+        helpMenu.insertItem(.separator(), at: 1)
+        return helpMenu
+    }
+
     /// AppKit commands. The responder chain then chooses the undo owner: an
     /// `InkTextView` validates against Loro, while a field editor in Settings
     /// keeps its native `UndoManager` behavior.
