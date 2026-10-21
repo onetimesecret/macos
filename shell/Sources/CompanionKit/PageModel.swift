@@ -310,7 +310,7 @@ public struct FileRenderSuggestion: Equatable, Sendable {
     }
 
     public var language: String {
-        if case .source(let language) = mode { return language.capitalized }
+        if case .source(let language) = mode { return CodeLanguageName.display(language) }
         return mode.formatLabel
     }
 }
@@ -2074,9 +2074,16 @@ public final class PageModel: ObservableObject {
         clipboardClearTimer?.invalidate()
         let interval =
             clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
-        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
+        // Inline on the main run loop, not through a Task hop: a hop
+        // lets a copy land between fire and clear, and the clear then
+        // takes the newer copy at once. The identity check stands the
+        // fired timer down if a re-arm beat it anyway.
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
+            let fired = ObjectIdentifier(timer)
+            MainActor.assumeIsolated {
+                guard let self, let armed = self.clipboardClearTimer,
+                      ObjectIdentifier(armed) == fired
+                else { return }
                 self.clipboardClearTimer = nil
                 _ = self.clearClipboardIfOurs()
             }

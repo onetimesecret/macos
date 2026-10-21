@@ -155,6 +155,10 @@ public final class SyncController: ObservableObject {
     /// backoff in `attachRetryDelay`.
     private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
+    /// One pairing poll in flight at a time, as `pumping` is for the
+    /// pump: a relay slower than the tick would otherwise stack rounds
+    /// and post the same queued message twice.
+    private var pairingPolling = false
     private nonisolated(unsafe) var elsewhereTimer: Timer?
     /// When a peer's edit last landed on each page; in memory only.
     private var remoteEdits: [UInt64: Date] = [:]
@@ -293,6 +297,10 @@ public final class SyncController: ObservableObject {
     /// Sign out: one Keychain account goes, the engine dissolves, the
     /// pad is untouched. Turning sync back on is the ceremony again.
     public func signOut() {
+        // A browser trip still out settles as `abandoned`; the new
+        // session drops that settle, so a sign-out is never worded as
+        // a browser that never returned.
+        session &+= 1
         _ = client.syncSignout()
         attached = false
         trouble = enabled ? .signedOut : nil
@@ -632,11 +640,15 @@ public final class SyncController: ObservableObject {
             pairingTimer?.invalidate()
             return
         }
+        guard !pairingPolling else { return }
+        pairingPolling = true
         let client = self.client
         Task.detached(priority: .utility) {
             let stage = client.syncPairingPoll()
             await MainActor.run { [weak self] in
-                guard let self, self.pairingStage != nil else { return }
+                guard let self else { return }
+                self.pairingPolling = false
+                guard self.pairingStage != nil else { return }
                 switch stage?.stage {
                 case "done":
                     self.pairingStage = stage
