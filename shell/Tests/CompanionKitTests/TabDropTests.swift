@@ -572,7 +572,8 @@ final class TabDropTests: XCTestCase {
     }
 
     /// A rail too dense for its pages' places, which the navigator packs up from the foot and
-    /// the pads rail scrolls, still stacks its targets in node order without one meeting another.
+    /// the pads rail scrolls, still stacks its targets in node order without one meeting another;
+    /// the navigator's rows pushed above the column seat none, so none lies over the heading.
     func testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting() throws {
         for pads in [false, true] {
             let rail = pads ? "the pads rail" : "the default rail"
@@ -585,14 +586,25 @@ final class TabDropTests: XCTestCase {
                 model.refresh()
             }
             let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host, on: model)
-            XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), rail)
-            if !pads {
-                let first = try XCTUnwrap(targets.first.map(frame(of:)), rail)
-                XCTAssertGreaterThan(
-                    first.maxY, host.convert(host.bounds, to: nil).maxY, "the control: \(rail) fits its pages")
+            let slots = clickedSlots(on: model)
+            if pads {
+                let targets = nodeTargets(in: host, on: model)
+                XCTAssertEqual(targets.map(\.slot), slots, rail)
+                assertTheTargetsStack(targets, in: host, footInside: false, rail)
+                continue
             }
-            assertTheTargetsStack(targets, in: host, footInside: !pads, rail)
+            let targets = seatedTargets(in: host)
+            XCTAssertFalse(targets.isEmpty, "\(rail) seated no target")
+            XCTAssertLessThan(targets.count, slots.count, "the control: \(rail) pushed no row above its column")
+            XCTAssertEqual(
+                targets.map(\.slot), Array(slots.suffix(targets.count)),
+                "a row pushed above \(rail) seated a target, or a seated one left its node")
+            let bounds = host.convert(host.bounds, to: nil)
+            for target in targets {
+                XCTAssertTrue(
+                    bounds.contains(frame(of: target)), "a target at \(frame(of: target)) lies outside \(rail)")
+            }
+            assertTheTargetsStack(targets, in: host, footInside: true, rail)
         }
     }
 
@@ -837,15 +849,20 @@ final class TabDropTests: XCTestCase {
         return host
     }
 
-    /// Every target seated under `host` once it has laid out, top to bottom as drawn; a count
-    /// other than the page nodes `model` draws, an unmounted host's zero among them, fails the test.
-    private func nodeTargets(
-        in host: NSView, on model: PageModel, file: StaticString = #filePath, line: UInt = #line
-    ) -> [TabDropTarget] {
+    /// Every target seated under `host` once it has laid out, top to bottom as drawn.
+    private func seatedTargets(in host: NSView) -> [TabDropTarget] {
         host.layoutSubtreeIfNeeded()
         drainMainQueue()
         host.layoutSubtreeIfNeeded()
-        let targets = mountedTargets(in: host).sorted { frame(of: $0).midY > frame(of: $1).midY }
+        return mountedTargets(in: host).sorted { frame(of: $0).midY > frame(of: $1).midY }
+    }
+
+    /// `seatedTargets(in:)`, where a count other than the page nodes `model` draws, an
+    /// unmounted host's zero among them, fails the test.
+    private func nodeTargets(
+        in host: NSView, on model: PageModel, file: StaticString = #filePath, line: UInt = #line
+    ) -> [TabDropTarget] {
+        let targets = seatedTargets(in: host)
         let pageNodes = clickedSlots(on: model).count
         XCTAssertGreaterThan(pageNodes, 0, "the rail draws no page node to look for", file: file, line: line)
         XCTAssertEqual(
