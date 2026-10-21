@@ -46,14 +46,16 @@ already does (2.5); otherwise that is the owner's decision.
 
 The server column is a reading at f7c8288bda and `b0e7ceb0`, not run,
 and no check in this repository notices when either moves. The re-read
-is the bump's own step, with the person moving the pin as its owner
-(issue 266): whoever moves either pin in this document re-reads the
-**Server today** column row by row against the new commit in the same
-change, updates the symbol, file and line beside each entry, revises
-**Standing** where the reading changed, and records the new pins and
-the date of the re-read in this paragraph and the status line, so the
-document always says which commits it describes. Where a row's standing
-moves between *match* and *gap*, the pull request that bumps the pin
+is the bump's own step, with the person moving a pin as its owner:
+whoever moves either pin in this document re-reads, in the same
+change, every row of the **Server today** column that cites the
+repository that moved, against its new commit (a fork bump re-reads
+the `oauth_*.rb`, `oidc.rb` and `authorize.str` rows; a develop bump
+the rest), updates the symbol, file and line beside each entry, revises
+**Standing** where the reading changed, and writes the new pin in the
+opening paragraph and in this one and the date of the re-read in the
+status line, so the document always says which commits it describes.
+Where a row's **Standing** changes, the pull request that bumps the pin
 says so in its body, so the owner's decision on which side moves is not
 left in a citation update. An automated check against the two server
 repositories is out of scope; the reading is by hand. The symbol
