@@ -4,6 +4,7 @@
 #![allow(unsafe_code)] // A C ABI needs raw pointers.
 
 mod conceal;
+mod content_json;
 mod diagnostics;
 mod files;
 // Public on purpose, unlike its siblings: the sync session layer that
@@ -20,6 +21,7 @@ mod sync_driver;
 mod sync_gate;
 pub mod sync_session;
 
+use content_json::{chip_face, copied_json, summary_json, to_c_json};
 use diagnostics::diag_fault;
 
 use std::ffi::CStr;
@@ -36,9 +38,9 @@ use ots_client::Transport as _;
 
 use companion_core::{
     ChipId, ChipMeta, Copied, CopyRefusal, DestinationClass, EditIntent, EditOp, EditSelection,
-    EnvelopeCap, FILE_SIZE_LIMIT, FileId, LedgerEvent, NameRefusal, PayloadError, Placed,
-    RestoreError, SealedChip, Segment, Sheet, SheetId, SheetStore, StepOutcome, SystemClock,
-    TTL_LADDER, Tab, TabId, TextSelection, Ttl, detect_source_language, judge_name, local_day,
+    EnvelopeCap, FILE_SIZE_LIMIT, FileId, NameRefusal, PayloadError, Placed, RestoreError,
+    SealedChip, Segment, SheetId, SheetStore, StepOutcome, SystemClock, TTL_LADDER, TabId,
+    TextSelection, Ttl, detect_source_language, judge_name,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1369,15 +1371,7 @@ pub unsafe extern "C" fn companion_chip_note_runs_json(
     let Some(text) = guard.store.note_text(ChipId::from_raw(chip)) else {
         return ptr::null_mut();
     };
-    let runs: Vec<serde_json::Value> = if text.is_empty() {
-        Vec::new()
-    } else {
-        vec![serde_json::json!({ "ink": text.as_str() })]
-    };
-    match serde_json::to_string(&runs) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    to_c_json(&content_json::InkRuns(text.as_str()))
 }
 
 /// Apply an edit batch to the note with its `TextKit` gesture, whole or not at
@@ -1852,19 +1846,14 @@ pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle)
         return ptr::null_mut();
     };
     let (page, objects) = guard.store.active_cut().unzip();
-    let faces: Vec<serde_json::Value> = objects
-        .unwrap_or_default()
-        .into_iter()
-        .map(chip_face)
-        .collect();
-    let value = serde_json::json!({
-        "page_id": page.map(SheetId::raw),
-        "objects": faces,
-    });
-    match serde_json::to_string(&value) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    to_c_json(&content_json::ActiveCut {
+        objects: objects
+            .unwrap_or_default()
+            .into_iter()
+            .map(chip_face)
+            .collect(),
+        page_id: page.map(SheetId::raw),
+    })
 }
 
 /// Decrypted drag: write a chip's payload into the drag `item` on `pasteboard`
@@ -2023,15 +2012,12 @@ pub unsafe extern "C" fn companion_tabs_json(handle: *mut CompanionHandle) -> *m
     let now = guard.store.now();
     let offset = guard.store.local_offset_seconds();
     let now_wall_ms = guard.store.wall_ms();
-    let summaries: Vec<serde_json::Value> = guard
+    let summaries: Vec<_> = guard
         .store
         .tabs()
         .map(|tab| summary_json(tab, now, offset, now_wall_ms))
         .collect();
-    match serde_json::to_string(&summaries) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    to_c_json(&summaries)
 }
 
 /// Whether no tab holds a page and whether no tabs remain (ADR-0017). The
@@ -2092,32 +2078,8 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
     let Ok(guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    let records: Vec<serde_json::Value> = guard
-        .store
-        .ledger()
-        .map(|record| {
-            serde_json::json!({
-                "event": match record.event() {
-                    LedgerEvent::Created => "created",
-                    LedgerEvent::Sealed => "sealed",
-                    LedgerEvent::Sent => "sent",
-                    LedgerEvent::Expired => "expired",
-                    LedgerEvent::Discarded => "discarded",
-                },
-                "item": record.item().to_string(),
-                "title": record.title(),
-                "at_ms": record.at_wall_ms(),
-                "created_at_ms": record.item_created_wall_ms(),
-                "size": record.size().as_str(),
-                // The ledger's own vocabulary, so a new class cannot skip the seam.
-                "destination": record.destination().to_string(),
-            })
-        })
-        .collect();
-    match serde_json::to_string(&records) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    let records: Vec<_> = guard.store.ledger().map(content_json::ledger_row).collect();
+    to_c_json(&records)
 }
 
 /// Clear the ledger in memory; the shell must save for it to reach the file.
@@ -2158,20 +2120,7 @@ pub unsafe extern "C" fn companion_sheet_document_json(
     let Some(sheet) = guard.store.sheet(SheetId::from_raw(sheet)) else {
         return ptr::null_mut();
     };
-    let runs: Vec<serde_json::Value> = sheet
-        .segments()
-        .iter()
-        .filter_map(|segment| match segment {
-            Segment::Ink(text) => Some(serde_json::json!({ "ink": text })),
-            Segment::Chip(chip_id) => sheet
-                .chip(*chip_id)
-                .map(|chip| serde_json::json!({ "chip": chip_face(chip) })),
-        })
-        .collect();
-    match serde_json::to_string(&runs) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    to_c_json(&content_json::DocumentRuns(sheet))
 }
 
 /// A page's provenance (ADR-0013): `{"created_ms": u64, "modified_s":
@@ -3530,93 +3479,25 @@ pub unsafe extern "C" fn companion_sync_pairing_cancel(handle: *mut CompanionHan
     guard.sync.pairing.take().is_some()
 }
 
-/// Free a string returned by this library. Passing null is a no-op.
+/// Wipe and free an owned string returned by this library. Null, a static
+/// version string and a pointer this library never handed out are left alone.
 ///
 /// # Safety
-/// `s` must be an owned string pointer returned by this library (or null),
-/// not previously freed.
+/// `s` must not be freed already, since its address may now belong to a newer
+/// string; the caller must not read through `s` after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
-    if !s.is_null() {
-        drop(unsafe { CString::from_raw(s) });
-    }
+    unsafe { content_json::free(s) };
 }
 
 // ---- Helpers ----
-
-/// One tab's non-secret summary (ADR-0017). `id` addresses the slot,
-/// `page_id` the page (null when empty). Clock fields are zero and meaningless
-/// without a page; page fields follow `page_id`'s null. `now_wall_ms` comes
-/// from the caller so every row shares one reading of today.
-fn summary_json(
-    tab: &Tab,
-    now: std::time::Instant,
-    utc_offset_seconds: i32,
-    now_wall_ms: u64,
-) -> serde_json::Value {
-    let page = tab.page();
-    let today = local_day(now_wall_ms, utc_offset_seconds);
-    let remaining = page.map_or(std::time::Duration::ZERO, |sheet| sheet.remaining(now));
-    serde_json::json!({
-        "id": tab.id().raw(),
-        "uuid": tab.uuid().to_string(),
-        "has_page": page.is_some(),
-        "page_id": page.map(|sheet| sheet.id().raw()),
-        "page_uuid": page.map(|sheet| sheet.uuid().to_string()),
-        "title": tab.label(utc_offset_seconds),
-        // `name`, `derived` or `placeholder`, so the shell can skip a redundant label.
-        "title_source": tab.label_source().as_str(),
-        "rung_code": ttl_to_code(tab.rung()),
-        "rung_label": tab.rung().to_string(),
-        "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
-        "remaining_label": page.map(|sheet| sheet.remaining_label(now)).unwrap_or_default(),
-        "spoken_remaining": page.map_or_else(
-            || "this tab holds no page".to_string(),
-            |_| spoken_remaining(remaining),
-        ),
-        "fraction_remaining": page.map_or(0.0, |sheet| {
-            f64::from(sheet.fraction_remaining(tab.rung(), now))
-        }),
-        "paused": page.is_some_and(|sheet| sheet.is_held(now)),
-        "hold_topped_up": page.is_some_and(|sheet| sheet.hold_topped_up(now)),
-        "hold_remaining_ms": page.map_or(0, |sheet| {
-            u64::try_from(sheet.hold_remaining(now).as_millis()).unwrap_or(u64::MAX)
-        }),
-        "chip_count": page.map_or(0, Sheet::chip_count),
-        "last_hour": page.is_some_and(|sheet| sheet.last_hour(now)),
-        "page_has_content": page.is_some_and(Sheet::has_content),
-        "page_day_offset": page.map(|sheet| sheet.local_day(utc_offset_seconds) - today),
-        // Absolute birth stamp for the stream navigator; null follows `page_id`.
-        "page_created_ms": page.map(Sheet::created_wall_ms),
-    })
-}
 
 /// A freshly sealed chip's non-secret face, as an owned C string.
 fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *mut c_char {
     let Some(sealed) = store.sheet(sheet).and_then(|s| s.chip(chip)) else {
         return ptr::null_mut();
     };
-    match serde_json::to_string(&chip_face(sealed)) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
-}
-
-/// A copy or cut as `{"envelope": string|null, "plain": string}`.
-fn copied_json(copied: &Copied) -> *mut c_char {
-    // The core writes the envelope as UTF-8 JSON; it crosses as a string.
-    let envelope = copied
-        .envelope
-        .as_ref()
-        .map(|bytes| String::from_utf8_lossy(bytes));
-    let value = serde_json::json!({
-        "envelope": envelope,
-        "plain": copied.plain.as_str(),
-    });
-    match serde_json::to_string(&value) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    to_c_json(&chip_face(sealed))
 }
 
 /// A copy's or a cut's answer: [`copied_json`], `{"error": "tooLarge" |
@@ -3668,22 +3549,6 @@ pub(crate) fn step_outcome_json(outcome: StepOutcome) -> *mut c_char {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
-}
-
-/// A chip's face as the seal routes and the document both send it.
-fn chip_face(chip: &SealedChip) -> serde_json::Value {
-    serde_json::json!({
-        "chip_id": chip.id().raw(),
-        "kind": match chip.meta() {
-            ChipMeta::Text { .. } => "text",
-            ChipMeta::Image { .. } => "image",
-        },
-        "excerpt": chip.excerpt(),
-        "size_label": chip.size_label(),
-        "concealed": chip.conceal().is_some(),
-        "name": chip.name(),
-        "has_note": chip.has_note(),
-    })
 }
 
 /// `{"origin": url}`, JSON so compaction can read it back mechanically.
@@ -3801,10 +3666,7 @@ fn is_file_id(sheet: u64) -> bool {
 
 /// Move a Rust `String` into an owned C string pointer (caller frees).
 fn into_c_string(s: String) -> *mut c_char {
-    match CString::new(s) {
-        Ok(c) => c.into_raw(),
-        Err(_) => ptr::null_mut(),
-    }
+    content_json::from_string(s)
 }
 
 /// Map a rung code (as used across the C ABI) to a [`Ttl`]. Codes follow
@@ -3828,6 +3690,194 @@ fn ttl_to_code(ttl: Ttl) -> c_int {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_routes_preserve_escaped_text_and_sorted_json_shapes() {
+        fn old_face(chip: &SealedChip) -> serde_json::Value {
+            serde_json::json!({
+                "chip_id": chip.id().raw(),
+                "kind": match chip.meta() {
+                    ChipMeta::Text { .. } => "text",
+                    ChipMeta::Image { .. } => "image",
+                },
+                "excerpt": chip.excerpt(),
+                "size_label": chip.size_label(),
+                "concealed": chip.conceal().is_some(),
+                "name": chip.name(),
+                "has_note": chip.has_note(),
+            })
+        }
+
+        unsafe {
+            let handle = handle();
+            let (page, chip) = page_with_a_chip(handle, "a sealed secret");
+            let text = "café 🦀\0\n\"\\";
+            let ops = cstring(&serde_json::json!([{"ins": {"at": 0, "text": text}}]).to_string());
+            assert!(companion_sheet_apply_ops(handle, page, ops.as_ptr()));
+            assert!(companion_chip_set_name(
+                handle,
+                chip,
+                cstring("CAFE_KEY").as_ptr()
+            ));
+            assert!(note_ops(
+                handle,
+                chip,
+                &serde_json::json!([{"ins": {"at": 0, "text": text}}]).to_string(),
+                0
+            ));
+            assert_eq!(
+                take_json(companion_chip_note_runs_json(handle, chip)),
+                serde_json::json!([{"ink": text}]).to_string(),
+            );
+            let (expected_doc, expected_chip) = {
+                let guard = (*handle).inner.lock().unwrap();
+                let sheet = guard.store.sheet(SheetId::from_raw(page)).unwrap();
+                let runs: Vec<_> = sheet
+                    .segments()
+                    .iter()
+                    .filter_map(|segment| match segment {
+                        Segment::Ink(ink) => Some(serde_json::json!({"ink": ink})),
+                        Segment::Chip(id) => sheet
+                            .chip(*id)
+                            .map(|chip| serde_json::json!({"chip": old_face(chip)})),
+                    })
+                    .collect();
+                (
+                    serde_json::to_string(&runs).unwrap(),
+                    old_face(sheet.chip(ChipId::from_raw(chip)).unwrap()),
+                )
+            };
+            assert_eq!(
+                take_json(companion_sheet_document_json(handle, page)),
+                expected_doc
+            );
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                assert_eq!(
+                    take_json(chip_json(
+                        &guard.store,
+                        SheetId::from_raw(page),
+                        ChipId::from_raw(chip)
+                    )),
+                    expected_chip.to_string()
+                );
+            }
+            let copied = json_of(companion_sheet_copy_fragment(
+                handle,
+                page,
+                0,
+                u32::try_from(text.encode_utf16().count() + 5).unwrap(),
+            ));
+            assert!(copied["envelope"].is_string());
+            assert!(copied["plain"].as_str().unwrap().starts_with(text));
+            assert!(companion_chip_copy_out(handle, chip));
+            let cut = companion_sheet_cut_fragment(
+                handle,
+                page,
+                u32::try_from(text.encode_utf16().count() + 2).unwrap(),
+                1,
+            );
+            assert!(!cut.is_null());
+            companion_string_free(cut);
+            assert_eq!(
+                take_json(companion_active_cut_json(handle)),
+                serde_json::json!({"page_id": page, "objects": [expected_chip]}).to_string()
+            );
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let expected: Vec<_> = guard
+                    .store
+                    .ledger()
+                    .map(|record| {
+                        serde_json::json!({
+                            "event": match record.event() {
+                                companion_core::LedgerEvent::Created => "created",
+                                companion_core::LedgerEvent::Sealed => "sealed",
+                                companion_core::LedgerEvent::Sent => "sent",
+                                companion_core::LedgerEvent::Expired => "expired",
+                                companion_core::LedgerEvent::Discarded => "discarded",
+                            },
+                            "item": record.item().to_string(),
+                            "title": record.title(),
+                            "at_ms": record.at_wall_ms(),
+                            "created_at_ms": record.item_created_wall_ms(),
+                            "size": record.size().as_str(),
+                            "destination": record.destination().to_string(),
+                        })
+                    })
+                    .collect();
+                assert!(expected.iter().any(|row| {
+                    row["title"]
+                        .as_str()
+                        .is_some_and(|title| title.contains("café"))
+                }));
+                drop(guard);
+                assert_eq!(
+                    take_json(companion_ledger_json(handle)),
+                    serde_json::to_string(&expected).unwrap()
+                );
+            }
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn tab_projection_matches_the_previous_json_bytes_for_each_label_source() {
+        unsafe {
+            let handle = handle();
+            let (tab_id, page) = new_page(handle);
+            for label_source in ["placeholder", "derived", "name"] {
+                if label_source == "derived" {
+                    let text = "café 🦀\0\n\"\\";
+                    let ops =
+                        cstring(&serde_json::json!([{"ins": {"at": 0, "text": text}}]).to_string());
+                    assert!(companion_sheet_apply_ops(handle, page, ops.as_ptr()));
+                } else if label_source == "name" {
+                    assert!(companion_tab_set_title(
+                        handle,
+                        tab_id,
+                        cstring("café 🦀 \"\\").as_ptr()
+                    ));
+                }
+                let guard = (*handle).inner.lock().unwrap();
+                let tab = guard.store.tabs().next().unwrap();
+                assert_eq!(tab.label_source().as_str(), label_source);
+                let page = tab.page();
+                let now = guard.store.now();
+                let offset = guard.store.local_offset_seconds();
+                let wall = guard.store.wall_ms();
+                let remaining = page.map_or(Duration::ZERO, |sheet| sheet.remaining(now));
+                let expected = serde_json::json!({
+                    "id": tab.id().raw(),
+                    "uuid": tab.uuid().to_string(),
+                    "has_page": page.is_some(),
+                    "page_id": page.map(|sheet| sheet.id().raw()),
+                    "page_uuid": page.map(|sheet| sheet.uuid().to_string()),
+                    "title": tab.label(offset),
+                    "title_source": tab.label_source().as_str(),
+                    "rung_code": ttl_to_code(tab.rung()),
+                    "rung_label": tab.rung().to_string(),
+                    "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
+                    "remaining_label": page.map(|sheet| sheet.remaining_label(now)).unwrap_or_default(),
+                    "spoken_remaining": page.map_or_else(|| "this tab holds no page".to_string(), |_| spoken_remaining(remaining)),
+                    "fraction_remaining": page.map_or(0.0, |sheet| f64::from(sheet.fraction_remaining(tab.rung(), now))),
+                    "paused": page.is_some_and(|sheet| sheet.is_held(now)),
+                    "hold_topped_up": page.is_some_and(|sheet| sheet.hold_topped_up(now)),
+                    "hold_remaining_ms": page.map_or(0, |sheet| u64::try_from(sheet.hold_remaining(now).as_millis()).unwrap_or(u64::MAX)),
+                    "chip_count": page.map_or(0, companion_core::Sheet::chip_count),
+                    "last_hour": page.is_some_and(|sheet| sheet.last_hour(now)),
+                    "page_has_content": page.is_some_and(companion_core::Sheet::has_content),
+                    "page_day_offset": page.map(|sheet| sheet.local_day(offset) - companion_core::local_day(wall, offset)),
+                    "page_created_ms": page.map(companion_core::Sheet::created_wall_ms),
+                });
+                assert_eq!(
+                    take_json(to_c_json(&summary_json(tab, now, offset, wall))),
+                    expected.to_string()
+                );
+            }
+            companion_free(handle);
+        }
+    }
 
     #[test]
     fn version_exports_name_the_crates_they_report() {
@@ -3887,6 +3937,10 @@ mod tests {
 
     unsafe fn take_json(p: *mut c_char) -> String {
         assert!(!p.is_null(), "expected a JSON string, got null");
+        assert!(
+            content_json::is_live(p),
+            "an owned return bypassed content_json"
+        );
         let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_owned();
         unsafe { companion_string_free(p) };
         s
@@ -6124,7 +6178,9 @@ mod tests {
                 let today = guard.store.wall_ms();
                 let day_ms = 24 * 60 * 60 * 1_000;
                 for (days, expected) in [(1_u64, -1_i64), (2, -2), (6, -6)] {
-                    let later = summary_json(tab, now, offset, today + days * day_ms);
+                    let later =
+                        serde_json::to_value(summary_json(tab, now, offset, today + days * day_ms))
+                            .unwrap();
                     assert_eq!(
                         later["page_day_offset"].as_i64(),
                         Some(expected),

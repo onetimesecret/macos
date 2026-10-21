@@ -17,15 +17,16 @@
 //!   shape inside a sealed delta — encoded and decoded strictly on the
 //!   client side of the seal.
 //!
-//! What this crate never holds: keys (the GOP chain and pairing live in
-//! `companion-ffi`), plaintext page content, or a socket to the relay
-//! (the transport is the integrator's, `crates/transport`).
+//! Page ops and their encoded plaintext use zeroizing buffers here.
+//! The GOP chain and pairing live in `companion-ffi`; the outbound
+//! transport is the integrator's (`crates/transport`).
 
 pub mod envelope;
 pub mod loopback;
 pub mod oauth;
 pub mod pad;
 pub mod relay;
+pub mod secret_json;
 
 mod b64;
 

@@ -1,7 +1,10 @@
 //! The tab, a durable slot, and the sheet, the page that expires in it
 //! (doc 04, ADR-0017). Masking is by gesture, never by content (doc 04).
 
+use std::fmt;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
@@ -148,13 +151,38 @@ impl ChipId {
 }
 
 /// One run of the body's projection, cached from the sheet's document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Segment {
     /// Visible text, exactly as typed.
     Ink(String),
     /// A sealed chip sits here.
     Chip(ChipId),
 }
+
+impl fmt::Debug for Segment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ink(_) => formatter.write_str("Ink([REDACTED])"),
+            Self::Chip(id) => formatter.debug_tuple("Chip").field(id).finish(),
+        }
+    }
+}
+
+impl Zeroize for Segment {
+    fn zeroize(&mut self) {
+        if let Self::Ink(text) = self {
+            text.zeroize();
+        }
+    }
+}
+
+impl Drop for Segment {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for Segment {}
 
 /// What a chip's bytes are, described without reading them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -467,7 +495,7 @@ impl Sheet {
             .runs()
             .into_iter()
             .filter_map(|run| match run {
-                DocRun::Ink(text) => Some(Segment::Ink(text)),
+                DocRun::Ink(mut text) => Some(Segment::Ink(std::mem::take(&mut *text))),
                 DocRun::Chip(uuid) => self
                     .chips
                     .iter()
@@ -1277,6 +1305,55 @@ mod tests {
 
     /// `ManualClock::new()`'s stamp, 2023-11-14 22:13:20 UTC.
     const STAMP: u64 = 1_700_000_000_000;
+
+    #[test]
+    fn segment_debug_output_never_prints_its_ink() {
+        let segments = vec![
+            Segment::Ink("hunter2 🙂 deploy key".into()),
+            Segment::Chip(ChipId(7)),
+        ];
+        for printed in [format!("{segments:?}"), format!("{segments:#?}")] {
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(!printed.contains("deploy"), "{printed}");
+        }
+        assert_eq!(format!("{:?}", segments[0]), "Ink([REDACTED])");
+        assert_eq!(format!("{:?}", segments[1]), "Chip(ChipId(7))");
+    }
+
+    #[test]
+    fn segment_ink_and_its_clone_have_independent_wiping_owners() {
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
+        let mut original = Segment::Ink("🙂\r\n尾".into());
+        let mut cloned = original.clone();
+        wiping_owner(&original);
+        wiping_owner(&cloned);
+        let Segment::Ink(text) = &mut original else {
+            unreachable!();
+        };
+        let pointer = text.as_ptr();
+        let capacity = text.capacity();
+        let Segment::Ink(copy) = &cloned else {
+            unreachable!();
+        };
+        assert_eq!(copy.capacity(), copy.len());
+        assert_ne!(pointer, copy.as_ptr());
+        text.as_mut_str().zeroize();
+        assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+        original.zeroize();
+        let Segment::Ink(text) = &original else {
+            unreachable!();
+        };
+        assert!(text.is_empty());
+        assert_eq!(text.as_ptr(), pointer);
+        assert_eq!(text.capacity(), capacity);
+        assert_eq!(cloned, Segment::Ink("🙂\r\n尾".into()));
+        cloned.zeroize();
+        assert_eq!(cloned, Segment::Ink(String::new()));
+        let mut chip = Segment::Chip(ChipId(1));
+        chip.zeroize();
+        assert_eq!(chip, Segment::Chip(ChipId(1)));
+    }
 
     fn title_of(line: &str) -> String {
         derive_title(&[Segment::Ink(line.into())]).expect("this line derives a title")
