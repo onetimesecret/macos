@@ -906,7 +906,14 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
             }
         }
     }
-    result.map(|line| capped_title(&line))
+    // Under the cap in bytes is under it in chars, so the common case keeps its one owner.
+    result.map(|line| {
+        if line.len() <= TITLE_CAP {
+            line
+        } else {
+            capped_title(&line)
+        }
+    })
 }
 
 /// An open fence. A closer must match its marker and be at least as long
@@ -1396,25 +1403,31 @@ mod tests {
         page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         let mut tab = unnamed_tab(Some(page));
         tab.name = Some(Zeroizing::new("the vault".into()));
-        let name: &Option<Zeroizing<String>> = &tab.name;
-        let derived: &Option<Zeroizing<String>> = &tab.page.as_ref().unwrap().derived_title;
-        let label: Zeroizing<String> = tab.label(0);
-        assert_eq!(name.as_ref().map(|n| n.as_str()), Some("the vault"));
-        assert_eq!(derived.as_ref().map(|t| t.as_str()), Some("deploy notes"));
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+        let name = tab.name.as_ref().unwrap();
+        wiping_owner(name);
+        let derived = tab.page.as_ref().unwrap().derived_title.as_ref().unwrap();
+        wiping_owner(derived);
+        let label = tab.label(0);
+        wiping_owner(&label);
+        assert_eq!(name.as_str(), "the vault");
+        assert_eq!(derived.as_str(), "deploy notes");
         assert_eq!(label.as_str(), "the vault");
-        let derived: Option<Zeroizing<String>> =
-            derive_title(&[Segment::Ink("# first\nsecond".into())]);
+        let fresh = derive_title(&[Segment::Ink("# first\nsecond".into())]).unwrap();
+        wiping_owner(&fresh);
+        assert_eq!(fresh.as_str(), "first");
+    }
+
+    /// The cap counts chars, not bytes, and the owner it makes is allocated once at its size.
+    #[test]
+    fn the_cap_counts_chars_and_allocates_once() {
         let long = "🧪".repeat(TITLE_CAP + 5);
         let capped = capped_title(&long);
-        assert_eq!(
-            capped.chars().count(),
-            TITLE_CAP,
-            "the cap counts chars, not bytes"
-        );
+        assert_eq!(capped.chars().count(), TITLE_CAP);
         assert_eq!(
             capped.capacity(),
             capped.len(),
-            "the owner was allocated at its size"
+            "the owner grew past its size"
         );
         assert_eq!(capped_title("short").as_str(), "short");
         assert_eq!(derived.as_deref().map(String::as_str), Some("first"));

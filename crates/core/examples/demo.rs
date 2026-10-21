@@ -11,6 +11,7 @@ use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
 use ots_client::{Api, BasicAuth, Client, ConcealPayload, NoAuth, share_link};
+use zeroize::Zeroizing;
 
 const DEMO_SERVER: &str = "https://eu.onetimesecret.com";
 
@@ -37,10 +38,10 @@ fn main() {
     let stdin = std::io::stdin();
     loop {
         let title = current.and_then(|id| tab_holding(&store, id)).map_or_else(
-            || "no page".to_string(),
-            |tab| tab.label(store.local_offset_seconds()).as_str().to_owned(),
+            || Zeroizing::new("no page".to_string()),
+            |tab| tab.label(store.local_offset_seconds()),
         );
-        print!("companionapp:{title}> ");
+        print!("companionapp:{}> ", title.as_str());
         std::io::stdout().flush().ok();
         let Some(Ok(line)) = stdin.lock().lines().next() else {
             break;

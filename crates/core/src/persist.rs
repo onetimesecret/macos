@@ -1019,6 +1019,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+    use crate::sheet::TITLE_CAP;
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
 
@@ -1685,12 +1686,8 @@ mod tests {
         let snapshot = empty_tab_snapshot(Some(&long));
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 0);
         let name = store.tabs().next().unwrap().name().unwrap();
-        assert_eq!(name.chars().count(), crate::sheet::TITLE_CAP);
-        assert_eq!(
-            name.len(),
-            crate::sheet::TITLE_CAP * 2,
-            "counted in chars, not bytes"
-        );
+        assert_eq!(name.chars().count(), TITLE_CAP);
+        assert_eq!(name.len(), TITLE_CAP * 2, "counted in chars, not bytes");
     }
 
     #[test]
