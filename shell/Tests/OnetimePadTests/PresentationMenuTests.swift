@@ -63,6 +63,53 @@ final class PresentationMenuTests: XCTestCase {
     }
 
     @MainActor
+    func testAFinderOpenDuringACloseDecisionOpensOnceItResolves() throws {
+        let suite = "onetimepad.close-decision-open-test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(suite, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixtures = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(suite).fixtures", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixtures) }
+        try FileManager.default.createDirectory(at: fixtures, withIntermediateDirectories: true)
+        let notes = fixtures.appendingPathComponent("notes.txt")
+        try "notes\n".write(to: notes, atomically: true, encoding: .utf8)
+        let draft = fixtures.appendingPathComponent("draft.txt")
+        try "draft\n".write(to: draft, atomically: true, encoding: .utf8)
+        companion_init()
+        let handle = "close-decision-open".withCString { companion_new_ephemeral($0) }!
+        let pages = PageModel(formFactor: .backdrop, defaults: defaults,
+                              seams: .init(stateDirectory: directory,
+                                           client: CompanionClient(adopting: handle)))
+        let model = BackdropModel(defaults: defaults, pages: pages)
+        let delegate = BackdropAppDelegate(model: model)
+        var selections = 0
+        delegate.selectEditorForTests = { selections += 1 }
+        pages.loadStateIfNeeded()
+        delegate.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+        pages.pads.isEnabled = true
+        pages.openFile(at: notes)
+        let id = try XCTUnwrap(pages.openFiles.first?.id)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "the ")]))
+        pages.applyOps(sheet: id, opsJSON: ops)
+        pages.closeActiveFile()
+        XCTAssertTrue(pages.openRefusedForCloseDecision)
+
+        delegate.application(NSApplication.shared, open: [draft])
+        XCTAssertEqual(delegate.finderDocuments, [draft])
+        XCTAssertEqual(pages.openFiles.map(\.name), ["notes.txt"])
+        XCTAssertEqual(selections, 0)
+
+        pages.resolvePendingFileClose(.keepEditing)
+        drainMainQueue()
+        XCTAssertEqual(delegate.finderDocuments, [])
+        XCTAssertEqual(pages.openFiles.map(\.name), ["notes.txt", "draft.txt"])
+        XCTAssertEqual(selections, 1)
+    }
+
+    @MainActor
     func testAmbientPreferenceSurvivesNativeMenuUpdate() {
         // A plain target has no matching selector. Automatic AppKit validation
         // would disable this item even when the model enables the panel.

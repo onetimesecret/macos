@@ -16,6 +16,7 @@ final class FinderOpenPlanTests: XCTestCase {
         _ queued: [URL],
         startupComplete: Bool = true,
         modalSessionRunning: Bool = false,
+        closeDecisionPending: Bool = false,
         launchActivationOutstanding: Bool = false,
         appActive: Bool = true
     ) -> FinderOpenPlan {
@@ -23,6 +24,7 @@ final class FinderOpenPlanTests: XCTestCase {
             queued: queued,
             startupComplete: startupComplete,
             modalSessionRunning: modalSessionRunning,
+            closeDecisionPending: closeDecisionPending,
             launchActivationOutstanding: launchActivationOutstanding,
             appActive: appActive,
             context: context)
@@ -106,15 +108,32 @@ final class FinderOpenPlanTests: XCTestCase {
         XCTAssertEqual(drained, FinderOpenPlan(open: [notes, draft]))
     }
 
+    func testAFinderOpenDuringACloseDecisionKeepsOnlyItsFiles() {
+        let held = plan([notes, link], closeDecisionPending: true)
+
+        XCTAssertEqual(held, FinderOpenPlan(held: [notes]))
+    }
+
+    func testTheHeldFilesOpenOnceTheCloseDecisionResolves() {
+        let held = plan([notes], closeDecisionPending: true).held
+
+        XCTAssertEqual(plan(held), FinderOpenPlan(open: [notes]))
+    }
+
     func testTheModelIsNotReadBeforeStartup() {
         var reads = 0
         func readContext() -> ActivationContext {
             reads += 1
             return context
         }
+        func readCloseDecision() -> Bool {
+            reads += 1
+            return false
+        }
         _ = FinderOpenPlan.decide(
             queued: [notes], startupComplete: false, modalSessionRunning: false,
-            launchActivationOutstanding: true, appActive: true, context: readContext())
+            closeDecisionPending: readCloseDecision(), launchActivationOutstanding: true,
+            appActive: true, context: readContext())
 
         XCTAssertEqual(reads, 0)
     }

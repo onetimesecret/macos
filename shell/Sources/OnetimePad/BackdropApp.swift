@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CompanionKit
 import SwiftUI
 import os
@@ -425,6 +426,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Stands in for the editor selection after a Finder open, so a test's runner opens no window.
     var selectEditorForTests: (() -> Void)?
 
+    /// Drains the Finder queue a turn after `pendingFileClose` returns to nil.
+    private var closeDecisionObserver: AnyCancellable?
+
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
     private var modalEndObserver: NSObjectProtocol?
@@ -584,6 +588,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             launchedAt = Date()
             applicationDidBecomeActive(notification)
         }
+        // @Published emits before the store, so the drain waits a turn to read the decision gone.
+        closeDecisionObserver = pages.$pendingFileClose
+            .map { $0 == nil }
+            .removeDuplicates()
+            .dropFirst()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.drainFinderDocuments() }
+            }
         drainFinderDocuments(launchActivationOutstanding: !replaysLaunchActivation)
     }
 
@@ -770,7 +783,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The Finder's Open and Open With, and files dropped on the Dock icon.
-    /// Queued, then opened by the drain once startup is done and no modal is up.
+    /// Queued, then opened by the drain once startup is done, no modal is
+    /// up and no close decision stands.
     func application(_ application: NSApplication, open urls: [URL]) {
         finderDocuments += urls
         drainFinderDocuments()
@@ -783,6 +797,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             queued: finderDocuments,
             startupComplete: startupComplete,
             modalSessionRunning: ModalSession.isRunning,
+            closeDecisionPending: pages.openRefusedForCloseDecision,
             launchActivationOutstanding: launchActivationOutstanding,
             appActive: NSApp?.isActive == true,
             context: activationContext())
