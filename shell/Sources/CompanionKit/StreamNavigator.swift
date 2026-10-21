@@ -355,8 +355,8 @@ public enum StreamNavigator {
         /// How far above its node's y a row is drawn; a day's first row rises a point more
         /// so its larger dot centres on the same line as a later row's.
         public static func rowLift(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 6 }
-        /// How far above its node's y the box the slivers and the packing keep clear of
-        /// begins: a point past either lift.
+        /// How far above its node's y the box the slivers keep clear of begins: a point
+        /// past the larger lift, so it clears both.
         public static let rowClearance: CGFloat = rowLift(firstOfDay: true) + 1
     }
 
@@ -366,7 +366,8 @@ public enum StreamNavigator {
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
         /// The top of the box around the node's words, `Metrics.rowClearance` above the centre
-        /// line, which the slivers and the packing keep clear of; `drawnTop` is where the row is drawn.
+        /// line, which the slivers keep clear of; `drawnTop` is where the row is drawn, and the
+        /// packing separates rows by lift (`StreamNavigatorTests` pins the boxes never meet).
         public let rowTop: CGFloat
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
@@ -542,18 +543,18 @@ public enum StreamNavigator {
         // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
         // less its own reserve, between the two.
         let lifts = nodes.map { Metrics.rowLift(firstOfDay: $0.firstOfDay) }
-        let clearances = nodes.indices.map { index in
+        let liftGaps = nodes.indices.map { index in
             index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
         }
         let span = height - Metrics.top - Metrics.bottom
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
         for index in 1..<ys.count {
-            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
+            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + liftGaps[index])
         }
         let limit = height - Metrics.bottom
         for index in ys.indices.reversed() {
             let cap = index == ys.count - 1
-                ? limit - heights[index] : ys[index + 1] - heights[index] - clearances[index + 1]
+                ? limit - heights[index] : ys[index + 1] - heights[index] - liftGaps[index + 1]
             ys[index] = min(ys[index], cap)
         }
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }
