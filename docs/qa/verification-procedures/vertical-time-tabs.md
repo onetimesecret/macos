@@ -508,6 +508,14 @@ Do not remove a daily-use profile's saved preference to test the unset default.
     Then edit content or change a layout input and confirm geometry updates.
     Without measurement evidence, this performance check remains pending even
     if scrolling appears smooth; this procedure adds no source instrumentation.
+15. Set System Settings, Appearance, Show scroll bars to Always, so the days
+    roll's horizontal scroller takes height from the viewport when it appears.
+    In days mode, scroll to a recognizable source position below the top and
+    record the logical text at the top edge. Turn wrapping off, then on, then
+    off again. Each time the scroller appears or goes, that text stays at the
+    top edge and the last line of the roll stays reachable above the scroller.
+    Repeat from the top of the roll scrolled only sideways. Record the scroll
+    bar setting with the result, and restore it afterwards.
 
 **Pass criteria:** every applicable outcome above is observed and recorded with
 the build, profile, machine, macOS version, mode, and wrap value. Any forced
@@ -567,3 +575,4 @@ an executed result.
 | | | 12 growth/shrink and widest-page removal clamps | Pending | Active/inactive source, resize, and wrapping. |
 | | | 12 logical reading anchors through reflow | Pending | Record source position and explicit-reveal exceptions. |
 | | | 12 no repeated measurement during horizontal-only scrolling | Pending | Measurement trace required, not visual smoothness alone. |
+| | | 12 reading anchor with scroll bars always shown | Pending | Record the Show scroll bars setting. |
