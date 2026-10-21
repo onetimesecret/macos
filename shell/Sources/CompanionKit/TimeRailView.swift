@@ -941,33 +941,24 @@ struct FileShelfRow: View {
     }
 }
 
-/// The tooltips a day's node shows, the one decision of the old rows
-/// the navigator still asks (`StreamNavigator.help`). A namespace and
-/// no longer a view since the navigator replaced the rail's rows; kept
-/// under its name so the tests read as they did.
+/// The empty today node's tooltip, the one decision of the old rows the
+/// navigator still asks (`StreamNavigator.help`); a page node's tooltip
+/// is composed there. A namespace and no longer a view since the
+/// navigator replaced the rail's rows; kept under its name so the tests
+/// read as they did.
 ///
 /// Internal rather than private so the wording can be tested without
 /// a window, in the idiom `TabStripView.newPageHelp` and
 /// `SheetTab.holdMenuTitle` set. On the main actor, as the view it
-/// replaced was, since the tooltips it builds read the strip's.
+/// replaced was, since the tooltip it builds reads the strip's.
 @MainActor
 enum TimeUnitTab {
-    /// A day's tooltip: what the click does, in the same words the day
-    /// itself shows, and the chord that does it too. With nothing bound
-    /// it says only what the click does, which is still true.
-    static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
-        Keystroke.chorded("Go to \(spokenLabel)", chord: chord)
-    }
-
-    /// Today's tooltip, which has two readings. Today already holding a
-    /// page is a jump like any other; today holding none is the one
-    /// place where a click conjures something, and saying "go to today"
-    /// there would describe a page that does not exist. The two agree
-    /// word for word about the day that has one, so a day that gains a
-    /// page reads the same either way it was asked.
-    static func todayHelp(hasPage: Bool, chord: Keystroke?) -> String {
-        guard hasPage else { return Keystroke.chorded("Start today's page", chord: chord) }
-        return dayHelp(spokenLabel: "today", chord: chord)
+    /// Today holding no page is the one place where a click conjures
+    /// something, and the tooltip says so rather than promising a page
+    /// that does not exist; with nothing bound it says only what the
+    /// click does, which is still true.
+    static func todayHelp(chord: Keystroke?) -> String {
+        Keystroke.chorded("Start today's page", chord: chord)
     }
 }
 

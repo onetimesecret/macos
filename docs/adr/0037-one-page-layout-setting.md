@@ -71,9 +71,9 @@ no longer open; the rest of D-13 stands.
 1. The reason for c1f4aca. It has no commit body. A proposed reason:
    the two dropped combinations had no default role, yet each was a
    navigation view kept at parity through every strip or rail change.
-2. Answered 2026-10-21. `SlotRailView` and `TimeStripView`: delete, or
-   keep unreachable. Recommendation: delete; git keeps them. Deleted
-   (issue 275): the card and the editor window draw `TimeRailView` down
+2. `SlotRailView` and `TimeStripView`: delete, or keep unreachable.
+   Recommendation: delete; git keeps them. Answered 2026-10-21: deleted
+   (issue 275); the card and the editor window draw `TimeRailView` down
    the side or `TabStripView` along the bottom, with no other branch.
 3. A notice for people whose placement moved. Recommendation: none.
    Timeline is a prototype and Settings names both layouts.

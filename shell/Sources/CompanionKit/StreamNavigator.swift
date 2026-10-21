@@ -286,7 +286,7 @@ public enum StreamNavigator {
     /// the one line the gutter already shows.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
-        guard node.hasPage else { return TimeUnitTab.todayHelp(hasPage: false, chord: chord) }
+        guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
         var first = "\(node.spokenDay) · \(node.stamp)"
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }

@@ -595,7 +595,7 @@ Four things about it are load-bearing.
 
 The mapping into the rail's coordinates is the pure
 `StreamNavigator.layout(nodes:geometry:height:width:)` function, in the
-idiom `selectedBucket` and `chord(forRowAt:)` set. The edges it decides
+idiom `chord(forRowAt:)` set. The edges it decides
 are the ones a drawing cannot be squinted at for: an unmeasured roll
 packs nodes in order without inventing proportions; missing extents are
 interpolated without reversing anchors; line fragments that land on one

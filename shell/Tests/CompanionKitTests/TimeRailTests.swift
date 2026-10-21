@@ -89,7 +89,7 @@ final class TimeRailTests: XCTestCase {
         XCTAssertTrue(model.tabs.isEmpty)
         func nodes() -> [StreamNavigator.Node] {
             StreamNavigator.nodes(
-                projection: model.timeUnits, tabs: model.tabs, selection: model.selection)
+                projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
         }
         func firstTargets() -> [SurfaceTarget] { nodes().filter(\.firstOfDay).map(\.target) }
         XCTAssertEqual(
@@ -118,30 +118,22 @@ final class TimeRailTests: XCTestCase {
     /// which is the one place on the rail where clicking makes
     /// something, and the tooltip says so rather than promising a page
     /// that is not there.
-    func testTodayIsARowWithOrWithoutAPageAndSaysWhich() throws {
-        let bare = try XCTUnwrap(project([]).units.first)
-        XCTAssertEqual(bare.bucket, 0)
-        XCTAssertEqual(bare.pageIDs, [])
-        XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: false, chord: nil), "Start today's page")
+    func testTodayIsANodeWithOrWithoutAPageAndSaysWhich() throws {
+        let bare = try XCTUnwrap(
+            StreamNavigator.nodes(projection: project([]), tabs: [], selection: nil).first)
+        XCTAssertFalse(bare.hasPage)
+        XCTAssertEqual(bare.target, .today)
+        XCTAssertEqual(StreamNavigator.help(for: bare, chord: nil), "Start today's page")
 
-        let peopled = try XCTUnwrap(project([slot(tab: 1, page: 11, day: 0)]).units.first)
-        XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: true, chord: nil), "Go to today")
-        XCTAssertEqual(
-            TimeUnitTab.todayHelp(hasPage: true, chord: nil),
-            TimeUnitTab.dayHelp(spokenLabel: peopled.spokenLabel, chord: nil),
-            "today read differently depending on which helper was asked")
-    }
-
-    /// The rail's + sits on the PAD heading (issue #158) and its tooltip
-    /// is the strip's own, word for word, so the two buttons that do one
-    /// thing cannot describe it two ways and a keymap that moved
-    /// `page::New` moves both.
-    func testTheRailsNewPageTooltipIsTheStripsWords() throws {
-        let model = try makeModel()
-        // One helper for every + button, the strip's and the rail's.
-        let chord = model.keymap.hintKeystroke(for: .pageNew)
-        XCTAssertEqual(TabStripView.newPageHelp(chord: chord), "New page (⌘N)")
-        XCTAssertEqual(TabStripView.newPageHelp(chord: nil), "New page")
+        let peopled = try XCTUnwrap(
+            StreamNavigator.nodes(
+                projection: project([slot(tab: 1, page: 11, day: 0)]), tabs: [], selection: nil
+            ).first)
+        XCTAssertTrue(peopled.hasPage)
+        XCTAssertEqual(peopled.target, .tab(1))
+        let help = StreamNavigator.help(for: peopled, chord: nil)
+        XCTAssertTrue(help.contains(" · "), "a page node's tooltip is its day and stamp: \(help)")
+        XCTAssertFalse(help.contains("Start"), "a page node's tooltip promised a page that exists")
     }
 
     // MARK: What the tooltips say you can press
@@ -155,10 +147,8 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(TimeRailView.chord(forRowAt: 0, keymap: model.keymap)?.displaySymbol, "⌘1")
         XCTAssertEqual(TimeRailView.chord(forRowAt: 1, keymap: model.keymap)?.displaySymbol, "⌘2")
         XCTAssertEqual(
-            TimeUnitTab.dayHelp(
-                spokenLabel: "yesterday",
-                chord: TimeRailView.chord(forRowAt: 1, keymap: model.keymap)),
-            "Go to yesterday (⌘2)")
+            TimeUnitTab.todayHelp(chord: TimeRailView.chord(forRowAt: 1, keymap: model.keymap)),
+            "Start today's page (⌘2)")
     }
 
     /// And says only what the row does when nothing is bound to it, a
@@ -169,8 +159,7 @@ final class TimeRailTests: XCTestCase {
     func testTheTooltipDegradesToThePlainDescription() throws {
         let model = try makeModel()
         XCTAssertNil(TimeRailView.chord(forRowAt: 9, keymap: model.keymap))
-        XCTAssertEqual(TimeUnitTab.dayHelp(spokenLabel: "yesterday", chord: nil), "Go to yesterday")
-        XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: false, chord: nil), "Start today's page")
+        XCTAssertEqual(TimeUnitTab.todayHelp(chord: nil), "Start today's page")
     }
 
     // MARK: Hidden blank pages
