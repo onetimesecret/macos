@@ -651,8 +651,10 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// file. Those are excluded by the AppKit fact `ModalSession`
     /// reads, and the two exclusions meet in `OutsidePress`, which is
     /// where the rule is stated once. Our ordinary windows, Settings
-    /// and About, are outside by this rule and rest the card, which is
-    /// the older behaviour left standing.
+    /// and About, never reach a global monitor at all (it sees only
+    /// events dispatched to other applications), so a click into them
+    /// leaves the card raised beside them, which is what
+    /// `returningFromAuxiliary` counts on.
     ///
     /// A *global* monitor deliberately: it observes the press and
     /// consumes nothing, so the click goes on to the window it was
@@ -842,6 +844,9 @@ final class BackdropPanel: NSPanel {
         isReleasedWhenClosed = false
         isMovableByWindowBackground = false
         isExcludedFromWindowsMenu = true
+        // Borderless, so never drawn; the name VoiceOver gives the
+        // window, the app's and nothing else (ADR-0033).
+        title = BackdropAppDelegate.productName
         animationBehavior = .none
         // Collection behavior is `BackdropStance`'s to state, from the
         // stance and the resolved altitude together, and the controller

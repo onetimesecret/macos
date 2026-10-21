@@ -92,6 +92,8 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         // Mission Control and the window list, which is further than
         // `sharingType` covers, so no page title or content goes in it.
         window.title = BackdropAppDelegate.productName
+        // One editor window (ADR-0033): no Show Tab Bar on the View menu.
+        window.tabbingMode = .disallowed
         // One unified band: the pad picker and the expand control are
         // toolbar items. With pads on the picker stands where the title
         // would and the title is hidden, still the app's name in the

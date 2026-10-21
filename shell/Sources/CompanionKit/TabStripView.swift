@@ -421,11 +421,14 @@ struct SheetTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 16, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
+                .help("Close tab")
                 .accessibilityLabel(Text("Close tab"))
             }
             .padding(.horizontal, 8)
@@ -496,6 +499,7 @@ struct SheetTab: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
+            Divider()
             Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
@@ -679,11 +683,14 @@ struct FileTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 16, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
+                .help("Close file")
                 .accessibilityLabel(Text("Close file"))
             }
             .padding(.horizontal, 8)
@@ -714,6 +721,7 @@ struct FileTab: View {
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
             Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
+            Divider()
             Button("Close File", role: .destructive) { model.closeFile(file.id) }
         }
     }

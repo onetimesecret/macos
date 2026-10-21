@@ -752,6 +752,7 @@ struct BackdropRootView: View {
     private func grip(_ edge: CardEdge) -> some View {
         Color.clear
             .contentShape(Rectangle())
+            .onHover { showResizeCursor(edge, $0) }
             .gesture(resizeGesture(edge))
     }
 
@@ -759,7 +760,34 @@ struct BackdropRootView: View {
         Color.clear
             .frame(width: Self.cornerSide, height: Self.cornerSide)
             .contentShape(Rectangle())
+            .onHover { showResizeCursor(edge, $0) }
             .gesture(resizeGesture(edge))
+    }
+
+    /// The pointer a window shows over its resize margins. Pushed on
+    /// entry and popped on exit; a resting card is mouse transparent
+    /// (ADR-0015), so no hover reaches a grip that cannot resize.
+    private func showResizeCursor(_ edge: CardEdge, _ inside: Bool) {
+        guard let cursor = Self.resizeCursor(for: edge) else { return }
+        if inside, raised { cursor.push() } else { NSCursor.pop() }
+    }
+
+    private static func resizeCursor(for edge: CardEdge) -> NSCursor? {
+        switch edge {
+        case .leading, .trailing: return .resizeLeftRight
+        case .top, .bottom: return .resizeUpDown
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
+            // Diagonal frame cursors are macOS 15 API; earlier systems
+            // keep the arrow on corners, as they do for windows.
+            guard #available(macOS 15, *) else { return nil }
+            let position: NSCursor.FrameResizePosition = switch edge {
+            case .topLeading: .topLeft
+            case .topTrailing: .topRight
+            case .bottomLeading: .bottomLeft
+            default: .bottomRight
+            }
+            return .frameResize(position: position, directions: .all)
+        }
     }
 
     /// One resize drag, per edge: the pure `CardEdge` decision turns the

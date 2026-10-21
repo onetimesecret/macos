@@ -665,7 +665,7 @@ struct StreamNavigatorView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
-        .accessibilityAddTraits(node.active ? [.isSelected] : [])
+        .accessibilityAddTraits(node.active ? [.isSelected, .isButton] : [.isButton])
     }
 
     /// The mark on the track. The active node is a filled ember dot,
@@ -810,8 +810,14 @@ final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
     /// its window or moves between windows, and by the representable's
-    /// dismantle (`retire`).
-    private var monitor: Any?
+    /// dismantle (`retire`). nonisolated(unsafe) for the deinit net, as
+    /// `BackdropWindowController`'s tokens are: removeMonitor is
+    /// thread-safe and every other touch is main-actor.
+    private nonisolated(unsafe) var monitor: Any?
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+    }
 
     /// Whether the view is watching its window's wheel events.
     var isWatching: Bool { monitor != nil }
@@ -1003,11 +1009,14 @@ private struct SlotRailRow: View {
                 Button { model.close(sheet.id) } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 16, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
+                .help("Close tab")
                 .accessibilityLabel(Text("Close tab"))
             }
             Group {
@@ -1038,7 +1047,12 @@ private struct SlotRailRow: View {
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
+        // The hover-only close mark and the menu verbs, reachable
+        // without a pointer.
+        .accessibilityAction { if !renaming { model.select(sheet.id) } }
+        .accessibilityAction(named: Text("Rename Tab")) { beginRename() }
+        .accessibilityAction(named: Text("Close Tab")) { model.close(sheet.id) }
         .contextMenu {
             Button("Rename Tab") { beginRename() }
             Button(SheetTab.holdMenuTitle(
@@ -1053,6 +1067,7 @@ private struct SlotRailRow: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
+            Divider()
             Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
@@ -1183,7 +1198,7 @@ struct FileShelfRow: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
     }
 }
 
