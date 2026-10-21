@@ -171,7 +171,8 @@ public struct FileRenderSuggestionBanner: View {
             Text("render as \(suggestion.language)?")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
-            Button("Use \(CodeLanguageName.display(suggestion.language))") {
+            // `suggestion.language` is already the display name.
+            Button("Use \(suggestion.language)") {
                 model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
             }
             .font(.system(.caption, design: .monospaced))
