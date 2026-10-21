@@ -1087,6 +1087,41 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
     }
 
+    /// Typing with the caret scrolled out of view reveals the caret, as an NSTextView does, and the
+    /// reading place follows the reveal, so the next pass leaves the clip where the reveal put it.
+    func testTypingWithTheCaretScrolledOutOfViewRevealsTheCaret() throws {
+        for wraps in [true, false] {
+            for (caretLine, readerLine) in [(10, 50), (70, 20)] {
+                let label = "wraps \(wraps), caret on line \(caretLine), reader on line \(readerLine)"
+                let model = try makeModel()
+                model.wrapsLines = wraps
+                let selected = try page(in: model, saying: longPage(lines: 80))
+                let roll = try mountRoll(model: model)
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                let editor = try XCTUnwrap(roll.stack.editor)
+                XCTAssertTrue(roll.window.makeFirstResponder(editor))
+                let caret = (editor.string as NSString).range(of: "line \(caretLine) ").location
+                editor.setSelectedRange(NSRange(location: caret, length: 0))
+                let reader = (editor.string as NSString).range(of: "line \(readerLine) ").location
+                scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + (try glyphRect(in: editor, at: reader)).minY))
+                let caretGlyph = editor.convert(try glyphRect(in: editor, at: caret), to: roll.stack)
+                XCTAssertFalse(roll.scroll.contentView.bounds.intersects(caretGlyph),
+                               "the case needs the caret out of view: \(label)")
+                let height = editor.frame.height
+
+                editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+
+                XCTAssertGreaterThan(editor.frame.height, height, "the case needs the height to change: \(label)")
+                assertCaretVisible(in: editor, on: roll)
+                let revealed = roll.scroll.contentView.bounds.minY
+                roll.stack.relayout()
+                roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, revealed, accuracy: 0.5, label)
+                assertCaretVisible(in: editor, on: roll)
+            }
+        }
+    }
+
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()
