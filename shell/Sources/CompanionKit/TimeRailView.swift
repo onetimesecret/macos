@@ -274,7 +274,7 @@ public struct TimeRailView: View {
             HStack(spacing: 4) {
                 heading()
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: NSFont.miniSystemFontSize, weight: .medium))
                     .foregroundStyle(Color.secondaryInk)
             }
             .contentShape(Rectangle())
@@ -542,7 +542,7 @@ struct StreamNavigatorView: View {
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 7, height: 1)
             Text("7d")
-                .font(.system(size: 9, design: .monospaced))
+                .font(.system(size: NSFont.miniSystemFontSize, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
         }
         .offset(x: Metrics.trackX - 3, y: y - 6)
@@ -559,7 +559,7 @@ struct StreamNavigatorView: View {
                     Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [1.5, 1.5]))
                 .frame(width: 5, height: 5)
             Text(StreamNavigator.emptyDaysLabel(count))
-                .font(.system(size: 9, design: .monospaced))
+                .font(.system(size: NSFont.miniSystemFontSize, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
                 .lineLimit(1)
         }
@@ -963,7 +963,7 @@ public struct SlotRailView: View {
             .accessibilityLabel(Text("New page"))
             if blankCount > 0 {
                 Text("\(blankCount) blank")
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(.system(size: NSFont.miniSystemFontSize, design: .monospaced))
                     .foregroundStyle(Color.secondaryInk)
                     .accessibilityLabel(Text("\(blankCount) blank slot\(blankCount == 1 ? "" : "s")"))
             }
