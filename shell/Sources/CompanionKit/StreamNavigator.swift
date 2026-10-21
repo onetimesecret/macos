@@ -351,6 +351,10 @@ public enum StreamNavigator {
         /// the surface a page's remaining life is drawn while pages
         /// are organized by day.
         public static let gaugeWidth: CGFloat = 44
+
+        /// How far above its node's y a row is drawn; a day's first row rises a point more
+        /// so its larger dot centres on the same line as a later row's.
+        public static func rowLift(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 6 }
     }
 
     /// A node with its place on the rail.
@@ -524,15 +528,21 @@ public enum StreamNavigator {
             reserves.append(reserve)
             heights.append(rowHeight + reserve)
         }
+        // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
+        // less its own reserve, between the two.
+        let lifts = nodes.map { Metrics.rowLift(firstOfDay: $0.firstOfDay) }
+        let clearances = nodes.indices.map { index in
+            index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
+        }
         let span = height - Metrics.top - Metrics.bottom
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
         for index in 1..<ys.count {
-            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1])
+            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
         }
         let limit = height - Metrics.bottom
         for index in ys.indices.reversed() {
             let cap = index == ys.count - 1
-                ? limit - heights[index] : ys[index + 1] - heights[index]
+                ? limit - heights[index] : ys[index + 1] - heights[index] - clearances[index + 1]
             ys[index] = min(ys[index], cap)
         }
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }

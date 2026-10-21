@@ -664,7 +664,7 @@ struct StreamNavigatorView: View {
         // The node takes drops for the page its click selects (issue 267).
         .background(TabDropOverlay.node(target, model: model, readOnly: readOnly))
         .contentShape(Rectangle())
-        .offset(y: placed.y - (first ? 7 : 6))
+        .offset(y: placed.y - Metrics.rowLift(firstOfDay: first))
         .onHover { inside in
             if inside {
                 hoverID = node.id
