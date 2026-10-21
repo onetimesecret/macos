@@ -988,7 +988,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at a time, so the caret, the selection and the reader's line outside
   those stretches keep their places, a sealed object the edit went
   around keeps its block, and the next keystroke is read from the
-  merged text. A rewrite of the whole page is taken as one stretch.
+  merged text. A rewrite of the whole page is taken as one stretch. A
+  composition in flight when a peer's edit changes the page is dropped,
+  since the input method's provisional text is not the core's: the
+  characters being composed at that moment are lost and the page stands
+  as it did before them, a sealed object the composition had replaced
+  included.
 - **The roll's follow ups from the reading place review** (app 0.40.1;
   issue #278). A peer's applied edit restates a page by the model's own
   record of which page a surface shows, not by a count of layout

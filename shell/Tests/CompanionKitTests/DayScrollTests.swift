@@ -719,6 +719,46 @@ final class DayScrollTests: XCTestCase {
             core: model.coreClient.documentRuns(sheet: mounted)))
     }
 
+    /// A settle that finds nothing changed leaves a composition standing, and a composition
+    /// over a selection holding a sealed object gives the object back when it is dropped (#276).
+    func testACompositionStandsThroughAnEchoAndGivesBackTheObjectItReplaced() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "before secret after")
+        XCTAssertNotNil(model.coreClient.sealText(sheet: mounted, "secret", at: 7, length: 6))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let chip = try XCTUnwrap(storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment)
+        editor.setSelectedRange(NSRange(location: 7, length: 1))
+        editor.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "before ka after", "the case needs a composition over the object")
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertTrue(editor.hasMarkedText(), "a settle with nothing new dropped the composition")
+        XCTAssertEqual(editor.string, "before ka after")
+
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 14, text: "wards")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertFalse(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "before \u{FFFC} afterwards")
+        XCTAssertTrue(
+            storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment === chip,
+            "the object the composition replaced did not come back as itself")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 1))
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+    }
+
     /// A peer's edit that changes one emoji for another replaces the whole pair, never one of
     /// its halves, and a settle that finds the page current touches the storage not at all (#276).
     func testAPeersEditInsideASurrogatePairReplacesTheWholePairAndAnEchoTouchesNothing() throws {

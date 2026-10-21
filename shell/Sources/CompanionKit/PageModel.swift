@@ -6832,18 +6832,21 @@ public final class PageModel: ObservableObject {
     /// edited range, and the selection fixups AppKit makes per edit with them.
     private func mergeIntoShownStorage(sheet: UInt64, shown: InkTextView) {
         guard let storage = storages[sheet] else { return }
-        // A composition in flight is the input method's provisional text, not the core's, and its
-        // commit would be read against a storage the peer's edit has moved under; it is dropped.
-        shown.coordinator?.abandonComposition(in: shown)
+        // A composition in flight is the input method's provisional text, not the core's: the
+        // comparison reads the storage as it stood before it, and only an edit that changed
+        // something drops it, since its commit would be read against a storage the merge moved.
+        let coordinator = shown.coordinator
+        let composed = coordinator?.compositionFreeCopy(of: storage)
         let rebuilt = rebuiltRuns(of: sheet)
-        let old = Self.units(of: storage)
+        let old = Self.units(of: composed ?? storage)
         let new = Self.units(of: rebuilt)
-        let head = zip(old, new).prefix { $0 == $1 }.count
+        let head = zip(old, new).lazy.prefix { $0 == $1 }.count
         let room = min(old.count, new.count) - head
-        let tail = zip(old.reversed(), new.reversed()).prefix { $0 == $1 }.prefix(room).count
+        let tail = zip(old.reversed(), new.reversed()).lazy.prefix { $0 == $1 }.prefix(room).count
         let oldMiddle = Array(old[head..<(old.count - tail)])
         let newMiddle = Array(new[head..<(new.count - tail)])
         guard !oldMiddle.isEmpty || !newMiddle.isEmpty else { return }
+        if shown.hasMarkedText() { coordinator?.abandonComposition() }
         // Offsets in UTF-16 units: the head's, and each middle unit's start within its middle.
         let headOffset = Self.width(of: old.prefix(head))
         let oldStarts = Self.starts(of: oldMiddle)
@@ -6881,7 +6884,8 @@ public final class PageModel: ObservableObject {
         #endif
     }
 
-    /// The diff is quadratic in the middle's length, and each stretch is a layout pass.
+    /// The diff costs the middle's length times its edit distance, quadratic when the two share
+    /// little, and each stretch is a layout pass.
     private static let mergeDiffLimit = 2_048
     private static let mergeStretchLimit = 64
 
@@ -6938,6 +6942,7 @@ public final class PageModel: ObservableObject {
         return starts
     }
 
+    /// The changes' offsets, ascending, which `runs(of:)` relies on.
     private static func offsets(of changes: [CollectionDifference<ProjectionUnit>.Change]) -> [Int] {
         changes.map { change in
             switch change {

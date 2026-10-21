@@ -2235,6 +2235,8 @@ public struct InkEditorView: NSViewRepresentable {
         struct CompositionSpan {
             let location: Int
             let baseline: String
+            /// The same text with its attributes, so an object the composition replaced comes back.
+            let attributedBaseline: NSAttributedString
             let selectionBefore: NSRange
             var spanLength: Int
         }
@@ -2372,9 +2374,22 @@ public struct InkEditorView: NSViewRepresentable {
             imeComposition = CompositionSpan(
                 location: clamped.location,
                 baseline: (storage.string as NSString).substring(with: clamped),
+                attributedBaseline: storage.attributedSubstring(from: clamped),
                 selectionBefore: clamped,
                 spanLength: clamped.length
             )
+        }
+
+        /// `storage` as it stood before the composition in flight, or nil without one: a copy
+        /// with the span put back to its baseline, for a comparison the provisional text must not
+        /// enter (#276).
+        func compositionFreeCopy(of storage: NSTextStorage) -> NSAttributedString? {
+            guard let ime = imeComposition else { return nil }
+            let span = NSRange(location: ime.location, length: max(0, ime.spanLength))
+            guard NSMaxRange(span) <= storage.length else { return nil }
+            let copy = NSMutableAttributedString(attributedString: storage)
+            copy.replaceCharacters(in: span, with: ime.attributedBaseline)
+            return copy
         }
 
         /// The composition resolved: diff the accumulated span against
@@ -2424,13 +2439,14 @@ public struct InkEditorView: NSViewRepresentable {
             finishComposition(in: storage, document: document)
         }
 
-        /// Drop a composition in flight, provisional text and all: the span returns to its
-        /// baseline with no op emitted, and the input method is told. For a peer's edit, whose
-        /// merge a commit read against the old storage would cross (#276).
-        func abandonComposition(in textView: InkTextView) {
-            guard textView.hasMarkedText(), let storage = textView.textStorage else { return }
+        /// Drop the composition in flight on this coordinator's own view, provisional text and
+        /// all: the span returns to its baseline, attributes included, with no op emitted, and
+        /// the input method is told. For a peer's edit, whose merge a commit read against the old
+        /// storage would cross (#276).
+        func abandonComposition() {
+            guard let textView, textView.hasMarkedText(), let storage = textView.textStorage else { return }
             let span = imeComposition.map { NSRange(location: $0.location, length: max(0, $0.spanLength)) }
-            let baseline = imeComposition?.baseline ?? ""
+            let baseline = imeComposition?.attributedBaseline ?? NSAttributedString()
             let selection = imeComposition?.selectionBefore
             imeComposition = nil
             textView.inputContext?.discardMarkedText()
