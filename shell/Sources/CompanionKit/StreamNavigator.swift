@@ -369,6 +369,7 @@ public enum StreamNavigator {
         /// The top of the sliver exclusion box, `Metrics.rowClearance` above the centre line and
         /// `rowHeight` tall; `drawnTop`, a lift above the centre line, is where the row is drawn.
         public let rowTop: CGFloat
+        /// The height of the drawn row and of the sliver exclusion box alike.
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
         public let noteY: CGFloat?

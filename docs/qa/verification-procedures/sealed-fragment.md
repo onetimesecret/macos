@@ -613,10 +613,10 @@ and with it on, which draws the pads rail.
       stands there as a new sealed object, the decrypted drag shows no
       operation and places nothing, and afterwards a click on the node
       still selects its page and scrolls the roll to it, a VoiceOver
-      press on the node does what the click does, its hover fill
-      and tooltip show as before, and in the stream navigator a click
-      on the bare track still scrolls and a drag along the column still
-      scrubs. **Fail:** the cursor never changes over a node (AppKit
+      press on the node does what the click does, the node's hover
+      fill and tooltip show as before, and in the stream navigator a
+      click on the bare track still scrolls and a drag along the
+      column still scrubs. **Fail:** the cursor never changes over a node (AppKit
       delivered no drag to a target whose `hitTest` answers nil), the
       run goes to another page or anywhere but the end, the decrypted
       drag places anything, a node stops answering its click, its
