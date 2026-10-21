@@ -19,7 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `long lines always wrap while the days are showing`. With wrapping
   off, fenced code keeps its wash for the whole width of the page,
   where before it had none; the wash reaches as far as the longest
-  line, in a tab and on the roll alike.
+  line, in a tab and on the roll alike. On the roll the line at the top
+  of the window stays there when wrapping is turned on or off and when
+  the window is resized, with the reader in a day the editor is not on,
+  and a round trip brings a reader partway through a paragraph back to
+  the same line. It also stays when text changes in a day above the
+  reader, when text is added or removed around the reader in a day the
+  editor is not on, and when a paragraph is added above the reader in
+  the day being written on. Turning a day's Markdown preview on or off
+  keeps the reader on that day, at the place with the same share of its
+  text; no map joins a source position to its rendered one, so that
+  place is approximate. Turning the preview on and off again without
+  scrolling comes back to the same line.
 
 - **A drag between pages moves its objects** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag
