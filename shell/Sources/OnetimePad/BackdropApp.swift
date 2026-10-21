@@ -1393,33 +1393,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Turn SwiftUI's two placeholder buttons into ordinary nil-targeted
-    /// Where OnetimePad Help goes until the docs site has a page of its
-    /// own (issue #294).
-    static let helpURL = URL(string: "https://docs.onetimesecret.dev/macos")!
-
-    /// The Help menu's item, through the model's `openURL` seam so a test
-    /// records the URL rather than starting a browser.
-    @objc func openHelp() {
-        model.pages.openURL(Self.helpURL)
-    }
-
-    /// Puts "<product> Help" with ⌘? at the head of the Help menu SwiftUI
-    /// built, above the diagnostics items, and returns that menu for
-    /// `NSApp.helpMenu`. Nil when there is no Help menu to find.
-    @discardableResult
-    static func installHelpItem(in mainMenu: NSMenu?, productName: String,
-                                target: NSObject) -> NSMenu? {
-        guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
-        else { return nil }
-        let help = NSMenuItem(title: "\(productName) Help",
-                              action: #selector(openHelp), keyEquivalent: "?")
-        help.keyEquivalentModifierMask = [.command]
-        help.target = target
-        helpMenu.insertItem(help, at: 0)
-        helpMenu.insertItem(.separator(), at: 1)
-        return helpMenu
-    }
-
     /// AppKit commands. The responder chain then chooses the undo owner: an
     /// `InkTextView` validates against Loro, while a field editor in Settings
     /// keeps its native `UndoManager` behavior.
@@ -1436,6 +1409,36 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             item.action = action
             item.isEnabled = true
         }
+    }
+
+    /// Where OnetimePad Help goes until the docs site has a page of its
+    /// own (issue #294).
+    static let helpURL = URL(string: "https://docs.onetimesecret.dev/macos")!
+
+    /// The Help menu's item, through the model's external link route so
+    /// a test records the URL rather than starting a browser.
+    @objc func openHelp(_ sender: Any?) {
+        model.pages.openExternal(Self.helpURL)
+    }
+
+    /// Puts "<product> Help" with ⌘? at the head of the Help menu SwiftUI
+    /// built, above the diagnostics items, and returns that menu for
+    /// `NSApp.helpMenu`. Nil when there is no Help menu to find; a menu
+    /// that already has the item is returned as it is.
+    @discardableResult
+    static func installHelpItem(in mainMenu: NSMenu?, productName: String,
+                                target: BackdropAppDelegate) -> NSMenu? {
+        guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
+        else { return nil }
+        if helpMenu.items.first?.action == #selector(openHelp(_:)) { return helpMenu }
+        let help = NSMenuItem(title: "\(productName) Help",
+                              action: #selector(openHelp(_:)), keyEquivalent: "?")
+        help.keyEquivalentModifierMask = [.command]
+        help.target = target
+        let hadItems = helpMenu.numberOfItems > 0
+        helpMenu.insertItem(help, at: 0)
+        if hadItems { helpMenu.insertItem(.separator(), at: 1) }
+        return helpMenu
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the

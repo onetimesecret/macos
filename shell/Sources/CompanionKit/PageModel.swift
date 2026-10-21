@@ -1318,9 +1318,14 @@ public final class PageModel: ObservableObject {
     /// How a cut writes its fragment onto `ambientPasteboard`; a test hands in one that refuses.
     private let writeCutFragment: @MainActor (SealedFragment, NSPasteboard) -> Bool
 
-    /// Where a link the person opens goes: the shared workspace, or a test's
-    /// recorder. The Help menu's item opens the docs through it too (issue #294).
-    public let openURL: @MainActor (URL) -> Void
+    /// Where a link the person opens goes: the shared workspace, or a test's recorder.
+    let openURL: @MainActor (URL) -> Void
+
+    /// Opens a link outside the app through the seam above; the Help menu's
+    /// route (issue #294).
+    public func openExternal(_ url: URL) {
+        openURL(url)
+    }
 
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each

@@ -55,10 +55,38 @@ final class HelpMenuTests: XCTestCase {
         XCTAssertEqual(item.title, "OnetimePad Help")
         XCTAssertEqual(item.keyEquivalent, "?")
         XCTAssertEqual(item.keyEquivalentModifierMask, [.command])
-        XCTAssertEqual(item.action, #selector(BackdropAppDelegate.openHelp))
+        XCTAssertEqual(item.action, #selector(BackdropAppDelegate.openHelp(_:)))
         XCTAssertTrue(item.target === delegate)
         XCTAssertTrue(menus.help.items[1].isSeparatorItem)
         XCTAssertEqual(menus.help.items[2].title, "Export Diagnostics…")
+    }
+
+    func testASecondInstallAddsNothing() throws {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let menus = makeMainMenu()
+        BackdropAppDelegate.installHelpItem(
+            in: menus.main, productName: "OnetimePad", target: delegate)
+        let first = try XCTUnwrap(menus.help.items.first)
+
+        let again = BackdropAppDelegate.installHelpItem(
+            in: menus.main, productName: "OnetimePad", target: delegate)
+
+        XCTAssertTrue(again === menus.help)
+        XCTAssertEqual(menus.help.numberOfItems, 3)
+        XCTAssertTrue(menus.help.items.first === first)
+    }
+
+    func testAnEmptyHelpMenuGetsNoSeparator() {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let mainMenu = NSMenu()
+        let helpItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        helpItem.submenu = NSMenu(title: "Help")
+        mainMenu.addItem(helpItem)
+
+        BackdropAppDelegate.installHelpItem(
+            in: mainMenu, productName: "OnetimePad", target: delegate)
+
+        XCTAssertEqual(helpItem.submenu?.items.map(\.title), ["OnetimePad Help"])
     }
 
     func testTheHelpItemOpensTheDocsThroughTheInjectedOpener() throws {
