@@ -1,5 +1,4 @@
 import CompanionCore
-import Darwin
 import Foundation
 import XCTest
 
@@ -119,5 +118,43 @@ final class ContentJSONDecodingTests: XCTestCase {
         })
         XCTAssertNotNil(tabs)
         XCTAssertEqual(releaseCount, 1)
+    }
+
+    func testRustFreeLeavesStaticAndForeignStringsAlone() {
+        let ffi = CompanionClient.ffiVersion
+        let core = CompanionClient.coreVersion
+        companion_string_free(UnsafeMutablePointer(mutating: companion_ffi_version()))
+        companion_string_free(UnsafeMutablePointer(mutating: companion_version()))
+        companion_string_free(UnsafeMutablePointer(mutating: companion_core_version()))
+        XCTAssertEqual(CompanionClient.ffiVersion, ffi)
+        XCTAssertEqual(CompanionClient.coreVersion, core)
+
+        let foreign = allocate(Array("foreign".utf8))
+        companion_string_free(foreign)
+        XCTAssertEqual(String(cString: foreign), "foreign")
+        foreign.deallocate()
+    }
+
+    func testOnlyTheTwoOwnedHelpersReleaseCoreStrings() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        let files = try FileManager.default.subpathsOfDirectory(atPath: sources.path)
+            .filter { $0.hasSuffix(".swift") }
+        XCTAssertFalse(files.isEmpty)
+        var releases: [String] = []
+        for file in files {
+            let text = try String(contentsOf: sources.appendingPathComponent(file), encoding: .utf8)
+            XCTAssertFalse(text.contains("UnsafeMutablePointer(mutating:"), file)
+            for line in text.split(separator: "\n") where line.contains("companion_string_free") {
+                releases.append("\(file): \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertEqual(releases.sorted(), [
+            "CompanionKit/CompanionClient.swift: defer { companion_string_free(pointer) }",
+            "CompanionKit/CompanionClient.swift: release: (UnsafeMutablePointer<CChar>) -> Void = { companion_string_free($0) },",
+        ])
     }
 }
