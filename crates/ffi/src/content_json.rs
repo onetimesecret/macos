@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::ffi::c_char;
 use std::io::{self, Write};
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
 use companion_core::{
@@ -33,11 +33,9 @@ impl CStringBuffer {
         self.0.split_last().map_or(&[], |(_, body)| body)
     }
 
-    /// Hand the buffer across the seam, recorded in [`LIVE`]; null, wiped, if it cannot be.
+    /// Hand the buffer across the seam, recorded in [`LIVE`].
     fn into_raw(mut self) -> *mut c_char {
-        let Ok(mut live) = LIVE.lock() else {
-            return ptr::null_mut();
-        };
+        let mut live = LIVE.lock().unwrap_or_else(PoisonError::into_inner);
         let bytes = std::mem::take(&mut self.0);
         let len = bytes.len();
         let raw = Box::into_raw(bytes).cast::<u8>();
@@ -50,18 +48,24 @@ impl CStringBuffer {
     /// # Safety
     /// The caller must not read through `raw` once this returns `Some`.
     unsafe fn from_raw(raw: *mut c_char) -> Option<Self> {
-        let len = LIVE.lock().ok()?.remove(&raw.addr())?;
+        let len = LIVE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&raw.addr())?;
         let slice = ptr::slice_from_raw_parts_mut(raw.cast::<u8>(), len);
         Some(Self(unsafe { Box::from_raw(slice) }))
     }
 }
 
 /// Every buffer `into_raw` handed out and `from_raw` has not taken back: address to length.
+/// A poisoned lock is read through: a refused hand-off or free would leak a buffer unwiped.
 static LIVE: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
 
 #[cfg(test)]
 pub(super) fn is_live(raw: *const c_char) -> bool {
-    LIVE.lock().is_ok_and(|live| live.contains_key(&raw.addr()))
+    LIVE.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .contains_key(&raw.addr())
 }
 
 impl Zeroize for CStringBuffer {
@@ -520,6 +524,23 @@ mod tests {
         let owner = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
         assert!(!is_live(raw));
         assert!(unsafe { CStringBuffer::from_raw(raw) }.is_none());
+        drop(owner);
+    }
+
+    #[test]
+    fn a_poisoned_registry_still_hands_out_and_takes_back() {
+        let poisoner = std::thread::spawn(|| {
+            let _live = LIVE.lock().unwrap_or_else(PoisonError::into_inner);
+            panic!("poison the registry on purpose");
+        });
+        assert!(poisoner.join().is_err());
+        assert!(LIVE.is_poisoned());
+
+        let raw = from_string("after the poison".to_string());
+        assert!(!raw.is_null());
+        assert!(is_live(raw));
+        let owner = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
+        assert!(!is_live(raw));
         drop(owner);
     }
 

@@ -291,7 +291,7 @@ behavior, not every allocation in the process.
 | `ffi/src/content_json.rs` | `exact_nul_encoding_matches_serde_and_wipes_the_live_allocation`: empty/escaped/Unicode/large output, terminal NUL, explicit live-allocation wipe; not post-free memory inspection. |
 | `ffi/src/content_json.rs` | `chip_and_cut_fields_match_the_previous_sorted_json_bytes`, `copied_envelope_stays_a_string_with_the_same_lossy_utf8_semantics`: projection shape and fallback behavior. |
 | `ffi/src/content_json.rs` | `raw_transfer_and_reconstruction_use_the_same_pointer_and_full_slice_length`, `ordinary_strings_share_the_exact_box_layout_and_free_path`: ownership layout, null and ordinary-string path. |
-| `ffi/src/content_json.rs` | `every_buffer_has_room_for_its_terminal_nul`, `free_takes_back_only_what_this_module_handed_out`: no empty buffer; static version pointers, a `CString::into_raw` pointer and an interior pointer survive a free; a buffer is taken back once. |
+| `ffi/src/content_json.rs` | `every_buffer_has_room_for_its_terminal_nul`, `free_takes_back_only_what_this_module_handed_out`: no empty buffer; static version pointers, a `CString::into_raw` pointer and an interior pointer survive a free; a buffer is taken back once. `a_poisoned_registry_still_hands_out_and_takes_back`: a poisoned lock refuses neither. |
 | `ffi/src/content_json.rs` | `errors_and_size_drift_return_null_instead_of_transferring_a_partial_buffer`: first/second-pass errors and both directions of length drift. |
 | `ffi/src/lib.rs` | `content_routes_preserve_escaped_text_and_sorted_json_shapes`, `tab_projection_matches_the_previous_json_bytes_for_each_label_source`. |
 | `ffi/src/files.rs` | `file_runs_match_previous_json_bytes_for_empty_escaped_and_large_text`. |
