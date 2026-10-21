@@ -745,7 +745,11 @@ struct BackdropRootView: View {
             }
         }
         // The grips exist only while raised, so a rest removes them.
-        .onDisappear { popResizeCursor() }
+        .onDisappear {
+            popResizeCursor()
+            hoveringEdge = nil
+            draggingEdge = nil
+        }
     }
 
     private static let gripThickness: CGFloat = 6

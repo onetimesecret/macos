@@ -159,10 +159,10 @@ private struct SyncDeviceRow: View {
                     }
             }
         }
-        // `.contain`, not `.ignore`: Revoke stays a focusable button for
+        // `.contain`, not `.ignore`: the words are read in their order,
+        // the fingerprint first, and Revoke stays a focusable button for
         // the keyboard as well as an action VoiceOver can reach.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("\(fingerprintHead), \(title), \(seen), \(badge)"))
     }
 
     /// The head of the fingerprint, drawn and spoken alike, which is

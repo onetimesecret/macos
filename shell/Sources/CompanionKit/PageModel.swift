@@ -2083,7 +2083,6 @@ public final class PageModel: ObservableObject {
         // cannot fire, so the identity check is only a second net.
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
             let fired = ObjectIdentifier(timer)
-            // A `RunLoop.main` timer fires on the main thread.
             MainActor.assumeIsolated {
                 guard let self, let armed = self.clipboardClearTimer,
                       ObjectIdentifier(armed) == fired

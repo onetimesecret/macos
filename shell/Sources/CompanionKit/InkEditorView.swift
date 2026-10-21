@@ -1614,13 +1614,13 @@ public struct InkEditorView: NSViewRepresentable {
                  #selector(removeChip(_:)):
                 return true
             default:
-                // Loud once, not fatal: a menu is on screen and validates
-                // on every display.
+                // Once in the log, since the menu validates on every
+                // display; a debug build stops here.
                 let name = item.action.map(NSStringFromSelector) ?? "nil"
                 if reportedUnnamedSelectors.insert(name).inserted {
                     Logger(subsystem: model.formFactor.loggerSubsystem, category: "editor")
                         .fault("unnamed menu selector \(name, privacy: .public)")
-                    assertionFailure("name \(name) in validateMenuItem")
+                    assertionFailure("add \(name) to validateMenuItem")
                 }
                 return true
             }
