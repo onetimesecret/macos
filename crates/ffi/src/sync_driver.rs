@@ -3659,7 +3659,10 @@ mod tests {
             "a message on the wire is still owed"
         );
         flow.release_head(false);
-        assert_eq!(flow.outgoing, vec![serde_json::json!(1), serde_json::json!(2)]);
+        assert_eq!(
+            flow.outgoing,
+            vec![serde_json::json!(1), serde_json::json!(2)]
+        );
         assert_eq!(flow.claim_head(), Some(serde_json::json!(1)));
         flow.release_head(true);
         assert_eq!(flow.outgoing, vec![serde_json::json!(2)]);
