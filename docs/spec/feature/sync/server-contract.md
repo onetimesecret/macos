@@ -45,8 +45,18 @@ supports). No row names which side moves unless an accepted record
 already does (2.5); otherwise that is the owner's decision.
 
 The server column is a reading at f7c8288bda and `b0e7ceb0`, not run,
-and no check in this repository notices when either moves. After any
-bump of either pin, re-read the column rather than trust it; the symbol
+and no check in this repository notices when either moves. The re-read
+is the bump's own step, with the person moving the pin as its owner
+(issue 266): whoever moves either pin in this document re-reads the
+**Server today** column row by row against the new commit in the same
+change, updates the symbol, file and line beside each entry, revises
+**Standing** where the reading changed, and records the new pins and
+the date of the re-read in this paragraph and the status line, so the
+document always says which commits it describes. Where a row's standing
+moves between *match* and *gap*, the pull request that bumps the pin
+says so in its body, so the owner's decision on which side moves is not
+left in a citation update. An automated check against the two server
+repositories is out of scope; the reading is by hand. The symbol
 beside each line is there to find a moved line again. Server file names
 are short: `features/oauth.rb` and `hooks/oauth.rb` are under
 `apps/web/auth/config/` on develop, and `router.rb`, `initializers/`
