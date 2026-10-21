@@ -500,12 +500,13 @@ final class DayStackView: NSView {
               storage.editedMask.contains(.editedCharacters) else { return }
         let edited = storage.editedRange
         let delta = storage.changeInLength
+        let length = storage.length
         let posted = ObjectIdentifier(storage)
         MainActor.assumeIsolated {
             guard let mounted = editor?.textStorage, ObjectIdentifier(mounted) == posted,
                   let place = readingPlace, place.page == coordinator.currentSheet,
                   place.reading == .source else { return }
-            readingPlace = place.rebased(throughEdit: edited, changeInLength: delta)
+            readingPlace = place.rebased(throughEdit: edited, changeInLength: delta, length: length)
         }
     }
 

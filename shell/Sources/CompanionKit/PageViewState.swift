@@ -150,21 +150,24 @@ struct RollPlace: Equatable {
     }
 
     /// The same place after one storage edit, said as the storage says it: the edited
-    /// range in the new text and the change in length.
-    func rebased(throughEdit edited: NSRange, changeInLength delta: Int) -> RollPlace {
+    /// range and the length of the new text, and the change in length.
+    func rebased(throughEdit edited: NSRange, changeInLength delta: Int, length: Int) -> RollPlace {
         var place = self
         place.anchor.characterIndex = Self.rebased(
-            anchor.characterIndex, throughEdit: edited, changeInLength: delta)
-        place.length = max(length + delta, 0)
+            anchor.characterIndex, throughEdit: edited, changeInLength: delta, length: length)
+        place.length = length
         return place
     }
 
-    /// Past the replaced text an index moves by `delta`; inside it, it stays within the replacement.
-    static func rebased(_ index: Int, throughEdit edited: NSRange, changeInLength delta: Int) -> Int {
+    /// Before the edit an index stays, and past it the index moves by `delta`. Inside it an
+    /// index moves by `delta` too, unless the edit restated the whole text of `length`.
+    static func rebased(_ index: Int, throughEdit edited: NSRange, changeInLength delta: Int, length: Int) -> Int {
         // Text typed or pasted at the anchor stays at the top, where the reader put it.
-        if index == edited.location, edited.length == delta { return index }
+        if index <= edited.location { return max(index, 0) }
         if index >= NSMaxRange(edited) - delta { return index + delta }
-        return min(max(index, 0), NSMaxRange(edited))
+        if edited.location == 0, edited.length == length { return min(index, length) }
+        // AppKit reports an insertion through to its paragraph's end, so the text after it moved.
+        return max(index + delta, edited.location)
     }
 
     /// Rebase a UTF-16 index through unchanged text, or to its replacement's start.

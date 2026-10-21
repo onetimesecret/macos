@@ -864,6 +864,91 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
     }
 
+    /// The storage fixes attributes lazily, so a keystroke, in a styled list item too, reports its
+    /// own characters and no more; that range is what the reading place is rebased through.
+    func testAKeystrokeReportsOnlyItsOwnCharactersEvenInAStyledParagraph() throws {
+        final class Reports: @unchecked Sendable { var edits: [(range: NSRange, delta: Int)] = [] }
+        let model = try makeModel()
+        let text = "# A heading with several words\n\nplain words then **a bold run of words** and "
+            + "`inline code span` here\n\n- a list item with words\n\n```swift\nlet value = compute(words)\n```\n"
+        let selected = try page(in: model, saying: text)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(storage.fixesAttributesLazily)
+        func attributes(at needle: String) -> NSDictionary {
+            storage.attributes(at: (editor.string as NSString).range(of: needle).location, effectiveRange: nil)
+                as NSDictionary
+        }
+        XCTAssertNotEqual(attributes(at: "- a list"), attributes(at: "plain"), "the case needs a styled item")
+        let reports = Reports()
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
+        ) { note in
+            guard let edited = note.object as? NSTextStorage, edited.editedMask.contains(.editedCharacters)
+            else { return }
+            reports.edits.append((edited.editedRange, edited.changeInLength))
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        for (inside, typed) in [
+            ("several", "x"), ("bold run", "x"), ("code span", "x"), ("plain", "🧪"), ("then", "漢"),
+            ("compute", "x"), ("# A", "x"), ("- a list", "x"), ("item with words", nil),
+        ] as [(String, String?)] {
+            let found = (editor.string as NSString).range(of: inside)
+            XCTAssertNotEqual(found.location, NSNotFound, inside)
+            let location = typed == nil ? NSMaxRange(found) : found.location + 2
+            let before = (editor.string as NSString).length
+            editor.setSelectedRange(NSRange(location: location, length: 0))
+            reports.edits = []
+            if let typed {
+                editor.insertText(typed, replacementRange: NSRange(location: NSNotFound, length: 0))
+            } else {
+                editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+            }
+            roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+            let delta = (editor.string as NSString).length - before
+            XCTAssertEqual(reports.edits.count, 1, inside)
+            XCTAssertEqual(reports.edits.first?.range, NSRange(location: location, length: delta), inside)
+            XCTAssertEqual(reports.edits.first?.delta, delta, inside)
+            if let typed { XCTAssertEqual(delta, (typed as NSString).length, inside) }
+        }
+    }
+
+    /// ⇥ in a list marker inserts at the item's start, and the storage reports the edit through
+    /// to the item's end; a reader on a later line of that item keeps the same line at the top.
+    func testADepthNudgeAboveTheReaderInTheirOwnListItemKeepsTheSameLineAtTheTop() throws {
+        let model = try makeModel()
+        model.wrapsLines = false
+        let item = (0..<40).map { "item line \($0)" }.joined(separator: "\u{2028}")
+        let selected = try page(in: model, saying: longPage(lines: 5) + "\n\n- " + item + "\n" + longPage(lines: 40))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let target = "item line 30"
+        let index = (editor.string as NSString).range(of: target).location
+        let glyph = try glyphRect(in: editor, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, selected)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        let top = roll.scroll.contentView.bounds.minY
+
+        let marker = (editor.string as NSString).range(of: "- item line 0")
+        editor.setSelectedRange(NSRange(location: marker.location + 2, length: 0))
+        editor.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+        XCTAssertEqual((editor.string as NSString).range(of: "  - item line 0").location, marker.location,
+                       "the case needs the depth nudge")
+        XCTAssertEqual((editor.string as NSString).range(of: target).location, index + 2)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, top, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index + 2)
+    }
+
     func testExpansionAndCollapseRestoreHorizontalOffsetsAtTopAndBelowTop() throws {
         for belowTop in [false, true] {
             let model = try makeModel()
