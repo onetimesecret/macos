@@ -168,16 +168,15 @@ public struct FileRenderSuggestionBanner: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            Text("render as \(suggestion.language)?")
+            Text("render as \(suggestion.languageName)?")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
-            // `suggestion.language` is already the display name.
-            Button("Use \(suggestion.language)") {
+            Button("Use \(suggestion.languageName)") {
                 model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
             }
             .font(.system(.caption, design: .monospaced))
             .controlSize(.small)
-            .accessibilityLabel(Text("Use \(suggestion.language) rendering"))
+            .accessibilityLabel(Text("Use \(suggestion.languageName) rendering"))
             Button("Keep Plain Text") { model.keepFilePlainText(suggestion.fileID) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
@@ -210,7 +209,7 @@ public struct FileRenderSuggestionBanner: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Rendering suggestion: \(suggestion.language)"))
+        .accessibilityLabel(Text("Rendering suggestion: \(suggestion.languageName)"))
     }
 }
 

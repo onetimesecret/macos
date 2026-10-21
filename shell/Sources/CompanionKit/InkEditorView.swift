@@ -1534,8 +1534,6 @@ public struct InkEditorView: NSViewRepresentable {
                     )
                     highlight.target = self
                     menu.addItem(highlight)
-                    // The slug, not the display name: it is the literal
-                    // token the fence's info string receives.
                     let insert = NSMenuItem(
                         title: "Insert \(suggestion.language) in Fence",
                         action: #selector(insertSuggestedFenceLabel(_:)),
@@ -1605,10 +1603,12 @@ public struct InkEditorView: NSViewRepresentable {
         /// other item this coordinator targets is enabled whenever it
         /// is offered, since each is appended only when it applies.
         public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-            if item.action == #selector(detectCodeLanguageFromMenu(_:)) {
+            switch item.action {
+            case #selector(detectCodeLanguageFromMenu(_:)):
                 return textView?.canDetectCodeLanguage == true
+            default:
+                return true
             }
-            return true
         }
 
         // MARK: The page swap (ADR-0006)
@@ -6134,6 +6134,18 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// its two items while the editor is first responder. A native field
     /// editor answers the same selectors through AppKit's own validation.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // The language verbs answer on every surface, a note's too,
+        // where there is no document for the cases below.
+        switch item.action {
+        case #selector(detectCodeLanguage(_:)):
+            return canDetectCodeLanguage
+        case #selector(chooseCodeLanguage(_:)):
+            return canChooseCodeLanguage
+        case #selector(pasteWithoutDetection(_:)):
+            return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
+        default:
+            break
+        }
         guard let document = coordinator?.document, let model = coordinator?.model else {
             return super.validateMenuItem(item)
         }
@@ -6143,12 +6155,6 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             let verb = back ? "Undo" : "Redo"
             item.title = model.editStepName(document, back: back).map { "\(verb) \($0)" } ?? verb
             return isEditable && answersChords && model.canStepEdit(document, back: back)
-        case #selector(detectCodeLanguage(_:)):
-            return canDetectCodeLanguage
-        case #selector(chooseCodeLanguage(_:)):
-            return canChooseCodeLanguage
-        case #selector(pasteWithoutDetection(_:)):
-            return PageModel.languageDetectionFeaturesAvailable && isEditable && answersChords
         case #selector(copy(_:)), #selector(cut(_:)), #selector(paste(_:)),
              #selector(pasteAsPlainText(_:)):
             return answersChords && super.validateMenuItem(item)

@@ -214,12 +214,11 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertEqual(emitted, [[.ins(at: 3, text: "swift")]])
     }
 
-    func testExplicitUnknownFenceAndCaretAfterClosedFenceAreNotTargets() throws {
+    func testDetectIsOfferedOnATargetAndGreyedInAnUnknownFenceOrPastAClosedOne() throws {
         let (_, coordinator, textView) = try makeEditor()
         let source = "```unknown\n++\n```\nafter"
         insert(source, into: textView)
 
-        textView.setSelectedRange(NSRange(location: 12, length: 0))
         // `update()` runs the auto-enable pass a shown menu runs, which
         // is what overwrote the explicit `isEnabled` before validation.
         // The control first: the whole last line selected is a target.

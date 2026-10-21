@@ -129,6 +129,37 @@ final class ClipboardClearLifecycleTests: XCTestCase {
         }
     }
 
+    func testASecondEgressInsideTheWindowGetsItsOwnWindowAndOneClear() throws {
+        let cleared = expectation(description: "the guarded clear fired")
+        let probe = ClipboardClearProbe(cleared: cleared)
+        let model = try makeModel(probe: probe, clearDelay: 0.2)
+        let target = ConcealDraft.Target.page(41)
+        model.beginConceal(target)
+        let first = try XCTUnwrap(model.concealDraft?.id)
+        model.dismissConceal()
+        model.finishConceal(
+            ConcealOutcome(ok: true, receiptId: "receipt-a", error: nil),
+            for: target, draftID: first
+        )
+        // The second copy lands inside the first one's window.
+        model.beginConceal(target)
+        let second = try XCTUnwrap(model.concealDraft?.id)
+        model.dismissConceal()
+        let rearmed = Date()
+        model.finishConceal(
+            ConcealOutcome(ok: true, receiptId: "receipt-b", error: nil),
+            for: target, draftID: second
+        )
+
+        wait(for: [cleared], timeout: 10)
+        XCTAssertGreaterThanOrEqual(
+            Date().timeIntervalSince(rearmed), 0.19,
+            "the clear waits the second copy's whole window, not the first's remainder"
+        )
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+        XCTAssertEqual(probe.callCount, 1, "the first timer stood down; one clear for the one board")
+    }
+
     func testModelTeardownClearsBeforeInvalidatingAPendingTimer() throws {
         let probe = ClipboardClearProbe()
         weak var releasedModel: PageModel?

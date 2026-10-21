@@ -309,7 +309,9 @@ public struct FileRenderSuggestion: Equatable, Sendable {
         self.mode = mode
     }
 
-    public var language: String {
+    /// The name the offer shows, never the slug: `CodeLanguageName`'s
+    /// for a source language, the mode's own label otherwise.
+    public var languageName: String {
         if case .source(let language) = mode { return CodeLanguageName.display(language) }
         return mode.formatLabel
     }
@@ -2080,7 +2082,7 @@ public final class PageModel: ObservableObject {
         // cannot fire, so the identity check is only a second net.
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
             let fired = ObjectIdentifier(timer)
-            guard Thread.isMainThread else { return }
+            // A `RunLoop.main` timer fires on the main thread.
             MainActor.assumeIsolated {
                 guard let self, let armed = self.clipboardClearTimer,
                       ObjectIdentifier(armed) == fired
