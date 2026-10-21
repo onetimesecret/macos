@@ -91,9 +91,12 @@ pub enum DeltaEnvelope {
 
 impl DeltaEnvelope {
     /// Encode for sealing.
-    #[must_use]
-    pub fn encode(&self) -> Zeroizing<Vec<u8>> {
-        crate::secret_json::to_zeroizing_vec(self).expect("envelope shapes always serialize")
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::secret_json::to_zeroizing_vec`]'s errors.
+    pub fn encode(&self) -> serde_json::Result<Zeroizing<Vec<u8>>> {
+        crate::secret_json::to_zeroizing_vec(self)
     }
 
     /// Decode an opened delta. `None` refuses anything that is not an
@@ -243,7 +246,7 @@ mod tests {
             r#"{"kind":"control","op":"accept","ballot_id":"ballot-1","device_fingerprint":"fp-2"}"#,
         ];
         for (envelope, wire) in envelopes.into_iter().zip(wire) {
-            let encoded = envelope.encode();
+            let encoded = envelope.encode().unwrap();
             assert_eq!(encoded.as_slice(), wire.as_bytes());
             assert_eq!(encoded.len(), encoded.capacity());
             assert_eq!(DeltaEnvelope::decode(&encoded), Some(envelope));
@@ -256,7 +259,8 @@ mod tests {
             page: "p".into(),
             ops: ByteBlob::from(vec![255; 32]),
         }
-        .encode();
+        .encode()
+        .unwrap();
         let text = std::str::from_utf8(&encoded).unwrap();
         assert!(!text.contains("255"));
     }
@@ -273,7 +277,7 @@ mod tests {
             }
         );
         assert_eq!(
-            envelope.encode().as_slice(),
+            envelope.encode().unwrap().as_slice(),
             "{\"kind\":\"ops\",\"page\":\"p\\\"\\\\\\né\",\"ops\":\"/w==\"}".as_bytes()
         );
         assert_eq!(

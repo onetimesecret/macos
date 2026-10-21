@@ -626,7 +626,8 @@ impl SyncSession {
     /// `POST /channel/deltas`: pad and seal everything queued under the
     /// current GOP key, one request, or resend the batch in flight at the
     /// epoch that sealed it. `None` when the clock says wait, nothing is
-    /// queued, a seal refuses, or no access token is held.
+    /// queued, an envelope fails to encode, a seal refuses, or no access
+    /// token is held.
     #[must_use]
     pub fn publish_request(
         &mut self,
@@ -654,7 +655,10 @@ impl SyncSession {
             let blobs = self
                 .outbox
                 .iter()
-                .map(|envelope| seal(&pad::pad(&envelope.encode())))
+                .map(|envelope| {
+                    let plaintext = envelope.encode().ok()?;
+                    seal(&pad::pad(&plaintext))
+                })
                 .collect::<Option<Vec<_>>>()?;
             let restate = self
                 .outbox

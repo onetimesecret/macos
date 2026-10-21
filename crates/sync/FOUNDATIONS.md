@@ -39,8 +39,10 @@ withdrawal, retry, epoch, or relay behavior is introduced here.
   bytes without exposing vector mutation. `Clone` creates an independent
   zeroizing owner; `Debug` prints `ByteBlob([REDACTED])`. Explicit `Zeroize`
   and the `ZeroizeOnDrop` marker are available.
-- `DeltaEnvelope::encode()` now returns `Zeroizing<Vec<u8>>`; its current
-  static shapes use the generic serializer above.
+- `DeltaEnvelope::encode()` now returns
+  `serde_json::Result<Zeroizing<Vec<u8>>>` through the generic serializer
+  above. The publish path in `ffi/src/sync_session.rs` treats an error like a
+  refused seal: no request, and the queue stays for the next tick.
 - `pad::pad(&[u8])` now returns `Zeroizing<Vec<u8>>`, allocated at the bucket
   size before copying plaintext. Prefix, payload, and zero suffix are unchanged.
 - These returned `Zeroizing<Vec<u8>>` values still expose vector mutation;
