@@ -281,19 +281,29 @@ go through a panel.
 ## Case 2a: Open With from the Finder
 
 1. Quit the pad. In Finder, Control-click `b.txt` and choose
-   Open With > OnetimePad.
+   Open With > OnetimePad. A debug build beside the installed app is a
+   second entry there; choose the bundle under test.
 2. Edit it and press cmd-s.
 3. With the pad running and another app frontmost, choose
    Open With > OnetimePad on `a.txt`.
+4. With the pad frontmost, open the File menu, close it, and press
+   cmd-n.
+5. Close the `b.txt` tab. Choose File > Open, and while the panel is
+   up, choose Open With > OnetimePad on `b.txt` in Finder. Then cancel
+   the panel.
 
 **Pass:** OnetimePad is listed and enabled under Open With, and the
 file's default app is unchanged. After each open the file's tab is
 selected in the editor window, and each save reaches the file as in
-case 1.
+case 1. The File menu has no New item, and cmd-n adds a new page. In
+step 5 no tab opens while the panel is up, and `b.txt`'s tab is
+selected once the panel is cancelled.
 
 **Fail:** the entry is greyed out; the pad becomes the default app for
 `.txt`; the pad comes forward with no tab for the file, or with today's
-page selected over it; or the save refused.
+page selected over it; the save refused; a New item in the File menu,
+or cmd-n doing anything but adding a page; or `b.txt` opening under the
+open panel.
 
 ## Case 3: Save As, to a new name and over an existing file
 
