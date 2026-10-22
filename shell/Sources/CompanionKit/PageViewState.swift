@@ -137,10 +137,10 @@ struct RollPlace: Equatable {
     func mappedAnchor(into reading: Reading, text: @autoclosure () -> String) -> ScrollAnchor {
         guard reading != self.reading else { return anchor }
         let target = text()
-        let length = target.utf16.count
+        let targetLength = target.utf16.count
         var mapped = anchor
-        let scaled = self.length > 0
-            ? (Double(anchor.characterIndex) * Double(length) / Double(self.length)).rounded() : 0
+        let scaled = length > 0
+            ? (Double(anchor.characterIndex) * Double(targetLength) / Double(length)).rounded() : 0
         mapped.characterIndex = Self.scalarBoundary(at: Int(scaled), in: target)
         return mapped
     }
