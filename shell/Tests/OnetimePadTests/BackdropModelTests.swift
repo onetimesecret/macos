@@ -987,12 +987,7 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(dockFirst.editorWindowCanTakeKeys)
     }
 
-    func testAHiddenAppRoutesTheActivationToItsEditorWindow() {
-        // Settings holds the keys, ⌘H, ⌘Tab back. Hiding sends the
-        // model nothing, and neither does coming back, since the editor
-        // window is keyed by neither. The window remains on screen and
-        // is the destination of the activation, not a claimant that
-        // suppresses routing.
+    func testAHiddenAppLeavesFocusRestorationToAppKit() {
         let model = makeModel(named: "hidden-app")
         model.editorWindowOpened()
         model.keyStatusChanged(of: .editorWindow, keyed: true)
@@ -1008,7 +1003,7 @@ final class BackdropModelTests: XCTestCase {
                     claimedByAnotherWindow: false
                 )
             ),
-            .openEditorWindow(.activation)
+            .noop
         )
     }
 

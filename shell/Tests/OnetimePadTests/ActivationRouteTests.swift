@@ -46,18 +46,12 @@ final class ActivationRouteTests: XCTestCase {
         }
     }
 
-    func testLateActivationSelectsEditorWindowAsAnActivation() {
-        // ⌘Tab or a Dock click on an inactive app; the roll stays
-        // where the person left it. The panel preference does not
-        // change the route.
+    func testOrdinaryActivationLeavesWindowOrderingToAppKit() {
         for enabled in [false, true] {
-            XCTAssertEqual(
-                ActivationRouter.decide(
-                    .lateActivation,
-                    in: base(ambientPanelEnabled: enabled)
-                ),
-                Self.editorRoute(.activation)
-            )
+            for owner in [PresentationOwner.panel, .editorWindow] {
+                XCTAssertEqual(ActivationRouter.decide(.lateActivation,
+                    in: base(ambientPanelEnabled: enabled, owner: owner)), .noop)
+            }
         }
     }
 
@@ -227,71 +221,23 @@ final class ActivationRouteTests: XCTestCase {
         }
     }
 
-    func testPendingEditorSummonPreservesRaiseRegardlessOfLaunchRecency() {
-        for elapsed in [0.0, 1.99, 2, 3_600] {
+    func testPendingExplicitSelectionsCompleteOnActivation() {
+        for raise in [BackdropRaise.activation, .summon] {
             XCTAssertEqual(ActivationRouter.routeForActivation(
-                pendingSummon: .openEditorWindow(.activation),
-                sinceLaunch: elapsed, launchWindow: 2,
-                context: base(ambientPanelEnabled: false)
-            ), .openEditorWindow(.activation))
+                pendingSummon: .openEditorWindow(raise), context: base()), .openEditorWindow(raise))
         }
     }
 
-    func testAnotherWindowClaimOverridesPendingSummon() {
-        for elapsed in [0.0, 3_600] {
-            XCTAssertEqual(ActivationRouter.routeForActivation(
-                pendingSummon: .openEditorWindow(.activation),
-                sinceLaunch: elapsed, launchWindow: 2,
-                context: base(claimedByAnotherWindow: true)
-            ), .noop)
-        }
-    }
-
-    func testActivationWithoutPendingSummonUsesRecency() {
+    func testAnotherWindowRequestCancelsPendingSelection() {
         XCTAssertEqual(ActivationRouter.routeForActivation(
-            pendingSummon: nil, sinceLaunch: 0, launchWindow: 2,
-            context: base()
-        ), .openEditorWindow(.summon))
-        XCTAssertEqual(ActivationRouter.routeForActivation(
-            pendingSummon: nil, sinceLaunch: 3_600, launchWindow: 2,
-            context: base()
-        ), .openEditorWindow(.activation))
+            pendingSummon: .openEditorWindow(.activation),
+            context: base(claimedByAnotherWindow: true)), .noop)
     }
 
-    func testStrandedPanelOffSummonEqualsLaterActivationRoute() {
-        let context = base(ambientPanelEnabled: false)
-        for reason in [ActivationReason.hotkey, .statusItem] {
-            let pending = ActivationRouter.decide(reason, in: context)
-            XCTAssertEqual(pending, .openEditorWindow(.activation))
+    func testUnrequestedActivationNeverCreatesAnEditor() {
+        for enabled in [false, true] {
             XCTAssertEqual(ActivationRouter.routeForActivation(
-                pendingSummon: pending, sinceLaunch: 3_600,
-                launchWindow: 2, context: context
-            ), ActivationRouter.routeForActivation(
-                pendingSummon: nil, sinceLaunch: 3_600,
-                launchWindow: 2, context: context
-            ))
+                pendingSummon: nil, context: base(ambientPanelEnabled: enabled)), .noop)
         }
     }
-
-    // MARK: The launch/late classifier
-
-    func testActivationReasonClassifiesByRecency() {
-        XCTAssertEqual(
-            ActivationRouter.activationReason(sinceLaunch: 0, launchWindow: 2),
-            .launchActivation
-        )
-        XCTAssertEqual(
-            ActivationRouter.activationReason(sinceLaunch: 1.99, launchWindow: 2),
-            .launchActivation
-        )
-        XCTAssertEqual(
-            ActivationRouter.activationReason(sinceLaunch: 2, launchWindow: 2),
-            .lateActivation
-        )
-        XCTAssertEqual(
-            ActivationRouter.activationReason(sinceLaunch: 3_600, launchWindow: 2),
-            .lateActivation
-        )
-    }
-
 }
