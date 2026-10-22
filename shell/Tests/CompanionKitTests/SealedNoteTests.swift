@@ -743,6 +743,8 @@ final class SealedNoteTests: XCTestCase {
             XCTAssertFalse(
                 page.model.tabs.contains { $0.pageID == page.sheet },
                 "\(route.name): the page outlived its refusal")
+            XCTAssertFalse(editor.isOpen, "\(route.name): the note stayed open")
+            XCTAssertEqual(editor.textView.string, "", "\(route.name): the note's ink outlived it")
         }
     }
 }

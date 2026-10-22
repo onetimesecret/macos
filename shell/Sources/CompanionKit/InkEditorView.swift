@@ -2161,7 +2161,11 @@ public struct InkEditorView: NSViewRepresentable {
             // mid-conversion.
             InkEditorView.discardComposition(in: textView)
             let outcome = model.stepEdit(document, back: back)
-            guard outcome.applied else { return }
+            guard outcome.applied else {
+                // A note the core now refuses closes, as after a refused batch (Law 0001, expiry row).
+                if case .note(let chip) = document, model.noteText(chip: chip) == nil { restateNote() }
+                return
+            }
             // The model restates a page's storage; a note's is the surface's own.
             if case .note = document { restateNote() }
             // The model rebuilt the storage from the core's runs, which
