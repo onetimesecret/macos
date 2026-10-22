@@ -1,6 +1,6 @@
 ---
 name: issue310-deadline-writes
-description: Issue #310 (PR 313, core 0.34.3, ffi 0.43.2, app 0.40.9, 2026-10-21); chip_mut reads through readable_sheets_mut, so note batches, steps, run end and renames refuse a due page; the note chord skips menu validation; the C header is hand kept; page ink is still ungated
+description: Issue #310 (PR 313, core 0.34.3, ffi 0.43.2, app 0.41.3, 2026-10-21); chip_mut reads through readable_sheets_mut, so note batches, steps, run end and renames refuse a due page; the note chord skips menu validation; the C header is hand kept; page ink is still ungated
 metadata:
   type: project
 ---
@@ -30,7 +30,9 @@ into storage that never wipes.
   change in `lib.rs` must be mirrored there and in `CompanionClient.swift`.
 - Open: typing the page's own ink on a due page is still accepted
   (`apply_batch`, `undo`, `redo` use `sheet_mut`). The row does not name it;
-  left for the maintainer, no rationale written into the law.
+  the coordinator takes it up separately, so no rationale went into the law.
+- App 0.40.9 collided with PR 304; open app PRs took 0.40.9 to 0.41.2, so
+  PR 313 took 0.41.3 and merges after 312. Ask for the number before bumping.
 - Declined review points: settling on every name refusal (only due pages
   settle, `otherwise: nil` shows nothing), `countEdit` before the note batch's
   core call (pre-existing, counts edits sent).
