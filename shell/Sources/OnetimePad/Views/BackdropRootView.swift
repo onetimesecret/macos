@@ -361,10 +361,16 @@ struct BackdropRootView: View {
         // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())
         .gesture(dragGesture, including: raised ? .all : .subviews)
-        // The header is where this card's title bar would be, so it
-        // answers a double-click by the title bar preference (issue #298).
+        // The header is where this card's title bar would be, so it answers a double-click
+        // by the title bar preference (issue #298), on its own ground and not on its controls.
         .simultaneousGesture(
-            TapGesture(count: 2).onEnded { if raised { model.headerDoubleClicked() } }
+            SpatialTapGesture(count: 2).onEnded { tap in
+                guard raised,
+                    HeaderLayout.doubleClickReachesTitleBar(
+                        x: tap.location.x, cardWidth: headerWidth, indicatorWidth: indicatorWidth)
+                else { return }
+                model.headerDoubleClicked()
+            }
         )
     }
 
@@ -916,5 +922,13 @@ enum HeaderLayout {
     static func identityWidth(cardWidth: CGFloat, indicatorWidth: CGFloat) -> CGFloat {
         let reserved = 2 * (indicatorWidth + gutter)
         return max(0, min(identityCap, cardWidth - reserved))
+    }
+
+    /// Whether a double-click at `x` lands on the leading mirror or the identity
+    /// rather than on the trailing cluster's controls or the gutter before them.
+    static func doubleClickReachesTitleBar(
+        x: CGFloat, cardWidth: CGFloat, indicatorWidth: CGFloat
+    ) -> Bool {
+        x < cardWidth - indicatorWidth - gutter
     }
 }
