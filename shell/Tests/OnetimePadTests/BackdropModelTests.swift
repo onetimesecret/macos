@@ -356,6 +356,30 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(model.geometry.height, 1000)
     }
 
+    func testAResetDuringATripLetsTheNextDoubleClickFill() {
+        let model = makeModel(named: "double-click-reset", preference: "Fill")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1440)
+        model.resetGeometry()
+        let reset = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1440, "out, not back to the place before the fill")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, reset, "the return is to where the reset left the card")
+    }
+
+    func testAReclampDuringATripLetsTheNextDoubleClickGoOutAgain() {
+        let model = makeModel(named: "double-click-reclamp", preference: "Fill")
+        let before = model.geometry
+        model.headerDoubleClicked()
+        model.reclamp(pane: CGRect(x: 0, y: 25, width: 1680, height: 1000))
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1680, "out again, on the new pane")
+        XCTAssertEqual(model.geometry.height, 1000)
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, before, "the way back survived the reclamp")
+    }
+
     func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {
         let model = makeModel(named: "owner-closed")
         XCTAssertEqual(model.pages.owner, .panel)
