@@ -2329,6 +2329,83 @@ mod tests {
         );
     }
 
+    /// A chip record's name and note each come back as one wiping copy at its exact size,
+    /// and the note makes no document until it is edited (Law 0004, C31).
+    #[test]
+    fn a_restored_name_and_note_rest_as_wiping_copies_until_the_note_is_edited() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let mut tail = text_field("API_KEY");
+        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        let name = chip.name.as_ref().expect("the name came back");
+        wiping_owner(name);
+        assert_eq!(name.capacity(), name.len(), "the name grew past its size");
+        let note = chip
+            .note
+            .as_ref()
+            .and_then(Note::resting)
+            .expect("the restore made the note a document");
+        wiping_owner(note);
+        assert_eq!(note.capacity(), note.len(), "the note grew past its size");
+        assert_eq!(note.as_str(), "kept \u{1F600} beside it");
+
+        let id = chip.id();
+        let quoted = [crate::store::EditOp::Insert {
+            pos_u16: 0,
+            text: "> ".into(),
+        }];
+        assert!(store.apply_note_ops(id, &quoted, crate::document::EditIntent::Typing, None));
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert!(
+            chip.note.as_ref().and_then(Note::resting).is_none(),
+            "the edit never reached a document"
+        );
+        assert_eq!(
+            &**store.note_text(id).unwrap(),
+            "> kept \u{1F600} beside it"
+        );
+    }
+
+    /// A note that rests is written back as the field it came from, and rests again after
+    /// the next restore (Law 0004, C31).
+    #[test]
+    fn a_resting_note_is_written_back_as_it_came_and_rests_after_the_next_restore() {
+        let (mut store, clock) = store();
+        let uuid = ItemId::random();
+        let note = "kept \u{1F600} beside it";
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field(note));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let written = store.snapshot(1_000_000);
+        assert!(
+            contains(&written, &tail),
+            "the note's field changed on the way back"
+        );
+
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&written, 1_000_000).unwrap(), 1);
+        let chip = revived.sheets().next().unwrap().chips().next().unwrap();
+        let rests = chip.note.as_ref().and_then(Note::resting);
+        assert_eq!(
+            rests.map(|text| text.as_str()),
+            Some(note),
+            "it no longer rests"
+        );
+        assert_eq!(
+            *revived.snapshot(1_000_000),
+            *written,
+            "a second round trip moved the bytes"
+        );
+    }
+
     #[test]
     fn an_unknown_note_flag_is_malformed_and_the_store_is_untouched() {
         let (mut store, survivor) = occupied();
