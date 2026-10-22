@@ -1,6 +1,8 @@
 //! Pasteboard adapter: the one crate that touches `NSPasteboard`, and the
 //! hygiene contract of docs/spec/05 that every implementation meets.
 
+use std::fmt;
+
 use zeroize::Zeroizing;
 
 #[cfg(target_os = "macos")]
@@ -25,7 +27,6 @@ pub enum PasteboardContent {
 }
 
 /// A read result: content plus the marks that arrived with it.
-#[derive(Debug)]
 pub struct PasteboardItem {
     /// The content.
     pub content: PasteboardContent,
@@ -34,6 +35,25 @@ pub struct PasteboardItem {
     /// The `public.url` flavor, if declared (ADR-0013), in a wiping owner of its
     /// exact size, since a URL can bear a token (Law 0004, C17).
     pub origin_url: Option<Zeroizing<String>>,
+}
+
+impl fmt::Debug for PasteboardItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PasteboardItem")
+            .field("content", &self.content)
+            .field("nspasteboard_concealed", &self.nspasteboard_concealed)
+            .field("origin_url", &self.origin_url.as_ref().map(|_| Redacted))
+            .finish()
+    }
+}
+
+/// What `Debug` writes in place of an origin URL (C17, C48).
+struct Redacted;
+
+impl fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
 }
 
 /// How a write should be marked.
@@ -155,13 +175,24 @@ pub struct MemoryPasteboard {
     change_count: u64,
 }
 
-#[derive(Debug)]
 struct StoredItem {
     bytes: Zeroizing<Vec<u8>>,
     kind: ContentKind,
     nspasteboard_concealed: bool,
     transient: bool,
     origin_url: Option<Zeroizing<String>>,
+}
+
+impl fmt::Debug for StoredItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StoredItem")
+            .field("bytes", &self.bytes)
+            .field("kind", &self.kind)
+            .field("nspasteboard_concealed", &self.nspasteboard_concealed)
+            .field("transient", &self.transient)
+            .field("origin_url", &self.origin_url.as_ref().map(|_| Redacted))
+            .finish()
+    }
 }
 
 impl MemoryPasteboard {
@@ -304,6 +335,32 @@ mod tests {
         assert!(pb.read().unwrap().origin_url.is_none());
         write_text(&mut pb, "our copy-out", true);
         assert!(pb.read().unwrap().origin_url.is_none());
+    }
+
+    #[test]
+    fn debug_output_never_prints_the_origin_url() {
+        let mut pb = MemoryPasteboard::new();
+        pb.put_external_with_origin(
+            PasteboardContent::Text("quoted paragraph".into()),
+            false,
+            Some(Zeroizing::new("https://example.test/reset?tk=Vq9Zx".into())),
+        );
+        let item = pb.read().unwrap();
+        for printed in [
+            format!("{item:?}"),
+            format!("{item:#?}"),
+            format!("{pb:?}"),
+            format!("{pb:#?}"),
+        ] {
+            assert!(!printed.contains("Vq9Zx"), "the origin printed: {printed}");
+            assert!(
+                !printed.contains("example.test"),
+                "the origin printed: {printed}"
+            );
+            assert!(printed.contains("[REDACTED]"), "the control: {printed}");
+        }
+        pb.put_external(PasteboardContent::Text("plain".into()), false);
+        assert!(format!("{:?}", pb.read().unwrap()).contains("origin_url: None"));
     }
 
     #[test]
