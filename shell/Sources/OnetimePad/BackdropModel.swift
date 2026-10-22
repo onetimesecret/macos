@@ -184,6 +184,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         self.titleBarDoubleClickPreference = titleBarDoubleClickPreference
         self.operatingSystemMajor = operatingSystemMajor
         geometry = BackdropGeometry.load(from: defaults)
+        doubleClickTrip = Self.loadTrip(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
         // Default on when the key is absent (a fresh install): the ADR
@@ -923,13 +924,32 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     }
 
     /// A zoom or fill under way: where the card went out to, and where it returns.
-    struct DoubleClickTrip: Equatable {
+    struct DoubleClickTrip: Codable, Equatable {
         var restore: BackdropGeometry
         var out: BackdropGeometry
     }
 
-    /// The trip under way, while the card is out.
-    private var doubleClickTrip: DoubleClickTrip?
+    /// The defaults key the trip is kept under, beside the geometry's.
+    static let doubleClickTripKey = "backdrop.doubleClickTrip"
+
+    /// The trip under way, kept beside the geometry so a relaunch can still return,
+    /// as AppKit keeps a zoomed window's user state.
+    private var doubleClickTrip: DoubleClickTrip? {
+        didSet { Self.saveTrip(doubleClickTrip, to: defaults) }
+    }
+
+    static func loadTrip(from defaults: UserDefaults) -> DoubleClickTrip? {
+        guard let data = defaults.data(forKey: doubleClickTripKey) else { return nil }
+        return try? JSONDecoder().decode(DoubleClickTrip.self, from: data)
+    }
+
+    static func saveTrip(_ trip: DoubleClickTrip?, to defaults: UserDefaults) {
+        guard let trip, let data = try? JSONEncoder().encode(trip) else {
+            defaults.removeObject(forKey: doubleClickTripKey)
+            return
+        }
+        defaults.set(data, forKey: doubleClickTripKey)
+    }
 
     /// Persist and publish, but only a real change: the screen
     /// observer can fire in bursts, and an unchanged geometry should

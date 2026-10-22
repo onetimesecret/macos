@@ -274,11 +274,13 @@ final class BackdropModelTests: XCTestCase {
         makeModel(named: name, reading: { preference })
     }
 
-    /// The same, with the seam asked again at each double-click.
+    /// The same, with the seam asked again at each double-click, over `shared` defaults
+    /// when a test stands a second model where the first left off.
     private func makeModel(
-        named name: String, reading preference: @escaping () -> String?
+        named name: String, reading preference: @escaping () -> String?,
+        over shared: UserDefaults? = nil
     ) -> BackdropModel {
-        let defaults = makeDefaults(named: name)
+        let defaults = shared ?? makeDefaults(named: name)
         let model = BackdropModel(
             defaults: defaults,
             pages: ephemeralPages(defaults: defaults, tag: name),
@@ -378,6 +380,20 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(model.geometry.height, 1000)
         model.headerDoubleClicked()
         XCTAssertEqual(model.geometry, before, "the way back survived the reclamp")
+    }
+
+    func testAFilledCardReturnsAfterARelaunch() {
+        let defaults = makeDefaults(named: "double-click-relaunch")
+        let first = makeModel(named: "double-click-relaunch", reading: { "Fill" }, over: defaults)
+        let before = first.geometry
+        first.headerDoubleClicked()
+        XCTAssertEqual(first.geometry.width, 1440)
+
+        let relaunched = makeModel(
+            named: "double-click-relaunch-2", reading: { "Fill" }, over: defaults)
+        XCTAssertEqual(relaunched.geometry.width, 1440, "the fill was persisted")
+        relaunched.headerDoubleClicked()
+        XCTAssertEqual(relaunched.geometry, before, "and so was the way back")
     }
 
     func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {
