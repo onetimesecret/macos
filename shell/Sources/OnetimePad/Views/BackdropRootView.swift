@@ -361,10 +361,16 @@ struct BackdropRootView: View {
         // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())
         .gesture(dragGesture, including: raised ? .all : .subviews)
-        // A window zooms on a title-bar double-click; the header is
-        // where this card's title bar would be.
+        // The header is where this card's title bar would be, so it answers a double-click
+        // by the title bar preference (issue #298), on its own ground and not on its controls.
         .simultaneousGesture(
-            TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
+            SpatialTapGesture(count: 2).onEnded { tap in
+                guard raised,
+                    HeaderLayout.doubleClickReachesTitleBar(
+                        x: tap.location.x, cardWidth: headerWidth, indicatorWidth: indicatorWidth)
+                else { return }
+                model.headerDoubleClicked()
+            }
         )
     }
 
@@ -561,20 +567,28 @@ struct BackdropRootView: View {
     /// to say.
     @ViewBuilder
     private var saveIndicator: some View {
-        if pages.activeFile != nil, !pages.showingLedger {
-            // The file surface has its own saved word, about the file
-            // on disk. The sealed state's word is about the pages
-            // behind, and two words reading "saved" a few points apart
-            // would be one word too many for a person to tell apart.
+        switch Self.persistenceWord(
+            fileActive: pages.activeFile != nil && !pages.showingLedger,
+            contentRefused: pages.contentRestoreRefused,
+            draftsHeld: pages.draftsHeldInMemory,
+            saveStatus: pages.saveStatus
+        ) {
+        case .hidden:
             EmptyView()
-        } else if pages.contentRestoreRefused {
+        case .notSaving:
             Text("not saving")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(Color.emberText)
                 .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
                 .accessibilityLabel(Text("This session is not being saved"))
-        } else {
-            switch pages.saveStatus {
+        case .draftsNotKept:
+            Text("drafts not kept")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(Color.emberText)
+                .help("The existing drafts file could not be read, so unsaved edits to open files are not kept as drafts. The page shows the recovery.")
+                .accessibilityLabel(Text("Unsaved file edits are not kept as drafts"))
+        case .status(let status):
+            switch status {
             case .idle:
                 EmptyView()
             case .saving:
@@ -597,6 +611,23 @@ struct BackdropRootView: View {
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
         }
+    }
+
+    /// What the header's persistence word says.
+    enum PersistenceWord: Equatable {
+        case hidden, notSaving, draftsNotKept
+        case status(SaveStatus)
+    }
+
+    /// The word for the header. A file surface keeps its own saved word and the
+    /// card's drops (D-18), except drafts not kept, which is about that file (issue #296).
+    static func persistenceWord(
+        fileActive: Bool, contentRefused: Bool, draftsHeld: Bool, saveStatus: SaveStatus
+    ) -> PersistenceWord {
+        if contentRefused && !fileActive { return .notSaving }
+        if draftsHeld { return .draftsNotKept }
+        if fileActive { return .hidden }
+        return .status(saveStatus)
     }
 
     /// The header's sync word. Nothing at all while sync is off, which
@@ -663,7 +694,7 @@ struct BackdropRootView: View {
                     model.discardProposal()
                     return
                 }
-                model.endZoom()
+                model.endDoubleClickTrip()
                 model.setGeometry(dragged(by: paneTranslation(from: started)))
             }
     }
@@ -832,7 +863,7 @@ struct BackdropRootView: View {
                     model.discardProposal()
                     return
                 }
-                model.endZoom()
+                model.endDoubleClickTrip()
                 model.setGeometry(
                     edge.resized(model.geometry, by: paneTranslation(from: started))
                 )
@@ -891,5 +922,13 @@ enum HeaderLayout {
     static func identityWidth(cardWidth: CGFloat, indicatorWidth: CGFloat) -> CGFloat {
         let reserved = 2 * (indicatorWidth + gutter)
         return max(0, min(identityCap, cardWidth - reserved))
+    }
+
+    /// Whether a double-click at `x` lands on the leading mirror or the identity
+    /// rather than on the trailing cluster's controls or the gutter before them.
+    static func doubleClickReachesTitleBar(
+        x: CGFloat, cardWidth: CGFloat, indicatorWidth: CGFloat
+    ) -> Bool {
+        x < cardWidth - indicatorWidth - gutter
     }
 }

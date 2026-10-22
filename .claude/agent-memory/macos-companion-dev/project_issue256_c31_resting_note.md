@@ -27,11 +27,11 @@ should never enter it.
   check (`within`) and nothing more. A filter for char boundaries broke parity;
   `a_resting_note_keeps_the_selections_its_document_would` pins the
   bounds check.
-- `finish_editing_group` takes `&mut self`, so the store looks the chip up
-  with `chip_home` (the deadline gate) and then `chip_mut`.
+- `finish_note_editing_group` looks the chip up once with `chip_mut`, which
+  is the deadline gate since #310 (it used `chip_home` then `chip_mut`).
 - ADR-0043 point 2 (accepted) says the note "is the document type a page's
   body and an open file use". PR 307 does not amend it, and points this out.
-- Register B1 still lists C09 and C10, although both rows have read
-  implemented since #292. PR 307 left that alone.
+- PR 307 left C09 and C10 in register B1; PR 316 removed them
+  ([[issue256-c27-stub-summary]]).
 
 Related: [[issue241-243-sealed-name-note-core]].

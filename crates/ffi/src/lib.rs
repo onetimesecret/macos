@@ -1308,8 +1308,9 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
 }
 
 /// Name a sealed object, or clear its name with a blank draft
-/// (ADR-0042 point 1). False for an unknown chip or a refused draft;
-/// the name is then unchanged.
+/// (ADR-0042 point 1). False for an unknown chip, a page past its
+/// deadline (Law 0001, expiry row) or a refused draft; the name is then
+/// unchanged.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `name` must be a valid,
@@ -1362,7 +1363,8 @@ pub unsafe extern "C" fn companion_chip_note_runs_json(
 
 /// Apply an edit batch to the note with its `TextKit` gesture, whole or not at
 /// all, as [`companion_sheet_apply_ops_with_intent`] does a page's. A chip op is
-/// refused; the first accepted batch makes the note.
+/// refused, as are an unknown chip and a page past its deadline (Law 0001,
+/// expiry row); the first accepted batch makes the note.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `json` must be a valid,
@@ -1404,7 +1406,8 @@ pub unsafe extern "C" fn companion_chip_note_apply_ops_with_intent(
 }
 
 /// End the note's typing run without an undo item; `u32::MAX` twice for no
-/// selection. False for an unknown chip or a half-given selection.
+/// selection. False for an unknown chip, a page past its deadline (Law 0001,
+/// expiry row) or a half-given selection.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1514,7 +1517,8 @@ unsafe fn note_action_name(handle: *mut CompanionHandle, chip: u64, undo: bool) 
 }
 
 /// Take back the note's last step, never the page's. Returns a `StepOutcome`,
-/// null for an unknown chip. Free with [`companion_string_free`].
+/// null for an unknown chip or a page past its deadline (Law 0001, expiry
+/// row). Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -8933,19 +8937,22 @@ mod tests {
         }
     }
 
-    /// `ab`, an object named `TOKEN`, `cd` on the hour rung, aged two hours
-    /// with no sweep: its page and object as the restore numbered them.
+    /// `ab`, an object named `TOKEN` with a note, `cd` on the hour rung, aged
+    /// two hours with no sweep: its page and object as the restore numbered them.
     unsafe fn a_due_page_with_a_chip(handle: *mut CompanionHandle) -> (u64, u64) {
         let (_, chip) = unsafe { page_with_a_chip(handle, "hunter2-secret") };
         let tab = unsafe { strip(handle) }[0]["id"].as_u64().unwrap();
         assert!(unsafe { companion_tab_set_rung(handle, tab, 0) });
         let name = cstring("TOKEN");
         assert!(unsafe { companion_chip_set_name(handle, chip, name.as_ptr()) });
+        let note = r#"[{"ins": {"at": 0, "text": "rotate monthly"}}]"#;
+        assert!(unsafe { note_ops(handle, chip, note, 0) });
         unsafe { age_by(handle, 2 * 60 * 60 * 1_000) };
         let guard = unsafe { &*handle }.inner.lock().unwrap();
         let page = guard.store.sheets().next().expect("no sweep took it");
         let object = page.chips().next().expect("its object stands");
         assert_eq!(object.name(), Some("TOKEN"), "the name stands too");
+        assert!(object.has_note(), "and its note");
         (page.id().raw(), object.id().raw())
     }
 
@@ -8989,6 +8996,41 @@ mod tests {
             assert!(!companion_chip_stands(ptr::null_mut(), chip));
             assert_eq!(companion_expire_due(handle), 1);
             assert!(!companion_chip_stands(handle, chip), "the sweep took it");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_takes_no_note_edit_step_or_rename_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let (sheet, chip) = a_due_page_with_a_chip(handle);
+            let page = take_json(companion_sheet_document_json(handle, sheet));
+            let typed = r#"[{"ins": {"at": 0, "text": "x"}}]"#;
+            assert!(!note_ops(handle, chip, typed, 0));
+            assert!(!note_ops(handle, chip, "[]", 0), "an empty batch too");
+            assert!(!companion_chip_note_finish_editing_group(
+                handle,
+                chip,
+                u32::MAX,
+                u32::MAX
+            ));
+            assert!(companion_chip_note_undo(handle, chip).is_null());
+            assert!(companion_chip_note_redo(handle, chip).is_null());
+            for draft in ["NEW_KEY", ""] {
+                let name = cstring(draft);
+                assert!(
+                    !companion_chip_set_name(handle, chip, name.as_ptr()),
+                    "{draft:?}"
+                );
+            }
+            assert_eq!(
+                take_json(companion_sheet_document_json(handle, sheet)),
+                page,
+                "the name or the doorway moved"
+            );
+            assert!(sent_destinations(handle).is_empty(), "nothing recorded");
+            assert_eq!(companion_expire_due(handle), 1, "the sweep still takes it");
             companion_free(handle);
         }
     }

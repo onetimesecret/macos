@@ -132,14 +132,16 @@ struct RollPlace: Equatable {
     /// Taken at the roll's top edge, so a restore keeps the clip there and returns only `x`.
     var atTop = false
 
-    /// The anchor for `reading`'s text of `length` characters. No position map joins
-    /// the source to its preview, so the other reading is mapped by proportion.
-    func mappedAnchor(into reading: Reading, length: Int) -> ScrollAnchor {
+    /// The anchor for `reading`'s `text`, read only for the other reading: no position map
+    /// joins the source to its preview, so it is mapped by proportion, snapped to a scalar (#290).
+    func mappedAnchor(into reading: Reading, text: @autoclosure () -> String) -> ScrollAnchor {
         guard reading != self.reading else { return anchor }
+        let target = text()
+        let targetLength = target.utf16.count
         var mapped = anchor
         let scaled = self.length > 0
-            ? (Double(anchor.characterIndex) * Double(length) / Double(self.length)).rounded() : 0
-        mapped.characterIndex = min(max(Int(scaled), 0), length)
+            ? (Double(anchor.characterIndex) * Double(targetLength) / Double(self.length)).rounded() : 0
+        mapped.characterIndex = Self.scalarBoundary(at: Int(scaled), in: target)
         return mapped
     }
 
@@ -152,31 +154,35 @@ struct RollPlace: Equatable {
     }
 
     /// The same place after one storage edit, said as the storage says it: the edited
-    /// range and the length of the new text, and the change in length. `byProjection`
+    /// range, the new text and its length, and the change in length. `byProjection`
     /// says the model wrote the edit (`PageModel.isApplyingProjection`), not a person.
     func rebased(
-        throughEdit edited: NSRange, changeInLength delta: Int, length: Int, byProjection: Bool
+        throughEdit edited: NSRange, changeInLength delta: Int, length: Int,
+        text: @autoclosure () -> String, byProjection: Bool
     ) -> RollPlace {
         var place = self
         place.anchor.characterIndex = Self.rebased(
             anchor.characterIndex, throughEdit: edited, changeInLength: delta, length: length,
-            byProjection: byProjection)
+            text: text(), byProjection: byProjection)
         place.length = length
         return place
     }
 
-    /// Before the edit an index stays, and past it the index moves by `delta`. Inside it an
-    /// index moves by `delta` too, unless the projection restated the whole text of `length`.
+    /// Before the edit an index stays, and past it the index moves by `delta`. Inside it an index
+    /// moves by `delta`, or stays for a projection's whole restate, snapped to a scalar of `text` (#311).
     static func rebased(
-        _ index: Int, throughEdit edited: NSRange, changeInLength delta: Int, length: Int, byProjection: Bool
+        _ index: Int, throughEdit edited: NSRange, changeInLength delta: Int, length: Int,
+        text: @autoclosure () -> String, byProjection: Bool
     ) -> Int {
         // Text typed or pasted at the anchor stays at the top, where the reader put it.
         if index <= edited.location { return max(index, 0) }
         if index >= NSMaxRange(edited) - delta { return index + delta }
         // A styled insertion on a page of one paragraph is reported as the whole text too.
-        if byProjection, edited.location == 0, edited.length == length { return min(index, length) }
+        if byProjection, edited.location == 0, edited.length == length {
+            return scalarBoundary(at: min(index, length), in: text())
+        }
         // AppKit reports an insertion through to its paragraph's end, so the text after it moved.
-        return max(index + delta, edited.location)
+        return scalarBoundary(at: max(index + delta, edited.location), in: text())
     }
 
     /// Rebase a UTF-16 index through unchanged text, or, past the search's bound, to the

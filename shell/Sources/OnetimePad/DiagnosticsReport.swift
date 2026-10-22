@@ -6,8 +6,12 @@ struct DiagnosticsReport: Sendable {
     let summary: String
     let details: String
 
+    /// `companionKeyed` is the altitude keeper's answer at capture, so the
+    /// expected altitude reads the same inputs as the card (#293).
     @MainActor
-    static func capture(model: BackdropModel, shortcutStatus: String) -> DiagnosticsReport {
+    static func capture(
+        model: BackdropModel, companionKeyed: Bool, shortcutStatus: String
+    ) -> DiagnosticsReport {
         let bundle = Bundle.main
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
@@ -22,8 +26,11 @@ struct DiagnosticsReport: Sendable {
         let architecture = "unknown"
         #endif
         let stance = model.stance == .raised ? "raised" : "resting"
-        let altitude = BackdropAltitude.resolve(stance: model.stance, keyed: model.holdsKeys,
-                                               pinned: model.pinned, keepsAbove: model.keepsAboveWhenInactive)
+        let altitude = BackdropAltitude.resolve(
+            stance: model.stance, keyed: model.holdsKeys,
+            pinned: model.pinned, keepsAbove: model.keepsAboveWhenInactive,
+            companionKeyed: companionKeyed
+        )
         let altitudeName: String
         switch altitude {
         case .desktop: altitudeName = "desktop"
@@ -39,6 +46,7 @@ struct DiagnosticsReport: Sendable {
             "Editor: open=\(model.editorWindowOpen), visible=\(model.editorWindowOnScreen)",
             "Panel owns keyboard: \(model.holdsKeys)",
             "Pinned: \(model.pinned); keep above when inactive: \(model.keepsAboveWhenInactive)",
+            "Companion window keyed: \(companionKeyed)",
             "Expected panel altitude: \(altitudeName) (\(altitude.level.rawValue))",
             "Shortcut: \(shortcutStatus)",
             "Page layout: \(model.pages.showsTimeUnits ? "Timeline" : "Tabs")",

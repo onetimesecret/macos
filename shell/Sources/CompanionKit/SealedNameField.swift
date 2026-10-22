@@ -54,7 +54,7 @@ struct ChipRename {
             refusal.say(Self.words(for: refused), in: model)
             return false
         }
-        // Past the rule, the core refuses only an object no longer there.
+        // Past the rule, the core refuses only an object gone or past its page's deadline.
         model.setChipName(name, chip: chip, sheet: sheet)
         shut(in: model)
         return true

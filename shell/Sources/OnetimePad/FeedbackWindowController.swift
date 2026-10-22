@@ -100,14 +100,12 @@ final class FeedbackDraft: ObservableObject {
 final class FeedbackWindowController: NSObject {
     private(set) var window: NSWindow?
     private var draft: FeedbackDraft?
-    private let levelFollower: CompanionLevelFollower
     private let serverURL: () -> String
     private let makeReport: () -> DiagnosticsReport
 
     init(model: BackdropModel, makeReport: @escaping () -> DiagnosticsReport) {
         serverURL = { [weak model] in model?.pages.connection?.serverUrl ?? "https://eu.onetimesecret.com" }
         self.makeReport = makeReport
-        levelFollower = CompanionLevelFollower(model: model)
         super.init()
     }
 
@@ -140,7 +138,6 @@ final class FeedbackWindowController: NSObject {
             self.window = window
         }
         draft?.prepareForPresentation()
-        if let window { levelFollower.follow(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

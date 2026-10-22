@@ -34,6 +34,10 @@ My wording also overstated “very large”: a mixed update involving roughly 1,
 
 Tracked as [#283](https://github.com/onetimesecret/macos/issues/283) (2026-10-21).
 
+2026-10-21: addendum (additive; the entry above remains the record of the day)
+
+The fallback position is fixed in app 0.40.3, [#283](https://github.com/onetimesecret/macos/issues/283). When the bounded search gives up on a mixed update, the reading anchor now keeps the reader's share of the rewritten stretch instead of going to its start: an anchor halfway into the old stretch goes halfway into the new one. An anchor in the unchanged text before or after the stretch still maps exactly, and a stretch deleted to nothing sends the anchor to the point where it stood. The search's bound is unchanged. The share is a proportion, not a match, so the view stays near where the reader was rather than on the same sentence.
+
 
 ---
 

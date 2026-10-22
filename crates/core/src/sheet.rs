@@ -214,7 +214,7 @@ pub const NAME_CAP: usize = 64;
 /// Why a sealed name was refused. A refusal leaves the name as it was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameRefusal {
-    /// No such chip.
+    /// No such chip, or one on a page past its deadline (Law 0001, expiry row).
     UnknownChip,
     /// Longer than [`NAME_CAP`] once trimmed.
     TooLong,

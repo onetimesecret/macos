@@ -391,6 +391,16 @@ impl<C: Clock> SheetStore<C> {
         self.readable_sheets().find(|s| s.id == id)
     }
 
+    /// [`SheetStore::readable_sheets`], mutably, as [`SheetStore::chip_mut`]
+    /// reads them (Law 0001, expiry row).
+    fn readable_sheets_mut(&mut self) -> impl Iterator<Item = &mut Sheet> {
+        let now = self.clock.now();
+        self.tabs
+            .iter_mut()
+            .filter_map(|tab| tab.page.as_mut())
+            .filter(move |sheet| !sheet.is_due(now))
+    }
+
     /// Whether a page's clock has run out though no sweep has taken it yet.
     /// False for an unknown page.
     #[must_use]
@@ -1288,10 +1298,10 @@ impl<C: Clock> SheetStore<C> {
             .find_map(|s| s.chip(id).map(|c| (s.id, c)))
     }
 
+    /// An attached object, mutably, refused past its page's deadline as
+    /// [`SheetStore::chip_home`] refuses (Law 0001, expiry row).
     fn chip_mut(&mut self, id: ChipId) -> Option<&mut SealedChip> {
-        self.tabs
-            .iter_mut()
-            .filter_map(|tab| tab.page.as_mut())
+        self.readable_sheets_mut()
             .find_map(|sheet| sheet.chips.iter_mut().find(|chip| chip.id == id))
     }
 
@@ -1299,7 +1309,8 @@ impl<C: Clock> SheetStore<C> {
     /// the name. A refusal changes nothing, and no outcome is recorded.
     ///
     /// # Errors
-    /// [`NameRefusal::UnknownChip`], or the rule's own refusal.
+    /// [`NameRefusal::UnknownChip`] for an unknown chip or a page past its
+    /// deadline (Law 0001, expiry row), or the rule's own refusal.
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
         let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
         chip.name = judge_name(draft)?.map(|name| Zeroizing::new(name.to_owned()));
@@ -1325,6 +1336,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// Apply a batch to a sealed object's note, whole or not at all; the first
     /// accepted batch makes the note. The page and the ledger are not touched.
+    /// False for an unknown chip or a page past its deadline (Law 0001, expiry row).
     pub fn apply_note_ops(
         &mut self,
         id: ChipId,
@@ -1351,16 +1363,16 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// End the note's typing run without adding a step. False only for an
-    /// unknown chip.
+    /// unknown chip or a page past its deadline (Law 0001, expiry row).
     pub fn finish_note_editing_group(
         &mut self,
         id: ChipId,
         selection: Option<TextSelection>,
     ) -> bool {
-        if self.chip_home(id).is_none() {
+        let Some(chip) = self.chip_mut(id) else {
             return false;
-        }
-        if let Some(note) = self.chip_mut(id).and_then(|chip| chip.note.as_mut()) {
+        };
+        if let Some(note) = chip.note.as_mut() {
             note.finish_editing_group(selection);
         }
         true
@@ -1389,12 +1401,12 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Take back the note's last step; the page's stack is not touched.
-    /// `None` for an unknown chip.
+    /// `None` for an unknown chip or a page past its deadline (Law 0001, expiry row).
     pub fn undo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
         self.step_note(id, true)
     }
 
-    /// Put back the step [`SheetStore::undo_note`] took.
+    /// Put back the step [`SheetStore::undo_note`] took, on the same terms.
     pub fn redo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
         self.step_note(id, false)
     }
@@ -2648,6 +2660,24 @@ mod tests {
         clock.advance(Duration::from_secs(1));
         assert!(store.readable_sheets().next().is_none());
         assert!(store.copy_out_chip(chip).is_none());
+        assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
+    fn the_write_gate_and_the_sweep_agree_on_the_deadline() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "hunter2");
+        clock.advance(8 * HOUR - Duration::from_secs(1));
+        assert!(store.apply_note_ops(chip, &typed(0, "a"), EditIntent::Typing, None));
+        assert!(store.set_chip_name(chip, "TOKEN").is_ok());
+        assert!(store.expire_due().is_empty());
+        clock.advance(Duration::from_secs(1));
+        assert!(!store.apply_note_ops(chip, &typed(1, "b"), EditIntent::Typing, None));
+        assert_eq!(
+            store.set_chip_name(chip, "OTHER"),
+            Err(NameRefusal::UnknownChip)
+        );
         assert_eq!(store.expire_due(), vec![id]);
     }
 
