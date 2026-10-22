@@ -119,7 +119,9 @@ draws only a typed name (D-46 amends the gutter paragraph).
   the tooltip carries the same facts without a second surface.
   *Amended 2026-10-21 (issue #277):* a wheel over a rail whose rows
   outrun its column scrolls the rail, as it does over any sidebar; over
-  a rail that fits its column it scrolls the roll as before.
+  a rail that fits its column it scrolls the roll as before, so on a
+  borderline rail the gauge reserve a selection adds to its row can
+  change what the wheel scrolls between two clicks.
 - **D-39 (fixed)** The plus sits on the PAD heading, in ember text, and
   not on today's node. A page is minted with the clock's reading of
   now whatever the rail is showing, and a plus beside a day would
