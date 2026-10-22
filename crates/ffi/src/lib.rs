@@ -1420,8 +1420,8 @@ pub unsafe extern "C" fn companion_chip_note_apply_ops_with_intent(
 }
 
 /// End the note's typing run without an undo item; `u32::MAX` twice for no
-/// selection. False for an unknown chip, a page past its deadline or a
-/// half-given selection.
+/// selection. False for an unknown chip, a page past its deadline (Law 0001,
+/// expiry row) or a half-given selection.
 ///
 /// # Safety
 /// `handle` must be a valid handle.

@@ -1460,7 +1460,8 @@ public class CompanionClient: @unchecked Sendable {
         }
     }
 
-    /// End the note's coalescing run without creating an undo item.
+    /// End the note's coalescing run without creating an undo item; false for
+    /// an unknown chip or a page past its deadline (Law 0001, expiry row).
     @discardableResult
     public func finishNoteEditingGroup(chip: UInt64, selection: NSRange? = nil) -> Bool {
         guard let wire = selectionWire(selection) else { return false }
@@ -1473,7 +1474,7 @@ public class CompanionClient: @unchecked Sendable {
         decodeOwnedJSON(StepOutcome.self, from: companion_chip_note_undo(handle, chip))
     }
 
-    /// Put back the step `undoNote(chip:)` took.
+    /// Put back the step `undoNote(chip:)` took, on the same terms.
     public func redoNote(chip: UInt64) -> StepOutcome? {
         decodeOwnedJSON(StepOutcome.self, from: companion_chip_note_redo(handle, chip))
     }
