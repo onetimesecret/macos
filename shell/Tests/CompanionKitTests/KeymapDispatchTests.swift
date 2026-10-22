@@ -119,6 +119,20 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, 1)
     }
 
+    /// With the ledger up, the surface's ⌘W hides the ledger and closes no
+    /// page, which is what the File menu's Close Ledger row names.
+    func testOnTheLedgerTheSurfaceChordClosesTheLedgerAndNoPage() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        model.showLedger()
+
+        model.closeWhatIsShowing(.surface) { XCTFail("no window closes on the surface") }
+
+        XCTAssertFalse(model.showingLedger)
+        XCTAssertEqual(model.tabs.count, 2)
+    }
+
     /// A sheet, a save panel or an alert with the keys, or no key window:
     /// the chord closes neither a page nor a window.
     func testWithNothingToCloseTheChordDoesNothing() throws {

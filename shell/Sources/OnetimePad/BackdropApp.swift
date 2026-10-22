@@ -196,8 +196,6 @@ private struct FileMenuItems: View {
             .keyboardShortcut(saveAsShortcut)
             .disabled(!onAFile)
         Divider()
-        // One item, so the NSMenuItem and its ⌘W equivalent stay put
-        // while the title and enablement follow the key window.
         Button(closeItem.title) {
             pages.closeWhatIsShowing(keyWindow.closeTarget, closeKeyWindow: closeKeyWindow)
         }
@@ -208,21 +206,25 @@ private struct FileMenuItems: View {
     private var closeItem: CloseMenuItem {
         CloseMenuItem.resolve(
             target: keyWindow.closeTarget, showing: pages.activeTarget,
-            keyWindowCanClose: keyWindow.canClose)
+            ledgerShowing: pages.showingLedger, keyWindowCanClose: keyWindow.canClose)
     }
 }
 
 /// The File menu's ⌘W item (issue #201), one row per `CloseChordTarget`.
+/// On the surface the rows follow `perform(.pageClose)`: a file first, then the ledger.
 enum CloseMenuItem: Equatable {
     case closeFile
+    case closeLedger
     case closePage(enabled: Bool)
     case closeWindow(enabled: Bool)
 
     static func resolve(
-        target: CloseChordTarget, showing: SurfaceTarget, keyWindowCanClose: Bool
+        target: CloseChordTarget, showing: SurfaceTarget, ledgerShowing: Bool,
+        keyWindowCanClose: Bool
     ) -> CloseMenuItem {
         switch (target, showing) {
         case (.surface, .file): return .closeFile
+        case (.surface, _) where ledgerShowing: return .closeLedger
         case (.surface, .tab): return .closePage(enabled: true)
         case (.surface, .today): return .closePage(enabled: false)
         case (.companionWindow, _): return .closeWindow(enabled: keyWindowCanClose)
@@ -233,6 +235,7 @@ enum CloseMenuItem: Equatable {
     var title: String {
         switch self {
         case .closeFile: return "Close File"
+        case .closeLedger: return "Close Ledger"
         case .closePage: return "Close Page"
         case .closeWindow: return "Close Window"
         }
@@ -240,7 +243,7 @@ enum CloseMenuItem: Equatable {
 
     var isEnabled: Bool {
         switch self {
-        case .closeFile: return true
+        case .closeFile, .closeLedger: return true
         case .closePage(let enabled), .closeWindow(let enabled): return enabled
         }
     }
