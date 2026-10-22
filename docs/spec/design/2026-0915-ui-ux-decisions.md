@@ -725,6 +725,13 @@ blocked while they stand (status lines stay 12 × 4).
   encoded with the file or its draft.
   *Acceptance:* a render-mode change leaves the bytes identical; the
   suggestion banner never edits text storage.
+  *Amendment proposed 2026-10-21, not ratified:* the decision reads
+  “Two "saved" words never show at once: a file's word replaces the
+  session's.” The header's drafts not kept shows on a file surface
+  beside the file's unsaved while that file's edits are held in memory,
+  because the drafts file would not open, on the reading that it is not
+  a saved word (issue #296, PR 304). The build behaves so from app
+  0.40.9.
 - **D-19 (fixed)** No save sheet on quit; the draft's age in the header
   is what the app owes instead, so a person can judge how old the typing
   is before pressing the save chord. The build's Quit Anyway / Cancel
@@ -737,10 +744,17 @@ blocked while they stand (status lines stay 12 × 4).
   a standing line names the loss with a "quit anyway (⌘Q)" button, the
   inline confirmation D-14 allows; the second ⌘Q, or the button, quits.
   Quit is never inert.
-  *Amendment proposed 2026-10-21, not ratified:* a second ⌘Q over file
-  edits the standing line did not name when it went up cancels again
-  and names them, and the ⌘Q after that quits; the button quits at
-  once (issue #296, PR 304). The build behaves so from app 0.40.9.
+  *Amendment proposed 2026-10-21, not ratified:* this departs from the
+  acceptance above (issue #296, PR 304). It reads “quitting with dirty
+  files asks nothing. A refused or unsavable state flush is the one
+  case quit does not simply proceed”; with the drafts licence withheld
+  because the drafts file would not open, quitting with dirty files
+  asks, since their edits are in memory only, and that is a second case
+  where quit does not simply proceed. And when a second ⌘Q's flush, or
+  the button's, comes to a different outcome than the standing line
+  names, a refusal superseding the drafts line for one, the line is
+  restated with the new outcome and the quit cancelled, so no quit goes
+  over a loss no line named. The build behaves so from app 0.40.9.
 
 ## 7 · The sync surface
 

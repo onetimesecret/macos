@@ -184,6 +184,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         self.titleBarDoubleClickPreference = titleBarDoubleClickPreference
         self.operatingSystemMajor = operatingSystemMajor
         geometry = BackdropGeometry.load(from: defaults)
+        doubleClickTrip = Self.loadTrip(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
         // Default on when the key is absent (a fresh install): the ADR
@@ -256,7 +257,9 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     /// The cancelled quit's standing line, held by the shared model
     /// because the surface that shows it is the shared one.
-    var quitAnywayOffered: Bool { pages.quitAnywayOffered }
+    func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool {
+        pages.quitAnywayAnswers(outcome)
+    }
 
     func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         pages.offerQuitAnyway(after: outcome)
@@ -860,17 +863,23 @@ final class BackdropModel: ObservableObject, QuitFlushable {
                 origin: pane.origin, width: pane.size.width, height: pane.size.height))
     }
 
-    /// Out to `target`, or back to the geometry an earlier trip left. A card
-    /// already at the target arms no trip, so the next double-click acts.
+    /// Back to the trip's restore while the card is out at `target`; out again, keeping
+    /// the restore, while it sits where a trip left it on a pane that moved; else out afresh.
     private func toggle(to target: BackdropGeometry) {
-        if let restored = doubleClickRestore {
-            doubleClickRestore = nil
-            applyGeometry(restored.clamped(to: pane))
+        let out = target.clamped(to: pane)
+        if let trip = doubleClickTrip, geometry == out {
+            doubleClickTrip = nil
+            applyGeometry(trip.restore.clamped(to: pane))
             return
         }
-        let out = target.clamped(to: pane)
+        if let trip = doubleClickTrip, geometry == trip.out {
+            doubleClickTrip = DoubleClickTrip(restore: trip.restore, out: out)
+            applyGeometry(out)
+            return
+        }
+        doubleClickTrip = nil
         guard out != geometry else { return }
-        doubleClickRestore = geometry
+        doubleClickTrip = DoubleClickTrip(restore: geometry, out: out)
         applyGeometry(out)
     }
 
@@ -914,22 +923,46 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         }
     }
 
-    /// The geometry a zoom or fill keeps for its return trip, while the card is out.
-    private var doubleClickRestore: BackdropGeometry?
+    /// A zoom or fill under way: where the card went out to, and where it returns.
+    struct DoubleClickTrip: Codable, Equatable {
+        var restore: BackdropGeometry
+        var out: BackdropGeometry
+    }
+
+    /// The defaults key the trip is kept under, beside the geometry's.
+    static let doubleClickTripKey = "backdrop.doubleClickTrip"
+
+    /// The trip under way, kept beside the geometry so a relaunch can still return,
+    /// as AppKit keeps a zoomed window's user state.
+    private var doubleClickTrip: DoubleClickTrip? {
+        didSet { Self.saveTrip(doubleClickTrip, to: defaults) }
+    }
+
+    static func loadTrip(from defaults: UserDefaults) -> DoubleClickTrip? {
+        guard let data = defaults.data(forKey: doubleClickTripKey) else { return nil }
+        return try? JSONDecoder().decode(DoubleClickTrip.self, from: data)
+    }
+
+    static func saveTrip(_ trip: DoubleClickTrip?, to defaults: UserDefaults) {
+        guard let trip, let data = try? JSONEncoder().encode(trip) else {
+            defaults.removeObject(forKey: doubleClickTripKey)
+            return
+        }
+        defaults.set(data, forKey: doubleClickTripKey)
+    }
 
     /// Persist and publish, but only a real change: the screen
     /// observer can fire in bursts, and an unchanged geometry should
-    /// cost neither a repaint nor a defaults write. A geometry the user
-    /// moved themselves ends the double-click's return trip.
+    /// cost neither a repaint nor a defaults write.
     private func applyGeometry(_ new: BackdropGeometry) {
         guard new != geometry else { return }
         geometry = new
         new.save(to: defaults)
     }
 
-    /// A drag or resize by hand retires the zoom or fill: the card is where the
-    /// user just put it, and a later double-click starts from there.
+    /// A drag or resize by hand retires the zoom or fill. `toggle(to:)` would find the
+    /// trip over anyway, the card no longer being where it left it.
     func endDoubleClickTrip() {
-        doubleClickRestore = nil
+        doubleClickTrip = nil
     }
 }

@@ -274,11 +274,13 @@ final class BackdropModelTests: XCTestCase {
         makeModel(named: name, reading: { preference })
     }
 
-    /// The same, with the seam asked again at each double-click.
+    /// The same, with the seam asked again at each double-click, over `shared` defaults
+    /// when a test stands a second model where the first left off.
     private func makeModel(
-        named name: String, reading preference: @escaping () -> String?
+        named name: String, reading preference: @escaping () -> String?,
+        over shared: UserDefaults? = nil
     ) -> BackdropModel {
-        let defaults = makeDefaults(named: name)
+        let defaults = shared ?? makeDefaults(named: name)
         let model = BackdropModel(
             defaults: defaults,
             pages: ephemeralPages(defaults: defaults, tag: name),
@@ -354,6 +356,44 @@ final class BackdropModelTests: XCTestCase {
         model.headerDoubleClicked()
         XCTAssertEqual(model.geometry.width, 1680, "the next double-click fills, not returns")
         XCTAssertEqual(model.geometry.height, 1000)
+    }
+
+    func testAResetDuringATripLetsTheNextDoubleClickFill() {
+        let model = makeModel(named: "double-click-reset", preference: "Fill")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1440)
+        model.resetGeometry()
+        let reset = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1440, "out, not back to the place before the fill")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, reset, "the return is to where the reset left the card")
+    }
+
+    func testAReclampDuringATripLetsTheNextDoubleClickGoOutAgain() {
+        let model = makeModel(named: "double-click-reclamp", preference: "Fill")
+        let before = model.geometry
+        model.headerDoubleClicked()
+        model.reclamp(pane: CGRect(x: 0, y: 25, width: 1680, height: 1000))
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1680, "out again, on the new pane")
+        XCTAssertEqual(model.geometry.height, 1000)
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, before, "the way back survived the reclamp")
+    }
+
+    func testAFilledCardReturnsAfterARelaunch() {
+        let defaults = makeDefaults(named: "double-click-relaunch")
+        let first = makeModel(named: "double-click-relaunch", reading: { "Fill" }, over: defaults)
+        let before = first.geometry
+        first.headerDoubleClicked()
+        XCTAssertEqual(first.geometry.width, 1440)
+
+        let relaunched = makeModel(
+            named: "double-click-relaunch-2", reading: { "Fill" }, over: defaults)
+        XCTAssertEqual(relaunched.geometry.width, 1440, "the fill was persisted")
+        relaunched.headerDoubleClicked()
+        XCTAssertEqual(relaunched.geometry, before, "and so was the way back")
     }
 
     func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {

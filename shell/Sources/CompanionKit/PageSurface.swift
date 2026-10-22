@@ -221,30 +221,15 @@ public struct PageStatusStack: View {
         _sync = ObservedObject(wrappedValue: model.sync)
     }
 
-    /// What the discard button says it will do.
-    ///
-    /// Out of the body because it is a sentence rather than a view,
-    /// and because the drafts clause makes it long enough that the
-    /// type checker stops enjoying it inline. The discard drops the
-    /// sealed content file, and the drafts are sealed under the same
-    /// key, so it takes any unsaved file edits with it. Named by
-    /// filename rather than warned about in general (decisions.md
-    /// item 14).
+    /// What the discard button says it will do, as a pure function of the drafts refusal.
     private var discardHelp: String {
-        let base = "Deletes the sealed file this session could not read and starts "
-            + "saving this session's pages in its place. The unreadable file "
-            + "cannot be recovered afterwards."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+        PageModel.stateDiscardHelp(draftsRefused: model.draftsRestoreRefused)
     }
 
-    /// What the quit anyway button says it will do: the loss named by
-    /// filename where a dirty file is open, for the same reason as
-    /// `discardHelp`.
+    /// What the quit anyway button says it will do: the loss the line beside it names.
     private func quitAnywayHelp(_ refusal: QuitSaveOutcome) -> String {
-        PageModel.quitAnywayHelp(refusal, files: model.openFiles)
+        PageModel.quitAnywayHelp(
+            refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
     }
 
     public var body: some View {
@@ -272,8 +257,8 @@ public struct PageStatusStack: View {
             .padding(.vertical, 4)
         }
         if model.draftsRestoreRefused {
-            // The drafts counterpart of the content banner (issue #296), standing
-            // for as long as the drafts leg settles without writing.
+            // As quiet as the ledger line; the header word comes only with a file's edits
+            // in memory (issue #296). It stands because it is the one route to the discard.
             HStack(spacing: 8) {
                 Text("the existing drafts file could not be read, so unsaved edits to open files are not kept as drafts")
                     .font(.system(.caption, design: .monospaced))
@@ -303,16 +288,10 @@ public struct PageStatusStack: View {
         }
         if let refusal = model.quitRefusal,
             let sentence = PageModel.quitRefusalSentence(
-                refusal, files: model.openFiles, draftsUnwritten: model.draftsDirty)
+                refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
         {
-            // The quit the terminate path cancelled (issue 172, D-14 and
-            // D-19). Standing rather than a notice, because the condition
-            // it names is; ember because the one thing to do about it is
-            // a decision. The button and a second ⌘Q are the same answer
-            // (`QuitPrompt.terminateReply`), so ⌘Q is never inert: the
-            // first press says what the quit costs and the second pays
-            // it. The recovery line above, when it stands, is the other
-            // way out.
+            // The quit the terminate path cancelled (issue 172, D-14, D-19), standing and ember.
+            // The button and ⌘Q answer it alike; a flush whose outcome changed restates it.
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))

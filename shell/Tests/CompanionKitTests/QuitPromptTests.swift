@@ -19,7 +19,7 @@ private final class FlushSpy: QuitFlushable {
         return outcome
     }
 
-    var quitAnywayOffered: Bool { offered != nil }
+    func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool { offered == outcome }
 
     func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         offered = outcome
@@ -123,56 +123,51 @@ final class QuitPromptTests: XCTestCase {
         XCTAssertEqual(
             PageModel.quitRefusalSentence(.unsavableWithDrafts, files: [dirty], draftsUnwritten: true),
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
-        // A file saved since the cancel still leaves a line under the cancelled quit.
+        // A file saved since the cancel retires the drafts line: nothing is held.
+        XCTAssertNil(PageModel.quitOfferAfterFiles(offer: .unsavableWithDrafts, draftsHeld: false))
+        XCTAssertEqual(
+            PageModel.quitOfferAfterFiles(offer: .unsavableWithDrafts, draftsHeld: true),
+            .unsavableWithDrafts)
+        XCTAssertEqual(
+            PageModel.quitOfferAfterFiles(offer: .unsavableWithContent, draftsHeld: false),
+            .unsavableWithContent, "the content arm's condition is not the files'")
         XCTAssertEqual(
             PageModel.quitRefusalSentence(.unsavableWithDrafts),
-            "the drafts file would not open and was not written over, so unsaved changes to open files will not survive the quit")
+            "the drafts file would not open and was not written over, so unsaved changes to open files will not survive the quit",
+            "the sentence is never empty")
         XCTAssertNil(PageModel.quitOfferAfterDraftsClear(offer: .unsavableWithDrafts))
         XCTAssertEqual(PageModel.quitOfferAfterDraftsClear(offer: .refused), .refused)
     }
 
-    func testTheQuitAnywayHelpNamesNoPagesOnTheDraftsArm() {
+    func testTheQuitAnywayHelpNamesTheLossItsLineNames() {
         let dirty = FileSummary(
             id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
             isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
             lastEditedAt: 0, restoredFromDraft: false)
         XCTAssertEqual(
-            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [dirty]),
+            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [dirty], draftsUnwritten: true),
             "Quits now. Unsaved changes to a.txt are lost.")
-        XCTAssertEqual(PageModel.quitAnywayHelp(.unsavableWithDrafts, files: []), "Quits now.")
         XCTAssertEqual(
-            PageModel.quitAnywayHelp(.refused, files: []),
-            "Quits now. The pages this session could not save are lost.")
+            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [], draftsUnwritten: true),
+            "Quits now.")
         XCTAssertEqual(
-            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty]),
-            "Quits now. The pages this session could not save are lost. Unsaved changes to a.txt go with it.")
+            PageModel.quitAnywayHelp(.refused, files: [], draftsUnwritten: false),
+            "Quits now. This session's pages are lost.")
+        // The drafts are on disk, so the line names the pages alone, and so does its button.
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty], draftsUnwritten: false),
+            "Quits now. This session's pages are lost.")
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty], draftsUnwritten: true),
+            "Quits now. This session's pages and the unsaved changes to a.txt are lost.")
     }
 
-    func testTheOfferAnswersAQuitOnlyOverTheFilesItNamed() {
-        let a = CompanionClient.fileIDTag | 1
-        let b = CompanionClient.fileIDTag | 2
-        XCTAssertTrue(PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a], atRisk: [a]))
-        XCTAssertTrue(
-            PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a, b], atRisk: [a]),
-            "fewer files at risk than named")
-        XCTAssertFalse(PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a], atRisk: [a, b]))
-        XCTAssertFalse(PageModel.quitAnswersOffer(offer: .refused, named: [], atRisk: [b]))
-        XCTAssertTrue(PageModel.quitAnswersOffer(offer: .unsavableWithContent, named: [], atRisk: []))
-        XCTAssertFalse(PageModel.quitAnswersOffer(offer: nil, named: [a], atRisk: []))
-    }
-
-    func testFilesAreAtRiskOnlyWhenTheirDraftsAreUnwritten() {
-        let dirty = FileSummary(
-            id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
-            isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
-            lastEditedAt: 0, restoredFromDraft: false)
-        let clean = FileSummary(
-            id: CompanionClient.fileIDTag | 2, name: "b.txt", path: "/tmp/b.txt",
-            isDirty: false, conflict: .none, lineEnding: .lf, hasBOM: false,
-            lastEditedAt: 0, restoredFromDraft: false)
-        XCTAssertEqual(
-            PageModel.filesAtRiskAtQuit(files: [dirty, clean], draftsUnwritten: true), [dirty.id])
-        XCTAssertEqual(PageModel.filesAtRiskAtQuit(files: [dirty, clean], draftsUnwritten: false), [])
+    func testAChangedOutcomeRestatesTheLineAndTheNextRequestQuits() {
+        // A refusal supersedes a drafts line: the line names it before any quit does.
+        let model = FlushSpy(.refused, offered: .unsavableWithDrafts)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.offered, .refused)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 
     func testARefusalsOfferComesDownOnASettledWriteOnly() {
@@ -200,10 +195,11 @@ final class QuitPromptTests: XCTestCase {
 
         model.offerQuitAnyway(after: .settled)
         XCTAssertNil(model.quitRefusal)
-        XCTAssertFalse(model.quitAnywayOffered)
+        XCTAssertFalse(model.quitAnywayAnswers(.settled))
 
         model.offerQuitAnyway(after: .unsavableWithContent)
         XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
-        XCTAssertTrue(model.quitAnywayOffered)
+        XCTAssertTrue(model.quitAnywayAnswers(.unsavableWithContent))
+        XCTAssertFalse(model.quitAnywayAnswers(.refused), "a changed outcome is not answered")
     }
 }

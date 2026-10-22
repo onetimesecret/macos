@@ -251,6 +251,19 @@ final class HeaderLayoutTests: XCTestCase {
         }
     }
 
+    /// The title bar double-click reaches the leading mirror and the identity, and not
+    /// the cluster's controls, so a quick double-click on the pin works only the pin.
+    func testADoubleClickReachesTheTitleBarOnlyOffTheControls() {
+        let card: CGFloat = 600
+        func reaches(_ x: CGFloat) -> Bool {
+            HeaderLayout.doubleClickReachesTitleBar(x: x, cardWidth: card, indicatorWidth: indicators)
+        }
+        XCTAssertTrue(reaches(10), "the leading mirror")
+        XCTAssertTrue(reaches(card / 2), "the identity")
+        XCTAssertFalse(reaches(card - indicators / 2), "a control in the cluster")
+        XCTAssertFalse(reaches(card - indicators - HeaderLayout.gutter / 2), "the gutter before it")
+    }
+
     func testANarrowCardStarvesTheIdentityRatherThanOverlapping() {
         // Narrower than the cluster and its mirror together: the
         // identity gets nothing, which is the right thing to lose.

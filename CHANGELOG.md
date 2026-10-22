@@ -1036,8 +1036,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   since a panel cannot miniaturise. With the setting unset the card
   reads Fill from macOS 15 and Zoom before, a reading still to be
   checked on hardware. A second double-click returns the card either
-  way, a drag or resize by hand still ends the return trip, and a
-  double-click on a card already at its target starts no trip.
+  way, and the way back is kept across a relaunch; a card moved or
+  reset since then goes out again instead, one whose screen grew goes
+  out to the new screen keeping the way back, and a double-click on a
+  card already at its target starts no trip.
+  A double-click on the header's controls works only that control.
 
 - **The drafts file is read before it is written** (app 0.40.9; issue
   #296). The model writes the drafts file only once its restore has
@@ -1046,16 +1049,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file writes the edits made before it at once. An existing drafts
   file that would not open is left alone for the session, as the state
   file already is: the save settles rather than fails, the unsaved file
-  edits stay in memory, the sudden termination hold stays so a logout
-  asks first, and one line in the log says why. A standing line says
-  so in the surface, ahead of any saved word, with one action, Discard
-  It and Keep Drafts, which drops the unreadable file and writes this
-  session's drafts from there; the discard of an unreadable state file
-  gives the drafts write back too, and rewrites the drafts from memory
-  when its erase refused. A quit with unsaved edits to a file while
-  the line stands asks rather than settling, naming the files. A
-  second ⌘Q quits anyway, unless edits the line did not name have
-  appeared since, which the line then names.
+  edits stay in memory, the sudden termination hold stays until those
+  edits are saved, so a logout asks first, and one line in the log
+  says why. A standing line under the page says so, as quiet as the
+  ledger's, and the header reads drafts not kept, on the file's own
+  surface too, only while a file's edits are held in memory. The line
+  has one action, Discard It and Keep Drafts, which drops the
+  unreadable file and writes this session's drafts from there; the
+  discard of an unreadable state file gives the drafts write back too,
+  says in its help that it takes the drafts file, and rewrites the
+  drafts from memory whatever its erase answers. A quit with unsaved
+  edits to a file while the line stands asks rather than settling,
+  naming the files; that line retires once no file's edits are held. A
+  second ⌘Q, or Quit Anyway, quits over what the line shows, unless its
+  flush comes to a different outcome, which the line then names.
 - **A restored or pasted note that nobody edits is wiped when it goes**
   (`companion-core` 0.34.2; issue #256, the content buffer register's
   C11 and C31). A note brought back by a relaunch, a paste or a clone
@@ -1157,7 +1164,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is done with it even when the send unwinds. Each claim is numbered,
   so a round whose ceremony was replaced under its send leaves the
   replacement's queue alone.
-
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or

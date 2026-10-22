@@ -402,9 +402,9 @@ line under the page says so, with one action that deletes the
 unreadable file and keeps this session's drafts from there; the discard
 of an unreadable state file does the same. A quit with unsaved changes
 to an open file while the line stands is an unsavable flush, as Quit
-with unsaved changes describes. A second ⌘Q over changes the line did
-not name when it went up cancels again and names them; the next one
-quits.
+with unsaved changes describes. A second ⌘Q, or the Quit Anyway
+button, quits over what the line shows; a flush that comes to a
+different outcome restates the line with it instead.
 
 ## Closing a tab
 

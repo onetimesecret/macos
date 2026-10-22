@@ -1328,6 +1328,9 @@ public final class PageModel: ObservableObject {
     /// Where a link the person opens goes: the shared workspace, or a test's recorder.
     private let openURL: @MainActor (URL) -> Void
 
+    /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
+    private let requestTermination: @MainActor () -> Void
+
     /// Opens a link outside the app through the seam above, for the editor's
     /// links and the Help menu alike (issue #294).
     public func openExternal(_ url: URL) {
@@ -1387,6 +1390,9 @@ public final class PageModel: ObservableObject {
         /// Where a link the person opens goes: a recorder of the test's own, so
         /// a suite never starts a browser; nil is the shared workspace's.
         let openURL: (@MainActor (URL) -> Void)?
+        /// Where Quit Anyway asks for termination: a recorder of the test's own, so
+        /// a suite never terminates its runner; nil is `NSApp`'s.
+        let requestTermination: (@MainActor () -> Void)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1403,7 +1409,8 @@ public final class PageModel: ObservableObject {
             ambientPasteboard: NSPasteboard? = nil,
             writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
             wakeNotifications: NotificationCenter? = nil,
-            openURL: (@MainActor (URL) -> Void)? = nil
+            openURL: (@MainActor (URL) -> Void)? = nil,
+            requestTermination: (@MainActor () -> Void)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1418,6 +1425,7 @@ public final class PageModel: ObservableObject {
             self.writeCutFragment = writeCutFragment
             self.wakeNotifications = wakeNotifications
             self.openURL = openURL
+            self.requestTermination = requestTermination
         }
     }
 
@@ -1501,6 +1509,7 @@ public final class PageModel: ObservableObject {
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
         openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
+        requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
@@ -1649,7 +1658,8 @@ public final class PageModel: ObservableObject {
     ///
     /// Readable so the cancelled quit's line can tell a drafts leg
     /// that failed from one that landed before another leg refused.
-    private(set) var draftsDirty = false
+    /// Published, so the header's drafts word redraws with it.
+    @Published private(set) var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -2063,6 +2073,17 @@ public final class PageModel: ObservableObject {
         // `saveState` keeps it while `draftsHeld` (issue #296).
         guard draftsLicence else {
             terminationLatch.acquire()
+            // No save settles a session that writes neither sealed file, so the mark does,
+            // against the core's roster: the published one trails an edit.
+            if !Self.writesEitherFile(
+                loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence)
+            {
+                terminationLatch.settle(saved: !draftsHeldInCore())
+            } else {
+                // A sealed file is written, so its save settles the hold; no saving word.
+                // Per-reason latch accounting would spare the write; out of scope for #296.
+                scheduleSave(after: saveDebounce)
+            }
             return
         }
         armDraftsWrite()
@@ -2175,7 +2196,10 @@ public final class PageModel: ObservableObject {
         )
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
-        guard licensed || (draftsDirty && draftsLicence) else { return true }
+        guard licensed || (draftsDirty && draftsLicence) else {
+            terminationLatch.settle(saved: !draftsHeldInCore())
+            return true
+        }
         // Both files rest in this directory, so one preparation covers
         // them: it is created if missing, and marked so Time Machine
         // leaves the ciphertext generations alone (`.noindex` in the
@@ -2281,10 +2305,7 @@ public final class PageModel: ObservableObject {
             scheduleSave(after: saveRetryDebounce, mode: .default)
         }
         // A file's edits that no drafts write may reach keep the hold until saved or discarded.
-        terminationLatch.settle(
-            saved: settled
-                && !Self.draftsHeld(
-                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+        terminationLatch.settle(saved: settled && !draftsHeldInCore())
         return settled
     }
 
@@ -2310,7 +2331,8 @@ public final class PageModel: ObservableObject {
         // and the dirtiness stays with the edits in memory (issue #296).
         guard draftsLicence else { return true }
         let path = FormFactor.draftsFileURL(in: directory).path
-        let wrote = openFiles.isEmpty
+        // The core's roster, which the published one trails: erase only with no file open there.
+        let wrote = client.fileRoster().isEmpty
             ? client.draftsErase(at: path)
             : client.draftsSave(to: path)
         if wrote {
@@ -2771,13 +2793,35 @@ public final class PageModel: ObservableObject {
         return .settled
     }
 
-    /// Whether a file's unsaved edits are in memory only: the drafts licence
-    /// withheld and a dirty file open (issue #296).
+    /// Whether a file's unsaved edits are in memory only: a loaded session, the
+    /// drafts licence withheld and a dirty file open (issue #296).
     public nonisolated static func draftsHeld(
-        draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
+        loaded: Bool, draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
     ) -> Bool {
-        !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
+        loaded && !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
+
+    /// `draftsHeld` for this session now, read by the header's drafts word.
+    public var draftsHeldInMemory: Bool {
+        Self.draftsHeld(
+            loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+            files: openFiles)
+    }
+
+    /// `draftsHeld` against the core's roster, which the published one trails by an
+    /// edit (issue #296). The roster is asked only when the licence leaves it open.
+    private func draftsHeldInCore() -> Bool {
+        guard stateLoaded, !draftsLicence, draftsDirty else { return false }
+        return Self.draftsHeld(
+            loaded: true, draftsLicence: false, draftsDirty: true, files: client.fileRoster())
+    }
+
+    /// The core roster the last quit flush read, until the published roster is restated.
+    private var quitRoster: [FileSummary]?
+
+    /// The files the cancelled quit's line reads: the quit's own snapshot while the
+    /// published roster trails it.
+    public var quitLineFiles: [FileSummary] { quitRoster ?? openFiles }
 
     /// The terminate path's flush: `saveState` plus the one question it
     /// cannot answer alone, whether a settled flush still left this
@@ -2786,6 +2830,10 @@ public final class PageModel: ObservableObject {
     /// write, everything recorded since the load is exactly what the
     /// quit loses, and the empty page launch itself mints is not.
     public func saveStateForQuit() -> QuitSaveOutcome {
+        // One core snapshot for the outcome, the offer and the line, with none of a
+        // roster restatement's side effects on a quit that may be cancelled.
+        let roster = client.fileRoster()
+        quitRoster = roster
         let settled = saveState()
         return Self.quitOutcome(
             settled: settled,
@@ -2793,34 +2841,15 @@ public final class PageModel: ObservableObject {
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad,
             draftsHeld: Self.draftsHeld(
-                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles
-            )
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: roster)
         )
     }
 
-    /// Whether a quit request now answers the standing line: it stands, and
-    /// no file's edits are at risk that the line did not name when it went up.
-    public var quitAnywayOffered: Bool {
-        Self.quitAnswersOffer(
-            offer: quitRefusal, named: quitRefusalNamed,
-            atRisk: Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty))
-    }
-
-    /// The files whose unsaved edits the cancelled quit named.
-    private var quitRefusalNamed: Set<UInt64> = []
-
-    /// The files a quit would lose edits to, as the standing line names them.
-    public nonisolated static func filesAtRiskAtQuit(
-        files: [FileSummary], draftsUnwritten: Bool
-    ) -> Set<UInt64> {
-        draftsUnwritten ? Set(files.filter(\.holdsUnsavedEdits).map(\.id)) : []
-    }
-
-    /// The second ask goes through only over the files the first one named.
-    public nonisolated static func quitAnswersOffer(
-        offer: QuitSaveOutcome?, named: Set<UInt64>, atRisk: Set<UInt64>
-    ) -> Bool {
-        offer != nil && atRisk.isSubset(of: named)
+    /// Whether a quit request whose flush came to `outcome` answers the standing
+    /// line: the line stands, and names that outcome. The line reads the live roster.
+    public func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool {
+        quitRefusal == outcome
     }
 
     /// The standing line's button, answered.
@@ -2834,21 +2863,16 @@ public final class PageModel: ObservableObject {
     /// other action on the status stack goes through the model, and the
     /// quit path is the one that can least afford a second route.
     ///
-    /// `NSApp` is read optionally because a filtered test run has no
-    /// application object, and a status action that traps the runner is
-    /// worse than one that does nothing there.
+    /// The request goes through the `requestTermination` seam, `NSApp` read optionally by default.
     public func requestQuitAnyway() {
-        // The button answers the line as it reads now, files included.
-        if let quitRefusal { offerQuitAnyway(after: quitRefusal) }
-        NSApp?.terminate(nil)
+        requestTermination()
     }
 
-    /// The cancelled quit's standing line goes up, naming the files at
-    /// risk now. A settled outcome is never recorded.
+    /// The cancelled quit's standing line goes up. A settled outcome is
+    /// never recorded: there is nothing to quit anyway from.
     public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         guard outcome != .settled else { return }
         quitRefusal = outcome
-        quitRefusalNamed = Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty)
     }
 
     /// Whether the offer survives a write. A refusal's offer stands
@@ -2908,15 +2932,21 @@ public final class PageModel: ObservableObject {
         offer == .unsavableWithDrafts ? nil : offer
     }
 
-    /// What the quit anyway button says it costs: the drafts arm names
-    /// the files alone, because its pages are on disk.
+    /// Whether the offer survives a change to the open files: the drafts
+    /// arm's line stands only while a file's edits are held in memory.
+    public nonisolated static func quitOfferAfterFiles(
+        offer: QuitSaveOutcome?, draftsHeld: Bool
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithDrafts && !draftsHeld ? nil : offer
+    }
+
+    /// What the quit anyway button says it costs, the loss its line names: the drafts
+    /// arm names the files alone, because its pages are on disk.
     public nonisolated static func quitAnywayHelp(
-        _ outcome: QuitSaveOutcome, files: [FileSummary]
+        _ outcome: QuitSaveOutcome, files: [FileSummary], draftsUnwritten: Bool
     ) -> String {
-        guard outcome == .unsavableWithDrafts else {
-            let base = "Quits now. The pages this session could not save are lost."
-            guard let atRisk = draftsAtRiskSentence(files: files) else { return base }
-            return base + " " + atRisk
+        if outcome != .unsavableWithDrafts {
+            return "Quits now. This session's \(lostAtQuit(files: files, draftsUnwritten: draftsUnwritten)) are lost."
         }
         let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
         guard !dirty.isEmpty else { return "Quits now." }
@@ -3647,8 +3677,12 @@ public final class PageModel: ObservableObject {
             return (old.path, new.path)
         })
         openFiles = files
-        // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
-        quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
+        quitRoster = nil
+        quitRefusal = Self.quitOfferAfterFiles(
+            offer: quitRefusal,
+            draftsHeld: Self.draftsHeld(
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: files))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
@@ -4996,6 +5030,20 @@ public final class PageModel: ObservableObject {
         return "Unsaved changes to \(englishList(dirty)) go with it."
     }
 
+    /// The state discard's help, naming the drafts file while its banner stands (issue #296).
+    /// No file's edits are at risk: the discard rewrites the drafts from memory.
+    public nonisolated static func stateDiscardHelp(draftsRefused: Bool) -> String {
+        var sentences = [
+            "Deletes the sealed file this session could not read and starts saving this "
+                + "session's pages in its place. The unreadable file cannot be recovered afterwards."
+        ]
+        if draftsRefused {
+            sentences.append(
+                "The drafts file this session could not read goes too, and this session's drafts take its place.")
+        }
+        return sentences.joined(separator: " ")
+    }
+
     /// A list a person reads out loud, which is the only reason this
     /// is not `joined(separator:)`.
     nonisolated static func englishList(_ items: [String]) -> String {
@@ -5238,9 +5286,9 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
-        // A refused erase may leave the drafts under halves it rotated away, so
-        // the write `markDirty` arms restates them from the roster in memory.
-        if !erased { draftsDirty = true }
+        // The erase may leave drafts under halves nobody has, refused or after a failed
+        // reseal, so the write `markDirty` arms restates them from the roster in memory.
+        draftsDirty = true
         if !draftsLicence { grantDraftsLicence() }
         contentRestoreRefused = false
         quitRefusal = Self.quitOfferAfterDraftsClear(
@@ -5258,6 +5306,10 @@ public final class PageModel: ObservableObject {
                 "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
             )
         }
+        // The write the grant arms drops or replaces the file whatever the erase answered.
+        draftsDirty = true
+        // Restated as the sibling discards restate theirs, dropping the last quit's snapshot.
+        refreshOpenFiles()
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
     }
