@@ -980,6 +980,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A large mixed rewrite of a day keeps the reader's share of it**
+  (app 0.40.3; issue #283). When a day the editor is not on changed by
+  a mixed edit too large for the reading anchor's bounded search, the
+  anchor went to the start of the changed stretch, often the top of the
+  page. It now keeps its share of that stretch, so the view stays near
+  where the reader was; an anchor in the unchanged head or tail still
+  maps exactly.
 - **The page under the editor takes a peer's edit** (app 0.40.2; issue
   #276). With sync on, another device's edit to the page being written
   on reached the core but not the editor, which kept the old text, and
