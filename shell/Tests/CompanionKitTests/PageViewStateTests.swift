@@ -1247,7 +1247,7 @@ final class PageViewStateTests: XCTestCase {
         for (index, expected) in [(7, 8), (8, 10)] {
             XCTAssertEqual(RollPlace.rebased(
                 index, throughEdit: longer.edited, changeInLength: longer.delta, length: longer.text.utf16.count,
-                text: longer.text, byProjection: false), expected, "index \(index) moved by 2")
+                text: longer.text, byProjection: false), expected, "index \(index) through a longer emoji replacement")
         }
         let restated = storageEdit(of: "abcdef") { $0.setAttributedString(NSAttributedString(string: "🧪🧪🧪")) }
         XCTAssertEqual(restated.edited, NSRange(location: 0, length: 6), "the storage reports the whole text")
