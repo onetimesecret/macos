@@ -1313,6 +1313,7 @@ final class FileDocumentTests: XCTestCase {
         let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
         model.loadStateIfNeeded()
         XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
         let other = try write("two\n", named: "b.txt", in: fixture)
         model.openFile(at: other)
         let id = try XCTUnwrap(model.openFiles.first?.id)
@@ -1329,10 +1330,68 @@ final class FileDocumentTests: XCTestCase {
         // The user's discard takes the unreadable files down, and the
         // drafts write is this session's to make from there.
         model.clearUnreadableStateFile()
+        XCTAssertFalse(model.draftsRestoreRefused)
         XCTAssertTrue(model.saveState())
         XCTAssertEqual(stranger.draftsWrites, 1)
         XCTAssertFalse(model.draftsDirty)
         XCTAssertNotEqual(try Data(contentsOf: draftsFile), sealedByOwner)
+    }
+
+    /// The drafts file alone would not open, beside a state file that
+    /// did. The refusal stands in the surface, a quit with a dirty file
+    /// asks rather than settling, and the one way back is the drafts
+    /// discard, after which the next save writes.
+    func testAnUnreadableDraftsFileBesideAReadableStateFileStandsUntilDiscarded() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        XCTAssertTrue(owner.saveState(), "the state file is sealed under the owner's key")
+        // Bytes that fail the core's envelope check, left where they are.
+        try Data("not a drafts file".utf8).write(to: draftsFile)
+
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused, "the state file opened")
+        XCTAssertTrue(model.draftsRestoreRefused, "the drafts file did not")
+        XCTAssertEqual(model.saveStateForQuit(), .settled, "nothing is at stake yet")
+
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+        XCTAssertNotEqual(model.saveStatus, .saving, "no write is waited for under a withheld licence")
+
+        XCTAssertEqual(model.saveStateForQuit(), .unsavableWithDrafts)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel, "the first ⌘Q asks")
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertEqual(client.draftsWrites, 0)
+        XCTAssertEqual(String(decoding: try Data(contentsOf: draftsFile), as: UTF8.self), "not a drafts file")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                try XCTUnwrap(model.quitRefusal), files: model.openFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
+
+        model.clearUnreadableDraftsFile()
+        XCTAssertFalse(model.draftsRestoreRefused)
+        XCTAssertEqual(client.draftsErasures, 1, "the unreadable file went by path")
+        XCTAssertEqual(model.saveStatus, .saving, "the discard arms the write the edits owe")
+        XCTAssertNil(model.quitRefusal, "the offer comes down with the discard")
+        XCTAssertEqual(model.saveStateForQuit(), .settled)
+        XCTAssertEqual(client.draftsWrites, 1, "the discard grants the write")
+        XCTAssertFalse(model.draftsDirty)
+        XCTAssertNotEqual(String(decoding: try Data(contentsOf: draftsFile), as: UTF8.self), "not a drafts file")
+
+        // The proof the write is real: a relaunch under the same key
+        // brings the draft back.
+        let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
+        relaunched.loadStateIfNeeded()
+        XCTAssertFalse(relaunched.draftsRestoreRefused)
+        let back = try XCTUnwrap(relaunched.openFiles.first?.id)
+        XCTAssertEqual(relaunched.storage(for: back).string, "well one\n")
     }
 
     /// The ordinary launch: the restore reads the file, and the next
