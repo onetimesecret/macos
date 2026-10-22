@@ -782,15 +782,17 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(ConcealView.destinationHelp, "the server this one-time link is created on")
         XCTAssertEqual(
             ConcealView.failureLabel("refused"), "Could not create the link: refused")
-        XCTAssertEqual(PageModel.linkFailedLine, "no reason was given")
+        XCTAssertEqual(PageModel.linkFailedLine, "the link was not created")
     }
 
-    /// With no reason from the core, VoiceOver reads the outcome once and the gap
-    /// after it, not the outcome twice (issue #295).
+    /// The fallback already says the link failed, so VoiceOver reads it without
+    /// the prefix; a named reason keeps it (issue #295).
     func testTheSpokenFallbackSaysTheOutcomeOnce() {
         XCTAssertEqual(
-            ConcealView.failureLabel(PageModel.linkFailedLine),
-            "Could not create the link: no reason was given")
+            ConcealView.failureLabel(PageModel.linkFailedLine), "the link was not created")
+        XCTAssertEqual(
+            ConcealView.failureLabel("there is nothing to send"),
+            "Could not create the link: there is nothing to send")
     }
 
     /// Options the client could not encode reach the sheet as the fallback, and

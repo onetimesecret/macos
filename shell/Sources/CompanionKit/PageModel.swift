@@ -6516,9 +6516,9 @@ public final class PageModel: ObservableObject {
     public static let linkCopiedLine =
         "the link is on the clipboard — paste it where it needs to go."
 
-    /// The error line when no reason comes back. It names the gap, since the
-    /// spoken label already says the link was not created (issue #295).
-    public static let linkFailedLine = "no reason was given"
+    /// The error line when no reason comes back; the sheet speaks it without
+    /// its failure prefix (issue #295).
+    nonisolated public static let linkFailedLine = "the link was not created"
 
     /// True while the shell is writing the projection itself: a
     /// page-switch rebuild, a seal's chip-face insertion, a recovery

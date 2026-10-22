@@ -197,7 +197,7 @@ public struct ConcealView: View {
     /// one-time link vocabulary (ADR-0055 rule 3, issue #295).
     nonisolated static let destinationHelp = "the server this one-time link is created on"
     nonisolated static func failureLabel(_ error: String) -> String {
-        "Could not create the link: \(error)"
+        error == PageModel.linkFailedLine ? error : "Could not create the link: \(error)"
     }
 
     private var isConfigured: Bool {
