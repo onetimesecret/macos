@@ -31,6 +31,17 @@ final class ApplicationLifecycleTests: XCTestCase {
         try test(BackdropAppDelegate(model: model), model)
     }
 
+    func testUnbundledAndUnrecognizedLaunchesAreRejected() {
+        for identifier in [nil, "", "dev.onetimepad.settings-lifecycle-probe", "com.example.OnetimePad",
+                           "dev.onetimesecret.pad.debug.copy", "com.onetimesecret.companion"] as [String?] {
+            XCTAssertFalse(AppLaunchIdentity.accepts(identifier))
+        }
+        for identifier in [FormFactor.backdropBundleIdentifier, FormFactor.localBundleIdentifier,
+                           FormFactor.devBundleIdentifier] {
+            XCTAssertTrue(AppLaunchIdentity.accepts(identifier))
+        }
+    }
+
     func testExplicitSettingsAndRepeatedActivationDoNotCreateAnEditor() throws {
         try withApplication { app, model in
             app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))

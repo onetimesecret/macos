@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Darwin
 import CompanionKit
 import os
 
@@ -7,6 +8,11 @@ import os
 @MainActor
 enum BackdropApp {
     static func main() {
+        guard AppLaunchIdentity.accepts(Bundle.main.bundleIdentifier) else {
+            FileHandle.standardError.write(Data(
+                "OnetimePad refused startup: launch a packaged app with a recognized bundle identifier. Use scripts/dev.sh for development and scripts/test-shell.sh for isolated tests.\n".utf8))
+            exit(EXIT_FAILURE)
+        }
         let application = NSApplication.shared
         let delegate = BackdropAppDelegate()
         application.delegate = delegate

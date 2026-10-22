@@ -19,6 +19,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Rebuilding can replace an executable that is still running from this build directory.
+build_pattern="$(printf '%s' "$PWD/shell/.build/" | sed 's/[][\\.|$(){}?+*^]/\\&/g')"
+if pgrep -f "^$build_pattern" >/dev/null; then
+  echo "Refusing to rebuild shell/.build while an executable from it is running." >&2
+  echo "Close that development instance normally, then rerun the tests." >&2
+  exit 1
+else
+  process_status=$?
+  if [[ "$process_status" != 1 ]]; then
+    echo "Cannot inspect running build executables; no build or tests were started." >&2
+    exit 1
+  fi
+fi
+
 scripts/build-core.sh --if-stale --test-util
 
 echo "==> swift test --package-path shell${*:+ $*}"
