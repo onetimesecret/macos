@@ -980,16 +980,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The page under the editor takes a peer's edit** (app 0.40.2; issue
+  #276). With sync on, another device's edit to the page being written
+  on reached the core but not the editor, which kept the old text, and
+  the next keystroke's edit was read from that stale text. A pump's
+  applied edit is now merged into the editor's text one changed stretch
+  at a time, so the caret, the selection and the reader's line outside
+  those stretches keep their places, a sealed object the edit went
+  around keeps its block, and the next keystroke is read from the
+  merged text. A rewrite of the whole page is taken as one stretch. A
+  composition in flight when a peer's edit changes the page is dropped,
+  since the input method's provisional text is not the core's: the
+  characters being composed at that moment are lost and the page stands
+  as it did before them, a sealed object the composition had replaced
+  included.
 - **The roll's follow ups from the reading place review** (app 0.40.1;
   issue #278). A peer's applied edit restates a page by the model's own
   record of which page a surface shows, not by a count of layout
   managers, so a second layout manager on a storage cannot leave a
   quiet page stale. The roll sets its horizontal scroller only when it
   differs from what the wrap setting asks, not on every keystroke's
-  pass. A test pins that
-  a page switch handing the keys to the editor, with its caret below
-  the viewport, keeps the reader's place; the switch already did. The
-  mixed edit fallback in the reading anchor's rebase has its own issue,
+  pass. A test pins that a page switch handing the keys to the editor,
+  with its caret below the viewport, keeps the reader's place; the
+  switch already did. The mixed edit fallback in the reading anchor's
+  rebase has its own issue,
   #283.
 - **A sealed object's excerpt and typed name are wiped when they go**
   (`companion-core` 0.34.1; issue #256, the content buffer register's
@@ -1079,8 +1093,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not the roll: a day the editor was not on kept its old text until
   something else redrew it, and a page left earlier reopened in the
   editor with the old text. Each applied event now redraws its page's
-  day and rereads that page's text. The page under the editor does
-  not take a peer's edit yet.
+  day and rereads that page's text. The page under the editor takes
+  a peer's edit since app 0.40.2.
 
 - **Turning wrapping on or off in a tab keeps the reader's line** (app
   0.39.0). ⌥Z or the Settings switch rebuilt a tab's layout without
