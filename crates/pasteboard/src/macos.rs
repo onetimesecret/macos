@@ -78,15 +78,15 @@ impl Pasteboard for SystemPasteboard {
         let png_type: &NSPasteboardType = unsafe { NSPasteboardTypePNG };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
 
-        let content = if let Some(s) = self.pasteboard.stringForType(string_type) {
-            // A string with no whole UTF-8 form is refused; the variant takes the buffer as is.
-            let mut text = utf8_of(&s)?;
-            PasteboardContent::Text(std::mem::take(&mut *text))
-        } else if let Some(data) = self.pasteboard.dataForType(png_type) {
-            PasteboardContent::Image(data.to_vec())
-        } else {
-            return None;
-        };
+        let text = self
+            .pasteboard
+            .stringForType(string_type)
+            .and_then(|s| utf8_of(&s));
+        let content = chosen_content(text, || {
+            self.pasteboard
+                .dataForType(png_type)
+                .map(|data| data.to_vec())
+        })?;
 
         let nspasteboard_concealed = self.declares(&[&NSString::from_str(CONCEALED_TYPE)]);
 
@@ -233,6 +233,18 @@ fn content_type(kind: ContentKind) -> &'static NSPasteboardType {
             ContentKind::Text => NSPasteboardTypeString,
             ContentKind::Image => NSPasteboardTypePNG,
         }
+    }
+}
+
+/// The content a read takes: the text when it converted, else the PNG, as when the board
+/// has no text at all. The variant takes the text's buffer as is (C45).
+fn chosen_content(
+    text: Option<Zeroizing<String>>,
+    png: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<PasteboardContent> {
+    match text {
+        Some(mut text) => Some(PasteboardContent::Text(std::mem::take(&mut *text))),
+        None => png().map(PasteboardContent::Image),
     }
 }
 
@@ -392,6 +404,29 @@ mod tests {
         let text = "exämple 🦀 token";
         let item = board_with(&NSString::from_str(text), None).read().unwrap();
         assert_eq!(item.content, PasteboardContent::Text(text.into()));
+    }
+
+    #[test]
+    fn a_text_without_utf8_falls_through_to_the_image_as_no_text_does() {
+        let png = || Some(vec![0x89, b'P', b'N', b'G']);
+        assert_eq!(
+            chosen_content(utf8_of(&unpaired_surrogate()), png),
+            Some(PasteboardContent::Image(vec![0x89, b'P', b'N', b'G']))
+        );
+        assert_eq!(
+            chosen_content(utf8_of(&unpaired_surrogate()), || None),
+            None
+        );
+        assert_eq!(
+            chosen_content(None, png),
+            png().map(PasteboardContent::Image)
+        );
+        assert_eq!(
+            chosen_content(utf8_of(&NSString::from_str("quoted")), || {
+                panic!("a text that converted never asks for the image")
+            }),
+            Some(PasteboardContent::Text("quoted".into()))
+        );
     }
 
     #[test]
