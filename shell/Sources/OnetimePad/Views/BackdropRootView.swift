@@ -561,20 +561,28 @@ struct BackdropRootView: View {
     /// to say.
     @ViewBuilder
     private var saveIndicator: some View {
-        if pages.activeFile != nil, !pages.showingLedger {
-            // The file surface has its own saved word, about the file
-            // on disk. The sealed state's word is about the pages
-            // behind, and two words reading "saved" a few points apart
-            // would be one word too many for a person to tell apart.
+        switch Self.persistenceWord(
+            fileActive: pages.activeFile != nil && !pages.showingLedger,
+            contentRefused: pages.contentRestoreRefused,
+            draftsHeld: pages.draftsHeldInMemory,
+            saveStatus: pages.saveStatus
+        ) {
+        case .hidden:
             EmptyView()
-        } else if pages.contentRestoreRefused {
+        case .notSaving:
             Text("not saving")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(Color.emberText)
                 .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
                 .accessibilityLabel(Text("This session is not being saved"))
-        } else {
-            switch pages.saveStatus {
+        case .draftsNotKept:
+            Text("drafts not kept")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(Color.emberText)
+                .help("The existing drafts file could not be read, so unsaved edits to open files are not kept as drafts. The page shows the recovery.")
+                .accessibilityLabel(Text("Unsaved file edits are not kept as drafts"))
+        case .status(let status):
+            switch status {
             case .idle:
                 EmptyView()
             case .saving:
@@ -597,6 +605,23 @@ struct BackdropRootView: View {
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
         }
+    }
+
+    /// What the header's persistence word says.
+    enum PersistenceWord: Equatable {
+        case hidden, notSaving, draftsNotKept
+        case status(SaveStatus)
+    }
+
+    /// The word for the header. A file surface keeps its own saved word and the
+    /// card's drops (D-18), except drafts not kept, which is about that file (issue #296).
+    static func persistenceWord(
+        fileActive: Bool, contentRefused: Bool, draftsHeld: Bool, saveStatus: SaveStatus
+    ) -> PersistenceWord {
+        if contentRefused && !fileActive { return .notSaving }
+        if draftsHeld { return .draftsNotKept }
+        if fileActive { return .hidden }
+        return .status(saveStatus)
     }
 
     /// The header's sync word. Nothing at all while sync is off, which
