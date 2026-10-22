@@ -31,7 +31,7 @@
 - [Parallel lane integration](project_parallel_lane_integration.md): cherry-pick lanes in order; MEMORY.md conflicts once per lane and both lines are kept; one lane's plist bump covers the phase
 - [Contrast measurements](project_contrast_measurements.md): system secondary label is 3.95:1 in light, so never assert `.secondary` at 4.5; ThemeContrastTests measures under both appearances
 - [Client fakes need a subclass](project_client_fakes_need_subclass.md): CompanionClient is no longer final; a refused or counted core call has no other seam
-- [ADR-0034 altitude keeper](project_adr0034_altitude_keeper.md): never build the window controller under xctest (it orders a pane and takes the keyboard); test BackdropAltitudeKeeper and CompanionLevelFollower with an unordered NSWindow
+- [ADR-0034 altitude keeper](project_adr0034_altitude_keeper.md): test BackdropAltitudeKeeper with an unordered NSWindow; since #293 companion windows stay normal and the keeper lowers the card under a key one, notifications posted by hand
 - [Issue #198 presentation ownership](project_issue198_presentation_ownership.md): claims are owner guarded and releases identity guarded; the owner settles before a stance publishes; never act on `$owner` synchronously; every teardown goes through `leavePage`
 - [Issue #207 test waits](project_issue207_test_waits.md): drainMainQueue for order, waitUntil on a publisher for timer driven state, letElapse for the four negative windows that must stay clock based; ListAutomation zero turn is an undo closer, not a wait
 - [Bookmark resolution facts](project_bookmark_resolution_facts.md): a bookmark follows its file into the Trash, and resolves to the recorded path when another file sits there; rename chains cannot be staged by renaming in a test
