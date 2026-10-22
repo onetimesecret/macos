@@ -1797,6 +1797,31 @@ final class FileDocumentTests: XCTestCase {
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
     }
 
+    /// After the drafts discard, a refused line names the files as they are now,
+    /// not as the quit's snapshot had them.
+    func testARefusedLineNamesTheCurrentFilesAfterTheDraftsDiscard() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        client.refusesPersistSave = true
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused)
+
+        let undo = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 0, len: 5)]))
+        XCTAssertTrue(client.applyFileOps(id, json: undo), "a.txt back to its saved text, past the model")
+        model.clearUnreadableDraftsFile()
+        XCTAssertEqual(model.quitRefusal, .refused, "the refusal outlives the drafts discard")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty),
+            "the sealed state file was not written, so this session's pages will not survive the quit")
+    }
+
     /// A cancelled ⌘Q restates nothing: a pending close stands, though the core
     /// already reads that file clean, until the roster is restated.
     func testAPendingFileCloseSurvivesACancelledQuit() throws {

@@ -5307,6 +5307,8 @@ public final class PageModel: ObservableObject {
         }
         // The write the grant arms drops or replaces the file whatever the erase answered.
         draftsDirty = true
+        // Restated as the sibling discards restate theirs, dropping the last quit's snapshot.
+        refreshOpenFiles()
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
     }
