@@ -139,8 +139,8 @@ struct RollPlace: Equatable {
         let target = text()
         let targetLength = target.utf16.count
         var mapped = anchor
-        let scaled = length > 0
-            ? (Double(anchor.characterIndex) * Double(targetLength) / Double(length)).rounded() : 0
+        let scaled = self.length > 0
+            ? (Double(anchor.characterIndex) * Double(targetLength) / Double(self.length)).rounded() : 0
         mapped.characterIndex = Self.scalarBoundary(at: Int(scaled), in: target)
         return mapped
     }
