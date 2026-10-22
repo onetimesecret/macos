@@ -433,10 +433,29 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
-    private lazy var settings = BackdropSettingsWindowController(model: model)
-    private lazy var feedback = FeedbackWindowController(model: model) { [unowned self] in
-        diagnosticReport()
+    /// The Settings and Send Feedback controllers, made on first use.
+    /// Backed by optionals rather than `lazy` so that a question about
+    /// a window they may not have made yet does not make the controller.
+    private var madeSettings: BackdropSettingsWindowController?
+    private var settings: BackdropSettingsWindowController {
+        if let madeSettings { return madeSettings }
+        let made = BackdropSettingsWindowController(model: model)
+        madeSettings = made
+        return made
     }
+    private var madeFeedback: FeedbackWindowController?
+    private var feedback: FeedbackWindowController {
+        if let madeFeedback { return madeFeedback }
+        let made = FeedbackWindowController(model: model) { [unowned self] in
+            diagnosticReport()
+        }
+        madeFeedback = made
+        return made
+    }
+
+    /// The About panel `showAbout` last put up, by identity. AppKit
+    /// reuses the one panel for the life of the process.
+    private weak var aboutPanel: NSWindow?
 
 
     /// The primary editor window (ADR-0033), the second of the two
@@ -446,8 +465,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Whether a window is one of the app's own ordinary windows:
     /// Settings, Send Feedback, or the About panel AppKit put up. ⌘W
     /// closes one of them while it has the keyboard (#201).
-    private func isCompanionWindow(_ window: NSWindow) -> Bool {
-        settings.owns(window) || feedback.owns(window) || standardAboutPanel() === window
+    func isCompanionWindow(_ window: NSWindow) -> Bool {
+        Self.isCompanionWindow(
+            window, settings: madeSettings?.window, feedback: madeFeedback?.window, about: aboutPanel)
+    }
+
+    /// The companion rule, pure so each window is an assertion: identity
+    /// against the windows already made, and no scan of `NSApp.windows`.
+    static func isCompanionWindow(
+        _ window: NSWindow, settings: NSWindow?, feedback: NSWindow?, about: NSWindow?
+    ) -> Bool {
+        [settings, feedback, about].contains { $0 === window }
     }
 
     /// Holds the About panel at the surface's keyless altitude while
@@ -1323,6 +1351,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // AppKit has put it up.
         let panel = standardAboutPanel()
         panel?.collectionBehavior.insert(.moveToActiveSpace)
+        // Kept by identity, so the lookup runs here once and not on every key event.
+        aboutPanel = panel
         // About sits at the surface's keyless altitude for as long as
         // it is open, as Settings does and through the same follower
         // (ADR-0032, #188). Otherwise About opens at .normal beneath a
@@ -1362,7 +1392,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 titled: window.styleMask.contains(.titled),
                 title: window.title,
                 isSheet: window.isSheet,
-                isSettings: settings.owns(window)
+                isSettings: madeSettings?.owns(window) == true
             )
         }
     }

@@ -98,7 +98,7 @@ final class FeedbackDraft: ObservableObject {
 
 @MainActor
 final class FeedbackWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var draft: FeedbackDraft?
     private let levelFollower: CompanionLevelFollower
     private let serverURL: () -> String
@@ -109,12 +109,6 @@ final class FeedbackWindowController: NSObject {
         self.makeReport = makeReport
         levelFollower = CompanionLevelFollower(model: model)
         super.init()
-    }
-
-    /// Whether a window is the Send Feedback window. The File menu's
-    /// ⌘W asks, to close it while it has the keyboard (#201).
-    func owns(_ candidate: NSWindow) -> Bool {
-        window === candidate
     }
 
     func show() {
