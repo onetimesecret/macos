@@ -986,10 +986,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file showing. It now closes that window, as in Xcode, Safari and
   Terminal, and the File menu's item reads Close Window. On the pad or
   the editor window it is `page::Close`, and the item reads Close File
-  on a file and Close Page on a page, enabled. While a sheet, a save
-  panel or an alert has the keyboard, or no window does, the item dims
-  and the chord closes nothing. The Window menu's ⇧⌘W item dims when
-  the key window cannot close, on the same fact as the File menu's.
+  on a file, Close Ledger while the ledger is showing, and Close Page on
+  a page, enabled. While a sheet, a save panel or an alert has the
+  keyboard, or no window does, the item dims and the chord closes
+  nothing; with no key window it used to read Close File and close the
+  file on the resting surface. The Window menu's ⇧⌘W item dims when the
+  key window cannot close, on the same fact as the File menu's.
+
 - **A Timeline too dense to fit scrolls instead of climbing over the
   Pad heading** (app 0.40.4; issue #277). The side Timeline packed its
   rows down from the top and then pulled them up from the foot, so a
