@@ -5312,6 +5312,8 @@ public final class PageModel: ObservableObject {
                 "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
             )
         }
+        // The write the grant arms drops or replaces the file whatever the erase answered.
+        draftsDirty = true
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
     }

@@ -94,8 +94,11 @@ final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
 
     override func draftsErase(at path: String) -> Bool {
         draftsErasures += 1
-        return super.draftsErase(at: path)
+        return refusesDraftsErase ? false : super.draftsErase(at: path)
     }
+
+    /// Answers the drafts file's erase as a refused unlink does.
+    var refusesDraftsErase = false
 }
 
 /// The file lane driven whole through the model: open a real file in a
@@ -1770,6 +1773,26 @@ final class FileDocumentTests: XCTestCase {
             PageModel.quitRefusalSentence(
                 .unsavableWithDrafts, files: model.openFiles, draftsUnwritten: model.draftsDirty),
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
+    }
+
+    /// The drafts discard with nothing typed and the erase refused: the write it
+    /// arms still drops or replaces the unreadable file.
+    func testTheDraftsDiscardArmsTheWriteWhateverTheEraseAnswers() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        XCTAssertFalse(model.draftsDirty, "nothing typed")
+
+        client.refusesDraftsErase = true
+        model.clearUnreadableDraftsFile()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: draftsFile.path), "the erase refused")
+        XCTAssertTrue(model.draftsDirty)
+        XCTAssertEqual(model.saveStatus, .saving, "a write is armed")
+
+        client.refusesDraftsErase = false
+        XCTAssertTrue(model.saveState())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draftsFile.path))
     }
 
     /// Quit Anyway's termination request answered as the app delegate answers it,
