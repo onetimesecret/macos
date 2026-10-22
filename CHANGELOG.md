@@ -995,17 +995,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The drafts file is read before it is written** (app 0.40.9; issue
   #296). The model writes the drafts file only once its restore has
   run, where before only the app layer's call order kept a save from
-  writing over a file nobody had read; edits made before the restore
-  are written as soon as it runs. An existing drafts file that
-  would not open is left alone for the session, as the state file
-  already is: the save settles rather than fails, the unsaved file
-  edits stay in memory, and one line in the log says why. A standing
-  line says so in the surface, ahead of any saved word, with one
-  action, Discard It and Keep Drafts, which drops the unreadable file
-  and writes this session's drafts from there; the discard of an
-  unreadable state file gives the drafts write back the same way. A
-  quit with unsaved edits to a file while the line stands asks rather
-  than settling, naming the files, and a second ⌘Q quits anyway.
+  writing over a file nobody had read; a restore that finds no drafts
+  file writes the edits made before it at once. An existing drafts
+  file that would not open is left alone for the session, as the state
+  file already is: the save settles rather than fails, the unsaved file
+  edits stay in memory, the sudden termination hold stays so a logout
+  asks first, and one line in the log says why. A standing line says
+  so in the surface, ahead of any saved word, with one action, Discard
+  It and Keep Drafts, which drops the unreadable file and writes this
+  session's drafts from there; the discard of an unreadable state file
+  gives the drafts write back too, and rewrites the drafts from memory
+  when its erase refused. A quit with unsaved edits to a file while
+  the line stands asks rather than settling, naming the files. A
+  second ⌘Q quits anyway, unless edits the line did not name have
+  appeared since, which the line then names.
 
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
