@@ -179,7 +179,7 @@ public struct TabStripView: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: NSFont.miniSystemFontSize, weight: .medium))
                 Text("page")
                     .font(.system(.caption2, design: .monospaced))
             }
@@ -563,7 +563,7 @@ struct FileTab: View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: "doc")
-                    .font(.system(size: 9))
+                    .font(.system(size: NSFont.miniSystemFontSize))
                     .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true) // the tab says "file" in words
                 Text(file.name)

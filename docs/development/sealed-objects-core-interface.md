@@ -77,7 +77,10 @@ set or a note edited, as after any mutation
 ## The note's routes
 
 The note is the document type a page's body and an open file use, holding
-ink alone. Its routes are keyed by chip id, as a file has its own:
+ink alone. Since 2026-10-21 (issue #256) a note made by a restore, a paste
+or a clone is its text alone until it accepts a batch that changes that
+text, which makes that document (At rest, below). Its routes are keyed by
+chip id, as a file has its own:
 
 - `companion_chip_note_runs_json`: `[]` without a note, else
   `[{"ink": text}]`; null for an unknown chip or a page past its deadline.
@@ -95,8 +98,10 @@ would write some page's ink. The shell's `InkDocument` is `.sheet(id)` for
 a page or a file and `.note(chip:)` for a note, and `PageModel` answers a
 note on the note's routes and never on a page's.
 
-A note exists from its first accepted edit. `has_note` is true while it
-holds a character that is not whitespace
+A note exists from its first accepted edit, or from a restore, a paste or
+a clone that brings its text (issue #256 since 2026-10-21: such a note
+rests as its text until an edit). `has_note` is true while it has a
+character that is not whitespace
 (`store.rs` `a_note_of_only_whitespace_opens_no_doorway`).
 
 ## What the shell receives
@@ -198,7 +203,10 @@ it as fields it does not know, not damage, and drops it at its next save.
   damage, as the page floor's is. The note persists as text, not as its
   operation log, and restore rebuilds it with an empty undo stack. Each
   note's text is taken once, at its exact size, before the snapshot's two
-  passes (draft Law 0004).
+  passes (draft Law 0004). Since 2026-10-21 (issue #256) the restore, a
+  paste and a clone keep the note's text as one zeroizing copy, and the
+  note's document is made from it at its first edit
+  ([content buffer register](content-buffer-handling.md) C31).
 - **The page record**, after the floor: its detached chips, framed as its
   attached chips are, then a cut flag (0, or 1 and the active cut's
   envelope) on the page the cut came from. A cut whose objects are not
