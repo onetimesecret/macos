@@ -851,11 +851,12 @@ private final class RailRevealView: NSView {
     /// recorded only once its ground was measured against the clip, so an attempt made
     /// before the view sits under a scroll view is made again by the next update.
     func reveal(_ request: RailReveal.Request?) {
-        let due = memory.isDue(request?.id)
-        guard let request, due else {
-            if request == nil { pending = nil }
+        guard let request else {
+            memory.forget()
+            pending = nil
             return
         }
+        guard memory.isDue(request.id) else { return }
         pending = request
         DispatchQueue.main.async { [weak self] in
             guard let self, let next = self.pending else { return }

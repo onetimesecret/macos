@@ -510,21 +510,22 @@ public enum StreamNavigator {
     /// What the column remembers of its reveals: the node last brought
     /// into view. A node is revealed once, so a later layout that moves
     /// its row leaves the reader's own scrolling alone, and a reveal
-    /// that could not be made stays due. No active node at all (a file
-    /// or the ledger showing) forgets, so the same node is revealed
-    /// again when the roll comes back (#277).
+    /// that could not be made stays due. With no active node at all (a
+    /// file or the ledger showing) the column calls `forget()`, so the
+    /// same node is revealed again when the roll comes back (#277).
     public struct RevealMemory: Equatable, Sendable {
         public private(set) var revealed: UInt64?
 
         public init() {}
 
-        /// Whether a reveal of `id` is due; nil is the roll leaving.
-        public mutating func isDue(_ id: UInt64?) -> Bool {
-            guard let id else {
-                revealed = nil
-                return false
-            }
-            return revealed != id
+        /// Whether a reveal of `id` is due.
+        public func isDue(_ id: UInt64) -> Bool {
+            revealed != id
+        }
+
+        /// The roll left, so the node it comes back to is due again.
+        public mutating func forget() {
+            revealed = nil
         }
 
         /// The reveal of `id` was made.

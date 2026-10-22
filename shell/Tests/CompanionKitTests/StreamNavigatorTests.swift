@@ -413,7 +413,8 @@ final class StreamNavigatorTests: XCTestCase {
         memory.record(22)
         XCTAssertTrue(memory.isDue(11), "a node selected again was not revealed")
         memory.record(11)
-        XCTAssertFalse(memory.isDue(nil), "the roll leaving asked for a scroll")
+        memory.forget()
+        XCTAssertNil(memory.revealed, "the roll left and the column still remembers its node")
         XCTAssertTrue(memory.isDue(11), "the roll came back and its node stayed out of view")
     }
 
