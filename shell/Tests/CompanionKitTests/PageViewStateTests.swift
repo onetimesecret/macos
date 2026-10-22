@@ -1118,6 +1118,14 @@ final class PageViewStateTests: XCTestCase {
             .mappedAnchor(into: .preview, text: short).characterIndex, 400)
         XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 9), reading: .preview)
             .mappedAnchor(into: .source, text: String(repeating: "s", count: 50)).characterIndex, 0)
+
+        // The roll restores on every layout pass, so the same reading must not copy the page.
+        var reads = 0
+        func counted() -> String { reads += 1; return short }
+        _ = place.mappedAnchor(into: .source, text: counted())
+        XCTAssertEqual(reads, 0, "the same reading read the text")
+        _ = place.mappedAnchor(into: .preview, text: counted())
+        XCTAssertEqual(reads, 1)
     }
 
     /// A proportion that falls inside an emoji's surrogate pair is moved to the pair's
