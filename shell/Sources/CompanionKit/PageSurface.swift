@@ -226,11 +226,10 @@ public struct PageStatusStack: View {
         PageModel.stateDiscardHelp(draftsRefused: model.draftsRestoreRefused)
     }
 
-    /// What the quit anyway button says it will do: the loss named by
-    /// filename where a dirty file is open, for the same reason as
-    /// `discardHelp`.
+    /// What the quit anyway button says it will do: the loss the line beside it names.
     private func quitAnywayHelp(_ refusal: QuitSaveOutcome) -> String {
-        PageModel.quitAnywayHelp(refusal, files: model.quitLineFiles)
+        PageModel.quitAnywayHelp(
+            refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
     }
 
     public var body: some View {

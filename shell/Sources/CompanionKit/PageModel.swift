@@ -2939,15 +2939,13 @@ public final class PageModel: ObservableObject {
         offer == .unsavableWithDrafts && !draftsHeld ? nil : offer
     }
 
-    /// What the quit anyway button says it costs: the drafts arm names
-    /// the files alone, because its pages are on disk.
+    /// What the quit anyway button says it costs, the loss its line names: the drafts
+    /// arm names the files alone, because its pages are on disk.
     public nonisolated static func quitAnywayHelp(
-        _ outcome: QuitSaveOutcome, files: [FileSummary]
+        _ outcome: QuitSaveOutcome, files: [FileSummary], draftsUnwritten: Bool
     ) -> String {
-        guard outcome == .unsavableWithDrafts else {
-            let base = "Quits now. The pages this session could not save are lost."
-            guard let atRisk = draftsAtRiskSentence(files: files) else { return base }
-            return base + " " + atRisk
+        if outcome != .unsavableWithDrafts {
+            return "Quits now. This session's \(lostAtQuit(files: files, draftsUnwritten: draftsUnwritten)) are lost."
         }
         let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
         guard !dirty.isEmpty else { return "Quits now." }

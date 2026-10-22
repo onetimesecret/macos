@@ -139,21 +139,27 @@ final class QuitPromptTests: XCTestCase {
         XCTAssertEqual(PageModel.quitOfferAfterDraftsClear(offer: .refused), .refused)
     }
 
-    func testTheQuitAnywayHelpNamesNoPagesOnTheDraftsArm() {
+    func testTheQuitAnywayHelpNamesTheLossItsLineNames() {
         let dirty = FileSummary(
             id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
             isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
             lastEditedAt: 0, restoredFromDraft: false)
         XCTAssertEqual(
-            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [dirty]),
+            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [dirty], draftsUnwritten: true),
             "Quits now. Unsaved changes to a.txt are lost.")
-        XCTAssertEqual(PageModel.quitAnywayHelp(.unsavableWithDrafts, files: []), "Quits now.")
         XCTAssertEqual(
-            PageModel.quitAnywayHelp(.refused, files: []),
-            "Quits now. The pages this session could not save are lost.")
+            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [], draftsUnwritten: true),
+            "Quits now.")
         XCTAssertEqual(
-            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty]),
-            "Quits now. The pages this session could not save are lost. Unsaved changes to a.txt go with it.")
+            PageModel.quitAnywayHelp(.refused, files: [], draftsUnwritten: false),
+            "Quits now. This session's pages are lost.")
+        // The drafts are on disk, so the line names the pages alone, and so does its button.
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty], draftsUnwritten: false),
+            "Quits now. This session's pages are lost.")
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty], draftsUnwritten: true),
+            "Quits now. This session's pages and the unsaved changes to a.txt are lost.")
     }
 
     func testAChangedOutcomeRestatesTheLineAndTheNextRequestQuits() {
