@@ -137,6 +137,8 @@
       // The app around the page.
       "cmd-s": "state::SaveNow",
       "cmd-,": "app::Settings",
+      // The Help menu's first item fires cmd-? app-wide (issue #294).
+      "cmd-?": "app::Help",
       "escape": "surface::HandBackKeys",
     },
   },

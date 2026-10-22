@@ -570,7 +570,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // The Help menu's first item is the app's help (issue #294), and
         // the menu becomes `helpMenu`.
         NSApp.helpMenu = Self.installHelpItem(
-            in: NSApp.mainMenu, productName: Self.productName, target: self)
+            in: NSApp.mainMenu, productName: Self.productName,
+            keystroke: model.pages.keymap.menuKeystroke(for: .appHelp), target: self)
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -1490,19 +1491,21 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.openExternal(Self.helpURL)
     }
 
-    /// Puts "<product> Help" with ⌘? at the head of the Help menu SwiftUI
-    /// built, above the diagnostics items, and returns that menu for
+    /// Puts "<product> Help" at the head of the Help menu SwiftUI built, on
+    /// the keymap's `app::Help` chord or none, and returns that menu for
     /// `NSApp.helpMenu`. Nil when there is no Help menu to find; a menu
-    /// that already has the item is returned as it is.
+    /// that already has the item anywhere is returned as it is.
     @discardableResult
     static func installHelpItem(in mainMenu: NSMenu?, productName: String,
+                                keystroke: Keystroke?,
                                 target: BackdropAppDelegate) -> NSMenu? {
         guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
         else { return nil }
-        if helpMenu.items.first?.action == #selector(openHelp(_:)) { return helpMenu }
+        if helpMenu.items.contains(where: { $0.action == #selector(openHelp(_:)) }) { return helpMenu }
         let help = NSMenuItem(title: "\(productName) Help",
-                              action: #selector(openHelp(_:)), keyEquivalent: "?")
-        help.keyEquivalentModifierMask = [.command]
+                              action: #selector(openHelp(_:)),
+                              keyEquivalent: keystroke?.menuKeyEquivalent ?? "")
+        help.keyEquivalentModifierMask = keystroke?.menuModifierMask ?? []
         help.target = target
         let hadItems = helpMenu.numberOfItems > 0
         helpMenu.insertItem(help, at: 0)

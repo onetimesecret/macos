@@ -65,6 +65,8 @@ public enum CommandID: String, CaseIterable, Sendable {
     case surfaceHandBackKeys = "surface::HandBackKeys"
     case stateSaveNow = "state::SaveNow"
     case appSettings = "app::Settings"
+    // The Help menu's first item, from that menu only (issue #294).
+    case appHelp = "app::Help"
 
     // The window around the surface (ADR-0033, issue #201): ⇧⌘W closes
     // the window the keyboard is in, from the Window menu only. ⌘W is
@@ -100,7 +102,7 @@ public enum CommandID: String, CaseIterable, Sendable {
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
             .editorDetectCodeLanguage, .editorUndo, .editorRedo, .noteToggleExpanded:
             return .editor
-        case .windowClose:
+        case .windowClose, .appHelp:
             return .window
         default:
             return .surface

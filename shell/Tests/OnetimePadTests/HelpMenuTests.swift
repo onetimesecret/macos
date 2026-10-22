@@ -6,8 +6,8 @@ import XCTest
 @testable import OnetimePad
 
 /// The Help menu's first item is the app's help (issue #294): its title
-/// names the product, its chord is ⌘?, and it opens the docs through the
-/// model's `openURL` seam rather than the shared workspace.
+/// names the product, its chord is the keymap's `app::Help`, and it opens
+/// the docs through the model's `openExternal` seam, not the shared workspace.
 @MainActor
 final class HelpMenuTests: XCTestCase {
     private final class OpenedLinks {
@@ -43,12 +43,25 @@ final class HelpMenuTests: XCTestCase {
         return (mainMenu, helpMenu)
     }
 
+    /// The bundled default's `app::Help` chord, read the way the delegate reads it.
+    private func helpChord() throws -> Keystroke? {
+        let text = try XCTUnwrap(Keymap.bundledDefaultText())
+        return Keymap.resolve(defaultText: text, overrideText: nil).menuKeystroke(for: .appHelp)
+    }
+
+    @discardableResult
+    private func install(
+        in mainMenu: NSMenu?, keystroke: Keystroke? = nil, target: BackdropAppDelegate
+    ) -> NSMenu? {
+        BackdropAppDelegate.installHelpItem(
+            in: mainMenu, productName: "OnetimePad", keystroke: keystroke, target: target)
+    }
+
     func testTheHelpItemHeadsTheMenuWithItsChord() throws {
         let delegate = makeDelegate(opened: OpenedLinks())
         let menus = makeMainMenu()
 
-        let helpMenu = BackdropAppDelegate.installHelpItem(
-            in: menus.main, productName: "OnetimePad", target: delegate)
+        let helpMenu = install(in: menus.main, keystroke: try helpChord(), target: delegate)
 
         XCTAssertTrue(helpMenu === menus.help, "the menu returned is the one for NSApp.helpMenu")
         let item = try XCTUnwrap(menus.help.items.first)
@@ -61,19 +74,51 @@ final class HelpMenuTests: XCTestCase {
         XCTAssertEqual(menus.help.items[2].title, "Export Diagnostics…")
     }
 
+    /// A keymap that unbinds `app::Help` leaves the item without a chord.
+    func testAnUnboundChordLeavesTheItemWithoutOne() throws {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let menus = makeMainMenu()
+        let text = try XCTUnwrap(Keymap.bundledDefaultText())
+        let unbound = Keymap.resolve(
+            defaultText: text,
+            overrideText: #"[{ "context": "Editor", "bindings": { "cmd-?": null } }]"#)
+        XCTAssertEqual(unbound.faults, [])
+
+        install(in: menus.main, keystroke: unbound.menuKeystroke(for: .appHelp), target: delegate)
+
+        let item = try XCTUnwrap(menus.help.items.first)
+        XCTAssertEqual(item.title, "OnetimePad Help")
+        XCTAssertEqual(item.keyEquivalent, "")
+        XCTAssertEqual(item.keyEquivalentModifierMask, [])
+    }
+
     func testASecondInstallAddsNothing() throws {
         let delegate = makeDelegate(opened: OpenedLinks())
         let menus = makeMainMenu()
-        BackdropAppDelegate.installHelpItem(
-            in: menus.main, productName: "OnetimePad", target: delegate)
+        install(in: menus.main, target: delegate)
         let first = try XCTUnwrap(menus.help.items.first)
 
-        let again = BackdropAppDelegate.installHelpItem(
-            in: menus.main, productName: "OnetimePad", target: delegate)
+        let again = install(in: menus.main, target: delegate)
 
         XCTAssertTrue(again === menus.help)
         XCTAssertEqual(menus.help.numberOfItems, 3)
         XCTAssertTrue(menus.help.items.first === first)
+    }
+
+    /// The guard asks whether the item is in the menu, not whether it is
+    /// first, so an item put above it does not earn a second copy.
+    func testAnItemBelowTheHeadIsNotInstalledTwice() {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let menus = makeMainMenu()
+        install(in: menus.main, target: delegate)
+        menus.help.insertItem(withTitle: "Search", action: nil, keyEquivalent: "", at: 0)
+        let count = menus.help.numberOfItems
+
+        install(in: menus.main, target: delegate)
+
+        XCTAssertEqual(menus.help.numberOfItems, count)
+        XCTAssertEqual(
+            menus.help.items.filter { $0.action == #selector(BackdropAppDelegate.openHelp(_:)) }.count, 1)
     }
 
     func testAnEmptyHelpMenuGetsNoSeparator() {
@@ -83,8 +128,7 @@ final class HelpMenuTests: XCTestCase {
         helpItem.submenu = NSMenu(title: "Help")
         mainMenu.addItem(helpItem)
 
-        BackdropAppDelegate.installHelpItem(
-            in: mainMenu, productName: "OnetimePad", target: delegate)
+        install(in: mainMenu, target: delegate)
 
         XCTAssertEqual(helpItem.submenu?.items.map(\.title), ["OnetimePad Help"])
     }
@@ -93,8 +137,7 @@ final class HelpMenuTests: XCTestCase {
         let opened = OpenedLinks()
         let delegate = makeDelegate(opened: opened)
         let menus = makeMainMenu()
-        BackdropAppDelegate.installHelpItem(
-            in: menus.main, productName: "OnetimePad", target: delegate)
+        install(in: menus.main, target: delegate)
         let item = try XCTUnwrap(menus.help.items.first)
         let target = try XCTUnwrap(item.target as? NSObject)
         let action = try XCTUnwrap(item.action)
@@ -107,9 +150,7 @@ final class HelpMenuTests: XCTestCase {
     func testNoHelpMenuMeansNothingToInstall() {
         let delegate = makeDelegate(opened: OpenedLinks())
         let mainMenu = NSMenu()
-        XCTAssertNil(BackdropAppDelegate.installHelpItem(
-            in: mainMenu, productName: "OnetimePad", target: delegate))
-        XCTAssertNil(BackdropAppDelegate.installHelpItem(
-            in: nil, productName: "OnetimePad", target: delegate))
+        XCTAssertNil(install(in: mainMenu, target: delegate))
+        XCTAssertNil(install(in: nil, target: delegate))
     }
 }
