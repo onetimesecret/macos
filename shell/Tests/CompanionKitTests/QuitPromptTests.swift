@@ -19,7 +19,7 @@ private final class FlushSpy: QuitFlushable {
         return outcome
     }
 
-    var quitAnywayOffered: Bool { offered != nil }
+    func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool { offered == outcome }
 
     func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         offered = outcome
@@ -156,31 +156,12 @@ final class QuitPromptTests: XCTestCase {
             "Quits now. The pages this session could not save are lost. Unsaved changes to a.txt go with it.")
     }
 
-    func testTheOfferAnswersAQuitOnlyOverTheFilesItNamed() {
-        let a = CompanionClient.fileIDTag | 1
-        let b = CompanionClient.fileIDTag | 2
-        XCTAssertTrue(PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a], atRisk: [a]))
-        XCTAssertTrue(
-            PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a, b], atRisk: [a]),
-            "fewer files at risk than named")
-        XCTAssertFalse(PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a], atRisk: [a, b]))
-        XCTAssertFalse(PageModel.quitAnswersOffer(offer: .refused, named: [], atRisk: [b]))
-        XCTAssertTrue(PageModel.quitAnswersOffer(offer: .unsavableWithContent, named: [], atRisk: []))
-        XCTAssertFalse(PageModel.quitAnswersOffer(offer: nil, named: [a], atRisk: []))
-    }
-
-    func testFilesAreAtRiskOnlyWhenTheirDraftsAreUnwritten() {
-        let dirty = FileSummary(
-            id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
-            isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
-            lastEditedAt: 0, restoredFromDraft: false)
-        let clean = FileSummary(
-            id: CompanionClient.fileIDTag | 2, name: "b.txt", path: "/tmp/b.txt",
-            isDirty: false, conflict: .none, lineEnding: .lf, hasBOM: false,
-            lastEditedAt: 0, restoredFromDraft: false)
-        XCTAssertEqual(
-            PageModel.filesAtRiskAtQuit(files: [dirty, clean], draftsUnwritten: true), [dirty.id])
-        XCTAssertEqual(PageModel.filesAtRiskAtQuit(files: [dirty, clean], draftsUnwritten: false), [])
+    func testAChangedOutcomeRestatesTheLineAndTheNextRequestQuits() {
+        // A refusal supersedes a drafts line: the line names it before any quit does.
+        let model = FlushSpy(.refused, offered: .unsavableWithDrafts)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.offered, .refused)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 
     func testARefusalsOfferComesDownOnASettledWriteOnly() {
@@ -208,10 +189,11 @@ final class QuitPromptTests: XCTestCase {
 
         model.offerQuitAnyway(after: .settled)
         XCTAssertNil(model.quitRefusal)
-        XCTAssertFalse(model.quitAnywayOffered)
+        XCTAssertFalse(model.quitAnywayAnswers(.settled))
 
         model.offerQuitAnyway(after: .unsavableWithContent)
         XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
-        XCTAssertTrue(model.quitAnywayOffered)
+        XCTAssertTrue(model.quitAnywayAnswers(.unsavableWithContent))
+        XCTAssertFalse(model.quitAnywayAnswers(.refused), "a changed outcome is not answered")
     }
 }

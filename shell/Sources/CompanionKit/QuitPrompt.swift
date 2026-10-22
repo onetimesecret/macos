@@ -6,10 +6,9 @@ public protocol QuitFlushable {
     /// Seal pending shell state and report whether termination may proceed.
     func saveStateForQuit() -> QuitSaveOutcome
 
-    /// Whether an earlier cancelled quit left its "quit anyway" line
-    /// standing on the surface over the files at risk now. While it does,
-    /// the next quit request is the answer to that line and terminates.
-    var quitAnywayOffered: Bool { get }
+    /// Whether an earlier cancelled quit left its "quit anyway" line standing
+    /// for this flush's outcome. While it does, the request answers it and terminates.
+    func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool
 
     /// Record a cancelled quit so the surface can say why it was
     /// cancelled and offer to quit anyway.
@@ -29,20 +28,20 @@ extension PageModel: QuitFlushable {}
 /// only one the quit path asks for. Nothing here can hold the app open
 /// for the rest of a session.
 ///
-/// A ⌘Q over file edits the line never named cancels again and names them.
+/// A flush whose outcome differs from the standing line's restates the line and cancels.
 public enum QuitPrompt {
     @MainActor
     public static func terminateReply(
         flushing model: some QuitFlushable
     ) -> NSApplication.TerminateReply {
-        // The flush runs regardless, and the offer is read after it, so a
-        // file whose draft the flush wrote is not counted at risk.
+        // The flush runs regardless, and the line is read against its outcome, so
+        // the app never quits over a loss no line named.
         let outcome = model.saveStateForQuit()
         switch outcome {
         case .settled:
             return .terminateNow
         case .refused, .unsavableWithContent, .unsavableWithDrafts:
-            if model.quitAnywayOffered { return .terminateNow }
+            if model.quitAnywayAnswers(outcome) { return .terminateNow }
             model.offerQuitAnyway(after: outcome)
             return .terminateCancel
         }

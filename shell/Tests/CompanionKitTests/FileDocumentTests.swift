@@ -1690,22 +1690,9 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
     }
 
-    /// Edits the cancelled quit's line never named, after a named file was saved
-    /// clean: the next ⌘Q asks again, and the one after it quits.
-    private func assertASecondQuitAsksOverNewEdits(
-        _ model: PageModel, file id: UInt64, line: UInt = #line
-    ) throws {
-        try type("well ", at: 0, into: id, on: model)
-        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel, line: line)
-        XCTAssertTrue(model.saveFile(id), line: line)
-        try type("again ", at: 0, into: id, on: model)
-        XCTAssertEqual(
-            QuitPrompt.terminateReply(flushing: model), .terminateCancel,
-            "the new edits were never named", line: line)
-        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow, line: line)
-    }
-
-    func testASecondQuitOverEditsTheDraftsLineNeverNamedAsksAgain() throws {
+    /// The drafts line retires when its file is saved clean, so new edits after
+    /// that ask afresh: the next ⌘Q cancels, and the one after it quits.
+    func testASecondQuitOverEditsMadeAfterTheDraftsLineRetiredAsksAfresh() throws {
         let fixture = try makeFixture()
         let model = try modelOverUnreadableDrafts(
             fixture, client: DraftsCountingClient(tag: fixture.tag))
@@ -1713,12 +1700,19 @@ final class FileDocumentTests: XCTestCase {
         model.openFile(at: url)
         let id = try XCTUnwrap(model.openFiles.first?.id)
         _ = model.storage(for: id)
-        try assertASecondQuitAsksOverNewEdits(model, file: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertNil(model.quitRefusal, "the line retired")
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
         XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 
-    /// The content arm reads the same offer, so it asks again the same way.
-    func testASecondQuitOverEditsTheContentLineNeverNamedAsksAgain() throws {
+    /// The content line stands and reads the live roster, so a second ⌘Q over edits
+    /// made since quits over what the line shows.
+    func testASecondQuitOverTheContentLineQuitsOverWhatTheLineShows() throws {
         let fixture = try makeFixture()
         try sealOwnerFiles(fixture)
         let model = makeModel(
@@ -1730,8 +1724,36 @@ final class FileDocumentTests: XCTestCase {
         model.openFile(at: url)
         let id = try XCTUnwrap(model.openFiles.first?.id)
         _ = model.storage(for: id)
-        try assertASecondQuitAsksOverNewEdits(model, file: id)
-        XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertTrue(model.saveFile(id))
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                try XCTUnwrap(model.quitRefusal), files: model.quitLineFiles,
+                draftsUnwritten: model.draftsDirty),
+            "nothing typed this session is on disk, so its pages and the unsaved changes to b.txt will not survive the quit")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// A flush whose outcome changed under a standing line restates the line with
+    /// the new outcome and cancels, so no quit goes over a loss no line named.
+    func testAQuitWhoseOutcomeChangedRestatesTheLine() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+
+        client.refusesPersistSave = true
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused, "the line names the refusal now")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 
     /// The drafts line names a loss only while one exists: saving the named file
@@ -1851,8 +1873,9 @@ final class FileDocumentTests: XCTestCase {
         }
     }
 
-    /// Over a file the line never named, the press restates the line, as ⌘Q does.
-    func testQuitAnywayOverAFileTheLineNeverNamedRestatesTheLine() throws {
+    /// The line reads the live roster, so a press over a line that already names
+    /// every file at risk quits in one press, as ⌘Q does.
+    func testQuitAnywayOverALineThatAlreadyNamesTheFilesQuits() throws {
         let fixture = try makeFixture()
         let delegate = DelegateReplies()
         let model = try modelOverUnreadableDrafts(
@@ -1871,17 +1894,14 @@ final class FileDocumentTests: XCTestCase {
         let b = try XCTUnwrap(model.openFiles.first(where: { $0.name == "b.txt" })?.id)
         _ = model.storage(for: b)
         try type("more ", at: 0, into: b, on: model)
-
-        model.requestQuitAnyway()
-        XCTAssertEqual(delegate.replies, [.terminateCancel], "the press restated the line")
-        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
         XCTAssertEqual(
             PageModel.quitRefusalSentence(
-                .unsavableWithDrafts, files: model.openFiles, draftsUnwritten: model.draftsDirty),
-            "the drafts file would not open and was not written over, so the unsaved changes to a.txt and b.txt will not survive the quit")
+                .unsavableWithDrafts, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt and b.txt will not survive the quit",
+            "the line already names b.txt")
 
         model.requestQuitAnyway()
-        XCTAssertEqual(delegate.replies, [.terminateCancel, .terminateNow])
+        XCTAssertEqual(delegate.replies, [.terminateNow])
     }
 
     /// A refused line whose write settles at the press quits at once, as ⌘Q does,

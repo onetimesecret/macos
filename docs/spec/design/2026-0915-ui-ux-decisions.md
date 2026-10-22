@@ -744,20 +744,17 @@ blocked while they stand (status lines stay 12 × 4).
   a standing line names the loss with a "quit anyway (⌘Q)" button, the
   inline confirmation D-14 allows; the second ⌘Q, or the button, quits.
   Quit is never inert.
-  *Amendment proposed 2026-10-21, not ratified:* this departs from two
-  phrases of the acceptance above (issue #296, PR 304). It reads
-  “quitting with dirty files asks nothing. A refused or unsavable state
-  flush is the one case quit does not simply proceed”; with the drafts
-  licence withheld because the drafts file would not open, quitting
-  with dirty files asks, since their edits are in memory only, and that
-  is a second case where quit does not simply proceed. It reads “the
-  second ⌘Q, or the button, quits”; a second ⌘Q, or the button, over
-  file edits the standing line did not name when it went up restates
-  the line with them rather than quitting, and the press after that
-  quits. That rule reaches all three cancelled outcomes: a refused
-  write, an unsavable session and file edits held in memory
-  (`.refused`, `.unsavableWithContent`, `.unsavableWithDrafts`). The
-  build behaves so from app 0.40.9.
+  *Amendment proposed 2026-10-21, not ratified:* this departs from the
+  acceptance above (issue #296, PR 304). It reads “quitting with dirty
+  files asks nothing. A refused or unsavable state flush is the one
+  case quit does not simply proceed”; with the drafts licence withheld
+  because the drafts file would not open, quitting with dirty files
+  asks, since their edits are in memory only, and that is a second case
+  where quit does not simply proceed. And when a second ⌘Q's flush, or
+  the button's, comes to a different outcome than the standing line
+  names, a refusal superseding the drafts line for one, the line is
+  restated with the new outcome and the quit cancelled, so no quit goes
+  over a loss no line named. The build behaves so from app 0.40.9.
 
 ## 7 · The sync surface
 

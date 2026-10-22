@@ -292,7 +292,7 @@ public struct PageStatusStack: View {
                 refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
         {
             // The quit the terminate path cancelled (issue 172, D-14, D-19), standing and ember.
-            // The button and ⌘Q answer it alike, and each restates it over edits it never named.
+            // The button and ⌘Q answer it alike; a flush whose outcome changed restates it.
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))

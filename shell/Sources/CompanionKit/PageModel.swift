@@ -2845,29 +2845,10 @@ public final class PageModel: ObservableObject {
         )
     }
 
-    /// Whether a quit request now answers the standing line: it stands, and
-    /// no file's edits are at risk that the line did not name when it went up.
-    public var quitAnywayOffered: Bool {
-        Self.quitAnswersOffer(
-            offer: quitRefusal, named: quitRefusalNamed,
-            atRisk: Self.filesAtRiskAtQuit(files: quitLineFiles, draftsUnwritten: draftsDirty))
-    }
-
-    /// The files whose unsaved edits the cancelled quit named.
-    private var quitRefusalNamed: Set<UInt64> = []
-
-    /// The files a quit would lose edits to, as the standing line names them.
-    public nonisolated static func filesAtRiskAtQuit(
-        files: [FileSummary], draftsUnwritten: Bool
-    ) -> Set<UInt64> {
-        draftsUnwritten ? Set(files.filter(\.holdsUnsavedEdits).map(\.id)) : []
-    }
-
-    /// The second ask goes through only over the files the first one named.
-    public nonisolated static func quitAnswersOffer(
-        offer: QuitSaveOutcome?, named: Set<UInt64>, atRisk: Set<UInt64>
-    ) -> Bool {
-        offer != nil && atRisk.isSubset(of: named)
+    /// Whether a quit request whose flush came to `outcome` answers the standing
+    /// line: the line stands, and names that outcome. The line reads the live roster.
+    public func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool {
+        quitRefusal == outcome
     }
 
     /// The standing line's button, answered.
@@ -2886,12 +2867,11 @@ public final class PageModel: ObservableObject {
         requestTermination()
     }
 
-    /// The cancelled quit's standing line goes up, naming the files at
-    /// risk now. A settled outcome is never recorded.
+    /// The cancelled quit's standing line goes up. A settled outcome is
+    /// never recorded: there is nothing to quit anyway from.
     public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         guard outcome != .settled else { return }
         quitRefusal = outcome
-        quitRefusalNamed = Self.filesAtRiskAtQuit(files: quitLineFiles, draftsUnwritten: draftsDirty)
     }
 
     /// Whether the offer survives a write. A refusal's offer stands
@@ -3699,8 +3679,6 @@ public final class PageModel: ObservableObject {
         })
         openFiles = files
         quitRoster = nil
-        // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
-        quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
         quitRefusal = Self.quitOfferAfterFiles(
             offer: quitRefusal,
             draftsHeld: Self.draftsHeld(

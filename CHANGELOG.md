@@ -1044,8 +1044,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drafts from memory whatever its erase answers. A quit with unsaved
   edits to a file while the line stands asks rather than settling,
   naming the files; that line retires once no file's edits are held. A
-  second ⌘Q, or Quit Anyway, quits, unless edits the line did not name
-  have appeared since, which the line then names.
+  second ⌘Q, or Quit Anyway, quits over what the line shows, unless its
+  flush comes to a different outcome, which the line then names.
 - **A restored or pasted note that nobody edits is wiped when it goes**
   (`companion-core` 0.34.2; issue #256, the content buffer register's
   C11 and C31). A note brought back by a relaunch, a paste or a clone
