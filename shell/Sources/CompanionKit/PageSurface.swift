@@ -221,11 +221,9 @@ public struct PageStatusStack: View {
         _sync = ObservedObject(wrappedValue: model.sync)
     }
 
-    /// What the discard button says it will do, as a pure function of the
-    /// roster and the drafts refusal (decisions.md item 14).
+    /// What the discard button says it will do, as a pure function of the drafts refusal.
     private var discardHelp: String {
-        PageModel.stateDiscardHelp(
-            files: model.openFiles, draftsRefused: model.draftsRestoreRefused)
+        PageModel.stateDiscardHelp(draftsRefused: model.draftsRestoreRefused)
     }
 
     /// What the quit anyway button says it will do: the loss named by
