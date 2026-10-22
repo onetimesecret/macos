@@ -62,6 +62,8 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-shift-s": .fileSaveAs,
         "cmd-s": .stateSaveNow,
         "cmd-,": .appSettings,
+        // The Help menu's first item (issue #294), carried by that menu only.
+        "cmd-?": .appHelp,
         "escape": .surfaceHandBackKeys,
     ]
 
@@ -178,6 +180,24 @@ final class BundledKeymapTests: XCTestCase {
         XCTAssertFalse(
             resolved.surfaceShortcuts().contains { $0.command == .windowClose },
             "window::Close must never be installed as a surface shortcut")
+    }
+
+    /// ⌘? is the Help menu's item (issue #294), offered to the menu and
+    /// never installed on the surface.
+    func testHelpIsMenuBoundAndNeverSurfaceInstalled() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.menuKeystroke(for: .appHelp)?.canonical, "cmd-?")
+        XCTAssertFalse(resolved.surfaceShortcuts().contains { $0.command == .appHelp })
+    }
+
+    /// An override that takes ⌘? away leaves the Help item nothing to advertise.
+    func testUnbindingHelpLeavesTheMenuNothingToAdvertise() throws {
+        let defaultText = try XCTUnwrap(Keymap.bundledDefaultText())
+        let keymap = Keymap.resolve(
+            defaultText: defaultText,
+            overrideText: #"[{ "context": "Editor", "bindings": { "cmd-?": null } }]"#)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertNil(keymap.menuKeystroke(for: .appHelp))
     }
 
     /// The Window menu carries the chord alone, so an override that

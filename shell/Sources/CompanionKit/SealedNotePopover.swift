@@ -104,10 +104,10 @@ final class NotePopoverView: NSView {
         super.init(frame: frame)
         glyph.image = NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil)
         glyph.contentTintColor = .secondaryLabelColor
-        title.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold)
+        title.font = NSFont.monospacedSystemFont(ofSize: NSFont.miniSystemFontSize, weight: .semibold)
         title.textColor = .secondaryInk
         for label in [hint, expandHint] {
-            label.font = NSFont.systemFont(ofSize: 9)
+            label.font = NSFont.systemFont(ofSize: NSFont.miniSystemFontSize)
             label.textColor = .secondaryInk
         }
         scroll.drawsBackground = false
@@ -231,7 +231,8 @@ final class SealedNoteEditor: NSObject {
         popover.title.attributedStringValue = NSAttributedString(
             string: face.name.map { "NOTE · \($0)" } ?? "NOTE",
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .semibold),
                 .foregroundColor: NSColor.secondaryInk, .kern: 1.15,
             ])
         overlay.frame = scroll.bounds

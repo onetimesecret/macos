@@ -41,8 +41,11 @@ array of sections:
   Zed. Context matching is a plain identifier, deliberately: no `&&`,
   no `!`, until something real needs one.
 - **`use_key_equivalents`** lets a chord in that section be advertised
-  as a macOS menu key equivalent. Only `app::Settings` takes one up
-  today. A menu equivalent is an app-wide claim, live even while a
+  as a macOS menu key equivalent. The menu items that show a chord
+  take it this way: Settings (`app::Settings`), the File menu's items,
+  Undo, Redo and the seal item in Edit, the Window menu's Close Window
+  (`window::Close`) and the Help menu's first item (`app::Help`, issue
+  #294). A menu equivalent is an app-wide claim, live even while a
   Settings field holds the keyboard, so it has to be asked for. Once
   granted, it stays with that chord and command: a later section that
   restates the same line without asking for equivalents leaves the

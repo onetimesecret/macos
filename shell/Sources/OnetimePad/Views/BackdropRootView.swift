@@ -189,14 +189,8 @@ struct BackdropRootView: View {
             // organization; this branch answers only placement.
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    Group {
-                        if pages.showsTimeUnits {
-                            TimeRailView(model: pages, readOnly: !raised)
-                        } else {
-                            SlotRailView(model: pages)
-                        }
-                    }
-                    .stanceFaded(raised: raised, animation: stanceFade)
+                    TimeRailView(model: pages, readOnly: !raised)
+                        .stanceFaded(raised: raised, animation: stanceFade)
                     Divider()
                 }
                 pageContent
@@ -206,14 +200,8 @@ struct BackdropRootView: View {
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
-                Group {
-                    if pages.showsTimeUnits {
-                        TimeStripView(model: pages)
-                    } else {
-                        TabStripView(model: pages, readOnly: !raised)
-                    }
-                }
-                .stanceFaded(raised: raised, animation: stanceFade)
+                TabStripView(model: pages, readOnly: !raised)
+                    .stanceFaded(raised: raised, animation: stanceFade)
             }
         }
         .background(

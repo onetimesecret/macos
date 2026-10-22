@@ -10,10 +10,12 @@ that turns them on. The roll is still branch 6's.
 - `shell/Sources/CompanionKit/TimeRailView.swift`: `TimeRailView`
   (public, 56pt, `VStack(spacing: 2)` of `TimeUnitTab` over
   `model.timeUnits.units`) and `TimeUnitTab` (internal). Four decisions
-  are pure statics with tests and nothing else decides them:
+  were pure statics with tests and nothing else decided them:
   `TimeUnitTab.target(for:)`, `TimeRailView.selectedBucket(
   projection:selection:)`, `chord(forRowAt:keymap:)` and the footer's
-  `hiddenPagesLine`/`hiddenPagesHelp`.
+  `hiddenPagesLine`/`hiddenPagesHelp`. Since 2026-10-21 (issue 275) the
+  first two are gone: `StreamNavigator.nodes` decides each node's
+  `target` and `active` flag, pinned in `StreamNavigatorTests`.
 - `TimeUnitProjection.Unit.spokenRemaining`, from the same
   soonest-dying page as the gauge. The rail carries `SheetTab`'s
   accessibility triple and the third had no source; looking it up in
@@ -24,10 +26,13 @@ that turns them on. The roll is still branch 6's.
 
 ## Four contracts a later branch must not re-decide
 
-- **The rail's targets are `visibleTargets`' targets.** Both map a unit
+- **The rail's targets are `visibleTargets`' targets.** Both map a day
   to its first slot in strip order, `.today` only where a day answers
-  to no slot. A click on the second row and ⌘2 must land together; a
-  test asserts the two lists element for element on a live pad.
+  to no slot. A click on the second day's node and ⌘2 must land
+  together; `TimeRailTests.testTheNodesLandWhereTheKeyboardLands`
+  asserts the first of day nodes against `visibleTargets` on a live pad
+  (the navigator draws one node per page, so later pages on a day are
+  filtered out of that comparison).
 - **The card's two content rows are written out in full**, deliberately,
   so the off path is identical by inspection rather than by trusting a
   wrapper with one child. The cost is a remount of the editor on a
@@ -39,7 +44,9 @@ that turns them on. The roll is still branch 6's.
   empty Today takes the mark only by elimination, on the pad where no
   drawn day holds a page. The stack's first CI run caught
   `selectedBucket` lighting Today for a slot it draws no row for, which
-  would have said the surface was somewhere it is not.
+  would have said the surface was somewhere it is not. The rule now
+  lives in `StreamNavigator.nodes` (`active`), pinned by
+  `StreamNavigatorTests.testTheActiveNodeFollowsTheSelection`.
 - **The rail carries no verb.** No rename, close, rung, hold or
   reorder, and no row for a tab holding no page. `TabFramesKey` is
   never touched, so the two modes cannot contend over one preference
@@ -47,12 +54,13 @@ that turns them on. The roll is still branch 6's.
 
 ## Two testing notes
 
-- **Never hand a View type's static to `map` unapplied.** SwiftUI's
-  `View` is `@MainActor`, so a conforming struct's statics are
-  main-actor isolated and `units.map(TimeUnitTab.target(for:))` is a
-  conversion that loses the isolation. `units.map { TimeUnitTab.target(
-  for: $0) }` is a closure formed in an isolated context and inherits
-  it, which is the form to write.
+- **Never hand a main actor type's static to `map` unapplied.** SwiftUI's
+  `View` is `@MainActor`, so a conforming type's statics are main actor
+  isolated and `nodes.map(StreamNavigator.help)` style conversions lose
+  the isolation. A closure formed in an isolated context, `nodes.map {
+  StreamNavigator.help(for: $0, chord: nil) }`, inherits it, which is the
+  form to write. (`TimeUnitTab` is a plain namespace since 2026-10-21 and
+  its one static, `todayHelp(chord:)`, is `nonisolated`.)
 - A live core still cannot make two days (the ageing seam restores
   every creation stamp intact), so ⌘2 and ⌥⌘→ are pinned as the
   contrast between the two modes on a one-day pad, and the multi-day

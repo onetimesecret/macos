@@ -555,6 +555,340 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// A switch that hands the keys to the editor must not let a scroll the hand off makes
+    /// stand in for the reader's own (#278, point 1).
+    func testAPageSwitchHandingTheKeysToAnOffscreenCaretKeepsTheReadingPlace() throws {
+        let model = try makeModel()
+        let top = try page(in: model, saying: longPage(lines: 60))
+        let previewed = try page(in: model, saying: "# Preview\n" + longPage(lines: 40))
+        let next = try page(in: model, saying: longPage(lines: 80))
+        model.toggleMarkdownPreview(for: previewed)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let end = editor.string.utf16.count
+        editor.setSelectedRange(NSRange(location: end, length: 0))
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: previewed), selectedPage: previewed, readOnly: false)
+        let preview = try XCTUnwrap(roll.stack.previewRegions[previewed])
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        XCTAssertTrue(editor.isHidden)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[top])
+        let index = (quiet.string as NSString).range(of: "line 20 ").location
+        XCTAssertNotEqual(index, NSNotFound)
+        let glyph = try glyphRect(in: quiet, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, top)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        let top0 = roll.scroll.contentView.bounds.minY
+        // The anchor's glyph, where it stands inside the clip: the invariant, whatever the
+        // rows above it do across the switch.
+        func glyphInClip() throws -> CGFloat {
+            quiet.frame.minY + (try glyphRect(in: quiet, at: index)).minY - roll.scroll.contentView.bounds.minY
+        }
+        let glyphBefore = try glyphInClip()
+        let nextRegion = try XCTUnwrap(roll.stack.quietRegions[next])
+        XCTAssertGreaterThan(
+            nextRegion.frame.minY, roll.scroll.contentView.bounds.maxY,
+            "the case needs the caret's page below the viewport")
+
+        roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
+
+        XCTAssertTrue(roll.window.firstResponder === editor, "the keys did not pass to the editor")
+        XCTAssertEqual(roll.coordinator.currentSheet, next)
+        XCTAssertEqual(editor.selectedRange().location, end, "the caret was not put back at the page's end")
+        XCTAssertGreaterThan(editor.frame.minY, top0 + roll.scroll.contentView.bounds.height)
+        XCTAssertEqual(roll.stack.currentPlace?.page, top)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+        XCTAssertTrue(roll.stack.quietRegions[top] === quiet)
+        XCTAssertEqual(try glyphInClip(), glyphBefore, accuracy: 0.5, "the anchor's line moved in the clip")
+    }
+
+    /// A peer's applied edit restates a quiet page and merges into the page a surface shows, one
+    /// stretch at a time, so a selection outside the stretches follows the text and the next
+    /// keystroke is read from the merged text (#276); the model's own view of what is mounted
+    /// answers which is which (#278, point 4).
+    func testAPeersEditRestatesAQuietPageAndMergesIntoTheMountedOne() throws {
+        let model = try makeModel()
+        let quiet = try page(in: model, saying: "quiet before")
+        let mounted = try page(in: model, saying: "alpha beta gamma")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(storage === model.storage(for: mounted))
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 6, length: 4))
+        // The quiet page's storage, minted before the peer's edit so the settle has one to restate,
+        // under a manager with no text view, as a torn down editor leaves behind.
+        let stale = model.storage(for: quiet)
+        let stray = NSLayoutManager()
+        stale.addLayoutManager(stray)
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
+        XCTAssertEqual(stale.string, "quiet before", "the case needs a stale storage to restate")
+        // The peer wrote at both ends of the mounted page, in the core alone.
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 16, text: " delta"), .ins(at: 0, text: "zero ")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+        let coreText = {
+            model.coreClient.documentRuns(sheet: mounted).reduce(into: "") {
+                if case .ink(let ink) = $1 { $0 += ink }
+            }
+        }
+        XCTAssertEqual(coreText(), "zero alpha beta gamma delta")
+        XCTAssertEqual(editor.string, "alpha beta gamma", "the case needs the storage behind the core")
+
+        model.settleRemoteEdits(on: [quiet, mounted])
+        stale.removeLayoutManager(stray)
+
+        XCTAssertEqual(stale.string, "quiet after", "a stray manager kept the page stale")
+        XCTAssertTrue(model.storage(for: quiet) === stale)
+        XCTAssertEqual(editor.string, "zero alpha beta gamma delta")
+        XCTAssertTrue(editor.textStorage === storage)
+        XCTAssertEqual(
+            editor.selectedRange(), NSRange(location: 11, length: 4),
+            "the selection did not follow the peer's text above it")
+        editor.insertText("!", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "zero alpha ! gamma delta")
+        XCTAssertEqual(coreText(), editor.string, "the keystroke after the merge was read from stale text")
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        XCTAssertEqual(roll.stack.quietRegions[quiet]?.string, "quiet after")
+    }
+
+    /// A peer's edit around a sealed object keeps the object's attachment, and a wholesale
+    /// rewrite past the diff's limit still ends on the core's text (#276).
+    func testAPeersEditAroundASealedObjectKeepsTheObjectAndAWholesaleRewriteEndsOnTheCoresText() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "before secret after")
+        XCTAssertNotNil(model.coreClient.sealText(sheet: mounted, "secret", at: 7, length: 6))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertEqual(editor.string, "before \u{FFFC} after")
+        let chip = try XCTUnwrap(storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment)
+        editor.setSelectedRange(NSRange(location: 9, length: 0))
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 14, text: "wards"), .del(at: 0, len: 2)]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertEqual(editor.string, "fore \u{FFFC} afterwards")
+        XCTAssertTrue(
+            storage.attribute(.attachment, at: 5, effectiveRange: nil) as? ChipAttachment === chip,
+            "the object's attachment was rebuilt under the editor")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 0))
+
+        let rewrite = String(repeating: "a page rewritten whole by a peer\n", count: 200)
+        XCTAssertTrue(model.coreClient.syncDocument(
+            sheet: mounted, json: "[{\"ink\":\"\(rewrite.replacingOccurrences(of: "\n", with: "\\n"))\"}]"))
+        model.settleRemoteEdits(on: [mounted])
+        XCTAssertEqual(editor.string, rewrite)
+        XCTAssertTrue(editor.textStorage === storage)
+    }
+
+    /// A peer's edit arriving mid composition drops the composition, provisional text and all,
+    /// since the input method's text is not the core's and its commit would be read against a
+    /// storage the merge moves; the merge then runs, and the next keystroke is ordinary (#276).
+    func testAPeersEditDuringACompositionDropsTheCompositionAndMerges() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "alpha beta")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        editor.setSelectedRange(NSRange(location: 6, length: 4))
+        editor.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "alpha ka", "the case needs a composition over a selection")
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 10, text: " gamma")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertFalse(editor.hasMarkedText(), "the composition stood through the merge")
+        XCTAssertEqual(editor.string, "alpha beta gamma")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 6, length: 4), "the selection the composition replaced is back")
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+        editor.insertText("\u{304B}", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(editor.string, "alpha \u{304B} gamma")
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+    }
+
+    /// A settle that finds nothing changed leaves a composition standing, and a composition
+    /// over a selection holding a sealed object gives the object back when it is dropped (#276).
+    func testACompositionStandsThroughAnEchoAndGivesBackTheObjectItReplaced() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "before secret after")
+        XCTAssertNotNil(model.coreClient.sealText(sheet: mounted, "secret", at: 7, length: 6))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        XCTAssertTrue(roll.window.makeFirstResponder(editor))
+        let chip = try XCTUnwrap(storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment)
+        editor.setSelectedRange(NSRange(location: 7, length: 1))
+        editor.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "before ka after", "the case needs a composition over the object")
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertTrue(editor.hasMarkedText(), "a settle with nothing new dropped the composition")
+        XCTAssertEqual(editor.string, "before ka after")
+
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 14, text: "wards")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertFalse(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "before \u{FFFC} afterwards")
+        XCTAssertTrue(
+            storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment === chip,
+            "the object the composition replaced did not come back as itself")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 1))
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+    }
+
+    /// A peer's edit that changes one emoji for another replaces the whole pair, never one of
+    /// its halves, and a settle that finds the page current touches the storage not at all (#276).
+    func testAPeersEditInsideASurrogatePairReplacesTheWholePairAndAnEchoTouchesNothing() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "a 😀 b")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        editor.setSelectedRange(NSRange(location: 5, length: 1))
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 2, len: 2), .ins(at: 2, text: "😁")]))
+        XCTAssertTrue(model.coreClient.applyOps(sheet: mounted, json: ops))
+        final class Watch: @unchecked Sendable {
+            var edits = 0
+            var halves = 0
+        }
+        let watch = Watch()
+        let token = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
+        ) { notification in
+            watch.edits += 1
+            if let edited = notification.object as? NSTextStorage, Self.holdsHalfAPair(edited.string) {
+                watch.halves += 1
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertEqual(editor.string, "a 😁 b")
+        XCTAssertEqual(watch.halves, 0, "an edit left half a surrogate pair standing")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 5, length: 1))
+        XCTAssertNil(PageModel.parityBreach(
+            editor: InkEditorView.Coordinator.runs(of: storage),
+            core: model.coreClient.documentRuns(sheet: mounted)))
+
+        let edits = watch.edits
+        model.settleRemoteEdits(on: [mounted])
+        XCTAssertEqual(watch.edits, edits, "a settle with nothing new edited the storage")
+    }
+
+    private static func holdsHalfAPair(_ text: String) -> Bool {
+        let units = Array(text.utf16)
+        for (index, unit) in units.enumerated() {
+            if UTF16.isLeadSurrogate(unit), index + 1 >= units.count || !UTF16.isTrailSurrogate(units[index + 1]) {
+                return true
+            }
+            if UTF16.isTrailSurrogate(unit), index == 0 || !UTF16.isLeadSurrogate(units[index - 1]) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// A rewrite of a few stretches keeps a selection on the words between them; one of more
+    /// stretches than the merge applies singly is replaced whole and ends on the core's text (#276).
+    func testAFewStretchesKeepTheWordsBetweenThemAndManyAreReplacedWhole() throws {
+        let model = try makeModel()
+        let words = (0..<100).map { "x\($0)" }
+        let mounted = try page(in: model, saying: words.joined(separator: " "))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        let island = (editor.string as NSString).range(of: "x50")
+        editor.setSelectedRange(island)
+        func rewrite(_ changed: Range<Int>) throws {
+            let text = words.enumerated().map { changed.contains($0.offset) ? "y\($0.offset)" : $0.element }
+                .joined(separator: " ")
+            XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"\(text)\"}]"))
+            model.settleRemoteEdits(on: [mounted])
+            XCTAssertEqual(editor.string, text)
+            XCTAssertNil(PageModel.parityBreach(
+                editor: InkEditorView.Coordinator.runs(of: storage),
+                core: model.coreClient.documentRuns(sheet: mounted)))
+        }
+
+        try rewrite(10..<20)
+        XCTAssertEqual(
+            (editor.string as NSString).substring(with: editor.selectedRange()), "x50",
+            "a selection between the stretches moved")
+
+        try rewrite(0..<100)
+        XCTAssertTrue(editor.textStorage === storage)
+    }
+
+    /// A peer's paragraph merged in above the reader on the mounted day keeps the same line at
+    /// the top of the clip, as a local paste there does (#276).
+    func testAPeersParagraphMergedAboveTheReaderInTheMountedDayKeepsTheSameLineAtTheTop() throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        _ = try page(in: model, saying: longPage(lines: 10))
+        let selected = try page(in: model, saying: longPage(lines: 80))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let target = "line 40 "
+        let index = (editor.string as NSString).range(of: target).location
+        let glyph = try glyphRect(in: editor, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        editor.setSelectedRange(NSRange(location: index, length: 0))
+
+        let paragraph = "a paragraph a peer wrote 🧪 above the reader, long enough to wrap at this width\n"
+        let above = (editor.string as NSString).range(of: "line 10 ").location
+        XCTAssertTrue(model.coreClient.applyOps(
+            sheet: selected, json: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: above, text: paragraph)]))))
+        model.settleRemoteEdits(on: [selected])
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+
+        let moved = (editor.string as NSString).range(of: target).location
+        XCTAssertEqual(moved, index + (paragraph as NSString).length)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: moved, length: 0))
+        var expected = place.anchor
+        expected.characterIndex = moved
+        let offset = try XCTUnwrap(expected.offset(in: editor))
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, editor.frame.minY + offset.y, accuracy: 0.5)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
+    }
+
     func testWrapAndWidthRoundTripsReturnAMidParagraphReaderToTheSameLine() throws {
         let model = try makeModel()
         model.wrapsLines = true

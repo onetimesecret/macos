@@ -2235,6 +2235,8 @@ public struct InkEditorView: NSViewRepresentable {
         struct CompositionSpan {
             let location: Int
             let baseline: String
+            /// The same text with its attributes, so an object the composition replaced comes back.
+            let attributedBaseline: NSAttributedString
             let selectionBefore: NSRange
             var spanLength: Int
         }
@@ -2372,9 +2374,22 @@ public struct InkEditorView: NSViewRepresentable {
             imeComposition = CompositionSpan(
                 location: clamped.location,
                 baseline: (storage.string as NSString).substring(with: clamped),
+                attributedBaseline: storage.attributedSubstring(from: clamped),
                 selectionBefore: clamped,
                 spanLength: clamped.length
             )
+        }
+
+        /// `storage` as it stood before the composition in flight, or nil without one: a copy
+        /// with the span put back to its baseline, for a comparison the provisional text must not
+        /// enter (#276).
+        func compositionFreeCopy(of storage: NSTextStorage) -> NSAttributedString? {
+            guard let ime = imeComposition else { return nil }
+            let span = NSRange(location: ime.location, length: max(0, ime.spanLength))
+            guard NSMaxRange(span) <= storage.length else { return nil }
+            let copy = NSMutableAttributedString(attributedString: storage)
+            copy.replaceCharacters(in: span, with: ime.attributedBaseline)
+            return copy
         }
 
         /// The composition resolved: diff the accumulated span against
@@ -2422,6 +2437,28 @@ public struct InkEditorView: NSViewRepresentable {
                   let document
             else { return }
             finishComposition(in: storage, document: document)
+        }
+
+        /// Drop the composition in flight on this coordinator's own view, provisional text and
+        /// all: the span returns to its baseline, attributes included, with no op emitted, and
+        /// the input method is told. For a peer's edit, whose merge a commit read against the old
+        /// storage would cross (#276).
+        func abandonComposition() {
+            guard let textView, textView.hasMarkedText(), let storage = textView.textStorage else { return }
+            let span = imeComposition.map { NSRange(location: $0.location, length: max(0, $0.spanLength)) }
+            let baseline = imeComposition?.attributedBaseline ?? NSAttributedString()
+            let selection = imeComposition?.selectionBefore
+            imeComposition = nil
+            textView.inputContext?.discardMarkedText()
+            model.applyingProjection {
+                textView.unmarkText()
+                if let span, NSMaxRange(span) <= storage.length {
+                    storage.replaceCharacters(in: span, with: baseline)
+                }
+            }
+            if let selection {
+                textView.setSelectedRange(Self.clamped(selection, to: storage.length))
+            }
         }
 
         /// The outermost TextKit action currently producing storage edits.
@@ -3312,7 +3349,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)),
                   (view === textView && writesFile) || (view as? AskingTextView)?.mayReadOut == true
             else { return false }
-            model.openURL(url)
+            model.openExternal(url)
             return true
         }
 
@@ -7309,7 +7346,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSAttributedString(
             string: Self.classification,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .semibold),
                 .foregroundColor: Self.quietInk(selected: selected),
                 .kern: 1.15,
             ]
@@ -7380,7 +7418,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor
     private func drawDoorwayRule(in cellFrame: NSRect) {
         guard let word = doorwayRect(in: cellFrame) else { return }
-        let font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let font = NSFont.monospacedSystemFont(ofSize: NSFont.miniSystemFontSize, weight: .regular)
         let y = word.minY + font.ascender + 2.5
         let rule = NSBezierPath()
         rule.move(to: NSPoint(x: word.minX, y: y))
@@ -7485,7 +7523,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSAttributedString(
             string: text,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .regular),
                 .foregroundColor: quietInk(selected: selected),
             ]
         )
@@ -7675,7 +7714,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSAttributedString(
             string: decryptedDragWords,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .medium),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .medium),
                 .foregroundColor: NSColor.labelColor,
             ]
         )

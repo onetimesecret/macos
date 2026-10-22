@@ -60,12 +60,16 @@ struct BackdropApp: App {
                 CommandMenu("File") {
                     FileMenuItems(
                         pages: appDelegate.pages,
+                        keyWindow: appDelegate.keyWindow,
                         present: appDelegate.returnToOwner,
                         newShortcut: appDelegate.shortcut(for: .pageNew),
                         openShortcut: appDelegate.shortcut(for: .fileOpen),
                         saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
                         saveAsShortcut: appDelegate.shortcut(for: .fileSaveAs),
-                        closeShortcut: appDelegate.shortcut(for: .pageClose)
+                        closeShortcut: appDelegate.shortcut(for: .pageClose),
+                        closeKeyWindow: {
+                            appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
+                        }
                     )
                 }
                 // No Print… until a print that emits placeholders is designed
@@ -125,35 +129,28 @@ struct BackdropApp: App {
                         appDelegate.showAbout()
                     }
                 }
+                // The delegate puts OnetimePad Help above these once
+                // AppKit has built the menu (`installHelpItem`, issue #294).
                 CommandGroup(replacing: .help) {
                     Button("Export Diagnostics…") { appDelegate.exportDiagnostics() }
                     Button("Copy Diagnostic Summary") { appDelegate.copyDiagnosticSummary() }
                     Divider()
                     Button("Send Feedback…") { appDelegate.sendFeedback() }
                 }
-                // The Window menu's Close Window (issue #201, ADR-0033).
-                // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
-                // window the keyboard is in and reaches Settings too.
-                // The group is placed before AppKit's Minimize/Zoom
-                // group (`.windowSize`) so it heads the menu;
-                // `.windowArrangement` is Bring All to Front, which sits
-                // after Minimize and Zoom. Apple keeps Close in File;
-                // the Window menu seat is issue #201's call while ⌘W
-                // is the strip's. The chord comes from the keymap, so an
-                // override that takes it away leaves the item without a
-                // shortcut rather than lying (see docs/development/keymap-format-and-dispatch.md).
+                // The Window menu's Close Window, ⇧⌘W (issue #201, ADR-0033),
+                // ahead of AppKit's Minimize and Zoom. ⌘W is the File menu's
+                // above. The chord comes from the keymap; an override that
+                // takes it away leaves the item without a shortcut.
                 //
-                // `performClose:` down the responder chain: the key
-                // window answers, so Settings closes on Settings, the
-                // editor closes on itself, and the borderless panel
-                // (`.panel` and its key relay) answers with nothing to
-                // do because it carries no close box. Panel and relay
-                // are also `isExcludedFromWindowsMenu = true`, so the
-                // menu itself lists the editor window and Settings only.
+                // `performClose:` down the responder chain to the key window;
+                // the item dims where that cannot close, as ⌘W's does.
                 CommandGroup(before: .windowSize) {
                     appDelegate.presentationCommands
                     Divider()
-                    WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
+                    WindowCloseMenuItem(
+                        keyWindow: appDelegate.keyWindow,
+                        shortcut: appDelegate.shortcut(for: .windowClose)
+                    ) {
                         appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
                     }
                     // No trailing divider: SwiftUI separates command groups.
@@ -162,31 +159,13 @@ struct BackdropApp: App {
     }
 }
 
-/// The File menu: New Page, Open, Save, Save As and Close File (ADR-0028).
-///
-/// A view of its own because a `CommandMenu`'s content is a view, and a
-/// view is what can observe the model whose state greys three of these
-/// five out. New Page heads the menu as New does in every macOS app; it
-/// is the same `page::New` the chord and the strip's + run, an explicit
-/// ask that always mints.
-///
-/// Every item goes through `perform`, the same route the chord takes,
-/// so each verb has one implementation. Save, Save As and Close File
-/// are dimmed while a page rather than a file is showing, because on a
-/// page those chords mean something else entirely and a menu that
-/// offered them under a file's names would be lying about what the
-/// click does.
-///
-/// Enablement is display and never a gate: the model's own arms decide
-/// what happens, and a click that arrives anyway lands on the page
-/// reading of the chord rather than on nothing.
-///
-/// New Page asked from a window that is not the surface (Settings,
-/// About, Feedback) also brings the owner surface back, so the command
-/// shows what it made the way Open… shows its panel.
+/// The File menu: New Page, Open, Save and Save As through `perform`, dimming
+/// Save and Save As off a file (ADR-0028), and the ⌘W item `CloseMenuItem` resolves (#201).
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
+    /// What ⌘W closes, and whether the key window can close.
+    @ObservedObject var keyWindow: KeyWindowFacts
     /// Brings the owner surface back, the editor window or the panel.
     let present: () -> Void
     let newShortcut: KeyboardShortcut?
@@ -194,9 +173,10 @@ private struct FileMenuItems: View {
     let saveShortcut: KeyboardShortcut?
     let saveAsShortcut: KeyboardShortcut?
     let closeShortcut: KeyboardShortcut?
+    /// Sends `performClose:` to the key window.
+    let closeKeyWindow: () -> Void
 
-    /// Whether the surface is showing a file, which is what the three
-    /// file verbs need to be true.
+    /// Whether the surface is showing a file, which Save and Save As need.
     private var onAFile: Bool {
         if case .file = pages.activeTarget { return true }
         return false
@@ -218,9 +198,53 @@ private struct FileMenuItems: View {
             .keyboardShortcut(saveAsShortcut)
             .disabled(!onAFile)
         Divider()
-        Button("Close File") { pages.perform(.pageClose) }
-            .keyboardShortcut(closeShortcut)
-            .disabled(!onAFile)
+        // One item, so the NSMenuItem and its ⌘W equivalent stay put
+        // while the title and enablement follow the key window.
+        Button(closeItem.title) {
+            pages.closeWhatIsShowing(keyWindow.closeTarget, closeKeyWindow: closeKeyWindow)
+        }
+        .keyboardShortcut(closeShortcut)
+        .disabled(!closeItem.isEnabled)
+    }
+
+    private var closeItem: CloseMenuItem {
+        CloseMenuItem.resolve(
+            target: keyWindow.closeTarget, showing: pages.activeTarget,
+            keyWindowCanClose: keyWindow.canClose)
+    }
+}
+
+/// The File menu's ⌘W item (issue #201), one row per `CloseChordTarget`.
+enum CloseMenuItem: Equatable {
+    case closeFile
+    case closePage(enabled: Bool)
+    case closeWindow(enabled: Bool)
+
+    static func resolve(
+        target: CloseChordTarget, showing: SurfaceTarget, keyWindowCanClose: Bool
+    ) -> CloseMenuItem {
+        switch (target, showing) {
+        case (.surface, .file): return .closeFile
+        case (.surface, .tab): return .closePage(enabled: true)
+        case (.surface, .today): return .closePage(enabled: false)
+        case (.companionWindow, _): return .closeWindow(enabled: keyWindowCanClose)
+        case (.nothing, _): return .closeWindow(enabled: false)
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .closeFile: return "Close File"
+        case .closePage: return "Close Page"
+        case .closeWindow: return "Close Window"
+        }
+    }
+
+    var isEnabled: Bool {
+        switch self {
+        case .closeFile: return true
+        case .closePage(let enabled), .closeWindow(let enabled): return enabled
+        }
     }
 }
 
@@ -357,6 +381,8 @@ private struct SealSelectionMenuItem: View {
 /// keymap has nothing to say, which is the fail-open shape the doc
 /// comment on the group promises.
 private struct WindowCloseMenuItem: View {
+    /// Dims on the File menu's ⌘W fact, `canClose`.
+    @ObservedObject var keyWindow: KeyWindowFacts
     let shortcut: KeyboardShortcut?
     let action: () -> Void
 
@@ -364,8 +390,10 @@ private struct WindowCloseMenuItem: View {
         if let shortcut {
             Button("Close Window", action: action)
                 .keyboardShortcut(shortcut)
+                .disabled(!keyWindow.canClose)
         } else {
             Button("Close Window", action: action)
+                .disabled(!keyWindow.canClose)
         }
     }
 }
@@ -390,15 +418,62 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
-    private lazy var settings = BackdropSettingsWindowController(model: model)
-    private lazy var feedback = FeedbackWindowController(model: model) { [unowned self] in
-        diagnosticReport()
+    /// The Settings and Send Feedback controllers, made on first use.
+    /// Backed by optionals rather than `lazy` so that a question about
+    /// a window they may not have made yet does not make the controller.
+    private var madeSettings: BackdropSettingsWindowController?
+    private var settings: BackdropSettingsWindowController {
+        if let madeSettings { return madeSettings }
+        let made = BackdropSettingsWindowController(model: model)
+        madeSettings = made
+        return made
     }
+    private var madeFeedback: FeedbackWindowController?
+    private var feedback: FeedbackWindowController {
+        if let madeFeedback { return madeFeedback }
+        let made = FeedbackWindowController(model: model) { [unowned self] in
+            diagnosticReport()
+        }
+        madeFeedback = made
+        return made
+    }
+
+    /// The About panel `showAbout` last put up, by identity. AppKit
+    /// reuses the one panel for the life of the process.
+    private weak var aboutPanel: NSWindow?
 
 
     /// The primary editor window (ADR-0033), the second of the two
-    /// content windows over the one model.
-    private lazy var editorWindow = PrimaryEditorWindowController(model: model)
+    /// content windows over the one model. Optional backed, as Settings is.
+    private var madeEditorWindow: PrimaryEditorWindowController?
+    private var editorWindow: PrimaryEditorWindowController {
+        if let madeEditorWindow { return madeEditorWindow }
+        let made = PrimaryEditorWindowController(model: model)
+        madeEditorWindow = made
+        return made
+    }
+
+    /// Whether a window is one of the app's own ordinary windows:
+    /// Settings, Send Feedback, or the About panel AppKit put up. ⌘W
+    /// closes one of them while it has the keyboard (#201).
+    func isCompanionWindow(_ window: NSWindow) -> Bool {
+        Self.isCompanionWindow(
+            window, settings: madeSettings?.window, feedback: madeFeedback?.window, about: aboutPanel)
+    }
+
+    /// The companion rule, pure so each window is an assertion: identity
+    /// against the windows already made, and no scan of `NSApp.windows`.
+    static func isCompanionWindow(
+        _ window: NSWindow, settings: NSWindow?, feedback: NSWindow?, about: NSWindow?
+    ) -> Bool {
+        [settings, feedback, about].contains { $0 === window }
+    }
+
+    /// Whether a window is the owner's: the panel, its key relay, or the
+    /// primary editor window. ⌘W closes the surface's page or file there.
+    private func isOwnerWindow(_ window: NSWindow) -> Bool {
+        controller?.owns(window) == true || madeEditorWindow?.owns(window) == true
+    }
 
     /// Holds the About panel at the surface's keyless altitude while
     /// it is open. Settings owns a follower of its own; this one is
@@ -462,6 +537,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
     private var windowCloseObserver: NSObjectProtocol?
 
+    /// Which window is key, for the ⌘W and ⇧⌘W items (issue #201).
+    /// Starts observing once the app has finished launching.
+    private(set) lazy var keyWindow = KeyWindowFacts(
+        isOwnerWindow: { [weak self] window in self?.isOwnerWindow(window) ?? false },
+        isCompanionWindow: { [weak self] window in self?.isCompanionWindow(window) ?? false }
+    )
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
     }
@@ -484,6 +566,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // the menu bar reads: App | File | Edit | View | Window | Help.
         Self.moveFileMenuAfterAppMenu()
         Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
+        keyWindow.observe()
+        // The Help menu's first item is the app's help (issue #294), and
+        // the menu becomes `helpMenu`.
+        NSApp.helpMenu = Self.installHelpItem(
+            in: NSApp.mainMenu, productName: Self.productName,
+            keystroke: model.pages.keymap.menuKeystroke(for: .appHelp), target: self)
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -1266,6 +1354,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // AppKit has put it up.
         let panel = standardAboutPanel()
         panel?.collectionBehavior.insert(.moveToActiveSpace)
+        // Kept by identity, so the lookup runs here once and not on every key event.
+        aboutPanel = panel
         // About sits at the surface's keyless altitude for as long as
         // it is open, as Settings does and through the same follower
         // (ADR-0032, #188). Otherwise About opens at .normal beneath a
@@ -1305,7 +1395,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 titled: window.styleMask.contains(.titled),
                 title: window.title,
                 isSheet: window.isSheet,
-                isSettings: settings.owns(window)
+                isSettings: madeSettings?.owns(window) == true
             )
         }
     }
@@ -1389,6 +1479,38 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             item.action = action
             item.isEnabled = true
         }
+    }
+
+    /// Where OnetimePad Help goes until the docs site has a page of its
+    /// own (issue #294).
+    static let helpURL = URL(string: "https://docs.onetimesecret.dev/macos")!
+
+    /// The Help menu's item, through the model's external link route so
+    /// a test records the URL rather than starting a browser.
+    @objc func openHelp(_ sender: Any?) {
+        model.pages.openExternal(Self.helpURL)
+    }
+
+    /// Puts "<product> Help" at the head of the Help menu SwiftUI built, on
+    /// the keymap's `app::Help` chord or none, and returns that menu for
+    /// `NSApp.helpMenu`. Nil when there is no Help menu to find; a menu
+    /// that already has the item anywhere is returned as it is.
+    @discardableResult
+    static func installHelpItem(in mainMenu: NSMenu?, productName: String,
+                                keystroke: Keystroke?,
+                                target: BackdropAppDelegate) -> NSMenu? {
+        guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
+        else { return nil }
+        if helpMenu.items.contains(where: { $0.action == #selector(openHelp(_:)) }) { return helpMenu }
+        let help = NSMenuItem(title: "\(productName) Help",
+                              action: #selector(openHelp(_:)),
+                              keyEquivalent: keystroke?.menuKeyEquivalent ?? "")
+        help.keyEquivalentModifierMask = keystroke?.menuModifierMask ?? []
+        help.target = target
+        let hadItems = helpMenu.numberOfItems > 0
+        helpMenu.insertItem(help, at: 0)
+        if hadItems { helpMenu.insertItem(.separator(), at: 1) }
+        return helpMenu
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the

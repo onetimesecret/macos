@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Seat words and note hints take their size from the platform** (app
+  0.40.8; issue #297). The thirteen places that spelled the mini font
+  size as a literal 9 now read `NSFont.systemFontSize(for: .mini)`
+  through one `NSFont.miniSystemFontSize`, and a test pins that number
+  at 9 so a platform change is noticed. Nothing on screen changes.
+
+- **Captions and tooltips say one-time link, not conceal** (app 0.40.7;
+  issue #295). The Connection settings caption, the guest prompt, the
+  clear token message, the sync sign out message, the sheet's server
+  tooltip and its spoken error line, and the ↗ page tab's tooltip and
+  label now name the one-time link and the API token, in the menu's
+  verb, create (ADR-0055 rule 3). Conceal stays the code's and the
+  server's word. The new sentences are pinned by test.
+
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue
   #79). With pages shown as days, Settings and ⌥Z turn wrapping on and
@@ -469,6 +483,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the interval through `companion_clipboard_clear_seconds`.
 
 ### Added
+
+- **OnetimePad Help heads the Help menu** (app 0.40.6; issue #294). The
+  item is ⌘?, bound in the keymap as `app::Help`, and opens
+  https://docs.onetimesecret.dev/macos, where the docs site will get a
+  page of its own. A keymap that unbinds the chord leaves the item
+  without a shortcut. The menu is assigned as the app's help menu.
 
 - **A Timeline page node takes a drop** (app 0.40.0; Law 0001's drag
   row, the 2026-10-20 Timeline node amendment, issue #267). In the
@@ -1011,6 +1031,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second ⌘Q quits anyway, unless edits the line did not name have
   appeared since, which the line then names.
 
+- **⌘W closes what the key window shows** (app 0.40.5; issue #201).
+  While Settings, About or Send Feedback had the keyboard, ⌘W beeped
+  with a page showing and closed the file behind that window with a
+  file showing. It now closes that window, as in Xcode, Safari and
+  Terminal, and the File menu's item reads Close Window. On the pad or
+  the editor window it is `page::Close`, and the item reads Close File
+  on a file and Close Page on a page, enabled. While a sheet, a save
+  panel or an alert has the keyboard, or no window does, the item dims
+  and the chord closes nothing. The Window menu's ⇧⌘W item dims when
+  the key window cannot close, on the same fact as the File menu's.
+- **A Timeline too dense to fit scrolls instead of climbing over the
+  Pad heading** (app 0.40.4; issue #277). The side Timeline packed its
+  rows down from the top and then pulled them up from the foot, so a
+  rail with more pages than fit pushed its first rows above the column,
+  where they were drawn over the Pad heading, its plus and the Files
+  shelf and took clicks there. The rows now stay below the column's top
+  and the column scrolls inside its own clip, as the Finder sidebar
+  does; the heading, its plus and the Files shelf stay put above it.
+  Selecting a page scrolls its node into view, a wheel over a rail that
+  scrolls turns the rail (over one that fits, the roll, as before), and
+  a row scrolled out of the column is neither drawn nor clickable nor
+  a drop target, so a click and a drop land on the same rows. The box
+  the line slivers keep clear of now covers every whole point a row
+  paints and the one above it, at a fractional top as at a whole one,
+  so a sliver never crosses a row's last point.
+- **A large mixed rewrite of a day keeps the reader's share of it**
+  (app 0.40.3; issue #283). When a day the editor is not on changed by
+  a mixed edit too large for the reading anchor's bounded search, the
+  anchor went to the start of the changed stretch, often the top of the
+  page. It now keeps its share of that stretch, so the view stays near
+  where the reader was; an anchor in the unchanged head or tail still
+  maps exactly.
+- **The page under the editor takes a peer's edit** (app 0.40.2; issue
+  #276). With sync on, another device's edit to the page being written
+  on reached the core but not the editor, which kept the old text, and
+  the next keystroke's edit was read from that stale text. A pump's
+  applied edit is now merged into the editor's text one changed stretch
+  at a time, so the caret, the selection and the reader's line outside
+  those stretches keep their places, a sealed object the edit went
+  around keeps its block, and the next keystroke is read from the
+  merged text. A rewrite of the whole page is taken as one stretch. A
+  composition in flight when a peer's edit changes the page is dropped,
+  since the input method's provisional text is not the core's: the
+  characters being composed at that moment are lost and the page stands
+  as it did before them, a sealed object the composition had replaced
+  included.
+- **The roll's follow ups from the reading place review** (app 0.40.1;
+  issue #278). A peer's applied edit restates a page by the model's own
+  record of which page a surface shows, not by a count of layout
+  managers, so a second layout manager on a storage cannot leave a
+  quiet page stale. The roll sets its horizontal scroller only when it
+  differs from what the wrap setting asks, not on every keystroke's
+  pass. A test pins that a page switch handing the keys to the editor,
+  with its caret below the viewport, keeps the reader's place; the
+  switch already did. The mixed edit fallback in the reading anchor's
+  rebase has its own issue,
+  #283.
+- **A sealed object's excerpt and typed name are wiped when they go**
+  (`companion-core` 0.34.1; issue #256, the content buffer register's
+  C09, C10 and C19). The excerpt, which is the content's own head and
+  tail, and the name typed beside an object held ordinary strings, and
+  so did a copy fragment's name for the object, so each could stay in
+  memory after the object was removed, the page expired or the
+  fragment was dropped. Each is now a zeroizing owner, and the excerpt
+  is built once at its size from the content without a copy of its
+  head or tail along the way. A fragment's wire form borrows the name
+  for the encoder; on the parse an escaped name is the parser's own
+  string before it is wrapped, which the register records.
+- **A tab's name, a page's derived title and a ledger record's title
+  are wiped when they go** (`companion-core` 0.34.0; issue #256, the
+  content buffer register's C13 to C16). The four were ordinary
+  strings, so a name typed into a tab, the first line a page's title
+  is read from, and the title a ledger record keeps could stay in
+  memory after the tab closed, the page expired or the record aged
+  out. Each is now a zeroizing owner, as the notes already were, and
+  the label a tab builds from either is one too, so `Tab::label`
+  returns `Zeroizing<String>` to any caller of the core crate. A ledger
+  record formats its title as `[REDACTED]`, as a segment's ink is. The
+  register records what each row still leaves ordinary.
+- **One poll round posts a pairing message** (`companion-ffi` 0.43.1;
+  issue #280). The outbox drain claims the head of the queue under the
+  lock before it sends, so a round overlapping another cannot post the
+  same message twice; a declined send puts it back for the next poll, a
+  message on the wire still counts as owed, so a confirmed ceremony
+  does not read done early, and the claim is released when the round
+  is done with it even when the send unwinds. Each claim is numbered,
+  so a round whose ceremony was replaced under its send leaves the
+  replacement's queue alone.
+
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
@@ -1068,8 +1177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not the roll: a day the editor was not on kept its old text until
   something else redrew it, and a page left earlier reopened in the
   editor with the old text. Each applied event now redraws its page's
-  day and rereads that page's text. The page under the editor does
-  not take a peer's edit yet.
+  day and rereads that page's text. The page under the editor takes
+  a peer's edit since app 0.40.2.
 
 - **Turning wrapping on or off in a tab keeps the reader's line** (app
   0.39.0). ⌥Z or the Settings switch rebuilt a tab's layout without
