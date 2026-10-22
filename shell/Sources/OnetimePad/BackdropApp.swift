@@ -1349,6 +1349,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         panel?.collectionBehavior.insert(.moveToActiveSpace)
         // Kept by identity, so the lookup runs here once and not on every key event.
         aboutPanel = panel
+        // An active app keyed the panel inside the order front, before it was known.
+        keyWindow.refresh()
         // About sits at the surface's keyless altitude for as long as
         // it is open, as Settings does and through the same follower
         // (ADR-0032, #188). Otherwise About opens at .normal beneath a
