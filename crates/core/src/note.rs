@@ -319,6 +319,13 @@ mod tests {
                     (typed(4, "!!"), typing, None),
                 ],
             ),
+            (
+                RESTED,
+                vec![
+                    (delete(2, 0), deletion, moved(2, 2)),
+                    (typed(4, "!!"), typing, None),
+                ],
+            ),
         ];
         for ends in runs {
             for (text, batches) in &edits {
