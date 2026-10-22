@@ -50,5 +50,5 @@
 - [Issue #277 rail scrolls](project_issue277_rail_scrolls.md): scrollTo on offset rows moved nothing, RailReveal drives the NSScrollView; visibleRect lies in an unordered window, test the clip view intersection; the wheel relay only while the drawing fits
 - [PR 272 Finder open](project_pr272_finder_open.md): FinderOpenPlan.decide owns the drain, a modal or close decision keeps the queue, dotfiles type as public.data so Open With skips them
 - [Issue #256 C31 resting note](project_issue256_c31_resting_note.md): a restored Note rests as Zeroizing until a batch moves its text; a run's selection is kept by a bounds check, since Loro accepts a position inside a surrogate pair
-- [Issue #256 C17 origin owners](project_issue256_c17_origin_owners.md): origin URLs are W (PR 315); copy an NSString via `to_str` in a pool; Loro decodes messages per block, not per `get_change`
+- [Issue #256 C17 origin owners](project_issue256_c17_origin_owners.md): origin URLs are W (PR 315); read NSString UTF-8 only via `utf8_of` (getBytes), never `UTF8String`; Loro decodes messages per block
 - [Close chord and Help menu](project_close_chord_and_help_menu.md): PRs 301/302 route cmd-w by key window identity and insert the Help item from AppKit after launch; SwiftUI rebuild and title flip owe hardware looks

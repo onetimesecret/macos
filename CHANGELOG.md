@@ -1014,15 +1014,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A paste's origin URL is wiped when it goes** (`companion-core`
   0.34.4, `companion-ffi` 0.43.3, `companion-pasteboard` 0.5.0; issue
-  #256, the content buffer register's C17 and C47). A paste from a
+  #256, the content buffer register's C17, C45 and C47). A paste from a
   browser brings the page's URL, and a URL can bear a token in its
   query, so it is content. The pasteboard read, the message the seal
   commits and a block's frozen origin each kept it as an ordinary
   string, so the URL could stay in memory after those copies were
-  released. Each is now a zeroizing copy made once at its exact size,
-  and the message is written without an intermediate JSON value. The
-  pasteboard item's debug output writes `[REDACTED]` for it. Where the
-  URL persists is unchanged. The register records what Foundation
+  released. Each is now a zeroizing copy at its exact size, and the
+  message is written without an intermediate JSON value. The
+  pasteboard read no longer has Foundation make a separate UTF-8 copy
+  of the URL or the pasted text, and a string with no UTF-8 form is
+  refused rather than read through a null pointer. The pasteboard
+  item's debug output writes `[REDACTED]` for the URL. Where the URL
+  persists is unchanged. The register records what Foundation
   and the document library still leave ordinary.
 - **A restored or pasted note that nobody edits is wiped when it goes**
   (`companion-core` 0.34.2; issue #256, the content buffer register's

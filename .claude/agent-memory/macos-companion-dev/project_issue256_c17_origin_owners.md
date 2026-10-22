@@ -14,11 +14,13 @@ C17 (origin URLs) was implemented as **W** in PR 315 (fix/256-origin-owners, 202
 it can bear a token; only `UNRECORDED_ORIGIN` (Loro transaction origin) is an N identifier.
 
 **How to apply:**
-- Copying an NSString into a wiping owner: `autoreleasepool(|pool| Zeroizing::new(unsafe { s.to_str(pool) }.to_owned()))`. `to_string` goes through the formatter and leaves a plain String.
+- Read an NSString's UTF-8 only through `pasteboard/src/macos.rs::utf8_of` (getBytes into a zeroed Zeroizing buffer). `to_str`, `to_string` and Display all call `UTF8String`, which mallocs an unwiped UTF-8 copy for a UTF-16 stored string and returns NULL for an unpaired surrogate, so objc2 builds a slice from NULL (UB).
+- The board cannot deliver an unpaired surrogate here: `setString` of one reads back as "" and invalid UTF-8 data reads back as nil, so test the refusal on `utf8_of` with `stringWithCharacters_length`.
+- Loro (change merge interval 0) folds a backdated commit into the change before it, so a test that wants the earliest change mid span must commit in rising stamps and insert at the front last.
 - Loro 1.13.9 `get_change` returns a ref into an already parsed change block and clones the message's `Arc<str>`; the decode copy happens when a block is parsed, not per call. Do not write "per get_change" in the register.
 - Register status: use C31's form ("**Implemented** ..."), not "**W — implemented**"; the em dash breaks the no dashes rule even though older rows use it.
 - Versions taken: core 0.34.4, ffi 0.43.3 (#313 uses 0.34.3 and 0.43.2), pasteboard 0.5.0 (public field type change). See [[stacked-version-bumps]].
-- Still ordinary after C17: Foundation's NSString and UTF8String buffer, and Loro's message copies (C01, C29). `PasteboardItem` and `MemoryPasteboard` now have hand written `Debug` that redacts only the origin; their content still prints (C48).
+- Still ordinary after C17: Foundation's NSString and whatever it allocates inside getBytes (not inspected), and Loro's message copies (C01, C29). A capacity equals length check cannot count copies; do not write "copied once" in a test comment. `PasteboardItem` and `MemoryPasteboard` now have hand written `Debug` that redacts only the origin; their content still prints (C48).
 - The review bot's other points on PR 315 were left: no diag on `origin_message`'s unreachable `None`, no shared count-and-write helper with `encode`, no restored "compaction reads it back" doc line (AGENTS.md forbids answering a finding with comment prose).
 
 Related: [[issue256-c31-resting-note]].
