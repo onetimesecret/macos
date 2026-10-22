@@ -892,7 +892,7 @@ fn read_chip(record: &mut Reader<'_>, next_chip_id: &mut u64) -> Result<SealedCh
             1 => judge_name(record.str().ok_or(Malformed)?)
                 .ok()
                 .flatten()
-                .map(str::to_owned),
+                .map(|name| Zeroizing::new(name.to_owned())),
             _ => return Err(Malformed),
         }
     };

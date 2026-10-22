@@ -980,6 +980,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A sealed object's excerpt and typed name are wiped when they go**
+  (`companion-core` 0.34.1; issue #256, the content buffer register's
+  C09, C10 and C19). The excerpt, which is the content's own head and
+  tail, and the name typed beside an object held ordinary strings, and
+  so did a copy fragment's name for the object, so each could stay in
+  memory after the object was removed, the page expired or the
+  fragment was dropped. Each is now a zeroizing owner, and the excerpt
+  is built once at its size from the content without a copy of its
+  head or tail along the way. A fragment's wire form borrows the name
+  for the encoder; on the parse an escaped name is the parser's own
+  string before it is wrapped, which the register records.
 - **A tab's name, a page's derived title and a ledger record's title
   are wiped when they go** (`companion-core` 0.34.0; issue #256, the
   content buffer register's C13 to C16). The four were ordinary
