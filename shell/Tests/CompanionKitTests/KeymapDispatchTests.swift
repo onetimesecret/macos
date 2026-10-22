@@ -65,6 +65,82 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.perform(.windowClose))
     }
 
+    /// app::Help is the Help menu's (issue #294); the delegate opens the docs.
+    func testHelpIsNotTheModelsToRun() throws {
+        let model = try makeModel()
+        XCTAssertEqual(CommandID.appHelp.dispatch, .window)
+        XCTAssertFalse(model.perform(.appHelp))
+    }
+
+    /// ⌘W's target from the shell's two identity facts (issue #201): the
+    /// owner's window first, then a companion window, and nothing else.
+    func testTheCloseChordTargetReadsTheKeyWindowsIdentity() {
+        XCTAssertEqual(CloseChordTarget(ownerWindowIsKey: true, companionWindowIsKey: false), .surface)
+        XCTAssertEqual(CloseChordTarget(ownerWindowIsKey: true, companionWindowIsKey: true), .surface)
+        XCTAssertEqual(
+            CloseChordTarget(ownerWindowIsKey: false, companionWindowIsKey: true), .companionWindow)
+        XCTAssertEqual(CloseChordTarget(ownerWindowIsKey: false, companionWindowIsKey: false), .nothing)
+    }
+
+    /// While Settings, About or Send Feedback has the keyboard there is no
+    /// page target, and the chord closes that window instead of beeping.
+    func testTheCloseChordClosesACompanionWindowAndNoPage() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing(.companionWindow) { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 1)
+        XCTAssertEqual(model.tabs.count, 2, "a page is not closed from a window that does not show it")
+    }
+
+    /// The pad's own ⌘W is unchanged: with the owner's window key, the
+    /// chord is `page::Close` and no window is asked to close.
+    func testTheCloseChordStaysThePagesOnTheSurface() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        model.reportKeys(true, from: .panel)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing(.surface) { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 0)
+        XCTAssertEqual(model.tabs.count, 1)
+    }
+
+    /// The surface target closes the page whether or not the owner has
+    /// reported the keys yet: the target is the shell's identity fact.
+    func testTheSurfaceTargetClosesAPageBeforeTheOwnerReportsKeys() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        XCTAssertFalse(model.holdsKeys)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing(.surface) { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 0)
+        XCTAssertEqual(model.tabs.count, 1)
+    }
+
+    /// A sheet, a save panel or an alert with the keys, or no key window:
+    /// the chord closes neither a page nor a window.
+    func testWithNothingToCloseTheChordDoesNothing() throws {
+        let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        model.reportKeys(true, from: .panel)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing(.nothing) { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 0)
+        XCTAssertEqual(model.tabs.count, 2)
+    }
+
     /// Edit → Seal Selected Content and the chord are one verb (D-30):
     /// the menu item names the same command id the keymap binds, and
     /// the chord it advertises is read from the keymap rather than

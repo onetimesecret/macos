@@ -68,6 +68,25 @@ draws only a typed name (D-46 amends the gutter paragraph).
   a day's first page, the minute on every page, the packing, the map's
   round trip and the band; `DayScrollTests` pins one extent per page,
   read off the roll's own frames.
+  *Amended 2026-10-21 (issue #277):* the packing never moves a row back
+  up. The build had pulled the rows up from the foot so the last one
+  stayed on the rail, which put a dense rail's first rows above the
+  column, over the Pad heading. Now rows that outrun the column
+  lengthen the drawing past it and the column scrolls inside its clip,
+  as the Finder sidebar does; the heading, its plus and the Files shelf
+  stay outside the scrolling part, and a selection change scrolls the
+  active node into view, with the note or the window mark above it;
+  ⌘-number or a click on the page already showing scrolls nothing,
+  a choice for this issue and open to revisit. The viewport band, the
+  active stretch and the
+  slivers stay level with the nodes, in the drawing's own coordinates,
+  so they scroll with the rows and the band can be out of the clip on a
+  rail scrolled away from it. The box the slivers keep clear of covers
+  every whole point the drawn row paints and the one above it.
+  `StreamNavigatorTests.testADenseRailGrowsPastTheColumnRatherThanAboveIt`,
+  `testASliverNeverCrossesARowsLastPointAndMayStandJustAboveIt`,
+  `testAtAFractionalTopNoSliverCrossesAPointTheRowPaints`,
+  `TabDropTests.testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting`.
 - **D-35 (fixed)** Geometry, never glyphs. The roll hands the rail each
   page's span and each laid-out line as a rectangle (where it begins,
   what share of the wrap width it used) and nothing else. The slivers
@@ -99,6 +118,11 @@ draws only a typed name (D-46 amends the gutter paragraph).
   chord when one is bound, and the page's title on a second line, the
   one line the gutter already shows. A floating card was not built;
   the tooltip carries the same facts without a second surface.
+  *Amended 2026-10-21 (issue #277):* a wheel over a rail whose rows
+  outrun its column scrolls the rail, as it does over any sidebar; over
+  a rail that fits its column it scrolls the roll as before, so on a
+  borderline rail the gauge reserve a selection adds to its row can
+  change what the wheel scrolls between two clicks.
 - **D-39 (fixed)** The plus sits on the PAD heading, in ember text, and
   not on today's node. A page is minted with the clock's reading of
   now whatever the rail is showing, and a plus beside a day would

@@ -32,6 +32,8 @@ Updates that only add text, or only remove text, now have a separate method with
 
 My wording also overstated “very large”: a mixed update involving roughly 1,000 changed characters can reach one limit. **This remains an unresolved scroll-position defect**, not a completed part of the recommendation.
 
+Tracked as [#283](https://github.com/onetimesecret/macos/issues/283) (2026-10-21).
+
 
 ---
 

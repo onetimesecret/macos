@@ -72,7 +72,9 @@ no longer open; the rest of D-13 stands.
    the two dropped combinations had no default role, yet each was a
    navigation view kept at parity through every strip or rail change.
 2. `SlotRailView` and `TimeStripView`: delete, or keep unreachable.
-   Recommendation: delete; git keeps them.
+   Recommendation: delete; git keeps them. Answered 2026-10-21: deleted
+   (issue 275); the card and the editor window draw `TimeRailView` down
+   the side or `TabStripView` along the bottom, with no other branch.
 3. A notice for people whose placement moved. Recommendation: none.
    Timeline is a prototype and Settings names both layouts.
 
@@ -88,3 +90,6 @@ no longer open; the rest of D-13 stands.
 - 2026-10-01: Accepted. The 2026-0915 record carries dated notes under
   section 4, D-13 and D-26, and the 2026-0916 rail redundancy record
   under D-44.
+- 2026-10-21: Open question 2 answered, the two views deleted (issue
+  275); the Context's "still compile" stands as the record of
+  2026-10-01.
