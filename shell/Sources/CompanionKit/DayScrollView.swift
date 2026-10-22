@@ -532,7 +532,7 @@ final class DayStackView: NSView {
                   place.reading == .source else { return }
             readingPlace = place.rebased(
                 throughEdit: edited, changeInLength: delta, length: length,
-                byProjection: model.isApplyingProjection)
+                text: mounted.string, byProjection: model.isApplyingProjection)
         }
     }
 
@@ -1435,7 +1435,7 @@ final class DayStackView: NSView {
               let row = rows.first(where: { $0.page == place.page && !$0.body.isHidden }),
               let text = row.body as? NSTextView,
               let within = place.mappedAnchor(
-                  into: Self.reading(of: text), length: text.textStorage?.length ?? 0
+                  into: Self.reading(of: text), text: text.string
               ).offset(in: text) else { return false }
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)

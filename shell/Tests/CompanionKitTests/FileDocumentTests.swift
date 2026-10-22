@@ -32,6 +32,75 @@ final class ScriptedFilePanels: FilePanels {
     }
 }
 
+/// An ephemeral client that counts the calls that reach the sealed files,
+/// since "nothing was asked to write" can be seen from nowhere else.
+final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
+    /// How `persistErase` answers: as the core does, or as one of its two refusals.
+    enum EraseAnswer {
+        case real
+        /// `Erasure::Survived`: false, with nothing touched.
+        case survived
+        /// The final unlink refused, after the core dropped or resealed the drafts.
+        case refusedAfterDrafts
+    }
+
+    private(set) var draftsWrites = 0
+    private(set) var draftsErasures = 0
+    private(set) var sealedWrites = 0
+    private(set) var emptinessProbes = 0
+    var eraseAnswer = EraseAnswer.real
+
+    init(tag: String) {
+        super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+    }
+
+    override func persistErase(at path: String) -> Bool {
+        switch eraseAnswer {
+        case .real: return super.persistErase(at: path)
+        case .survived: return false
+        case .refusedAfterDrafts:
+            _ = super.persistErase(at: path)
+            return false
+        }
+    }
+
+    override func emptiness() -> StoreEmptiness? {
+        emptinessProbes += 1
+        return super.emptiness()
+    }
+
+    override func persistSave(to path: String) -> Bool {
+        sealedWrites += 1
+        return refusesPersistSave ? false : super.persistSave(to: path)
+    }
+
+    /// Answers the state file's save as a refused write does.
+    var refusesPersistSave = false
+
+    override func persistRotateAndSave(to path: String) -> Bool {
+        sealedWrites += 1
+        return super.persistRotateAndSave(to: path)
+    }
+
+    override func ledgerSave(to path: String) -> Bool {
+        sealedWrites += 1
+        return super.ledgerSave(to: path)
+    }
+
+    override func draftsSave(to path: String) -> Bool {
+        draftsWrites += 1
+        return super.draftsSave(to: path)
+    }
+
+    override func draftsErase(at path: String) -> Bool {
+        draftsErasures += 1
+        return refusesDraftsErase ? false : super.draftsErase(at: path)
+    }
+
+    /// Answers the drafts file's erase as a refused unlink does.
+    var refusesDraftsErase = false
+}
+
 /// The file lane driven whole through the model: open a real file in a
 /// directory the test owns, type into it, watch the dirty mark move,
 /// save it and read the bytes back off disk, and stand a second model
@@ -82,7 +151,8 @@ final class FileDocumentTests: XCTestCase {
         _ fixture: Fixture,
         panels: ScriptedFilePanels,
         fileLanguageDetection: LanguageDetectionService? = nil,
-        client: CompanionClient? = nil
+        client: CompanionClient? = nil,
+        requestTermination: (@MainActor () -> Void)? = nil
     ) -> PageModel {
         let model = PageModel(
             formFactor: .panel,
@@ -91,7 +161,9 @@ final class FileDocumentTests: XCTestCase {
                 stateDirectory: fixture.state,
                 client: client ?? CompanionClient.ephemeral(tag: fixture.tag),
                 saveDebounce: 0.05,
-                fileLanguageDetection: fileLanguageDetection
+                fileLanguageDetection: fileLanguageDetection,
+                // No test asks `NSApp` to terminate its runner.
+                requestTermination: requestTermination ?? {}
             )
         )
         model.fileCoordinator = FileCoordinator(panels: panels)
@@ -1171,6 +1243,16 @@ final class FileDocumentTests: XCTestCase {
                 file("c.txt", dirty: true),
             ]),
             "Unsaved changes to a.txt and c.txt go with it.")
+
+        // The state discard's help names the drafts file while its banner stands, and no
+        // file's edits, which the discard rewrites from memory.
+        let base = "Deletes the sealed file this session could not read and starts saving this "
+            + "session's pages in its place. The unreadable file cannot be recovered afterwards."
+        XCTAssertEqual(PageModel.stateDiscardHelp(draftsRefused: false), base)
+        XCTAssertEqual(
+            PageModel.stateDiscardHelp(draftsRefused: true),
+            base + " The drafts file this session could not read goes too, and this session's "
+                + "drafts take its place.")
     }
 
     /// The drafts leg has its own write, so the cancelled quit's line
@@ -1238,6 +1320,779 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(
             try XCTUnwrap(model.openFiles.first).isDirty,
             "the file stays dirty; only its draft is on disk")
+    }
+
+    // MARK: Read before write (issue #296)
+
+    /// A save asked before the drafts restore, with no drafts file on disk, writes
+    /// none; the restore that follows grants the write.
+    func testASaveBeforeTheRestoreWritesNoDraftsFile() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        XCTAssertTrue(model.saveState(), "left alone is settled, not refused")
+        XCTAssertEqual(client.draftsWrites, 0)
+        XCTAssertEqual(client.draftsErasures, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draftsFile.path))
+        XCTAssertTrue(model.draftsDirty, "the write is still owed")
+
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(client.draftsWrites, 1, "the restore grants the write")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: draftsFile.path))
+        XCTAssertFalse(model.draftsDirty)
+    }
+
+    /// The restore that grants the licence arms the write edits typed before it
+    /// owe, over a state file that restored and so armed nothing.
+    func testTheRestoreThatGrantsTheLicenceArmsTheWriteEarlierEditsOwe() throws {
+        let fixture = try makeFixture()
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        XCTAssertTrue(owner.saveState(), "a state file to restore, and no drafts file")
+
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertNotEqual(model.saveStatus, .saving, "nothing is armed before the restore")
+
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused)
+        XCTAssertFalse(model.draftsRestoreRefused)
+        waitForSave(on: model)
+        XCTAssertEqual(client.draftsWrites, 1, "the debounced write, with no saveState asked")
+        XCTAssertFalse(model.draftsDirty)
+    }
+
+    /// A restore that opens replaces the roster the core held, so a file opened
+    /// and typed into before it leaves the roster and owes no write.
+    func testASuccessfulRestoreReplacesEditsTypedBeforeItAndOwesNoWrite() throws {
+        let fixture = try makeFixture()
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: first)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState(), "a readable drafts file naming a.txt")
+
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: second)
+        let early = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: early)
+        try type("more ", at: 0, into: early, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.draftsRestoreRefused)
+        XCTAssertEqual(model.openFiles.map(\.name), ["a.txt"])
+        XCTAssertFalse(model.draftsDirty, "nothing the restored roster lacks is owed")
+        let back = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertEqual(model.storage(for: back).string, "well one\n")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(client.draftsWrites, 0)
+    }
+
+    /// The content file's rule, applied to the drafts: a session that
+    /// could not read an existing drafts file does not write over it.
+    func testASaveAfterAFailedRestoreOfAnExistingDraftsFileWritesNothing() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: url)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState())
+        let sealedByOwner = try Data(contentsOf: draftsFile)
+
+        // A different credential tag never held the content key, so
+        // the drafts file exists and will not open.
+        let stranger = DraftsCountingClient(tag: "stranger-\(UUID().uuidString)")
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        let other = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: other)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        XCTAssertTrue(model.saveState(), "left alone is settled, not refused")
+        XCTAssertEqual(stranger.draftsWrites, 0)
+        XCTAssertEqual(stranger.draftsErasures, 0)
+        XCTAssertEqual(try Data(contentsOf: draftsFile), sealedByOwner, "the owner's drafts stand")
+        XCTAssertTrue(model.draftsDirty, "the write is still owed")
+
+        // The user's discard takes the unreadable files down, and the
+        // drafts write is this session's to make from there.
+        model.clearUnreadableStateFile()
+        XCTAssertFalse(model.draftsRestoreRefused)
+        XCTAssertEqual(stranger.draftsErasures, 0, "the core's own erase resealed the drafts")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(stranger.draftsWrites, 1)
+        XCTAssertFalse(model.draftsDirty)
+        XCTAssertNotEqual(try Data(contentsOf: draftsFile), sealedByOwner)
+    }
+
+    /// The owner's session: a.txt typed into and every sealed file written.
+    private func sealOwnerFiles(_ fixture: Fixture) throws {
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: url)
+        let id = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: id)
+        try type("well ", at: 0, into: id, on: owner)
+        XCTAssertTrue(owner.saveState())
+    }
+
+    /// Either refusal of the content erase: the discard deletes nothing by path,
+    /// and the next save writes this session's drafts where a relaunch reads them.
+    func testAContentDiscardWhoseEraseRefusedRestatesTheDraftsFromMemory() throws {
+        for answer in [DraftsCountingClient.EraseAnswer.survived, .refusedAfterDrafts] {
+            let fixture = try makeFixture()
+            try sealOwnerFiles(fixture)
+            let tag = "stranger-\(UUID().uuidString)"
+            let stranger = DraftsCountingClient(tag: tag)
+            let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+            model.loadStateIfNeeded()
+            XCTAssertTrue(model.draftsRestoreRefused, "\(answer)")
+            let url = try write("two\n", named: "b.txt", in: fixture)
+            model.openFile(at: url)
+            let id = try XCTUnwrap(model.openFiles.first?.id)
+            _ = model.storage(for: id)
+            try type("more ", at: 0, into: id, on: model)
+
+            stranger.eraseAnswer = answer
+            model.clearUnreadableStateFile()
+            XCTAssertFalse(model.draftsRestoreRefused, "\(answer)")
+            XCTAssertTrue(model.saveState(), "\(answer)")
+            XCTAssertEqual(stranger.draftsErasures, 0, "\(answer)")
+            XCTAssertGreaterThan(stranger.draftsWrites, 0, "\(answer)")
+
+            let relaunched = makeModel(
+                fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: tag))
+            relaunched.loadStateIfNeeded()
+            XCTAssertFalse(relaunched.draftsRestoreRefused, "\(answer)")
+            let back = try XCTUnwrap(relaunched.openFiles.first?.id, "\(answer)")
+            XCTAssertEqual(relaunched.storage(for: back).string, "more two\n", "\(answer)")
+        }
+    }
+
+    /// A surviving key half with nothing open: the next save drops the drafts
+    /// file the discard left, so the next launch is not refused again.
+    func testAContentDiscardWhoseEraseSurvivedWithNothingOpenDropsTheDrafts() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        try sealOwnerFiles(fixture)
+        let tag = "stranger-\(UUID().uuidString)"
+        let stranger = DraftsCountingClient(tag: tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.draftsRestoreRefused)
+        XCTAssertFalse(model.draftsDirty)
+
+        stranger.eraseAnswer = .survived
+        model.clearUnreadableStateFile()
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(stranger.draftsErasures, 1, "the save's drafts leg, with nothing open")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draftsFile.path))
+
+        let relaunched = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: tag))
+        relaunched.loadStateIfNeeded()
+        XCTAssertFalse(relaunched.draftsRestoreRefused)
+    }
+
+    /// Drafts that restored beside a state file that did not: whatever the erase
+    /// answers, a reseal it could not finish included, the next save writes them again.
+    func testAContentDiscardRewritesDraftsThatRestoredWhateverTheEraseAnswers() throws {
+        for answer in [DraftsCountingClient.EraseAnswer.real, .survived] {
+            let fixture = try makeFixture()
+            try sealOwnerFiles(fixture)
+            try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
+            let client = DraftsCountingClient(tag: fixture.tag)
+            let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+            model.loadStateIfNeeded()
+            XCTAssertTrue(model.contentRestoreRefused, "\(answer)")
+            XCTAssertFalse(model.draftsRestoreRefused, "\(answer)")
+            XCTAssertFalse(model.draftsDirty, "\(answer)")
+
+            client.eraseAnswer = answer
+            model.clearUnreadableStateFile()
+            XCTAssertTrue(model.draftsDirty, "the write is armed either way: \(answer)")
+            XCTAssertTrue(model.saveState(), "\(answer)")
+            XCTAssertEqual(client.draftsWrites, 1, "\(answer)")
+
+            let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
+            relaunched.loadStateIfNeeded()
+            let back = try XCTUnwrap(relaunched.openFiles.first?.id, "\(answer)")
+            XCTAssertEqual(relaunched.storage(for: back).string, "well one\n", "\(answer)")
+        }
+    }
+
+    /// Every licence withheld: a file's edits mark the drafts dirty, and the
+    /// save stands down before it probes the store or writes anything.
+    func testASessionWithEveryLicenceWithheldWritesAndProbesNothing() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let stranger = DraftsCountingClient(tag: "stranger-\(UUID().uuidString)")
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.ledgerRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        let probes = stranger.emptinessProbes
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(stranger.emptinessProbes, probes)
+        XCTAssertEqual(stranger.sealedWrites, 0)
+        XCTAssertEqual(stranger.draftsWrites, 0)
+        XCTAssertEqual(stranger.draftsErasures, 0)
+    }
+
+    /// A readable state file beside a drafts file that fails the core's envelope
+    /// check, under the owner's key.
+    private func modelOverUnreadableDrafts(
+        _ fixture: Fixture, client: DraftsCountingClient,
+        requestTermination: (@MainActor () -> Void)? = nil
+    ) throws -> PageModel {
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        XCTAssertTrue(owner.saveState())
+        try Data("not a drafts file".utf8).write(to: FormFactor.draftsFileURL(in: fixture.state))
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: client,
+            requestTermination: requestTermination)
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused, "the state file opened")
+        XCTAssertTrue(model.draftsRestoreRefused, "the drafts file did not")
+        return model
+    }
+
+    /// The drafts file alone would not open: the refusal stands, a quit with a
+    /// dirty file asks, and the drafts discard is the way back.
+    func testAnUnreadableDraftsFileBesideAReadableStateFileStandsUntilDiscarded() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        XCTAssertEqual(model.saveStateForQuit(), .settled, "nothing is at stake yet")
+
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+        XCTAssertNotEqual(model.saveStatus, .saving, "no drafts write is waited for")
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the edits are in memory only, so logout asks")
+
+        XCTAssertEqual(model.saveStateForQuit(), .unsavableWithDrafts)
+        XCTAssertGreaterThan(model.terminationHolds, 0, "a settled flush keeps the hold")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel, "the first ⌘Q asks")
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertEqual(client.draftsWrites, 0)
+        XCTAssertEqual(String(decoding: try Data(contentsOf: draftsFile), as: UTF8.self), "not a drafts file")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                try XCTUnwrap(model.quitRefusal), files: model.openFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
+
+        model.clearUnreadableDraftsFile()
+        XCTAssertFalse(model.draftsRestoreRefused)
+        XCTAssertEqual(client.draftsErasures, 1, "the unreadable file went by path")
+        XCTAssertEqual(model.saveStatus, .saving, "the discard arms the write the edits owe")
+        XCTAssertNil(model.quitRefusal, "the offer comes down with the discard")
+        XCTAssertEqual(model.saveStateForQuit(), .settled)
+        XCTAssertEqual(client.draftsWrites, 1, "the discard grants the write")
+        XCTAssertFalse(model.draftsDirty)
+        XCTAssertEqual(model.terminationHolds, 0, "the drafts are on disk, so the hold goes")
+        XCTAssertNotEqual(String(decoding: try Data(contentsOf: draftsFile), as: UTF8.self), "not a drafts file")
+
+        // The proof the write is real: a relaunch under the same key
+        // brings the draft back.
+        let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
+        relaunched.loadStateIfNeeded()
+        XCTAssertFalse(relaunched.draftsRestoreRefused)
+        let back = try XCTUnwrap(relaunched.openFiles.first?.id)
+        XCTAssertEqual(relaunched.storage(for: back).string, "well one\n")
+    }
+
+    /// The header's drafts word reads `draftsHeldInMemory`: quiet with no file open,
+    /// shown while a file's edits are in memory only, gone once the file is saved.
+    func testTheHeaderDraftsWordFollowsTheEditsHeldInMemory() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        XCTAssertFalse(model.draftsHeldInMemory, "a launch with no file open stays quiet")
+
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        XCTAssertFalse(model.draftsHeldInMemory, "an open file with nothing typed has nothing at risk")
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsHeldInMemory)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertFalse(model.draftsHeldInMemory)
+    }
+
+    /// A page's save settles while a file's edits have no drafts write to reach:
+    /// the hold stays until the file is saved, and the save that mark arms returns it.
+    func testAPageSaveKeepsTheHoldWhileAFileEditIsInMemoryOnly() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.applyOps(
+            sheet: page, opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "ink")])))
+        XCTAssertTrue(model.saveState(), "the page is on disk")
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the file's edits are not")
+
+        XCTAssertTrue(model.saveFile(id))
+        waitUntil(model.$saveStatus.dropFirst(), description: "the save the file's mark armed") {
+            $0 == .saved
+        }
+        XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
+    }
+
+    /// The drafts line retires when its file is saved clean, so new edits after
+    /// that ask afresh: the next ⌘Q cancels, and the one after it quits.
+    func testASecondQuitOverEditsMadeAfterTheDraftsLineRetiredAsksAfresh() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertNil(model.quitRefusal, "the line retired")
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// The content line stands and reads the live roster, so a second ⌘Q over edits
+    /// made since quits over what the line shows.
+    func testASecondQuitOverTheContentLineQuitsOverWhatTheLineShows() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertTrue(model.saveFile(id))
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                try XCTUnwrap(model.quitRefusal), files: model.quitLineFiles,
+                draftsUnwritten: model.draftsDirty),
+            "nothing typed this session is on disk, so its pages and the unsaved changes to b.txt will not survive the quit")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// A flush whose outcome changed under a standing line restates the line with
+    /// the new outcome and cancels, so no quit goes over a loss no line named.
+    func testAQuitWhoseOutcomeChangedRestatesTheLine() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+
+        client.refusesPersistSave = true
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused, "the line names the refusal now")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// The drafts line names a loss only while one exists: saving the named file
+    /// retires it, and the next ⌘Q quits.
+    func testTheDraftsLineRetiresWhenTheNamedFileIsSaved() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertNil(model.quitRefusal, "nothing is held in memory now")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// The quit leg reads the core's roster: an edit the published roster has
+    /// not caught up with still makes the quit ask.
+    func testTheQuitLegReadsEditsThePublishedRosterHasNotCaughtUpWith() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertTrue(model.draftsDirty, "the open marked the drafts")
+
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "well ")]))
+        XCTAssertTrue(client.applyFileOps(id, json: ops), "an edit past the model")
+        XCTAssertFalse(try XCTUnwrap(model.openFiles.first).isDirty, "the published roster trails")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .unsavableWithDrafts, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
+    }
+
+    /// After the drafts discard, a refused line names the files as they are now,
+    /// not as the quit's snapshot had them.
+    func testARefusedLineNamesTheCurrentFilesAfterTheDraftsDiscard() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        client.refusesPersistSave = true
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused)
+
+        let undo = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 0, len: 5)]))
+        XCTAssertTrue(client.applyFileOps(id, json: undo), "a.txt back to its saved text, past the model")
+        model.clearUnreadableDraftsFile()
+        XCTAssertEqual(model.quitRefusal, .refused, "the refusal outlives the drafts discard")
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .refused, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty),
+            "the sealed state file was not written, so this session's pages will not survive the quit")
+    }
+
+    /// The drafts leg asks the core whether a file is open: a file the published
+    /// roster has not caught up with is sealed, and the drafts file is not dropped.
+    func testTheDraftsLegSealsAFileThePublishedRosterHasNotCaughtUpWith() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        model.loadStateIfNeeded()
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: first)
+        let a = try XCTUnwrap(model.openFiles.first?.id)
+        model.closeFile(a)
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertTrue(model.draftsDirty)
+
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        XCTAssertNotNil(client.openFile(path: second.path), "a file opened past the model")
+        XCTAssertTrue(model.openFiles.isEmpty, "the published roster trails")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(client.draftsErasures, 0)
+        XCTAssertEqual(client.draftsWrites, 1)
+    }
+
+    /// A cancelled ⌘Q restates nothing: a pending close stands, though the core
+    /// already reads that file clean, until the roster is restated.
+    func testAPendingFileCloseSurvivesACancelledQuit() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: first)
+        let a = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: a)
+        try type("well ", at: 0, into: a, on: model)
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: second)
+        let b = try XCTUnwrap(model.openFiles.first(where: { $0.name == "b.txt" })?.id)
+        _ = model.storage(for: b)
+        try type("more ", at: 0, into: b, on: model)
+        model.closeFile(a)
+        XCTAssertEqual(model.pendingFileClose?.fileID, a)
+
+        let undo = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 0, len: 5)]))
+        XCTAssertTrue(client.applyFileOps(a, json: undo), "a.txt back to its saved text, past the model")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.pendingFileClose?.fileID, a, "the cancelled quit withdrew nothing")
+    }
+
+    /// A session that never loaded keeps no hold over a file's edits: the hold and the
+    /// quit outcome agree, as `quitOutcome` reads such a session.
+    func testASessionThatNeverLoadedKeepsNoHoldOverFileEdits() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(try XCTUnwrap(model.openFiles.first).isDirty)
+
+        XCTAssertFalse(model.draftsHeldInMemory)
+        XCTAssertEqual(model.terminationHolds, 0)
+        XCTAssertEqual(model.saveStateForQuit(), .settled)
+        XCTAssertEqual(model.terminationHolds, 0)
+    }
+
+    /// The drafts discard with nothing typed and the erase refused: the write it
+    /// arms still drops or replaces the unreadable file.
+    func testTheDraftsDiscardArmsTheWriteWhateverTheEraseAnswers() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        XCTAssertFalse(model.draftsDirty, "nothing typed")
+
+        client.refusesDraftsErase = true
+        model.clearUnreadableDraftsFile()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: draftsFile.path), "the erase refused")
+        XCTAssertTrue(model.draftsDirty)
+        XCTAssertEqual(model.saveStatus, .saving, "a write is armed")
+
+        client.refusesDraftsErase = false
+        XCTAssertTrue(model.saveState())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draftsFile.path))
+    }
+
+    /// Quit Anyway's termination request answered as the app delegate answers it,
+    /// through `QuitPrompt.terminateReply`, so the button takes ⌘Q's path.
+    private final class DelegateReplies {
+        weak var model: PageModel?
+        var replies: [NSApplication.TerminateReply] = []
+
+        @MainActor func answer() {
+            guard let model else { return }
+            replies.append(QuitPrompt.terminateReply(flushing: model))
+        }
+    }
+
+    /// The line reads the live roster, so a press over a line that already names
+    /// every file at risk quits in one press, as ⌘Q does.
+    func testQuitAnywayOverALineThatAlreadyNamesTheFilesQuits() throws {
+        let fixture = try makeFixture()
+        let delegate = DelegateReplies()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag),
+            requestTermination: { delegate.answer() })
+        delegate.model = model
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: first)
+        let a = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: a)
+        try type("well ", at: 0, into: a, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: second)
+        let b = try XCTUnwrap(model.openFiles.first(where: { $0.name == "b.txt" })?.id)
+        _ = model.storage(for: b)
+        try type("more ", at: 0, into: b, on: model)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .unsavableWithDrafts, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt and b.txt will not survive the quit",
+            "the line already names b.txt")
+
+        model.requestQuitAnyway()
+        XCTAssertEqual(delegate.replies, [.terminateNow])
+    }
+
+    /// A refused line whose write settles at the press quits at once, as ⌘Q does,
+    /// though a file was typed into since the line went up.
+    func testQuitAnywayOverARefusedLineQuitsOnceTheWriteSettles() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let delegate = DelegateReplies()
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: client,
+            requestTermination: { delegate.answer() })
+        delegate.model = model
+        model.loadStateIfNeeded()
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.applyOps(
+            sheet: page, opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "ink")])))
+        client.refusesPersistSave = true
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused)
+
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        client.refusesPersistSave = false
+
+        model.requestQuitAnyway()
+        XCTAssertEqual(delegate.replies, [.terminateNow])
+    }
+
+    /// An unsavable content line with the drafts licence held: the press's flush
+    /// writes the drafts a new keystroke owes, so one press quits, as ⌘Q does.
+    func testQuitAnywayOverAnUnsavableContentLineQuitsInOnePressWithTheDraftsLicenceHeld() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
+        let delegate = DelegateReplies()
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: fixture.tag),
+            requestTermination: { delegate.answer() })
+        delegate.model = model
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertFalse(model.draftsRestoreRefused)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("now ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
+
+        try type("then ", at: 0, into: id, on: model)
+        model.requestQuitAnyway()
+        XCTAssertEqual(delegate.replies, [.terminateNow])
+    }
+
+    /// After the content discard grants the licences, a file's mark settles nothing
+    /// inline: a page write's hold survives the file being saved clean.
+    func testAPageWritesHoldSurvivesAFilesMarkAfterTheContentDiscard() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        model.clearUnreadableStateFile()
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
+
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.applyOps(
+            sheet: page, opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "ink")])))
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the page write is still owed")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
+    }
+
+    /// Every licence withheld, so no save comes to settle the latch: the hold a
+    /// file edit takes goes once the file is saved, and comes back with the next edit.
+    func testASessionWithEveryLicenceWithheldReleasesItsHoldOnceTheFileIsSaved() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.ledgerRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertGreaterThan(model.terminationHolds, 0)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
+
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertGreaterThan(model.terminationHolds, 0)
+        XCTAssertTrue(model.saveState())
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the stand-down keeps a hold the edits still need")
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
+    }
+
+    /// The ordinary launch: the restore reads the file, and the next
+    /// save writes it as it always has.
+    func testASaveAfterTheRestoreWritesTheDraftsFile() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: url)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState())
+        let sealedByOwner = try Data(contentsOf: draftsFile)
+
+        let relaunched = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: relaunched)
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertEqual(model.storage(for: id).string, "well one\n", "the draft came back")
+        try type("and ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(relaunched.draftsWrites, 1)
+        XCTAssertFalse(model.draftsDirty)
+        XCTAssertNotEqual(try Data(contentsOf: draftsFile), sealedByOwner)
     }
 
     // MARK: The roster is the authority
