@@ -470,11 +470,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **OnetimePad Help heads the Help menu** (app 0.40.6; issue #294). The
-  item is ⌘?, bound in the keymap as `app::Help`, and opens
-  https://docs.onetimesecret.dev/macos, where the docs site will get a
-  page of its own. A keymap that unbinds the chord leaves the item
-  without a shortcut. The menu is assigned as the app's help menu.
+- **OnetimePad Help sits above the Help menu's diagnostics items** (app
+  0.40.6; issue #294). The item is ⌘?, bound in the keymap as
+  `app::Help`, and opens https://docs.onetimesecret.dev/macos, where the
+  docs site will get a page of its own. A keymap that unbinds the chord
+  leaves the item without a shortcut. The menu is assigned as the app's
+  help menu, and the item is put back on each activation if a menu
+  rebuild dropped it.
 
 - **A Timeline page node takes a drop** (app 0.40.0; Law 0001's drag
   row, the 2026-10-20 Timeline node amendment, issue #267). In the
