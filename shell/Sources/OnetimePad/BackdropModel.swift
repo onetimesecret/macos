@@ -862,12 +862,12 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     /// Out to `target`, or back to the geometry an earlier trip left.
     private func toggle(to target: BackdropGeometry) {
-        if let restored = zoomRestore {
-            zoomRestore = nil
+        if let restored = doubleClickRestore {
+            doubleClickRestore = nil
             applyGeometry(restored.clamped(to: pane))
             return
         }
-        zoomRestore = geometry
+        doubleClickRestore = geometry
         applyGeometry(target.clamped(to: pane))
     }
 
@@ -882,7 +882,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         /// Zoom, stored as Maximize: full working height, width kept.
         case zoom
         /// Minimize, which a card cannot do, and Do Nothing.
-        case none
+        case doNothing
     }
 
     /// The preference's four values and its default, which the system
@@ -893,7 +893,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         switch preference {
         case "Fill": .fill
         case "Maximize", "Zoom": .zoom
-        case "Minimize", "None": .none
+        case "Minimize", "None": .doNothing
         default: operatingSystemMajor >= 15 ? .fill : .zoom
         }
     }
@@ -907,28 +907,26 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         ) {
         case .zoom: toggleZoom()
         case .fill: toggleFill()
-        case .none: break
+        case .doNothing: break
         }
     }
 
-    /// The geometry a zoom is holding for its return trip, if the card
-    /// is zoomed right now.
-    private var zoomRestore: BackdropGeometry?
+    /// The geometry a zoom or fill keeps for its return trip, while the card is out.
+    private var doubleClickRestore: BackdropGeometry?
 
     /// Persist and publish, but only a real change: the screen
     /// observer can fire in bursts, and an unchanged geometry should
     /// cost neither a repaint nor a defaults write. A geometry the user
-    /// moved themselves ends the zoom's claim on a return trip.
+    /// moved themselves ends the double-click's return trip.
     private func applyGeometry(_ new: BackdropGeometry) {
         guard new != geometry else { return }
         geometry = new
         new.save(to: defaults)
     }
 
-    /// A drag or resize by hand retires the zoom: the card is where the
-    /// user just put it, and a later double-click should zoom from
-    /// there rather than snap back to a place they have left behind.
-    func endZoom() {
-        zoomRestore = nil
+    /// A drag or resize by hand retires the zoom or fill: the card is where the
+    /// user just put it, and a later double-click starts from there.
+    func endDoubleClickTrip() {
+        doubleClickRestore = nil
     }
 }

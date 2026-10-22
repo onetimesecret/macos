@@ -683,7 +683,7 @@ struct BackdropRootView: View {
                     model.discardProposal()
                     return
                 }
-                model.endZoom()
+                model.endDoubleClickTrip()
                 model.setGeometry(dragged(by: paneTranslation(from: started)))
             }
     }
@@ -852,7 +852,7 @@ struct BackdropRootView: View {
                     model.discardProposal()
                     return
                 }
-                model.endZoom()
+                model.endDoubleClickTrip()
                 model.setGeometry(
                     edge.resized(model.geometry, by: paneTranslation(from: started))
                 )

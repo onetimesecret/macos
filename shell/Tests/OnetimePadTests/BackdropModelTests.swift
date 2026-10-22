@@ -247,9 +247,10 @@ final class BackdropModelTests: XCTestCase {
             BackdropModel.titleBarDoubleClick(preference: "Zoom", operatingSystemMajor: 15), .zoom)
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: "Minimize", operatingSystemMajor: 15),
-            .none, "a card cannot miniaturise")
+            .doNothing, "a card cannot miniaturise")
         XCTAssertEqual(
-            BackdropModel.titleBarDoubleClick(preference: "None", operatingSystemMajor: 15), .none)
+            BackdropModel.titleBarDoubleClick(preference: "None", operatingSystemMajor: 15),
+            .doNothing)
     }
 
     func testAnUnsetPreferenceReadsAsTheSystemDefaultForTheRelease() {
@@ -336,7 +337,7 @@ final class BackdropModelTests: XCTestCase {
         let model = makeModel(named: "double-click-fill-moved", preference: "Fill")
         let before = model.geometry
         model.headerDoubleClicked()
-        model.endZoom()
+        model.endDoubleClickTrip()
         model.headerDoubleClicked()
         XCTAssertNotEqual(model.geometry, before, "no return to a place the person left")
         XCTAssertEqual(model.geometry.width, 1440)
