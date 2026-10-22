@@ -78,7 +78,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     init(
         model: BackdropModel,
         onCardClick: @escaping () -> Void,
-        isCompanionWindow: @escaping @MainActor (NSWindow) -> Bool = { _ in false }
+        isCompanionWindow: @escaping @MainActor (NSWindow) -> Bool
     ) {
         self.model = model
         panel = BackdropPanel()

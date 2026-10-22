@@ -281,6 +281,17 @@ final class BackdropStanceTests: XCTestCase {
             behavior(.raised, keyed: false, pinned: false, keepsAbove: false),
             [.canJoinAllSpaces, .fullScreenNone]
         )
+        // Reachable since #293: a pinned rest under a key companion is at
+        // normal, and only its full screen bit differs from the floating rest.
+        XCTAssertEqual(
+            BackdropStance.resting.collectionBehavior(
+                altitude: BackdropAltitude.resolve(
+                    stance: .resting, keyed: false, pinned: true, keepsAbove: false,
+                    companionKeyed: true
+                )
+            ),
+            [.canJoinAllSpaces, .ignoresCycle, .fullScreenNone]
+        )
     }
 
     func testNoPostureChangeAsksForAReassignment() {
