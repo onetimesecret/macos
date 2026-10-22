@@ -988,6 +988,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An edit across the reader's place no longer splits a surrogate
+  pair** (app 0.41.2; issue #311). When an edit to the day being
+  written on covered the character at the top of the reader's view,
+  the reader's place moved by the edit's change in length, and in text
+  the edit wrote with emoji it could fall between the two halves of a
+  UTF-16 surrogate pair; a whole page restated by undo, redo or sync
+  could do the same. It now moves back to the pair's start,
+  as the preview crossing does (#290).
 - **Turning a day's preview on or off no longer splits a surrogate
   pair** (app 0.41.1; issue #290). The roll moves the reader's
   place between a page's Markdown source and its preview by the same

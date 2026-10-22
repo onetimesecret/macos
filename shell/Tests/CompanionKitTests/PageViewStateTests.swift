@@ -1171,7 +1171,7 @@ final class PageViewStateTests: XCTestCase {
             let edit = inserting(inserted, at: location, into: text)
             let moved = place.rebased(
                 throughEdit: edit.edited, changeInLength: edit.delta, length: edit.text.utf16.count,
-                byProjection: false)
+                text: edit.text, byProjection: false)
             XCTAssertEqual(moved.anchor, ScrollAnchor(characterIndex: expected, lineFraction: 0.25, x: 3), inserted)
             XCTAssertEqual(moved.length, edit.text.utf16.count)
             XCTAssertEqual(moved.page, place.page)
@@ -1180,11 +1180,12 @@ final class PageViewStateTests: XCTestCase {
         }
         let empty = inserting("first words", at: 0, into: "")
         XCTAssertEqual(RollPlace.rebased(
-            0, throughEdit: empty.edited, changeInLength: empty.delta, length: 11, byProjection: false), 0)
+            0, throughEdit: empty.edited, changeInLength: empty.delta, length: 11, text: empty.text,
+            byProjection: false), 0)
         let replaced = storageEdit(of: text) { $0.replaceCharacters(in: NSRange(location: 7, length: 4), with: "LINE") }
         XCTAssertEqual(
             RollPlace.rebased(7, throughEdit: replaced.edited, changeInLength: replaced.delta,
-                              length: replaced.text.utf16.count, byProjection: false), 7,
+                              length: replaced.text.utf16.count, text: replaced.text, byProjection: false), 7,
             "a replacement starting at the anchor keeps it")
     }
 
@@ -1195,7 +1196,8 @@ final class PageViewStateTests: XCTestCase {
         for (index, expected) in [(2, 2), (6, 6), (13, 6), (18, 6), (19, 6), (21, 8), (25, 12)] {
             XCTAssertEqual(
                 RollPlace.rebased(
-                    index, throughEdit: edit.edited, changeInLength: edit.delta, length: 12, byProjection: false),
+                    index, throughEdit: edit.edited, changeInLength: edit.delta, length: 12, text: edit.text,
+                    byProjection: false),
                 expected,
                 "index \(index)")
         }
@@ -1211,19 +1213,61 @@ final class PageViewStateTests: XCTestCase {
             XCTAssertEqual(edit.edited, NSRange(location: 6, length: replacement.utf16.count))
             for index in replaced.location..<NSMaxRange(replaced) {
                 let moved = RollPlace.rebased(
-                    index, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false)
+                    index, throughEdit: edit.edited, changeInLength: edit.delta, length: length, text: edit.text,
+                    byProjection: false)
                 XCTAssertEqual(moved, index == 6 ? 6 : max(index + edit.delta, 6), "index \(index) in \(replacement)")
                 XCTAssertTrue((6...end).contains(moved), "index \(index) in \(replacement)")
             }
             XCTAssertEqual(RollPlace.rebased(
-                18, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false), end)
+                18, throughEdit: edit.edited, changeInLength: edit.delta, length: length, text: edit.text,
+                byProjection: false), end)
             XCTAssertEqual(
                 RollPlace.rebased(
-                    19, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false),
+                    19, throughEdit: edit.edited, changeInLength: edit.delta, length: length, text: edit.text,
+                    byProjection: false),
                 end + 1)
             XCTAssertEqual(RollPlace.rebased(
-                2, throughEdit: edit.edited, changeInLength: edit.delta, length: length, byProjection: false), 2)
+                2, throughEdit: edit.edited, changeInLength: edit.delta, length: length, text: edit.text,
+                byProjection: false), 2)
         }
+    }
+
+    /// An anchor inside an edit that writes emoji is snapped back to a pair's start (#311), for a
+    /// person's replacement and a projection's whole restate; only those read the text.
+    func testARollPlaceInsideAnEmojiReplacementStopsOnAScalarBoundary() {
+        let text = "first\nsecond\nthird"
+        let second = NSRange(location: 6, length: 6)
+        let same = storageEdit(of: text) { $0.replaceCharacters(in: second, with: "🧪🧪🧪") }
+        let length = same.text.utf16.count
+        XCTAssertEqual(same.delta, 0)
+        XCTAssertEqual(RollPlace.rebased(
+            9, throughEdit: same.edited, changeInLength: same.delta, length: length, text: same.text,
+            byProjection: false), 8, "9 is a low surrogate")
+        let longer = storageEdit(of: text) { $0.replaceCharacters(in: second, with: "🧪🧪🧪🧪") }
+        for (index, expected) in [(7, 8), (8, 10)] {
+            XCTAssertEqual(RollPlace.rebased(
+                index, throughEdit: longer.edited, changeInLength: longer.delta, length: longer.text.utf16.count,
+                text: longer.text, byProjection: false), expected, "index \(index) moved by 2")
+        }
+        let restated = storageEdit(of: "abcdef") { $0.setAttributedString(NSAttributedString(string: "🧪🧪🧪")) }
+        XCTAssertEqual(restated.edited, NSRange(location: 0, length: 6), "the storage reports the whole text")
+        XCTAssertEqual(RollPlace.rebased(
+            3, throughEdit: restated.edited, changeInLength: restated.delta, length: 6, text: restated.text,
+            byProjection: true), 2, "3 is a low surrogate")
+
+        // The mounted page's every keystroke rebases, so an index outside the edit must not copy the page.
+        var reads = 0
+        func counted() -> String { reads += 1; return same.text }
+        for index in [2, 15] {
+            _ = RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: index), length: length).rebased(
+                throughEdit: same.edited, changeInLength: same.delta, length: length, text: counted(),
+                byProjection: false)
+        }
+        XCTAssertEqual(reads, 0, "an index outside the edit read the text")
+        _ = RollPlace.rebased(
+            9, throughEdit: same.edited, changeInLength: same.delta, length: length, text: counted(),
+            byProjection: false)
+        XCTAssertEqual(reads, 1)
     }
 
     /// An insertion with another paragraph's style, as a list depth nudge makes, is reported
@@ -1255,7 +1299,7 @@ final class PageViewStateTests: XCTestCase {
             XCTAssertEqual(
                 RollPlace.rebased(
                     index, throughEdit: edit.range, changeInLength: edit.delta, length: storage.length,
-                    byProjection: false),
+                    text: storage.string, byProjection: false),
                 (storage.string as NSString).range(of: reading).location, reading)
         }
     }
@@ -1273,7 +1317,7 @@ final class PageViewStateTests: XCTestCase {
                 XCTAssertEqual(
                     RollPlace.rebased(
                         index, throughEdit: edit.edited, changeInLength: edit.delta, length: length,
-                        byProjection: true),
+                        text: edit.text, byProjection: true),
                     expected,
                     "index \(index) in \(rewritten)")
             }
@@ -1295,7 +1339,7 @@ final class PageViewStateTests: XCTestCase {
         for edit in edits {
             let moved = place.rebased(
                 throughEdit: edit.edited, changeInLength: edit.delta, length: (edit.text as NSString).length,
-                byProjection: false)
+                text: edit.text, byProjection: false)
             let index = moved.anchor.characterIndex
             XCTAssertEqual(index, (edit.text as NSString).range(of: "👩‍💻").location, edit.text)
             XCTAssertEqual(moved.length, (edit.text as NSString).length)
