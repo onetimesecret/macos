@@ -2664,6 +2664,24 @@ mod tests {
     }
 
     #[test]
+    fn the_write_gate_and_the_sweep_agree_on_the_deadline() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = seal(&mut store, id, "hunter2");
+        clock.advance(8 * HOUR - Duration::from_secs(1));
+        assert!(store.apply_note_ops(chip, &typed(0, "a"), EditIntent::Typing, None));
+        assert!(store.set_chip_name(chip, "TOKEN").is_ok());
+        assert!(store.expire_due().is_empty());
+        clock.advance(Duration::from_secs(1));
+        assert!(!store.apply_note_ops(chip, &typed(1, "b"), EditIntent::Typing, None));
+        assert_eq!(
+            store.set_chip_name(chip, "OTHER"),
+            Err(NameRefusal::UnknownChip)
+        );
+        assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
     fn a_held_page_reads_until_its_frozen_life_drains() {
         let (mut store, clock) = store();
         let (tab, id) = store.new_tab();
