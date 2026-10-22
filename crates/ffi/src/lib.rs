@@ -21,7 +21,7 @@ mod sync_driver;
 mod sync_gate;
 pub mod sync_session;
 
-use content_json::{chip_face, copied_json, summary_json, to_c_json};
+use content_json::{chip_face, copied_json, origin_message, summary_json, to_c_json};
 use diagnostics::diag_fault;
 
 use std::ffi::CStr;
@@ -619,27 +619,20 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     };
     let sheet = SheetId::from_raw(sheet);
     // The origin URL is content: it persists only in the encrypted commit.
-    let origin = item.origin_url.as_ref().map(|url| origin_message(url));
+    let message = item.origin_url.as_ref().and_then(|url| origin_message(url));
+    let origin = message.as_ref().map(|message| message.as_str());
     let sealed = match item.content {
         PasteboardContent::Text(mut text) => {
             // Wipe the transit copy; the core holds its own.
-            let sealed = guard.store.seal_text_at_with_origin(
-                sheet,
-                &text,
-                at_utf16,
-                len_utf16,
-                origin.as_deref(),
-            );
+            let sealed = guard
+                .store
+                .seal_text_at_with_origin(sheet, &text, at_utf16, len_utf16, origin);
             text.zeroize();
             sealed
         }
-        PasteboardContent::Image(bytes) => guard.store.seal_image_at_with_origin(
-            sheet,
-            bytes,
-            at_utf16,
-            len_utf16,
-            origin.as_deref(),
-        ),
+        PasteboardContent::Image(bytes) => guard
+            .store
+            .seal_image_at_with_origin(sheet, bytes, at_utf16, len_utf16, origin),
     };
     match sealed {
         Ok(chip) => {
@@ -737,26 +730,19 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
             return ptr::null_mut();
         };
         let sheet = SheetId::from_raw(sheet);
-        let origin = item.origin_url.as_ref().map(|url| origin_message(url));
+        let message = item.origin_url.as_ref().and_then(|url| origin_message(url));
+        let origin = message.as_ref().map(|message| message.as_str());
         let sealed = match item.content {
             PasteboardContent::Text(mut text) => {
-                let sealed = guard.store.seal_text_at_with_origin(
-                    sheet,
-                    &text,
-                    at_utf16,
-                    len_utf16,
-                    origin.as_deref(),
-                );
+                let sealed = guard
+                    .store
+                    .seal_text_at_with_origin(sheet, &text, at_utf16, len_utf16, origin);
                 text.zeroize();
                 sealed
             }
-            PasteboardContent::Image(bytes) => guard.store.seal_image_at_with_origin(
-                sheet,
-                bytes,
-                at_utf16,
-                len_utf16,
-                origin.as_deref(),
-            ),
+            PasteboardContent::Image(bytes) => guard
+                .store
+                .seal_image_at_with_origin(sheet, bytes, at_utf16, len_utf16, origin),
         };
         match sealed {
             Ok(chip) => chip_json(&guard.store, sheet, chip),
@@ -3549,11 +3535,6 @@ pub(crate) fn step_outcome_json(outcome: StepOutcome) -> *mut c_char {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
-}
-
-/// `{"origin": url}`, JSON so compaction can read it back mechanically.
-fn origin_message(url: &str) -> String {
-    serde_json::json!({ "origin": url }).to_string()
 }
 
 /// Parse the synced-document JSON: `[{"ink": "…"}, {"chip": 7}, …]`.

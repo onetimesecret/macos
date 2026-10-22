@@ -121,6 +121,29 @@ pub(super) fn to_c_json<T: Serialize + ?Sized>(value: &T) -> *mut c_char {
     encode(value).map_or(ptr::null_mut(), CStringBuffer::into_raw)
 }
 
+/// A paste's origin message, `{"origin": url}`, counted, then written once into a wiping
+/// owner of its exact size with no `Value` copy of the URL (Law 0004, C17).
+pub(super) fn origin_message(url: &str) -> Option<Zeroizing<String>> {
+    #[derive(Serialize)]
+    struct Message<'a> {
+        origin: &'a str,
+    }
+    let message = Message { origin: url };
+    let mut count = Count(0);
+    serde_json::to_writer(&mut count, &message).ok()?;
+    let mut bytes = Zeroizing::new(vec![0; count.0]);
+    let mut remaining = bytes.as_mut_slice();
+    serde_json::to_writer(&mut remaining, &message).ok()?;
+    if !remaining.is_empty() {
+        return None;
+    }
+    // A refused conversion hands its bytes back into a wiping owner to drop.
+    String::from_utf8(std::mem::take(&mut *bytes))
+        .map_err(|refused| Zeroizing::new(refused.into_bytes()))
+        .ok()
+        .map(Zeroizing::new)
+}
+
 pub(super) fn from_string(text: String) -> *mut c_char {
     let text = Zeroizing::new(text);
     if text.as_bytes().contains(&0) {
@@ -391,6 +414,26 @@ mod tests {
             &InkRuns(&text),
             &serde_json::to_vec(&[serde_json::json!({"ink": text})]).unwrap(),
         );
+    }
+
+    /// The origin message is the JSON a `Value` made of it, in one wiping owner of its exact
+    /// size (Law 0004, C17).
+    #[test]
+    fn the_origin_message_is_its_json_in_one_exact_wiping_owner() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+        for url in [
+            "",
+            "https://origin.example.test/reset?tk=Vq9Zx",
+            "https://example.test/café/🦀?q=\"quoted\"&b=\\\n\t\0\u{001f}",
+        ] {
+            let message = origin_message(url).unwrap();
+            wiping_owner(&message);
+            assert_eq!(
+                message.as_str(),
+                serde_json::json!({ "origin": url }).to_string()
+            );
+            assert_eq!(message.capacity(), message.len(), "the message grew");
+        }
     }
 
     #[test]
