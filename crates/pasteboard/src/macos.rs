@@ -247,7 +247,7 @@ fn utf8_of(string: &NSString) -> Option<Zeroizing<String>> {
     let mut leftover = NSRange::new(0, 0);
     // SAFETY: `bytes` has room for the `len` bytes allowed, and `used` and `leftover`
     // are live locals for the call.
-    unsafe {
+    let converted = unsafe {
         string.getBytes_maxLength_usedLength_encoding_options_range_remainingRange(
             bytes.as_mut_ptr().cast::<c_void>(),
             len,
@@ -256,9 +256,9 @@ fn utf8_of(string: &NSString) -> Option<Zeroizing<String>> {
             NSStringEncodingConversionOptions::empty(),
             NSRange::new(0, units),
             &raw mut leftover,
-        );
-    }
-    if used != len || leftover.length != 0 {
+        )
+    };
+    if !converted || used != len || leftover.length != 0 {
         return None;
     }
     // A refused conversion hands its bytes back into a wiping owner to drop.
@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn a_non_ascii_origin_reads_whole_and_an_unpaired_surrogate_reads_as_none() {
+    fn a_non_ascii_origin_reads_whole_and_a_surrogate_written_as_one_yields_no_origin() {
         let url = "https://exämple.test/reset?tk=SECRET";
         let pb = board_with(
             &NSString::from_str("quoted"),
