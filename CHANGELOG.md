@@ -987,10 +987,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window's title bar to), where before it always stretched the card to
   full working height. Zoom is that stretch; Fill takes the whole
   visible frame; Minimize and Do Nothing leave the card where it is,
-  since a panel cannot miniaturise. With the setting unset the system's
-  default applies, Fill from macOS 15 and Zoom before. A second
-  double-click returns the card either way, and a drag or resize by
-  hand still ends the return trip.
+  since a panel cannot miniaturise. With the setting unset the card
+  reads Fill from macOS 15 and Zoom before, a reading still to be
+  checked on hardware. A second double-click returns the card either
+  way, a drag or resize by hand still ends the return trip, and a
+  double-click on a card already at its target starts no trip.
 
 - **The drafts file is read before it is written** (app 0.40.9; issue
   #296). The model writes the drafts file only once its restore has

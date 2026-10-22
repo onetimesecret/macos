@@ -81,8 +81,10 @@ sense, while remaining a **non-activating accessory**:
   system's title bar preference (`AppleActionOnDoubleClick`). Zoom is
   the stretch described here; Fill takes the whole visible frame;
   Minimize and Do Nothing leave the card where it is, since a panel
-  cannot miniaturise. Unset reads as the system default, Fill from
-  macOS 15 and Zoom before.
+  cannot miniaturise, and a card already out stays out, as a window
+  does. Unset reads as Fill from macOS 15 and Zoom before. That default
+  is an interpretation pending a hardware check: Apple's Desktop & Dock
+  help for macOS 15 lists the four choices without naming a default.
 - **Position and size persist** across summons.
 - **Capture configuration.** The design sets `sharingType = .none` by
   default. Rev C removed the "excluded from screen capture" caption from
