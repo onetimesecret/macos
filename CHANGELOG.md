@@ -980,6 +980,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The roll's follow ups from the reading place review** (app 0.40.1;
+  issue #278). A peer's applied edit restates a page by the model's own
+  record of which page a surface shows, not by a count of layout
+  managers, so a second layout manager on a storage cannot leave a
+  quiet page stale. The roll sets its horizontal scroller only when it
+  differs from what the wrap setting asks, not on every keystroke's
+  pass. A test pins that
+  a page switch handing the keys to the editor, with its caret below
+  the viewport, keeps the reader's place; the switch already did. The
+  mixed edit fallback in the reading anchor's rebase has its own issue,
+  #283.
 - **A sealed object's excerpt and typed name are wiped when they go**
   (`companion-core` 0.34.1; issue #256, the content buffer register's
   C09, C10 and C19). The excerpt, which is the content's own head and

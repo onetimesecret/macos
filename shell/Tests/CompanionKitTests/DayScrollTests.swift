@@ -555,6 +555,87 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// A switch that hands the keys to the editor must not let a scroll the hand off makes
+    /// stand in for the reader's own (#278, point 1).
+    func testAPageSwitchHandingTheKeysToAnOffscreenCaretKeepsTheReadingPlace() throws {
+        let model = try makeModel()
+        let top = try page(in: model, saying: longPage(lines: 60))
+        let previewed = try page(in: model, saying: "# Preview\n" + longPage(lines: 40))
+        let next = try page(in: model, saying: longPage(lines: 80))
+        model.toggleMarkdownPreview(for: previewed)
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let end = editor.string.utf16.count
+        editor.setSelectedRange(NSRange(location: end, length: 0))
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: previewed), selectedPage: previewed, readOnly: false)
+        let preview = try XCTUnwrap(roll.stack.previewRegions[previewed])
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        XCTAssertTrue(editor.isHidden)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[top])
+        let index = (quiet.string as NSString).range(of: "line 20 ").location
+        XCTAssertNotEqual(index, NSNotFound)
+        let glyph = try glyphRect(in: quiet, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(place.page, top)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+        let top0 = roll.scroll.contentView.bounds.minY
+        // The anchor's glyph, where it stands inside the clip: the invariant, whatever the
+        // rows above it do across the switch.
+        func glyphInClip() throws -> CGFloat {
+            quiet.frame.minY + (try glyphRect(in: quiet, at: index)).minY - roll.scroll.contentView.bounds.minY
+        }
+        let glyphBefore = try glyphInClip()
+        let nextRegion = try XCTUnwrap(roll.stack.quietRegions[next])
+        XCTAssertGreaterThan(
+            nextRegion.frame.minY, roll.scroll.contentView.bounds.maxY,
+            "the case needs the caret's page below the viewport")
+
+        roll.stack.update(projection: spreadOverDays(model, selecting: next), selectedPage: next, readOnly: false)
+
+        XCTAssertTrue(roll.window.firstResponder === editor, "the keys did not pass to the editor")
+        XCTAssertEqual(roll.coordinator.currentSheet, next)
+        XCTAssertEqual(editor.selectedRange().location, end, "the caret was not put back at the page's end")
+        XCTAssertGreaterThan(editor.frame.minY, top0 + roll.scroll.contentView.bounds.height)
+        XCTAssertEqual(roll.stack.currentPlace?.page, top)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, index)
+        XCTAssertTrue(roll.stack.quietRegions[top] === quiet)
+        XCTAssertEqual(try glyphInClip(), glyphBefore, accuracy: 0.5, "the anchor's line moved in the clip")
+    }
+
+    /// A peer's applied edit restates a quiet page and leaves the page a surface shows alone (#276);
+    /// the answer comes from the model's own view of what is mounted (#278, point 4).
+    func testAPeersEditRestatesAQuietPageAndNotTheMountedOne() throws {
+        let model = try makeModel()
+        let quiet = try page(in: model, saying: "quiet before")
+        let mounted = try page(in: model, saying: "mounted before")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        XCTAssertTrue(editor.textStorage === model.storage(for: mounted))
+        // The quiet page's storage, minted before the peer's edit so the settle has one to restate,
+        // under a manager with no text view, as a torn down editor leaves behind.
+        let stale = model.storage(for: quiet)
+        let stray = NSLayoutManager()
+        stale.addLayoutManager(stray)
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: quiet, json: "[{\"ink\":\"quiet after\"}]"))
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: mounted, json: "[{\"ink\":\"mounted after\"}]"))
+        XCTAssertEqual(stale.string, "quiet before", "the case needs a stale storage to restate")
+
+        model.settleRemoteEdits(on: [quiet, mounted])
+        stale.removeLayoutManager(stray)
+
+        XCTAssertEqual(stale.string, "quiet after", "a stray manager kept the page stale")
+        XCTAssertTrue(model.storage(for: quiet) === stale)
+        XCTAssertEqual(editor.string, "mounted before", "the mounted page was restated under the editor")
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        XCTAssertEqual(roll.stack.quietRegions[quiet]?.string, "quiet after")
+    }
+
     func testWrapAndWidthRoundTripsReturnAMidParagraphReaderToTheSameLine() throws {
         let model = try makeModel()
         model.wrapsLines = true
