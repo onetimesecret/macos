@@ -163,8 +163,9 @@ pub(crate) struct SpanProvenance {
     pub(crate) created_s: i64,
     /// Latest change that touched the span, Unix seconds.
     pub(crate) modified_s: i64,
-    /// The created-defining change's message. Content: never a read surface.
-    pub(crate) origin: Option<String>,
+    /// The created-defining change's message, content in a wiping owner: never a read
+    /// surface (Law 0004, C17).
+    pub(crate) origin: Option<Zeroizing<String>>,
 }
 
 /// A sheet's body as a Loro document. The chip mark is `expand: none`, so
@@ -826,7 +827,7 @@ impl SheetDocument {
             }
             let message = || {
                 let message = change.message();
-                (!message.is_empty()).then(|| message.to_string())
+                (!message.is_empty()).then(|| Zeroizing::new(message.to_owned()))
             };
             derived = Some(match derived {
                 None => SpanProvenance {
