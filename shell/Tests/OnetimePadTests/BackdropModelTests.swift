@@ -343,6 +343,19 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(model.geometry.width, 1440)
     }
 
+    func testADoubleClickOnACardAlreadyAtItsTargetArmsNoTrip() {
+        let model = makeModel(named: "double-click-already-filled", preference: "Fill")
+        model.headerDoubleClicked()
+        model.endDoubleClickTrip()
+        let filled = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, filled, "already at the target")
+        model.reclamp(pane: CGRect(x: 0, y: 25, width: 1680, height: 1000))
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1680, "the next double-click fills, not returns")
+        XCTAssertEqual(model.geometry.height, 1000)
+    }
+
     func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {
         let model = makeModel(named: "owner-closed")
         XCTAssertEqual(model.pages.owner, .panel)

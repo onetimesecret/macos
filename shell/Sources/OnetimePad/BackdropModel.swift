@@ -862,15 +862,18 @@ final class BackdropModel: ObservableObject, QuitFlushable {
                 origin: pane.origin, width: pane.size.width, height: pane.size.height))
     }
 
-    /// Out to `target`, or back to the geometry an earlier trip left.
+    /// Out to `target`, or back to the geometry an earlier trip left. A card
+    /// already at the target arms no trip, so the next double-click acts.
     private func toggle(to target: BackdropGeometry) {
         if let restored = doubleClickRestore {
             doubleClickRestore = nil
             applyGeometry(restored.clamped(to: pane))
             return
         }
+        let out = target.clamped(to: pane)
+        guard out != geometry else { return }
         doubleClickRestore = geometry
-        applyGeometry(target.clamped(to: pane))
+        applyGeometry(out)
     }
 
     /// The key the system stores the title bar double-click preference
