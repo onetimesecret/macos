@@ -77,7 +77,10 @@ set or a note edited, as after any mutation
 ## The note's routes
 
 The note is the document type a page's body and an open file use, holding
-ink alone. Its routes are keyed by chip id, as a file has its own:
+ink alone. Since 2026-10-21 (issue #256) a note made by a restore, a paste
+or a clone is its text alone until the first batch it accepts, which makes
+that document (At rest, below). Its routes are keyed by chip id, as a file
+has its own:
 
 - `companion_chip_note_runs_json`: `[]` without a note, else
   `[{"ink": text}]`; null for an unknown chip or a page past its deadline.

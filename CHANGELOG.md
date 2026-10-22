@@ -994,7 +994,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was put in a document at once, and that document's storage is not
   wiped, so its text could stay in memory after the object was removed
   or the page expired, though nobody had touched the note. Such a note
-  now rests as one zeroizing copy of its text, and only an edit puts it
+  now rests as a zeroizing copy of its text, and only an edit puts it
   in a document; undo and redo after that edit work as before. The
   names a restore reads were already zeroizing owners. The register
   records what an edited note's document and the restored cut still

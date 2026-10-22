@@ -222,8 +222,10 @@ mod tests {
             before: at(4),
             after: at(6),
         };
-        let runs: [&[Option<TextSelection>]; 4] = [
+        let runs: [&[Option<TextSelection>]; 6] = [
             &[],
+            &[None],
+            &[Some(at(99))],
             &[Some(at(4))],
             &[Some(at(2)), Some(at(4)), None],
             &[Some(at(4)), Some(at(6)), Some(at(99))],
