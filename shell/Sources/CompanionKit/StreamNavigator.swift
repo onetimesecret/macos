@@ -19,9 +19,8 @@ import Foundation
 /// its day, how many empty days fall between two, where the seven day
 /// window ends, where each node stands for a given rail height, where
 /// the band and the line slivers fall, and what a click on bare track
-/// scrolls to. In the idiom `TimeRailView.selectedBucket` and
-/// `TimeUnitTab.target(for:)` set, so the whole navigator is under test
-/// without a window.
+/// scrolls to. In the idiom `TabStripView.newPageHelp` set, so the
+/// whole navigator is under test without a window.
 ///
 /// What it never carries is text. `RollGeometry` hands it rectangles
 /// (a page's span, a line's width) and it hands the view rectangles
@@ -100,8 +99,8 @@ public enum StreamNavigator {
     /// `selection` is the selected slot, as `PageModel.selection` names
     /// it. A page node is active when its slot is the selection; the
     /// empty place is active only by elimination, when no drawn page
-    /// holds the selection, the same rule `TimeRailView.selectedBucket`
-    /// states for the old rows. With `surfaceShowsRoll` false (a file or
+    /// holds the selection, the rule the rail's rows stated before the
+    /// navigator replaced them. With `surfaceShowsRoll` false (a file or
     /// the ledger has replaced the roll) no node is active at all: what
     /// is on screen is then not on the rail.
     public static func nodes(
@@ -287,7 +286,7 @@ public enum StreamNavigator {
     /// the one line the gutter already shows.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
-        guard node.hasPage else { return TimeUnitTab.todayHelp(hasPage: false, chord: chord) }
+        guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
         var first = "\(node.spokenDay) · \(node.stamp)"
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }
@@ -596,13 +595,13 @@ public enum StreamNavigator {
         // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
         // less its own reserve, between the two.
         let lifts = nodes.map { Metrics.rowLift(firstOfDay: $0.firstOfDay) }
-        let clearances = nodes.indices.map { index in
+        let liftGaps = nodes.indices.map { index in
             index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
         }
         let span = max(0, height - Metrics.top - Metrics.bottom)
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
         for index in 1..<ys.count {
-            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
+            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + liftGaps[index])
         }
         let lastBottom = ys[ys.count - 1] + heights[ys.count - 1]
         let contentHeight = max(height, lastBottom + Metrics.bottom)

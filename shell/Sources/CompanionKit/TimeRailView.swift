@@ -338,32 +338,6 @@ public struct TimeRailView: View {
         return chords
     }
 
-    /// Which day the rail marks as the one the surface is showing.
-    ///
-    /// The mark follows the selected page's day rather than the row
-    /// that was last clicked, so a selection moved by the keyboard, or
-    /// dropped onto another day by the fall after an expiry, moves it
-    /// too. A selection standing in a slot the rail draws no node for
-    /// (an empty slot, or a blank old page the content bar is holding
-    /// back) lights nothing at all: what is on screen is then not on
-    /// the rail, and marking a node would say the surface is somewhere
-    /// it is not.
-    ///
-    /// Today is the one day that can answer to no slot, and while it
-    /// holds no page it takes the mark only by elimination, on the pad
-    /// where no drawn day holds a page, so there is nothing else the
-    /// mark could sit on and today is the place the next page would
-    /// land. Pure, because which day is lit is a decision and not a
-    /// drawing; `StreamNavigator.nodes` states the same rule per node.
-    static func selectedBucket(projection: TimeUnitProjection, selection: UInt64?) -> Int? {
-        if let selection,
-            let day = projection.units.first(where: { $0.tabIDs.contains(selection) }) {
-            return day.bucket
-        }
-        guard projection.units.allSatisfy({ $0.pageIDs.isEmpty }) else { return nil }
-        return projection.units.first { $0.bucket == 0 }?.bucket
-    }
-
     /// Where the day at `day` sits in `PageModel.visibleTargets`, which
     /// is the array `select(index:)` indexes.
     ///
@@ -1060,254 +1034,6 @@ final class WheelRelayView: NSView {
     }
 }
 
-/// Durable slots placed down the leading edge. The slots remain the
-/// same named, reorderable objects as the bottom presentation; only
-/// their measure and reading direction change (D-26). No layout draws
-/// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
-public struct SlotRailView: View {
-    @ObservedObject var model: PageModel
-    @State private var rowFrames: [UInt64: CGRect] = [:]
-
-    public init(model: PageModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        // Keep the slot rail on the same leading grid as the stream
-        // rail. The two placement modes are peers, so changing between
-        // them must not make the Files and Pad labels jump sideways.
-        VStack(alignment: .leading, spacing: 2) {
-            if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "Files")
-                ForEach(model.navigationFiles) { file in
-                    FileShelfRow(
-                        file: file,
-                        selected: model.selectedFile == file.id && !model.showingLedger,
-                        model: model
-                    )
-                }
-                GroupLabel(text: "Pad")
-            }
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 2) {
-                    ForEach(model.navigationTabs) { sheet in
-                        SlotRailRow(
-                            sheet: sheet,
-                            selected: model.selection == sheet.id
-                                && model.selectedFile == nil && !model.showingLedger,
-                            model: model,
-                            beginReorder: { model.draggingTab = sheet.id },
-                            reorder: { pointerY in
-                                reorder(dragged: sheet.id, pointerY: pointerY)
-                            },
-                            endReorder: { model.draggingTab = nil }
-                        )
-                        .id(sheet.id)
-                        .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(
-                                key: SlotRailFramesKey.self,
-                                value: [sheet.id: geometry.frame(in: .named(Self.space))]
-                            )
-                        })
-                    }
-                }
-            }
-            Button(action: model.newPage) {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .medium))
-                    .frame(width: 24, height: 20)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.secondaryInk)
-            .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
-            .accessibilityLabel(Text("New page"))
-            if blankCount > 0 {
-                Text("\(blankCount) blank")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Color.secondaryInk)
-                    .accessibilityLabel(Text("\(blankCount) blank slot\(blankCount == 1 ? "" : "s")"))
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .frame(width: TimeRailView.width)
-        .background(Color.panelBackground)
-        .coordinateSpace(name: Self.space)
-        .onPreferenceChange(SlotRailFramesKey.self) { rowFrames = $0 }
-    }
-
-    fileprivate static let space = "slotRail"
-
-    private var blankCount: Int {
-        model.navigationTabs.count { !$0.hasPage }
-    }
-
-    private func reorder(dragged: UInt64, pointerY: CGFloat) {
-        let target = model.navigationTabs
-            .filter { $0.id != dragged }
-            .count { rowFrames[$0.id].map { $0.midY < pointerY } ?? false }
-        guard let current = model.navigationTabs.firstIndex(where: { $0.id == dragged }), target != current
-        else { return }
-        model.move(dragged, to: target)
-    }
-}
-
-private struct SlotRailRow: View {
-    let sheet: TabSummary
-    let selected: Bool
-    @ObservedObject var model: PageModel
-    let beginReorder: () -> Void
-    let reorder: (CGFloat) -> Void
-    let endReorder: () -> Void
-
-    @State private var hovering = false
-    @State private var rename = TabRename.Field()
-    @FocusState private var renameFocused: Bool
-
-    private var renaming: Bool { rename.isOpen }
-
-    var body: some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 3) {
-                if sheet.paused { HoldChip(toppedUp: sheet.holdToppedUp) }
-                if renaming {
-                    renameField
-                } else {
-                    Text(sheet.title)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                reorderHandle
-                Button { model.close(sheet.id) } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .frame(width: 12, height: 16)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.secondaryInk)
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
-                .help("Close tab")
-                // The row offers Close Tab as an action; the mark is
-                // pointer-only.
-                .accessibilityHidden(true)
-            }
-            Group {
-                if sheet.hasPage {
-                    GaugeBar(
-                        fraction: sheet.fractionRemaining,
-                        paused: sheet.paused,
-                        toppedUp: sheet.holdToppedUp,
-                        lastHour: sheet.lastHour
-                    )
-                } else {
-                    EmptyRule()
-                }
-            }
-            .frame(height: 3)
-            .padding(.horizontal, 3)
-        }
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(selected ? Color.cellBackground : .clear)
-        )
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .gesture(TapGesture(count: 2).onEnded { if !renaming { model.pause(sheet.id) } })
-        .simultaneousGesture(TapGesture().onEnded { if !renaming { model.select(sheet.id) } })
-        .accessibilityElement(children: renaming ? .contain : .ignore)
-        .accessibilityLabel(Text(accessibilityDescription))
-        .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
-        // The hover-only close mark and the menu verbs, reachable
-        // without a pointer; mid-rename the element is the field's
-        // container and offers neither.
-        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
-        .accessibilityActions {
-            if !renaming {
-                Button("Rename Tab") { beginRename() }
-                Button("Close Tab") { model.close(sheet.id) }
-            }
-        }
-        .contextMenu {
-            Button("Rename Tab") { beginRename() }
-            Button(SheetTab.holdMenuTitle(
-                paused: sheet.paused, toppedUp: sheet.holdToppedUp)
-            ) { model.pause(sheet.id) }
-                .disabled(!sheet.hasPage)
-            Button(SheetTab.rungMenuTitle(hasPage: sheet.hasPage)) {
-                model.cycleRung(sheet.id)
-            }
-            if model.sync.enabled, let pageID = sheet.pageID {
-                Button(SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID))) {
-                    model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
-                }
-            }
-            Divider()
-            Button("Close Tab", role: .destructive) { model.close(sheet.id) }
-        }
-    }
-
-    private var reorderHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 8, weight: .medium))
-            .foregroundStyle(Color.secondaryInk)
-            .frame(width: 12, height: 18)
-            .contentShape(Rectangle())
-            .help("Drag to reorder tab")
-            .accessibilityLabel(Text("Reorder tab"))
-            .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .named(SlotRailView.space))
-                    .onChanged { value in
-                        beginReorder()
-                        reorder(value.location.y)
-                    }
-                    .onEnded { _ in endReorder() }
-            )
-    }
-
-    private func beginRename() {
-        rename.open(on: sheet.title)
-    }
-
-    private var renameField: some View {
-        TextField("", text: $rename.draft)
-            .textFieldStyle(.plain)
-            .font(.system(.caption, design: .monospaced))
-            .focused($renameFocused)
-            .onSubmit { endRename(committed: true) }
-            .onExitCommand { endRename(committed: false) }
-            .onChange(of: renameFocused) { focused in
-                if focused { TabRename.selectWholeDraft() } else { endRename(committed: false) }
-            }
-            .onAppear { DispatchQueue.main.async { renameFocused = true } }
-            .accessibilityLabel(Text("Tab name"))
-    }
-
-    private func endRename(committed: Bool) {
-        if case .rename(let name)? = rename.end(committed: committed) {
-            model.renameTab(sheet.id, to: name)
-        }
-    }
-
-    private var accessibilityDescription: String {
-        guard sheet.hasPage else { return "tab, \(sheet.title), holding no page" }
-        var description = "page, \(sheet.title)"
-        if sheet.chipCount > 0 {
-            description += ", \(sheet.chipCount) sealed chip\(sheet.chipCount == 1 ? "" : "s")"
-        }
-        if sheet.paused {
-            description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
-        }
-        return description
-    }
-}
-
 /// The menu's order choices and current value share their localized labels.
 struct PadSortCopy {
     let direction: PadSortDirection
@@ -1323,14 +1049,6 @@ struct PadSortCopy {
         }
     }
     var help: String { CompanionL10n.format("pad.sort.help", label, currentOrder) }
-}
-
-private struct SlotRailFramesKey: PreferenceKey {
-    static let defaultValue: [UInt64: CGRect] = [:]
-
-    static func reduce(value: inout [UInt64: CGRect], nextValue: () -> [UInt64: CGRect]) {
-        value.merge(nextValue()) { _, newer in newer }
-    }
 }
 
 /// One open file on the rail's Files shelf: the filename over the
@@ -1384,56 +1102,22 @@ struct FileShelfRow: View {
     }
 }
 
-/// The pure decisions a day's tab makes, shared by the bottom strip's
-/// `TimeUnitBottomTab` and the navigator's nodes: the target a click
-/// resolves to, which day offers a plus, and the tooltips. A namespace
-/// and no longer a view since the navigator replaced the rail's rows;
-/// kept under its name so the tests and the strip read as they did.
+/// The empty today node's tooltip, the one decision of the old rows the
+/// navigator still asks (`StreamNavigator.help`); a page node's tooltip
+/// is composed there. A namespace and no longer a view since the
+/// navigator replaced the rail's rows; kept under its name so the tests
+/// read as they did.
 ///
-/// Internal rather than private so the decisions can be tested without
+/// Internal rather than private so the wording can be tested without
 /// a window, in the idiom `TabStripView.newPageHelp` and
-/// `SheetTab.holdMenuTitle` set. On the main actor, as the view it
-/// replaced was, since the tooltips it builds read the strip's.
-@MainActor
+/// `SheetTab.holdMenuTitle` set.
 enum TimeUnitTab {
-    /// Which bottom tab carries the + button: today, and only today. A
-    /// page is minted with the clock's own reading of now, so today is
-    /// the one day a new page can land on; a plus beside yesterday
-    /// would promise a page in the past. Pure, so the strip's tests
-    /// can pin the placement without a window. The side rail puts its
-    /// plus on the PAD heading for the same reason.
-    nonisolated static func offersNewPage(_ unit: TimeUnitProjection.Unit) -> Bool {
-        unit.bucket == 0
-    }
-
-    /// Where a click on a day lands.
-    ///
-    /// The same answer the keyboard gets, and deliberately the same
-    /// shape: a day answers with its first page's slot, and only today
-    /// can answer with no slot at all. `PageModel.visibleTargets` maps
-    /// the very same units the very same way, so a click on the second
-    /// day and ⌘2 cannot disagree about where the second day is.
-    static func target(for unit: TimeUnitProjection.Unit) -> SurfaceTarget {
-        guard let tab = unit.tabIDs.first else { return .today }
-        return .tab(tab)
-    }
-
-    /// A day's tooltip: what the click does, in the same words the day
-    /// itself shows, and the chord that does it too. With nothing bound
-    /// it says only what the click does, which is still true.
-    static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
-        Keystroke.chorded("Go to \(spokenLabel)", chord: chord)
-    }
-
-    /// Today's tooltip, which has two readings. Today already holding a
-    /// page is a jump like any other; today holding none is the one
-    /// place where a click conjures something, and saying "go to today"
-    /// there would describe a page that does not exist. The two agree
-    /// word for word about the day that has one, so a day that gains a
-    /// page reads the same either way it was asked.
-    static func todayHelp(hasPage: Bool, chord: Keystroke?) -> String {
-        guard hasPage else { return Keystroke.chorded("Start today's page", chord: chord) }
-        return dayHelp(spokenLabel: "today", chord: chord)
+    /// Today holding no page is the one place where a click conjures
+    /// something, and the tooltip says so rather than promising a page
+    /// that does not exist; with nothing bound it says only what the
+    /// click does, which is still true.
+    nonisolated static func todayHelp(chord: Keystroke?) -> String {
+        Keystroke.chorded("Start today's page", chord: chord)
     }
 }
 

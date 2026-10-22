@@ -1,11 +1,11 @@
 ---
 name: issue267-timeline-node-drops
-description: PR 269 retargeted 2026-10-20 to TimeRailView page nodes; the side Timeline has two renderings (stream navigator by default, pads rail when the experiment is on); SlotRailView and TimeStripView are drawn by no layout
+description: PR 269 retargeted 2026-10-20 to TimeRailView page nodes; the side Timeline has two renderings (stream navigator by default, pads rail when the experiment is on); SlotRailView and TimeStripView were drawn by no layout and are deleted (issue 275)
 metadata:
   type: project
 ---
 
-PR 269 (issue 267) first seated `TabDropOverlay` in `SlotRailView` and `TimeStripView`. Maintainer direction of 2026-10-20 moved it to the side Timeline's page nodes, because `PageModel.showsPagesDownSide` is `showsTimeUnits` and ADR-0037 leaves those two views undrawn. App 0.40.0.
+PR 269 (issue 267) first seated `TabDropOverlay` in `SlotRailView` and `TimeStripView`. Maintainer direction of 2026-10-20 moved it to the side Timeline's page nodes, because `PageModel.showsPagesDownSide` is `showsTimeUnits` and ADR-0037 left those two views undrawn; issue 275 deleted them on 2026-10-21. App 0.40.0.
 
 **Why:** the brief pointed at the pads rail's node button only, but `TimeRailView.body` branches on `model.pads.isEnabled`, which defaults off, so the Timeline a person sees is `legacyRail`, drawn by `StreamNavigatorView.node(_:width:)`. Seating the target in one rendering would have repeated the unreachable placement mistake.
 

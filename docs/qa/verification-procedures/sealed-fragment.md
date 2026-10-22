@@ -585,9 +585,9 @@ SIGKILLs a live one), then `scripts/dev.sh`.
 
 ## Drops on the side Timeline's page nodes (issue #267)
 
-**Status, 2026-10-20:** not run on hardware. Build `fae8228b` (app
-0.40.0) on `fix/267-placement-drop-targets`, or a later commit on that
-branch, with `scripts/dev.sh`, and record the commit with the results.
+**Status, 2026-10-21:** not run on hardware. Build `main` at or after
+the merge of PR 269 (1b0ecb9d, app 0.40.0) with `scripts/dev.sh`, and
+record the commit with the results.
 The mounted view tests in `TabDropTests` drive each node's target
 through its destination calls; they run no AppKit drag session and no
 pointer (Law 0001, drag row, 2026-10-20 Timeline node amendment).
@@ -612,14 +612,16 @@ and with it on, which draws the pads rail.
       page of a day takes the drop meant for it, the TextEdit word
       stands there as a new sealed object, the decrypted drag shows no
       operation and places nothing, and afterwards a click on the node
-      still selects its page and scrolls the roll to it, its hover fill
-      and tooltip show as before, and in the stream navigator a click
-      on the bare track still scrolls and a drag along the column still
-      scrubs. **Fail:** the cursor never changes over a node (AppKit
+      still selects its page and scrolls the roll to it, a VoiceOver
+      press on the node does what the click does, the node's hover
+      fill and tooltip show as before, and in the stream navigator a
+      click on the bare track still scrolls and a drag along the
+      column still scrubs. **Fail:** the cursor never changes over a node (AppKit
       delivered no drag to a target whose `hitTest` answers nil), the
       run goes to another page or anywhere but the end, the decrypted
-      drag places anything, or a node stops answering its click, its
-      scroll or its tooltip.
+      drag places anything, a node stops answering its click, its
+      scroll or its tooltip, or the VoiceOver press does anything but
+      what the click does.
 - [ ] **A drop on a resting card's Timeline node** (Law 0001, drag
       row; ADR-0015; issue 267). Pin the card and let it rest, drag a
       word from TextEdit over a page node and release; then raise the
@@ -670,7 +672,7 @@ and with it on, which draws the pads rail.
       node under the pointer, whether or not the rail scrolled.
       **Fail:** the run goes to any other page.
 
-| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Dense rail, rows below the fold |
+| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, VoiceOver press, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Dense rail, rows below the fold |
 |---|---|---|---|---|---|---|---|
 | Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (scrolled to, and held at the foot) |
 | Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (held at the foot) |
