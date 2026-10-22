@@ -105,7 +105,7 @@ This changes the final allocation; it does not retroactively wipe earlier
 | F09 | `sheet_paste_fragment`, `sheet_paste_active_cut`, `sheet_move_range`, `sheet_move_range_to`, `sheet_clone_range` | Placement ranges/counts, unreadable/expiry flags; **N + W** output | Implemented output; content input and core temporaries remain separate work. |
 | F10 | `active_cut_json` | Object excerpts and names, plus page id; **Z + W**, borrowed faces | Implemented output; core and Swift active-cut storage are not fixed by this. |
 | F11 | `tabs_json` | Typed/derived titles and tab metadata; **Z + W** | Implemented output and zeroizing temporary label; upstream title/name construction is C13–C15, implemented 2026-10-21. |
-| F12 | `ledger_json` | Titles and event metadata; **Z + W**, borrowed title | Implemented output; the resident and restored title owner is C16, implemented 2026-10-21; the restored chip owners remain C31. |
+| F12 | `ledger_json` | Titles and event metadata; **Z + W**, borrowed title | Implemented output; the resident and restored title owner is C16, implemented 2026-10-21; the restored chip owners are C31's, implemented 2026-10-21. |
 | F13 | `sheet_document_json` | All ink, object excerpts/names; **Z + W**, borrowed `DocumentRuns` | Implemented output without content `Value` copies; projection owners C02/C03 now wipe, while upstream Loro allocations remain C01. |
 | F14 | `sheet_meta_json`, `sheet_blocks_json` | Stamps, block ids and counts; **N + W** | Implemented content-free shape as inspected; not permission to add block text to these serializers. |
 | F15 | `connection_json`, `connection_test` | Connection state and result/error metadata; **N + W** | Implemented; no page text in the inspected output. |
@@ -145,7 +145,7 @@ silently exempting an existing content copy.
 | C08 | `EditOp::Insert.text`, `parse_ops`, `parse_segments` | **W** direct typed parse plus wiping scratch | **Blocked/Planned**: ordinary `String` and content `Value` copies remain in `core/src/store.rs` / `ffi/src/lib.rs`; serde_json escaped-string scratch is non-wiping. A zeroizing visitor alone does not fix scratch. |
 | C09 | `SealedChip.excerpt`, `text_face` head/tail | **W**, exact projection, or **N** omit excerpt | **W — implemented** resident owner (2026-10-21): `excerpt` is `Zeroizing<String>`, and `text_face` takes its head and tail as slices of the input and joins them once at the exact size, with no collected copies and no `format!` scratch (`core/src/sheet.rs`). F04/F10/F13 borrow it. |
 | C10 | `SealedChip.name` | **W** resident/name-update owner | **W — implemented** resident owner (2026-10-21): `Option<Zeroizing<String>>`, with the name set, the restore and the transfer clone wrapping the judged name as it is copied (`core/src/sheet.rs`, `store.rs`, `transfer.rs`, `persist.rs`). |
-| C11 | `SealedChip.note`, `Note` | **W** document and projection | **Partial/Blocked**: `Note::text` is zeroizing and exact; underlying Loro has C01's limits (`core/src/note.rs`). |
+| C11 | `SealedChip.note`, `Note` | **W** document and projection | **Partial/Blocked** (2026-10-21): a note made by `Note::holding`, for a restore, a paste or a clone, rests as one `Zeroizing<String>` at its exact size, and `Note::text` copies it at that size; a read, a step, a run's end without a selection and a batch refused for inking the chip sentinel make no document (`core/src/note.rs`, C31). **Blocked**: any other batch, or a run's end given a selection, inserts the text into a Loro document, as the first edit of a chip with no note does; from then `Note::text` is zeroizing and exact, and underlying Loro has C01's limits. |
 | C12 | `SealedChip.bytes` | **W**, fixed `SecretBuffer` | **Implemented** for this owner: `core/src/secret.rs` wipes length and spare capacity on drop; no resizing API. Text attempts page locking; images use the unlocked constructor. This is not evidence of successful OS page locking for every allocation. |
 | C13 | `Sheet.derived_title`, `derive_title` / `strip_markdown` | **W**, bounded exact construction | **W — implemented** resident owner (2026-10-21): `derived_title` and `derive_title`'s result are `Zeroizing<String>`; the first line's trimmed copy is wrapped as it is made, `strip_markdown` and `flatten_links` build in wiping owners sized once from the line, and the resident title is `capped_title`'s exact owner, so a long line's intermediate wipes as it drops rather than living on in the title's capacity (`core/src/sheet.rs`). `Sheet` derives no `Debug`; one added later would print the title, since the redaction is `LedgerRecord`'s alone. |
 | C14 | `Tab.name` | **W**, bounded exact construction | **W — implemented** resident owner (2026-10-21): `Option<Zeroizing<String>>` on the tab, the set and the restore taking the cap through `capped_title`, one allocation at the exact size with no growing scratch (`core/src/store.rs`, `sheet.rs`, `persist.rs`). `Tab` derives no `Debug`; one added later would print the name. |
@@ -165,7 +165,7 @@ silently exempting an existing content copy.
 | C28 | Core snapshot and materialized block section | **Z + W** | **Implemented** application output (`core/src/persist.rs`); Loro exports captured before serialization retain C29's construction limit. |
 | C29 | `export_snapshot`, `export_updates_since` | **W** export construction and result | **Partial/Blocked**: `core/src/document.rs` wraps only returned vectors. Loro fast snapshot pre-sizes its outer result, while update export grows a plain vector; intermediate serialization is not established as zeroizing. |
 | C30 | Drafts emit | **Z + W** | **Implemented** application output (`core/src/file_persist.rs`); captures Loro exports once, so C29 remains. |
-| C31 | `restore`, `read_chip` name/note | **W** restore owners | **Planned/Blocked**: names become ordinary strings, notes become Loro documents (`core/src/persist.rs`); final decrypted snapshot wiping does not erase these copies. |
+| C31 | `restore`, `read_chip` name/note | **W** restore owners | **Implemented** restore owners (2026-10-21): each name the restore reads, a chip's name, a tab's name and a ledger record's title, is a slice of the decrypted snapshot (C32, I08) copied once into its exact `Zeroizing<String>` (C10, C14, C16), and a chip record's note is copied once into `Note`'s resting owner at its exact size, with no Loro document made for it (`core/src/persist.rs`, `note.rs`, C11). `persist.rs::a_restored_name_and_note_rest_as_wiping_copies_until_the_note_is_edited` and `note.rs::a_resting_note_edits_and_steps_as_the_document_it_becomes` check the owners and that the steps after the first edit match a document made at once. What remains is not these owners': that first edit puts the note's text in a Loro document (C01), and the active cut's envelope is parsed on restore for its identities alone, so its ink, names and notes pass serde's escaped-string scratch before their wiping owners, which then drop (`core/src/transfer.rs::ActiveCut::restored`, C19, C21). |
 | C32 | FFI `seal_body`, `open_body`, `Opened::Plaintext` | **W** exact work/decrypt owner | **Implemented** final plaintext owner (`ffi/src/persist.rs`); output of sealing is ciphertext. |
 | C33 | `ByteBlob` page ops | **W** zeroizing owner and clones | **Implemented** at `7384bff1` (`sync/src/envelope.rs`): private `Zeroizing<Vec<u8>>`, explicit zeroize interface, redacted Debug. `From<Vec<u8>>` cannot fix the input vector's earlier allocation history. |
 | C34 | `ByteBlob` base64 serialize/deserialize | **Z + W** | **Partial**: exact zeroizing encode/decode buffers and visitor exist (`sync/src/b64.rs`, `envelope.rs`); escaped JSON still passes through non-wiping serde scratch. Base64 text of ops is content, not ciphertext. |
@@ -367,11 +367,13 @@ B4's explicit Swift boundary validation is resolved by source inspection and
 the parent-reported focused results; it is no longer a blocker. C02–C05, C07
 and C06 normalization are implemented; C06's FFI reader remains unresolved.
 C13–C16 are implemented (2026-10-21): the derived title, the tab name, the
-tab label and the ledger title are wiping owners.
+tab label and the ledger title are wiping owners. C31 is implemented
+(2026-10-21): the restore copies names and notes into wiping owners, and a
+restored note makes no Loro document until its first edit.
 
 1. **B1 — remaining core ownership:** implement and test C08–C10, C17,
-   C19–C21 and C27/C31: parser/refusal cleanup, resident excerpt/name/origin
-   copies, fragment wire names and restored owners. Also restrict or return a
+   C19–C21 and C27: parser/refusal cleanup, resident excerpt/name/origin
+   copies and fragment wire names. Also restrict or return a
    wiping owner from `OpenFile::bytes_to_write`; current in-tree callers are tests.
 2. **B2 — dependency storage and parsing:** resolve C01/C29 and escaped-string
    scratch in C08/C21/C34/C41. Review Loro shared/static/inline storage and its
@@ -405,7 +407,7 @@ Paths are relative to `crates/`.
 | I05 | Explicit temporary `.zeroize()` (`ffi/src/lib.rs`, `sync_driver.rs`; `ots-client/src/api.rs`) | **W — partial** path-local cleanup. It does not erase an earlier released allocation or a clone. |
 | I06 | Deserialize into `Zeroizing<String>` (`sync/src/oauth.rs`) | **W — partial**: final field owner, not serde_json scratch. |
 | I07 | Exact form encoder (`sync/src/oauth.rs`) | **W — implemented** zeroizing form output. |
-| I08 | In-place decrypt and truncate (`ffi/src/persist.rs`) | **W — implemented** plaintext result owner; downstream restored objects remain C31. |
+| I08 | In-place decrypt and truncate (`ffi/src/persist.rs`) | **W — implemented** plaintext result owner; downstream restored names and notes are C31's, implemented 2026-10-21, and a restored note's document after its first edit is C01's. |
 | I09 | Fixed zeroizing read chunk (`transport/src/lib.rs`, `ffi/src/files.rs`) | **W — implemented** chunk/probe owners, not a zeroizing whole-file reader (C06). |
 | I10 | `panic = "unwind"` (`Cargo.toml`) | **W — implemented** normal unwind cleanup support, not a buffer owner or evidence of cleanup after abort, kill or power loss. |
 

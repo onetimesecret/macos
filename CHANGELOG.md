@@ -980,6 +980,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A restored or pasted note that nobody edits is wiped when it goes**
+  (`companion-core` 0.34.2; issue #256, the content buffer register's
+  C11 and C31). A note brought back by a relaunch, a paste or a clone
+  was put in a document at once, and that document's storage is not
+  wiped, so its text could stay in memory after the object was removed
+  or the page expired, though nobody had touched the note. Such a note
+  now rests as one zeroizing copy of its text, and only an edit puts it
+  in a document; undo and redo after that edit work as before. The
+  names a restore reads were already zeroizing owners. The register
+  records what an edited note's document and the restored cut still
+  leave ordinary.
 - **A sealed object's excerpt and typed name are wiped when they go**
   (`companion-core` 0.34.1; issue #256, the content buffer register's
   C09, C10 and C19). The excerpt, which is the content's own head and

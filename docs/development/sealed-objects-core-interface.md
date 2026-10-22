@@ -198,7 +198,10 @@ it as fields it does not know, not damage, and drops it at its next save.
   damage, as the page floor's is. The note persists as text, not as its
   operation log, and restore rebuilds it with an empty undo stack. Each
   note's text is taken once, at its exact size, before the snapshot's two
-  passes (draft Law 0004).
+  passes (draft Law 0004). Since 2026-10-21 (issue #256) the restore, a
+  paste and a clone keep the note's text as one zeroizing copy, and the
+  note's document is made from it at its first edit
+  ([content buffer register](content-buffer-handling.md) C31).
 - **The page record**, after the floor: its detached chips, framed as its
   attached chips are, then a cut flag (0, or 1 and the active cut's
   envelope) on the page the cut came from. A cut whose objects are not
