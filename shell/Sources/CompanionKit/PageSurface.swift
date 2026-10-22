@@ -230,7 +230,7 @@ public struct PageStatusStack: View {
     /// filename where a dirty file is open, for the same reason as
     /// `discardHelp`.
     private func quitAnywayHelp(_ refusal: QuitSaveOutcome) -> String {
-        PageModel.quitAnywayHelp(refusal, files: model.openFiles)
+        PageModel.quitAnywayHelp(refusal, files: model.quitLineFiles)
     }
 
     public var body: some View {
@@ -289,7 +289,7 @@ public struct PageStatusStack: View {
         }
         if let refusal = model.quitRefusal,
             let sentence = PageModel.quitRefusalSentence(
-                refusal, files: model.openFiles, draftsUnwritten: model.draftsDirty)
+                refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
         {
             // The quit the terminate path cancelled (issue 172, D-14, D-19), standing and ember.
             // The button and ⌘Q answer it alike, and each restates it over edits it never named.

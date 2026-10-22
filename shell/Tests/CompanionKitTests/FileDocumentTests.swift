@@ -1771,8 +1771,33 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
         XCTAssertEqual(
             PageModel.quitRefusalSentence(
-                .unsavableWithDrafts, files: model.openFiles, draftsUnwritten: model.draftsDirty),
+                .unsavableWithDrafts, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty),
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
+    }
+
+    /// A cancelled ⌘Q restates nothing: a pending close stands, though the core
+    /// already reads that file clean, until the roster is restated.
+    func testAPendingFileCloseSurvivesACancelledQuit() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: first)
+        let a = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: a)
+        try type("well ", at: 0, into: a, on: model)
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: second)
+        let b = try XCTUnwrap(model.openFiles.first(where: { $0.name == "b.txt" })?.id)
+        _ = model.storage(for: b)
+        try type("more ", at: 0, into: b, on: model)
+        model.closeFile(a)
+        XCTAssertEqual(model.pendingFileClose?.fileID, a)
+
+        let undo = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 0, len: 5)]))
+        XCTAssertTrue(client.applyFileOps(a, json: undo), "a.txt back to its saved text, past the model")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.pendingFileClose?.fileID, a, "the cancelled quit withdrew nothing")
     }
 
     /// A session that never loaded holds no file's edits: the hold and the quit

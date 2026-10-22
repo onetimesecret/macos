@@ -2814,6 +2814,13 @@ public final class PageModel: ObservableObject {
             loaded: true, draftsLicence: false, draftsDirty: true, files: client.fileRoster())
     }
 
+    /// The core roster the last quit flush read, until the published roster is restated.
+    private var quitRoster: [FileSummary]?
+
+    /// The files the cancelled quit's line reads: the quit's own snapshot while the
+    /// published roster trails it.
+    public var quitLineFiles: [FileSummary] { quitRoster ?? openFiles }
+
     /// The terminate path's flush: `saveState` plus the one question it
     /// cannot answer alone, whether a settled flush still left this
     /// session's work nowhere but in memory. Work is `mutatedSinceLoad`
@@ -2821,15 +2828,19 @@ public final class PageModel: ObservableObject {
     /// write, everything recorded since the load is exactly what the
     /// quit loses, and the empty page launch itself mints is not.
     public func saveStateForQuit() -> QuitSaveOutcome {
-        // The offer and its named files read the published roster, which trails an edit.
-        refreshOpenFiles()
+        // One core snapshot for the outcome, the offer and the line, with none of a
+        // roster restatement's side effects on a quit that may be cancelled.
+        let roster = client.fileRoster()
+        quitRoster = roster
         let settled = saveState()
         return Self.quitOutcome(
             settled: settled,
             contentLicence: saveLicence,
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad,
-            draftsHeld: draftsHeldInCore()
+            draftsHeld: Self.draftsHeld(
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: roster)
         )
     }
 
@@ -2838,7 +2849,7 @@ public final class PageModel: ObservableObject {
     public var quitAnywayOffered: Bool {
         Self.quitAnswersOffer(
             offer: quitRefusal, named: quitRefusalNamed,
-            atRisk: Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty))
+            atRisk: Self.filesAtRiskAtQuit(files: quitLineFiles, draftsUnwritten: draftsDirty))
     }
 
     /// The files whose unsaved edits the cancelled quit named.
@@ -2879,7 +2890,7 @@ public final class PageModel: ObservableObject {
     public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         guard outcome != .settled else { return }
         quitRefusal = outcome
-        quitRefusalNamed = Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty)
+        quitRefusalNamed = Self.filesAtRiskAtQuit(files: quitLineFiles, draftsUnwritten: draftsDirty)
     }
 
     /// Whether the offer survives a write. A refusal's offer stands
@@ -3686,6 +3697,7 @@ public final class PageModel: ObservableObject {
             return (old.path, new.path)
         })
         openFiles = files
+        quitRoster = nil
         // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
         quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
         quitRefusal = Self.quitOfferAfterFiles(
