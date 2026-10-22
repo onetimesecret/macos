@@ -37,7 +37,9 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         let defaults = makeDefaults(named: "exclusive-presentation")
         let pages = ephemeralPages(defaults: defaults, tag: "exclusive-presentation")
         let model = BackdropModel(defaults: defaults, pages: pages)
-        let panel = BackdropWindowController(model: model, onCardClick: {})
+        let panel = BackdropWindowController(
+            model: model, onCardClick: {}, isCompanionWindow: { _ in false }
+        )
         let editor = PrimaryEditorWindowController(model: model)
         pages.newPage()
         panel.show()
@@ -77,7 +79,9 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         let defaults = makeDefaults(named: "ordered-presentation")
         let pages = ephemeralPages(defaults: defaults, tag: "ordered-presentation")
         let model = BackdropModel(defaults: defaults, pages: pages)
-        let panel = BackdropWindowController(model: model, onCardClick: {})
+        let panel = BackdropWindowController(
+            model: model, onCardClick: {}, isCompanionWindow: { _ in false }
+        )
         let editor = PrimaryEditorWindowController(model: model)
         pages.newPage()
         model.raise(.summon)
@@ -105,7 +109,9 @@ final class EditorOwnershipSequenceTests: XCTestCase {
             let defaults = makeDefaults(named: "summon-switch")
             let pages = ephemeralPages(defaults: defaults, tag: "summon-switch")
             let model = BackdropModel(defaults: defaults, pages: pages)
-            let panel = BackdropWindowController(model: model, onCardClick: {})
+            let panel = BackdropWindowController(
+                model: model, onCardClick: {}, isCompanionWindow: { _ in false }
+            )
             let editor = PrimaryEditorWindowController(model: model)
             pages.newPage()
             editor.show()
