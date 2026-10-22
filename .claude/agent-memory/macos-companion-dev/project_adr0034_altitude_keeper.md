@@ -37,6 +37,17 @@ Tests post the key notifications by hand on unordered windows and use
 must also set `model.pinned`, since the companion turns reapply from the
 model.
 
+**Review round (PR 306, 2026-10-21):** a companion's release waits one
+main queue hop and a companion key gain cancels it (AppKit posts the old
+resign first), so every resign or close in a test needs `drainMainQueue()`
+before the float is asserted. A sheet orders its parent front. The
+delegate keeps About in a weak `aboutPanel` set in `showAbout`, which
+then calls `noticeCompanionWindow` because an active app keys the panel
+before it has a name; `madeSettings`/`madeFeedback` replace `lazy` so the
+lookup makes no controller. An unordered NSWindow did not deallocate
+when its last Swift reference went, even in an autoreleasepool, so a
+weak reference nil-ing out cannot be staged in xctest.
+
 **How to apply:** new window decisions go in a small type that takes any
 `NSWindow`, not in the controller. `@Published` emits on willSet, so sinks
 use the emitted value for the input that is changing. Apple's header
