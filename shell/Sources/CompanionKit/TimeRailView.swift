@@ -842,6 +842,9 @@ final class RailRevealView: NSView {
     private(set) var memory = StreamNavigator.RevealMemory()
     /// The request standing when the hop runs, so two in one hop make one move, the last.
     private var pending: RailReveal.Request?
+    /// The request a hop could not measure, asked again when the clip or the drawing
+    /// changes size or the view comes into a window.
+    private var waiting: RailReveal.Request?
 
     /// Flipped so a row's top is measured as the layout measures it, down from the column's top.
     override var isFlipped: Bool { true }
@@ -849,16 +852,33 @@ final class RailRevealView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     /// Scroll the ground into the clip, by `StreamNavigator.RevealMemory`: the node is
-    /// recorded only once its ground was measured against the clip, so an attempt made
-    /// before the view sits under a scroll view, or before the clip has its height, is
-    /// made again by the next update.
+    /// recorded only once its ground was measured against the clip. Every update
+    /// replaces the request a hop is waiting on, and one that is not due cancels it.
     func reveal(_ request: RailReveal.Request?) {
+        unwatch()
         guard let request else {
             memory.forget()
             pending = nil
             return
         }
-        guard memory.isDue(request.id) else { return }
+        guard memory.isDue(request.id) else {
+            pending = nil
+            return
+        }
+        schedule(request)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
+            return
+        }
+        if let waiting { schedule(waiting) }
+    }
+
+    /// One hop on the main queue, for the content to take the new row heights first.
+    private func schedule(_ request: RailReveal.Request) {
         pending = request
         DispatchQueue.main.async { [weak self] in
             guard let self, let next = self.pending else { return }
@@ -867,17 +887,42 @@ final class RailRevealView: NSView {
         }
     }
 
+    /// Wait on the clip and the drawing for a size a reveal can be measured against.
+    private func watch(_ views: [NSView], for request: RailReveal.Request) {
+        waiting = request
+        for view in views {
+            view.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(sizeChanged), name: NSView.frameDidChangeNotification, object: view)
+        }
+    }
+
+    private func unwatch() {
+        waiting = nil
+        NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
+    }
+
+    @objc private func sizeChanged(_ notification: Notification) {
+        if let waiting { schedule(waiting) }
+    }
+
     private func scroll(to request: RailReveal.Request) {
-        guard memory.isDue(request.id),
-              let scrollView = enclosingScrollView, let document = scrollView.documentView,
-              // The offset is a distance down from the top, which is the clip origin's y
-              // only over a flipped document, the one SwiftUI's scroll view keeps.
-              document.isFlipped
-        else { return }
+        unwatch()
+        guard memory.isDue(request.id) else { return }
+        guard let scrollView = enclosingScrollView, let document = scrollView.documentView else {
+            waiting = request
+            return
+        }
+        // The offset is a distance down from the top, which is the clip origin's y
+        // only over a flipped document, the one SwiftUI's scroll view keeps.
+        guard document.isFlipped else { return }
         let clip = scrollView.contentView
         let visible = clip.documentVisibleRect
         // A clip with no height, or a drawing that has not yet filled it, measures nothing.
-        guard visible.height > 0, document.frame.height >= clip.bounds.height else { return }
+        guard visible.height > 0, document.frame.height >= clip.bounds.height else {
+            watch([clip, document], for: request)
+            return
+        }
         memory.record(request.id)
         let ground = convert(
             NSRect(x: 0, y: request.top, width: 1, height: request.bottom - request.top), to: document)

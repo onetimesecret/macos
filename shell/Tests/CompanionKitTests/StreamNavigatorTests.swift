@@ -419,33 +419,83 @@ final class StreamNavigatorTests: XCTestCase {
     }
 
     /// A hop that finds the clip with no height, or the drawing not yet as tall as the clip,
-    /// moves nothing and leaves the reveal due; a later hop over a laid out clip makes it.
-    func testARevealThatMeasuredNothingStaysDueForALaterHop() {
+    /// moves nothing and leaves the reveal due, and the clip or the drawing taking its size
+    /// makes it with no second update. Out of its window the view answers no size; back in
+    /// it, the reveal is made.
+    func testARevealThatMeasuredNothingIsMadeWhenTheClipTakesItsSize() {
+        let cases: [(clip: CGFloat, drawing: CGFloat, leaves: Bool)] = [
+            (0, 1000, false), (400, 100, false), (0, 1000, true),
+        ]
+        let request = RailReveal.Request(id: 11, top: 900, bottom: 930)
+        for (clipHeight, drawingHeight, leaves) in cases {
+            let label = "a \(clipHeight) point clip over a \(drawingHeight) point drawing"
+            let column = RevealColumn(clipHeight: clipHeight, drawingHeight: drawingHeight)
+            addTeardownBlock { column.window.close() }
+
+            column.reveal.reveal(request)
+            drainMainQueue()
+            XCTAssertTrue(column.reveal.memory.isDue(11), "\(label) used up the reveal")
+            XCTAssertEqual(column.offset, 0, "\(label) moved the clip")
+
+            if leaves { column.scroll.removeFromSuperview() }
+            column.scroll.setFrameSize(NSSize(width: 100, height: 400))
+            column.document.setFrameSize(NSSize(width: 100, height: 1000))
+            drainMainQueue()
+            if leaves {
+                XCTAssertTrue(column.reveal.memory.isDue(11), "a view out of its window answered the clip's size")
+                XCTAssertEqual(column.offset, 0, "a view out of its window moved the clip")
+                column.window.contentView?.addSubview(column.scroll)
+                drainMainQueue()
+            }
+            XCTAssertFalse(column.reveal.memory.isDue(11), "\(label) left the reveal due once the clip took its size")
+            XCTAssertEqual(column.offset, 530, "\(label) did not bring the row to the clip's bottom")
+        }
+    }
+
+    /// Two updates in one hop make one move, the last, and a last one already revealed makes none.
+    func testTheLastUpdateInAHopDecidesTheReveal() {
+        let column = RevealColumn(clipHeight: 400, drawingHeight: 1000)
+        addTeardownBlock { column.window.close() }
+        let far = RailReveal.Request(id: 11, top: 900, bottom: 930)
+        let near = RailReveal.Request(id: 22, top: 500, bottom: 530)
+        column.reveal.reveal(near)
+        drainMainQueue()
+        XCTAssertEqual(column.offset, 130, "the control: the first reveal brought its row to the clip's bottom")
+
+        column.reveal.reveal(far)
+        column.reveal.reveal(near)
+        drainMainQueue()
+        XCTAssertEqual(column.offset, 130, "a request replaced in its hop moved the clip")
+        XCTAssertTrue(column.reveal.memory.isDue(11), "a request replaced in its hop was recorded")
+    }
+
+    /// A `RailRevealView` behind a flipped drawing inside a scroll view, in a window never ordered.
+    private struct RevealColumn {
         final class Document: NSView {
             override var isFlipped: Bool { true }
         }
-        let request = RailReveal.Request(id: 11, top: 900, bottom: 930)
-        for (clipHeight, drawingHeight): (CGFloat, CGFloat) in [(0, 1000), (400, 100)] {
-            let label = "a \(clipHeight) point clip over a \(drawingHeight) point drawing"
-            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 100, height: clipHeight))
-            let document = Document(frame: NSRect(x: 0, y: 0, width: 100, height: drawingHeight))
+
+        let window: NSWindow
+        let scroll: NSScrollView
+        let document: Document
+        let reveal: RailRevealView
+
+        init(clipHeight: CGFloat, drawingHeight: CGFloat) {
+            window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 100, height: 400),
+                styleMask: [], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 400))
+            scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 100, height: clipHeight))
+            document = Document(frame: NSRect(x: 0, y: 0, width: 100, height: drawingHeight))
             scroll.documentView = document
-            let reveal = RailRevealView(frame: NSRect(x: 0, y: 0, width: 100, height: 1000))
+            reveal = RailRevealView(frame: NSRect(x: 0, y: 0, width: 100, height: 1000))
             document.addSubview(reveal)
-
-            reveal.reveal(request)
-            drainMainQueue()
-            XCTAssertTrue(reveal.memory.isDue(11), "\(label) used up the reveal")
-            XCTAssertEqual(scroll.contentView.bounds.minY, 0, "\(label) moved the clip")
-
-            scroll.setFrameSize(NSSize(width: 100, height: 400))
-            document.setFrameSize(NSSize(width: 100, height: 1000))
-            reveal.reveal(request)
-            drainMainQueue()
-            XCTAssertFalse(reveal.memory.isDue(11), "the hop after \(label) left the reveal due")
-            XCTAssertEqual(
-                scroll.contentView.bounds.minY, 530, "the hop after \(label) did not bring the row to the clip's bottom")
+            window.contentView?.addSubview(scroll)
         }
+
+        /// How far down the drawing the clip stands.
+        var offset: CGFloat { scroll.contentView.bounds.minY }
     }
 
     /// A row's ground begins at the note or the mark it keeps above itself, and at its own
