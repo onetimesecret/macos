@@ -684,8 +684,9 @@ uint32_t companion_chip_name_refusal(const char *draft);
  * Name a sealed object, or clear its name with an empty or blank draft.
  * The name is page-owned ink beside the object: it rides the chip's
  * face as "name" and reaches no ledger record. Returns false for an
- * unknown chip or a draft companion_chip_name_refusal() refuses, and
- * the name is then as it was.
+ * unknown chip, a page past its deadline (Law 0001, expiry row) or a
+ * draft companion_chip_name_refusal() refuses, and the name is then as
+ * it was.
  */
 bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
                              const char *name);
@@ -716,8 +717,9 @@ char *companion_chip_note_runs_json(CompanionHandle *handle, uint64_t chip);
  * Apply an edit batch to the note, with the TextKit gesture and
  * selections companion_sheet_apply_ops_with_intent() takes. Whole or not
  * at all; a chip op is refused, since sealed objects do not nest, and so
- * is an "ins" whose text holds U+FFFC. The first accepted batch makes
- * the note.
+ * is an "ins" whose text holds U+FFFC, and every batch for an unknown
+ * chip or a page past its deadline (Law 0001, expiry row). The first
+ * accepted batch makes the note.
  */
 bool companion_chip_note_apply_ops_with_intent(CompanionHandle *handle,
                                                uint64_t chip,
@@ -730,7 +732,8 @@ bool companion_chip_note_apply_ops_with_intent(CompanionHandle *handle,
 
 /*
  * End the note's typing run without an undo item; UINT32_MAX twice for
- * no selection. False for an unknown chip or a half-given selection.
+ * no selection. False for an unknown chip, a page past its deadline
+ * (Law 0001, expiry row) or a half-given selection.
  */
 bool companion_chip_note_finish_editing_group(CompanionHandle *handle,
                                               uint64_t chip, uint32_t location,
@@ -752,7 +755,8 @@ char *companion_chip_note_redo_action_name(CompanionHandle *handle,
 /*
  * Take back the note's last step, or put it back. Both return the
  * StepOutcome the file routes below describe, or null for an unknown
- * chip. Free with companion_string_free().
+ * chip or a page past its deadline (Law 0001, expiry row). Free with
+ * companion_string_free().
  */
 char *companion_chip_note_undo(CompanionHandle *handle, uint64_t chip);
 char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);

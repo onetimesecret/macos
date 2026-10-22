@@ -67,7 +67,7 @@ is refused whole and the name stands.
 | Entry point | Answer |
 | --- | --- |
 | `companion_chip_name_refusal(draft) -> u32` | judges a draft without a handle: 0 takes it, an empty draft clearing; 1 is longer than 64 characters; 2 is outside the charset; null and non-UTF-8 answer 2 |
-| `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip or a refused draft, the name then unchanged |
+| `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip, a page past its deadline or a refused draft, the name then unchanged |
 
 The shell owns the words for each code, so a field can say why a draft
 will not take while it is typed. It marks the page dirty after a name is
@@ -222,7 +222,11 @@ it as fields it does not know, not damage, and drops it at its next save.
 runs. It asks `Sheet::is_due`, the question the sweep asks, so a page
 leaves it at the instant it becomes due. Copy decrypted, `NAME=value`,
 the decrypted drag, both conceals, the note's text and a fragment's copy
-and cut find their page or object through it. To word its refusal a
+and cut find their page or object through it. Since 2026-10-21
+(issue #310) the note's batch, undo, redo and end of its typing run
+and a rename find their object through `SheetStore::chip_mut`, which
+asks `Sheet::is_due` the same way, so each refuses a page past its
+deadline and changes nothing. To word its refusal a
 page's conceal asks whether the page still stands, and a chip's conceal
 whether any page still holds the chip (`SheetStore::chip_stands`, over
 the seam `companion_chip_stands`); neither reads either.

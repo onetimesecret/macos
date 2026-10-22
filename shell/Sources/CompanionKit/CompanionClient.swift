@@ -1235,8 +1235,9 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Name a sealed object, or clear its name with a blank draft. False
-    /// for an unknown chip or a draft `chipNameRefusal` refuses, and the
-    /// name is then as it was. Records nothing in the ledger.
+    /// for an unknown chip, a page past its deadline (Law 0001, expiry row)
+    /// or a draft `chipNameRefusal` refuses, and the name is then as it
+    /// was. Records nothing in the ledger.
     @discardableResult
     public func setChipName(_ name: String, chip: UInt64) -> Bool {
         // A C string ends at an interior NUL, so the core would take less than was typed.
@@ -1443,7 +1444,8 @@ public class CompanionClient: @unchecked Sendable {
     }
 
     /// Apply an edit batch to the note. False means it was refused whole
-    /// and nothing moved; a chip op or ink holding U+FFFC is refused.
+    /// and nothing moved; a chip op or ink holding U+FFFC is refused, as is
+    /// any batch on a page past its deadline (Law 0001, expiry row).
     @discardableResult
     public func applyNoteOps(
         chip: UInt64,
@@ -1458,19 +1460,21 @@ public class CompanionClient: @unchecked Sendable {
         }
     }
 
-    /// End the note's coalescing run without creating an undo item.
+    /// End the note's coalescing run without creating an undo item; false for
+    /// an unknown chip or a page past its deadline (Law 0001, expiry row).
     @discardableResult
     public func finishNoteEditingGroup(chip: UInt64, selection: NSRange? = nil) -> Bool {
         guard let wire = selectionWire(selection) else { return false }
         return companion_chip_note_finish_editing_group(handle, chip, wire.0, wire.1)
     }
 
-    /// Take back the note's own last step.
+    /// Take back the note's own last step; nil for an unknown chip or a
+    /// page past its deadline (Law 0001, expiry row).
     public func undoNote(chip: UInt64) -> StepOutcome? {
         decodeOwnedJSON(StepOutcome.self, from: companion_chip_note_undo(handle, chip))
     }
 
-    /// Put back the step `undoNote(chip:)` took.
+    /// Put back the step `undoNote(chip:)` took, on the same terms.
     public func redoNote(chip: UInt64) -> StepOutcome? {
         decodeOwnedJSON(StepOutcome.self, from: companion_chip_note_redo(handle, chip))
     }

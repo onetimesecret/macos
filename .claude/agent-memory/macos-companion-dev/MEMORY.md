@@ -52,3 +52,4 @@
 - [Issue #256 C31 resting note](project_issue256_c31_resting_note.md): a restored Note rests as Zeroizing until a batch moves its text; a run's selection is kept by a bounds check, since Loro accepts a position inside a surrogate pair
 - [Issue #256 C27 stub summary](project_issue256_c27_stub_summary.md): IgnoredAny skips a string without serde_json scratch, a lone surrogate witnesses it; B1 is C08, C17, C19 to C21
 - [Close chord and Help menu](project_close_chord_and_help_menu.md): PRs 301/302 route cmd-w by key window identity and insert the Help item from AppKit after launch; SwiftUI rebuild and title flip owe hardware looks
+- [Issue #310 deadline writes](project_issue310_deadline_writes.md): chip_mut reads readable_sheets_mut; the note chord skips menu validation; mirror lib.rs docs in companion_ffi.h; page ink on a due page is still ungated

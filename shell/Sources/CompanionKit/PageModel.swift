@@ -6185,10 +6185,14 @@ public final class PageModel: ObservableObject {
     }
 
     /// Names a sealed object on page `sheet`, or clears its name given a
-    /// blank draft, and redraws its block; false when the core refused.
+    /// blank draft, and redraws its block; false when the core refused,
+    /// which settles as a refusal does (Law 0001, expiry row).
     @discardableResult
     public func setChipName(_ name: String, chip: UInt64, sheet: UInt64) -> Bool {
-        guard client.setChipName(name, chip: chip) else { return false }
+        guard client.setChipName(name, chip: chip) else {
+            settleRefusal(chip: chip, otherwise: nil)
+            return false
+        }
         markDirty()
         restateChipFace(chip, sheet: sheet)
         return true
@@ -6217,9 +6221,14 @@ public final class PageModel: ObservableObject {
     }
 
     /// One step of the note's own stack, which the page's ⌘Z never reaches.
+    /// A refusal settles as a refusal does and answers `.refused` (Law 0001, expiry row).
     public func stepNote(chip: UInt64, back: Bool) -> StepOutcome {
-        let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
-        guard let outcome, outcome.applied else { return .nothing }
+        guard let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
+        else {
+            settleRefusal(chip: chip, otherwise: nil)
+            return .refused
+        }
+        guard outcome.applied else { return .nothing }
         countEdit(.note(chip: chip))
         markDirty()
         return StepOutcome(applied: true, selection: outcome.selection)
@@ -6862,10 +6871,20 @@ public final class PageModel: ObservableObject {
         /// The selection restored by the step, or nil when the step carried
         /// no selection and the editor should leave its range alone.
         public let selection: NSRange?
+        /// True when the core refused the step, as for a note past its page's
+        /// deadline (Law 0001, expiry row), rather than finding none to take.
+        public let refused: Bool
+
+        public init(applied: Bool, selection: NSRange?, refused: Bool = false) {
+            self.applied = applied
+            self.selection = selection
+            self.refused = refused
+        }
 
         public var caret: Int? { selection?.location }
 
         public static let nothing = StepOutcome(applied: false, selection: nil)
+        public static let refused = StepOutcome(applied: false, selection: nil, refused: true)
     }
 
     /// Take back the page's last local edit through the core's stack,
