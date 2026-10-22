@@ -2162,8 +2162,8 @@ public struct InkEditorView: NSViewRepresentable {
             InkEditorView.discardComposition(in: textView)
             let outcome = model.stepEdit(document, back: back)
             guard outcome.applied else {
-                // A note the core now refuses closes, as after a refused batch (Law 0001, expiry row).
-                if case .note(let chip) = document, model.noteText(chip: chip) == nil { restateNote() }
+                // A note whose step the core refused closes, as after a refused batch (Law 0001, expiry row).
+                if outcome.refused, case .note = document { closeNoteHost() }
                 return
             }
             // The model restates a page's storage; a note's is the surface's own.
@@ -3449,11 +3449,16 @@ public struct InkEditorView: NSViewRepresentable {
             guard let noteChip else { return }
             guard let text = model.noteText(chip: noteChip) else {
                 let sheet = noteHost?.sheet
-                if let host = noteHost { host.close(returningKeys: host.holdsKeys) } else { unloadNote() }
+                closeNoteHost()
                 model.settleRefusal(sheet: sheet, told: true)
                 return
             }
             showNote(text)
+        }
+
+        /// Closes the note's popover, or unloads a note with none, when the core refuses it.
+        private func closeNoteHost() {
+            if let host = noteHost { host.close(returningKeys: host.holdsKeys) } else { unloadNote() }
         }
 
         /// Lays `text` down as the note's whole storage, styled as the page's ink.

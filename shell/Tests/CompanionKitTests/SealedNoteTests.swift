@@ -19,10 +19,12 @@ final class SealedNoteTests: XCTestCase {
         let chip: UInt64
     }
 
-    /// A client that records each sheet the page's block route is asked for,
-    /// its copies and seals kept on a pasteboard in process memory.
+    /// A client that records each sheet the page's block route is asked for
+    /// and counts the reads of a note's text, its copies and seals kept on a
+    /// pasteboard in process memory.
     final class BlockAskingClient: CompanionClient, @unchecked Sendable {
         private(set) var blocksAsked: [UInt64] = []
+        private(set) var noteReads = 0
 
         init(tag: String) {
             super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
@@ -31,6 +33,11 @@ final class SealedNoteTests: XCTestCase {
         override func blocks(sheet: UInt64) -> [BlockInfo] {
             blocksAsked.append(sheet)
             return super.blocks(sheet: sheet)
+        }
+
+        override func noteRuns(chip: UInt64) -> [RestoredRun]? {
+            noteReads += 1
+            return super.noteRuns(chip: chip)
         }
     }
 
@@ -746,5 +753,26 @@ final class SealedNoteTests: XCTestCase {
             XCTAssertFalse(editor.isOpen, "\(route.name): the note stayed open")
             XCTAssertEqual(editor.textView.string, "", "\(route.name): the note's ink outlived it")
         }
+    }
+
+    /// A ⌘Z or ⇧⌘Z that finds no step on a live note reads none of the note's
+    /// text and leaves the note open; only a refusal closes it.
+    func testANoteStepWithNoneToTakeReadsNoNoteTextAndLeavesTheNoteOpen() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        XCTAssertFalse(page.model.canStepNote(chip: page.chip, back: true), "the control: no undo waits")
+        XCTAssertFalse(page.model.canStepNote(chip: page.chip, back: false), "the control: no redo waits")
+        let reads = page.client.noteReads
+
+        for flags: NSEvent.ModifierFlags in [.command, [.command, .shift]] {
+            let chord = try keyEvent("z", keyCode: 6, flags: flags, in: page.window)
+            XCTAssertTrue(editor.textView.performKeyEquivalent(with: chord), "the note declined the chord")
+        }
+        drainMainQueue()
+
+        XCTAssertEqual(page.client.noteReads, reads, "a step with none to take read the note's text")
+        XCTAssertTrue(editor.isOpen, "a step with none to take closed the note")
+        XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet })
     }
 }

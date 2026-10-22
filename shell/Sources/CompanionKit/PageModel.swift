@@ -6020,12 +6020,12 @@ public final class PageModel: ObservableObject {
     }
 
     /// One step of the note's own stack, which the page's ⌘Z never reaches.
-    /// A refusal settles as a refusal does (Law 0001, expiry row).
+    /// A refusal settles as a refusal does and answers `.refused` (Law 0001, expiry row).
     public func stepNote(chip: UInt64, back: Bool) -> StepOutcome {
         guard let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
         else {
             settleRefusal(chip: chip, otherwise: nil)
-            return .nothing
+            return .refused
         }
         guard outcome.applied else { return .nothing }
         countEdit(.note(chip: chip))
@@ -6670,10 +6670,20 @@ public final class PageModel: ObservableObject {
         /// The selection restored by the step, or nil when the step carried
         /// no selection and the editor should leave its range alone.
         public let selection: NSRange?
+        /// True when the core refused the step, as for a note past its page's
+        /// deadline (Law 0001, expiry row), rather than finding none to take.
+        public let refused: Bool
+
+        public init(applied: Bool, selection: NSRange?, refused: Bool = false) {
+            self.applied = applied
+            self.selection = selection
+            self.refused = refused
+        }
 
         public var caret: Int? { selection?.location }
 
         public static let nothing = StepOutcome(applied: false, selection: nil)
+        public static let refused = StepOutcome(applied: false, selection: nil, refused: true)
     }
 
     /// Take back the page's last local edit through the core's stack,
