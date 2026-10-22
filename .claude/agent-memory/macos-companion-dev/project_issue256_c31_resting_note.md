@@ -11,8 +11,10 @@ and ledger titles exact `Zeroizing<String>` copies from slices of the
 decrypted snapshot. The real change is in `crates/core/src/note.rs`: `Note`
 has an enum body, `Resting(Zeroizing<String>, Option<TextSelection>)` or
 `Document(SheetDocument)`. `Note::holding` (used by restore, paste and clone)
-starts it resting, and only a batch that `ink::admits` accepts builds the
-Loro document.
+starts it resting. Only a batch that `ink::admits` accepts and that moves
+text builds the Loro document; a batch of zero width ops answers true and
+keeps its after selection (only if before and after are in bounds), as
+the document would.
 
 **Why:** Loro's arena never wipes (C01), so a restored note nobody edits
 should never enter it.
