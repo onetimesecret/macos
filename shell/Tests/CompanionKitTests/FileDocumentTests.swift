@@ -1871,6 +1871,35 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(delegate.replies, [.terminateNow])
     }
 
+    /// After the content discard grants the licences, a file's mark settles nothing
+    /// inline: a page write's hold survives the file being saved clean.
+    func testAPageWritesHoldSurvivesAFilesMarkAfterTheContentDiscard() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        model.clearUnreadableStateFile()
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
+
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.applyOps(
+            sheet: page, opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "ink")])))
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the page write is still owed")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
+    }
+
     /// Every licence withheld, so no save comes to settle the latch: the hold a
     /// file edit takes goes once the file is saved, and comes back with the next edit.
     func testASessionWithEveryLicenceWithheldReleasesItsHoldOnceTheFileIsSaved() throws {
