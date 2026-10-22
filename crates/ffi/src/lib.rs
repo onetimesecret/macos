@@ -66,7 +66,7 @@ impl Board {
         &mut self,
         content: PasteboardContent,
         nspasteboard_concealed: bool,
-        origin: Option<String>,
+        origin: Option<Zeroizing<String>>,
     ) {
         match self {
             Board::Memory(pb) => {
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     };
     let sheet = SheetId::from_raw(sheet);
     // The origin URL is content: it persists only in the encrypted commit.
-    let origin = item.origin_url.as_deref().map(origin_message);
+    let origin = item.origin_url.as_ref().map(|url| origin_message(url));
     let sealed = match item.content {
         PasteboardContent::Text(mut text) => {
             // Wipe the transit copy; the core holds its own.
@@ -737,7 +737,7 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
             return ptr::null_mut();
         };
         let sheet = SheetId::from_raw(sheet);
-        let origin = item.origin_url.as_deref().map(origin_message);
+        let origin = item.origin_url.as_ref().map(|url| origin_message(url));
         let sealed = match item.content {
             PasteboardContent::Text(mut text) => {
                 let sealed = guard.store.seal_text_at_with_origin(
@@ -3931,7 +3931,7 @@ mod tests {
         guard.pasteboard.put_external(
             PasteboardContent::Text(text.to_string()),
             false,
-            Some(origin.to_string()),
+            Some(Zeroizing::new(origin.to_owned())),
         );
     }
 

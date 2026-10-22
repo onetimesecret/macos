@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
-use objc2::rc::Retained;
+use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardItem, NSPasteboardName, NSPasteboardNameDrag,
@@ -87,7 +87,7 @@ impl Pasteboard for SystemPasteboard {
         let origin_url = self
             .pasteboard
             .stringForType(url_type)
-            .map(|url| url.to_string())
+            .map(|url| wiping_copy(&url))
             .filter(|url| !url.is_empty());
 
         Some(PasteboardItem {
@@ -229,6 +229,15 @@ fn content_type(kind: ContentKind) -> &'static NSPasteboardType {
     }
 }
 
+/// A string's UTF-8 copied once into a wiping owner of its exact size, with no
+/// growing `to_string` buffer; Foundation's own copies stay Foundation's (C17).
+fn wiping_copy(string: &NSString) -> Zeroizing<String> {
+    autoreleasepool(|pool| {
+        // SAFETY: `pool` is the innermost pool, and the slice is copied before it drains.
+        Zeroizing::new(unsafe { string.to_str(pool) }.to_owned())
+    })
+}
+
 /// The one content write every decrypted egress shares: text as a string,
 /// an image as PNG data. Returns whether the target took it.
 fn write_content(target: &impl ContentTarget, content: &[u8], kind: ContentKind) -> bool {
@@ -272,6 +281,7 @@ mod tests {
     #[test]
     fn read_captures_the_origin_url_when_present_and_none_otherwise() {
         use objc2_foundation::NSArray;
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         let pb = SystemPasteboard::for_testing();
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
@@ -285,10 +295,11 @@ mod tests {
             url_type,
         );
         let item = pb.read().unwrap();
-        assert_eq!(
-            item.origin_url.as_deref(),
-            Some("https://example.test/article?token=q")
-        );
+        let origin = item.origin_url.as_ref().unwrap();
+        assert_eq!(origin.as_str(), "https://example.test/article?token=q");
+        // Copied once out of the NSString, into a wiping owner at its size (C17).
+        wiping_owner(origin);
+        assert_eq!(origin.capacity(), origin.len(), "the origin copy grew");
 
         let mut pb = SystemPasteboard::for_testing();
         write_text(&mut pb, "no origin here", false);

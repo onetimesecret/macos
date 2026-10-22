@@ -31,9 +31,9 @@ pub struct PasteboardItem {
     pub content: PasteboardContent,
     /// True when the writer marked it [`CONCEALED_TYPE`].
     pub nspasteboard_concealed: bool,
-    /// The `public.url` flavor, if declared (ADR-0013). Treat as content:
-    /// a URL can carry a token.
-    pub origin_url: Option<String>,
+    /// The `public.url` flavor, if declared (ADR-0013), in a wiping owner of its
+    /// exact size, since a URL can bear a token (Law 0004, C17).
+    pub origin_url: Option<Zeroizing<String>>,
 }
 
 /// How a write should be marked.
@@ -161,7 +161,7 @@ struct StoredItem {
     kind: ContentKind,
     nspasteboard_concealed: bool,
     transient: bool,
-    origin_url: Option<String>,
+    origin_url: Option<Zeroizing<String>>,
 }
 
 impl MemoryPasteboard {
@@ -181,7 +181,7 @@ impl MemoryPasteboard {
         &mut self,
         content: PasteboardContent,
         nspasteboard_concealed: bool,
-        origin_url: Option<String>,
+        origin_url: Option<Zeroizing<String>>,
     ) {
         self.change_count += 1;
         let (bytes, kind) = match content {
@@ -284,16 +284,21 @@ mod tests {
 
     #[test]
     fn read_captures_the_origin_url_when_present_and_none_otherwise() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         let mut pb = MemoryPasteboard::new();
         pb.put_external_with_origin(
             PasteboardContent::Text("quoted paragraph".into()),
             false,
-            Some("https://example.test/article?token=q".into()),
+            Some(Zeroizing::new(
+                "https://example.test/article?token=q".into(),
+            )),
         );
-        assert_eq!(
-            pb.read().unwrap().origin_url.as_deref(),
-            Some("https://example.test/article?token=q")
-        );
+        let item = pb.read().unwrap();
+        let origin = item.origin_url.as_ref().unwrap();
+        assert_eq!(origin.as_str(), "https://example.test/article?token=q");
+        // The read's copy of the stored owner is its own wiping owner, at its size (C17).
+        wiping_owner(origin);
+        assert_eq!(origin.capacity(), origin.len(), "the read copy grew");
 
         pb.put_external(PasteboardContent::Text("plain".into()), false);
         assert!(pb.read().unwrap().origin_url.is_none());
