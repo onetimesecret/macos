@@ -234,6 +234,128 @@ final class BackdropModelTests: XCTestCase {
         )
     }
 
+    // MARK: The header double-click reads the title bar preference (issue #298)
+
+    func testEachTitleBarPreferenceValueMapsToItsAction() {
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Fill", operatingSystemMajor: 14), .fill)
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Maximize", operatingSystemMajor: 15),
+            .zoom)
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Minimize", operatingSystemMajor: 15),
+            .doNothing, "a card cannot miniaturise")
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "None", operatingSystemMajor: 15),
+            .doNothing)
+        // The setting's label is not a stored value anything establishes, so it reads as unset.
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Zoom", operatingSystemMajor: 15), .fill)
+    }
+
+    func testAnUnsetPreferenceReadsAsTheSystemDefaultForTheRelease() {
+        // Fill from macOS 15 and Zoom before: the code's reading, pending a hardware check.
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: nil, operatingSystemMajor: 14), .zoom)
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: nil, operatingSystemMajor: 15), .fill)
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: nil, operatingSystemMajor: 26), .fill)
+        // A value the system never writes reads as unset rather than as
+        // a double-click that does nothing with nothing to say why.
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Sideways", operatingSystemMajor: 15),
+            .fill)
+    }
+
+    /// The model built with each preference in its seam, over a pane the
+    /// card does not already fill.
+    private func makeModel(named name: String, preference: String?) -> BackdropModel {
+        makeModel(named: name, reading: { preference })
+    }
+
+    /// The same, with the seam asked again at each double-click.
+    private func makeModel(
+        named name: String, reading preference: @escaping () -> String?
+    ) -> BackdropModel {
+        let defaults = makeDefaults(named: name)
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: name),
+            titleBarDoubleClickPreference: preference,
+            operatingSystemMajor: 15
+        )
+        model.reclamp(pane: CGRect(x: 0, y: 25, width: 1440, height: 850))
+        return model
+    }
+
+    func testMaximizeStillStretchesTheCardToFullWorkingHeight() {
+        let model = makeModel(named: "double-click-maximize", preference: "Maximize")
+        let before = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.origin.y, 25)
+        XCTAssertEqual(model.geometry.height, 850)
+        XCTAssertEqual(model.geometry.width, before.width, "the zoom spends height only")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, before, "the second double-click returns the card")
+    }
+
+    func testFillTakesTheWholePane() {
+        let model = makeModel(named: "double-click-fill", preference: "Fill")
+        let before = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.origin, CGPoint(x: 0, y: 25))
+        XCTAssertEqual(model.geometry.width, 1440)
+        XCTAssertEqual(model.geometry.height, 850)
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, before)
+    }
+
+    func testMinimizeAndDoNothingLeaveTheCardWhereItIs() {
+        for preference in ["Minimize", "None"] {
+            let model = makeModel(named: "double-click-\(preference)", preference: preference)
+            let before = model.geometry
+            model.headerDoubleClicked()
+            XCTAssertEqual(model.geometry, before, preference)
+        }
+    }
+
+    func testAChangedPreferenceAppliesAtTheNextDoubleClick() {
+        var preference: String? = "Maximize"
+        let model = makeModel(named: "double-click-reread", reading: { preference })
+        let before = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, before.width, "the zoom")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, before)
+        preference = "Fill"
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1440, "the fill, with no new model")
+    }
+
+    func testAHandMoveEndsAFillTripAsItEndsAZoom() {
+        let model = makeModel(named: "double-click-fill-moved", preference: "Fill")
+        let before = model.geometry
+        model.headerDoubleClicked()
+        model.endDoubleClickTrip()
+        model.headerDoubleClicked()
+        XCTAssertNotEqual(model.geometry, before, "no return to a place the person left")
+        XCTAssertEqual(model.geometry.width, 1440)
+    }
+
+    func testADoubleClickOnACardAlreadyAtItsTargetArmsNoTrip() {
+        let model = makeModel(named: "double-click-already-filled", preference: "Fill")
+        model.headerDoubleClicked()
+        model.endDoubleClickTrip()
+        let filled = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, filled, "already at the target")
+        model.reclamp(pane: CGRect(x: 0, y: 25, width: 1680, height: 1000))
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1680, "the next double-click fills, not returns")
+        XCTAssertEqual(model.geometry.height, 1000)
+    }
+
     func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {
         let model = makeModel(named: "owner-closed")
         XCTAssertEqual(model.pages.owner, .panel)

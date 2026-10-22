@@ -189,14 +189,8 @@ struct BackdropRootView: View {
             // organization; this branch answers only placement.
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    Group {
-                        if pages.showsTimeUnits {
-                            TimeRailView(model: pages, readOnly: !raised)
-                        } else {
-                            SlotRailView(model: pages)
-                        }
-                    }
-                    .stanceFaded(raised: raised, animation: stanceFade)
+                    TimeRailView(model: pages, readOnly: !raised)
+                        .stanceFaded(raised: raised, animation: stanceFade)
                     Divider()
                 }
                 pageContent
@@ -206,14 +200,8 @@ struct BackdropRootView: View {
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
-                Group {
-                    if pages.showsTimeUnits {
-                        TimeStripView(model: pages)
-                    } else {
-                        TabStripView(model: pages, readOnly: !raised)
-                    }
-                }
-                .stanceFaded(raised: raised, animation: stanceFade)
+                TabStripView(model: pages, readOnly: !raised)
+                    .stanceFaded(raised: raised, animation: stanceFade)
             }
         }
         .background(
@@ -373,10 +361,10 @@ struct BackdropRootView: View {
         // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())
         .gesture(dragGesture, including: raised ? .all : .subviews)
-        // A window zooms on a title-bar double-click; the header is
-        // where this card's title bar would be.
+        // The header is where this card's title bar would be, so it
+        // answers a double-click by the title bar preference (issue #298).
         .simultaneousGesture(
-            TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
+            TapGesture(count: 2).onEnded { if raised { model.headerDoubleClicked() } }
         )
     }
 
@@ -585,6 +573,14 @@ struct BackdropRootView: View {
                 .foregroundStyle(Color.emberText)
                 .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
                 .accessibilityLabel(Text("This session is not being saved"))
+        } else if pages.draftsRestoreRefused {
+            // Ahead of the saved word (issue #296): the drafts leg
+            // settles without writing while the refusal stands.
+            Text("drafts not kept")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(Color.emberText)
+                .help("The existing drafts file could not be read, so unsaved edits to open files are not kept as drafts. The page shows the recovery.")
+                .accessibilityLabel(Text("Unsaved file edits are not kept as drafts"))
         } else {
             switch pages.saveStatus {
             case .idle:
@@ -675,7 +671,7 @@ struct BackdropRootView: View {
                     model.discardProposal()
                     return
                 }
-                model.endZoom()
+                model.endDoubleClickTrip()
                 model.setGeometry(dragged(by: paneTranslation(from: started)))
             }
     }
@@ -844,7 +840,7 @@ struct BackdropRootView: View {
                     model.discardProposal()
                     return
                 }
-                model.endZoom()
+                model.endDoubleClickTrip()
                 model.setGeometry(
                     edge.resized(model.geometry, by: paneTranslation(from: started))
                 )

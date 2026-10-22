@@ -17,7 +17,7 @@ use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evic
 use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
-    SheetClock, SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
+    SheetClock, SheetId, Tab, TabId, capped_title, derive_title, judge_name,
 };
 use crate::sync::{ExpiryPolicy, HoldRegister};
 use crate::ttl::{self, Ttl};
@@ -1277,7 +1277,7 @@ impl<C: Clock> SheetStore<C> {
         tab.name = if trimmed.is_empty() {
             None
         } else {
-            Some(trimmed.chars().take(TITLE_CAP).collect())
+            Some(capped_title(trimmed))
         };
         true
     }
@@ -1302,7 +1302,7 @@ impl<C: Clock> SheetStore<C> {
     /// [`NameRefusal::UnknownChip`], or the rule's own refusal.
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
         let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
-        chip.name = judge_name(draft)?.map(str::to_owned);
+        chip.name = judge_name(draft)?.map(|name| Zeroizing::new(name.to_owned()));
         Ok(())
     }
 
@@ -1428,7 +1428,7 @@ impl<C: Clock> SheetStore<C> {
         if matches!(chip.meta, ChipMeta::Image { .. }) {
             return None;
         }
-        let name = chip.name.as_deref()?;
+        let name = chip.name.as_ref()?.as_str();
         let value = chip.bytes.expose();
         // Exact size: a reallocation would strand sealed bytes unwiped (Law 0004).
         let mut out = Zeroizing::new(Vec::with_capacity(name.len() + 1 + value.len()));
@@ -1442,7 +1442,7 @@ impl<C: Clock> SheetStore<C> {
     /// stack with it (ADR-0046 point 2). False for an unknown chip.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
         let offset = self.clock.local_offset_seconds();
-        let mut removed: Option<(ItemId, usize, String, u64)> = None;
+        let mut removed: Option<(ItemId, usize, Zeroizing<String>, u64)> = None;
         for tab in &mut self.tabs {
             let label = tab.label(offset);
             let Some(sheet) = tab.page.as_mut() else {
@@ -1706,7 +1706,7 @@ impl<C: Clock> SheetStore<C> {
     pub fn expire_due(&mut self) -> Vec<SheetId> {
         let now = self.clock.now();
         let offset = self.clock.local_offset_seconds();
-        let mut dead: Vec<(Sheet, String)> = Vec::new();
+        let mut dead: Vec<(Sheet, Zeroizing<String>)> = Vec::new();
         for tab in &mut self.tabs {
             let spent = tab.page.as_mut().is_some_and(|page| {
                 normalize(page, now);
@@ -1751,7 +1751,7 @@ impl<C: Clock> SheetStore<C> {
         &mut self,
         event: LedgerEvent,
         item: ItemId,
-        title: String,
+        title: Zeroizing<String>,
         item_created_wall_ms: u64,
         size: SizeClass,
         destination: DestinationClass,
@@ -1776,7 +1776,7 @@ impl<C: Clock> SheetStore<C> {
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
     )]
-    fn entomb(&mut self, sheet: Sheet, label: String, event: LedgerEvent) {
+    fn entomb(&mut self, sheet: Sheet, label: Zeroizing<String>, event: LedgerEvent) {
         // The page has left the strip, so a cut it held ends here.
         self.end_a_broken_cut();
         for chip in sheet.chips.iter().chain(&sheet.detached) {
@@ -2133,6 +2133,8 @@ mod tests {
             .tab_of(page)
             .expect("the page is in a tab")
             .label(store.local_offset_seconds())
+            .as_str()
+            .to_owned()
     }
 
     fn slot(store: &SheetStore<ManualClock>, page: SheetId) -> TabId {
@@ -2399,7 +2401,7 @@ mod tests {
         let (mut store, clock) = store();
         let id = store.new_tab().1;
         let tab = store.tabs().next().unwrap();
-        assert_eq!(tab.label(0), PLACEHOLDER);
+        assert_eq!(tab.label(0).as_str(), PLACEHOLDER);
         assert_eq!(tab.name(), None, "a tab is born with no name at all");
         assert_eq!(tab.created_wall_ms(), 1_700_000_000_000);
         assert_eq!(tab.page().unwrap().created_wall_ms(), 1_700_000_000_000);
@@ -2708,7 +2710,7 @@ mod tests {
         assert!(tabs[1].page().is_none());
         assert_eq!(tabs[1].name(), Some("payroll"), "the name outlived it");
         assert_eq!(tabs[1].rung(), Ttl::MIN, "and so did the rung");
-        assert_eq!(tabs[1].label(0), "payroll");
+        assert_eq!(tabs[1].label(0).as_str(), "payroll");
         assert_eq!(store.len(), 2, "two live pages across three tabs");
 
         let record = store.ledger().next().unwrap();
@@ -2762,7 +2764,7 @@ mod tests {
 
         clock.advance(HOUR);
         assert_eq!(store.expire_due(), vec![id]);
-        assert_eq!(store.tabs().next().unwrap().label(0), PLACEHOLDER);
+        assert_eq!(store.tabs().next().unwrap().label(0).as_str(), PLACEHOLDER);
     }
 
     #[test]
@@ -2860,7 +2862,7 @@ mod tests {
         assert_eq!(store.tabs().next().unwrap().rung(), Ttl::MIN);
         assert_ne!(page.uuid(), born, "a reused slot holds a new item");
         assert_eq!(
-            store.tabs().next().unwrap().label(0),
+            store.tabs().next().unwrap().label(0).as_str(),
             PLACEHOLDER,
             "the label is the slot's stamp, an hour older than this page"
         );
@@ -2905,7 +2907,8 @@ mod tests {
         fragments.extend(fragments_of(CHIP_NOTE));
         let mut checked = 0usize;
         for record in store.ledger() {
-            let rendered = format!("{record:?}");
+            // The title itself too: the record's Debug redacts it, and the walk must not go blind.
+            let rendered = format!("{record:?} title={}", record.title());
             for fragment in &fragments {
                 assert!(
                     !rendered.contains(fragment.as_str()),

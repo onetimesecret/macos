@@ -510,10 +510,10 @@ public struct ConnectionSettingsView: View {
                 TextField("Server URL", text: $serverUrl, prompt: Text("https://eu.onetimesecret.com"))
                 TextField("Share domain", text: $shareDomain, prompt: Text("optional; defaults to the server's host"))
             } header: {
-                SettingsCaption("Where a conceal goes, over https only.")
+                SettingsCaption(Self.serverCaption)
             }
             Section {
-                TextField("Organization ID", text: $extid, prompt: Text("empty for guest conceals"))
+                TextField("Organization ID", text: $extid, prompt: Text(Self.guestPrompt))
                 SecureField("API token", text: $token, prompt: Text(tokenPrompt))
                 if model.connection?.hasToken == true {
                     Button("Clear Stored Token", role: .destructive) { confirmingClear = true }
@@ -525,7 +525,7 @@ public struct ConnectionSettingsView: View {
                             Button("Clear Token", role: .destructive) { clearToken() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text("Conceals fall back to guest links until you enter a new token.")
+                            Text(Self.clearTokenMessage)
                         }
                 }
             } header: {
@@ -583,6 +583,13 @@ public struct ConnectionSettingsView: View {
     nonisolated static func saveStatus(accepted: Bool) -> String {
         accepted ? "saved" : "refused: the server URL must be https://…"
     }
+
+    /// The server section's words in one-time link vocabulary (ADR-0055
+    /// rule 3, issue #295): conceal is the server's verb, not the reader's.
+    nonisolated static let serverCaption = "Where one-time links are created, over https only."
+    nonisolated static let guestPrompt = "empty for guest links"
+    nonisolated static let clearTokenMessage =
+        "One-time links are created as guest links until you enter a new token."
 
     private func clearToken() {
         let cleared = model.clearToken()

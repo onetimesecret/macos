@@ -77,6 +77,14 @@ sense, while remaining a **non-activating accessory**:
   page grows; chrome stays constant).
 - **Double-clicking the title bar stretches it vertically** to full
   working height — double-click again to return.
+  *Note, 2026-10-21 (issue #298):* the double-click now follows the
+  system's title bar preference (`AppleActionOnDoubleClick`). Zoom is
+  the stretch described here; Fill takes the whole visible frame;
+  Minimize and Do Nothing leave the card where it is, since a panel
+  cannot miniaturise, and a card already out stays out, as a window
+  does. Unset reads as Fill from macOS 15 and Zoom before. That default
+  is an interpretation pending a hardware check: Apple's Desktop & Dock
+  help for macOS 15 lists the four choices without naming a default.
 - **Position and size persist** across summons.
 - **Capture configuration.** The design sets `sharingType = .none` by
   default. Rev C removed the "excluded from screen capture" caption from
@@ -365,7 +373,8 @@ Pointer-only gestures, for completeness: click the countdown to shorten
 it one rung · drag tabs to reorder · double-click a tab to pause its clock
 (1h → 24h → release) · ✕ on tab hover to close · drag the title bar to
 move · drag any edge to resize · double-click the title bar to stretch
-vertically · drop content onto the page to seal it.
+vertically (since 2026-10-21 by the system's title bar preference, issue
+#298; see the window section) · drop content onto the page to seal it.
 
 ## Conceal flow (secondary interaction)
 

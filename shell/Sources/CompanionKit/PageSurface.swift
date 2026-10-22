@@ -243,12 +243,8 @@ public struct PageStatusStack: View {
     /// What the quit anyway button says it will do: the loss named by
     /// filename where a dirty file is open, for the same reason as
     /// `discardHelp`.
-    private var quitAnywayHelp: String {
-        let base = "Quits now. The pages this session could not save are lost."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+    private func quitAnywayHelp(_ refusal: QuitSaveOutcome) -> String {
+        PageModel.quitAnywayHelp(refusal, files: model.openFiles)
     }
 
     public var body: some View {
@@ -270,6 +266,24 @@ public struct PageStatusStack: View {
                     .help(discardHelp)
                     .accessibilityLabel(
                         Text("Discard the unreadable state file and start saving this session"))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+        if model.draftsRestoreRefused {
+            // The drafts counterpart of the content banner (issue #296), standing
+            // for as long as the drafts leg settles without writing.
+            HStack(spacing: 8) {
+                Text("the existing drafts file could not be read, so unsaved edits to open files are not kept as drafts")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.emberText)
+                Button("Discard It and Keep Drafts") { model.clearUnreadableDraftsFile() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .help("Deletes the drafts file this session could not read and keeps this session's drafts in its place. The unreadable file cannot be recovered afterwards; the open files on disk are untouched.")
+                    .accessibilityLabel(
+                        Text("Discard the unreadable drafts file and keep this session's drafts"))
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -306,8 +320,11 @@ public struct PageStatusStack: View {
                 Button("Quit Anyway (⌘Q)") { model.requestQuitAnyway() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
-                    .help(quitAnywayHelp)
-                    .accessibilityLabel(Text("Quit without this session's unsaved pages"))
+                    .help(quitAnywayHelp(refusal))
+                    .accessibilityLabel(
+                        Text(refusal == .unsavableWithDrafts
+                            ? "Quit without the unsaved file changes"
+                            : "Quit without this session's unsaved pages"))
                 Spacer()
             }
             .padding(.horizontal, 12)

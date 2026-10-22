@@ -98,7 +98,7 @@ final class FeedbackDraft: ObservableObject {
 
 @MainActor
 final class FeedbackWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var draft: FeedbackDraft?
     private let serverURL: () -> String
     private let makeReport: () -> DiagnosticsReport
@@ -107,12 +107,6 @@ final class FeedbackWindowController: NSObject {
         serverURL = { [weak model] in model?.pages.connection?.serverUrl ?? "https://eu.onetimesecret.com" }
         self.makeReport = makeReport
         super.init()
-    }
-
-    /// Whether a window is the Send Feedback window. The altitude
-    /// keeper asks, to lower the card while it has the keyboard (#293).
-    func owns(_ candidate: NSWindow) -> Bool {
-        window === candidate
     }
 
     func show() {

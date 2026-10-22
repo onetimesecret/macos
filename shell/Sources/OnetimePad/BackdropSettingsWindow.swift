@@ -74,7 +74,7 @@ enum SettingsTab: Int, CaseIterable {
 /// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
 final class BackdropSettingsWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var tabs: NSTabViewController?
     private let model: BackdropModel
 
@@ -109,8 +109,7 @@ final class BackdropSettingsWindowController: NSObject {
     }
 
     /// Whether a window is the Settings window. The About lookup asks,
-    /// so that it can never take this window for AppKit's panel, and
-    /// the altitude keeper asks to lower the card under it (#293).
+    /// so that it can never take this window for AppKit's panel.
     func owns(_ candidate: NSWindow) -> Bool {
         window === candidate
     }

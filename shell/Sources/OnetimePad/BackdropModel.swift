@@ -164,13 +164,25 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// always owns.
     private let panelMayOwn: Bool
 
+    /// The system's title bar double-click preference, asked at each double-click.
+    private let titleBarDoubleClickPreference: () -> String?
+
+    /// The macOS major version the preference's default depends on.
+    private let operatingSystemMajor: Int
+
     init(
         defaults: UserDefaults = FormFactor.settingsDefaults,
         pages: PageModel? = nil,
-        panelMayOwn: Bool = true
+        panelMayOwn: Bool = true,
+        titleBarDoubleClickPreference: @escaping () -> String? = {
+            UserDefaults.standard.string(forKey: BackdropModel.titleBarDoubleClickKey)
+        },
+        operatingSystemMajor: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
     ) {
         self.defaults = defaults
         self.panelMayOwn = panelMayOwn
+        self.titleBarDoubleClickPreference = titleBarDoubleClickPreference
+        self.operatingSystemMajor = operatingSystemMajor
         geometry = BackdropGeometry.load(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
@@ -834,36 +846,90 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// zoomed header stays where a double-click can still reach it to
     /// come back down.
     func toggleZoom() {
-        if let restored = zoomRestore {
-            zoomRestore = nil
+        var zoomed = geometry
+        zoomed.origin.y = pane.origin.y
+        zoomed.height = pane.size.height
+        toggle(to: zoomed)
+    }
+
+    /// Fill: the card takes the whole pane, and a second double-click
+    /// returns it, by the same remembered geometry as the zoom.
+    func toggleFill() {
+        toggle(
+            to: BackdropGeometry(
+                origin: pane.origin, width: pane.size.width, height: pane.size.height))
+    }
+
+    /// Out to `target`, or back to the geometry an earlier trip left. A card
+    /// already at the target arms no trip, so the next double-click acts.
+    private func toggle(to target: BackdropGeometry) {
+        if let restored = doubleClickRestore {
+            doubleClickRestore = nil
             applyGeometry(restored.clamped(to: pane))
             return
         }
-        zoomRestore = geometry
-        var zoomed = geometry
-        zoomed.origin.y = pane.minY
-        zoomed.height = pane.height
-        applyGeometry(zoomed.clamped(to: pane))
+        let out = target.clamped(to: pane)
+        guard out != geometry else { return }
+        doubleClickRestore = geometry
+        applyGeometry(out)
     }
 
-    /// The geometry a zoom is holding for its return trip, if the card
-    /// is zoomed right now.
-    private var zoomRestore: BackdropGeometry?
+    /// The key the system stores the title bar double-click preference
+    /// under (System Settings, Desktop & Dock).
+    static let titleBarDoubleClickKey = "AppleActionOnDoubleClick"
+
+    /// What a title bar double-click does, read off the preference.
+    enum TitleBarDoubleClick: Equatable {
+        /// Fill: the card takes the whole pane.
+        case fill
+        /// Zoom, stored as Maximize: full working height, width kept.
+        case zoom
+        /// Minimize, which a card cannot do, and Do Nothing.
+        case doNothing
+    }
+
+    /// The preference's four values, and Fill from macOS 15 and Zoom before
+    /// when unset: an interpretation pending a hardware check (issue #298).
+    nonisolated static func titleBarDoubleClick(
+        preference: String?, operatingSystemMajor: Int
+    ) -> TitleBarDoubleClick {
+        switch preference {
+        case "Fill": .fill
+        case "Maximize": .zoom
+        case "Minimize", "None": .doNothing
+        default: operatingSystemMajor >= 15 ? .fill : .zoom
+        }
+    }
+
+    /// Double-click the header: the title bar verb the person chose in
+    /// System Settings, as a window's own title bar reads it.
+    func headerDoubleClicked() {
+        switch Self.titleBarDoubleClick(
+            preference: titleBarDoubleClickPreference(),
+            operatingSystemMajor: operatingSystemMajor
+        ) {
+        case .zoom: toggleZoom()
+        case .fill: toggleFill()
+        case .doNothing: break
+        }
+    }
+
+    /// The geometry a zoom or fill keeps for its return trip, while the card is out.
+    private var doubleClickRestore: BackdropGeometry?
 
     /// Persist and publish, but only a real change: the screen
     /// observer can fire in bursts, and an unchanged geometry should
     /// cost neither a repaint nor a defaults write. A geometry the user
-    /// moved themselves ends the zoom's claim on a return trip.
+    /// moved themselves ends the double-click's return trip.
     private func applyGeometry(_ new: BackdropGeometry) {
         guard new != geometry else { return }
         geometry = new
         new.save(to: defaults)
     }
 
-    /// A drag or resize by hand retires the zoom: the card is where the
-    /// user just put it, and a later double-click should zoom from
-    /// there rather than snap back to a place they have left behind.
-    func endZoom() {
-        zoomRestore = nil
+    /// A drag or resize by hand retires the zoom or fill: the card is where the
+    /// user just put it, and a later double-click starts from there.
+    func endDoubleClickTrip() {
+        doubleClickRestore = nil
     }
 }
