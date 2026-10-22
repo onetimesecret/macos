@@ -44,7 +44,7 @@ array of sections:
   as a macOS menu key equivalent. The menu items that show a chord
   take it this way: Settings (`app::Settings`), the File menu's items,
   Undo, Redo and the seal item in Edit, the Window menu's Close Window
-  (`window::Close`) and the Help menu's first item (`app::Help`, issue
+  (`window::Close`) and the Help menu's product help item (`app::Help`, issue
   #294). A menu equivalent is an app-wide claim, live even while a
   Settings field holds the keyboard, so it has to be asked for. Once
   granted, it stays with that chord and command: a later section that
@@ -160,12 +160,18 @@ log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.
 | registry | `Keymap/KeymapRegistry.swift` | `PageModel.perform(_:)`, one exhaustive switch. |
 | frameworks | `Keymap/KeystrokeBridge.swift` | `KeyboardShortcut`, menu equivalents, matching an `NSEvent`. |
 
-Two dispatch routes, and which one a command takes is a property of the
-command rather than of the file. Surface commands are carried by the
-hidden buttons `PageKeyboardMap` mounts while the card is raised. Editor
-commands are answered by the page's own text view, which sees a
-keystroke before those buttons do and which owns the caret and the
-selection the seal gestures act on.
+Three dispatch routes (`CommandID.Dispatch`), and which one a command
+takes is a property of the command rather than of the file. Surface
+commands are carried by the hidden buttons `PageKeyboardMap` mounts
+while the card is raised. Editor commands are answered by the page's own
+text view, which sees a keystroke before those buttons do and which owns
+the caret and the selection the seal gestures act on. Window commands,
+`window::Close` and `app::Help`, fire from a main menu item's key
+equivalent alone: the Window menu's Close Window and the Help menu's
+product help item. Neither other route installs them, so they fire
+while Settings or another window without a surface has the keyboard,
+and only from a section with `use_key_equivalents`; the validator notes
+one bound anywhere else (`windowCommandWithoutKeyEquivalents`).
 
 ## What is not in the map
 

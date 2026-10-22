@@ -242,6 +242,39 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertNil(keymap.command(for: try parse("cmd-k"), in: .editor))
     }
 
+    /// A window route command bound without menu equivalents fires
+    /// nowhere: no surface installs it and no menu item may take it.
+    func testAWindowCommandWithoutKeyEquivalentsIsNoted() throws {
+        let keymap = resolve(
+            """
+            [{ "context": "Editor", "bindings": { "cmd-?": "app::Help", "cmd-shift-w": "window::Close" } }]
+            """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertEqual(
+            keymap.diagnostics,
+            [
+                .windowCommandWithoutKeyEquivalents(.bundledDefault, keystroke: "cmd-?", command: .appHelp),
+                .windowCommandWithoutKeyEquivalents(
+                    .bundledDefault, keystroke: "cmd-shift-w", command: .windowClose),
+            ])
+        XCTAssertNil(keymap.menuKeystroke(for: .appHelp))
+    }
+
+    /// The same lines in a section that asks for equivalents say nothing,
+    /// and an override restating one without asking keeps the equivalent.
+    func testAWindowCommandWithKeyEquivalentsIsNotNoted() throws {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-?": "app::Help" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-?": "app::Help" } }]
+                """)
+        XCTAssertEqual(keymap.diagnostics, [])
+        XCTAssertEqual(keymap.menuKeystroke(for: .appHelp)?.canonical, "cmd-?")
+    }
+
     /// A section with no context is every context, which is how Zed
     /// reads one and therefore how a file copied from there behaves.
     func testASectionWithoutAContextAppliesEverywhere() throws {

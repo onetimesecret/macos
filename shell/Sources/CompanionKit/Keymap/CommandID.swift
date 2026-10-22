@@ -65,7 +65,7 @@ public enum CommandID: String, CaseIterable, Sendable {
     case surfaceHandBackKeys = "surface::HandBackKeys"
     case stateSaveNow = "state::SaveNow"
     case appSettings = "app::Settings"
-    // The Help menu's first item, from that menu only (issue #294).
+    // The Help menu's product help item, from that menu only (issue #294).
     case appHelp = "app::Help"
 
     // The window around the surface (ADR-0033, issue #201): ⇧⌘W closes
