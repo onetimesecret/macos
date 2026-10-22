@@ -1105,17 +1105,39 @@ final class PageViewStateTests: XCTestCase {
     }
 
     func testARollPlaceCrossesBetweenSourceAndPreviewByProportion() {
+        let short = String(repeating: "p", count: 400)
+        let long = String(repeating: "s", count: 1_000)
         let anchor = ScrollAnchor(characterIndex: 300, lineFraction: 0.5, x: 4)
         let place = RollPlace(page: 1, anchor: anchor, reading: .source, length: 1_000)
-        XCTAssertEqual(place.mappedAnchor(into: .source, length: 400), anchor)
-        XCTAssertEqual(place.mappedAnchor(into: .preview, length: 400),
+        XCTAssertEqual(place.mappedAnchor(into: .source, text: short), anchor)
+        XCTAssertEqual(place.mappedAnchor(into: .preview, text: short),
                        ScrollAnchor(characterIndex: 120, lineFraction: 0.5, x: 4))
         let preview = RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 120), reading: .preview, length: 400)
-        XCTAssertEqual(preview.mappedAnchor(into: .source, length: 1_000).characterIndex, 300)
+        XCTAssertEqual(preview.mappedAnchor(into: .source, text: long).characterIndex, 300)
         XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 1_000), length: 1_000)
-            .mappedAnchor(into: .preview, length: 400).characterIndex, 400)
+            .mappedAnchor(into: .preview, text: short).characterIndex, 400)
         XCTAssertEqual(RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 9), reading: .preview)
-            .mappedAnchor(into: .source, length: 50).characterIndex, 0)
+            .mappedAnchor(into: .source, text: String(repeating: "s", count: 50)).characterIndex, 0)
+
+        // The roll restores on every layout pass, so the same reading must not copy the page.
+        var reads = 0
+        func counted() -> String { reads += 1; return short }
+        _ = place.mappedAnchor(into: .source, text: counted())
+        XCTAssertEqual(reads, 0, "the same reading read the text")
+        _ = place.mappedAnchor(into: .preview, text: counted())
+        XCTAssertEqual(reads, 1)
+    }
+
+    /// A proportion that falls inside an emoji's surrogate pair is moved to the pair's
+    /// start, in either direction (#290), and one already on a pair's start stays.
+    func testARollPlaceCrossingReadingsStopsOnAScalarBoundary() {
+        let paired = String(repeating: "🧪", count: 200)
+        let source = RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 302), reading: .source, length: 1_000)
+        XCTAssertEqual(source.mappedAnchor(into: .preview, text: paired).characterIndex, 120, "121 is a low surrogate")
+        XCTAssertEqual(
+            source.mappedAnchor(into: .preview, text: "a" + paired).characterIndex, 121, "121 starts a pair here")
+        let preview = RollPlace(page: 1, anchor: ScrollAnchor(characterIndex: 100), reading: .preview, length: 300)
+        XCTAssertEqual(preview.mappedAnchor(into: .source, text: paired).characterIndex, 132, "133 is a low surrogate")
     }
 
     /// Edit a storage holding `text`, and answer what the storage reports of the edit.

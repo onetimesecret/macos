@@ -13,8 +13,10 @@ Review round on PR #271 (2026-10-16, committed as 8f16332b), `DayStackView` in
   explicit moves recapture it. Recapturing after a reflow named the visual line's first
   character and drifted a mid paragraph reader backward on every wrap or width trip.
 - `RollPlace` gained `reading` (.source or .preview) and `length`; a mismatch maps the
-  index by proportion (`mappedAnchor(into:length:)`), since no source to rendered
-  position map exists. Defaults keep `RollPlace(page:anchor:)` compiling.
+  index by proportion (`mappedAnchor(into:text:)`), since no source to rendered
+  position map exists. Defaults keep `RollPlace(page:anchor:)` compiling. Since #290 the
+  text is an autoclosure (restore runs every relayout pass) and the result is snapped
+  with `scalarBoundary`, the helper #283 added for the exhausted rebase.
 - A reseed of the reading page's region rebases the index by common suffix then prefix
   (`RollPlace.rebased`); suffix first so text arriving at the anchor goes above it.
 - `DayScrollView.dismantleNSView` calls `stack.unobserveEditor()` (2026-10-20, was a blanket
