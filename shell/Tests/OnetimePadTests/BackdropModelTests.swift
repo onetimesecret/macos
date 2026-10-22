@@ -270,11 +270,18 @@ final class BackdropModelTests: XCTestCase {
     /// The model built with each preference in its seam, over a pane the
     /// card does not already fill.
     private func makeModel(named name: String, preference: String?) -> BackdropModel {
+        makeModel(named: name, reading: { preference })
+    }
+
+    /// The same, with the seam asked again at each double-click.
+    private func makeModel(
+        named name: String, reading preference: @escaping () -> String?
+    ) -> BackdropModel {
         let defaults = makeDefaults(named: name)
         let model = BackdropModel(
             defaults: defaults,
             pages: ephemeralPages(defaults: defaults, tag: name),
-            titleBarDoubleClickPreference: { preference },
+            titleBarDoubleClickPreference: preference,
             operatingSystemMajor: 15
         )
         model.reclamp(pane: CGRect(x: 0, y: 25, width: 1440, height: 850))
@@ -310,6 +317,29 @@ final class BackdropModelTests: XCTestCase {
             model.headerDoubleClicked()
             XCTAssertEqual(model.geometry, before, preference)
         }
+    }
+
+    func testAChangedPreferenceAppliesAtTheNextDoubleClick() {
+        var preference: String? = "Maximize"
+        let model = makeModel(named: "double-click-reread", reading: { preference })
+        let before = model.geometry
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, before.width, "the zoom")
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry, before)
+        preference = "Fill"
+        model.headerDoubleClicked()
+        XCTAssertEqual(model.geometry.width, 1440, "the fill, with no new model")
+    }
+
+    func testAHandMoveEndsAFillTripAsItEndsAZoom() {
+        let model = makeModel(named: "double-click-fill-moved", preference: "Fill")
+        let before = model.geometry
+        model.headerDoubleClicked()
+        model.endZoom()
+        model.headerDoubleClicked()
+        XCTAssertNotEqual(model.geometry, before, "no return to a place the person left")
+        XCTAssertEqual(model.geometry.width, 1440)
     }
 
     func testWithTheEditorWindowClosedThePanelOwnsRestingOrRaised() {
