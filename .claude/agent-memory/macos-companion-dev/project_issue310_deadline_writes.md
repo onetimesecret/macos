@@ -19,10 +19,11 @@ into storage that never wipes.
 - `delete_chip` and `mark_chip_concealed` walk `tabs` themselves and stay
   ungated on purpose (burn destroys; a late conceal receipt is the row's case).
 - Shell: `PageModel.setChipName` and `stepNote` call
-  `settleRefusal(chip:otherwise: nil)` on refusal; `Coordinator.step` closes a
-  note whose `noteText` is now nil through `restateNote`, as a refused batch's
-  restate does. `stepNote` returns `.nothing` for both a refusal and an empty
-  stack, so the coordinator re-reads rather than reading the answer.
+  `settleRefusal(chip:otherwise: nil)` on refusal. `PageModel.StepOutcome` has
+  a `refused` flag (`.refused`), and `Coordinator.step` closes the note on that
+  flag alone. Never decide a step's refusal by reading `noteText`: that copies
+  the note's plaintext into a Swift String on every empty ⌘Z (review, round 2).
+  `BlockAskingClient.noteReads` in SealedNoteTests counts such reads.
 - The note's ⌘Z/⇧⌘Z go `performKeyEquivalent` → `dispatch(.editorUndo)` →
   `Coordinator.step` with no `canStepEdit` check; only the menu item is
   validated. Two review bots assumed otherwise. Test the chord, not the model.
