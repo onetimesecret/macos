@@ -140,13 +140,15 @@ struct BackdropApp: App {
                 // above. The chord comes from the keymap; an override that
                 // takes it away leaves the item without a shortcut.
                 //
-                // `performClose:` down the responder chain: the key window
-                // answers, and the borderless panel and its key relay have
-                // no close box, so they answer with nothing to do.
+                // `performClose:` down the responder chain to the key window;
+                // the item dims where that cannot close, as ⌘W's does.
                 CommandGroup(before: .windowSize) {
                     appDelegate.presentationCommands
                     Divider()
-                    WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
+                    WindowCloseMenuItem(
+                        keyWindow: appDelegate.keyWindow,
+                        shortcut: appDelegate.shortcut(for: .windowClose)
+                    ) {
                         appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
                     }
                     // No trailing divider: SwiftUI separates command groups.
@@ -377,6 +379,8 @@ private struct SealSelectionMenuItem: View {
 /// keymap has nothing to say, which is the fail-open shape the doc
 /// comment on the group promises.
 private struct WindowCloseMenuItem: View {
+    /// Dims on the File menu's ⌘W fact, `canClose`.
+    @ObservedObject var keyWindow: KeyWindowFacts
     let shortcut: KeyboardShortcut?
     let action: () -> Void
 
@@ -384,8 +388,10 @@ private struct WindowCloseMenuItem: View {
         if let shortcut {
             Button("Close Window", action: action)
                 .keyboardShortcut(shortcut)
+                .disabled(!keyWindow.canClose)
         } else {
             Button("Close Window", action: action)
+                .disabled(!keyWindow.canClose)
         }
     }
 }
