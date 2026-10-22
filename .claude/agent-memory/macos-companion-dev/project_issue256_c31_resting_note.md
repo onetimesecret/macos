@@ -31,7 +31,7 @@ should never enter it.
   with `chip_home` (the deadline gate) and then `chip_mut`.
 - ADR-0043 point 2 (accepted) says the note "is the document type a page's
   body and an open file use". PR 307 does not amend it, and points this out.
-- Register B1 still lists C09 and C10, although both rows have read
-  implemented since #292. PR 307 left that alone.
+- PR 307 left C09 and C10 in register B1; PR 316 removed them
+  ([[issue256-c27-stub-summary]]).
 
 Related: [[issue241-243-sealed-name-note-core]].
