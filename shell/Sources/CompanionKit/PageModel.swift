@@ -2908,6 +2908,14 @@ public final class PageModel: ObservableObject {
         offer == .unsavableWithDrafts ? nil : offer
     }
 
+    /// Whether the offer survives a change to the open files: the drafts
+    /// arm's line stands only while a file's edits are held in memory.
+    public nonisolated static func quitOfferAfterFiles(
+        offer: QuitSaveOutcome?, draftsHeld: Bool
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithDrafts && !draftsHeld ? nil : offer
+    }
+
     /// What the quit anyway button says it costs: the drafts arm names
     /// the files alone, because its pages are on disk.
     public nonisolated static func quitAnywayHelp(
@@ -3649,6 +3657,10 @@ public final class PageModel: ObservableObject {
         openFiles = files
         // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
         quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
+        quitRefusal = Self.quitOfferAfterFiles(
+            offer: quitRefusal,
+            draftsHeld: Self.draftsHeld(
+                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: files))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {

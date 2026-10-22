@@ -1687,6 +1687,25 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
     }
 
+    /// The drafts line names a loss only while one exists: saving the named file
+    /// retires it, and the next ⌘Q quits.
+    func testTheDraftsLineRetiresWhenTheNamedFileIsSaved() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertNil(model.quitRefusal, "nothing is held in memory now")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
     /// The ordinary launch: the restore reads the file, and the next
     /// save writes it as it always has.
     func testASaveAfterTheRestoreWritesTheDraftsFile() throws {
