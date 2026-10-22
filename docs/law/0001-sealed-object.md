@@ -1854,6 +1854,8 @@ paths must stay dialog free.
   read lookup and now takes the shared one. The shell
   settles after a refused rename or note step, as after a refused copy,
   and says the page expired when its page went; a refused batch already
-  settled when the note restated its text. Burning an object and
+  settled when the note restated its text. The end of a typing run,
+  which a caret move or the note's closing asks for and no person does,
+  settles nothing when it is refused. Burning an object and
   recording a conceal's receipt do not use that lookup and are
   unchanged. The expiry row names the routes and cites the tests.
