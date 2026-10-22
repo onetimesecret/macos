@@ -23,8 +23,8 @@ field is AppKit and is driven by `DayScrollTests`; the checks below
 that touch it are about a real key window, which the tests do not
 have. A sealed object's name field is AppKit too, driven by
 `SealedNameFieldTests`; its checks are the double click's timing and
-the keys in a real key window. The slot rail is not drawn by any
-layout since ADR-0037, so it has no check here.
+the keys in a real key window. The slot rail, which no layout drew
+since ADR-0037, is deleted (issue 275), so it has no check here.
 
 Quit any running instance first (`swift build` re-signs in place and
 SIGKILLs a live one), then `scripts/dev.sh`.

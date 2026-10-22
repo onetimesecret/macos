@@ -991,7 +991,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the viewport, keeps the reader's place; the switch already did. The
   mixed edit fallback in the reading anchor's rebase has its own issue,
   #283.
-
+- **A sealed object's excerpt and typed name are wiped when they go**
+  (`companion-core` 0.34.1; issue #256, the content buffer register's
+  C09, C10 and C19). The excerpt, which is the content's own head and
+  tail, and the name typed beside an object held ordinary strings, and
+  so did a copy fragment's name for the object, so each could stay in
+  memory after the object was removed, the page expired or the
+  fragment was dropped. Each is now a zeroizing owner, and the excerpt
+  is built once at its size from the content without a copy of its
+  head or tail along the way. A fragment's wire form borrows the name
+  for the encoder; on the parse an escaped name is the parser's own
+  string before it is wrapped, which the register records.
+- **A tab's name, a page's derived title and a ledger record's title
+  are wiped when they go** (`companion-core` 0.34.0; issue #256, the
+  content buffer register's C13 to C16). The four were ordinary
+  strings, so a name typed into a tab, the first line a page's title
+  is read from, and the title a ledger record keeps could stay in
+  memory after the tab closed, the page expired or the record aged
+  out. Each is now a zeroizing owner, as the notes already were, and
+  the label a tab builds from either is one too, so `Tab::label`
+  returns `Zeroizing<String>` to any caller of the core crate. A ledger
+  record formats its title as `[REDACTED]`, as a segment's ink is. The
+  register records what each row still leaves ordinary.
+- **One poll round posts a pairing message** (`companion-ffi` 0.43.1;
+  issue #280). The outbox drain claims the head of the queue under the
+  lock before it sends, so a round overlapping another cannot post the
+  same message twice; a declined send puts it back for the next poll, a
+  message on the wire still counts as owed, so a confirmed ceremony
+  does not read done early, and the claim is released when the round
+  is done with it even when the send unwinds. Each claim is numbered,
+  so a round whose ceremony was replaced under its send leaves the
+  replacement's queue alone.
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
