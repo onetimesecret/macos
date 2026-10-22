@@ -2864,9 +2864,7 @@ public final class PageModel: ObservableObject {
     /// other action on the status stack goes through the model, and the
     /// quit path is the one that can least afford a second route.
     ///
-    /// `NSApp` is read optionally because a filtered test run has no
-    /// application object, and a status action that traps the runner is
-    /// worse than one that does nothing there.
+    /// The request goes through the `requestTermination` seam, `NSApp` read optionally by default.
     public func requestQuitAnyway() {
         // Files at risk since the line went up: restate it, as a second ⌘Q would.
         if let quitRefusal, !quitAnywayOffered {
@@ -5041,11 +5039,9 @@ public final class PageModel: ObservableObject {
         return "Unsaved changes to \(englishList(dirty)) go with it."
     }
 
-    /// The state discard's help: the drafts file goes too while its own
-    /// banner stands (issue #296), and dirty files are named.
-    public nonisolated static func stateDiscardHelp(
-        files: [FileSummary], draftsRefused: Bool
-    ) -> String {
+    /// The state discard's help, naming the drafts file while its banner stands (issue #296).
+    /// No file's edits are at risk: the discard rewrites the drafts from memory.
+    public nonisolated static func stateDiscardHelp(draftsRefused: Bool) -> String {
         var sentences = [
             "Deletes the sealed file this session could not read and starts saving this "
                 + "session's pages in its place. The unreadable file cannot be recovered afterwards."
@@ -5054,7 +5050,6 @@ public final class PageModel: ObservableObject {
             sentences.append(
                 "The drafts file this session could not read goes too, and this session's drafts take its place.")
         }
-        if let atRisk = draftsAtRiskSentence(files: files) { sentences.append(atRisk) }
         return sentences.joined(separator: " ")
     }
 

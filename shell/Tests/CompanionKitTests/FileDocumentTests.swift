@@ -1238,14 +1238,15 @@ final class FileDocumentTests: XCTestCase {
             ]),
             "Unsaved changes to a.txt and c.txt go with it.")
 
-        // The state discard's help, which names the drafts file while its banner stands.
+        // The state discard's help names the drafts file while its banner stands, and no
+        // file's edits, which the discard rewrites from memory.
         let base = "Deletes the sealed file this session could not read and starts saving this "
             + "session's pages in its place. The unreadable file cannot be recovered afterwards."
-        XCTAssertEqual(PageModel.stateDiscardHelp(files: [], draftsRefused: false), base)
+        XCTAssertEqual(PageModel.stateDiscardHelp(draftsRefused: false), base)
         XCTAssertEqual(
-            PageModel.stateDiscardHelp(files: [file("a.txt", dirty: true)], draftsRefused: true),
+            PageModel.stateDiscardHelp(draftsRefused: true),
             base + " The drafts file this session could not read goes too, and this session's "
-                + "drafts take its place. Unsaved changes to a.txt go with it.")
+                + "drafts take its place.")
     }
 
     /// The drafts leg has its own write, so the cancelled quit's line
