@@ -10,6 +10,7 @@ import CompanionKit
 final class KeyWindowFacts: ObservableObject {
     @Published private(set) var closeTarget: CloseChordTarget = .nothing
     @Published private(set) var canClose = false
+    private let keyWindow: @MainActor () -> NSWindow?
     private let isOwnerWindow: (NSWindow) -> Bool
     private let isCompanionWindow: (NSWindow) -> Bool
     private let center: NotificationCenter
@@ -19,10 +20,12 @@ final class KeyWindowFacts: ObservableObject {
 
     init(
         center: NotificationCenter = .default,
+        keyWindow: @escaping @MainActor () -> NSWindow? = { NSApp?.keyWindow },
         isOwnerWindow: @escaping (NSWindow) -> Bool,
         isCompanionWindow: @escaping (NSWindow) -> Bool
     ) {
         self.center = center
+        self.keyWindow = keyWindow
         self.isOwnerWindow = isOwnerWindow
         self.isCompanionWindow = isCompanionWindow
     }
@@ -54,8 +57,10 @@ final class KeyWindowFacts: ObservableObject {
         refresh()
     }
 
+    /// Reads the key window again, for a window whose identity was
+    /// recorded after it became key (About, in `showAbout`).
     func refresh() {
-        stand(NSApp?.keyWindow)
+        stand(keyWindow())
     }
 
     /// Publishes each fact only when it moves.
