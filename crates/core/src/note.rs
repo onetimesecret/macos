@@ -86,10 +86,18 @@ impl Note {
         if ops.iter().any(EditOp::inks_sentinel) {
             return None;
         }
-        if let Body::Resting(text, _) = &self.body
-            && !ink::admits(text, ops)
-        {
-            return None;
+        if let Body::Resting(text, kept) = &mut self.body {
+            if !ink::admits(text, ops) {
+                return None;
+            }
+            // Nothing moves, so the note rests on, keeping the selection the document would.
+            if ops.iter().all(moves_nothing) {
+                let ends = selection.filter(|ends| within(text, ends.before));
+                if let Some(after) = ends.map(|ends| ends.after).filter(|at| within(text, *at)) {
+                    *kept = Some(after);
+                }
+                return Some(true);
+            }
         }
         ink::apply_batch(self.document(), ops, intent, selection)
     }
@@ -140,6 +148,15 @@ impl Note {
     }
 }
 
+/// Whether `op` changes no text: an empty insert, or a deletion of nothing.
+fn moves_nothing(op: &EditOp) -> bool {
+    match op {
+        EditOp::Insert { text, .. } => text.is_empty(),
+        EditOp::Delete { len_u16, .. } => *len_u16 == 0,
+        EditOp::InsertChip { .. } => false,
+    }
+}
+
 /// Whether `selection` ends within `text` in UTF-16, all
 /// [`SheetDocument::snapshot_selection`] asks of it.
 fn within(text: &str, selection: TextSelection) -> bool {
@@ -165,8 +182,8 @@ mod tests {
     }
 
     /// A restored note is one wiping copy at its exact size (Law 0004, C31): a plain `String`
-    /// would not compile here, and a read, a step, a run's end, an empty batch or a refused
-    /// one makes no document.
+    /// would not compile here, and a read, a step, a run's end, an empty batch, one that
+    /// moves nothing or a refused one makes no document.
     #[test]
     fn a_restored_note_rests_as_one_wiping_copy_until_its_first_edit() {
         let mut note = Note::holding(RESTED);
@@ -186,6 +203,27 @@ mod tests {
             length_u16: 0,
         }));
         assert_eq!(note.apply(&[], EditIntent::Typing, None), Some(true));
+        let nothing = [
+            EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 0,
+            },
+            EditOp::Insert {
+                pos_u16: 0,
+                text: String::new(),
+            },
+        ];
+        for batch in [&nothing[..1], &nothing[1..], &nothing[..]] {
+            assert_eq!(note.apply(batch, EditIntent::Typing, None), Some(true));
+        }
+        let nothing_past_the_end = [EditOp::Delete {
+            pos_u16: 99,
+            len_u16: 0,
+        }];
+        assert_eq!(
+            note.apply(&nothing_past_the_end, EditIntent::Deletion, None),
+            None
+        );
         let sentinel = typed(0, "\u{FFFC}");
         assert_eq!(note.apply(&sentinel, EditIntent::Typing, None), None);
         let past_the_end = typed(99, "x");
