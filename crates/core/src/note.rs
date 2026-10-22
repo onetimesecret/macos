@@ -8,8 +8,8 @@ use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection};
 use crate::ink::{self, StepOutcome};
 use crate::store::EditOp;
 
-/// The note's text, and once edited its document, which never holds a chip: sealed objects
-/// do not nest.
+/// The note's text, and once edited its document, in which no chip ever stands: sealed
+/// objects do not nest.
 pub(crate) struct Note {
     body: Body,
 }
@@ -23,8 +23,8 @@ enum Body {
 }
 
 impl Note {
-    /// A note holding `text` with an empty undo stack: a restore, or a paste. It rests as
-    /// one copy at its exact size until its first edit.
+    /// A note of `text` with an empty undo stack: a restore, or a paste. It rests as one
+    /// copy at its exact size until its first edit.
     pub(crate) fn holding(text: &str) -> Self {
         Self {
             body: Body::Resting(Zeroizing::new(text.to_owned()), None),
@@ -153,7 +153,7 @@ mod tests {
 
     use super::*;
 
-    const HELD: &str = "kept \u{1F600} beside it";
+    const RESTED: &str = "kept \u{1F600} beside it";
 
     fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
 
@@ -164,16 +164,16 @@ mod tests {
         }]
     }
 
-    /// A held note is one wiping copy at its exact size (Law 0004, C31): a plain `String`
+    /// A restored note is one wiping copy at its exact size (Law 0004, C31): a plain `String`
     /// would not compile here, and a read, a step, a run's end, an empty batch or a refused
     /// one makes no document.
     #[test]
-    fn a_held_note_rests_as_one_wiping_copy_until_its_first_edit() {
-        let mut note = Note::holding(HELD);
-        let text = note.resting().expect("a held note rests");
+    fn a_restored_note_rests_as_one_wiping_copy_until_its_first_edit() {
+        let mut note = Note::holding(RESTED);
+        let text = note.resting().expect("a restored note rests");
         wiping_owner(text);
         assert_eq!(text.capacity(), text.len(), "the copy grew past its size");
-        assert_eq!(note.text().as_str(), HELD);
+        assert_eq!(note.text().as_str(), RESTED);
         assert!(note.has_content());
         assert!(!note.can_undo() && !note.can_redo());
         assert_eq!(note.undo_action_name(), None);
@@ -204,8 +204,8 @@ mod tests {
         assert!(note.step(true).applied);
         assert_eq!(
             note.text().as_str(),
-            HELD,
-            "the undo went past the held text"
+            RESTED,
+            "the undo went past the restored text"
         );
         assert!(!note.can_undo());
     }
@@ -232,8 +232,8 @@ mod tests {
         ];
         for ends in runs {
             for selection in [None, Some(edit)] {
-                let mut note = Note::holding(HELD);
-                let mut document = ink::document_holding(HELD);
+                let mut note = Note::holding(RESTED);
+                let mut document = ink::document_holding(RESTED);
                 for end in ends {
                     note.finish_editing_group(*end);
                     document.finish_editing_group(*end);
@@ -259,7 +259,7 @@ mod tests {
     /// A resting note keeps a run's selection exactly where its document would take one.
     #[test]
     fn a_resting_note_keeps_the_selections_its_document_would() {
-        for text in ["", HELD, "\u{1F600}\u{1F600}"] {
+        for text in ["", RESTED, "\u{1F600}\u{1F600}"] {
             let document = ink::document_holding(text);
             let units = u32::try_from(text.encode_utf16().count()).unwrap();
             let mut selections = vec![TextSelection {
