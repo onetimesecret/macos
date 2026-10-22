@@ -34,7 +34,7 @@ rows are never compressed or folded.
 - The wheel relay is installed only while `layout.contentHeight <= column height`;
   a dense rail takes the wheel itself (D-38 dated note). The relay must stay inside the
   ScrollView's content so the hit view is its ancestor.
-- PR 286 (`fix/269-review-follow-ups`) renames the same hunks (`rowClearance`,
-  `liftGaps`); the second to merge conflicts there.
+- PR 286 merged first; merging main into this branch kept its `liftGaps` name and
+  retired its `Metrics.rowClearance`, as the issue 277 decision asks.
 
 Related: [[issue267-timeline-node-drops]], [[project_issue79_time_rail]].
