@@ -16,8 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OnetimePad deactivates. The card gives way instead: a pinned or kept
   above card drops to normal level while one of its own windows has the
   keyboard and floats again when that window closes or the card takes
-  the keyboard back. A card resting on the desktop stays there. The
-  `CompanionLevelFollower` that wrote the card's altitude onto those
+  the keyboard back. Moving from Settings to About, or opening a save
+  sheet on Send Feedback, keeps the card where it is rather than floating
+  it for a moment in between. A card resting on the desktop stays there.
+  The `CompanionLevelFollower` that wrote the card's altitude onto those
   windows is retired; the rule is one more input to
   `BackdropAltitude.resolve`, written by `BackdropAltitudeKeeper`.
 

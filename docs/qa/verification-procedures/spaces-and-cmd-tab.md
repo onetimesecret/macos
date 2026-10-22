@@ -883,6 +883,16 @@ first full-screen check above, and its row records it.
       is what a level read only once at open produces. Its first pass,
       About in front of the card with the pin on, is also issue #190's
       check About with Pin on.
+- [ ] **A hand off between companion windows keeps the card still.**
+      *Companion.* With the pin on and the card resting, open Settings
+      with `⌘,`, then choose About from the OnetimePad menu while
+      Settings is key. Then open Send Feedback, choose Export, and
+      cancel the save sheet. **Pass:** the card stays at normal level
+      under Settings, About, Send Feedback and the save sheet, with no
+      frame of it drawn over any of them, and floats again only once
+      the last of them closes or the app deactivates (ADR-0032
+      Amendment 1, 2026-10-21, issue #293). **Fail:** the card flashes
+      over a window during a hand off, or floats over the save sheet.
 
 ### The drag, which is a decision rather than a fix
 

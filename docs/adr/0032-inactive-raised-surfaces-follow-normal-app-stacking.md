@@ -220,17 +220,18 @@ The paragraph beginning "When Settings or another ordinary window of
 OnetimePad takes the keyboard" is replaced by the following rule.
 
 Settings, About and Send Feedback are ordinary windows at normal level and
-never change level. A companion window of OnetimePad's own holding the
-keyboard is a further input to the surface's altitude, beside stance,
+never change level. The keyboard being in a companion window of
+OnetimePad's own is a further input to the surface's altitude, beside stance,
 keyboard ownership, Pin and the preference. While one of those windows is
 key, or a sheet run on one of them is, a surface that the table would float
 lowers to normal; a resting unpinned surface stays at desktop level, since
 it is below the ordinary window already. The surface returns to the table's
 level when that window closes, resigns the keyboard, or the surface takes
-the keyboard back. The surface's own keyboard ownership wins over the
-companion's: a raise committed as "about to take keys" floats, and the
-companion's resign follows. All routes to the same ordinary window use the
-same rule.
+the keyboard back. A hand off from one of those windows to another, or to
+a sheet run on one, keeps the surface lowered. The surface's own keyboard
+ownership wins over the companion's: a raise committed as "about to take
+keys" floats, and the companion's resign follows. All routes to the same
+ordinary window use the same rule.
 
 The altitude table reads, with the new row first because it governs the
 rows below it:
