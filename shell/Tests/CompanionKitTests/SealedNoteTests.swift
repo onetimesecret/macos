@@ -708,13 +708,16 @@ final class SealedNoteTests: XCTestCase {
     /// From its deadline, before any sweep, a note's batch, its undo and redo and a
     /// rename each refuse and settle at once with the expired line.
     func testANoteEditStepOrNamePastItsPagesDeadlineSettlesWithTheExpiredLine() throws {
-        let routes: [(name: String, run: (Page, SealedNoteEditor) -> Void)] = [
+        let routes: [(name: String, run: (Page, SealedNoteEditor) throws -> Void)] = [
             ("a batch", { _, editor in self.type(" monthly", into: editor) }),
-            ("undo", { page, _ in
-                XCTAssertFalse(page.model.stepEdit(.note(chip: page.chip), back: true).applied)
+            ("⌘Z", { page, editor in
+                let chord = try self.keyEvent("z", keyCode: 6, flags: .command, in: page.window)
+                XCTAssertTrue(editor.textView.performKeyEquivalent(with: chord), "the note declined ⌘Z")
             }),
-            ("redo", { page, _ in
-                XCTAssertFalse(page.model.stepEdit(.note(chip: page.chip), back: false).applied)
+            ("⇧⌘Z", { page, editor in
+                let chord = try self.keyEvent(
+                    "z", keyCode: 6, flags: [.command, .shift], in: page.window)
+                XCTAssertTrue(editor.textView.performKeyEquivalent(with: chord), "the note declined ⇧⌘Z")
             }),
             ("a name by the field's Return", { page, _ in
                 page.coordinator.beginNaming(at: 3)
@@ -733,7 +736,7 @@ final class SealedNoteTests: XCTestCase {
             type("rotate", into: editor)
             try age(page)
 
-            route.run(page, editor)
+            try route.run(page, editor)
             drainMainQueue()
 
             XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, route.name)
