@@ -51,3 +51,4 @@
 - [PR 272 Finder open](project_pr272_finder_open.md): FinderOpenPlan.decide owns the drain, a modal or close decision keeps the queue, dotfiles type as public.data so Open With skips them
 - [Issue #256 C31 resting note](project_issue256_c31_resting_note.md): a restored Note rests as Zeroizing until a batch moves its text; a run's selection is kept by a bounds check, since Loro accepts a position inside a surrogate pair
 - [Close chord and Help menu](project_close_chord_and_help_menu.md): PRs 301/302 route cmd-w by key window identity and insert the Help item from AppKit after launch; SwiftUI rebuild and title flip owe hardware looks
+- [Issue #310 deadline writes](project_issue310_deadline_writes.md): chip_mut reads readable_sheets_mut; the note chord skips menu validation; mirror lib.rs docs in companion_ffi.h; page ink on a due page is still ungated
