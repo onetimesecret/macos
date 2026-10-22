@@ -123,10 +123,18 @@ final class QuitPromptTests: XCTestCase {
         XCTAssertEqual(
             PageModel.quitRefusalSentence(.unsavableWithDrafts, files: [dirty], draftsUnwritten: true),
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
-        // A file saved since the cancel still leaves a line under the cancelled quit.
+        // A file saved since the cancel retires the drafts line: nothing is held.
+        XCTAssertNil(PageModel.quitOfferAfterFiles(offer: .unsavableWithDrafts, draftsHeld: false))
+        XCTAssertEqual(
+            PageModel.quitOfferAfterFiles(offer: .unsavableWithDrafts, draftsHeld: true),
+            .unsavableWithDrafts)
+        XCTAssertEqual(
+            PageModel.quitOfferAfterFiles(offer: .unsavableWithContent, draftsHeld: false),
+            .unsavableWithContent, "the content arm's condition is not the files'")
         XCTAssertEqual(
             PageModel.quitRefusalSentence(.unsavableWithDrafts),
-            "the drafts file would not open and was not written over, so unsaved changes to open files will not survive the quit")
+            "the drafts file would not open and was not written over, so unsaved changes to open files will not survive the quit",
+            "the sentence is never empty")
         XCTAssertNil(PageModel.quitOfferAfterDraftsClear(offer: .unsavableWithDrafts))
         XCTAssertEqual(PageModel.quitOfferAfterDraftsClear(offer: .refused), .refused)
     }

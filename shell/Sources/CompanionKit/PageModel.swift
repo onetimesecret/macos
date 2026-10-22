@@ -2063,6 +2063,15 @@ public final class PageModel: ObservableObject {
         // `saveState` keeps it while `draftsHeld` (issue #296).
         guard draftsLicence else {
             terminationLatch.acquire()
+            // No save settles a session that writes neither sealed file, so the mark does,
+            // against the core's roster: the published one trails an edit.
+            if !Self.writesEitherFile(
+                loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence)
+            {
+                terminationLatch.settle(
+                    saved: !Self.draftsHeld(
+                        draftsLicence: false, draftsDirty: true, files: client.fileRoster()))
+            }
             return
         }
         armDraftsWrite()
@@ -2175,7 +2184,12 @@ public final class PageModel: ObservableObject {
         )
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
-        guard licensed || (draftsDirty && draftsLicence) else { return true }
+        guard licensed || (draftsDirty && draftsLicence) else {
+            terminationLatch.settle(
+                saved: !Self.draftsHeld(
+                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+            return true
+        }
         // Both files rest in this directory, so one preparation covers
         // them: it is created if missing, and marked so Time Machine
         // leaves the ciphertext generations alone (`.noindex` in the
@@ -2906,6 +2920,14 @@ public final class PageModel: ObservableObject {
         offer: QuitSaveOutcome?
     ) -> QuitSaveOutcome? {
         offer == .unsavableWithDrafts ? nil : offer
+    }
+
+    /// Whether the offer survives a change to the open files: the drafts
+    /// arm's line stands only while a file's edits are held in memory.
+    public nonisolated static func quitOfferAfterFiles(
+        offer: QuitSaveOutcome?, draftsHeld: Bool
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithDrafts && !draftsHeld ? nil : offer
     }
 
     /// What the quit anyway button says it costs: the drafts arm names
@@ -3649,6 +3671,10 @@ public final class PageModel: ObservableObject {
         openFiles = files
         // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
         quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
+        quitRefusal = Self.quitOfferAfterFiles(
+            offer: quitRefusal,
+            draftsHeld: Self.draftsHeld(
+                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: files))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
@@ -4994,6 +5020,23 @@ public final class PageModel: ObservableObject {
         let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
         guard !dirty.isEmpty else { return nil }
         return "Unsaved changes to \(englishList(dirty)) go with it."
+    }
+
+    /// The state discard's help: the drafts file goes too while its own
+    /// banner stands (issue #296), and dirty files are named.
+    public nonisolated static func stateDiscardHelp(
+        files: [FileSummary], draftsRefused: Bool
+    ) -> String {
+        var sentences = [
+            "Deletes the sealed file this session could not read and starts saving this "
+                + "session's pages in its place. The unreadable file cannot be recovered afterwards."
+        ]
+        if draftsRefused {
+            sentences.append(
+                "The drafts file this session could not read goes too, and this session's drafts take its place.")
+        }
+        if let atRisk = draftsAtRiskSentence(files: files) { sentences.append(atRisk) }
+        return sentences.joined(separator: " ")
     }
 
     /// A list a person reads out loud, which is the only reason this

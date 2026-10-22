@@ -1234,6 +1234,15 @@ final class FileDocumentTests: XCTestCase {
                 file("c.txt", dirty: true),
             ]),
             "Unsaved changes to a.txt and c.txt go with it.")
+
+        // The state discard's help, which names the drafts file while its banner stands.
+        let base = "Deletes the sealed file this session could not read and starts saving this "
+            + "session's pages in its place. The unreadable file cannot be recovered afterwards."
+        XCTAssertEqual(PageModel.stateDiscardHelp(files: [], draftsRefused: false), base)
+        XCTAssertEqual(
+            PageModel.stateDiscardHelp(files: [file("a.txt", dirty: true)], draftsRefused: true),
+            base + " The drafts file this session could not read goes too, and this session's "
+                + "drafts take its place. Unsaved changes to a.txt go with it.")
     }
 
     /// The drafts leg has its own write, so the cancelled quit's line
@@ -1685,6 +1694,56 @@ final class FileDocumentTests: XCTestCase {
         _ = model.storage(for: id)
         try assertASecondQuitAsksOverNewEdits(model, file: id)
         XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
+    }
+
+    /// The drafts line names a loss only while one exists: saving the named file
+    /// retires it, and the next ⌘Q quits.
+    func testTheDraftsLineRetiresWhenTheNamedFileIsSaved() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertNil(model.quitRefusal, "nothing is held in memory now")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// Every licence withheld, so no save comes to settle the latch: the hold a
+    /// file edit takes goes once the file is saved, and comes back with the next edit.
+    func testASessionWithEveryLicenceWithheldReleasesItsHoldOnceTheFileIsSaved() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.ledgerRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertGreaterThan(model.terminationHolds, 0)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
+
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertGreaterThan(model.terminationHolds, 0)
+        XCTAssertTrue(model.saveState())
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the stand-down keeps a hold the edits still need")
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
     }
 
     /// The ordinary launch: the restore reads the file, and the next

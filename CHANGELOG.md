@@ -1032,16 +1032,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file writes the edits made before it at once. An existing drafts
   file that would not open is left alone for the session, as the state
   file already is: the save settles rather than fails, the unsaved file
-  edits stay in memory, the sudden termination hold stays so a logout
-  asks first, and one line in the log says why. A standing line says
-  so in the surface, ahead of any saved word, with one action, Discard
-  It and Keep Drafts, which drops the unreadable file and writes this
+  edits stay in memory, the sudden termination hold stays until those
+  edits are saved, so a logout asks first, and one line in the log
+  says why. A standing line under the page says so, as quiet as the
+  ledger's and with no header word, with one action, Discard It and
+  Keep Drafts, which drops the unreadable file and writes this
   session's drafts from there; the discard of an unreadable state file
-  gives the drafts write back too, and rewrites the drafts from memory
-  when its erase refused. A quit with unsaved edits to a file while
-  the line stands asks rather than settling, naming the files. A
-  second ⌘Q quits anyway, unless edits the line did not name have
-  appeared since, which the line then names.
+  gives the drafts write back too, says in its help that it takes the
+  drafts file, and rewrites the drafts from memory when its erase
+  refused. A quit with unsaved edits to a file while the line stands
+  asks rather than settling, naming the files; that line retires once
+  no file's edits are held. A second ⌘Q quits anyway, unless edits the
+  line did not name have appeared since, which the line then names.
 - **A restored or pasted note that nobody edits is wiped when it goes**
   (`companion-core` 0.34.2; issue #256, the content buffer register's
   C11 and C31). A note brought back by a relaunch, a paste or a clone
