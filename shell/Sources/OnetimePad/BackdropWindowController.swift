@@ -6,8 +6,8 @@ import os
 
 /// The background surface's window: a borderless pane covering the
 /// primary screen. Where it sits in the stacking order is
-/// `BackdropAltitude.resolve`'s to decide from four inputs together
-/// (stance, key status, the pin and the keep-above preference,
+/// `BackdropAltitude.resolve`'s to decide from five inputs together
+/// (stance, key status, pin, preference and a key companion window,
 /// ADR-0032), so an unpinned rest sits at desktop level (above the
 /// wallpaper, below the icons and every normal window), a pinned rest
 /// floats above other windows and shrinks to the card's own rect so
@@ -765,7 +765,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// decision distinguishes raised-and-keyed (summon rests it) from
     /// raised-but-keyboard-less (summon re-keys it). The altitude the
     /// panel sits at is `BackdropAltitude.resolve`'s to decide from
-    /// the four inputs together, and this passes the key answer that
+    /// its five inputs together, and this passes the key answer that
     /// has just arrived so the resolver reads honest facts.
     func windowDidBecomeKey(_ notification: Notification) {
         altitude.reapply(
@@ -839,8 +839,8 @@ private final class BackdropKeyRelayPanel: NSPanel {
 /// ordinary window would. Key status is stance-gated the way Plash gates
 /// interactivity. Where the panel sits in the stacking order is not
 /// the panel's own concern: `BackdropAltitude.resolve` picks a level
-/// from stance, key status, the pin and the keep-above preference
-/// together (ADR-0032), and the controller writes it.
+/// from stance, key status, the pin, the preference and a key companion
+/// window (ADR-0032), and the controller writes it.
 final class BackdropPanel: NSPanel {
     /// Set by the controller from the stance, before ordering changes.
     var isInteractive = false
