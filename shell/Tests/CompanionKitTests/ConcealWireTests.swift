@@ -149,4 +149,38 @@ final class ConcealWireTests: XCTestCase {
             "a page the roster does not hold carries nothing the sheet can vouch for"
         )
     }
+
+    /// An empty page is refused before the wire, and the core's refusal reaches
+    /// the sheet in its words rather than the core's (ADR-0055 rule 3, issue #295).
+    func testAnEmptyPageIsRefusedInTheSheetsWords() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-empty-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        XCTAssertNotEqual(client.newTab(), 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(id: sheetID, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(outcome.error, "there is nothing to send")
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
+
+    /// The core's encoding refusal and a string the client does not know give
+    /// no reason, so the sheet shows its fallback; a server reason passes (issue #295).
+    func testACoreRefusalTheClientDoesNotKnowGivesNoReason() {
+        for error in ["malformed conceal options", "a refusal the client has never seen"] {
+            let outcome = CompanionClient.readerOutcome(
+                ConcealOutcome(ok: false, receiptId: nil, error: error))
+            XCTAssertFalse(outcome.ok)
+            XCTAssertNil(outcome.error, "\(error) reached the sheet")
+        }
+        let outage = "could not reach the server: stubbed outage"
+        XCTAssertEqual(
+            CompanionClient.readerOutcome(
+                ConcealOutcome(ok: false, receiptId: nil, error: outage)
+            ).error,
+            outage)
+    }
 }
