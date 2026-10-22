@@ -32,8 +32,8 @@ pub struct PasteboardItem {
     pub content: PasteboardContent,
     /// True when the writer marked it [`CONCEALED_TYPE`].
     pub nspasteboard_concealed: bool,
-    /// The `public.url` flavor, if declared (ADR-0013), in a wiping owner of its
-    /// exact size, since a URL can bear a token (Law 0004, C17).
+    /// The `public.url` flavor, if declared (ADR-0013), in a wiping owner, since a URL
+    /// can bear a token (Law 0004, C17).
     pub origin_url: Option<Zeroizing<String>>,
 }
 
@@ -327,7 +327,7 @@ mod tests {
         let item = pb.read().unwrap();
         let origin = item.origin_url.as_ref().unwrap();
         assert_eq!(origin.as_str(), "https://example.test/article?token=q");
-        // The read's copy of the stored owner is its own wiping owner, at its size (C17).
+        // The read's clone is a wiping owner whose capacity is its length (C17).
         wiping_owner(origin);
         assert_eq!(origin.capacity(), origin.len(), "the read copy grew");
 

@@ -33,5 +33,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "NSArray",
+  # A string's UTF-8 is converted straight into a wiping buffer (C17).
+  "NSRange",
   "NSString",
 ] }
