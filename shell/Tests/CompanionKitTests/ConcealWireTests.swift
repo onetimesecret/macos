@@ -183,4 +183,57 @@ final class ConcealWireTests: XCTestCase {
             ).error,
             outage)
     }
+
+    /// The core answers a file's id with no outcome at all; the client logs that
+    /// and gives no reason, so the sheet shows its fallback (issue #295).
+    func testACoreAnswerThatDoesNotDecodeGivesNoReason() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-undecoded-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(
+            id: CompanionClient.fileIDTag | 1, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertNil(outcome.error)
+        XCTAssertEqual(outcome, CompanionClient.undecodableOutcome())
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
+
+    /// With no connection configured the core refuses before the wire, and its
+    /// sentence reaches the sheet as the core wrote it (issue #295).
+    func testNoConnectionReachesTheSheetInTheCoresWords() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-unconfigured-\(UUID().uuidString)")
+        XCTAssertNotEqual(client.newTab(), 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: #"[{"ink": "the credentials"}]"#))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(id: sheetID, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(outcome.error, "no connection configured")
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
+
+    /// A page past its deadline is refused before the wire, in the core's
+    /// words (Law 0001, expiry row; issue #295).
+    func testAnExpiredPageReachesTheSheetInTheCoresWords() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-expired-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        let tab = client.newTab()
+        XCTAssertNotEqual(tab, 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: #"[{"ink": "the credentials"}]"#))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+
+        let outcome = client.concealSheet(id: sheetID, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(outcome.error, "this page has expired")
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
 }

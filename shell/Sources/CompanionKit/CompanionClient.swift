@@ -1606,26 +1606,33 @@ public class CompanionClient: @unchecked Sendable {
         let outcome = json.withCString { opts in
             decodeOwnedJSON(ConcealOutcome.self, from: route(handle, id, opts))
         }
-        guard let outcome else {
-            return ConcealOutcome(ok: false, receiptId: nil, error: "the core refused the request")
-        }
+        guard let outcome else { return Self.undecodableOutcome() }
         return Self.readerOutcome(outcome)
     }
 
     /// Options that would not encode are a diagnostic for the log; the outcome
     /// gives no reason, so the sheet shows its own fallback (issue #295).
     static func unencodableOptionsOutcome() -> ConcealOutcome {
-        unexplainedOutcome(logging: "malformed conceal options")
+        unexplainedOutcome(logging: .malformedOptions)
+    }
+
+    /// A core answer that would not decode, logged and shown as the sheet's
+    /// fallback, as an encoding failure is (issue #295).
+    static func undecodableOutcome() -> ConcealOutcome {
+        unexplainedOutcome(logging: .undecodable)
     }
 
     /// The core's outcome with its refusal in the sheet's words (ADR-0055 rule 3,
     /// issue #295); a refusal with no such words is logged and given no reason.
     static func readerOutcome(_ outcome: ConcealOutcome) -> ConcealOutcome {
         guard !outcome.ok, let error = outcome.error else { return outcome }
-        guard let reason = readerReason(forCoreRefusal: error) else {
-            return unexplainedOutcome(logging: error)
+        if let reason = readerReason(forCoreRefusal: error) {
+            return ConcealOutcome(ok: false, receiptId: outcome.receiptId, error: reason)
         }
-        return ConcealOutcome(ok: false, receiptId: outcome.receiptId, error: reason)
+        if let known = KnownDiagnostic(rawValue: error) { return unexplainedOutcome(logging: known) }
+        // An unknown string may be a reworded one quoting the server's message.
+        concealLogger.error("conceal: unrecognised refusal \(error, privacy: .private)")
+        return ConcealOutcome(ok: false, receiptId: nil, error: nil)
     }
 
     /// The core's conceal refusals the sheet may show (crates/ffi `conceal_error`),
@@ -1647,8 +1654,14 @@ public class CompanionClient: @unchecked Sendable {
         }
     }
 
-    private static func unexplainedOutcome(logging diagnostic: String) -> ConcealOutcome {
-        concealLogger.error("conceal: \(diagnostic, privacy: .public)")
+    /// The fixed diagnostics the log may show in the clear.
+    private enum KnownDiagnostic: String {
+        case malformedOptions = "malformed conceal options"
+        case undecodable = "the core refused the request"
+    }
+
+    private static func unexplainedOutcome(logging diagnostic: KnownDiagnostic) -> ConcealOutcome {
+        concealLogger.error("conceal: \(diagnostic.rawValue, privacy: .public)")
         return ConcealOutcome(ok: false, receiptId: nil, error: nil)
     }
 
