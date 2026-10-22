@@ -53,6 +53,11 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     /// Actual visibility, used by presentation handoff checks.
     var isVisible: Bool { window?.isVisible == true }
 
+    /// Whether a window is this one, for ⌘W (#201).
+    func owns(_ candidate: NSWindow) -> Bool {
+        window === candidate
+    }
+
     /// Close and release the editor for a deliberate ambient switch. The
     /// switch supplies the next key window, so close must not deactivate later.
     func closeForAmbientPanel() {
@@ -354,11 +359,7 @@ private struct PrimaryEditorRootView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    if pages.showsTimeUnits {
-                        TimeRailView(model: pages, readOnly: false)
-                    } else {
-                        SlotRailView(model: pages)
-                    }
+                    TimeRailView(model: pages, readOnly: false)
                     Divider()
                 }
                 content
@@ -366,11 +367,7 @@ private struct PrimaryEditorRootView: View {
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
-                if pages.showsTimeUnits {
-                    TimeStripView(model: pages)
-                } else {
-                    TabStripView(model: pages, readOnly: false)
-                }
+                TabStripView(model: pages, readOnly: false)
             }
         }
         .background(Color.panelBackground)
