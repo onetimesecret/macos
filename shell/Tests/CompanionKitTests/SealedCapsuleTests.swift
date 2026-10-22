@@ -782,7 +782,15 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(ConcealView.destinationHelp, "The server this one-time link is created on")
         XCTAssertEqual(
             ConcealView.failureLabel("refused"), "Could not create the link: refused")
-        XCTAssertEqual(PageModel.linkFailedLine, "the link was not created")
+        XCTAssertEqual(PageModel.linkFailedLine, "no reason was given")
+    }
+
+    /// With no reason from the core, VoiceOver reads the outcome once and the gap
+    /// after it, not the outcome twice (issue #295).
+    func testTheSpokenFallbackSaysTheOutcomeOnce() {
+        XCTAssertEqual(
+            ConcealView.failureLabel(PageModel.linkFailedLine),
+            "Could not create the link: no reason was given")
     }
 
     /// A removal flashes its line with Undo beside it (D-30), since the core
