@@ -700,7 +700,7 @@ final class SealedNoteTests: XCTestCase {
         let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == page.sheet }?.id)
         XCTAssertTrue(page.client.setRung(tab: tab, rung: .oneHour))
         XCTAssertTrue(page.client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
-        // The re-mint is dense, so the page's and the object's ids still name what the core holds.
+        // The re-mint is dense, so the page's and the object's ids still name what the core keeps.
         XCTAssertTrue(page.client.tabs().contains { $0.pageID == page.sheet }, "the page was swept")
         XCTAssertTrue(page.client.chipStands(page.chip), "the object was renumbered")
     }
