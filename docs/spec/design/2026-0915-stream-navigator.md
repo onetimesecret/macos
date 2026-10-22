@@ -81,10 +81,11 @@ draws only a typed name (D-46 amends the gutter paragraph).
   active stretch and the
   slivers stay level with the nodes, in the drawing's own coordinates,
   so they scroll with the rows and the band can be out of the clip on a
-  rail scrolled away from it. The box the slivers keep clear of is the
-  drawn row one point higher and as tall.
+  rail scrolled away from it. The box the slivers keep clear of covers
+  every whole point the drawn row paints and the one above it.
   `StreamNavigatorTests.testADenseRailGrowsPastTheColumnRatherThanAboveIt`,
   `testASliverNeverCrossesARowsLastPointAndMayStandJustAboveIt`,
+  `testAtAFractionalTopNoSliverCrossesAPointTheRowPaints`,
   `TabDropTests.testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting`.
 - **D-35 (fixed)** Geometry, never glyphs. The roll hands the rail each
   page's span and each laid-out line as a rectangle (where it begins,

@@ -553,6 +553,49 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(layout.slivers.map(\.y), justAbove, "a sliver crossed a row's last point, or one just above a row was dropped")
     }
 
+    /// At a fractional top the slivers keep clear of every whole point a row paints and the
+    /// one above it, as at a whole point top: a line on the point above or on the last
+    /// painted point yields no sliver, and one a point further out on either side yields one.
+    func testAtAFractionalTopNoSliverCrossesAPointTheRowPaints() throws {
+        let nodes = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: 0, createdMs: born + 60_000),
+        ])
+        // A 200 point document over a 200 point span: a document offset is a rail point.
+        let height: CGFloat = StreamNavigator.Metrics.top + 200 + StreamNavigator.Metrics.bottom
+        func geometry(lines: [RollGeometry.LineMark]) -> RollGeometry {
+            RollGeometry(
+                extents: [
+                    extent(nodes[0], top: 50.4, height: 50, lines: lines),
+                    extent(nodes[1], top: 150.4, height: 49.6),
+                ],
+                documentHeight: 200, viewportTop: 0, viewportHeight: 200)
+        }
+        let bare = StreamNavigator.layout(nodes: nodes, geometry: geometry(lines: []), height: height, width: 102)
+        for placed in bare.placed {
+            XCTAssertNotEqual(
+                placed.drawnTop, placed.drawnTop.rounded(), "the control: a row was drawn at a whole point")
+            XCTAssertNotEqual(
+                placed.drawnTop + placed.rowHeight, (placed.drawnTop + placed.rowHeight).rounded(),
+                "the control: a row ended at a whole point")
+        }
+        // A whole point p is painted when [p, p + 1) meets [drawnTop, drawnTop + rowHeight).
+        let painted = bare.placed.map {
+            (first: $0.drawnTop.rounded(.down), last: ($0.drawnTop + $0.rowHeight).rounded(.up) - 1)
+        }
+        let dropped = painted.flatMap { [$0.first - 1, $0.last] }
+        let kept = painted.flatMap { [$0.first - 2, $0.last + 1] }
+        let lines = (dropped + kept).map {
+            RollGeometry.LineMark(y: bare.documentOffset(atY: $0), width: 1)
+        }
+        let layout = StreamNavigator.layout(
+            nodes: nodes, geometry: geometry(lines: lines), height: height, width: 102)
+        XCTAssertEqual(layout.placed.map(\.y), bare.placed.map(\.y), "the lines moved a node")
+        XCTAssertEqual(
+            layout.slivers.map(\.y), kept.sorted(),
+            "a sliver crossed a point a row paints or the one above it, or one a point clear of a row was dropped")
+    }
+
     /// A measured roll puts each node where its page's share of the
     /// roll falls, and the map from document to rail runs through the
     /// nodes as placed: a node's own y answers back its page's top, and
@@ -692,7 +735,7 @@ final class StreamNavigatorTests: XCTestCase {
             XCTAssertLessThanOrEqual(sliver.width, available)
             for placed in layout.placed {
                 XCTAssertFalse(
-                    sliver.y >= placed.rowTop && sliver.y <= placed.rowTop + placed.rowHeight,
+                    sliver.y >= placed.rowTop && sliver.y <= placed.rowBottom,
                     "a sliver crossed a node's words at \(sliver.y)")
             }
         }
@@ -795,7 +838,7 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(stacked.placed.map(\.documentTop), [0, 0, 0, 0])
         XCTAssertEqual(stacked.placed[0].y, StreamNavigator.Metrics.top)
         XCTAssertEqual(
-            stacked.placed[1].rowTop, stacked.placed[0].rowTop + stacked.placed[0].rowHeight,
+            stacked.placed[1].drawnTop, stacked.placed[0].drawnTop + stacked.placed[0].rowHeight,
             "an unmeasured roll's second node did not pack against the first")
 
         let tall = RollGeometry(
@@ -992,13 +1035,13 @@ final class StreamNavigatorTests: XCTestCase {
         var settled: CGFloat = 0
         for placed in layout.placed {
             XCTAssertGreaterThanOrEqual(
-                placed.rowTop, settled, "a node began above where the one before it ended",
+                placed.drawnTop, settled, "a node began above where the one before it ended",
                 file: file, line: line)
             XCTAssertGreaterThan(placed.rowHeight, 0, file: file, line: line)
             XCTAssertLessThanOrEqual(
-                placed.rowTop + placed.rowHeight, layout.contentHeight,
+                placed.drawnTop + placed.rowHeight, layout.contentHeight,
                 "a node was drawn past the foot of the drawing", file: file, line: line)
-            settled = placed.rowTop + placed.rowHeight
+            settled = placed.drawnTop + placed.rowHeight
         }
     }
 }

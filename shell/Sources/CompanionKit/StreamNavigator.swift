@@ -362,7 +362,7 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The height of the drawn row and of the box the slivers keep clear of alike.
+        /// The height of the drawn row.
         public let rowHeight: CGFloat
         /// Where the row's ground begins: the note or the window mark reserved above it,
         /// or the sliver box when it keeps none. A reveal brings the ground in with the row.
@@ -377,8 +377,12 @@ public enum StreamNavigator {
         /// The top of the row as drawn, `Metrics.rowLift` above the centre line.
         public var drawnTop: CGFloat { y - Metrics.rowLift(firstOfDay: node.firstOfDay) }
 
-        /// The top of the box the slivers keep clear of: the drawn row, one point higher (#277).
-        public var rowTop: CGFloat { drawnTop - 1 }
+        /// The top of the box the slivers keep clear of: the whole point above the first
+        /// one the drawn row paints (#277).
+        public var rowTop: CGFloat { drawnTop.rounded(.down) - 1 }
+
+        /// The foot of that box: the last whole point the drawn row paints.
+        public var rowBottom: CGFloat { (drawnTop + rowHeight).rounded(.up) - 1 }
     }
 
     /// The part of the roll the reader can see, in rail coordinates.
@@ -616,7 +620,7 @@ public enum StreamNavigator {
             Placed(
                 node: nodes[index], y: nodeYs[index],
                 rowHeight: heights[index] - reserves[index],
-                groundTop: min(ys[index], nodeYs[index] - lifts[index] - 1),
+                groundTop: min(ys[index], (nodeYs[index] - lifts[index]).rounded(.down) - 1),
                 noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
@@ -639,7 +643,7 @@ public enum StreamNavigator {
         if available > 2 {
             // A node's words, and the note and the mark reserved above
             // them, are ground no sliver may cross.
-            let rows = placed.map { ($0.groundTop, $0.rowTop + $0.rowHeight) }
+            let rows = placed.map { ($0.groundTop, $0.rowBottom) }
             for extent in geometry.extents {
                 for line in extent.lines {
                     // Whole points: a one point sliver is drawn on a

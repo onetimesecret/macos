@@ -992,8 +992,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scrolls turns the rail (over one that fits, the roll, as before), and
   a row scrolled out of the column is neither drawn nor clickable nor
   a drop target, so a click and a drop land on the same rows. The box
-  the line slivers keep clear of is now the drawn row one point higher
-  and as tall, so a sliver never crosses a row's last point.
+  the line slivers keep clear of now covers every whole point a row
+  paints and the one above it, at a fractional top as at a whole one,
+  so a sliver never crosses a row's last point.
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
