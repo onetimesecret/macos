@@ -948,7 +948,7 @@ fn read_materialized(
         let modified_s = clamp(record.u64().ok_or(Malformed)?).max(created_s);
         let origin = match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(record.str().ok_or(Malformed)?.to_string()),
+            1 => Some(Zeroizing::new(record.str().ok_or(Malformed)?.to_owned())),
             _ => return Err(Malformed),
         };
         records.push(PersistedBlock {
@@ -1379,6 +1379,7 @@ mod tests {
     #[test]
     fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
         use crate::store::EditOp;
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         let (mut store, clock) = store();
         let id = store.new_tab().1;
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
@@ -1427,15 +1428,24 @@ mod tests {
             "block identities and stamps are adopted from the slot, not re-minted"
         );
         assert_eq!(sheet.modified_s(), modified);
+        let restored = sheet.blocks.records()[0]
+            .materialized
+            .as_ref()
+            .unwrap()
+            .origin
+            .as_ref()
+            .unwrap();
         assert_eq!(
-            sheet.blocks.records()[0]
-                .materialized
-                .as_ref()
-                .unwrap()
-                .origin
-                .as_deref(),
-            Some(origin),
+            restored.as_str(),
+            origin,
             "the origin rides the materialized record through the round trip"
+        );
+        // A wiping owner whose capacity is its length (C17).
+        wiping_owner(restored);
+        assert_eq!(
+            restored.capacity(),
+            restored.len(),
+            "the restored origin grew"
         );
     }
 

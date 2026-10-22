@@ -50,6 +50,7 @@
 - [Issue #277 rail scrolls](project_issue277_rail_scrolls.md): scrollTo on offset rows moved nothing, RailReveal drives the NSScrollView; visibleRect lies in an unordered window, test the clip view intersection; the wheel relay only while the drawing fits
 - [PR 272 Finder open](project_pr272_finder_open.md): FinderOpenPlan.decide owns the drain, a modal or close decision keeps the queue, dotfiles type as public.data so Open With skips them
 - [Issue #256 C31 resting note](project_issue256_c31_resting_note.md): a restored Note rests as Zeroizing until a batch moves its text; a run's selection is kept by a bounds check, since Loro accepts a position inside a surrogate pair
-- [Issue #256 C27 stub summary](project_issue256_c27_stub_summary.md): IgnoredAny skips a string without serde_json scratch, a lone surrogate witnesses it; B1 is C08, C17, C19 to C21
+- [Issue #256 C17 origin owners](project_issue256_c17_origin_owners.md): origin URLs are W (PR 315); read NSString UTF-8 only via `utf8_of` (getBytes), never `UTF8String`; Loro decodes messages per block
+- [Issue #256 C27 stub summary](project_issue256_c27_stub_summary.md): IgnoredAny skips a string without serde_json scratch, a lone surrogate witnesses it; B1 is C08, C19 to C21 (C17 left it in PR 315)
 - [Close chord and Help menu](project_close_chord_and_help_menu.md): PRs 301/302 route cmd-w by key window identity and insert the Help item from AppKit after launch; SwiftUI rebuild and title flip owe hardware looks
 - [Issue #310 deadline writes](project_issue310_deadline_writes.md): chip_mut reads readable_sheets_mut; the note chord skips menu validation; mirror lib.rs docs in companion_ffi.h; page ink on a due page is still ungated

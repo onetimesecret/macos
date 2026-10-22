@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use loro::cursor::{Cursor, PosType, Side};
 use loro::event::{Diff, DiffEvent};
 use loro::{
-    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, Frontiers, LoroDoc, LoroText,
+    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, Frontiers, ID, LoroDoc, LoroText,
     LoroValue, StyleConfig, StyleConfigMap, TextDelta, UndoItemMeta, UndoManager, VersionVector,
 };
 use zeroize::Zeroizing;
@@ -163,8 +163,16 @@ pub(crate) struct SpanProvenance {
     pub(crate) created_s: i64,
     /// Latest change that touched the span, Unix seconds.
     pub(crate) modified_s: i64,
-    /// The created-defining change's message. Content: never a read surface.
-    pub(crate) origin: Option<String>,
+    /// The created-defining change's message, content in a wiping owner: never a read
+    /// surface (Law 0004, C17).
+    pub(crate) origin: Option<Zeroizing<String>>,
+}
+
+/// A span's stamps, and an op of the change that defines created.
+struct SpanStamps {
+    created_s: i64,
+    modified_s: i64,
+    created_by: ID,
 }
 
 /// A sheet's body as a Loro document. The chip mark is `expand: none`, so
@@ -792,17 +800,32 @@ impl SheetDocument {
     /// Earliest and latest commit stamps of a span, Unix seconds (ADR-0013).
     /// `None` for an empty span, a bad offset, or no committed characters.
     pub(crate) fn span_timestamps(&self, start_u16: usize, len_u16: usize) -> Option<(i64, i64)> {
-        self.span_provenance(start_u16, len_u16)
-            .map(|derived| (derived.created_s, derived.modified_s))
+        self.span_stamps(start_u16, len_u16)
+            .map(|stamps| (stamps.created_s, stamps.modified_s))
     }
 
     /// [`SheetDocument::span_timestamps`] plus the created-defining change's
-    /// message. Epoch-stamped changes (the compaction rebuild) do not vote.
+    /// message, copied after the scan from that one change.
     pub(crate) fn span_provenance(
         &self,
         start_u16: usize,
         len_u16: usize,
     ) -> Option<SpanProvenance> {
+        let stamps = self.span_stamps(start_u16, len_u16)?;
+        let origin = self.doc.get_change(stamps.created_by).and_then(|change| {
+            let message = change.message();
+            (!message.is_empty()).then(|| Zeroizing::new(message.to_owned()))
+        });
+        Some(SpanProvenance {
+            created_s: stamps.created_s,
+            modified_s: stamps.modified_s,
+            origin,
+        })
+    }
+
+    /// A span's stamps and the op whose change defines created, with no message read.
+    /// Epoch-stamped changes (the compaction rebuild) do not vote.
+    fn span_stamps(&self, start_u16: usize, len_u16: usize) -> Option<SpanStamps> {
         if len_u16 == 0 {
             return None;
         }
@@ -812,44 +835,36 @@ impl SheetDocument {
         let end = self
             .body
             .convert_pos(start_u16 + len_u16, PosType::Utf16, PosType::Unicode)?;
-        let mut derived: Option<SpanProvenance> = None;
+        let mut stamps: Option<SpanStamps> = None;
         for pos in start..end {
             let Some(id) = self.body.get_cursor(pos, Side::Middle).and_then(|c| c.id) else {
                 continue;
             };
-            let Some(change) = self.doc.get_change(id) else {
+            let Some(stamp) = self.doc.get_change(id).map(|change| change.timestamp) else {
                 continue;
             };
-            let stamp = change.timestamp;
             if stamp <= 0 {
                 continue;
             }
-            let message = || {
-                let message = change.message();
-                (!message.is_empty()).then(|| message.to_string())
-            };
-            derived = Some(match derived {
-                None => SpanProvenance {
+            stamps = Some(match stamps {
+                None => SpanStamps {
                     created_s: stamp,
                     modified_s: stamp,
-                    origin: message(),
+                    created_by: id,
                 },
-                Some(so_far) => {
-                    // A strictly earlier stamp takes the created role; a tie keeps the first.
-                    let origin = if stamp < so_far.created_s {
-                        message()
+                // A strictly earlier stamp takes the created role; a tie keeps the first.
+                Some(so_far) => SpanStamps {
+                    created_s: so_far.created_s.min(stamp),
+                    modified_s: so_far.modified_s.max(stamp),
+                    created_by: if stamp < so_far.created_s {
+                        id
                     } else {
-                        so_far.origin
-                    };
-                    SpanProvenance {
-                        created_s: so_far.created_s.min(stamp),
-                        modified_s: so_far.modified_s.max(stamp),
-                        origin,
-                    }
-                }
+                        so_far.created_by
+                    },
+                },
             });
         }
-        derived
+        stamps
     }
 
     /// The newest change's timestamp, Unix seconds; the epoch-stamped
@@ -1427,6 +1442,43 @@ mod tests {
         doc.commit_at(5_000);
         assert_eq!(doc.latest_timestamp(), Some(5_000));
         assert_eq!(doc.span_timestamps(0, 1), Some((5_000, 5_000)));
+    }
+
+    #[test]
+    fn a_spans_origin_is_the_message_of_its_earliest_change_wherever_it_sits() {
+        let doc = SheetDocument::new();
+        let commit = |stamp: i64, message: &str| {
+            doc.doc.commit_with(
+                CommitOptions::new()
+                    .immediate_renew(true)
+                    .timestamp(stamp)
+                    .commit_msg(message),
+            );
+        };
+        // Stamps rise with each commit, since Loro folds a backdated change into the last.
+        doc.insert(0, "bbb").unwrap();
+        commit(2_000, "two");
+        doc.insert(3, "ccc").unwrap();
+        commit(5_000, "five");
+        doc.insert(0, "aaa").unwrap();
+        commit(9_000, "nine");
+
+        let derived = doc.span_provenance(0, 9).unwrap();
+        assert_eq!((derived.created_s, derived.modified_s), (2_000, 9_000));
+        assert_eq!(
+            derived.origin.as_deref().map(String::as_str),
+            Some("two"),
+            "the earliest change sits mid span and still defines created"
+        );
+        assert_eq!(doc.span_timestamps(0, 9), Some((2_000, 9_000)));
+        assert_eq!(
+            doc.span_provenance(0, 3)
+                .unwrap()
+                .origin
+                .as_deref()
+                .map(String::as_str),
+            Some("nine")
+        );
     }
 
     #[test]

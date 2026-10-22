@@ -1012,6 +1012,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A paste's origin URL is wiped when it goes** (`companion-core`
+  0.34.4, `companion-ffi` 0.43.3, `companion-pasteboard` 0.5.0; issue
+  #256, the content buffer register's C17, C45 and C47). A paste from a
+  browser brings the page's URL, and a URL can bear a token in its
+  query, so it is content. The pasteboard read, the message the seal
+  commits and a block's frozen origin each kept it as an ordinary
+  string, so the URL could stay in memory after those copies were
+  released. Each is now a zeroizing copy at its exact size, and the
+  message is written without an intermediate JSON value. The
+  pasteboard read no longer asks Foundation for a separate UTF-8 copy
+  of the URL, the pasted text or the board's type names, and a URL or
+  text with no UTF-8 form is skipped rather than read through a null
+  pointer; a skipped text leaves the read to take an image, as an
+  absent one does. The read releases Foundation's strings when it
+  returns, instead of at the end of the event loop's turn. The
+  pasteboard item's debug output writes `[REDACTED]` for the URL.
+  Where the URL persists is unchanged. The register records what
+  Foundation and the document library still leave ordinary.
 - **A note or a name on a page past its deadline takes no edit** (app
   0.41.3, `companion-core` 0.34.3, `companion-ffi` 0.43.2; issue #310).
   Between a page's deadline and the sweep that takes it, a sealed

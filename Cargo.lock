@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.34.3"
+version = "0.34.4"
 dependencies = [
  "betlang",
  "companion-credentials",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "companion-ffi"
-version = "0.43.2"
+version = "0.43.3"
 dependencies = [
  "base64",
  "companion-core",
@@ -192,7 +192,7 @@ version = "0.1.0"
 
 [[package]]
 name = "companion-pasteboard"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "objc2",
  "objc2-app-kit",
