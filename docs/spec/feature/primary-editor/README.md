@@ -54,7 +54,9 @@ storages, or nothing (ADR-0006, ADR-0020).
   title or page content appears there (ADR-0033 Restoration).
 - **Traffic light buttons.** Standard. The green button enters full
   screen; the yellow minimises to the Dock; the red closes the window
-  (⌘W stays `page::Close`, so ⇧⌘W closes the window; see Commands).
+  (⇧⌘W closes the window; ⌘W is `page::Close` here and closes the
+  window only in Settings, Send Feedback and About, which show no page;
+  see Commands).
 - **Minimize.** A miniaturized editor window is open for ownership and
   not on screen for the keyboard (`BackdropModel.editorWindowOpen`,
   `editorWindowOnScreen`). It keeps the page while the panel rests, so
@@ -203,6 +205,14 @@ reading and not something the ADR says.
   the owner, which is today's behaviour with one window.
 - **⌘W stays `page::Close`.** The page strip is a tab strip, and
   Safari and Terminal close the tab on ⌘W.
+  Note, 2026-10-21 (issue #201): ⌘W closes what the key window shows.
+  While the panel, its key relay or the editor window is key it stays
+  `page::Close`. While Settings, About or Send Feedback is key there is
+  no page target, and the chord sends `performClose:` to that window;
+  before, it beeped with a page showing and closed the file behind that
+  window with a file showing. While a sheet, a save panel or an alert is
+  key, or no window is, the File menu's item dims and the chord closes
+  nothing, so for this item enablement does not read the owner.
 - **⇧⌘W closes the window** (`window::Close`). ADR-0033 recorded
   that the default keymap left ⇧⌘W free; B5 bound it there
   (`"cmd-shift-w": "window::Close"` in
