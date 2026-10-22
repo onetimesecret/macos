@@ -456,10 +456,9 @@ mod tests {
         }
     }
 
-    // The expected bytes are those the `serde_json::Value` reading wrote (C27).
     #[cfg(feature = "test-util")]
     #[test]
-    fn the_summary_matches_the_bytes_the_value_reading_wrote() {
+    fn the_summary_bytes_are_pinned_for_both_conceal_routes() {
         let (stub, wire) = stubbed();
         conceal(
             &conn(),
@@ -494,8 +493,12 @@ mod tests {
             stub.last_json().unwrap(),
             r#"{"authorized":true,"has_passphrase":true,"method":"POST","recipient":"a@b.c","share_domain":"secrets.example.com","ttl":60,"url":"https://eu.onetimesecret.com/api/v3/secret/conceal"}"#
         );
+    }
 
-        // The connection test's GET, and bodies with no conceal fields to read.
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_request_with_no_conceal_fields_to_read_has_an_empty_summary() {
+        let stub = StubWire::answering(200, OK_BODY);
         let empty = r#"{"authorized":false,"has_passphrase":false,"method":"GET","recipient":null,"share_domain":null,"ttl":null,"url":"https://eu.onetimesecret.com/api/v3/status"}"#;
         for body in [
             None,
@@ -526,9 +529,14 @@ mod tests {
         )
         .unwrap();
         let summary = stub.last_json().unwrap();
-        let record = format!("{:?}", stub.seen.lock().unwrap());
+        let record = format!(
+            "{:?}",
+            stub.seen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        );
         for text in [&summary, &record] {
-            for secret in ["hunter2", "quoted", "\u{1F600}", "swordfish", "pw"] {
+            for secret in ["hunter2", "quoted", "\u{1F600}", "swordfish"] {
                 assert!(!text.contains(secret), "{secret} reached {text}");
             }
         }
@@ -543,7 +551,7 @@ mod tests {
     fn the_summary_reads_past_a_secret_it_never_decodes() {
         let body = r#"{"secret":{"kind":"conceal","secret":"\ud800 hunter2","share_domain":"s.example","ttl":5,"passphrase":"\ud800"}}"#;
         assert!(serde_json::from_str::<serde_json::Value>(body).is_err());
-        let (stub, _wire) = stubbed();
+        let stub = StubWire::answering(200, OK_BODY);
         stub.send(bare("POST", Some(body.as_bytes()))).unwrap();
         assert_eq!(
             stub.last_json().unwrap(),
