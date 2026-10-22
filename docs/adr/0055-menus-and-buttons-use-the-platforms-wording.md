@@ -86,3 +86,7 @@ Menus and buttons are worded as the platform words them.
   amended is Law 0001's menu block and the
   [sealed row spec](../spec/feature/sealed-content/sealed-row-note-and-handles.md)'s
   The object's menu, both in this record's words.
+- 2026-10-21: Rule 3 applied to the captions, tooltips and spoken labels
+  that still said *conceal* as a noun or a UI verb (issue #295): the
+  Connection and Sync settings, the conceal sheet's server tooltip and
+  error line, and the strip's ↗ page tab. The API token is named as such.

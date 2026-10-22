@@ -442,6 +442,13 @@ final class EmptySlotGestureTests: XCTestCase {
             SheetTab.rungMenuTitle(hasPage: false), "Shorten the Next Page's Countdown")
     }
 
+    /// The ↗ page tab speaks the menu's verb, create, with the one-time
+    /// link as its object (ADR-0055 rule 3, issue #295).
+    func testThePageLinkTabNamesTheLinkInTheMenusWords() {
+        XCTAssertEqual(TabStripView.concealPageHelp, "create a one-time link from this page")
+        XCTAssertEqual(TabStripView.concealPageLabel, "Create one-time link from page")
+    }
+
     /// The double-click on an empty slot, in the model where the
     /// refusal lives: the first tap mints, and the hold the second tap
     /// would put on that fresh page is not the user's intent.

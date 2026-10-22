@@ -10,6 +10,11 @@ struct SyncSettingsSection: View {
 
     @State private var confirmingSignout = false
 
+    /// What signing out leaves alone. The token is the API token in the
+    /// reader's words (ADR-0055 rule 3, issue #295).
+    nonisolated static let signOutMessage =
+        "Sync stops until you sign in again. Pages, sealed chips and the API token are untouched."
+
     var body: some View {
         Section {
             Toggle("Sync between your devices", isOn: $sync.enabled)
@@ -30,9 +35,7 @@ struct SyncSettingsSection: View {
                             Button("Sign Out", role: .destructive) { sync.signOut() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text(
-                                "Sync stops until you sign in again. Pages, sealed chips and the conceal token are untouched."
-                            )
+                            Text(Self.signOutMessage)
                         }
                 } else if SyncController.showsGiveUpSignin(
                     gate: sync.status?.gate, signinPending: sync.status?.signinPending == true)
