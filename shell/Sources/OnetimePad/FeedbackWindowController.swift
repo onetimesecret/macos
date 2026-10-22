@@ -98,7 +98,7 @@ final class FeedbackDraft: ObservableObject {
 
 @MainActor
 final class FeedbackWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var draft: FeedbackDraft?
     private let levelFollower: CompanionLevelFollower
     private let serverURL: () -> String

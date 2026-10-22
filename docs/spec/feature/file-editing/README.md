@@ -571,10 +571,13 @@ Close File, and reading each chord from the keymap rather than spelling
 it in the menu code. Save, Save As and Close File are inert when the
 active tab is a page rather than a file.
 
-Note, 2026-10-21 (issue #201): the close item reads Close File only while
-the owner's window is key. While Settings, About or Send Feedback has the
-keyboard it reads Close Window, enabled when that window can close, and
-⌘W sends `performClose:` to it.
+Note, 2026-10-21 (issue #201): the close item follows the key window.
+While the owner's window is key it reads Close File on a file and Close
+Page on a page, enabled, since ⌘W closes the page there. While Settings,
+About or Send Feedback has the keyboard it reads Close Window, enabled
+when that window can close, and ⌘W sends `performClose:` to it. While a
+sheet, a save panel or an alert has the keyboard, or no window does, it
+reads Close Window, dimmed.
 
 ## Accessibility
 
