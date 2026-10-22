@@ -75,7 +75,9 @@ impl Pasteboard for SystemPasteboard {
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
 
         let content = if let Some(s) = self.pasteboard.stringForType(string_type) {
-            PasteboardContent::Text(s.to_string())
+            // A string with no whole UTF-8 form is refused; the variant takes the buffer as is.
+            let mut text = utf8_of(&s)?;
+            PasteboardContent::Text(std::mem::take(&mut *text))
         } else if let Some(data) = self.pasteboard.dataForType(png_type) {
             PasteboardContent::Image(data.to_vec())
         } else {
@@ -380,6 +382,13 @@ mod tests {
         let item = pb.read().expect("the text still reads");
         assert_eq!(item.content, PasteboardContent::Text("quoted".into()));
         assert!(item.origin_url.is_none());
+    }
+
+    #[test]
+    fn a_non_ascii_text_reads_whole() {
+        let text = "exämple 🦀 token";
+        let item = board_with(&NSString::from_str(text), None).read().unwrap();
+        assert_eq!(item.content, PasteboardContent::Text(text.into()));
     }
 
     #[test]
