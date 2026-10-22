@@ -5984,10 +5984,14 @@ public final class PageModel: ObservableObject {
     }
 
     /// Names a sealed object on page `sheet`, or clears its name given a
-    /// blank draft, and redraws its block; false when the core refused.
+    /// blank draft, and redraws its block; false when the core refused,
+    /// which settles as a refusal does (Law 0001, expiry row).
     @discardableResult
     public func setChipName(_ name: String, chip: UInt64, sheet: UInt64) -> Bool {
-        guard client.setChipName(name, chip: chip) else { return false }
+        guard client.setChipName(name, chip: chip) else {
+            settleRefusal(chip: chip, otherwise: nil)
+            return false
+        }
         markDirty()
         restateChipFace(chip, sheet: sheet)
         return true
@@ -6016,9 +6020,14 @@ public final class PageModel: ObservableObject {
     }
 
     /// One step of the note's own stack, which the page's ⌘Z never reaches.
+    /// A refusal settles as a refusal does (Law 0001, expiry row).
     public func stepNote(chip: UInt64, back: Bool) -> StepOutcome {
-        let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
-        guard let outcome, outcome.applied else { return .nothing }
+        guard let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
+        else {
+            settleRefusal(chip: chip, otherwise: nil)
+            return .nothing
+        }
+        guard outcome.applied else { return .nothing }
         countEdit(.note(chip: chip))
         markDirty()
         return StepOutcome(applied: true, selection: outcome.selection)

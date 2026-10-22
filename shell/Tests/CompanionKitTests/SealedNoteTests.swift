@@ -692,4 +692,48 @@ final class SealedNoteTests: XCTestCase {
         XCTAssertFalse(ModalSession.isRunning)
         XCTAssertEqual(ends, 0)
     }
+
+    // MARK: A page past its deadline (Law 0001, expiry row)
+
+    /// Puts the page past its deadline with no sweep: a one hour rung, two hours on.
+    private func age(_ page: Page) throws {
+        let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == page.sheet }?.id)
+        XCTAssertTrue(page.client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(page.client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        // The re-mint is dense, so the page's and the object's ids still name what the core holds.
+        XCTAssertTrue(page.client.tabs().contains { $0.pageID == page.sheet }, "the page was swept")
+        XCTAssertTrue(page.client.chipStands(page.chip), "the object was renumbered")
+    }
+
+    /// From its deadline, before any sweep, a note's batch, its undo and redo and a
+    /// rename each refuse and settle at once with the expired line.
+    func testANoteEditStepOrNamePastItsPagesDeadlineSettlesWithTheExpiredLine() throws {
+        let routes: [(name: String, run: (Page, SealedNoteEditor) -> Void)] = [
+            ("a batch", { _, editor in self.type(" monthly", into: editor) }),
+            ("undo", { page, _ in
+                XCTAssertFalse(page.model.stepEdit(.note(chip: page.chip), back: true).applied)
+            }),
+            ("redo", { page, _ in
+                XCTAssertFalse(page.model.stepEdit(.note(chip: page.chip), back: false).applied)
+            }),
+            ("a name", { page, _ in
+                XCTAssertFalse(page.model.setChipName("API_KEY", chip: page.chip, sheet: page.sheet))
+            }),
+        ]
+        for route in routes {
+            let page = try makePage()
+            page.coordinator.beginNote(at: 3)
+            let editor = try note(page)
+            type("rotate", into: editor)
+            try age(page)
+
+            route.run(page, editor)
+            drainMainQueue()
+
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, route.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet },
+                "\(route.name): the page outlived its refusal")
+        }
+    }
 }
