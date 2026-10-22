@@ -183,4 +183,21 @@ final class ConcealWireTests: XCTestCase {
             ).error,
             outage)
     }
+
+    /// The core answers a file's id with no outcome at all; the client logs that
+    /// and gives no reason, so the sheet shows its fallback (issue #295).
+    func testACoreAnswerThatDoesNotDecodeGivesNoReason() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-undecoded-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(
+            id: CompanionClient.fileIDTag | 1, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertNil(outcome.error)
+        XCTAssertEqual(outcome, CompanionClient.undecodableOutcome())
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
 }
