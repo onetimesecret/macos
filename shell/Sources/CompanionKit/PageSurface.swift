@@ -221,23 +221,11 @@ public struct PageStatusStack: View {
         _sync = ObservedObject(wrappedValue: model.sync)
     }
 
-    /// What the discard button says it will do.
-    ///
-    /// Out of the body because it is a sentence rather than a view,
-    /// and because the drafts clause makes it long enough that the
-    /// type checker stops enjoying it inline. The discard drops the
-    /// sealed content file, and the drafts are sealed under the same
-    /// key, so it takes any unsaved file edits with it. Named by
-    /// filename rather than warned about in general (decisions.md
-    /// item 14).
+    /// What the discard button says it will do, as a pure function of the
+    /// roster and the drafts refusal (decisions.md item 14).
     private var discardHelp: String {
-        let base = "Deletes the sealed file this session could not read and starts "
-            + "saving this session's pages in its place. The unreadable file "
-            + "cannot be recovered afterwards."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+        PageModel.stateDiscardHelp(
+            files: model.openFiles, draftsRefused: model.draftsRestoreRefused)
     }
 
     /// What the quit anyway button says it will do: the loss named by
