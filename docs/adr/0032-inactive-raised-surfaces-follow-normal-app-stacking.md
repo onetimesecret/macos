@@ -254,6 +254,10 @@ rows below it:
 - Those windows go behind other applications on ⌘Tab like any ordinary
   window, and the surface, keyless after the switch, sits where the table
   puts it.
+- The input is a companion window being key, not being open. An open
+  companion window that is not key is covered by a pinned or kept above
+  surface, as any window of the app is under a floating one; clicking it
+  or choosing it gives it the keyboard, and the surface lowers.
 - Full screen participation still follows altitude (ADR-0034), so a surface
   lowered under a companion window leaves other apps' full screen Spaces for
   as long as it is lowered.
