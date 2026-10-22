@@ -31,7 +31,8 @@ final class BackdropStanceTests: XCTestCase {
         // once, on the extension.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: false, keepsAbove: false
+                stance: .resting, keyed: false, pinned: false, keepsAbove: false,
+                companionKeyed: false
             ).level.rawValue,
             Int(CGWindowLevelForKey(.desktopWindow)) + 1
         )
@@ -40,7 +41,8 @@ final class BackdropStanceTests: XCTestCase {
     func testRestingStaysBelowTheDesktopIcons() {
         XCTAssertLessThan(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: false, keepsAbove: false
+                stance: .resting, keyed: false, pinned: false, keepsAbove: false,
+                companionKeyed: false
             ).level.rawValue,
             Int(CGWindowLevelForKey(.desktopIconWindow))
         )
@@ -150,7 +152,8 @@ final class BackdropStanceTests: XCTestCase {
         // matrix).
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: true, keepsAbove: false
+                stance: .resting, keyed: false, pinned: true, keepsAbove: false,
+                companionKeyed: false
             ).level,
             .floating
         )
@@ -251,7 +254,8 @@ final class BackdropStanceTests: XCTestCase {
         ) -> NSWindow.CollectionBehavior {
             stance.collectionBehavior(
                 altitude: BackdropAltitude.resolve(
-                    stance: stance, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove
+                    stance: stance, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove,
+                    companionKeyed: false
                 )
             )
         }
@@ -276,6 +280,17 @@ final class BackdropStanceTests: XCTestCase {
         XCTAssertEqual(
             behavior(.raised, keyed: false, pinned: false, keepsAbove: false),
             [.canJoinAllSpaces, .fullScreenNone]
+        )
+        // Reachable since #293: a pinned rest under a key companion is at
+        // normal, and only its full screen bit differs from the floating rest.
+        XCTAssertEqual(
+            BackdropStance.resting.collectionBehavior(
+                altitude: BackdropAltitude.resolve(
+                    stance: .resting, keyed: false, pinned: true, keepsAbove: false,
+                    companionKeyed: true
+                )
+            ),
+            [.canJoinAllSpaces, .ignoresCycle, .fullScreenNone]
         )
     }
 

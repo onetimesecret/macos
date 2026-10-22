@@ -458,7 +458,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Whether a window is one of the app's own ordinary windows:
     /// Settings, Send Feedback, or the About panel AppKit put up. ⌘W
-    /// closes one of them while it has the keyboard (#201).
+    /// closes one of them while it has the keyboard (#201), and the card
+    /// lowers under it (#293).
     func isCompanionWindow(_ window: NSWindow) -> Bool {
         Self.isCompanionWindow(
             window, settings: madeSettings?.window, feedback: madeFeedback?.window, about: aboutPanel)
@@ -477,12 +478,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private func isOwnerWindow(_ window: NSWindow) -> Bool {
         controller?.owns(window) == true || madeEditorWindow?.owns(window) == true
     }
-
-    /// Holds the About panel at the surface's keyless altitude while
-    /// it is open. Settings owns a follower of its own; this one is
-    /// the delegate's because the About panel is AppKit's and has no
-    /// controller of ours to live in.
-    private lazy var aboutLevelFollower = CompanionLevelFollower(model: model)
 
     /// Not every activation is the same raise, and one kind of launch
     /// brings no activation at all. A launch the person performs, from
@@ -588,6 +583,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 self.apply(
                     ActivationRouter.decide(.cardClick, in: self.activationContext())
                 )
+            },
+            isCompanionWindow: { [weak self] window in
+                self?.isCompanionWindow(window) ?? false
             }
         )
         self.controller = controller
@@ -1272,7 +1270,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let shortcutStatus = summonKeyFailure.map {
             "failed (\($0.stage.rawValue), OSStatus \($0.status))"
         } ?? (summonKey == nil ? "not registered" : "registered")
-        return DiagnosticsReport.capture(model: model, shortcutStatus: shortcutStatus)
+        return DiagnosticsReport.capture(
+            model: model,
+            companionKeyed: controller?.companionWindowKeyed ?? false,
+            shortcutStatus: shortcutStatus
+        )
     }
 
     @objc func exportDiagnostics() {
@@ -1357,18 +1359,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         panel?.collectionBehavior.insert(.moveToActiveSpace)
         // Kept by identity, so the lookup runs here once and not on every key event.
         aboutPanel = panel
-        // An active app keyed the panel inside the order front, before it was known.
+        // An active app keyed the panel inside the order front, before it was known,
+        // so the key window facts and the altitude keeper (#293) read it now.
         keyWindow.refresh()
-        // About sits at the surface's keyless altitude for as long as
-        // it is open, as Settings does and through the same follower
-        // (ADR-0032, #188). Otherwise About opens at .normal beneath a
-        // raised, pinned or keep above card, and a level read only at
-        // open strands it there the moment the pin is toggled on the
-        // card while About is up. The follower lets go when the panel
-        // closes and picks it up again on the next open.
-        if let panel {
-            aboutLevelFollower.follow(panel)
-        }
+        if let panel { controller?.noticeCompanionWindow(panel) }
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
@@ -1385,9 +1379,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// text. Settings has a title, and the surface and its key relay are
     /// borderless, so none of those can be mistaken for it. A sheet can:
     /// a confirmation run on the Settings window is visible, titled and
-    /// carries no title text, and following it would hand the About
-    /// follower a window that closes with the answer. So a sheet is
-    /// never the panel, and neither is the Settings window itself,
+    /// has no title text, and taking it for the panel would hand
+    /// the companion lookup a window that closes with the answer (a
+    /// sheet counts through its parent instead). So a sheet is never
+    /// the panel, and neither is the Settings window itself,
     /// whatever its title reads at the time, or an open or save panel.
     /// If a future macOS builds the panel differently the lookup finds nothing and the panel
     /// keeps the behavior it had before this existed.

@@ -96,8 +96,8 @@ This changes the final allocation; it does not retroactively wipe earlier
 | --- | --- | --- | --- |
 | F01 | `ffi_version`, `version`, `core_version` | Public version strings; **N**, static borrowed pointers | Implemented; no page content, no owned-free call. |
 | F02 | `detect_source_language` | Content-derived language slug; **N** output, **W** final owner | Implemented output classification; input bytes remain content, see S03. |
-| F03 | `test_wire_last_json` (test-util) | Redacted request summary; **N** output, **W** final owner | Implemented output; its whole-body parser is not zeroizing, see C27. |
-| F04 | `sheet_seal_from_pasteboard`, `sheet_seal_text`, `sheet_seal_from_drag` | Excerpt and name, with kind/size/note flags; **Z + W** borrowed `ChipFace` | Implemented Rust output; core excerpt/name owners and Swift `ChipInfo` remain C09–C11 / S01. |
+| F03 | `test_wire_last_json` (test-util) | Redacted request summary; **N** output, **W** final owner | Implemented output; the summary's reader skips the secret and passphrase without decoding them, C27, implemented 2026-10-21. |
+| F04 | `sheet_seal_from_pasteboard`, `sheet_seal_text`, `sheet_seal_from_drag` | Excerpt and name, with kind/size/note flags; **Z + W** borrowed `ChipFace` | Implemented Rust output; the core excerpt and name owners are C09 and C10, implemented 2026-10-21, while the note owner and Swift `ChipInfo` remain C11 / S01. |
 | F05 | `sheet_undo_action_name`, `sheet_redo_action_name`, `chip_note_undo_action_name`, `chip_note_redo_action_name`, `file_undo_action_name`, `file_redo_action_name` | Static action labels copied to owned returns; **N + W** | Implemented; Swift `ownedString` still copies labels, not page text. |
 | F06 | `chip_note_runs_json` | Note ink; **Z + W**, borrow `Note::text` through `InkRuns` | Implemented output, not Loro internals or decoded strings. |
 | F07 | `chip_note_undo`, `chip_note_redo`, `file_undo`, `file_redo` | Applied flag and UTF-16 caret/selection; **N + W** | Implemented; existing metadata `Value` serializer remains. |
@@ -156,12 +156,12 @@ silently exempting an existing content copy.
 | C19 | `Reference.name`, `WireRef.name` in `envelope` | **W**, borrow during encoding | **Partial** (2026-10-21): `Reference.name` is `Option<Zeroizing<String>>`, taken from the chip's own owner and wrapped on parse, and `WireRef.name` borrows it for the encode as the note does. On the parse an escaped name is serde's own `Cow::Owned` before the wrap (`core/src/fragment.rs`); that scratch is C21's. |
 | C20 | `Fragment.nodes` | **N** header-only vector, **W** per text owner | **Partial**: vector growth moves headers, not separately allocated ink bytes; it does not exempt C19's name or all variant contents. |
 | C21 | `Fragment::parse`, WireFragment fields | **W** direct owners plus wiping parser | **Blocked/Planned**: final ink/note move into zeroizing strings, but parse temporaries, invalid/refused input cleanup, names and serde scratch are not covered. Cut/UUID text can be **N** typed identifiers. |
-| C22 | `Copied.envelope`, `Copied.plain` | **Z + W** | **Implemented** exact/two-pass output (`core/src/fragment.rs`); wire-name clone remains C19. F08's lossy fallback construction also needs review for wiping growth. |
+| C22 | `Copied.envelope`, `Copied.plain` | **Z + W** | **Implemented** exact/two-pass output (`core/src/fragment.rs`); the wire name borrows C19's owner for the encode. F08's lossy fallback construction also needs review for wiping growth. |
 | C23 | `ActiveCut.envelope` | **W** | **Implemented** final zeroizing vector (`core/src/transfer.rs`); upstream fragment construction remains C19–C21. |
 | C24 | `copy_out_chip`, `copy_out_name_value` (`NAME=`) | **W** exact result | **Implemented** final zeroizing vectors (`core/src/store.rs`); resident source/name is separate. |
 | C25 | `sheet_payload`, chip conceal payload | **W** exact result | **Implemented** final zeroizing strings (`core/src/store.rs`, `ffi/src/lib.rs`); segment owners now wipe (C03), while Loro remains C01. |
 | C26 | Conceal request body | **Z + W** | **Implemented** two-pass request owner (`ots-client/src/api.rs`, `types.rs`); does not cover transport/library internals. |
-| C27 | `StubWire::summarize` (test-util) | **N** redacted direct visitor, **W** scratch | **Planned**: it currently parses the whole secret body into `Value` before redacting (`ffi/src/conceal.rs`). Output redaction alone does not wipe test-process content. |
+| C27 | `StubWire::summarize` (test-util) | **N** redacted direct visitor, **W** scratch | **Implemented** redacted direct visitor (2026-10-21): the summary reads the body's `secret` object through a derived struct that names `ttl`, `share_domain`, `passphrase` and `recipient`, and keeps only whether a passphrase is present; the secret's text, the passphrase and every field not named pass as `IgnoredAny`, so no `Value` or `String` is made of them (`ffi/src/conceal.rs`). serde_json 1.0.150 skips such a string in place: `SliceRead::ignore_str` (`src/read.rs`, lines 598 to 618) and `ignore_escape` (lines 1025 to 1048) advance past it, and `ignore_value` (`src/de.rs`, lines 1102 to 1215) puts only bracket bytes in its scratch, so neither the secret nor the passphrase reaches that scratch and **W** has none of theirs to wipe. `conceal.rs::the_summary_and_record_omit_an_escaped_secret_and_passphrase` checks the summary and the record's `Debug` for escaped text, `the_summary_reads_past_a_secret_it_never_decodes` reads the fields past a secret serde_json refuses to decode, `the_summary_bytes_are_pinned_for_both_conceal_routes` pins the bytes the summary writes for each route, and `a_request_with_no_conceal_fields_to_read_has_an_empty_summary` pins the connection test's GET and bodies with nothing to read. What remains is not the summary's: the request body is C26's owner, and the kept `share_domain` and `recipient` are ordinary metadata strings. The skip is serde_json 1.0.150's, and no test here would fail if a later version copied an ignored string into its scratch, so a serde_json update needs this reading again. |
 | C28 | Core snapshot and materialized block section | **Z + W** | **Implemented** application output (`core/src/persist.rs`); Loro exports captured before serialization retain C29's construction limit. |
 | C29 | `export_snapshot`, `export_updates_since` | **W** export construction and result | **Partial/Blocked**: `core/src/document.rs` wraps only returned vectors. Loro fast snapshot pre-sizes its outer result, while update export grows a plain vector; intermediate serialization is not established as zeroizing. |
 | C30 | Drafts emit | **Z + W** | **Implemented** application output (`core/src/file_persist.rs`); captures Loro exports once, so C29 remains. |
@@ -366,15 +366,20 @@ pass, caching the length per document revision is one option to evaluate.
 B4's explicit Swift boundary validation is resolved by source inspection and
 the parent-reported focused results; it is no longer a blocker. C02–C05, C07
 and C06 normalization are implemented; C06's FFI reader remains unresolved.
-C13–C16 are implemented (2026-10-21): the derived title, the tab name, the
-tab label and the ledger title are wiping owners. C31 is implemented
+C09 and C10 are implemented (2026-10-21): a sealed object's excerpt and name
+are wiping owners. C13–C16 are implemented (2026-10-21): the derived title,
+the tab name, the tab label and the ledger title are wiping owners. C27 is
+implemented (2026-10-21): the stub wire's summary skips the secret and
+passphrase without decoding them. C31 is implemented
 (2026-10-21): the restore copies names and notes into wiping owners, and a
 restored note makes no Loro document until its first edit.
 
-1. **B1 — remaining core ownership:** implement and test C08–C10, C17,
-   C19–C21 and C27: parser/refusal cleanup, resident excerpt/name/origin
-   copies and fragment wire names. Also restrict or return a
-   wiping owner from `OpenFile::bytes_to_write`; current in-tree callers are tests.
+1. **B1 — remaining core ownership:** implement and test C08, C17 and C19
+   to C21: parser/refusal cleanup, resident origin copies, the variant
+   contents of a fragment's nodes (C20), and the names a fragment parse
+   reads, whose escaped scratch C19's row leaves to C21. Also
+   restrict or return a wiping owner from `OpenFile::bytes_to_write` (C05);
+   current in-tree callers are tests.
 2. **B2 — dependency storage and parsing:** resolve C01/C29 and escaped-string
    scratch in C08/C21/C34/C41. Review Loro shared/static/inline storage and its
    whole import/export allocation graph. Wrapping returned allocations is not
