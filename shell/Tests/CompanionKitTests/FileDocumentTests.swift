@@ -71,8 +71,11 @@ final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
 
     override func persistSave(to path: String) -> Bool {
         sealedWrites += 1
-        return super.persistSave(to: path)
+        return refusesPersistSave ? false : super.persistSave(to: path)
     }
+
+    /// Answers the state file's save as a refused write does.
+    var refusesPersistSave = false
 
     override func persistRotateAndSave(to path: String) -> Bool {
         sealedWrites += 1
@@ -1764,40 +1767,103 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.saveStateForQuit(), .unsavableWithDrafts)
     }
 
-    /// Quit Anyway answers the line as a second ⌘Q would: over a file the line
-    /// never named it restates the line rather than quitting.
+    /// Quit Anyway's termination request answered as the app delegate answers it,
+    /// through `QuitPrompt.terminateReply`, so the button takes ⌘Q's path.
+    private final class DelegateReplies {
+        weak var model: PageModel?
+        var replies: [NSApplication.TerminateReply] = []
+
+        @MainActor func answer() {
+            guard let model else { return }
+            replies.append(QuitPrompt.terminateReply(flushing: model))
+        }
+    }
+
+    /// Over a file the line never named, the press restates the line, as ⌘Q does.
     func testQuitAnywayOverAFileTheLineNeverNamedRestatesTheLine() throws {
         let fixture = try makeFixture()
-        var terminations = 0
+        let delegate = DelegateReplies()
         let model = try modelOverUnreadableDrafts(
             fixture, client: DraftsCountingClient(tag: fixture.tag),
-            requestTermination: { terminations += 1 })
+            requestTermination: { delegate.answer() })
+        delegate.model = model
         let first = try write("one\n", named: "a.txt", in: fixture)
         model.openFile(at: first)
         let a = try XCTUnwrap(model.openFiles.first?.id)
         _ = model.storage(for: a)
         try type("well ", at: 0, into: a, on: model)
         XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
-        XCTAssertTrue(model.quitAnywayOffered)
 
         let second = try write("two\n", named: "b.txt", in: fixture)
         model.openFile(at: second)
         let b = try XCTUnwrap(model.openFiles.first(where: { $0.name == "b.txt" })?.id)
         _ = model.storage(for: b)
         try type("more ", at: 0, into: b, on: model)
-        XCTAssertFalse(model.quitAnywayOffered, "b.txt was never named")
 
         model.requestQuitAnyway()
-        XCTAssertEqual(terminations, 0, "the press restated the line")
+        XCTAssertEqual(delegate.replies, [.terminateCancel], "the press restated the line")
         XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
-        XCTAssertTrue(model.quitAnywayOffered)
         XCTAssertEqual(
             PageModel.quitRefusalSentence(
                 .unsavableWithDrafts, files: model.openFiles, draftsUnwritten: model.draftsDirty),
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt and b.txt will not survive the quit")
 
         model.requestQuitAnyway()
-        XCTAssertEqual(terminations, 1, "the line names b.txt now, so the press quits")
+        XCTAssertEqual(delegate.replies, [.terminateCancel, .terminateNow])
+    }
+
+    /// A refused line whose write settles at the press quits at once, as ⌘Q does,
+    /// though a file was typed into since the line went up.
+    func testQuitAnywayOverARefusedLineQuitsOnceTheWriteSettles() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let delegate = DelegateReplies()
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: client,
+            requestTermination: { delegate.answer() })
+        delegate.model = model
+        model.loadStateIfNeeded()
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.applyOps(
+            sheet: page, opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "ink")])))
+        client.refusesPersistSave = true
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused)
+
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        client.refusesPersistSave = false
+
+        model.requestQuitAnyway()
+        XCTAssertEqual(delegate.replies, [.terminateNow])
+    }
+
+    /// An unsavable content line with the drafts licence held: the press's flush
+    /// writes the drafts a new keystroke owes, so one press quits, as ⌘Q does.
+    func testQuitAnywayOverAnUnsavableContentLineQuitsInOnePressWithTheDraftsLicenceHeld() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
+        let delegate = DelegateReplies()
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: fixture.tag),
+            requestTermination: { delegate.answer() })
+        delegate.model = model
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertFalse(model.draftsRestoreRefused)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("now ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
+
+        try type("then ", at: 0, into: id, on: model)
+        model.requestQuitAnyway()
+        XCTAssertEqual(delegate.replies, [.terminateNow])
     }
 
     /// Every licence withheld, so no save comes to settle the latch: the hold a

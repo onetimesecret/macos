@@ -2866,11 +2866,6 @@ public final class PageModel: ObservableObject {
     ///
     /// The request goes through the `requestTermination` seam, `NSApp` read optionally by default.
     public func requestQuitAnyway() {
-        // Files at risk since the line went up: restate it, as a second ⌘Q would.
-        if let quitRefusal, !quitAnywayOffered {
-            offerQuitAnyway(after: quitRefusal)
-            return
-        }
         requestTermination()
     }
 
