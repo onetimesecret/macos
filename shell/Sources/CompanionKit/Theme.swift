@@ -32,6 +32,13 @@ extension Color {
     public static let cellBackground = Color(nsColor: .controlBackgroundColor)
 }
 
+extension NSFont {
+    /// The mini control size's point size, which the seat words, the
+    /// note hints and the rail's small labels wear (issue #297). The
+    /// number is the platform's, pinned at 9 by ThemeMetricsTests.
+    public static let miniSystemFontSize: CGFloat = NSFont.systemFontSize(for: .mini)
+}
+
 extension NSColor {
     /// The ember fill, the AppKit side of `Color.ember`, for the places
     /// that draw with an `NSBezierPath`: the day gutter's active rule.
