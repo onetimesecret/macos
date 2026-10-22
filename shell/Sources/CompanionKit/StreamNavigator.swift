@@ -354,6 +354,10 @@ public enum StreamNavigator {
         /// How far above its node's y a row is drawn; a day's first row rises a point more
         /// so its larger dot centres on the same line as a later row's.
         public static func rowLift(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 6 }
+        /// How far above its node's y the box the slivers keep clear of begins: a point
+        /// past the larger lift.
+        public static let rowClearance: CGFloat =
+            max(rowLift(firstOfDay: true), rowLift(firstOfDay: false)) + 1
     }
 
     /// A node with its place on the rail.
@@ -361,8 +365,10 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The box the slivers keep clear of.
+        /// The top of the sliver exclusion box, `Metrics.rowClearance` above the centre line and
+        /// `rowHeight` tall; `drawnTop`, a lift above the centre line, is where the row is drawn.
         public let rowTop: CGFloat
+        /// The height of the drawn row and of the sliver exclusion box alike.
         public let rowHeight: CGFloat
         /// Where the empty days note is drawn, when there is one.
         public let noteY: CGFloat?
@@ -537,18 +543,18 @@ public enum StreamNavigator {
         // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
         // less its own reserve, between the two.
         let lifts = nodes.map { Metrics.rowLift(firstOfDay: $0.firstOfDay) }
-        let clearances = nodes.indices.map { index in
+        let liftGaps = nodes.indices.map { index in
             index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
         }
         let span = height - Metrics.top - Metrics.bottom
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
         for index in 1..<ys.count {
-            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
+            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + liftGaps[index])
         }
         let limit = height - Metrics.bottom
         for index in ys.indices.reversed() {
             let cap = index == ys.count - 1
-                ? limit - heights[index] : ys[index + 1] - heights[index] - clearances[index + 1]
+                ? limit - heights[index] : ys[index + 1] - heights[index] - liftGaps[index + 1]
             ys[index] = min(ys[index], cap)
         }
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }
@@ -563,7 +569,8 @@ public enum StreamNavigator {
         let placed = nodes.indices.map { index in
             Placed(
                 node: nodes[index], y: nodeYs[index],
-                rowTop: nodeYs[index] - 8, rowHeight: heights[index] - reserves[index],
+                rowTop: nodeYs[index] - Metrics.rowClearance,
+                rowHeight: heights[index] - reserves[index],
                 noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
