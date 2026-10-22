@@ -192,24 +192,28 @@ final class QuitOutcomeTests: XCTestCase {
     }
 
     func testDraftsAreHeldOnlyByADirtyFileUnderAWithheldLicence() {
-        func file(_ name: String, dirty: Bool) -> FileSummary {
+        func file(_ name: String, id: UInt64, dirty: Bool) -> FileSummary {
             FileSummary(
-                id: CompanionClient.fileIDTag | 1, name: name, path: "/tmp/\(name)",
+                id: CompanionClient.fileIDTag | id, name: name, path: "/tmp/\(name)",
                 isDirty: dirty, conflict: .none, lineEnding: .lf, hasBOM: false,
                 lastEditedAt: 0, restoredFromDraft: false
             )
         }
-        let dirty = file("a.txt", dirty: true)
-        let clean = file("b.txt", dirty: false)
+        let dirty = file("a.txt", id: 1, dirty: true)
+        let clean = file("b.txt", id: 2, dirty: false)
         XCTAssertTrue(
-            PageModel.draftsHeld(draftsLicence: false, draftsDirty: true, files: [clean, dirty]))
+            PageModel.draftsHeld(
+                loaded: true, draftsLicence: false, draftsDirty: true, files: [clean, dirty]))
         XCTAssertFalse(
-            PageModel.draftsHeld(draftsLicence: true, draftsDirty: true, files: [dirty]))
+            PageModel.draftsHeld(loaded: true, draftsLicence: true, draftsDirty: true, files: [dirty]))
         XCTAssertFalse(
-            PageModel.draftsHeld(draftsLicence: false, draftsDirty: false, files: [dirty]))
+            PageModel.draftsHeld(loaded: true, draftsLicence: false, draftsDirty: false, files: [dirty]))
         // A record move owes a write, but nothing a person typed rides on it.
         XCTAssertFalse(
-            PageModel.draftsHeld(draftsLicence: false, draftsDirty: true, files: [clean]))
+            PageModel.draftsHeld(loaded: true, draftsLicence: false, draftsDirty: true, files: [clean]))
+        // A session that never loaded has no edits in memory only, as `quitOutcome` reads it.
+        XCTAssertFalse(
+            PageModel.draftsHeld(loaded: false, draftsLicence: false, draftsDirty: true, files: [dirty]))
     }
 
     func testAWithheldLicenceOverAnEmptySessionQuitsSilently() {

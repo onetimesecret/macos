@@ -2080,6 +2080,7 @@ public final class PageModel: ObservableObject {
                 terminationLatch.settle(saved: !draftsHeldInCore())
             } else {
                 // A sealed file is written, so its save settles the hold; no saving word.
+                // Per-reason latch accounting would spare the write; out of scope for #296.
                 scheduleSave(after: saveDebounce)
             }
             return
@@ -2790,26 +2791,36 @@ public final class PageModel: ObservableObject {
         return .settled
     }
 
-    /// Whether a file's unsaved edits are in memory only: the drafts licence
-    /// withheld and a dirty file open (issue #296).
+    /// Whether a file's unsaved edits are in memory only: a loaded session, the
+    /// drafts licence withheld and a dirty file open (issue #296).
     public nonisolated static func draftsHeld(
-        draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
+        loaded: Bool, draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
     ) -> Bool {
-        !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
+        loaded && !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
     /// `draftsHeld` for this session now, read by the header's drafts word; it redraws
     /// with `openFiles`, which every change to `draftsDirty` is followed by.
     public var draftsHeldInMemory: Bool {
-        Self.draftsHeld(draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles)
+        Self.draftsHeld(
+            loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+            files: openFiles)
     }
 
     /// `draftsHeld` against the core's roster, which the published one trails by an
     /// edit (issue #296). The roster is asked only when the licence leaves it open.
     private func draftsHeldInCore() -> Bool {
-        guard !draftsLicence, draftsDirty else { return false }
-        return Self.draftsHeld(draftsLicence: false, draftsDirty: true, files: client.fileRoster())
+        guard stateLoaded, !draftsLicence, draftsDirty else { return false }
+        return Self.draftsHeld(
+            loaded: true, draftsLicence: false, draftsDirty: true, files: client.fileRoster())
     }
+
+    /// The core roster the last quit flush read, until the published roster is restated.
+    private var quitRoster: [FileSummary]?
+
+    /// The files the cancelled quit's line reads: the quit's own snapshot while the
+    /// published roster trails it.
+    public var quitLineFiles: [FileSummary] { quitRoster ?? openFiles }
 
     /// The terminate path's flush: `saveState` plus the one question it
     /// cannot answer alone, whether a settled flush still left this
@@ -2818,15 +2829,19 @@ public final class PageModel: ObservableObject {
     /// write, everything recorded since the load is exactly what the
     /// quit loses, and the empty page launch itself mints is not.
     public func saveStateForQuit() -> QuitSaveOutcome {
-        // The offer and its named files read the published roster, which trails an edit.
-        refreshOpenFiles()
+        // One core snapshot for the outcome, the offer and the line, with none of a
+        // roster restatement's side effects on a quit that may be cancelled.
+        let roster = client.fileRoster()
+        quitRoster = roster
         let settled = saveState()
         return Self.quitOutcome(
             settled: settled,
             contentLicence: saveLicence,
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad,
-            draftsHeld: draftsHeldInCore()
+            draftsHeld: Self.draftsHeld(
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: roster)
         )
     }
 
@@ -2835,7 +2850,7 @@ public final class PageModel: ObservableObject {
     public var quitAnywayOffered: Bool {
         Self.quitAnswersOffer(
             offer: quitRefusal, named: quitRefusalNamed,
-            atRisk: Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty))
+            atRisk: Self.filesAtRiskAtQuit(files: quitLineFiles, draftsUnwritten: draftsDirty))
     }
 
     /// The files whose unsaved edits the cancelled quit named.
@@ -2876,7 +2891,7 @@ public final class PageModel: ObservableObject {
     public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         guard outcome != .settled else { return }
         quitRefusal = outcome
-        quitRefusalNamed = Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty)
+        quitRefusalNamed = Self.filesAtRiskAtQuit(files: quitLineFiles, draftsUnwritten: draftsDirty)
     }
 
     /// Whether the offer survives a write. A refusal's offer stands
@@ -3683,12 +3698,14 @@ public final class PageModel: ObservableObject {
             return (old.path, new.path)
         })
         openFiles = files
+        quitRoster = nil
         // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
         quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
         quitRefusal = Self.quitOfferAfterFiles(
             offer: quitRefusal,
             draftsHeld: Self.draftsHeld(
-                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: files))
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: files))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
@@ -5312,6 +5329,8 @@ public final class PageModel: ObservableObject {
                 "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
             )
         }
+        // The write the grant arms drops or replaces the file whatever the erase answered.
+        draftsDirty = true
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
     }
