@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
-use objc2::rc::Retained;
+use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardItem, NSPasteboardName, NSPasteboardNameDrag,
@@ -70,10 +70,9 @@ impl SystemPasteboard {
                 .any(|declared| names.iter().any(|name| declared.isEqualToString(name)))
         })
     }
-}
 
-impl Pasteboard for SystemPasteboard {
-    fn read(&self) -> Option<PasteboardItem> {
+    /// [`Pasteboard::read`]'s body, run inside the read's own autorelease pool.
+    fn read_in_pool(&self) -> Option<PasteboardItem> {
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let png_type: &NSPasteboardType = unsafe { NSPasteboardTypePNG };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
@@ -103,6 +102,13 @@ impl Pasteboard for SystemPasteboard {
             nspasteboard_concealed,
             origin_url,
         })
+    }
+}
+
+impl Pasteboard for SystemPasteboard {
+    fn read(&self) -> Option<PasteboardItem> {
+        // The board's autoreleased strings and data go when the read returns, unwiped.
+        autoreleasepool(|_| self.read_in_pool())
     }
 
     fn write(
