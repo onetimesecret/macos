@@ -211,7 +211,7 @@ final class QuitOutcomeTests: XCTestCase {
         // A record move owes a write, but nothing a person typed rides on it.
         XCTAssertFalse(
             PageModel.draftsHeld(loaded: true, draftsLicence: false, draftsDirty: true, files: [clean]))
-        // A session that never loaded holds nothing, as `quitOutcome` reads it.
+        // A session that never loaded has no edits in memory only, as `quitOutcome` reads it.
         XCTAssertFalse(
             PageModel.draftsHeld(loaded: false, draftsLicence: false, draftsDirty: true, files: [dirty]))
     }

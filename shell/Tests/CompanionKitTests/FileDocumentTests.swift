@@ -1657,7 +1657,7 @@ final class FileDocumentTests: XCTestCase {
         model.openFile(at: url)
         let id = try XCTUnwrap(model.openFiles.first?.id)
         _ = model.storage(for: id)
-        XCTAssertFalse(model.draftsHeldInMemory, "an open file with nothing typed holds nothing")
+        XCTAssertFalse(model.draftsHeldInMemory, "an open file with nothing typed has nothing at risk")
         try type("well ", at: 0, into: id, on: model)
         XCTAssertTrue(model.draftsHeldInMemory)
 
@@ -1800,9 +1800,9 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.pendingFileClose?.fileID, a, "the cancelled quit withdrew nothing")
     }
 
-    /// A session that never loaded holds no file's edits: the hold and the quit
-    /// outcome agree, as `quitOutcome` reads such a session.
-    func testASessionThatNeverLoadedHoldsNoFileEdits() throws {
+    /// A session that never loaded keeps no hold over a file's edits: the hold and the
+    /// quit outcome agree, as `quitOutcome` reads such a session.
+    func testASessionThatNeverLoadedKeepsNoHoldOverFileEdits() throws {
         let fixture = try makeFixture()
         let model = makeModel(
             fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: fixture.tag))
