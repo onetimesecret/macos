@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Seat words and note hints take their size from the platform** (app
-  0.40.8; issue #297). The thirteen places that spelled the mini font
+  0.40.8; issue #297). The twelve places that spelled the mini font
   size as a literal 9 now read `NSFont.systemFontSize(for: .mini)`
   through one `NSFont.miniSystemFontSize`, and a test pins that number
   at 9 so a platform change is noticed. Nothing on screen changes.
@@ -1042,7 +1042,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the line stands asks rather than settling, naming the files. A
   second ⌘Q quits anyway, unless edits the line did not name have
   appeared since, which the line then names.
-
+- **A restored or pasted note that nobody edits is wiped when it goes**
+  (`companion-core` 0.34.2; issue #256, the content buffer register's
+  C11 and C31). A note brought back by a relaunch, a paste or a clone
+  was put in a document at once, and that document's storage is not
+  wiped, so its text could stay in memory after the object was removed
+  or the page expired, though nobody had touched the note. Such a note
+  now rests as a zeroizing copy of its text, and only an edit puts it
+  in a document; undo and redo after that edit work as before. The
+  names a restore reads were already zeroizing owners. The register
+  records what an edited note's document and the restored cut still
+  leave ordinary.
 - **⌘W closes what the key window shows** (app 0.40.5; issue #201).
   While Settings, About or Send Feedback had the keyboard, ⌘W beeped
   with a page showing and closed the file behind that window with a
@@ -1055,7 +1065,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing; with no key window it used to read Close File and close the
   file on the resting surface. The Window menu's ⇧⌘W item dims when the
   key window cannot close, on the same fact as the File menu's.
-
 - **A Timeline too dense to fit scrolls instead of climbing over the
   Pad heading** (app 0.40.4; issue #277). The side Timeline packed its
   rows down from the top and then pulled them up from the foot, so a

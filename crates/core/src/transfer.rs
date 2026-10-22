@@ -1097,6 +1097,10 @@ mod tests {
         let face = store.sheet(id).unwrap().chip(clone).unwrap();
         assert_eq!(face.name(), Some("API_KEY"));
         assert!(face.has_note());
+        assert!(
+            face.note.as_ref().and_then(Note::resting).is_some(),
+            "the pasted note was made a document"
+        );
         assert_eq!(&**store.note_text(clone).unwrap(), "rotate monthly");
         assert!(
             !store.note_can_undo(clone),
