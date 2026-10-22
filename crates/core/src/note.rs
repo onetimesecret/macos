@@ -248,6 +248,18 @@ mod tests {
         assert!(!note.can_undo());
     }
 
+    /// The note's every answer beside the document's.
+    fn same_answers(note: &Note, document: &SheetDocument, context: &str) {
+        let text = ink::text_of(document);
+        assert_eq!(note.text().as_str(), text.as_str(), "{context}");
+        assert_eq!(note.can_undo(), document.can_undo(), "{context}");
+        assert_eq!(note.can_redo(), document.can_redo(), "{context}");
+        let undo = document.undo_action_name();
+        assert_eq!(note.undo_action_name(), undo, "{context}");
+        let redo = document.redo_action_name();
+        assert_eq!(note.redo_action_name(), redo, "{context}");
+    }
+
     /// The document a note becomes answers as one made at once would, the selections given
     /// at runs' ends included, so resting changes no step (ADR-0043 point 4).
     #[test]
@@ -256,10 +268,13 @@ mod tests {
             location_u16,
             length_u16: 0,
         };
-        let edit = EditSelection {
-            before: at(4),
-            after: at(6),
+        let moved = |before, after| {
+            Some(EditSelection {
+                before: at(before),
+                after: at(after),
+            })
         };
+        let delete = |pos_u16, len_u16| vec![EditOp::Delete { pos_u16, len_u16 }];
         let runs: [&[Option<TextSelection>]; 6] = [
             &[],
             &[None],
@@ -268,27 +283,63 @@ mod tests {
             &[Some(at(2)), Some(at(4)), None],
             &[Some(at(4)), Some(at(6)), Some(at(99))],
         ];
+        let typing = EditIntent::Typing;
+        let deletion = EditIntent::Deletion;
+        // Each text, then the batches one group sends it, with their intents and selections.
+        let edits = [
+            (RESTED, vec![(typed(4, "!!"), typing, None)]),
+            (RESTED, vec![(typed(4, "!!"), typing, moved(4, 6))]),
+            ("", vec![(typed(0, "first"), typing, moved(0, 5))]),
+            (RESTED, vec![(delete(4, 3), deletion, moved(7, 4))]),
+            (
+                RESTED,
+                vec![
+                    (delete(6, 2), deletion, None),
+                    (delete(4, 3), deletion, None),
+                ],
+            ),
+            (
+                RESTED,
+                vec![
+                    (typed(4, "a"), typing, moved(4, 5)),
+                    (typed(5, "b"), typing, moved(5, 6)),
+                ],
+            ),
+            (
+                RESTED,
+                vec![
+                    (delete(2, 0), typing, moved(2, 2)),
+                    (typed(4, "!!"), typing, None),
+                ],
+            ),
+            (
+                RESTED,
+                vec![
+                    (delete(2, 0), typing, moved(99, 2)),
+                    (typed(4, "!!"), typing, None),
+                ],
+            ),
+        ];
         for ends in runs {
-            for selection in [None, Some(edit)] {
-                let mut note = Note::holding(RESTED);
-                let mut document = ink::document_holding(RESTED);
+            for (text, batches) in &edits {
+                let mut note = Note::holding(text);
+                let mut document = ink::document_holding(text);
                 for end in ends {
                     note.finish_editing_group(*end);
                     document.finish_editing_group(*end);
                 }
                 assert!(note.resting().is_some(), "a run's end made a document");
-                let ops = typed(4, "!!");
-                assert_eq!(
-                    note.apply(&ops, EditIntent::Typing, selection),
-                    ink::apply_batch(&mut document, &ops, EditIntent::Typing, selection),
-                );
-                for back in [true, false, true] {
-                    assert_eq!(
-                        note.step(back),
-                        ink::step(&mut document, back),
-                        "ends {ends:?}, selection {selection:?}, back {back}"
-                    );
-                    assert_eq!(note.text().as_str(), ink::text_of(&document).as_str());
+                for (ops, intent, selection) in batches {
+                    let context = format!("{text:?}, ends {ends:?}, batch {ops:?}");
+                    let answer = ink::apply_batch(&mut document, ops, *intent, *selection);
+                    assert_eq!(note.apply(ops, *intent, *selection), answer, "{context}");
+                    same_answers(&note, &document, &context);
+                }
+                for back in [true, false, true, true, false, false] {
+                    let context = format!("{text:?}, ends {ends:?}, back {back}");
+                    let step = ink::step(&mut document, back);
+                    assert_eq!(note.step(back), step, "{context}");
+                    same_answers(&note, &document, &context);
                 }
             }
         }

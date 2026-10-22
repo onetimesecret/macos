@@ -2372,6 +2372,40 @@ mod tests {
         );
     }
 
+    /// A note that rests is written back as the field it came from, and rests again after
+    /// the next restore (Law 0004, C31).
+    #[test]
+    fn a_resting_note_is_written_back_as_it_came_and_rests_after_the_next_restore() {
+        let (mut store, clock) = store();
+        let uuid = ItemId::random();
+        let note = "kept \u{1F600} beside it";
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field(note));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let written = store.snapshot(1_000_000);
+        assert!(
+            contains(&written, &tail),
+            "the note's field changed on the way back"
+        );
+
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&written, 1_000_000).unwrap(), 1);
+        let chip = revived.sheets().next().unwrap().chips().next().unwrap();
+        let rests = chip.note.as_ref().and_then(Note::resting);
+        assert_eq!(
+            rests.map(|text| text.as_str()),
+            Some(note),
+            "it no longer rests"
+        );
+        assert_eq!(
+            *revived.snapshot(1_000_000),
+            *written,
+            "a second round trip moved the bytes"
+        );
+    }
+
     #[test]
     fn an_unknown_note_flag_is_malformed_and_the_store_is_untouched() {
         let (mut store, survivor) = occupied();

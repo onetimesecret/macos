@@ -3101,6 +3101,65 @@ mod tests {
         );
     }
 
+    /// A restored note ends a run and then takes an edit through the store's routes, and the
+    /// caret the run's end gave comes back with the redo (Law 0004, C31).
+    #[test]
+    fn a_restored_note_ends_a_run_and_then_takes_an_edit() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        write_note(&mut store, chip, CHIP_NOTE);
+        let mut revived = store_on(clock.clone());
+        let snapshot = store.snapshot(1_000_000);
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let chip = revived
+            .sheets()
+            .next()
+            .unwrap()
+            .chips()
+            .next()
+            .unwrap()
+            .id();
+        let rests = |store: &SheetStore<ManualClock>| {
+            let note = store.chip_home(chip).unwrap().1.note.as_ref();
+            note.is_some_and(|note| note.resting().is_some())
+        };
+        let caret = TextSelection {
+            location_u16: 5,
+            length_u16: 0,
+        };
+        assert!(revived.finish_note_editing_group(chip, None));
+        assert!(revived.finish_note_editing_group(chip, Some(caret)));
+        assert!(rests(&revived), "a run's end made the note's document");
+        assert!(!revived.note_can_undo(chip));
+
+        assert!(revived.apply_note_ops(chip, &typed(5, ","), EditIntent::Typing, None));
+        assert!(!rests(&revived), "the edit never reached a document");
+        assert_eq!(
+            note_of(&revived, chip),
+            "Wq9Fj, Zx7Kp Marmot Burrow Vq2Ld Gh5Ty"
+        );
+        assert_eq!(revived.note_undo_action_name(chip), Some("Typing"));
+        assert!(revived.undo_note(chip).unwrap().applied);
+        assert_eq!(note_of(&revived, chip), CHIP_NOTE);
+        let redo = revived.redo_note(chip).unwrap();
+        assert!(redo.applied);
+        assert_eq!(
+            note_of(&revived, chip),
+            "Wq9Fj, Zx7Kp Marmot Burrow Vq2Ld Gh5Ty"
+        );
+        let past_the_comma = TextSelection {
+            location_u16: 6,
+            length_u16: 0,
+        };
+        assert_eq!(
+            redo.selection_u16,
+            Some(past_the_comma),
+            "the run's caret, moved past the comma typed at it, did not come back"
+        );
+        assert!(!revived.finish_note_editing_group(ChipId::from_raw(4_242), None));
+    }
+
     #[test]
     fn after_the_page_expires_the_snapshot_holds_no_note() {
         let (mut store, clock) = store();
