@@ -139,7 +139,8 @@ mod tests {
     }
 
     /// A held note is one wiping copy at its exact size (Law 0004, C31): a plain `String`
-    /// would not compile here, and a read, a step, a run's end or a refusal makes no document.
+    /// would not compile here, and a read, a step, a run's end or a sentinel's refusal makes
+    /// no document.
     #[test]
     fn a_held_note_rests_as_one_wiping_copy_until_its_first_edit() {
         let mut note = Note::holding(HELD);
