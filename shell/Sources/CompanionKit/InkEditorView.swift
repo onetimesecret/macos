@@ -3349,7 +3349,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)),
                   (view === textView && writesFile) || (view as? AskingTextView)?.mayReadOut == true
             else { return false }
-            model.openURL(url)
+            model.openExternal(url)
             return true
         }
 
