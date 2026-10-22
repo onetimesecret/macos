@@ -2176,7 +2176,7 @@ public final class PageModel: ObservableObject {
         )
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
-        guard licensed || draftsDirty else { return true }
+        guard licensed || (draftsDirty && draftsLicence) else { return true }
         // Both files rest in this directory, so one preparation covers
         // them: it is created if missing, and marked so Time Machine
         // leaves the ciphertext generations alone (`.noindex` in the
@@ -2732,6 +2732,7 @@ public final class PageModel: ObservableObject {
     /// as saving: a record that misses this write is mended again at
     /// the next launch, and nothing a person typed rides on it.
     private func markDraftsRecordMoved() {
+        guard draftsLicence else { return }
         draftsDirty = true
         scheduleSave(after: saveDebounce)
     }

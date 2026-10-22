@@ -46,6 +46,8 @@ final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
 
     private(set) var draftsWrites = 0
     private(set) var draftsErasures = 0
+    private(set) var sealedWrites = 0
+    private(set) var emptinessProbes = 0
     var eraseAnswer = EraseAnswer.real
 
     init(tag: String) {
@@ -60,6 +62,26 @@ final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
             _ = super.persistErase(at: path)
             return false
         }
+    }
+
+    override func emptiness() -> StoreEmptiness? {
+        emptinessProbes += 1
+        return super.emptiness()
+    }
+
+    override func persistSave(to path: String) -> Bool {
+        sealedWrites += 1
+        return super.persistSave(to: path)
+    }
+
+    override func persistRotateAndSave(to path: String) -> Bool {
+        sealedWrites += 1
+        return super.persistRotateAndSave(to: path)
+    }
+
+    override func ledgerSave(to path: String) -> Bool {
+        sealedWrites += 1
+        return super.ledgerSave(to: path)
     }
 
     override func draftsSave(to path: String) -> Bool {
@@ -1337,6 +1359,38 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertFalse(model.draftsDirty)
     }
 
+    /// A restore that opens replaces the roster the core held, so a file opened
+    /// and typed into before it leaves the roster and owes no write.
+    func testASuccessfulRestoreReplacesEditsTypedBeforeItAndOwesNoWrite() throws {
+        let fixture = try makeFixture()
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: first)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState(), "a readable drafts file naming a.txt")
+
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: second)
+        let early = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: early)
+        try type("more ", at: 0, into: early, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.draftsRestoreRefused)
+        XCTAssertEqual(model.openFiles.map(\.name), ["a.txt"])
+        XCTAssertFalse(model.draftsDirty, "nothing the restored roster lacks is owed")
+        let back = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertEqual(model.storage(for: back).string, "well one\n")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(client.draftsWrites, 0)
+    }
+
     /// The content file's rule, applied to the drafts: a session that
     /// could not read an existing drafts file does not write over it.
     func testASaveAfterAFailedRestoreOfAnExistingDraftsFileWritesNothing() throws {
@@ -1475,6 +1529,32 @@ final class FileDocumentTests: XCTestCase {
         relaunched.loadStateIfNeeded()
         let back = try XCTUnwrap(relaunched.openFiles.first?.id)
         XCTAssertEqual(relaunched.storage(for: back).string, "well one\n")
+    }
+
+    /// Every licence withheld: a file's edits mark the drafts dirty, and the
+    /// save stands down before it probes the store or writes anything.
+    func testASessionWithEveryLicenceWithheldWritesAndProbesNothing() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let stranger = DraftsCountingClient(tag: "stranger-\(UUID().uuidString)")
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.ledgerRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsDirty)
+
+        let probes = stranger.emptinessProbes
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(stranger.emptinessProbes, probes)
+        XCTAssertEqual(stranger.sealedWrites, 0)
+        XCTAssertEqual(stranger.draftsWrites, 0)
+        XCTAssertEqual(stranger.draftsErasures, 0)
     }
 
     /// A readable state file beside a drafts file that fails the core's envelope
