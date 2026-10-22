@@ -272,9 +272,8 @@ public struct PageStatusStack: View {
             .padding(.vertical, 4)
         }
         if model.draftsRestoreRefused {
-            // The drafts counterpart of the content banner (issue #296):
-            // standing, and shown ahead of any saved word, because the
-            // drafts leg settles without writing while it stands.
+            // The drafts counterpart of the content banner (issue #296), standing
+            // for as long as the drafts leg settles without writing.
             HStack(spacing: 8) {
                 Text("the existing drafts file could not be read, so unsaved edits to open files are not kept as drafts")
                     .font(.system(.caption, design: .monospaced))

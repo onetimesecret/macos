@@ -1305,9 +1305,8 @@ final class FileDocumentTests: XCTestCase {
 
     // MARK: Read before write (issue #296)
 
-    /// A model that has not restored the drafts file does not write
-    /// one, whatever the app layer's call order: the save settles, the
-    /// write stays owed, and the restore that follows grants it.
+    /// A save asked before the drafts restore, with no drafts file on disk, writes
+    /// none; the restore that follows grants the write.
     func testASaveBeforeTheRestoreWritesNoDraftsFile() throws {
         let fixture = try makeFixture()
         let client = DraftsCountingClient(tag: fixture.tag)
@@ -1333,9 +1332,8 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertFalse(model.draftsDirty)
     }
 
-    /// The edits typed before the restore are not left waiting on the
-    /// next keystroke: the restore that grants the licence arms their
-    /// write, over a state file that restored and so armed nothing.
+    /// The restore that grants the licence arms the write edits typed before it
+    /// owe, over a state file that restored and so armed nothing.
     func testTheRestoreThatGrantsTheLicenceArmsTheWriteEarlierEditsOwe() throws {
         let fixture = try makeFixture()
         let owner = makeModel(fixture, panels: ScriptedFilePanels())

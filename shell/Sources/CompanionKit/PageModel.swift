@@ -656,10 +656,8 @@ public final class PageModel: ObservableObject {
     /// because no page is at stake.
     @Published public private(set) var ledgerRestoreRefused = false
 
-    /// The drafts file existed and would not open, so the drafts
-    /// licence is withheld and no unsaved file edit reaches disk until
-    /// the user discards that file (`clearUnreadableDraftsFile`), or
-    /// the state file with it. Standing for the session, as above.
+    /// The drafts file existed and would not open, so the drafts licence is
+    /// withheld until a discard grants it (`clearUnreadableDraftsFile`).
     @Published public private(set) var draftsRestoreRefused = false
 
     /// The write lifecycle the surface shows (issue #49). Moves in
@@ -1692,13 +1690,8 @@ public final class PageModel: ObservableObject {
     /// background section 9).
     private var ledgerLicence = false
 
-    /// The same licence for the drafts file, by the same truth table.
-    /// False until `restoreDrafts` has run, so a save that is asked
-    /// before the restore writes nothing over a file nobody has read
-    /// yet (issue #296); withheld afterwards when an existing drafts
-    /// file would not open. Two ways back, both the user's word: the
-    /// drafts discard (`clearUnreadableDraftsFile`) and the content
-    /// discard (`clearUnreadableStateFile`).
+    /// The drafts file's licence by the same truth table: false until `restoreDrafts`
+    /// has run, withheld over a drafts file that would not open (issue #296).
     private var draftsLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
@@ -2760,9 +2753,7 @@ public final class PageModel: ObservableObject {
     /// quit regardless of the licence. A settled flush over a withheld
     /// content licence also cancels it when the session accumulated work
     /// after load; an untouched session under a withheld licence may
-    /// terminate. A settled flush that left a file's unsaved edits in
-    /// memory under a withheld drafts licence cancels it too, after the
-    /// content arm, which names the drafts along with the pages. What a
+    /// terminate. The drafts arm follows the content arm (issue #296). What a
     /// cancelled quit does next is `QuitPrompt`'s.
     public nonisolated static func quitOutcome(
         settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool,
@@ -2774,9 +2765,8 @@ public final class PageModel: ObservableObject {
         return .settled
     }
 
-    /// Whether the drafts leg is leaving a file's unsaved edits in
-    /// memory: the licence withheld and a dirty file with edits nobody
-    /// saved (issue #296). A record move alone is not at stake.
+    /// Whether a file's unsaved edits are in memory only: the drafts licence
+    /// withheld and a dirty file open (issue #296).
     public nonisolated static func draftsHeld(
         draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
     ) -> Bool {
