@@ -19,6 +19,24 @@ B4 routes of issue #210. The panel-off checks for #215 were added
 after that run and remain unverified. Rows with an empty result have
 not been run.
 
+## Current launch and activation checks (ADR-0059)
+
+ADR-0059 replaces older rows below that expect every Cmd-Tab or Dock click to select the editor, rest a raised panel, or use a two-second launch classification. Those route expectations are historical; their recorded results do not verify the replacement. Other geometry, stacking and full-screen checks remain applicable.
+
+These are manual checks for an explicitly selected development fixture, separate from any app already in use. Automated probes require injected temporary state and in-memory credentials; a separate bundle identity by itself does not meet that requirement. Record the macOS version, build revision, route and result. Repeat on macOS 13 and on a current macOS release; a deployment-target build alone does not execute the older platform.
+
+- [ ] **Foreground cold launch:** quit the development app, then open its bundle normally. Exactly one editor opens; Settings remains absent. Run once with the ambient panel enabled and once disabled.
+- [ ] **Background cold launch:** quit, then `open -g` the development bundle. Settings and the editor remain absent; the ambient panel follows its preference. A first-use Keychain introduction is a separate dialog and should be acknowledged before repeating this check.
+- [ ] **Return to Settings:** open Settings, switch to another app, then Cmd-Tab back. Settings retains the keyboard; an editor is neither created nor reordered ahead of it. Repeat with About and Send Feedback.
+- [ ] **Return to the editor:** move the roll into history, switch away and back. The caret, page and scroll position remain. Repeat with the editor minimized; Cmd-Tab does not deminiaturize it.
+- [ ] **No ordinary window:** close the editor and companions, switch away, then Cmd-Tab back. No editor or Settings opens. Click the Dock icon: the editor opens once without moving the selected page or roll to today.
+- [ ] **Reopen with Settings visible:** leave Settings visible and close the editor. Click the Dock icon and repeat with `open` on the running bundle. Settings remains the ordinary destination and no editor opens.
+- [ ] **Reopen a minimized editor:** minimize the editor and leave no other ordinary window visible. Click the Dock icon. The existing editor deminiaturizes; no duplicate editor or Settings appears.
+- [ ] **Explicit Settings:** exercise the application menu, configured shortcut, status-item menu and a pane-specific Settings button. The same Settings window opens, including the requested pane. Close and repeat. With the Settings keymap binding removed, the menu item remains clickable and advertises no shortcut.
+- [ ] **Finder launch:** quit, then open a text file using the development bundle. The file is selected once; no Settings window or today-anchor change follows. Repeat with the app already running.
+- [ ] **Menus:** verify Undo/Redo in the editor and a Settings field, native Cut/Copy/Paste/Find, file command enablement, disabled ambient-panel command when the preference is off, Window menu registration, Help, Services, and an unbound app-specific shortcut.
+- [ ] **Explicit presentations and modals:** switch with Open in Window, Show Ambient Panel, the hotkey and status item; open and cancel file panels and quit confirmation. Each explicit route returns to its intended owner without opening Settings.
+
 ## Scope after ADR-0033
 
 ADR-0033 separated the primary editor from the ambient panel. What the
