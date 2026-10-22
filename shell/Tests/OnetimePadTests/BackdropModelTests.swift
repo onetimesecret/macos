@@ -242,19 +242,19 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: "Maximize", operatingSystemMajor: 15),
             .zoom)
-        // The setting's own label for the stretch reads as the stretch too.
-        XCTAssertEqual(
-            BackdropModel.titleBarDoubleClick(preference: "Zoom", operatingSystemMajor: 15), .zoom)
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: "Minimize", operatingSystemMajor: 15),
             .doNothing, "a card cannot miniaturise")
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: "None", operatingSystemMajor: 15),
             .doNothing)
+        // The setting's label is not a stored value anything establishes, so it reads as unset.
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Zoom", operatingSystemMajor: 15), .fill)
     }
 
     func testAnUnsetPreferenceReadsAsTheSystemDefaultForTheRelease() {
-        // The system moved its default from Zoom to Fill in macOS 15.
+        // Fill from macOS 15 and Zoom before: the code's reading, pending a hardware check.
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: nil, operatingSystemMajor: 14), .zoom)
         XCTAssertEqual(

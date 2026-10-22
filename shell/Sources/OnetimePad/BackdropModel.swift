@@ -164,9 +164,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// always owns.
     private let panelMayOwn: Bool
 
-    /// The system's title bar double-click preference, read on each
-    /// double-click so a change in System Settings takes at once. Seamed
-    /// for tests; the shipping reader is the global domain's own key.
+    /// The system's title bar double-click preference, asked at each double-click.
     private let titleBarDoubleClickPreference: () -> String?
 
     /// The macOS major version the preference's default depends on.
@@ -890,14 +888,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         case doNothing
     }
 
-    /// The preference's four values and its default, which the system
-    /// moved from Zoom to Fill in macOS 15 (issue #298).
+    /// The preference's four values, and Fill from macOS 15 and Zoom before
+    /// when unset: an interpretation pending a hardware check (issue #298).
     nonisolated static func titleBarDoubleClick(
         preference: String?, operatingSystemMajor: Int
     ) -> TitleBarDoubleClick {
         switch preference {
         case "Fill": .fill
-        case "Maximize", "Zoom": .zoom
+        case "Maximize": .zoom
         case "Minimize", "None": .doNothing
         default: operatingSystemMajor >= 15 ? .fill : .zoom
         }
