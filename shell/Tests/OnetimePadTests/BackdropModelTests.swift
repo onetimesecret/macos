@@ -242,6 +242,9 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: "Maximize", operatingSystemMajor: 15),
             .zoom)
+        // The setting's own label for the stretch reads as the stretch too.
+        XCTAssertEqual(
+            BackdropModel.titleBarDoubleClick(preference: "Zoom", operatingSystemMajor: 15), .zoom)
         XCTAssertEqual(
             BackdropModel.titleBarDoubleClick(preference: "Minimize", operatingSystemMajor: 15),
             .none, "a card cannot miniaturise")

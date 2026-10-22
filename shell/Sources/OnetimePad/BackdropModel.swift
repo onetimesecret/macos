@@ -892,7 +892,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     ) -> TitleBarDoubleClick {
         switch preference {
         case "Fill": .fill
-        case "Maximize": .zoom
+        case "Maximize", "Zoom": .zoom
         case "Minimize", "None": .none
         default: operatingSystemMajor >= 15 ? .fill : .zoom
         }
