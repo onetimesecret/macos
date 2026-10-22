@@ -5,7 +5,7 @@ import XCTest
 @testable import CompanionKit
 @testable import OnetimePad
 
-/// The Help menu's first item is the app's help (issue #294): its title
+/// The Help menu's product help item (issue #294), first among the app's own: its title
 /// names the product, its chord is the keymap's `app::Help`, and it opens
 /// the docs through the model's `openExternal` seam, not the shared workspace.
 @MainActor
@@ -119,6 +119,39 @@ final class HelpMenuTests: XCTestCase {
         XCTAssertEqual(menus.help.numberOfItems, count)
         XCTAssertEqual(
             menus.help.items.filter { $0.action == #selector(BackdropAppDelegate.openHelp(_:)) }.count, 1)
+    }
+
+    /// The install runs again on every activation, so an item a menu
+    /// rebuild dropped comes back, with one separator and no second copy.
+    func testInstallingAgainAfterTheItemIsDroppedPutsItBack() throws {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let menus = makeMainMenu()
+        install(in: menus.main, target: delegate)
+        let help = try XCTUnwrap(menus.help.items.first)
+        menus.help.removeItem(help)
+
+        install(in: menus.main, target: delegate)
+
+        XCTAssertEqual(
+            menus.help.items.map { $0.isSeparatorItem ? "-" : $0.title },
+            ["OnetimePad Help", "-", "Export Diagnostics…"])
+        install(in: menus.main, target: delegate)
+        XCTAssertEqual(menus.help.numberOfItems, 3)
+    }
+
+    /// An item drawn by a view of its own stays above ours.
+    func testAnItemWithAViewStaysAboveTheHelpItem() throws {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let menus = makeMainMenu()
+        let viewItem = NSMenuItem()
+        viewItem.view = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 20))
+        menus.help.insertItem(viewItem, at: 0)
+
+        install(in: menus.main, target: delegate)
+
+        XCTAssertTrue(menus.help.items[0] === viewItem)
+        XCTAssertEqual(menus.help.items[1].title, "OnetimePad Help")
+        XCTAssertTrue(menus.help.items[2].isSeparatorItem)
     }
 
     func testAnEmptyHelpMenuGetsNoSeparator() {
