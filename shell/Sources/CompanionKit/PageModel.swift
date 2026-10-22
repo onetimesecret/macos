@@ -1658,7 +1658,8 @@ public final class PageModel: ObservableObject {
     ///
     /// Readable so the cancelled quit's line can tell a drafts leg
     /// that failed from one that landed before another leg refused.
-    private(set) var draftsDirty = false
+    /// Published, so the header's drafts word redraws with it.
+    @Published private(set) var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -2330,7 +2331,8 @@ public final class PageModel: ObservableObject {
         // and the dirtiness stays with the edits in memory (issue #296).
         guard draftsLicence else { return true }
         let path = FormFactor.draftsFileURL(in: directory).path
-        let wrote = openFiles.isEmpty
+        // The core's roster, which the published one trails: erase only with no file open there.
+        let wrote = client.fileRoster().isEmpty
             ? client.draftsErase(at: path)
             : client.draftsSave(to: path)
         if wrote {
@@ -2799,8 +2801,7 @@ public final class PageModel: ObservableObject {
         loaded && !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
-    /// `draftsHeld` for this session now, read by the header's drafts word; it redraws
-    /// with `openFiles`, which every change to `draftsDirty` is followed by.
+    /// `draftsHeld` for this session now, read by the header's drafts word.
     public var draftsHeldInMemory: Bool {
         Self.draftsHeld(
             loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
@@ -2939,15 +2940,13 @@ public final class PageModel: ObservableObject {
         offer == .unsavableWithDrafts && !draftsHeld ? nil : offer
     }
 
-    /// What the quit anyway button says it costs: the drafts arm names
-    /// the files alone, because its pages are on disk.
+    /// What the quit anyway button says it costs, the loss its line names: the drafts
+    /// arm names the files alone, because its pages are on disk.
     public nonisolated static func quitAnywayHelp(
-        _ outcome: QuitSaveOutcome, files: [FileSummary]
+        _ outcome: QuitSaveOutcome, files: [FileSummary], draftsUnwritten: Bool
     ) -> String {
-        guard outcome == .unsavableWithDrafts else {
-            let base = "Quits now. The pages this session could not save are lost."
-            guard let atRisk = draftsAtRiskSentence(files: files) else { return base }
-            return base + " " + atRisk
+        if outcome != .unsavableWithDrafts {
+            return "Quits now. This session's \(lostAtQuit(files: files, draftsUnwritten: draftsUnwritten)) are lost."
         }
         let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
         guard !dirty.isEmpty else { return "Quits now." }
@@ -5309,6 +5308,8 @@ public final class PageModel: ObservableObject {
         }
         // The write the grant arms drops or replaces the file whatever the erase answered.
         draftsDirty = true
+        // Restated as the sibling discards restate theirs, dropping the last quit's snapshot.
+        refreshOpenFiles()
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
     }
