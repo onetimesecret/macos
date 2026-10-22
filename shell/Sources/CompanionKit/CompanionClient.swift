@@ -1,4 +1,5 @@
 import Foundation
+import os
 import CompanionCore
 
 
@@ -1601,15 +1602,71 @@ public class CompanionClient: @unchecked Sendable {
         if let ttlSecs { object["ttl_secs"] = ttlSecs }
         if !passphrase.isEmpty { object["passphrase"] = passphrase }
         if !recipient.isEmpty { object["recipient"] = recipient }
-        guard let json = Self.encodeJSON(object) else {
-            return ConcealOutcome(ok: false, receiptId: nil, error: "malformed conceal options")
-        }
+        guard let json = Self.encodeJSON(object) else { return Self.unencodableOptionsOutcome() }
         let outcome = json.withCString { opts in
             decodeOwnedJSON(ConcealOutcome.self, from: route(handle, id, opts))
         }
-        return outcome
-            ?? ConcealOutcome(ok: false, receiptId: nil, error: "the core refused the request")
+        guard let outcome else { return Self.undecodableOutcome() }
+        return Self.readerOutcome(outcome)
     }
+
+    /// Options that would not encode are a diagnostic for the log; the outcome
+    /// gives no reason, so the sheet shows its own fallback (issue #295).
+    static func unencodableOptionsOutcome() -> ConcealOutcome {
+        unexplainedOutcome(logging: .malformedOptions)
+    }
+
+    /// A core answer that would not decode, logged and shown as the sheet's
+    /// fallback, as an encoding failure is (issue #295).
+    static func undecodableOutcome() -> ConcealOutcome {
+        unexplainedOutcome(logging: .undecodable)
+    }
+
+    /// The core's outcome with its refusal in the sheet's words (ADR-0055 rule 3,
+    /// issue #295); a refusal with no such words is logged and given no reason.
+    static func readerOutcome(_ outcome: ConcealOutcome) -> ConcealOutcome {
+        guard !outcome.ok, let error = outcome.error else { return outcome }
+        if let reason = readerReason(forCoreRefusal: error) {
+            return ConcealOutcome(ok: false, receiptId: outcome.receiptId, error: reason)
+        }
+        if let known = KnownDiagnostic(rawValue: error) { return unexplainedOutcome(logging: known) }
+        // An unknown string may be a reworded one quoting the server's message.
+        concealLogger.error("conceal: unrecognised refusal \(error, privacy: .private)")
+        return ConcealOutcome(ok: false, receiptId: nil, error: nil)
+    }
+
+    /// The core's conceal refusals the sheet may show (crates/ffi `conceal_error`),
+    /// translated where the core's words say conceal; nil for any other string.
+    static func readerReason(forCoreRefusal error: String) -> String? {
+        switch error {
+        case "nothing to conceal":
+            return "there is nothing to send"
+        case "no connection configured", "no such page", "this page has expired",
+            "that content is gone", "this chip is not text",
+            "this chip holds an image, which cannot travel as a text secret yet",
+            "this page holds an image, which cannot travel as a text secret yet":
+            return error
+        default:
+            let serverPrefixes = [
+                "could not reach the server: ", "the server refused (", "unreadable server response: ",
+            ]
+            return serverPrefixes.contains(where: error.hasPrefix) ? error : nil
+        }
+    }
+
+    /// The fixed diagnostics the log may show in the clear.
+    private enum KnownDiagnostic: String {
+        case malformedOptions = "malformed conceal options"
+        case undecodable = "the core refused the request"
+    }
+
+    private static func unexplainedOutcome(logging diagnostic: KnownDiagnostic) -> ConcealOutcome {
+        concealLogger.error("conceal: \(diagnostic.rawValue, privacy: .public)")
+        return ConcealOutcome(ok: false, receiptId: nil, error: nil)
+    }
+
+    private static let concealLogger = Logger(
+        subsystem: FormFactor.backdrop.loggerSubsystem, category: "conceal")
 
     private static func encodeJSON(_ object: [String: Any]) -> String? {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }

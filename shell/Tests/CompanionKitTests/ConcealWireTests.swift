@@ -149,4 +149,91 @@ final class ConcealWireTests: XCTestCase {
             "a page the roster does not hold carries nothing the sheet can vouch for"
         )
     }
+
+    /// An empty page is refused before the wire, and the core's refusal reaches
+    /// the sheet in its words rather than the core's (ADR-0055 rule 3, issue #295).
+    func testAnEmptyPageIsRefusedInTheSheetsWords() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-empty-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        XCTAssertNotEqual(client.newTab(), 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(id: sheetID, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(outcome.error, "there is nothing to send")
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
+
+    /// The core's encoding refusal and a string the client does not know give
+    /// no reason, so the sheet shows its fallback; a server reason passes (issue #295).
+    func testACoreRefusalTheClientDoesNotKnowGivesNoReason() {
+        for error in ["malformed conceal options", "a refusal the client has never seen"] {
+            let outcome = CompanionClient.readerOutcome(
+                ConcealOutcome(ok: false, receiptId: nil, error: error))
+            XCTAssertFalse(outcome.ok)
+            XCTAssertNil(outcome.error, "\(error) reached the sheet")
+        }
+        let outage = "could not reach the server: stubbed outage"
+        XCTAssertEqual(
+            CompanionClient.readerOutcome(
+                ConcealOutcome(ok: false, receiptId: nil, error: outage)
+            ).error,
+            outage)
+    }
+
+    /// The core answers a file's id with no outcome at all; the client logs that
+    /// and gives no reason, so the sheet shows its fallback (issue #295).
+    func testACoreAnswerThatDoesNotDecodeGivesNoReason() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-undecoded-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(
+            id: CompanionClient.fileIDTag | 1, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertNil(outcome.error)
+        XCTAssertEqual(outcome, CompanionClient.undecodableOutcome())
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
+
+    /// With no connection configured the core refuses before the wire, and its
+    /// sentence reaches the sheet as the core wrote it (issue #295).
+    func testNoConnectionReachesTheSheetInTheCoresWords() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-unconfigured-\(UUID().uuidString)")
+        XCTAssertNotEqual(client.newTab(), 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: #"[{"ink": "the credentials"}]"#))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+
+        let outcome = client.concealSheet(id: sheetID, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(outcome.error, "no connection configured")
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
+
+    /// A page past its deadline is refused before the wire, in the core's
+    /// words (Law 0001, expiry row; issue #295).
+    func testAnExpiredPageReachesTheSheetInTheCoresWords() throws {
+        let client = CompanionClient.ephemeral(tag: "wire-expired-\(UUID().uuidString)")
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil
+        ))
+        let tab = client.newTab()
+        XCTAssertNotEqual(tab, 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: #"[{"ink": "the credentials"}]"#))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+        XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+
+        let outcome = client.concealSheet(id: sheetID, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(outcome.error, "this page has expired")
+        XCTAssertNil(client.lastWireForTests(), "nothing was sent")
+    }
 }

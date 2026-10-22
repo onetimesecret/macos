@@ -195,9 +195,9 @@ public struct ConcealView: View {
 
     /// The destination's tooltip and the error line's spoken label, in
     /// one-time link vocabulary (ADR-0055 rule 3, issue #295).
-    nonisolated static let destinationHelp = "The server this one-time link is created on"
+    nonisolated static let destinationHelp = "the server this one-time link is created on"
     nonisolated static func failureLabel(_ error: String) -> String {
-        "Could not create the link: \(error)"
+        error == PageModel.linkFailedLine ? error : "Could not create the link: \(error)"
     }
 
     private var isConfigured: Bool {
