@@ -7346,7 +7346,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSAttributedString(
             string: Self.classification,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .semibold),
                 .foregroundColor: Self.quietInk(selected: selected),
                 .kern: 1.15,
             ]
@@ -7417,7 +7418,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor
     private func drawDoorwayRule(in cellFrame: NSRect) {
         guard let word = doorwayRect(in: cellFrame) else { return }
-        let font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let font = NSFont.monospacedSystemFont(ofSize: NSFont.miniSystemFontSize, weight: .regular)
         let y = word.minY + font.ascender + 2.5
         let rule = NSBezierPath()
         rule.move(to: NSPoint(x: word.minX, y: y))
@@ -7522,7 +7523,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSAttributedString(
             string: text,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .regular),
                 .foregroundColor: quietInk(selected: selected),
             ]
         )
@@ -7712,7 +7714,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSAttributedString(
             string: decryptedDragWords,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .medium),
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.miniSystemFontSize, weight: .medium),
                 .foregroundColor: NSColor.labelColor,
             ]
         )

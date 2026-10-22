@@ -118,3 +118,63 @@ rest are in the
 - 2026-10-14: Proposed.
 - 2026-10-14: Consolidated from draft ADR-0043 (a sealed object's name and note live on its chip) points 1, 3 and 5 and point 6's compatibility consequence, written 2026-10-13 and never ratified; its sync sentence is left open above, and its routes, codes, JSON fields and framing are in the [core interface](../development/sealed-objects-core-interface.md).
 - 2026-10-16: Accepted.
+- 2026-10-21: Amendment 1 qualifies point 2's sentence "It is the document
+  type a page's body and an open file use" for
+  [issue #256](https://github.com/onetimesecret/macos/issues/256), row C31
+  of the [content buffer register](../development/content-buffer-handling.md),
+  in PR #307: a note made by a restore, a paste or a clone rests as its text
+  until a batch changes that text. Every other part of this decision stands.
+
+## Amendment 1: a restored, pasted or cloned note rests as its text until an edit changes it
+
+- **Status:** proposed
+- **Date:** 2026-10-21
+
+Appended, not folded in. The base Decision text above is left as written.
+This amendment qualifies one sentence of point 2, for
+[issue #256](https://github.com/onetimesecret/macos/issues/256), row C31 of
+the [content buffer register](../development/content-buffer-handling.md),
+and PR #307.
+
+### What was observed
+
+A note made by a restore, a paste or a clone was the document type of point
+2 from the moment it was made, whether or not anyone went on to edit it. The
+register's C01 records that the pinned Loro stores a document's text in an
+arena whose growth and release do not wipe it, so the text of every note a
+relaunch brought back stayed in that arena for the session, and could stay
+in memory after its object was removed or its page expired.
+
+### What this changes
+
+Point 2's sentence "It is the document type a page's body and an open file
+use" applies to a note made by a restore, a paste or a clone from its first
+batch that changes its text. Until then the note rests as one wiping string
+at its exact size. Reading it, writing it to the state file, copying it into
+a fragment, asking for its undo or redo and ending a typing run all leave
+it resting, and so does a batch that is empty, one whose ops move nothing,
+and one that is refused. The first batch that changes the text makes the
+document from the string, and the string is wiped as the document replaces
+it. A selection given at a run's end, or by a batch that moves nothing, is
+kept and handed to the document when it is made, so undo and redo after
+that first edit answer as a document made at once would. A note made by its
+first accepted edit, on a chip with none, is the document from that edit,
+as before.
+
+### Why
+
+A note that is never edited never reaches Loro's arena (register C01), so
+its text is wiped when its object or its page goes. Point 4 is unchanged: a
+resting note has no step to take, as a note restored with an empty undo
+stack had none.
+
+### Consequences of the amendment
+
+- A note that is edited reaches the arena at its first edit and has C01's
+  limits from then, as every note had before.
+- The note's routes, the doorway and the save read a resting note without
+  making its document.
+- The [core interface](../development/sealed-objects-core-interface.md)'s
+  note and At rest sections describe the resting form, and the register's
+  C11 and C31 rows record what a resting note and an edited one leave
+  ordinary.
