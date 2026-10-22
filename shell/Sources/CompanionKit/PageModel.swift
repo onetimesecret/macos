@@ -2080,6 +2080,7 @@ public final class PageModel: ObservableObject {
                 terminationLatch.settle(saved: !draftsHeldInCore())
             } else {
                 // A sealed file is written, so its save settles the hold; no saving word.
+                // Per-reason latch accounting would spare the write; out of scope for #296.
                 scheduleSave(after: saveDebounce)
             }
             return
