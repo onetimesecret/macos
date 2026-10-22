@@ -716,8 +716,14 @@ final class SealedNoteTests: XCTestCase {
             ("redo", { page, _ in
                 XCTAssertFalse(page.model.stepEdit(.note(chip: page.chip), back: false).applied)
             }),
-            ("a name", { page, _ in
-                XCTAssertFalse(page.model.setChipName("API_KEY", chip: page.chip, sheet: page.sheet))
+            ("a name by the field's Return", { page, _ in
+                page.coordinator.beginNaming(at: 3)
+                guard let field = page.coordinator.nameEditor, field.isOpen else {
+                    return XCTFail("the name field did not open")
+                }
+                field.draft = "API_KEY"
+                field.commit()
+                XCTAssertFalse(field.isOpen, "the refused Return kept the field")
             }),
         ]
         for route in routes {
