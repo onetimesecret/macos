@@ -1,4 +1,5 @@
 import Foundation
+import os
 import CompanionCore
 
 
@@ -1601,15 +1602,23 @@ public class CompanionClient: @unchecked Sendable {
         if let ttlSecs { object["ttl_secs"] = ttlSecs }
         if !passphrase.isEmpty { object["passphrase"] = passphrase }
         if !recipient.isEmpty { object["recipient"] = recipient }
-        guard let json = Self.encodeJSON(object) else {
-            return ConcealOutcome(ok: false, receiptId: nil, error: "malformed conceal options")
-        }
+        guard let json = Self.encodeJSON(object) else { return Self.unencodableOptionsOutcome() }
         let outcome = json.withCString { opts in
             decodeOwnedJSON(ConcealOutcome.self, from: route(handle, id, opts))
         }
         return outcome
             ?? ConcealOutcome(ok: false, receiptId: nil, error: "the core refused the request")
     }
+
+    /// Options that would not encode are a diagnostic for the log; the outcome
+    /// gives no reason, so the sheet shows its own fallback (issue #295).
+    static func unencodableOptionsOutcome() -> ConcealOutcome {
+        concealLogger.error("conceal: malformed conceal options")
+        return ConcealOutcome(ok: false, receiptId: nil, error: nil)
+    }
+
+    private static let concealLogger = Logger(
+        subsystem: FormFactor.backdrop.loggerSubsystem, category: "conceal")
 
     private static func encodeJSON(_ object: [String: Any]) -> String? {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }

@@ -793,6 +793,27 @@ final class SealedCapsuleTests: XCTestCase {
             "Could not create the link: no reason was given")
     }
 
+    /// Options the client could not encode reach the sheet as the fallback, and
+    /// the client's diagnostic never does (issue #295).
+    func testTheSheetNeverShowsTheClientsEncodingDiagnostic() throws {
+        let outcome = CompanionClient.unencodableOptionsOutcome()
+        XCTAssertFalse(outcome.ok)
+        XCTAssertNil(outcome.error)
+
+        let model = try makeModel()
+        model.newPage()
+        let target = ConcealDraft.Target.page(try XCTUnwrap(model.selectedPageID))
+        model.beginConceal(target)
+        let draftID = try XCTUnwrap(model.concealDraft?.id)
+        model.finishConceal(outcome, for: target, draftID: draftID)
+
+        let shown = try XCTUnwrap(model.concealDraft?.error)
+        XCTAssertEqual(shown, PageModel.linkFailedLine)
+        XCTAssertFalse(
+            ConcealView.failureLabel(shown).localizedCaseInsensitiveContains("conceal"),
+            "\(shown) says conceal, which rule 3 keeps for the code and the server")
+    }
+
     /// A removal flashes its line with Undo beside it (D-30), since the core
     /// keeps the object detached; withdrawn, the words stay and the button goes.
     func testARemovalFlashesItsLineWithUndoAndAWithdrawalKeepsOnlyTheWords() throws {

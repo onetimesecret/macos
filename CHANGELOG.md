@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caption and the two tooltips are lower case sentences, as ADR-0055
   rule 1 keeps captions and tooltips. A failure that comes back with no
   reason reads `no reason was given`, so the spoken line says the link
-  was not created once.
+  was not created once. Options the client cannot encode are logged
+  under the `conceal` category and reach the sheet as that fallback.
 
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue
