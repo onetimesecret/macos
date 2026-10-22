@@ -1288,10 +1288,14 @@ impl<C: Clock> SheetStore<C> {
             .find_map(|s| s.chip(id).map(|c| (s.id, c)))
     }
 
+    /// An attached object, mutably, refused past its page's deadline as
+    /// [`SheetStore::chip_home`] refuses (Law 0001, expiry row).
     fn chip_mut(&mut self, id: ChipId) -> Option<&mut SealedChip> {
+        let now = self.clock.now();
         self.tabs
             .iter_mut()
             .filter_map(|tab| tab.page.as_mut())
+            .filter(|sheet| !sheet.is_due(now))
             .find_map(|sheet| sheet.chips.iter_mut().find(|chip| chip.id == id))
     }
 
@@ -1299,7 +1303,8 @@ impl<C: Clock> SheetStore<C> {
     /// the name. A refusal changes nothing, and no outcome is recorded.
     ///
     /// # Errors
-    /// [`NameRefusal::UnknownChip`], or the rule's own refusal.
+    /// [`NameRefusal::UnknownChip`] for an unknown chip or a page past its
+    /// deadline (Law 0001, expiry row), or the rule's own refusal.
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
         let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
         chip.name = judge_name(draft)?.map(|name| Zeroizing::new(name.to_owned()));
@@ -1325,6 +1330,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// Apply a batch to a sealed object's note, whole or not at all; the first
     /// accepted batch makes the note. The page and the ledger are not touched.
+    /// False for an unknown chip or a page past its deadline (Law 0001, expiry row).
     pub fn apply_note_ops(
         &mut self,
         id: ChipId,
@@ -1351,16 +1357,16 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// End the note's typing run without adding a step. False only for an
-    /// unknown chip.
+    /// unknown chip or a page past its deadline (Law 0001, expiry row).
     pub fn finish_note_editing_group(
         &mut self,
         id: ChipId,
         selection: Option<TextSelection>,
     ) -> bool {
-        if self.chip_home(id).is_none() {
+        let Some(chip) = self.chip_mut(id) else {
             return false;
-        }
-        if let Some(note) = self.chip_mut(id).and_then(|chip| chip.note.as_mut()) {
+        };
+        if let Some(note) = chip.note.as_mut() {
             note.finish_editing_group(selection);
         }
         true
@@ -1389,7 +1395,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Take back the note's last step; the page's stack is not touched.
-    /// `None` for an unknown chip.
+    /// `None` for an unknown chip or a page past its deadline (Law 0001, expiry row).
     pub fn undo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
         self.step_note(id, true)
     }
