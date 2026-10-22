@@ -980,6 +980,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Turning a day's preview on or off keeps the reader on a whole
+  character** (app 0.41.1; issue #290). The roll moves the reader's
+  place between a page's Markdown source and its preview by the same
+  share of the text, and that share could fall between the two halves
+  of an emoji's UTF-16 surrogate pair. It now moves back to the pair's
+  start, as the bounded search fallback for a large rewrite already
+  did (#283).
 - **A large mixed rewrite of a day keeps the reader's share of it**
   (app 0.40.3; issue #283). When a day the editor is not on changed by
   a mixed edit too large for the reading anchor's bounded search, the

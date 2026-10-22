@@ -132,14 +132,14 @@ struct RollPlace: Equatable {
     /// Taken at the roll's top edge, so a restore keeps the clip there and returns only `x`.
     var atTop = false
 
-    /// The anchor for `reading`'s text of `length` characters. No position map joins
-    /// the source to its preview, so the other reading is mapped by proportion.
-    func mappedAnchor(into reading: Reading, length: Int) -> ScrollAnchor {
+    /// The anchor for `reading`'s `text`. No position map joins the source to its
+    /// preview, so the other reading is mapped by proportion, snapped to a scalar (#290).
+    func mappedAnchor(into reading: Reading, text: String) -> ScrollAnchor {
         guard reading != self.reading else { return anchor }
         var mapped = anchor
         let scaled = self.length > 0
-            ? (Double(anchor.characterIndex) * Double(length) / Double(self.length)).rounded() : 0
-        mapped.characterIndex = min(max(Int(scaled), 0), length)
+            ? (Double(anchor.characterIndex) * Double(text.utf16.count) / Double(self.length)).rounded() : 0
+        mapped.characterIndex = Self.scalarBoundary(at: Int(scaled), in: text)
         return mapped
     }
 
