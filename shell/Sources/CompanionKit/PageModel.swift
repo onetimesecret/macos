@@ -5209,44 +5209,32 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
-        if !draftsLicence {
-            // A refused erase returns before it reaches the drafts file
-            // (`companion_persist_erase`), so that file goes by path here.
-            if !erased { eraseUnreadableDraftsFile() }
-            grantDraftsLicence()
-            quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
-        }
+        // A refused erase may leave the drafts under halves it rotated away, so
+        // the write `markDirty` arms restates them from the roster in memory.
+        if !erased { draftsDirty = true }
+        if !draftsLicence { grantDraftsLicence() }
         contentRestoreRefused = false
-        quitRefusal = Self.quitOfferAfterContentClear(offer: quitRefusal)
+        quitRefusal = Self.quitOfferAfterDraftsClear(
+            offer: Self.quitOfferAfterContentClear(offer: quitRefusal))
         markDirty()
         refresh()
     }
 
-    /// Discard the drafts file this session could not read and start
-    /// writing drafts (the drafts banner's one action, issue #296). The
-    /// content clear's shape for the third file: the file goes by path,
-    /// the licence comes back on the user's word whatever the erase
-    /// managed, and a write owed by edits in memory is armed at once.
-    /// Guarded to the one condition it exists for, as the content clear is.
+    /// The drafts banner's one action (issue #296): drop the drafts file this
+    /// session could not read, by path, and grant the licence on the user's word.
     public func clearUnreadableDraftsFile() {
         guard stateLoaded, !draftsLicence else { return }
-        eraseUnreadableDraftsFile()
+        if !client.draftsErase(at: draftsFileURL.path) {
+            logger.error(
+                "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
+            )
+        }
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
-        if draftsDirty { armDraftsWrite() }
     }
 
-    /// The drafts file this session could not read, dropped by path on a
-    /// user discard. A refusal is logged; the next drafts write replaces it.
-    private func eraseUnreadableDraftsFile() {
-        guard !client.draftsErase(at: draftsFileURL.path) else { return }
-        logger.error(
-            "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
-        )
-    }
-
-    /// The drafts licence back, with the pad roster it gates and the
-    /// standing line that said it was withheld.
+    /// The drafts licence back, with the pad roster it gates, the standing
+    /// line that said it was withheld, and the write any edits in memory owe.
     private func grantDraftsLicence() {
         draftsLicence = true
         draftsRestoreRefused = false
@@ -5254,6 +5242,7 @@ public final class PageModel: ObservableObject {
             padFileRosterReady = true
             pads.reconcileFiles(Set(openFiles.map(\.path)))
         }
+        if draftsDirty { armDraftsWrite() }
     }
 
     /// The ◌ tab is a toggle: click to visit the ledger, click again
