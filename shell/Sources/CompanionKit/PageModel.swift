@@ -2331,7 +2331,8 @@ public final class PageModel: ObservableObject {
         // and the dirtiness stays with the edits in memory (issue #296).
         guard draftsLicence else { return true }
         let path = FormFactor.draftsFileURL(in: directory).path
-        let wrote = openFiles.isEmpty
+        // The core's roster, which the published one trails: erase only with no file open there.
+        let wrote = client.fileRoster().isEmpty
             ? client.draftsErase(at: path)
             : client.draftsSave(to: path)
         if wrote {

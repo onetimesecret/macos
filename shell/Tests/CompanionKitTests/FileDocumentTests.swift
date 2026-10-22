@@ -1822,6 +1822,28 @@ final class FileDocumentTests: XCTestCase {
             "the sealed state file was not written, so this session's pages will not survive the quit")
     }
 
+    /// The drafts leg asks the core whether a file is open: a file the published
+    /// roster has not caught up with is sealed, and the drafts file is not dropped.
+    func testTheDraftsLegSealsAFileThePublishedRosterHasNotCaughtUpWith() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        model.loadStateIfNeeded()
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: first)
+        let a = try XCTUnwrap(model.openFiles.first?.id)
+        model.closeFile(a)
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertTrue(model.draftsDirty)
+
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        XCTAssertNotNil(client.openFile(path: second.path), "a file opened past the model")
+        XCTAssertTrue(model.openFiles.isEmpty, "the published roster trails")
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(client.draftsErasures, 0)
+        XCTAssertEqual(client.draftsWrites, 1)
+    }
+
     /// A cancelled ⌘Q restates nothing: a pending close stands, though the core
     /// already reads that file clean, until the roster is restated.
     func testAPendingFileCloseSurvivesACancelledQuit() throws {
