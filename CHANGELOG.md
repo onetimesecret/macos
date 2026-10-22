@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing to send`, and a refusal it does not know, the encoding
   failure and an answer that does not decode among them, is logged
   under the `conceal` category and reaches the sheet as that fallback.
+  The log redacts an unrecognised string; only the client's two fixed
+  diagnostics are logged in the clear.
 
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue

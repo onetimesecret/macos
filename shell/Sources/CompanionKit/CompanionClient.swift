@@ -1630,7 +1630,8 @@ public class CompanionClient: @unchecked Sendable {
             return ConcealOutcome(ok: false, receiptId: outcome.receiptId, error: reason)
         }
         if let known = KnownDiagnostic(rawValue: error) { return unexplainedOutcome(logging: known) }
-        concealLogger.error("conceal: \(error, privacy: .public)")
+        // An unknown string may be a reworded one quoting the server's message.
+        concealLogger.error("conceal: unrecognised refusal \(error, privacy: .private)")
         return ConcealOutcome(ok: false, receiptId: nil, error: nil)
     }
 
