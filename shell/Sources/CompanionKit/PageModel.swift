@@ -1328,6 +1328,9 @@ public final class PageModel: ObservableObject {
     /// Where a link the person opens goes: the shared workspace, or a test's recorder.
     private let openURL: @MainActor (URL) -> Void
 
+    /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
+    private let requestTermination: @MainActor () -> Void
+
     /// Opens a link outside the app through the seam above, for the editor's
     /// links and the Help menu alike (issue #294).
     public func openExternal(_ url: URL) {
@@ -1387,6 +1390,9 @@ public final class PageModel: ObservableObject {
         /// Where a link the person opens goes: a recorder of the test's own, so
         /// a suite never starts a browser; nil is the shared workspace's.
         let openURL: (@MainActor (URL) -> Void)?
+        /// Where Quit Anyway asks for termination: a recorder of the test's own, so
+        /// a suite never terminates its runner; nil is `NSApp`'s.
+        let requestTermination: (@MainActor () -> Void)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1403,7 +1409,8 @@ public final class PageModel: ObservableObject {
             ambientPasteboard: NSPasteboard? = nil,
             writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
             wakeNotifications: NotificationCenter? = nil,
-            openURL: (@MainActor (URL) -> Void)? = nil
+            openURL: (@MainActor (URL) -> Void)? = nil,
+            requestTermination: (@MainActor () -> Void)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1418,6 +1425,7 @@ public final class PageModel: ObservableObject {
             self.writeCutFragment = writeCutFragment
             self.wakeNotifications = wakeNotifications
             self.openURL = openURL
+            self.requestTermination = requestTermination
         }
     }
 
@@ -1501,6 +1509,7 @@ public final class PageModel: ObservableObject {
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
         openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
+        requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
@@ -2859,9 +2868,12 @@ public final class PageModel: ObservableObject {
     /// application object, and a status action that traps the runner is
     /// worse than one that does nothing there.
     public func requestQuitAnyway() {
-        // The button answers the line as it reads now, files included.
-        if let quitRefusal { offerQuitAnyway(after: quitRefusal) }
-        NSApp?.terminate(nil)
+        // Files at risk since the line went up: restate it, as a second ⌘Q would.
+        if let quitRefusal, !quitAnywayOffered {
+            offerQuitAnyway(after: quitRefusal)
+            return
+        }
+        requestTermination()
     }
 
     /// The cancelled quit's standing line goes up, naming the files at
