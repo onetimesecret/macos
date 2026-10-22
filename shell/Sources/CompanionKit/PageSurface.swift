@@ -291,14 +291,8 @@ public struct PageStatusStack: View {
             let sentence = PageModel.quitRefusalSentence(
                 refusal, files: model.openFiles, draftsUnwritten: model.draftsDirty)
         {
-            // The quit the terminate path cancelled (issue 172, D-14 and
-            // D-19). Standing rather than a notice, because the condition
-            // it names is; ember because the one thing to do about it is
-            // a decision. The button and a second ⌘Q are the same answer
-            // (`QuitPrompt.terminateReply`), so ⌘Q is never inert: the
-            // first press says what the quit costs and the second pays
-            // it. The recovery line above, when it stands, is the other
-            // way out.
+            // The quit the terminate path cancelled (issue 172, D-14, D-19), standing and ember.
+            // The button and ⌘Q answer it alike, and each restates it over edits it never named.
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))

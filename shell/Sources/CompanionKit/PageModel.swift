@@ -2864,9 +2864,7 @@ public final class PageModel: ObservableObject {
     /// other action on the status stack goes through the model, and the
     /// quit path is the one that can least afford a second route.
     ///
-    /// `NSApp` is read optionally because a filtered test run has no
-    /// application object, and a status action that traps the runner is
-    /// worse than one that does nothing there.
+    /// The request goes through the `requestTermination` seam, `NSApp` read optionally by default.
     public func requestQuitAnyway() {
         // Files at risk since the line went up: restate it, as a second ⌘Q would.
         if let quitRefusal, !quitAnywayOffered {
