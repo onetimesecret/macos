@@ -274,7 +274,8 @@ pub struct SealedChip {
     pub(crate) conceal: Option<Conceal>,
     /// A wiping owner, since a name is content (Law 0004, C10).
     pub(crate) name: Option<Zeroizing<String>>,
-    /// Made by its first accepted edit.
+    /// Made by its first accepted edit, or by a restore, a paste or a clone that brings its
+    /// text, which then rests until an edit (C31).
     pub(crate) note: Option<Note>,
     /// Whether its sentinel has stood in a body; the first standing is the
     /// seal's, which no step may take back (D-30).
