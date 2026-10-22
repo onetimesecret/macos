@@ -45,9 +45,10 @@ finds the editor window closed opens it on the desktop the person is on,
 and a raised panel rests as the window takes the keyboard; one that finds
 it open on another desktop switches there, as it does for any document
 application. A pinned panel floats above every ordinary window, editor
-included; the editor never floats. *Companion* marks Settings and
-About, the ordinary windows ADR-0033 leaves under ADR-0032's companion
-window rule.
+included, and lowers under a key Settings, About or Send Feedback window
+(ADR-0032 Amendment 1); the editor never floats. *Companion* marks
+Settings and About, the ordinary windows ADR-0033 leaves under
+ADR-0032's companion window rule.
 
 ## What was seen, and what the code did about it
 
@@ -494,7 +495,8 @@ when switching away** is off before the first run; the checks that need
 it on say so and turn it off again.
 
 Issue #190 lists twelve checks. Eleven are below; the twelfth, About
-with Pin on, is the About check under companion windows further down.
+with Pin on, is the first check under "Companion windows stay at normal
+level" further down, rewritten for ADR-0032 Amendment 1.
 Its first check predates ADR-0033 and ended with a ⌘Tab back to a keyed
 card; that return now selects the editor window, so the check below
 re-keys the card with the hotkey instead.
@@ -869,20 +871,29 @@ first full-screen check above, and its row records it.
       **Fail:** OnetimePad stays active with no window that can take
       the keyboard, so typing goes nowhere, or any `VERDICT FAIL`.
 
-### Companion windows follow the surface (ADR-0032, issue #188)
+### Companion windows stay at normal level (ADR-0032 Amendment 1, issue #293)
 
-- [ ] **About stays in front while Pin and the preference move.**
-      *Companion.* With the card resting and unpinned, open About and
-      leave it open. Raise the card (⌃⌥Space), turn the pin on from the
-      header toggle and rest it (Esc). **Pass:** the card floats and
-      About is still in front of it. Raise the card and turn the pin
-      off, open Settings and turn **Keep OnetimePad above other apps
-      when switching away** on, then off, with About still open.
-      **Pass:** About is never left underneath the card at any step.
-      **Fail:** About is stranded beneath the card after a toggle, which
-      is what a level read only once at open produces. Its first pass,
-      About in front of the card with the pin on, is also issue #190's
-      check About with Pin on.
+Rewritten 2026-10-21 for issue #293. The checks here before asked About
+to follow the card's altitude (issue #188), which Amendment 1 replaces.
+
+- [ ] **About and the card trade places with the keyboard.**
+      *Companion.* With the pin on and the card resting, open About
+      from the OnetimePad menu. **Pass:** with About key, the card sits
+      below it. Press ⌃⌥Space: the card is key and floats over About.
+      Click About: the card lowers under it again. Repeat with the pin
+      off and **Keep OnetimePad above other apps when switching away**
+      on, then turn the preference off. **Fail:** the card covers About
+      while About is key, or stays under About once the card has the
+      keyboard. This is issue #190's check About with Pin on.
+- [ ] **A keyless About is covered by a pinned card.** *Companion.*
+      With the pin off and the card resting, open About and leave it.
+      Raise the card (⌃⌥Space), turn the pin on from the header toggle,
+      rest it (Esc), and click another app's window so that About is
+      open but not key. **Pass:** the card floats over About, as it
+      does over any window while pinned (ADR-0032 Amendment 1,
+      Consequences); clicking About gives it the keyboard and the card
+      lowers under it. **Fail:** the card stays under a keyless About,
+      or covers About once About is key.
 - [ ] **A hand off between companion windows keeps the card still.**
       *Companion.* With the pin on and the card resting, open Settings
       with `⌘,`, then choose About from the OnetimePad menu while
