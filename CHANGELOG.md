@@ -1012,6 +1012,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A note or a name on a page past its deadline takes no edit** (app
+  0.40.9, `companion-core` 0.34.3, `companion-ffi` 0.43.2; issue #310).
+  Between a page's deadline and the sweep that takes it, a sealed
+  object's note still took typing, undo and redo, and the object could
+  still be renamed, though every way out of the page already refused.
+  These edits now refuse and change nothing, as a paste or a drag onto
+  the page does, so a restored note nobody edited is not put in a
+  document whose storage is not wiped. The page then goes at once and
+  the line under it says it expired, as after a refused copy.
 - **A restored or pasted note that nobody edits is wiped when it goes**
   (`companion-core` 0.34.2; issue #256, the content buffer register's
   C11 and C31). A note brought back by a relaunch, a paste or a clone
