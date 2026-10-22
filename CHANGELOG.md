@@ -1022,9 +1022,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   released. Each is now a zeroizing copy at its exact size, and the
   message is written without an intermediate JSON value. The
   pasteboard read no longer asks Foundation for a separate UTF-8 copy
-  of the URL or the pasted text, and a string with no UTF-8 form is
-  refused rather than read through a null pointer. The pasteboard
-  item's debug output writes `[REDACTED]` for the URL. Where the URL
+  of the URL, the pasted text or the board's type names, and a URL or
+  text with no UTF-8 form is skipped rather than read through a null
+  pointer; a skipped text leaves the read to take an image, as an
+  absent one does. The read releases Foundation's strings when it
+  returns, instead of at the end of the event loop's turn. The
+  pasteboard item's debug output writes `[REDACTED]` for the URL.
+  Where the URL
   persists is unchanged. The register records what Foundation
   and the document library still leave ordinary.
 - **A restored or pasted note that nobody edits is wiped when it goes**
