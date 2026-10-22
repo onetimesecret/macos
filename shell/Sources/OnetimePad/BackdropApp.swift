@@ -746,7 +746,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             },
             raisePanel: { [model] raise in model.raise(raise) },
             summonPanel: { [model] in model.summon() },
-            closeEditorForPanel: { [self] in editorWindow.closeForAmbientPanel() }
+            closeEditorForPanel: { [self] in madeEditorWindow?.closeForAmbientPanel() }
         )
     }
 
