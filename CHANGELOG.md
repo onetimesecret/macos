@@ -19,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caption and the two tooltips are lower case sentences, as ADR-0055
   rule 1 keeps captions and tooltips. A failure that comes back with no
   reason reads `the link was not created`, and VoiceOver reads it
-  without the failure prefix, so once. Options the client cannot
-  encode are logged under the `conceal` category and reach the sheet
-  as that fallback.
+  without the failure prefix, so once. The client puts the core's
+  refusals in the sheet's words: `nothing to conceal` reads `there is
+  nothing to send`, and a refusal it does not know, the encoding
+  failure among them, is logged under the `conceal` category and
+  reaches the sheet as that fallback.
 
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue
